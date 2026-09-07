@@ -38,6 +38,9 @@ type tableDoc struct {
 	Comment string
 	Columns []columnDoc
 	Indexes []indexDoc
+	// Change is what a comparison found about this table, or empty when the
+	// caller supplied no marks or none for this name.
+	Change ChangeKind
 }
 
 // columnDoc is one column, with the facts a reader looks for first.
@@ -103,6 +106,7 @@ func build(db *schemamodel.Database, opts Options) document {
 			Comment: table.Comment,
 			Columns: columns[table.Name],
 			Indexes: indexesOf(db, table),
+			Change:  changeOf(opts.Changes, table.Name),
 		})
 	}
 	sort.Slice(doc.Tables, func(i, j int) bool { return doc.Tables[i].Name < doc.Tables[j].Name })
@@ -208,4 +212,22 @@ func dedupeRelations(relations []relation) []relation {
 		return unique[i].To < unique[j].To
 	})
 	return unique
+}
+
+// changeOf reads the mark for one table, dropping a value this package does not
+// know. An unrecognized mark renders as no mark rather than as a default one:
+// showing a table as removed because a caller misspelled "modified" would be a
+// worse answer than showing it unmarked.
+//
+// This is the only place a mark is checked. The renderers below it ask whether
+// the field is set, not whether it is known, so there is one answer to "is this
+// a mark" rather than three that agree until one of them is edited -- and a
+// test that removes this check reddens, which it could not do while the
+// renderers repeated it.
+func changeOf(changes map[string]ChangeKind, table string) ChangeKind {
+	kind := changes[table]
+	if !kind.valid() {
+		return ""
+	}
+	return kind
 }

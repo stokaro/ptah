@@ -234,11 +234,12 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 			c := qt.New(t)
 			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
-			document, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
+			documentResult, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
 				Format:                 "hcl",
 				OmitAtlasRefusedBlocks: test.omitRefused,
 			})
 			c.Assert(err, qt.IsNil)
+			document := documentResult.Rendered
 
 			path := filepath.Join(c.TempDir(), "desired.hcl")
 			c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)

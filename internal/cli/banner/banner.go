@@ -15,10 +15,9 @@ import (
 	"strings"
 
 	"golang.org/x/term"
-)
 
-// URL is where the banner points a reader.
-const URL = "https://ptah.run"
+	"ptah.run/internal/buildinfo"
+)
 
 // tagline is the one sentence under the logo.
 const tagline = "Database schema management, without the ceremony."
@@ -54,7 +53,7 @@ func Text(tool, version string) string {
 		out.WriteString(line)
 		out.WriteString("\n")
 	}
-	fmt.Fprintf(&out, "\n%s\n\n%s\n%s\n\n", tagline, release(tool, version), URL)
+	fmt.Fprintf(&out, "\n%s\n\n%s\n%s\n\n", tagline, release(tool, version), buildinfo.URL)
 	return out.String()
 }
 

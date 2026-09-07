@@ -28,12 +28,13 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 	c := qt.New(t)
 	dbPath := seedInspectSQLiteDB(c)
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
 }
@@ -43,7 +44,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 	diagnosticCalled := false
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
 		DevURL: "notadriver://x",
 		Format: "hcl",
@@ -54,7 +55,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "notadriver://x"`)
-	c.Assert(rendered, qt.Equals, "")
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	c.Assert(diagnosticCalled, qt.IsFalse)
 }
 
@@ -68,13 +69,14 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	devPath := filepath.Join(dir, "dev.db")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"), 0o600), qt.IsNil)
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + schemaPath,
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
 	assertInspectSQLiteDevEmpty(c, devPath)
@@ -101,22 +103,22 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 
 	blockedCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	rendered, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{
 		URL:    "file://" + schemaPath,
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 	c.Assert(err, qt.ErrorMatches, `acquire schema inspection dev database lock: .*context deadline exceeded`)
-	c.Assert(rendered, qt.Equals, "")
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	c.Assert(lock.Release(), qt.IsNil)
 
-	rendered, err = atlasschema.InspectSource(t.Context(), atlasschema.InspectSourceOptions{
+	renderedResult, err = atlasschema.InspectSource(t.Context(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + schemaPath,
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered, qt.Contains, `table "locked_inspection"`)
+	c.Assert(renderedResult.Rendered, qt.Contains, `table "locked_inspection"`)
 	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
@@ -134,13 +136,14 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE fresh_table (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + schemaPath,
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "fresh_table"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "stale_dev_table")
 }
@@ -159,13 +162,14 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + migrationsDir,
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "replayed_users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "atlas_schema_revisions")
 	assertInspectSQLiteDevEmpty(c, devPath)
@@ -194,7 +198,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "env://src",
 		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
 		Format: "hcl",
@@ -206,6 +210,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "env_sourced"`)
 }
 
@@ -217,13 +222,13 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 	outDir := filepath.Join(t.TempDir(), "schema")
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
 		Format: `{{ hcl . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered, qt.Equals, "")
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	written := collectFiles(c, outDir, ".hcl")
 	c.Assert(written, qt.Not(qt.HasLen), 0)
 	reloaded, err := schemafile.LoadAll(written, schemafile.Options{Dialect: "sqlite"})
@@ -259,13 +264,12 @@ CREATE TABLE sessions (
 	dbschema.CloseAndWarn(conn)
 	outDir := filepath.Join(dir, "schema-sql")
 
-	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
 		Format: `{{ sql . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 	c.Assert(err, qt.IsNil)
-
-	c.Assert(rendered, qt.Equals, "")
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
 	mainSQL, err := os.ReadFile(filepath.Join(outDir, "main.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(mainSQL), qt.Contains, "-- atlas:import ./tables/users.sql")
@@ -315,7 +319,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	exported := filepath.Join(dir, "schema.hcl")
-	c.Assert(os.WriteFile(exported, []byte(live), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(exported, []byte(live.Rendered), 0o600), qt.IsNil)
 
 	reloaded, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + exported,
@@ -324,7 +328,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(reloaded, qt.Equals, live)
+	c.Assert(reloaded.Rendered, qt.Equals, live.Rendered)
 }
 
 func TestInspectSource_FailurePath(t *testing.T) {
@@ -333,12 +337,12 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
-		rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL: "file://" + schemaPath,
 		})
 
 		c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`)
-		c.Assert(rendered, qt.Equals, "")
+		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 
 	// Inspection used to refuse every docker:// dev URL here. It now provisions

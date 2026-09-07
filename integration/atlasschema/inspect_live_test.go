@@ -118,12 +118,13 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, test.setup)
 
-			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 				Format:  "json",
 				Schemas: test.schemas,
 			})
 
 			c.Assert(err, qt.IsNil)
+			rendered := renderedResult.Rendered
 			c.Assert(rendered, qt.Equals, test.want)
 		})
 	}
@@ -197,12 +198,13 @@ func TestInspectLive_SQLSchemaStatements(t *testing.T) {
 			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
-			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 				Format:  "sql",
 				Schemas: test.schemas,
 			})
 
 			c.Assert(err, qt.IsNil)
+			rendered := renderedResult.Rendered
 			c.Assert(strings.Count(rendered, "CREATE SCHEMA"), qt.Equals, test.want)
 			// The tables are asserted in every row so that a rendering which
 			// lost its whole body cannot pass by having zero schema statements.
@@ -263,9 +265,10 @@ func TestInspectLive_HCLRealmScope(t *testing.T) {
 			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
-			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{Format: "hcl"})
+			renderedResult, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{Format: "hcl"})
 
 			c.Assert(err, qt.IsNil)
+			rendered := renderedResult.Rendered
 			for _, block := range test.want {
 				c.Assert(rendered, qt.Contains, block)
 			}

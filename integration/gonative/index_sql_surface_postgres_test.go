@@ -52,12 +52,13 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	document, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+	documentResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
 		URL:         dbURL,
 		Format:      "sql",
 		Diagnostics: io.Discard,
 	})
 	c.Assert(err, qt.IsNil)
+	document := documentResult.Rendered
 
 	// What the document says, before what the plan does. A writer that stopped
 	// emitting the suffix would make the plan empty for the wrong reason.

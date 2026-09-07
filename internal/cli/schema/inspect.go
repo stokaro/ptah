@@ -182,7 +182,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	fmt.Fprint(cmd.OutOrStdout(), rendered)
+	fmt.Fprint(cmd.OutOrStdout(), rendered.Rendered)
 	return nil
 }
 

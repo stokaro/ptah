@@ -6,6 +6,16 @@ import (
 	"runtime/debug"
 )
 
+// URL is where Ptah lives, for a surface that tells a reader what produced
+// what they are looking at.
+//
+// It sits beside the version because the two are one answer -- this was made by
+// Ptah, this version, and here is where Ptah is -- and because everything that
+// prints one prints the other: the terminal banner, and the footer of every
+// HTML document Ptah writes. A second spelling in the presentation layer would
+// be one more thing to change on the day the address moves.
+const URL = "https://ptah.run"
+
 var (
 	// Version is the release version stamped at build time.
 	Version = "dev"

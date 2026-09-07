@@ -43,21 +43,39 @@ func render(c *qt.C, db *schemamodel.Database, opts schemadoc.Options) string {
 
 // TestRender_FetchesNothing is the property the whole design follows from.
 //
-// Any absolute URL in the output is a request the reader's browser makes when
-// they open the file, which is what this document exists not to do: it would
-// mean the page does not work offline, and that looking at a schema can be
-// observed.
+// A request the reader's browser makes when they open the file is what this
+// document exists not to make: it would mean the page does not work offline,
+// and that looking at a schema can be observed.
+//
+// The subject is fetching, not mentioning. The footer links to Ptah, and an
+// anchor is inert until somebody clicks it -- a document carrying one still
+// opens offline and still tells nobody it was opened. What is forbidden is the
+// markup that fetches without being asked: a script, a stylesheet link, an
+// image, an @import, and a url() pointing outside the document. An assertion
+// that refused every absolute URL would refuse the footer for a property the
+// footer does not violate.
 func TestRender_FetchesNothing(t *testing.T) {
 	c := qt.New(t)
 
 	page := render(c, bookshop(), schemadoc.Options{})
 
-	external := regexp.MustCompile(`(?i)(https?:)?//[a-z0-9.-]+\.[a-z]{2,}`).FindAllString(page, -1)
-	c.Assert(external, qt.HasLen, 0, qt.Commentf("the document must reference nothing outside itself"))
+	// src is the attribute that fetches. href is not in this pattern because
+	// the only element that fetches through one is <link>, which the loop below
+	// forbids outright -- so an href that survives is on an anchor.
+	fetching := regexp.MustCompile(`(?i)src\s*=\s*"(https?:)?//`).FindAllString(page, -1)
+	c.Assert(fetching, qt.HasLen, 0,
+		qt.Commentf("the document must fetch nothing when it is opened"))
 	for _, element := range []string{"<script", "<link", "<img", "@import"} {
 		c.Assert(page, qt.Not(qt.Contains), element,
 			qt.Commentf("%s is how a page reaches for something it does not carry", element))
 	}
+	// Every outside address the document does carry is an anchor. Asserted as a
+	// count rather than as an absence, because "no <a href> reaches outside"
+	// and "one does, and it is the footer" are different documents and only the
+	// second is the one this package writes.
+	anchors := regexp.MustCompile(`(?i)<a [^>]*href="https?://`).FindAllString(page, -1)
+	c.Assert(anchors, qt.HasLen, 1)
+
 	// url(#a) points at the arrowhead defined a few bytes earlier, so the test
 	// is about where a url() points rather than about the function appearing.
 	// Forbidding it outright would forbid the diagram's own marker.
@@ -263,4 +281,82 @@ func TestRender_RefusesANilSchema(t *testing.T) {
 	_, err := schemadoc.Render(nil, schemadoc.Options{})
 
 	c.Assert(err, qt.IsNotNil)
+}
+
+// A marked table carries its mark in two places, because the two answer
+// different questions: the rectangle says which part of the picture moved, and
+// the card says it again where a reader has already scrolled to the columns.
+func TestRender_MarksWhatAComparisonFound(t *testing.T) {
+	tests := []struct {
+		name  string
+		kind  schemadoc.ChangeKind
+		class string
+		label string
+	}{
+		{name: "added", kind: schemadoc.ChangeAdded, class: "chg-added", label: "added"},
+		{name: "changed", kind: schemadoc.ChangeChanged, class: "chg-changed", label: "changed"},
+		{name: "removed", kind: schemadoc.ChangeRemoved, class: "chg-removed", label: "removed"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			page := render(c, bookshop(), schemadoc.Options{
+				Changes: map[string]schemadoc.ChangeKind{"books": test.kind},
+			})
+
+			c.Assert(page, qt.Contains, `class="node `+test.class+`"`)
+			c.Assert(page, qt.Contains, `<span class="chg `+test.class+`">`+test.label+`</span>`)
+		})
+	}
+}
+
+// The legend names the kinds the diagram actually uses. A key listing three
+// states where only one is drawn sends a reader looking for the other two.
+func TestRender_LegendNamesOnlyTheMarksItDrew(t *testing.T) {
+	c := qt.New(t)
+
+	page := render(c, bookshop(), schemadoc.Options{
+		Changes: map[string]schemadoc.ChangeKind{"books": schemadoc.ChangeAdded},
+	})
+
+	c.Assert(page, qt.Contains, `<div class="erd-legend">`)
+	c.Assert(page, qt.Contains, `<span class="chg chg-added">added</span>`)
+	c.Assert(page, qt.Not(qt.Contains), `<span class="chg chg-removed">removed</span>`)
+	c.Assert(page, qt.Not(qt.Contains), `<span class="chg chg-changed">changed</span>`)
+}
+
+// An unmarked document is the document that rendered before marks existed:
+// no legend, and the node markup unchanged byte for byte. The nodes matter
+// because a class attribute built by concatenation is where a stray space goes
+// unnoticed -- invisible in a browser, and a difference no one meant.
+func TestRender_LeavesAnUnmarkedDocumentAlone(t *testing.T) {
+	c := qt.New(t)
+
+	page := render(c, bookshop(), schemadoc.Options{})
+
+	c.Assert(page, qt.Contains, `class="node"`)
+	// The markup forms, not the bare class names: the stylesheet declares every
+	// class on every document, so asserting on `chg-` alone would match the CSS
+	// and pass whatever the diagram drew.
+	c.Assert(page, qt.Not(qt.Contains), `<div class="erd-legend">`)
+	c.Assert(page, qt.Not(qt.Contains), `class="node chg-`)
+	c.Assert(page, qt.Not(qt.Contains), `<span class="chg `)
+}
+
+// A mark this package does not know marks nothing. The alternative is a
+// document that shows a table as removed because a caller wrote "modified",
+// which is the wrong answer rendered confidently.
+func TestRender_IgnoresAMarkItDoesNotKnow(t *testing.T) {
+	c := qt.New(t)
+
+	page := render(c, bookshop(), schemadoc.Options{
+		Changes: map[string]schemadoc.ChangeKind{"books": schemadoc.ChangeKind("modified")},
+	})
+
+	c.Assert(page, qt.Contains, `class="node"`)
+	c.Assert(page, qt.Not(qt.Contains), `class="node chg-`)
+	c.Assert(page, qt.Not(qt.Contains), `<span class="chg `)
+	c.Assert(page, qt.Not(qt.Contains), `<div class="erd-legend">`)
 }

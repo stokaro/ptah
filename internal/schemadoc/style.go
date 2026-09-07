@@ -40,6 +40,18 @@ section[id] { scroll-margin-top: 20px; }
 .erd .arrow { fill: var(--text-mute); }
 .erd-note { font-family: var(--mono); font-size: 12.5px; color: var(--text-mute); margin-top: 12px; }
 
+/* Comparison marks. The fill is the soft token and the stroke the solid one, so
+   a marked node reads as the same rectangle in another color rather than as a
+   different shape -- the diagram still answers "what depends on what" first. */
+.erd .node.chg-added { fill: var(--ok-soft); stroke: var(--ok); }
+.erd .node.chg-changed { fill: var(--amber-soft); stroke: var(--amber); }
+.erd .node.chg-removed { fill: var(--danger-soft); stroke: var(--danger); }
+.erd-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chg { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius); border: 1px solid; }
+.chg-added { background: var(--ok-soft); border-color: var(--ok); color: var(--text); }
+.chg-changed { background: var(--amber-soft); border-color: var(--amber); color: var(--text); }
+.chg-removed { background: var(--danger-soft); border-color: var(--danger); color: var(--text); }
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .sidebar { position: static; max-height: none; padding: 24px 0 12px; border-right: 0; }

@@ -114,7 +114,9 @@ func (c *schemaCapture) render(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 ) (string, error) {
-	return atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
+	// Only the rendering. This capture compares two HCL documents, so the
+	// model beside it answers a question nothing here asks.
+	result, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 		DevURL:  c.devURL,
 		Schemas: c.schemas,
 		Format:  "hcl",
@@ -125,6 +127,10 @@ func (c *schemaCapture) render(
 		// report renders HCL it can itself parse.
 		OmitAtlasRefusedBlocks: true,
 	})
+	if err != nil {
+		return "", err
+	}
+	return result.Rendered, nil
 }
 
 func lintFileOrder(a, b lint.File, maxVersion int64) int {

@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 4968,
-      "sourceBytes": 45378
+      "visibleWords": 4986,
+      "sourceBytes": 45503
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8391,
-      "sourceBytes": 59012
+      "visibleWords": 8375,
+      "sourceBytes": 58967
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -3776,8 +3776,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8717,
-      "sourceBytes": 86012
+      "visibleWords": 8723,
+      "sourceBytes": 86064
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

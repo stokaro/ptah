@@ -265,7 +265,7 @@ seven of them as open capabilities regardless.
 | Analyzers that need a dev-database schema diff | ✅ | ✅ | ✅ | Rules declare whether they read migration SQL or the replayed dev schema; the versions read come from that declaration, and a rule that asks and gets nothing says so on stderr. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
 | Atlas Pro analyzer code coverage | ✅ | ➖ | ✅ | Measured against a reviewed snapshot of the analyzer page rather than the page itself; the generated lint-rules reference carries the verdict for every code in it. |
-| Atlas web reports (`--web`) | 🔷 | ❌ | ✅ | The flag publishes a report into the hosted web UI and is rejected here as unknown. Ptah renders the same lint and diff findings locally through `--format`, including `{{ json . }}`. |
+| Atlas web reports (`--web`) | 🔷 | ❌ | ✅ | `schema inspect --web` and `schema diff --web` write a self-contained HTML ERD locally and open it; nothing is published. `migrate lint --web` stays unregistered. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. On migrate down the flag is registered and reads the same variable. |
 | CI integration (GitHub Action, annotations) | ✅ | 🟡 | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only. |
 | Custom lint rules and check-level policy | ✅ | ❌ | ✅ | A rule is declared in `.ptah-lint.yaml` or an atlas.hcl `rule` block as an expression over the statement; a `naming` block on either surface drives the NM rules. review, non_linear, force do nothing. |
@@ -374,7 +374,7 @@ seven of them as open capabilities regardless.
 | Public API compatibility gate | ✅ | ➖ | ➖ | check-public-api.sh keeps the committed API baseline and the package tree in sync; pre-v1 breaks need a per-baseline approval line. |
 | Query builder for parameterized SQL | ✅ | ➖ | ➖ | Joins, DISTINCT, GROUP BY, HAVING, RETURNING, LIKE, upsert, CTEs, subqueries, arithmetic, function calls, INSERT … SELECT and window functions all render. No frame clause yet. |
 | Reusable Go packages (embedder API) | ✅ | ➖ | ➖ | Documented embedder packages cover parse, diff, plan, render, migrate, lint and seed. CE conformance measures CLI commands, not Go APIs. |
-| Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`. |
+| Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations; SVG shells out to Graphviz dot. `schema export --to html` and the compat `--web` write a self-contained HTML ERD. |
 | Statement observer and validator hooks (Go API) | ✅ | ➖ | ➖ | migrator.WithStatementObserver runs a read-only callback per executed statement; WithStatementValidator gates all statements pre-execution; both compose with StatementInterceptor. |
 | testkit companion module for database tests | ✅ | ➖ | ➖ | Separate repository and module ptah.run/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph. |
 

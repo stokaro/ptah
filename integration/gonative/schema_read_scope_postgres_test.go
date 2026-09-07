@@ -178,7 +178,7 @@ func readScopePlan(c *qt.C, devURL string, from, to []string) []string {
 func readScopeInspected(c *qt.C, sourceURL string) string {
 	c.Helper()
 
-	rendered, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
 		URL:                    sourceURL,
 		Format:                 "hcl",
 		Diagnostics:            io.Discard,
@@ -186,7 +186,7 @@ func readScopeInspected(c *qt.C, sourceURL string) string {
 		IgnoreUnknownHCLNames:  true,
 	})
 	c.Assert(err, qt.IsNil)
-	return rendered
+	return renderedResult.Rendered
 }
 
 func readScopeStatements(changes []atlasreport.SchemaDiffChange) []string {
