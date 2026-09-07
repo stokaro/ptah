@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title description">
+  <title id="title">Delivering a schema change</title>
+  <desc id="description">A reviewed change is published as an OCI artifact whose digest is resolved once. The same digest is promoted between environments and applied to each database, and every apply is followed by an observation. The artifact is content-bound; a plan and an observation belong to one database.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0284c7"/>
+    </marker>
+    <style>
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; }
+      .content { fill: #e0f2fe; stroke: #0284c7; stroke-width: 2.5; }
+      .database { fill: #dcfce7; stroke: #15803d; stroke-width: 2.5; }
+      .step { fill: #ffffff; stroke: #64748b; stroke-width: 2; }
+      .heading { fill: #0f172a; font: 700 25px system-ui, sans-serif; }
+      .label { fill: #0f172a; font: 650 19px system-ui, sans-serif; }
+      .detail { fill: #475569; font: 15px system-ui, sans-serif; }
+      .flow { fill: none; stroke: #0284c7; stroke-width: 3; marker-end: url(#arrow); }
+      .observe { fill: none; stroke: #15803d; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrow); }
+      @media (prefers-color-scheme: dark) {
+        .panel { fill: #111827; stroke: #475569; }
+        .content { fill: #0c4a6e; stroke: #38bdf8; }
+        .database { fill: #14532d; stroke: #4ade80; }
+        .step { fill: #1f2937; stroke: #64748b; }
+        .heading, .label { fill: #f8fafc; }
+        .detail { fill: #cbd5e1; }
+        .flow { stroke: #38bdf8; }
+        .observe { stroke: #4ade80; }
+        #arrow path { fill: #38bdf8; }
+      }
+    </style>
+  </defs>
+
+  <rect class="panel" x="20" y="20" width="1160" height="320" rx="22"/>
+  <text class="heading" x="52" y="62">One digest carries the change; each database answers for itself</text>
+
+  <rect class="step" x="50" y="100" width="200" height="96" rx="16"/>
+  <text class="label" x="150" y="136" text-anchor="middle">Review</text>
+  <text class="detail" x="150" y="162" text-anchor="middle">lint, test,</text>
+  <text class="detail" x="150" y="182" text-anchor="middle">read the files</text>
+
+  <rect class="content" x="300" y="100" width="220" height="96" rx="16"/>
+  <text class="label" x="410" y="136" text-anchor="middle">Publish</text>
+  <text class="detail" x="410" y="162" text-anchor="middle">migrations push</text>
+  <text class="detail" x="410" y="182" text-anchor="middle">prints the digest</text>
+
+  <rect class="content" x="570" y="100" width="220" height="96" rx="16"/>
+  <text class="label" x="680" y="136" text-anchor="middle">Promote</text>
+  <text class="detail" x="680" y="162" text-anchor="middle">oci tag, oci copy</text>
+  <text class="detail" x="680" y="182" text-anchor="middle">same digest</text>
+
+  <rect class="database" x="840" y="100" width="200" height="96" rx="16"/>
+  <text class="label" x="940" y="136" text-anchor="middle">Apply</text>
+  <text class="detail" x="940" y="162" text-anchor="middle">migrations up</text>
+  <text class="detail" x="940" y="182" text-anchor="middle">--verify-sum</text>
+
+  <rect class="database" x="840" y="228" width="200" height="80" rx="16"/>
+  <text class="label" x="940" y="262" text-anchor="middle">Verify</text>
+  <text class="detail" x="940" y="288" text-anchor="middle">status, drift</text>
+
+  <path class="flow" d="M 250 148 L 296 148"/>
+  <path class="flow" d="M 520 148 L 566 148"/>
+  <path class="flow" d="M 790 148 L 836 148"/>
+  <path class="observe" d="M 940 196 L 940 224"/>
+
+  <text class="detail" x="410" y="252">Content-bound: the artifact proves what it contains.</text>
+  <text class="detail" x="410" y="276">A plan and an observation belong to one database, so</text>
+  <text class="detail" x="410" y="300">a clean apply in staging says nothing about production.</text>
+</svg>
