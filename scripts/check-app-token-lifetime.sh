@@ -63,16 +63,16 @@ for workflow in .github/workflows/*.yml; do
 			job = ""; timeout = ""; mints = 0
 		}
 		BEGIN { in_jobs = 0; job = ""; timeout = ""; mints = 0 }
-		/^jobs:[[:space:]]*$/ { flush(); in_jobs = 1; next }
-		/^[^[:space:]#]/ { flush(); in_jobs = 0; next }
-		in_jobs && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ {
+		/^jobs:[ \t]*$/ { flush(); in_jobs = 1; next }
+		/^[^ \t#]/ { flush(); in_jobs = 0; next }
+		in_jobs && /^  [A-Za-z0-9_.-]+:[ \t]*$/ {
 			flush()
 			job = $0
 			sub(/^  /, "", job)
-			sub(/:[[:space:]]*$/, "", job)
+			sub(/:[ \t]*$/, "", job)
 			next
 		}
-		in_jobs && job != "" && /^    timeout-minutes:[[:space:]]*[0-9]+/ {
+		in_jobs && job != "" && /^    timeout-minutes:[ \t]*[0-9]+/ {
 			timeout = $0
 			sub(/^[^0-9]*/, "", timeout)
 			sub(/[^0-9].*$/, "", timeout)
