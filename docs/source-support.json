@@ -3524,8 +3524,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "sql-file",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input schema-file: ./schema.sql",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3537,8 +3537,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "yaml-file",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input schema-file: ./schema.yaml",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3550,8 +3550,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "hcl-file",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input schema-file: ./schema.hcl",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3563,8 +3563,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "dbml-file",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input schema-file: ./schema.dbml",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3582,15 +3582,15 @@
       "evidence": [
         ".github/actions/ptah/run.sh"
       ],
-      "limitations": "The action hard-codes migrations plan --root-dir; this is an explicit Go-only scope until the companion action changes.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "stokaro/ptah-action",
       "source": "external-program",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with inputs schema-cmd: go run ./loader and schema-format: sql",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3602,8 +3602,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "configured-external",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with inputs schema-cmd and schema-format",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3615,8 +3615,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "oci-artifact",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input schema-file: oci://ghcr.io/acme/app-schema:v1",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"
@@ -3654,8 +3654,8 @@
     {
       "command": "stokaro/ptah-action",
       "source": "composite-source",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with schema-file and dir taking one value per line",
       "implementationOwner": ".github/actions/ptah",
       "evidence": [
         ".github/actions/ptah/run.sh"

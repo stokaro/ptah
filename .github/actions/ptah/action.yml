@@ -14,21 +14,32 @@ inputs:
     required: false
     default: "true"
   go-version:
-    description: >-
-      Go version passed to actions/setup-go. Empty by default so the toolchain
-      is read from go-version-file instead; set it only to override.
+    description: Go version passed to actions/setup-go.
+    required: false
+    default: "1.26.5"
+  dir:
+    description: >
+      Root directory scanned for Go schema entities, repeatable one per line.
+      Empty selects no Go source unless nothing else is selected, in which case
+      it falls back to the current directory.
     required: false
     default: ""
-  go-version-file:
-    description: >-
-      Go module file the toolchain is read from, relative to the calling
-      repository. Used when go-version is empty.
+  schema-file:
+    description: >
+      SQL, YAML, HCL, DBML, or oci:// desired-schema source, one per line.
+      Repeatable, and combines with the other source selectors.
     required: false
-    default: go.mod
-  dir:
-    description: Root directory to scan for Go schema entities.
+    default: ""
+  schema-cmd:
+    description: >
+      External program whose standard output is the desired schema. Run without
+      a shell and split on whitespace.
     required: false
-    default: "."
+    default: ""
+  schema-format:
+    description: "Format of the schema-cmd output: sql, hcl, or yaml."
+    required: false
+    default: ""
   db-url:
     description: Target database URL used to read the current schema.
     required: true
@@ -64,6 +75,14 @@ inputs:
     description: Directory for generated action reports.
     required: false
     default: ""
+  generate:
+    description: Write the migration files the plan describes into migration-dir.
+    required: false
+    default: "false"
+  generate-name:
+    description: Name passed to ptah migrations generate. Empty lets Ptah name it.
+    required: false
+    default: ""
 outputs:
   plan-path:
     description: Path to the text migration plan report.
@@ -83,15 +102,29 @@ outputs:
   destructive:
     description: "true when the safety report contains destructive statements."
     value: ${{ steps.run.outputs.destructive }}
+  generate-exit-code:
+    description: Exit code of ptah migrations generate, or 0 when generate is off.
+    value: ${{ steps.run.outputs.generate-exit-code }}
+  generated-list-path:
+    description: Path to a file listing the migration files generate wrote, one per line.
+    value: ${{ steps.run.outputs.generated-list-path }}
+  generated-count:
+    description: How many migration files generate wrote.
+    value: ${{ steps.run.outputs.generated-count }}
 runs:
   using: composite
   steps:
+    # Go is set up only when a Go source is in play. A run whose desired schema
+    # is a SQL file has no reason to install a toolchain, and installing one
+    # anyway is how "the action is source-neutral" stays false in practice.
     - name: Set up Go
-      if: inputs.setup-go == 'true'
+      if: >-
+        inputs.setup-go == 'true' &&
+        (inputs.dir != '' ||
+         (inputs.schema-file == '' && inputs.schema-cmd == ''))
       uses: actions/setup-go@v7
       with:
         go-version: ${{ inputs.go-version }}
-        go-version-file: ${{ inputs.go-version == '' && inputs.go-version-file || '' }}
         cache: false
 
     - name: Install Ptah
@@ -110,6 +143,9 @@ runs:
       env:
         PTAH_BIN: ${{ steps.install.outputs.ptah-bin }}
         INPUT_DIR: ${{ inputs.dir }}
+        INPUT_SCHEMA_FILE: ${{ inputs.schema-file }}
+        INPUT_SCHEMA_CMD: ${{ inputs.schema-cmd }}
+        INPUT_SCHEMA_FORMAT: ${{ inputs.schema-format }}
         INPUT_DB_URL: ${{ inputs.db-url }}
         INPUT_DIALECT: ${{ inputs.dialect }}
         INPUT_MIGRATION_DIR: ${{ inputs.migration-dir }}
@@ -118,12 +154,14 @@ runs:
         INPUT_LINT_FAIL_ON: ${{ inputs.lint-fail-on }}
         INPUT_ALLOW_DESTRUCTIVE: ${{ inputs.allow-destructive }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_GENERATE: ${{ inputs.generate }}
+        INPUT_GENERATE_NAME: ${{ inputs.generate-name }}
         GITHUB_ACTION_PATH: ${{ github.action_path }}
       run: "$GITHUB_ACTION_PATH/run.sh"
 
     - name: Comment on pull request
       if: inputs.comment == 'true'
-      uses: actions/github-script@v9
+      uses: actions/github-script@v8
       env:
         PTAH_PLAN_PATH: ${{ steps.run.outputs.plan-path }}
         PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
@@ -134,6 +172,7 @@ runs:
         PTAH_SAFETY_EXIT_CODE: ${{ steps.run.outputs.safety-exit-code }}
         PTAH_LINT_EXIT_CODE: ${{ steps.run.outputs.lint-exit-code }}
         PTAH_DESTRUCTIVE: ${{ steps.run.outputs.destructive }}
+        PTAH_GENERATED_LIST_PATH: ${{ steps.run.outputs.generated-list-path }}
         PTAH_ACTION_PATH: ${{ github.action_path }}
       with:
         script: |
@@ -141,7 +180,7 @@ runs:
           await run({ github, context, core });
 
     - name: Set destructive-change check run
-      uses: actions/github-script@v9
+      uses: actions/github-script@v8
       env:
         PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
         PTAH_SAFETY_ERROR_PATH: ${{ steps.run.outputs.safety-error-path }}

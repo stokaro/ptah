@@ -45,11 +45,14 @@ lints the migration directory, updates one sticky pull request comment, and
 writes a `Ptah destructive-change verdict` check run from the machine-readable
 safety report.
 
-The current action is Go-specific: its `dir` input is passed to
-`ptah migrations plan --root-dir`, and it has no schema-file or external-loader
-input. Use the direct CLI form above for SQL, YAML, HCL, DBML, OCI, or external
-sources. [ptah-action issue #1](https://github.com/stokaro/ptah-action/issues/1)
-tracks generic desired-schema source inputs.
+The action takes the same desired-schema sources the CLI does. `dir` selects
+Go annotation roots, `schema-file` selects SQL, YAML, HCL, DBML or `oci://`
+sources, and `schema-cmd` with `schema-format` selects an external loader. Each
+one forwards to the flag of the same meaning, and `dir` and `schema-file` take
+one value per line and compose.
+
+A run that selects no Go source installs no Go toolchain, even with the default
+`setup-go: true`.
 
 ```yaml
 name: Ptah
