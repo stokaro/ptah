@@ -1,0 +1,63 @@
+---
+title: Testing and safety
+description: Prove a schema change is correct and safe before it reaches a database, and turn that proof into a CI gate.
+type: landing
+audience:
+  - ci-operator
+  - database-engineer
+readerQuestion: How do I prove a change is correct and safe before applying it?
+goal: Open the check that answers the question at hand, and know what each one does not answer.
+sourceOfTruth:
+  - internal/cli/migrationstest
+  - internal/cli/lint
+generated: false
+searchAliases:
+  - test a migration
+  - safety checks
+overlaps:
+  - /testing/ci/
+  - /versioned/lint/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Every check here answers one question and no more than one. Knowing which
+question a green result answered is the difference between a gate and a habit.
+
+## Checks
+
+<CardGrid>
+  <LinkCard title="Test migrations and schemas" href="../migrations-and-schema/" description="Run cases against throwaway databases and assert what the change did, not only that it ran." />
+  <LinkCard title="Run checks in CI" href="../ci/" description="Turn those checks into a pull-request gate, and read the exit codes correctly." />
+  <LinkCard title="Lint migration SQL" href="../../versioned/lint/" description="Catch destructive and backward-incompatible statements before a database sees them." />
+  <LinkCard title="Validate a schema file" href="../../schema/validate-and-format/" description="Fail on a structural problem, or on a declaration a target would silently drop." />
+  <LinkCard title="Report security findings" href="../../schema/security/" description="Surface privilege, owner and role findings in the desired schema." />
+  <LinkCard title="Keep history verifiable" href="../../versioned/integrity-and-safety/" description="What the integrity file proves, and what it does not." />
+</CardGrid>
+
+## What each answer covers
+
+A test asserts a change's effect on a throwaway database. A lint finding is
+about the SQL as written, with no database involved. Validation is about the
+desired schema alone. None of them observes the database you are about to
+change, which is what [drift detection](../../direct/compare-and-drift/) is
+for.
+
+So a green pull request means the change is correct in isolation. Whether the
+target is in the state the change assumes is a separate question, asked
+against that target.
+
+## Choose the database
+
+Use a throwaway database for tests, a dev or shadow database for replay and
+planning, and a reviewed target URL for a real apply. These roles are not
+interchangeable, and
+[database URLs and dev databases](../../concepts/database-urls-and-dev-databases/)
+defines each one.
+
+## Reference
+
+[Exit codes](../../reference/exit-codes/) is the automation contract,
+[lint rules](../../reference/lint-rules/) enumerates every rule identifier, and
+[test cases](../../reference/test-cases/) is the exact case format.

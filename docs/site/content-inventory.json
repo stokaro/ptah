@@ -6,13 +6,13 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 132,
-    "authored": 130,
+    "pages": 133,
+    "authored": 131,
     "generated": 2,
     "byType": {
       "concept": 16,
       "how-to": 56,
-      "landing": 12,
+      "landing": 13,
       "reference": 33,
       "status": 8,
       "troubleshooting": 4,
@@ -686,6 +686,7 @@
         "/schema/stats/",
         "/start/adopt-an-existing-database/",
         "/testing/migrations-and-schema/",
+        "/testing/overview/",
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
@@ -1458,7 +1459,8 @@
         "/schema/stats/",
         "/schema/validate-and-format/",
         "/start/quick-start-direct/",
-        "/testing/ci/"
+        "/testing/ci/",
+        "/testing/overview/"
       ],
       "visibleWords": 1434,
       "sourceBytes": 12002
@@ -3328,7 +3330,7 @@
       "route": "/operate/deliver/",
       "title": "Deliver a schema change",
       "description": "Follow one schema change from a reviewed pull request to a verified database, and see which guide owns each stage.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3368,6 +3370,7 @@
       ],
       "inboundLinks": [
         "/operate/kubernetes-operator/",
+        "/operate/overview/",
         "/testing/ci/",
         "/versioned/maintain-history/"
       ],
@@ -3379,7 +3382,7 @@
       "route": "/operate/kubernetes-operator/",
       "title": "Kubernetes operator",
       "description": "Reconcile a desired schema from an OCI artifact with the Ptah Operator, and know what it does not deploy.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3411,7 +3414,8 @@
         "/operate/oci-registry/"
       ],
       "inboundLinks": [
-        "/operate/deliver/"
+        "/operate/deliver/",
+        "/operate/overview/"
       ],
       "visibleWords": 451,
       "sourceBytes": 4678
@@ -3421,7 +3425,7 @@
       "route": "/operate/oci-registry/",
       "title": "OCI registry artifacts",
       "description": "Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": "Use OCI registries",
       "type": "how-to",
       "audience": [
@@ -3480,17 +3484,17 @@
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
       "route": "/operate/overview/",
-      "title": "Test, deliver, and operate",
-      "description": "Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.",
-      "sidebarPath": "Test, deliver, and operate",
+      "title": "Deliver and operate",
+      "description": "Publish, promote and apply a change, manage the data that travels with it, and diagnose a failed run.",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": "Overview",
       "type": "landing",
       "audience": [
         "ci-operator",
         "database-engineer"
       ],
-      "readerQuestion": "How do I run Ptah safely in tests, automation, and operational workflows?",
-      "goal": "Open the canonical test, CI, artifact, data, or troubleshooting task.",
+      "readerQuestion": "How do I get a reviewed change to a database and keep it running?",
+      "goal": "Open the canonical delivery, artifact, data, or troubleshooting task.",
       "sourceOfTruth": [
         "internal/cli/migrations",
         "internal/cli/schema",
@@ -3515,24 +3519,25 @@
       "disposition": "keep",
       "outboundLinks": [
         "/concepts/database-urls-and-dev-databases/",
+        "/operate/deliver/",
+        "/operate/kubernetes-operator/",
         "/operate/oci-registry/",
         "/operate/troubleshooting/",
         "/reference/exit-codes/",
         "/reference/test-cases/",
-        "/testing/ci/",
-        "/testing/migrations-and-schema/",
+        "/testing/overview/",
         "/versioned/reference-data/"
       ],
       "inboundLinks": [],
-      "visibleWords": 118,
-      "sourceBytes": 2365
+      "visibleWords": 128,
+      "sourceBytes": 2397
     },
     {
       "path": "docs/site/src/content/docs/operate/seed-data.md",
       "route": "/operate/seed-data/",
       "title": "Seed data",
       "description": "Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3573,7 +3578,7 @@
       "route": "/operate/troubleshooting/",
       "title": "Troubleshooting",
       "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -3872,6 +3877,7 @@
         "/schema/stats/",
         "/schema/validate-and-format/",
         "/testing/ci/",
+        "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 3606,
@@ -4092,6 +4098,7 @@
         "/databases/postgresql/",
         "/reference/atlas-commands/",
         "/schema/security/",
+        "/testing/overview/",
         "/versioned/lint/"
       ],
       "visibleWords": 5770,
@@ -4296,7 +4303,8 @@
         "/extend/public-api/",
         "/operate/overview/",
         "/reference/capabilities/",
-        "/testing/migrations-and-schema/"
+        "/testing/migrations-and-schema/",
+        "/testing/overview/"
       ],
       "visibleWords": 519,
       "sourceBytes": 4255
@@ -4915,7 +4923,8 @@
         "/reference/native-commands/",
         "/schema/stats/",
         "/schema/visualize/",
-        "/testing/ci/"
+        "/testing/ci/",
+        "/testing/overview/"
       ],
       "visibleWords": 1147,
       "sourceBytes": 11831
@@ -5108,7 +5117,8 @@
         "/extend/editor-and-shell/",
         "/schema/overview/",
         "/schema/work-with-a-source/",
-        "/testing/ci/"
+        "/testing/ci/",
+        "/testing/overview/"
       ],
       "visibleWords": 1421,
       "sourceBytes": 12124
@@ -5715,7 +5725,7 @@
       "route": "/testing/ci/",
       "title": "CI",
       "description": "Gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Testing and safety",
       "sidebarLabel": "Run checks in CI",
       "type": "how-to",
       "audience": [
@@ -5755,12 +5765,12 @@
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
         "/operate/deliver/",
-        "/operate/overview/",
         "/schema/export/",
         "/schema/protobuf/",
         "/schema/validate-and-format/",
         "/start/quick-start-direct/",
         "/start/quick-start-migrations/",
+        "/testing/overview/",
         "/versioned/generate/",
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
@@ -5773,7 +5783,7 @@
       "route": "/testing/migrations-and-schema/",
       "title": "Test migrations and schemas",
       "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Testing and safety",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5811,14 +5821,67 @@
         "/concepts/database-urls-and-dev-databases/",
         "/databases/sqlite/",
         "/extend/public-api/",
-        "/operate/overview/",
         "/reference/capabilities/",
         "/reference/test-cases/",
         "/testing/ci/",
+        "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 1162,
       "sourceBytes": 11609
+    },
+    {
+      "path": "docs/site/src/content/docs/testing/overview.mdx",
+      "route": "/testing/overview/",
+      "title": "Testing and safety",
+      "description": "Prove a schema change is correct and safe before it reaches a database, and turn that proof into a CI gate.",
+      "sidebarPath": "Testing and safety",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "ci-operator",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I prove a change is correct and safe before applying it?",
+      "goal": "Open the check that answers the question at hand, and know what each one does not answer.",
+      "sourceOfTruth": [
+        "internal/cli/migrationstest",
+        "internal/cli/lint"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "test a migration",
+        "safety checks"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/testing/ci/",
+        "/versioned/lint/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/direct/compare-and-drift/",
+        "/reference/exit-codes/",
+        "/reference/lint-rules/",
+        "/reference/test-cases/",
+        "/schema/security/",
+        "/schema/validate-and-format/",
+        "/testing/ci/",
+        "/testing/migrations-and-schema/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/operate/overview/"
+      ],
+      "visibleWords": 177,
+      "sourceBytes": 2901
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -6089,6 +6152,7 @@
         "/reference/atlas-commands/",
         "/start/quick-start-migrations/",
         "/testing/ci/",
+        "/testing/overview/",
         "/versioned/apply/",
         "/versioned/generate/",
         "/versioned/lint/",
@@ -6146,6 +6210,7 @@
         "/extend/components/",
         "/operate/oci-registry/",
         "/testing/ci/",
+        "/testing/overview/",
         "/versioned/apply/",
         "/versioned/generate/",
         "/versioned/integrity-and-safety/",
@@ -6271,7 +6336,7 @@
       "route": "/versioned/reference-data/",
       "title": "Reference data",
       "description": "Declare reference/seed rows and generate reversible data migrations from the drift against a live database.",
-      "sidebarPath": "Test, deliver, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
