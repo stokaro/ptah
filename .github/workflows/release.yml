@@ -127,16 +127,47 @@ jobs:
       #
       # This is the other half of stokaro/ptah#2361. `skip_upload` in
       # .goreleaser.yaml no longer turns an absent token into a quietly
-      # narrower release; this step is what turns it into a legible failure.
+      # narrower release; these two steps are what turn it into a legible
+      # failure.
+      #
+      # Minting here rather than beside GoReleaser is also what makes the
+      # presence check a real check: a key that cannot mint fails in the same
+      # seconds an absent one does. An installation token lives an hour and
+      # this job is capped at 40 minutes, so it cannot outlive the run that
+      # holds it. `scripts/check-app-token-lifetime.sh` holds that margin,
+      # because raising the timeout would break the formula upload alone --
+      # after the assets and the images are already pushed.
+      - name: Mint a GitHub App token for the tap
+        id: app-token
+        if: vars.PUBLISH_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_KEY }}
+          owner: stokaro
+          repositories: homebrew-ptah
+
       - name: The Homebrew tap token must be present
+        id: tap-token
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
-            echo "::error::HOMEBREW_TAP_TOKEN is empty or unset. The Homebrew formula would not reach stokaro/homebrew-ptah, and the release would otherwise finish green with one channel missing. Set the secret, then re-run this job." >&2
+          set -euo pipefail
+          # App first. Both write the formula the same way, and the app one does
+          # not expire on a date somebody picked.
+          if [ -n "${APP_TOKEN}" ]; then
+            echo "::add-mask::${APP_TOKEN}"
+            echo "value=${APP_TOKEN}" >>"${GITHUB_OUTPUT}"
+            echo "the formula is written as the app"
+          elif [ -n "${PAT}" ]; then
+            echo "::add-mask::${PAT}"
+            echo "value=${PAT}" >>"${GITHUB_OUTPUT}"
+            echo "the formula is written as HOMEBREW_TAP_TOKEN"
+          else
+            echo "::error::no tap credential is configured. The Homebrew formula would not reach stokaro/homebrew-ptah, and the release would otherwise finish green with one channel missing. Set the PUBLISH_APP_ID variable with a PUBLISH_APP_KEY secret, giving the app contents:write on stokaro/homebrew-ptah, then re-run this job." >&2
             exit 1
           fi
-          echo "HOMEBREW_TAP_TOKEN is present"
 
       - uses: actions/checkout@v7
         with:
@@ -189,7 +220,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # The name is .goreleaser.yaml's; what it carries is now whichever
+          # credential the step above resolved.
+          HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.value }}
 
       # The mirror, verified rather than assumed.
       #

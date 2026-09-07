@@ -31,6 +31,10 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Two checkouts, an rsync and a tag move. The cap is here because the job
+    # mints an app token, and `scripts/check-app-token-lifetime.sh` requires one
+    # of every job that does.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
