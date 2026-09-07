@@ -92,6 +92,38 @@ Promotion moves an artifact. It does not move a plan or an observation: both of
 those are specific to the database they were made against, so staging's clean
 apply is not evidence about production.
 
+## Promote between environments
+
+`ptah oci tag` moves an alias inside one repository. `ptah oci copy` moves the
+artifact to another repository, which is what a separate per-environment
+registry needs, and it preserves the manifest digest: the artifact staging
+approved is the artifact production applies, byte for byte.
+
+```bash
+ptah oci copy \
+  oci://ghcr.io/acme/app-migrations@sha256:0123... \
+  oci://registry.internal/prod/app-migrations \
+  --recursive
+```
+
+`--recursive` carries the artifact's referrers with it. Without it the copy
+takes the artifact alone and the lint and plan reports attached to it stay at
+the source, so a production registry that must hold its own evidence needs the
+flag. `ptah oci verify` then checks the destination against a verification
+policy before anything consumes it.
+
+What does not travel:
+
+- **An approval.** It was given for a plan against one database.
+- **An observation.** `migrations status` and `schema drift` answer for the
+  database they read, so staging's clean result is not evidence about
+  production.
+- **A plan.** It binds the artifact to a target's observed state, and the next
+  target has its own.
+
+So each environment repeats apply and verify against its own database. What
+promotion saves is the review, not the run.
+
 ## Apply
 
 ```bash
@@ -150,6 +182,29 @@ an OCI artifact continuously, with plans and approvals as cluster resources.
 It does not apply a versioned migration directory: `PtahSchema` reconciles a
 desired schema, and a versioned-migration controller does not exist yet. On the
 versioned path the operator does not replace the apply step above.
+
+</TabItem>
+<TabItem label="Argo CD or Flux">
+
+A GitOps controller syncs Kubernetes objects; it does not run migrations. Two
+shapes work, and which one fits depends on the workflow rather than on the
+controller.
+
+**A desired schema** is the shape GitOps already fits. Commit the `PtahSchema`
+resource, let Argo CD or Flux sync it, and the operator reconciles from there.
+Convergence is the operator's job and the controller only has to deliver the
+resource.
+
+**A versioned directory** needs a Job that runs `ptah migrations up` against
+the pinned digest, ordered before the workload that depends on the new schema.
+Argo CD runs it as a `PreSync` hook; Flux orders it with `dependsOn` between
+Kustomizations. In both cases the Job image is `ghcr.io/stokaro/ptah` pinned by
+digest, and the migration reference is a digest for the reason above: a
+controller re-syncs, and a tag that moved between two syncs would apply
+something nobody reviewed.
+
+Neither controller reports whether the database converged. The Job's exit code
+does, and the verify step is still yours to run.
 
 </TabItem>
 </Tabs>

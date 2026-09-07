@@ -62,7 +62,7 @@
 /** @type {import('@astrojs/starlight/types').StarlightUserConfig['sidebar']} */
 export const sidebar = [
   {
-    label: 'Start',
+    label: 'Getting started',
     collapsed: true,
     items: [
       { slug: 'start/overview', label: 'Overview' },
@@ -70,7 +70,7 @@ export const sidebar = [
       { slug: 'start/install-options' },
       { slug: 'start/quick-start' },
       { slug: 'start/quick-start-migrations' },
-      { slug: 'start/quick-start-direct', label: 'Continue direct changes' },
+      { slug: 'start/quick-start-direct', label: 'Update a schema and detect drift' },
       { slug: 'start/choose-a-workflow' },
       { slug: 'start/adopt-an-existing-database' },
     ],
@@ -155,7 +155,7 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Define and understand schemas',
+    label: 'Schemas',
     collapsed: true,
     items: [
       { slug: 'schema/overview', label: 'Overview' },
@@ -185,7 +185,7 @@ export const sidebar = [
         ],
       },
       {
-        label: 'Contract exports',
+        label: 'API schema exports',
         items: [
           { slug: 'schema/export' },
           { slug: 'schema/protobuf' },
@@ -211,18 +211,30 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Test, automate, and operate',
+    label: 'Testing and safety',
+    collapsed: true,
+    items: [
+      { slug: 'testing/migrations-and-schema' },
+      { slug: 'testing/ci', label: 'Run checks in CI' },
+    ],
+  },
+  {
+    label: 'Deliver and operate',
     collapsed: true,
     items: [
       { slug: 'operate/overview', label: 'Overview' },
-      { slug: 'testing/migrations-and-schema' },
-      { slug: 'testing/ci' },
-      { slug: 'versioned/reference-data' },
-      { slug: 'operate/seed-data' },
-      { slug: 'operate/oci-registry' },
       { slug: 'operate/deliver' },
+      { slug: 'operate/oci-registry', label: 'Use OCI registries' },
       { slug: 'operate/kubernetes-operator' },
       { slug: 'operate/troubleshooting' },
+    ],
+  },
+  {
+    label: 'Data',
+    collapsed: true,
+    items: [
+      { slug: 'versioned/reference-data' },
+      { slug: 'operate/seed-data' },
     ],
   },
   {
@@ -230,6 +242,7 @@ export const sidebar = [
     collapsed: true,
     items: [
       { slug: 'extend/overview', label: 'Overview' },
+      { slug: 'extend/editor-and-shell' },
       {
         label: 'Go integration',
         items: [
