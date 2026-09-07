@@ -76,8 +76,9 @@ func (o Omission) Message() string {
 //
 // Reporting is not exhaustive over every property every dialect drops. It
 // covers the declarations a renderer names as skipped, the table options a
-// target cannot carry, and the comments a target does not store;
-// stokaro/ptah#2983 records what remains.
+// target cannot carry, the comments a target does not store, and an index's
+// partial condition and operator class; stokaro/ptah#2983 records what
+// remains.
 func GetOrderedCreateStatementsReportingOmissions(
 	r *schemamodel.Database,
 	dialect string,

@@ -187,7 +187,8 @@ the target dropped on its own, so it stays quiet about:
 
 Reporting is not yet exhaustive over every property every dialect drops. It
 covers what a renderer names as skipped, the table options a target cannot
-carry, and the comments a target does not store;
+carry, the comments a target does not store, and an index's partial condition
+and operator class;
 [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
 remains.
 
@@ -195,6 +196,11 @@ A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
 table, column or index comment; the MySQL family, Oracle and ClickHouse keep the
 first two and have no clause for the third.
+
+A partial index reports its condition wherever the target drops it. That one is
+worth a gate on its own: the MySQL family and ClickHouse render the index over
+the whole table instead, so a unique index starts rejecting rows the author
+meant to allow.
 
 ## Format HCL schema files
 
