@@ -23,12 +23,14 @@ disposition: keep
 sourceMode: oci-artifact-only
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
 [Run checks in CI](../../testing/ci/) ends where a pull request is approved.
 This page starts there and ends at a database whose state has been observed
 after the change. It owns the sequence, not the detail: each stage links to the
 guide that owns it.
+
+![A reviewed change is published as an OCI artifact whose digest is resolved once. The same digest is promoted between environments and applied to each database, and every apply is followed by an observation. The artifact is content-bound; a plan and an observation belong to one database.](../../../assets/delivery-lifecycle.svg)
 
 ## The sequence
 
@@ -154,6 +156,25 @@ versioned path the operator does not replace the apply step above.
 
 ## Next steps
 
-- [OCI registry artifacts](../oci-registry/) for the artifact operations.
-- [Kubernetes operator](../kubernetes-operator/) for the cluster path.
-- [Rollback](../../versioned/rollback/) for recovering a bad change.
+<CardGrid>
+  <LinkCard
+    title="OCI registry artifacts"
+    href="../oci-registry/"
+    description="Authenticate, publish, pin, verify, and attach reports to an artifact."
+  />
+  <LinkCard
+    title="Kubernetes operator"
+    href="../kubernetes-operator/"
+    description="Reconcile a desired schema in a cluster, and what that path does not cover."
+  />
+  <LinkCard
+    title="Rollback"
+    href="../../versioned/rollback/"
+    description="Recover from a change that reached the database and should not have."
+  />
+  <LinkCard
+    title="Run checks in CI"
+    href="../../testing/ci/"
+    description="The stage before this one: what a pull request should prove."
+  />
+</CardGrid>

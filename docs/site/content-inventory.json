@@ -3326,8 +3326,8 @@
       "inboundLinks": [
         "/operate/kubernetes-operator/"
       ],
-      "visibleWords": 667,
-      "sourceBytes": 5890
+      "visibleWords": 694,
+      "sourceBytes": 6714
     },
     {
       "path": "docs/site/src/content/docs/operate/kubernetes-operator.md",
