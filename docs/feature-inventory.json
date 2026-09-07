@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 84,
+  "claimed": 85,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -97,7 +97,7 @@
       "id": "cli-ptah-db-drop-all",
       "kind": "native-verb",
       "surface": "ptah db drop-all",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/troubleshooting.md"
     },
     {
       "id": "cli-ptah-db-read",

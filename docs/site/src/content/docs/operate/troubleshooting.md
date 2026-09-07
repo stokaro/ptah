@@ -11,6 +11,8 @@ sourceOfTruth:
   - "dbschema"
   - "migration"
 generated: false
+owns:
+  - cli-ptah-db-drop-all
 overlaps: []
 disposition: keep
 sourceMode: command-specific
@@ -186,6 +188,43 @@ ptah migrations validate --dir ./migrations
 ```
 
 The command exits `0` and prints that the directory matches `ptah.sum`.
+
+## A development database has to be emptied
+
+**Symptom**
+
+A throwaway or development database is in a state no migration reaches: a
+half-applied change, an object created by hand, or a schema that no longer
+matches any revision.
+
+**What to run**
+
+`ptah db drop-all` drops every schema object the database holds. Its scope is
+the database and not a schema Ptah declares, so objects Ptah never created go
+too. Run it against a database you are willing to lose.
+
+```bash
+ptah db drop-all --db-url "$DATABASE_URL" --dry-run
+```
+
+`--dry-run` connects, reports how many objects would be dropped, and changes
+nothing. Without it the command asks for two confirmations; `--auto-approve`
+skips both and is the one flag here with no `PTAH_*` variable, so no
+environment can turn the prompts off by accident.
+
+**What it leaves behind**
+
+SQLite keeps Ptah's revision table. Everything else in the database goes, so
+`ptah migrations status` afterwards still reports the old version and
+`ptah migrations up` finds nothing pending against an emptied database. Put the
+recorded history back in step with
+[`ptah migrations baseline`](../../versioned/maintain-history/).
+
+**Not for a shared database**
+
+There is no undo. Use it on a database whose contents you can recreate, and
+reach for [rollback](../../versioned/rollback/) or a forward repair on anything
+else.
 
 ## A dialect capability is unsupported
 

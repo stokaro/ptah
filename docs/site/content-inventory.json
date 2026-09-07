@@ -3591,7 +3591,9 @@
         "dbschema",
         "migration"
       ],
-      "owns": [],
+      "owns": [
+        "cli-ptah-db-drop-all"
+      ],
       "generated": false,
       "generator": null,
       "editSource": null,
@@ -3608,7 +3610,9 @@
         "/inference/troubleshooting/",
         "/operate/ai-agent-troubleshooting/",
         "/reference/atlas-commands/",
-        "/reference/capabilities/"
+        "/reference/capabilities/",
+        "/versioned/maintain-history/",
+        "/versioned/rollback/"
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
@@ -3621,8 +3625,8 @@
         "/start/install/",
         "/testing/ci/"
       ],
-      "visibleWords": 959,
-      "sourceBytes": 8526
+      "visibleWords": 1158,
+      "sourceBytes": 9905
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -6261,6 +6265,7 @@
       ],
       "inboundLinks": [
         "/concepts/migration-directory/",
+        "/operate/troubleshooting/",
         "/versioned/apply/",
         "/versioned/generate/",
         "/versioned/integrity-and-safety/",
@@ -6419,6 +6424,7 @@
         "/atlas/docs-coverage/",
         "/atlas/retained-divergences/",
         "/operate/deliver/",
+        "/operate/troubleshooting/",
         "/start/quick-start-migrations/",
         "/versioned/apply/",
         "/versioned/import/",
