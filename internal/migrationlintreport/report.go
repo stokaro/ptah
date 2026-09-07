@@ -44,6 +44,9 @@ const (
 	FormatGitHubActions = "github-actions"
 	// FormatSARIF renders a SARIF 2.1.0 report.
 	FormatSARIF = "sarif"
+	// FormatGitLab renders the GitLab Code Quality report, which GitLab CI
+	// ingests as a `codequality` artifact and renders on a merge request.
+	FormatGitLab = "gitlab"
 
 	// FailOnError fails when any error-severity finding is present.
 	FailOnError = "error"
@@ -1229,10 +1232,116 @@ func Write(w io.Writer, format string, report Report) error {
 		return nil
 	case FormatSARIF:
 		return writeSARIF(w, report)
+	case FormatGitLab:
+		return writeGitLab(w, report)
 	default:
 		writeText(w, report)
 		return nil
 	}
+}
+
+// gitlabFinding is one entry of the GitLab Code Quality report. The field
+// names are GitLab's, not Ptah's, and every one of them is required: GitLab
+// drops an entry that is missing a fingerprint or a location rather than
+// reporting the omission.
+type gitlabFinding struct {
+	Description string         `json:"description"`
+	CheckName   string         `json:"check_name"`
+	Fingerprint string         `json:"fingerprint"`
+	Severity    string         `json:"severity"`
+	Location    gitlabLocation `json:"location"`
+}
+
+type gitlabLocation struct {
+	Path  string      `json:"path"`
+	Lines gitlabLines `json:"lines"`
+}
+
+type gitlabLines struct {
+	Begin int `json:"begin"`
+}
+
+// gitlabSeverity maps Ptah's three severities onto GitLab's five. GitLab also
+// has `critical` and `blocker`; nothing here emits them for a finding, because
+// Ptah has no severity that means either, and inventing one would make a rule
+// look worse in GitLab than it is in every other renderer.
+func gitlabSeverity(severity lint.Severity) string {
+	switch severity {
+	case lint.SeverityError:
+		return "major"
+	case lint.SeverityInfo:
+		return "info"
+	default:
+		return "minor"
+	}
+}
+
+// gitlabBeginLine is the line GitLab anchors an entry to. Ptah reports line 0
+// for a file-level finding, and GitLab requires a line, so those anchor to the
+// first line of the file they are about.
+func gitlabBeginLine(line int) int {
+	if line > 0 {
+		return line
+	}
+	return 1
+}
+
+// gitlabFingerprint identifies a finding across pipeline runs so GitLab can
+// tell a new one from a surviving one. It hashes what the finding says rather
+// than where it sits in the report, so reordering the corpus does not present
+// every finding as new. The occurrence ordinal distinguishes two findings that
+// agree on all four fields, which GitLab would otherwise collapse into one.
+func gitlabFingerprint(finding lint.Finding, occurrence int) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d",
+		finding.Rule, finding.File, finding.Line, finding.Message, occurrence)))
+	return hex.EncodeToString(sum[:])
+}
+
+// writeGitLab renders the report as a GitLab Code Quality artifact.
+//
+// A failed run is reported as an entry rather than as an empty array. The
+// array is the whole artifact, so an empty one is indistinguishable from a
+// clean corpus, and a reader who sees only the merge request would be told
+// the lint passed when it never ran.
+func writeGitLab(w io.Writer, report Report) error {
+	entries := make([]gitlabFinding, 0, len(report.Findings)+1)
+	if report.Error != "" {
+		entries = append(entries, gitlabFinding{
+			Description: report.Error,
+			CheckName:   "ptah-lint",
+			Fingerprint: gitlabFingerprint(lint.Finding{Rule: "ptah-lint", Message: report.Error}, 0),
+			Severity:    "blocker",
+			Location:    gitlabLocation{Path: gitlabErrorPath(report), Lines: gitlabLines{Begin: 1}},
+		})
+	}
+	seen := make(map[string]int)
+	for _, finding := range report.Findings {
+		key := finding.Rule + "\x00" + finding.File + "\x00" + finding.Message
+		occurrence := seen[key]
+		seen[key] = occurrence + 1
+		entries = append(entries, gitlabFinding{
+			Description: fmt.Sprintf("%s: %s", finding.Rule, finding.Message),
+			CheckName:   finding.Rule,
+			Fingerprint: gitlabFingerprint(finding, occurrence),
+			Severity:    gitlabSeverity(finding.Severity),
+			Location: gitlabLocation{
+				Path:  finding.File,
+				Lines: gitlabLines{Begin: gitlabBeginLine(finding.Line)},
+			},
+		})
+	}
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(entries)
+}
+
+// gitlabErrorPath is where a run-level failure is anchored. The migration
+// directory is the subject of the failure when the report names one.
+func gitlabErrorPath(report Report) string {
+	if report.Dir != "" {
+		return report.Dir
+	}
+	return "."
 }
 
 func writeSARIF(w io.Writer, report Report) error {
@@ -1425,10 +1534,10 @@ func ErrorReport(failOn, msg string) Report {
 // ValidateFormat rejects unknown native report formats.
 func ValidateFormat(format string) error {
 	switch format {
-	case FormatText, FormatJSON, FormatGitHubActions, FormatSARIF:
+	case FormatText, FormatJSON, FormatGitHubActions, FormatSARIF, FormatGitLab:
 		return nil
 	default:
-		return fmt.Errorf("invalid --format value %q: expected text, json, github-actions, or sarif", format)
+		return fmt.Errorf("invalid --format value %q: expected text, json, github-actions, sarif, or gitlab", format)
 	}
 }
 

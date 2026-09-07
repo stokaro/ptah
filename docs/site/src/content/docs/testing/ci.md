@@ -171,6 +171,36 @@ stdout redirect would capture an empty file. Prefer
 `--format github-actions` when inline annotations are wanted without the
 code-scanning permission model.
 
+## Report findings on a GitLab merge request
+
+`ptah migrations lint --format gitlab` emits a GitLab Code Quality report.
+GitLab reads it as a `codequality` artifact and annotates the changed lines of
+a merge request:
+
+```yaml
+ptah-lint:
+  image: alpine:3
+  script:
+    - ptah migrations lint --dir ./migrations --dialect postgres
+        --fail-on none --format gitlab > gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+Ptah's three severities map onto GitLab's scale as `error` to `major`,
+`warning` to `minor`, and `info` to `info`. A file-level finding carries no
+line, and GitLab requires one, so those anchor to the first line of the file
+they name.
+
+Use `--fail-on none` when the report owns the outcome, for the same reason as
+the SARIF step above: above the threshold the findings go to stderr and the
+command exits `1`, so a plain stdout redirect would capture an empty file.
+
+A run that fails before it can lint is reported as one `blocker` entry rather
+than as an empty report, because an empty Code Quality artifact is
+indistinguishable from a clean one on the merge request.
+
 ## Recommended pull-request contour
 
 | Check | Why it exists |
