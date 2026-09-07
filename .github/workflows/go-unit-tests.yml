@@ -175,10 +175,48 @@ jobs:
           } >>"$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+  js-wasm-build:
+    name: js-wasm-build
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      # A browser is a second execution target, and the things that break it
+      # break silently: a platform-specific dependency reached from a place
+      # that had a portable alternative, or a new os.Exit on the reusable
+      # command path. Neither shows on any native runner. Building the whole
+      # module is what keeps the split files in internal/dbschema/sqlite,
+      # internal/dbschema/oracle, internal/devlock, internal/atlasmigrate and
+      # internal/testutils honest (stokaro/ptah#3045).
+      #
+      # Build rather than vet or test: vet and test include the test packages,
+      # and those legitimately drive a real SQLite engine that js/wasm does not
+      # link. The js test contour arrives with the engine that would make it
+      # mean something.
+      - name: Build every package for js/wasm
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: go build ./...
+
   unit-test-gate:
     name: Unit test gate
     if: always() && github.event_name == 'pull_request'
-    needs: [scope, unit-tests, windows-publication, windows-unit-tests]
+    needs: [scope, unit-tests, windows-publication, windows-unit-tests, js-wasm-build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -190,6 +228,7 @@ jobs:
           UNIT_RESULT: ${{ needs.unit-tests.result }}
           WINDOWS_PUBLICATION_RESULT: ${{ needs.windows-publication.result }}
           WINDOWS_UNIT_RESULT: ${{ needs.windows-unit-tests.result }}
+          JS_WASM_RESULT: ${{ needs.js-wasm-build.result }}
         run: |
           scripts/check-ci-scope-gate.sh --selftest
           scripts/check-ci-scope-gate.sh \
@@ -197,4 +236,5 @@ jobs:
             --scope "$CODE_SCOPE" \
             --scoped "unit-tests=$UNIT_RESULT" \
             --scoped "windows-publication=$WINDOWS_PUBLICATION_RESULT" \
-            --scoped "windows-unit-tests=$WINDOWS_UNIT_RESULT"
+            --scoped "windows-unit-tests=$WINDOWS_UNIT_RESULT" \
+            --scoped "js-wasm-build=$JS_WASM_RESULT"

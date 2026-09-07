@@ -6,9 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	sqlitedriver "modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // probeSchemaName is the alias used by the self-check ATTACH. It must not
@@ -47,7 +44,7 @@ func RestrictSession(ctx context.Context, session *sql.Conn) error {
 	if session == nil {
 		return errors.New("sqlite session restriction requires a pinned session")
 	}
-	if _, err := sqlitedriver.Limit(session, sqlite3.SQLITE_LIMIT_ATTACHED, 0); err != nil {
+	if err := applyAttachedDatabaseLimit(ctx, session); err != nil {
 		return fmt.Errorf("restrict sqlite session: set attached-database limit: %w", err)
 	}
 	return verifyRestriction(ctx, session)
