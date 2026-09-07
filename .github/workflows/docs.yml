@@ -735,11 +735,18 @@ jobs:
         run: |
           set -euo pipefail
           go build -o "$RUNNER_TEMP/ptah" ./cmd/ptah
+          # The ERD sample is written by ptah-compat, not ptah (stokaro/ptah#3037).
+          # Without this the generator falls back to bin/ptah-compat, which no
+          # step builds, and spawnSync reports status null with no output --
+          # the same trap the generator's own comment describes for PTAH_BIN.
+          go build -o "$RUNNER_TEMP/ptah-compat" ./cmd/ptah-compat
           cd docs/site
           npm ci
           npx playwright install --with-deps chromium
           npm run check:generated-assets:selftest
-          PTAH_BIN="$RUNNER_TEMP/ptah" npm run check:generated-assets
+          PTAH_BIN="$RUNNER_TEMP/ptah" \
+          PTAH_COMPAT_BIN="$RUNNER_TEMP/ptah-compat" \
+            npm run check:generated-assets
 
   example-acceptance:
     name: Example acceptance
