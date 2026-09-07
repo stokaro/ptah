@@ -297,6 +297,13 @@ try {
     encoding: 'utf8',
     env: { ...process.env, CI: '1', PTAH_SKIP_BROWSER_OPEN: '1' },
   });
+  // A process that never started reports status null and no streams, so the
+  // status branch below renders `failed with null` over `undefinedundefined`
+  // and names neither the binary that is missing nor the reason. renderSVG
+  // above asks the same question first, for the same reason.
+  if (erdRun.error) {
+    throw new Error(`${ptahCompat} could not run: ${erdRun.error.message}`);
+  }
   if (erdRun.status !== 0) {
     throw new Error(
       `${ptahCompat} schema diff --web failed with ${erdRun.status}\n${erdRun.stdout}${erdRun.stderr}`,
