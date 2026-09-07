@@ -598,6 +598,29 @@ func (r *Renderer) GetOutput() string {
 
 // VisitCreateTable renders CREATE TABLE with PostgreSQL-specific handling
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+	// This target writes the identity clauses, UNIQUE, and -- where the server
+	// persists one -- the name on a NOT NULL, refusing the name rather than
+	// dropping it where it does not. What it has no clause for is the MySQL
+	// family's ON UPDATE and a per-column character set, and it renders no
+	// COLLATE even though the server has one.
+	for _, column := range node.Columns {
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:          column.Charset,
+				Collate:          column.Collate,
+				UpdateExpression: column.UpdateExpression,
+				AutoIncrement:    column.AutoInc && !generatesItsOwnValues(column),
+				// The one remedy in this group. It matters more than it looks:
+				// the table-level AUTO_INCREMENT option already tells the
+				// author to move the start onto identity_start, and on a column
+				// rendered as a plain integer that is advice about a key this
+				// target was not generating at all (stokaro/ptah#2969).
+				AutoIncrementRemedy: "declare the column type as SERIAL or BIGSERIAL, " +
+					"or give it an identity clause with identity_generation",
+			},
+		)
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
 	} else {
@@ -1575,6 +1598,23 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 	default:
 		return fieldType, nil
 	}
+}
+
+// generatesItsOwnValues reports whether this renderer wrote something that
+// makes the server assign the column's value.
+//
+// The flag alone does not say: this target spells generation two ways and reads
+// neither off `AutoInc`. A sequence-backed type carries it -- `SERIAL` is a type
+// whose default draws from a sequence -- and an identity clause carries it,
+// which is the branch renderColumn takes on IdentityGeneration. A column with
+// neither is rendered as a plain integer, so a declaration that it generates its
+// own values reached the output nowhere and is reported as lost.
+//
+// It is one predicate rather than a condition repeated at the record and at the
+// render, because the two would agree until somebody taught renderColumn a third
+// spelling (stokaro/ptah#2983).
+func generatesItsOwnValues(column *ast.ColumnNode) bool {
+	return sequenceBackedType(column.Type) || column.IdentityGeneration != ""
 }
 
 func sequenceBackedType(fieldType string) bool {

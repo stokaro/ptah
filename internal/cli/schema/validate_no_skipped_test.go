@@ -39,13 +39,23 @@ func TestSchemaValidateNoSkippedNamesEveryDroppedTableOption(t *testing.T) {
 
 	c.Assert(exitcode.Code(err, 2), qt.Equals, 1)
 	c.Assert(strings.Split(strings.TrimSpace(stdout), "\n"), qt.DeepEquals, []string{
+		// The column line is the sharper half of this fixture, and it arrived
+		// after the table options (stokaro/ptah#2983). PostgreSQL reads AutoInc
+		// nowhere: it renders `"id" INT PRIMARY KEY NOT NULL`, so the key
+		// generates nothing and every insert has to supply one. The remedy on
+		// the line below tells the author to move the start onto
+		// identity_start, which is advice about a key this target was not
+		// generating at all.
+		`postgres: column "users.id": auto-increment would be skipped; ` +
+			`declare the column type as SERIAL or BIGSERIAL, or give it an ` +
+			`identity clause with identity_generation`,
 		`postgres: table "users": table option AUTO_INCREMENT=100 would be skipped; ` +
 			`declare the start on the key column with identity_start`,
 		`postgres: table "users": table option CHARSET=utf8mb4 would be skipped`,
 		`postgres: table "users": table option COLLATE=utf8mb4_bin would be skipped`,
 		`postgres: table "users": table option ENGINE=InnoDB would be skipped`,
 	})
-	c.Assert(strings.TrimSpace(stderr), qt.Equals, "4 problems")
+	c.Assert(strings.TrimSpace(stderr), qt.Equals, "5 problems")
 }
 
 // TestSchemaValidateNoSkippedReportsATargetThatSaidNothing is the half a
@@ -61,11 +71,14 @@ func TestSchemaValidateNoSkippedReportsATargetThatSaidNothing(t *testing.T) {
 		dialect string
 		want    int
 	}{
+		// The three that spell a generated key report the four table options
+		// and nothing about the column.
 		{name: "sqlite", dialect: "sqlite", want: 4},
 		{name: "sql server", dialect: "sqlserver", want: 4},
 		{name: "oracle", dialect: "oracle", want: 4},
-		// ClickHouse renders an engine clause, so that option survives.
-		{name: "clickhouse", dialect: "clickhouse", want: 3},
+		// ClickHouse renders an engine clause, so that option survives, and it
+		// generates no key, so the column adds a line of its own.
+		{name: "clickhouse", dialect: "clickhouse", want: 4},
 	}
 
 	for _, test := range tests {

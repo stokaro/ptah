@@ -155,12 +155,19 @@ ptah schema validate --schema-file schema.sql --dialect postgres --no-skipped
 Expected output includes:
 
 ```text
+postgres: column "users.id": auto-increment would be skipped; declare the column type as SERIAL or BIGSERIAL, or give it an identity clause with identity_generation
 postgres: table "users": table option AUTO_INCREMENT=100 would be skipped; declare the start on the key column with identity_start
 postgres: table "users": table option CHARSET=utf8mb4 would be skipped
 postgres: table "users": table option COLLATE=utf8mb4_bin would be skipped
 postgres: table "users": table option ENGINE=InnoDB would be skipped
-4 problems
+5 problems
 ```
+
+The first line is the one to read first. `id INT NOT NULL AUTO_INCREMENT`
+renders on PostgreSQL as `"id" INT PRIMARY KEY NOT NULL`, so the key generates
+nothing and every insert has to supply one. It is also what makes the line below
+it usable: moving the start onto `identity_start` is advice about a key this
+target was not generating until the column itself is fixed.
 
 Each lost declaration is one line, so fixing some of them shortens the report
 rather than leaving it unchanged. A remedy is printed only where one works on
@@ -188,9 +195,9 @@ the target dropped on its own, so it stays quiet about:
 Reporting is not yet exhaustive over every property every dialect drops. It
 covers what a renderer names as skipped, the table options a target cannot
 carry, the comments a target does not store, an index's partial condition and
-operator class, and a column's identity clauses;
+operator class, and every property a column declares;
 [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
-remains.
+remains, which is now index properties and whole-node ones.
 
 A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
@@ -205,7 +212,31 @@ meant to allow.
 A generated key reports the values it loses, not the spelling. Every target
 writes a key some way, so `AUTO_INCREMENT` in place of `GENERATED ALWAYS AS
 IDENTITY` is not a finding; a declared `identity_start` that the target drops
-is.
+is. Two targets write no key at all for a column that declares one, and they
+report that on its own line: ClickHouse has no generated column, and PostgreSQL
+generates through a sequence-backed type or an identity clause and reads the
+flag nowhere, so a plain `INTEGER` marked auto-increment is a column whose
+values the caller has to supply.
+
+The rest of a column's properties are reported wherever the target drops them:
+
+| Property | Kept by | Dropped by |
+| --- | --- | --- |
+| Character set | the MySQL family | every other target |
+| Collation | the MySQL family | every other target |
+| `ON UPDATE` expression | the MySQL family | every other target |
+| NOT NULL constraint name | PostgreSQL 18 and later | the MySQL family, SQLite, SQL Server, Oracle, ClickHouse |
+| Column `UNIQUE` | every target but ClickHouse | ClickHouse |
+
+Two of these are worth more than their storage. A dropped collation changes
+which values a comparison and a unique index treat as equal, and a dropped
+`UNIQUE` lets the database accept rows the author meant to exclude.
+
+A NOT NULL constraint name is the one case where a target refuses instead of
+reporting. The PostgreSQL family accepts the syntax on a server that stores no
+such name and would lose it on the way in, so it fails the render rather than
+carrying on; every other target drops the name, keeps the constraint, and
+reports the loss.
 
 ## Format HCL schema files
 

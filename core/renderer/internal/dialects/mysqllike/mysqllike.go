@@ -387,6 +387,14 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// This family writes the character set, the collation, the ON UPDATE
+		// expression, UNIQUE and AUTO_INCREMENT, so the only column property it
+		// loses is the name on a NOT NULL: the server has no syntax for one and
+		// the renderer drops the name rather than the constraint.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{NotNullConstraintName: column.NotNullConstraintName},
+		)
 	}
 	// Table comment
 	if node.Comment != "" {

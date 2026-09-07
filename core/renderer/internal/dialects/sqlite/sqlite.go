@@ -116,6 +116,18 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// UNIQUE and AUTOINCREMENT are written; the rest of the column's
+		// properties are not. SQLite does have a column COLLATE clause, so the
+		// collation is a declaration this target could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
 	}
 
 	guard := ""

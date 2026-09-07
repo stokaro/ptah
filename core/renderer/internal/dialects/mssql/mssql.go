@@ -142,6 +142,18 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Generation: column.IdentityGeneration,
 			Options:    column.IdentityOptions,
 		})
+		// UNIQUE and IDENTITY are written; the rest is not. T-SQL does have a
+		// column COLLATE clause, so the collation is a declaration this target
+		// could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
 	}
 	if node.SelectBody != "" {
 		return unsupportedFeaturef("CREATE TABLE AS SELECT is not supported")

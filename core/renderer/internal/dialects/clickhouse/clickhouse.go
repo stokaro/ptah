@@ -619,6 +619,23 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// This target keeps none of the column properties. Two of them decide
+		// what the database accepts rather than how it stores: a dropped UNIQUE
+		// admits rows the author meant to exclude, and a column declared to
+		// generate its own values generates none. Neither is refused, because a
+		// schema written for several engines is expected to reach this one, and
+		// #2983 widens the report without changing what render writes.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+				Unique:                column.Unique,
+				AutoIncrement:         column.AutoInc,
+			},
+		)
 	}
 	guard := ""
 	if node.IfNotExists {
