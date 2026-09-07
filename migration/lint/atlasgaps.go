@@ -22,6 +22,12 @@ import (
 // rebuilds in place and lets them through; PG320 takes a light lock and is
 // still a hazard, for a reason that is not cost at all.
 //
+// The comparison these rules close was made against Ptah at
+// 48c3b61b5bd183218ea6527f87113d0a4fae65df. Which existing rule already
+// reported a hazard decided whether a check here became a rule, an alias or a
+// partial, so the answer is only reproducible against a named tree -- the same
+// reason the server versions below are named rather than left as "current".
+//
 // MYSQL AND MARIADB, MEASURED
 //
 // Every MySQL claim below was measured on MySQL 8.4.11 and MariaDB 11.8.9 by

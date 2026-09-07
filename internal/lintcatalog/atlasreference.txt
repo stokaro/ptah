@@ -2,6 +2,13 @@
 #
 # Source:      https://atlasgo.io/lint/analyzers
 # Reviewed on: 2026-09-06
+# Assessed against Ptah at 48c3b61b5bd183218ea6527f87113d0a4fae65df
+#
+# The Ptah commit is here for the same reason the server versions are in
+# migration/lint/atlasgaps.go: every verdict beside a code in the catalog --
+# covered, partial, not implemented -- is a claim about what Ptah's rules did
+# at a point in time, and a reader who cannot name that tree cannot re-run the
+# comparison that produced it.
 #
 # One line per check: CODE, the marking that page carries (PRO or FREE),
 # and the meaning it states. This file is the reference the offline check
