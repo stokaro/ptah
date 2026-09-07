@@ -377,6 +377,17 @@ func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
 
 // VisitCreateTable renders MariaDB-specific CREATE TABLE statements
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+	// AUTO_INCREMENT carries no generation mode, start or step on the column,
+	// so a declared value reaches the output nowhere. The table-level
+	// AUTO_INCREMENT option is a different declaration and is rendered.
+	for _, column := range node.Columns {
+		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
+			Generation: column.IdentityGeneration,
+			Start:      column.IdentityStart,
+			Increment:  column.IdentityIncrement,
+			Options:    column.IdentityOptions,
+		})
+	}
 	// Table comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)

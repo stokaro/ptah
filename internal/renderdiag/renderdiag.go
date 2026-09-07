@@ -226,3 +226,52 @@ func (s *Sink) RecordLostProperty(kind, name, property, value string) {
 	}
 	s.Record(PropertyOmission(kind, name, property, value))
 }
+
+// Identity clause properties a target can decline to carry.
+const (
+	// IdentityGenerationProperty is ALWAYS or BY DEFAULT. Oracle renders BY
+	// DEFAULT whatever was declared, so losing this one substitutes a
+	// semantics rather than omitting a clause.
+	IdentityGenerationProperty = "identity generation"
+	// IdentityStartProperty is the first value the key takes. It is the value
+	// a PostgreSQL-family target tells the author to move an AUTO_INCREMENT
+	// start onto (stokaro/ptah#2969), so a target that drops it silently makes
+	// that advice wrong.
+	IdentityStartProperty = "identity start"
+	// IdentityIncrementProperty is the step between generated values.
+	IdentityIncrementProperty = "identity increment"
+	// IdentityOptionsProperty is the raw sequence option list.
+	IdentityOptionsProperty = "identity options"
+)
+
+// Identity carries the identity clauses one column declares. A zero field is a
+// clause the column did not declare, and records nothing.
+type Identity struct {
+	Generation string
+	Start      string
+	Increment  string
+	Options    string
+}
+
+// RecordLostIdentity records the identity clauses a target does not carry.
+//
+// The caller passes only what its renderer drops, so a target that writes the
+// start and increment leaves those zero. Every generated key ends up spelled
+// some way on every target -- AUTO_INCREMENT, AUTOINCREMENT, IDENTITY -- and
+// that spelling is not the loss; the values the author chose are.
+func (s *Sink) RecordLostIdentity(name string, lost Identity) {
+	if s == nil {
+		return
+	}
+	for _, declared := range []struct {
+		property string
+		value    string
+	}{
+		{IdentityGenerationProperty, lost.Generation},
+		{IdentityIncrementProperty, lost.Increment},
+		{IdentityOptionsProperty, lost.Options},
+		{IdentityStartProperty, lost.Start},
+	} {
+		s.RecordLostProperty(ColumnKind, name, declared.property, declared.value)
+	}
+}

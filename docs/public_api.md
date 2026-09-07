@@ -106,8 +106,9 @@ A refusal is an error, not an omission: a non-nil error carries no statements
 and no omissions, because nothing was rendered for a declaration to be missing
 from. Reporting is not exhaustive over every property every dialect drops. It
 covers what a renderer names as skipped, the table options a target cannot
-carry, the comments a target does not store, and an index's partial condition
-and operator class. stokaro/ptah#2983 records what remains.
+carry, the comments a target does not store, an index's partial condition and
+operator class, and a column's identity clauses. stokaro/ptah#2983 records what
+remains.
 
 An object whose key payload is empty is refused with
 `ptaherr.ErrInvalidSchemaDiff` before any statement is emitted:
