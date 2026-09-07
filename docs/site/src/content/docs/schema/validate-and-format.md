@@ -177,13 +177,13 @@ A render the target refuses outright fails this mode too, as a `schema` problem
 carrying the refusal.
 
 The flag is opt-in because a schema written for several engines is expected to
-lose engine-specific declarations on the others. Two things it does not report,
-for the same reason:
+lose engine-specific declarations on the others. It reports only a declaration
+the target dropped on its own, so it stays quiet about:
 
-- an object a `dialects=` scope excludes from this target, which is not part of
-  that target's desired state at all;
+- an object a `dialects=` scope excludes from this target, which was never part
+  of that target's desired state;
 - a declaration a [platform override](../../reference/go-annotations/) replaced
-  for this target, which is the author choosing what the target gets.
+  for this target, where the schema already says what this target gets.
 
 Reporting is not yet exhaustive over every property every dialect drops. It
 covers what a renderer names as skipped and the table options a target cannot

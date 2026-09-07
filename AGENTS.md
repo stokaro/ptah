@@ -115,7 +115,7 @@ fixture series in `integration/internal/fixtures/entities/`.
 ## Schema Annotations
 
 Directives are `//ptah:` comments on Go structs; `internal/stubs/` holds worked
-examples. Two things the parser will not tell you:
+examples. Placement and spelling each have a rule that is easy to miss:
 
 - **An index annotation has to sit on a struct field.** Written at file level,
   after the closing brace, it contributes no index and says nothing. To declare
@@ -405,6 +405,46 @@ prospective; the repository-wide audit is stokaro/ptah#1213.
 
 American English in code, comments, documentation, issue and PR text, and CLI
 output, unless preserving an exact external quote or protocol token.
+
+**Plain international English, in everything you write.** Many readers, and
+many of the people who write the next page, do not read English as a first
+language, so a sentence has to land on one pass. Short sentences, concrete
+nouns, active voice, one idea per sentence. Easy reading beats a clever
+construction. Say what changed and why, once, and stop.
+
+This governs every artifact, not only the pages the docs gates read: commit
+messages, pull request and issue text, code comments, CLI output, and review
+replies. [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) is the authority on the
+specifics and carries the enumerated lists: section 5 is plain English for a
+global audience, section 4 is voice, and section 6 is timeless documentation.
+Read it rather than a restatement here.
+
+The register to avoid is the one an assistant falls into by default. No
+marketing adjectives or filler intensifiers. No `Certainly`, `Great question`,
+`I hope this helps`. No `delve into`, `leverage` or `utilize` where `use`
+works. No `not just X, but Y`, no rule-of-three flourish, no rhetorical
+question opening a section, no closing paragraph that restates the one above
+it. No throat-clearing before the point. Do not narrate the diff in prose: the
+diff is already there, so spend the sentence on the reason, the trade-off or
+the risk.
+
+**A count is not a subject.** Never write `Two things follow:`, `Decide four
+things` or `asserts three things`. `thing` stands where the real noun belongs,
+and swapping in a better noun is not the repair: `Two rules follow:` is the
+same sentence with a nicer word in it.
+
+In front of a list, the count states what the reader can already see, so the
+lead-in has to say something the list does not -- what the items have in
+common, or why they are together -- or it goes and the list speaks for itself.
+In running prose, where there is no list to count, name the noun: `Three things
+weigh against it` is `Three objections weigh against it`. This holds in Go doc
+comments too, where most of the existing occurrences are.
+
+`one thing` is not the same construction and stays: `One thing is deliberately
+absent:` and `the declared set cannot say one thing here and another in a
+workflow file` are ordinary English. So is `two different things`, where the
+point is that a term has two referents and naming them would pre-empt the
+section. stokaro/ptah#2987 carries the gate and the existing occurrences.
 
 ## Documentation Obligations
 
