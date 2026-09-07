@@ -755,6 +755,10 @@ func suiteStartedCells(c *qt.C) []capabilityprobe.Cell {
 // this file is where that name list is checked against the declaration.
 const renovateConfig = "../../renovate.json"
 
+// cellsSource is the declaration a custom manager must not treat as a version
+// list; see TestRenovate_MovesNoImageWhoseTagNamesItsLine.
+const cellsSource = "cells.go"
+
 // databaseImagesRuleGroup is the groupName of the rule under test. Matching on
 // it rather than on position means a rule reordered above stays found.
 const databaseImagesRuleGroup = "database server images"
@@ -806,6 +810,105 @@ type renovatePackageRule struct {
 	GroupName         string   `json:"groupName"`
 	MatchPackageNames []string `json:"matchPackageNames"`
 	AutoMerge         *bool    `json:"automerge"`
+}
+
+// renovateCustomManager is one custom manager from the dependency policy.
+type renovateCustomManager struct {
+	ManagerFilePatterns []string `json:"managerFilePatterns"`
+	MatchStrings        []string `json:"matchStrings"`
+}
+
+// TestRenovate_MovesNoImageWhoseTagNamesItsLine keeps a bot away from an
+// identity.
+//
+// A cell's tag is the release LINE it reproduces -- tagPinsLine requires
+// tag == Line -- so moving it does not update anything, it renames the line and
+// stops covering the old one. The Spanner cell is the exception this file
+// declares: it is Versionless, its tag names no line, and it is the one image a
+// manager may follow.
+//
+// This exists because a manager that matched every Image in this file shipped
+// and did exactly that within a day (stokaro/ptah#3031): two ClickHouse lines
+// were collapsed onto one image, two LTS lines stopped being covered, and a
+// MariaDB cell claimed another cell's image. Narrowing the pattern by hand is a
+// claim; this is the check.
+func TestRenovate_MovesNoImageWhoseTagNamesItsLine(t *testing.T) {
+	c := qt.New(t)
+
+	body, err := os.ReadFile(cellsSource)
+	c.Assert(err, qt.IsNil)
+
+	movable := make(map[string]struct{})
+	for _, manager := range renovateManagersReading(c, cellsSource) {
+		for _, pattern := range manager.MatchStrings {
+			expression, err := regexp.Compile(strings.ReplaceAll(pattern, "(?<", "(?P<"))
+			c.Assert(err, qt.IsNil,
+				qt.Commentf("pattern %q does not compile; check-renovate-regex.sh owns RE2 validity, "+
+					"and this test cannot report what a broken pattern would match", pattern))
+			for _, match := range expression.FindAllStringSubmatch(string(body), -1) {
+				movable[match[1]+":"+match[2]] = struct{}{}
+			}
+		}
+	}
+	c.Assert(len(movable) > 0, qt.IsTrue,
+		qt.Commentf("no manager matches an image in %s, so every assertion below is vacuous; if the "+
+			"manager was removed on purpose, remove this test with it", cellsSource))
+
+	for _, cell := range cellsAManagerCanMove(movable) {
+		t.Run(cell.Image, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(cell.Versionless, qt.IsTrue,
+				qt.Commentf("a Renovate manager can move %q, and cell %s reproduces release line %q "+
+					"with it: a bump would rename the line rather than update anything, and the line "+
+					"would stop being covered", cell.Image, capabilityprobe.CellID(cell), cell.Line))
+		})
+	}
+}
+
+// cellsAManagerCanMove returns the cells whose image one of those patterns
+// matched, keyed by the full reference so a repository shared by two cells is
+// not confused with either.
+func cellsAManagerCanMove(movable map[string]struct{}) []capabilityprobe.Cell {
+	subjects := make([]capabilityprobe.Cell, 0, len(movable))
+	for _, cell := range capabilityprobe.Cells {
+		if _, follows := movable[cell.Image]; follows {
+			subjects = append(subjects, cell)
+		}
+	}
+	return subjects
+}
+
+// renovateManagersReading returns the custom managers whose file patterns cover
+// path.
+//
+// The pattern is a Renovate file matcher rather than a Go regexp, so it is
+// compared by containing the path rather than by matching it: a manager that
+// names this file is the subject whatever anchors surround the name.
+func renovateManagersReading(c *qt.C, path string) []renovateCustomManager {
+	c.Helper()
+
+	body, err := os.ReadFile(renovateConfig)
+	c.Assert(err, qt.IsNil)
+
+	var config struct {
+		CustomManagers []renovateCustomManager `json:"customManagers"`
+	}
+	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
+
+	reading := make([]renovateCustomManager, 0, len(config.CustomManagers))
+	for _, manager := range config.CustomManagers {
+		for _, pattern := range manager.ManagerFilePatterns {
+			// The pattern is a regexp, so the file name inside it carries
+			// escapes: `cells\.go` names cells.go. Comparing the unescaped
+			// text is what keeps this from reporting that nothing reads the
+			// file it plainly names.
+			if strings.Contains(strings.ReplaceAll(pattern, `\`, ""), path) {
+				reading = append(reading, manager)
+				break
+			}
+		}
+	}
+	return reading
 }
 
 func databaseImageRule(c *qt.C) renovatePackageRule {

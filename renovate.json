@@ -28,12 +28,12 @@
     },
     {
       "customType": "regex",
-      "description": "A database image is pinned twice: the workflow that starts the container, and the matrix cell in internal/capabilityprobe/cells.go that says what capabilities the server behind it has. The cell is a Go string literal, so no built-in manager sees it, and the manager above moved the workflow alone -- pgadapter-emulator went to v0.55.3 in #3016 while the cell still declared v0.55.2, and TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts failed on master until stokaro/ptah#2975 noticed. Reading the repository and the tag out of the literal itself needs no marker comment, because the field name is already the tie: every Image in that file is a container this repository starts. The pattern is RE2, which has no backreferences (stokaro/ptah#2339). Grouped with the workflow bump by the database-server-images rule below, which matches the same depName, so both pins move in one pull request and the gate is green on arrival.",
+      "description": "The Spanner emulator is pinned twice: the workflow that starts the container, and the matrix cell in internal/capabilityprobe/cells.go. The cell is a Go string literal no built-in manager sees, so a bump moved the workflow alone and left the cell behind, which is what stokaro/ptah#3027 repaired. ONLY THAT ONE IMAGE IS MANAGED, and the repository is named here rather than matched by shape. Every other Image in that file carries a release LINE as its tag -- tagPinsLine in matrix.go requires tag == Line -- so the tag is an identity, not a version to keep current. A manager that matched them all bumped four of them in stokaro/ptah#3031: two ClickHouse lines were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered at all, and the MariaDB 11.4 cell started claiming the 11.8 cell's image. The Spanner cell is the only one declared Versionless, meaning its tag names no line, which is what makes it the only one safe to move. The pattern is RE2, which has no backreferences (stokaro/ptah#2339). Grouped with the workflow bump by the database-server-images rule below, which matches the same depName, so both pins move in one pull request.",
       "managerFilePatterns": [
         "/^internal/capabilityprobe/cells\\.go$/"
       ],
       "matchStrings": [
-        "Image:\\s+\"(?<depName>[^\"\\s:]+):(?<currentValue>[^\"\\s]+)\""
+        "Image:\\s+\"(?<depName>gcr\\.io/cloud-spanner-pg-adapter/pgadapter-emulator):(?<currentValue>[^\"\\s]+)\""
       ],
       "datasourceTemplate": "docker"
     }
