@@ -5,17 +5,25 @@ Ptah releases are produced by GoReleaser from annotated version tags.
 ## Prerequisites
 
 - For Homebrew publishing: the `stokaro/homebrew-ptah` tap repository and a
-  `HOMEBREW_TAP_TOKEN` repository secret that can push to it. The secret holds a
-  fine-grained token granting `Contents: Read and write` on that repository and
-  nothing else, which is the whole of what GoReleaser needs: it reads the
-  default branch, reads the formula path for its SHA, and writes the file.
-  Both are required. The release workflow's first step refuses an empty or
-  unset secret and stops before anything is built, and `skip_upload` is
-  `false`, so a release cannot finish green with the Homebrew channel missing.
-  An **expired** token fails the same run later, at the formula push, because
-  neither check can tell a live token from a dead one. The expiry is on the
-  token's page under GitHub developer settings; rotating it there means
-  resetting the secret.
+  credential that can push to it. `Contents: Read and write` on that repository
+  is the whole of what GoReleaser needs: it reads the default branch, reads the
+  formula path for its SHA, and writes the file.
+
+  The release mints that credential from the GitHub App behind the
+  `PUBLISH_APP_ID` variable and the `PUBLISH_APP_KEY` secret, narrowed to
+  `homebrew-ptah` alone. `HOMEBREW_TAP_TOKEN`, a fine-grained token with the
+  same single permission, is the fallback where the app pair is absent.
+
+  Both are required, and the release workflow's first step refuses a run with
+  neither before anything is built. `skip_upload` is `false`, so a release
+  cannot finish green with the Homebrew channel missing.
+
+  An **expired** fine-grained token fails the same run later, at the formula
+  push, because a presence check cannot tell a live token from a dead one. That
+  is the failure the app removes: its token is minted per run and lives an hour,
+  and the release job is capped at 40 minutes so the token cannot expire while
+  the job still holds it. `scripts/check-app-token-lifetime.sh` holds that
+  margin for every job that mints one.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
 - `DOCKER_HUB_USER` and `DOCKER_HUB_TOKEN` as repository secrets, for the
