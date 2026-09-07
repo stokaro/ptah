@@ -111,6 +111,32 @@ Rebase complements the `--exec-order` policies on
 [Apply migrations](../apply/): rebase fixes the directory once, execution
 policy decides how an unfixed out-of-order migration is treated at run time.
 
+### Applied is not the same as published
+
+Rebase refuses a migration that the target database has already applied. That
+check reads one database, and it is the only one Ptah can make: nothing in the
+directory records where else the migration has been.
+
+A migration that has been pushed to a registry is one of those places. The
+[OCI artifact](../../operate/oci-registry/) is immutable, so renumbering the
+local files does not rewrite it -- it produces a directory whose migration
+identities disagree with an artifact someone may already be deploying.
+Re-hashing afterwards and passing `--verify-sum` does not catch this either:
+both prove the directory agrees with its own integrity file, which the
+renumbered directory does.
+
+So rebase only what is still local. No single command answers "has this
+version been published": `ptah oci tags` lists the tags a repository carries,
+and which versions each one contains takes pulling that reference with
+`ptah migrations pull` and reading the directory. In practice the pipeline
+knows -- a version is published once its branch has merged and the publish job
+has run -- and that is the line to rebase behind.
+
+There is no mechanism that refuses a rebase because a version was published.
+[Deliver a schema change](../../operate/deliver/) states the same boundary from
+the delivery side: regeneration belongs before the publication step, and
+promotion reuses a reviewed artifact rather than rebuilding one.
+
 ## Delete a migration (rm)
 
 `ptah migrations rm` deletes a version's pair and rewrites `ptah.sum`:

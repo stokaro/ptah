@@ -3324,7 +3324,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [
-        "/operate/kubernetes-operator/"
+        "/operate/kubernetes-operator/",
+        "/versioned/maintain-history/"
       ],
       "visibleWords": 667,
       "sourceBytes": 5890
@@ -3426,7 +3427,8 @@
         "/reference/capabilities/",
         "/reference/native-commands/",
         "/versioned/apply/",
-        "/versioned/lint/"
+        "/versioned/lint/",
+        "/versioned/maintain-history/"
       ],
       "visibleWords": 2521,
       "sourceBytes": 21765
@@ -6136,6 +6138,8 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/operate/deliver/",
+        "/operate/oci-registry/",
         "/versioned/apply/",
         "/versioned/checkpoints/",
         "/versioned/integrity-and-safety/",
@@ -6149,8 +6153,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1462,
-      "sourceBytes": 13115
+      "visibleWords": 1689,
+      "sourceBytes": 14564
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",
