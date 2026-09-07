@@ -399,6 +399,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// The line above is a SQL comment, which the server does not store: the
 	// render looks like it kept the text and the database has none of it.
 	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
+	// Only the PostgreSQL family has an operator-class clause, so a declared
+	// class reaches the output nowhere here.
+	r.recordLostOperatorClasses(node)
 	if strings.TrimSpace(node.Condition) != "" {
 		// Oracle has no WHERE clause on CREATE INDEX. The equivalent it does
 		// have -- a function-based index whose expression is NULL for the rows
@@ -934,4 +937,33 @@ func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
 		target += "." + escapeIdentifier(op.Column)
 	}
 	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, escapeStringLiteral(op.Comment))
+}
+
+// recordLostOperatorClasses names every operator class the index declares.
+//
+// A class is declared per index or per part, and the distinct values are
+// recorded once each: two columns sharing a class lost one thing, not two.
+func (r *Renderer) recordLostOperatorClasses(node *ast.IndexNode) {
+	seen := make(map[string]struct{})
+	for _, class := range append([]string{node.Operator}, partOperatorClasses(node)...) {
+		if class == "" {
+			continue
+		}
+		if _, repeated := seen[class]; repeated {
+			continue
+		}
+		seen[class] = struct{}{}
+		r.sink.RecordLostProperty(
+			renderdiag.IndexKind, node.Name, renderdiag.OperatorClassProperty, class)
+	}
+}
+
+// partOperatorClasses returns the class each declared part carries.
+func partOperatorClasses(node *ast.IndexNode) []string {
+	parts := node.EffectiveParts()
+	classes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		classes = append(classes, part.Operator)
+	}
+	return classes
 }

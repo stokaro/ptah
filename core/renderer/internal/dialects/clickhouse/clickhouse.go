@@ -972,6 +972,14 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// A data-skipping index carries no comment clause, so the declaration
 	// reaches the output nowhere at all.
 	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
+	// The condition is dropped, so the index covers every row rather than the
+	// declared subset. On a unique index that changes which rows the server
+	// accepts, which is why it is reported rather than left to the reader to
+	// notice.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ConditionProperty, node.Condition)
+	// Only the PostgreSQL family has an operator-class clause, so a declared
+	// class reaches the output nowhere here.
+	r.recordLostOperatorClasses(node)
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no target table)", node.Name)
 		return nil
@@ -1421,4 +1429,33 @@ func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
 func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	r.notSupported("DROP SYNONYM", node.Name)
 	return nil
+}
+
+// recordLostOperatorClasses names every operator class the index declares.
+//
+// A class is declared per index or per part, and the distinct values are
+// recorded once each: two columns sharing a class lost one thing, not two.
+func (r *Renderer) recordLostOperatorClasses(node *ast.IndexNode) {
+	seen := make(map[string]struct{})
+	for _, class := range append([]string{node.Operator}, partOperatorClasses(node)...) {
+		if class == "" {
+			continue
+		}
+		if _, repeated := seen[class]; repeated {
+			continue
+		}
+		seen[class] = struct{}{}
+		r.sink.RecordLostProperty(
+			renderdiag.IndexKind, node.Name, renderdiag.OperatorClassProperty, class)
+	}
+}
+
+// partOperatorClasses returns the class each declared part carries.
+func partOperatorClasses(node *ast.IndexNode) []string {
+	parts := node.EffectiveParts()
+	classes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		classes = append(classes, part.Operator)
+	}
+	return classes
 }

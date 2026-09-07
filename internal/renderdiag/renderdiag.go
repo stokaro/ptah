@@ -205,3 +205,24 @@ func (s *Sink) RecordLostComment(kind, name, comment string) {
 func ColumnName(table, column string) string {
 	return table + "." + column
 }
+
+// Index properties a target can decline to carry.
+const (
+	// ConditionProperty is a partial index's WHERE condition. Losing it is not
+	// a cosmetic loss: the index is created over every row instead of the
+	// declared subset, and on a unique index that changes which rows the
+	// database accepts.
+	ConditionProperty = "partial index condition"
+	// OperatorClassProperty is a PostgreSQL operator class. It is declared per
+	// index or per part, and only the PostgreSQL family has a clause for it.
+	OperatorClassProperty = "operator class"
+)
+
+// RecordLostProperty records a declared property the target does not carry.
+// An empty value records nothing, because nothing was declared to lose.
+func (s *Sink) RecordLostProperty(kind, name, property, value string) {
+	if s == nil || value == "" {
+		return
+	}
+	s.Record(PropertyOmission(kind, name, property, value))
+}
