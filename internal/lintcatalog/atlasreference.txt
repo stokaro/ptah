@@ -1,0 +1,95 @@
+# The reviewed snapshot of the Atlas analyzer check table.
+#
+# Source:      https://atlasgo.io/lint/analyzers
+# Reviewed on: 2026-09-06
+#
+# One line per check: CODE, the marking that page carries (PRO or FREE),
+# and the meaning it states. This file is the reference the offline check
+# in this package compares the catalog against, code for code -- a count
+# cannot see a check that is missing from both the catalog and the page it
+# was built from, which is how the comparison fell nineteen behind.
+#
+# That page presents the table as highlights: "Below are highlights of
+# what is built into Atlas. Beyond them, Atlas runs and reports dozens of
+# additional checks." Completeness against this file is therefore
+# completeness against a reviewed snapshot, not parity with the analyzer.
+#
+# Refresh it with: go run ./internal/cmd/atlasref refresh
+
+BC101 FREE Renaming a table
+BC102 FREE Renaming a column
+BC103 FREE Dropping a table
+BC104 FREE Dropping a column
+CD101 PRO Foreign-key constraint was dropped
+CD102 PRO Check constraint was dropped
+CD103 PRO Primary-key constraint was dropped
+DS101 FREE Schema was dropped
+DS102 FREE Table was dropped
+DS103 FREE Non-virtual column was dropped
+MF101 FREE Add unique index to existing column
+MF102 FREE Modifying non-unique index to unique
+MF103 FREE Adding a non-nullable column to an existing table
+MF104 FREE Modifying a nullable column to non-nullable
+SA101 FREE Possible SQL injection vulnerabilities detected
+PG110 FREE Creating table with non-optimal data alignment
+PG101 PRO Missing the CONCURRENTLY in index creation
+PG102 PRO Missing the CONCURRENTLY in index deletion
+PG103 PRO Missing atlas:txmode none directive in file header
+PG104 PRO PRIMARY KEY constraint creation that acquires an ACCESS EXCLUSIVE lock
+PG105 PRO UNIQUE constraint creation that acquires an ACCESS EXCLUSIVE lock
+PG108 PRO Creating an index on a partitioned table blocks writes on all its partitions
+PG109 PRO Adding an EXCLUDE constraint acquires an ACCESS EXCLUSIVE lock and scans the table
+PG301 PRO Column type or collation change that requires a table or index rewrite
+PG302 PRO Adding a column with a volatile DEFAULT value requires a rewrite of the table
+PG303 PRO Modifying a nullable column to non-nullable requires a full table scan
+PG304 PRO Adding a PRIMARY KEY on nullable columns implicitly sets them NOT NULL, full table scan
+PG305 PRO Adding a CHECK constraint that requires a full table scan
+PG306 PRO Adding a FOREIGN KEY constraint that requires a full table scan and blocks writes
+PG307 PRO Changing table logging mode (LOGGED/UNLOGGED) requires a full table rewrite
+PG308 PRO Adding a trigger to an existing table acquires a SHARE ROW EXCLUSIVE lock
+PG309 PRO Adding a STORED generated column requires a full table rewrite
+PG310 PRO Adding an identity column requires a full table rewrite
+PG311 PRO Changing a table's access method requires a full table and index rewrite
+PG312 PRO Redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock
+PG314 PRO Changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup
+PG320 PRO Disabling autovacuum for a table lets dead rows accumulate
+MY101 FREE Adding a non-nullable column without a DEFAULT value to an existing table
+MY102 FREE Adding a column with an inline REFERENCES clause has no actual effect
+MY110 FREE Removing enum values from a column requires a table copy
+MY111 FREE Reordering enum values of a column requires a table copy
+MY112 FREE Inserting new enum values not at the end requires a table copy
+MY113 FREE Exceeding 256 enum values changes storage size and requires a table copy
+MY120 FREE Removing set values from a column requires a table copy
+MY121 FREE Reordering set values of a column requires a table copy
+MY122 FREE Inserting new set values not at the end requires a table copy
+MY123 FREE Exceeding 8, 16, 24, 32 or 64 set values changes the storage size and requires a table copy
+MY130 PRO Changing a column type requires a table copy
+MY131 PRO Adding a foreign key blocks DML
+MY132 PRO Adding a primary key requires a table rebuild
+MY133 PRO Dropping a primary key without adding a new one requires a table copy and blocks DML
+MY134 PRO Adding a FULLTEXT index blocks DML
+MY135 PRO Adding a SPATIAL index blocks DML
+MY136 PRO Changing the table character set requires a table rebuild
+MY137 PRO Modifying the primary key rebuilds the table and its secondary indexes
+MY138 PRO Changing the storage engine requires a table copy and blocks DML
+MY139 PRO Partitioning or removing partitioning from a table requires a table copy and blocks DML
+MY140 PRO Adding a STORED generated column requires a table copy and blocks DML
+MY141 PRO Adding an AUTO_INCREMENT column rebuilds the table and blocks DML
+MY142 PRO Adding a column before existing columns prevents an instant operation on older versions
+MY143 PRO Modifying a generated column requires a table copy and blocks DML
+MY144 PRO Adding a CHECK constraint scans all existing rows
+MY145 PRO Modifying or enforcing a CHECK constraint re-validates all existing rows
+MY146 PRO Dropping system versioning permanently deletes all history rows
+MY147 PRO Changing column nullability requires a table rebuild
+MY148 PRO Changing a column character set or collation requires a table copy and blocks DML
+OW101 PRO User not authorized to modify resource
+OW102 PRO User explicitly denied access to resource
+NM101 FREE Schema name violates the naming convention
+NM102 FREE Table name violates the naming convention
+NM103 FREE Column name violates the naming convention
+NM104 FREE Index name violates the naming convention
+NM105 FREE Foreign-key constraint name violates the naming convention
+NM106 FREE Check constraint name violates the naming convention
+LT101 FREE Modifying a nullable column to non-nullable without a DEFAULT value
+TX101 PRO Migration file contains multiple statements that cannot run in a single transaction
+TX201 PRO Nested transaction detected

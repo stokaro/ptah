@@ -19,13 +19,16 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 
 	aliases := lint.AtlasCodeAliases()
 
-	// Eight Atlas codes report under a differently spelled Ptah rule; six of
+	// Nine Atlas codes report under a differently spelled Ptah rule; six of
 	// them are codes Ptah also uses for a rule of its own and are excluded.
 	// Every engine-specific code left this table when it became a Ptah rule
-	// of the same name (members.go, mysqlcost.go, pgcost.go).
-	c.Assert(aliases, qt.HasLen, 2)
+	// of the same name (members.go, mysqlcost.go, pgcost.go), and MY148 is the
+	// exception that rejoined it: the hazard it names is one MY130 already
+	// reports, so the code has to reach that rule rather than a new one.
+	c.Assert(aliases, qt.HasLen, 3)
 	c.Assert(aliases["BC102"], qt.DeepEquals, []string{"BC101"})
 	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101", "DD103"})
+	c.Assert(aliases["MY148"], qt.DeepEquals, []string{"MY130"})
 }
 
 // TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor holds the reverse direction,

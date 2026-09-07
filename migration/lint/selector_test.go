@@ -144,17 +144,17 @@ func TestSelectors_ANoLintCodeLeavesADeclaredNeighborReported(t *testing.T) {
 		{
 			name: "the built-in code alone",
 			sql:  "-- ptah:nolint DS102\nALTER TABLE users DROP COLUMN legacy;\n",
-			want: []string{"DS102X", "DS102XY"},
+			want: []string{"BC104", "DS102X", "DS102XY"},
 		},
 		{
 			name: "the declared code alone",
 			sql:  "-- ptah:nolint DS102X\nALTER TABLE users DROP COLUMN legacy;\n",
-			want: []string{"DS102", "DS102XY"},
+			want: []string{"BC104", "DS102", "DS102XY"},
 		},
 		{
 			name: "the family",
 			sql:  "-- ptah:nolint DS\nALTER TABLE users DROP COLUMN legacy;\n",
-			want: make([]string, 0),
+			want: []string{"BC104"},
 		},
 	}
 

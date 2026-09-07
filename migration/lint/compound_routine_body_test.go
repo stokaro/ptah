@@ -93,7 +93,7 @@ func TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement(t *testing.T) {
 		{
 			name:     "a drop the migration really performs, after the routine",
 			sql:      "CREATE PROCEDURE purge()\nBEGIN\n  DELETE FROM audit;\n  DROP TABLE sessions;\nEND;\n\nDROP TABLE users;\n",
-			wantRule: []string{"AC101", "DS101"},
+			wantRule: []string{"AC101", "BC103", "DS101"},
 		},
 	}
 
@@ -280,7 +280,7 @@ func TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither(t *testing.T) {
 			// a DROP the migration performs is still reported, at error.
 			name:    "the same drop the migration really performs",
 			sql:     "DROP TABLE legacy_audit;\n",
-			dialect: "postgres", wantRule: []string{"DS101"},
+			dialect: "postgres", wantRule: []string{"BC103", "DS101"},
 		},
 		{
 			// The control that keeps it from firing on everything.

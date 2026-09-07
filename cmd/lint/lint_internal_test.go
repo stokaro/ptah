@@ -80,10 +80,13 @@ func TestPrepareReportOptions_CapturesLocalDirectoryBeforeBuild(t *testing.T) {
 	report, err := migrationlintreport.Build(c.Context(), got, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS101")
-	c.Assert(report.Findings[0].Context.Subjects, qt.HasLen, 1)
+	// The captured directory is what was analyzed, so both findings name the
+	// table the original file dropped rather than the replacement's.
+	c.Assert(report.Findings, qt.HasLen, 2)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "BC103")
 	c.Assert(report.Findings[0].Context.Subjects[0].Name, qt.Equals, "original")
+	c.Assert(report.Findings[1].Rule, qt.Equals, "DS101")
+	c.Assert(report.Findings[1].Context.Subjects[0].Name, qt.Equals, "original")
 }
 
 func TestPrepareReportOptions_ExplicitDirWinsPresentEmptyConfig(t *testing.T) {

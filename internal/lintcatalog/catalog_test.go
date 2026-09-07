@@ -608,13 +608,18 @@ func TestSurfaceColumnMatchesWhatEachProfileReports(t *testing.T) {
 	c.Assert(nativeOnly, qt.Contains, "DS101=both")
 }
 
-// TestAtlasCatalogCoverageHoldsItsFloor is the gate on the catalog's own
-// counts, so that a row cannot slip back to partial or absent without a
-// deliberate edit here. Every row that is not covered carries the reason in
-// its note, the two waived rows are the account-bound ones and no other, and
-// no row is partial since MF104 reached every dialect (stokaro/ptah#2942,
-// stokaro/ptah#2958).
-func TestAtlasCatalogCoverageHoldsItsFloor(t *testing.T) {
+// TestAtlasCatalogNamesEveryRowThatIsNotCovered pins the non-covered rows by
+// code, so that one cannot appear or disappear without a deliberate edit here.
+//
+// It used to assert that the absent and partial sets were EMPTY and that the
+// covered count sat above a floor. Both were true and neither could see the
+// defect: the catalog agreed with itself while it was nineteen checks behind
+// the page it was built from, and a floor on how many rows are covered rises
+// as happily from a wrong claim as from a right one (stokaro/ptah#2972). The
+// set that decides completeness is compared against the reviewed reference in
+// [lintcatalog.CompareAtlasReference], which Validate runs; this test pins
+// what the catalog SAYS about each code it holds.
+func TestAtlasCatalogNamesEveryRowThatIsNotCovered(t *testing.T) {
 	c := qt.New(t)
 
 	byStatus := make(map[lintcatalog.AtlasStatus][]string)
@@ -624,9 +629,44 @@ func TestAtlasCatalogCoverageHoldsItsFloor(t *testing.T) {
 			qt.Commentf("%s is %s and gives no reason", check.Code, check.Status))
 	}
 
-	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.HasLen, 0)
-	c.Assert(byStatus[lintcatalog.StatusPartial], qt.HasLen, 0)
+	// MY142 is measured absent rather than unimplemented: ADD COLUMN ... FIRST
+	// accepts ALGORITHM=INSTANT on every MySQL line this repository declares,
+	// so a rule would be a false positive wherever Ptah is tested.
+	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.DeepEquals, []string{"MY142"})
+	// PG108 needs the migration to declare the parent partitioned; MY148 needs
+	// the dev database to prove the copy. Each note says which input is missing.
+	c.Assert(byStatus[lintcatalog.StatusPartial], qt.DeepEquals, []string{"MY148", "PG108"})
+	// The two account-bound rows, and no others. A third waiver would be a way
+	// to make the count green without implementing anything.
 	c.Assert(byStatus[lintcatalog.StatusWaived], qt.DeepEquals, []string{"OW101", "OW102"})
-	c.Assert(len(byStatus[lintcatalog.StatusCovered]) >= 55, qt.IsTrue,
-		qt.Commentf("covered rows fell to %d", len(byStatus[lintcatalog.StatusCovered])))
+}
+
+// TestAtlasCatalogMatchesTheReviewedReference is the check the comparison was
+// missing: the catalog's code set against the committed snapshot, both ways.
+func TestAtlasCatalogMatchesTheReviewedReference(t *testing.T) {
+	c := qt.New(t)
+
+	drift := lintcatalog.CompareAtlasReference()
+
+	c.Assert(drift.Empty(), qt.IsTrue, qt.Commentf("%s", drift.Error()))
+}
+
+// TestAtlasReference_Parses keeps the embedded snapshot readable, since
+// [lintcatalog.AtlasReference] panics on a file it cannot parse rather than
+// answering "no checks" for one it failed to read.
+func TestAtlasReference_Parses(t *testing.T) {
+	c := qt.New(t)
+
+	reference := lintcatalog.AtlasReference()
+
+	c.Assert(len(reference) > 70, qt.IsTrue,
+		qt.Commentf("the reviewed reference holds only %d checks", len(reference)))
+	codes := make(map[string]int, len(reference))
+	for _, entry := range reference {
+		codes[entry.Code]++
+		c.Assert(entry.Meaning, qt.Not(qt.Equals), "")
+	}
+	for code, count := range codes {
+		c.Assert(count, qt.Equals, 1, qt.Commentf("%s appears %d times", code, count))
+	}
 }

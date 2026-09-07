@@ -12,6 +12,14 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
+// atlasGapDroppedTableMessageTail is what every BC103 message says after it has
+// named the table. It is spelled out here rather than read from the package, so
+// a reworded production message fails a test instead of agreeing with itself.
+const atlasGapDroppedTableMessageTail = "application versions already deployed against the old schema " +
+	"still query, so each of them starts failing the moment this migration commits -- a rollout break " +
+	"that lands even on an empty table, which no backup mitigates; deploy code that no longer reads it " +
+	"first, then drop it in a later release"
+
 func TestAnalyzeFS_VersionSelectionPreservesCompleteSnapshot(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
@@ -37,7 +45,7 @@ func TestAnalyzeFS_VersionSelectionPreservesCompleteSnapshot(t *testing.T) {
 	selected := analysis.SelectedFiles()
 	c.Assert(selected, qt.HasLen, 1)
 	c.Assert(selected[0].Name, qt.Equals, "2_drop.sql")
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(fstest.TestFS(analysis.SnapshotFS(), "1_create.sql", "2_drop.sql"), qt.IsNil)
 }
 
@@ -174,9 +182,11 @@ func TestAnalyzeFS_SameLineStatementsHaveStableContexts(t *testing.T) {
 	c.Assert(files[0].SQL[first.Span.Start:first.Span.End], qt.Equals, first.SQL)
 	c.Assert(files[0].SQL[second.Span.Start:second.Span.End], qt.Equals, second.SQL)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101", "DS102"})
-	c.Assert(findings[0].Context.StatementIndex, qt.Equals, 0)
-	c.Assert(findings[1].Context.StatementIndex, qt.Equals, 1)
+	// Both statements sit on one line, so the order within it is by rule code
+	// rather than by statement, and the statement each finding belongs to is
+	// what the context still has to carry.
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC104", "DS101", "DS102"})
+	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{0, 1, 0, 1})
 }
 
 // subjectsOf collects each finding's subjects, keeping finding order. Comparing
@@ -198,6 +208,25 @@ func messagesOf(findings []lint.Finding) []string {
 		messages = append(messages, finding.Message)
 	}
 	return messages
+}
+
+// filesOf collects the file path each finding points at, keeping finding order.
+func filesOf(findings []lint.Finding) []string {
+	paths := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		paths = append(paths, finding.File)
+	}
+	return paths
+}
+
+// linesOf collects the source line each finding points at, keeping finding
+// order.
+func linesOf(findings []lint.Finding) []int {
+	lines := make([]int, 0, len(findings))
+	for _, finding := range findings {
+		lines = append(lines, finding.Line)
+	}
+	return lines
 }
 
 // statementIndexesOf collects the analyzed statement each finding belongs to.
@@ -230,9 +259,11 @@ func TestAnalyzeFS_MultiTargetDropReportsOnlyUnsafeTables(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101", "DS101"})
-	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{1, 1})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC103", "DS101", "DS101"})
+	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{1, 1, 1, 1})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectTable, Name: "audit_log"}},
+		{{Kind: lint.SubjectTable, Name: "users"}},
 		{{Kind: lint.SubjectTable, Name: "audit_log"}},
 		{{Kind: lint.SubjectTable, Name: "users"}},
 	})
@@ -253,12 +284,16 @@ func TestAnalyzeFS_DropTableSubjectsPreserveIdentifierSpelling(t *testing.T) {
 	c.Assert(subjectsOf(analysis.Findings()), qt.DeepEquals, [][]lint.Subject{
 		{{Kind: lint.SubjectTable, Name: `"Users"`}},
 		{{Kind: lint.SubjectTable, Name: `public."users"`}},
+		{{Kind: lint.SubjectTable, Name: `"Users"`}},
+		{{Kind: lint.SubjectTable, Name: `public."users"`}},
 	})
 }
 
 // TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable pins what a DROP TABLE
-// with several targets analyzes into: one finding per destroyed table, each
-// carrying exactly the table it is about.
+// with several targets analyzes into: one finding per destroyed table per
+// consequence, each carrying exactly the table it is about. A drop carries two
+// consequences -- the rows it destroys and the name deployed clients still
+// query -- so the per-target split has to hold for each of them separately.
 //
 // The three tables are created in one order (mid, zeta, alpha), dropped in a
 // second (zeta, alpha, mid), and sort into a third (alpha, mid, zeta), so
@@ -277,16 +312,22 @@ func TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable(t *testing.T) {
 		want  [][]lint.Subject
 	}{
 		{
-			name:  "single target is one finding",
+			name:  "single target is one finding per consequence",
 			drop:  "DROP TABLE zeta;",
-			rules: []string{"DS101"},
-			want:  [][]lint.Subject{{{Kind: lint.SubjectTable, Name: "zeta"}}},
+			rules: []string{"BC103", "DS101"},
+			want: [][]lint.Subject{
+				{{Kind: lint.SubjectTable, Name: "zeta"}},
+				{{Kind: lint.SubjectTable, Name: "zeta"}},
+			},
 		},
 		{
 			name:  "every target is its own finding, ordered by name",
 			drop:  "DROP TABLE zeta, alpha, mid;",
-			rules: []string{"DS101", "DS101", "DS101"},
+			rules: []string{"BC103", "BC103", "BC103", "DS101", "DS101", "DS101"},
 			want: [][]lint.Subject{
+				{{Kind: lint.SubjectTable, Name: "alpha"}},
+				{{Kind: lint.SubjectTable, Name: "mid"}},
+				{{Kind: lint.SubjectTable, Name: "zeta"}},
 				{{Kind: lint.SubjectTable, Name: "alpha"}},
 				{{Kind: lint.SubjectTable, Name: "mid"}},
 				{{Kind: lint.SubjectTable, Name: "zeta"}},
@@ -333,6 +374,8 @@ func TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(messagesOf(analysis.Findings()), qt.DeepEquals, []string{
+		`dropping table public."Alpha" retires a name ` + atlasGapDroppedTableMessageTail,
+		"dropping table zeta retires a name " + atlasGapDroppedTableMessageTail,
 		`DROP TABLE permanently deletes table public."Alpha" and every row in it; ` +
 			"take a verified backup first and consider a rename-and-retire window instead",
 		"DROP TABLE permanently deletes table zeta and every row in it; " +
@@ -343,6 +386,11 @@ func TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage(t *testing.T) {
 // TestAnalyzeFS_MultiTargetDropOrdersByLogicalName pins the sort key against the
 // two candidates that reproduce all-lowercase unqualified fixtures identically:
 // a case-folding comparison, and a comparison of the reference as written.
+//
+// Each list appears twice because the statement carries two consequences, and
+// seeing the same sequence both times is the second thing this pins: the two
+// reports derive their order from one sort, so a comma list cannot be reported
+// in one order as data loss and another as a compatibility break.
 func TestAnalyzeFS_MultiTargetDropOrdersByLogicalName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -353,14 +401,14 @@ func TestAnalyzeFS_MultiTargetDropOrdersByLogicalName(t *testing.T) {
 			// Byte-wise, "Mid" and "Zeta" lead. Case-folded, alpha leads.
 			name: "uppercase sorts ahead of lowercase",
 			drop: `DROP TABLE "Zeta", alpha, "Mid";`,
-			want: []string{`"Mid"`, `"Zeta"`, "alpha"},
+			want: []string{`"Mid"`, `"Zeta"`, "alpha", `"Mid"`, `"Zeta"`, "alpha"},
 		},
 		{
 			// By logical name: aaa then bbb. By the reference as written,
 			// "public.aaa" would sort after "bbb".
 			name: "qualification is not part of the key",
 			drop: "DROP TABLE public.aaa, bbb;",
-			want: []string{"public.aaa", "bbb"},
+			want: []string{"public.aaa", "bbb", "public.aaa", "bbb"},
 		},
 	}
 
@@ -383,8 +431,10 @@ func TestAnalyzeFS_MultiTargetDropOrdersByLogicalName(t *testing.T) {
 
 // TestAnalyzeFS_UnparsableDropTargetsStillReport keeps the fail-closed path
 // intact: a DROP TABLE whose target list cannot be read to the end still
-// reports, as one subject-less finding. Splitting per target must not turn "no
-// target recovered" into "nothing to report".
+// reports, as one subject-less finding per consequence. Splitting per target
+// must not turn "no target recovered" into "nothing to report", and neither
+// consequence may be the one that goes quiet -- an unreadable target list is
+// exactly as much a rollout break as a readable one.
 func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{"1_drop.sql": "DROP TABLE IF EXISTS;"})
@@ -393,9 +443,10 @@ func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"})
-	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{nil})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{nil, nil})
 	c.Assert(messagesOf(findings), qt.DeepEquals, []string{
+		"dropping the table retires a name " + atlasGapDroppedTableMessageTail,
 		"DROP TABLE permanently deletes the table and every row in it; " +
 			"take a verified backup first and consider a rename-and-retire window instead",
 	})
@@ -446,10 +497,10 @@ func TestAnalyzeFS_SQLiteBracketedDropTableRetainsFindingContext(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "DS101")
-	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{
-		{Kind: lint.SubjectTable, Name: "[Users]"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectTable, Name: "[Users]"}},
+		{{Kind: lint.SubjectTable, Name: "[Users]"}},
 	})
 }
 
@@ -466,21 +517,15 @@ func TestAnalyzeFS_ColumnFindingsExposeStructuredSubjects(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DD101", "DS102"})
-	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{
-		{
-			Kind:     lint.SubjectColumn,
-			Name:     `"TenantID"`,
-			Parent:   `public."Users"`,
-			DataType: "UUID",
-		},
-	})
-	c.Assert(findings[1].Context.Subjects, qt.DeepEquals, []lint.Subject{
-		{
-			Kind:   lint.SubjectColumn,
-			Name:   `"Legacy"`,
-			Parent: `public."Users"`,
-		},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DD101", "DS102"})
+	// The retired name reaches the rollout-break finding as a structured
+	// subject too, and identically to the data-loss one: a renderer that reads
+	// a finding's primary subject must be able to name the column whichever of
+	// the two consequences it is showing.
+	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
+		{{Kind: lint.SubjectColumn, Name: `"Legacy"`, Parent: `public."Users"`}},
+		{{Kind: lint.SubjectColumn, Name: `"TenantID"`, Parent: `public."Users"`, DataType: "UUID"}},
+		{{Kind: lint.SubjectColumn, Name: `"Legacy"`, Parent: `public."Users"`}},
 	})
 }
 
@@ -501,7 +546,7 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"DS101", "DS102", "DD101"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102", "DD101"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -526,7 +571,7 @@ ALTER TABLE accounts DROP COLUMN legacy;
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"DS101", "DS102"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -563,7 +608,8 @@ ALTER TABLE accounts DROP COLUMN legacy;
 // TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly.
 //
 // Reverting the change prints the native column as
-// []string{"PG101", "BC101", "DS101", "TX201"} instead of []string{"BC101"}.
+// []string{"PG101", "BC101", "BC103", "DS101", "TX201"} instead of
+// []string{"BC101", "BC103"}.
 func TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnBothSurfaces(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
@@ -586,7 +632,11 @@ BEGIN;
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC101"})
+	// BC103 survives `-- atlas:nolint destructive` on the native surface, and
+	// that is the point of the directive rather than a leak in it: the operator
+	// accepted losing the rows in legacy_users and said nothing about the
+	// deployed versions that still query the name.
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC101", "BC103"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -648,7 +698,7 @@ DROP TABLE users;
 	nativeFiles := native.Files()
 	c.Assert(nativeFiles, qt.HasLen, 1)
 	c.Assert(nativeFiles[0].Ignored, qt.IsFalse)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"DS101"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
 
 	atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -726,7 +776,7 @@ func TestAnalyzeFS_CapturesAtlasTemplateInputsOnce(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(fsys.reads, qt.DeepEquals, map[string]int{
 		"1_template.sql":  1,
 		"atlas.sum":       1,
