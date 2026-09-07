@@ -107,7 +107,7 @@
       "enabled": false
     },
     {
-      "description": "go.mod carries two Go versions with different lifecycles. `toolchain` is what CI builds with and moves on every patch release, so Renovate keeps proposing it -- stokaro/ptah#2732 is one such bump and they are welcome. The `go` directive is the published compatibility floor: go.5x5.cz/ptah is a released import path, so raising it forces every consumer onto a newer language version, and AGENTS.md says it moves on a human decision. Renovate moved it once, in stokaro/ptah#223, under the title `update dependency go`, which reads like any other bump. The two are separable only by depType, so that is what this matches: `golang` is the directive and `toolchain` is the directive below it. Disabling the first leaves the second flowing. TestRenovate_LeavesTheCompatibilityFloorToAHuman requires this rule to exist.",
+      "description": "go.mod carries two Go versions with different lifecycles. `toolchain` is what CI builds with and moves on every patch release, so Renovate keeps proposing it -- stokaro/ptah#2732 is one such bump and they are welcome. The `go` directive is the published compatibility floor: the module is a released import path, so raising it forces every consumer onto a newer language version, and AGENTS.md says it moves on a human decision. Renovate moved it once, in stokaro/ptah#223, under the title `update dependency go`, which reads like any other bump. The two are separable only by depType, so that is what this matches: `golang` is the directive and `toolchain` is the directive below it. Disabling the first leaves the second flowing. TestRenovate_LeavesTheCompatibilityFloorToAHuman requires this rule to exist.",
       "matchManagers": [
         "gomod"
       ],

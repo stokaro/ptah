@@ -37,7 +37,7 @@ type renovateRule struct {
 //
 // go.mod carries two Go versions with different lifecycles. `toolchain` is what
 // CI builds with and moves on every patch release. The `go` directive is the
-// published compatibility floor: go.5x5.cz/ptah is a released import path, so
+// published compatibility floor: the module is a released import path, so
 // raising it forces every consumer onto a newer language version, and AGENTS.md
 // says it moves on a human decision.
 //
