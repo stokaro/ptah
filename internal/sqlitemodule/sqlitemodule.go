@@ -43,8 +43,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	_ "modernc.org/sqlite" // SQLite database/sql driver, for Registered
 )
 
 // Querier is the read-only slice of a database handle this package needs. It

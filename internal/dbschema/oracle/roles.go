@@ -3,11 +3,8 @@ package oracle
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/sijms/go-ora/v3/network"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -39,11 +36,11 @@ const (
 // language other than English -- so this asks the driver for the server's own
 // error number.
 func isRoleReadDenied(err error) bool {
-	var oracleErr *network.OracleError
-	if !errors.As(err, &oracleErr) {
+	code, ok := oracleErrorCode(err)
+	if !ok {
 		return false
 	}
-	switch oracleErr.ErrCode {
+	switch code {
 	case errViewNotVisible, errInsufficientPrivileg:
 		return true
 	default:

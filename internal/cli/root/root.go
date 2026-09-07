@@ -104,31 +104,25 @@ func ExecuteCommand(cmd *cobra.Command, args ...string) {
 	}
 }
 
-// runCommand runs cmd and reports the status the process should exit with. It
-// exists so that every release the command set up -- signal delivery above all
-// -- is torn down before os.Exit, which runs no deferred function, and so that
-// the exit-code contract can be exercised without ending the test binary.
+// runCommand is RunContext under a context the process's own signals cancel.
+// It exists so that every release the command set up -- signal delivery above
+// all -- is torn down before os.Exit, which runs no deferred function, and so
+// that the exit-code contract can be exercised without ending the test binary.
 func runCommand(cmd *cobra.Command, args ...string) int {
-	cmd.SetArgs(args)
-
 	// An interrupt cancels the command rather than killing the process, so the
 	// releases it defers -- a dev-database container above all -- actually run
 	// before the exit. See withInterruptCancel.
 	ctx, interrupted, release := withInterruptCancel(context.Background(), cmd.ErrOrStderr())
 	defer release()
-	cmd.SetContext(ctx)
 
-	err := executeWithRecovery(cmd)
+	code := RunContext(ctx, cmd, args...)
 	if sig := interrupted(); sig != nil {
 		// An interrupted command reports the interrupt, not whatever error the
 		// cancelation happened to surface as. What that status is belongs to
 		// the surface: see interruptExitCode.
 		return interruptExitCode(cmd, sig)
 	}
-	if err != nil {
-		return exitcode.Code(err, 2)
-	}
-	return 0
+	return code
 }
 
 func executeWithRecovery(cmd *cobra.Command) (err error) {
