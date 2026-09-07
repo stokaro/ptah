@@ -5611,8 +5611,8 @@
       "inboundLinks": [
         "/start/quick-start/"
       ],
-      "visibleWords": 294,
-      "sourceBytes": 4531
+      "visibleWords": 356,
+      "sourceBytes": 5030
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",

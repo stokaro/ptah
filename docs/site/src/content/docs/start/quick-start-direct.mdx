@@ -11,6 +11,7 @@ sourceOfTruth:
   - internal/cli/schema
   - docs/exit_codes.md
 generated: false
+quickstart: true
 searchAliases:
   - direct schema evolution
   - schema drift CI
@@ -114,7 +115,7 @@ the live database.
 ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
 ```
 
-Expected standard output:
+Expected output on standard output:
 
 ```text
 Planned schema changes:
@@ -131,7 +132,7 @@ ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-appro
 ptah schema drift --schema-file schema.sql --db-url sqlite://app.db
 ```
 
-Expected output ends with:
+Expected output on standard output:
 
 ```text
 Schema apply completed successfully.
@@ -143,13 +144,31 @@ No schema drift detected.
 plan or use an interactive approval before applying to a shared database.
 :::
 
-## 4. Use drift as a CI gate
+## 4. Read the column back from the database
 
-The same check belongs in automation:
+The apply reported success and drift reported none. Both are Ptah's own
+verdicts; this reads the table itself:
 
 ```console
-ptah schema drift --schema-file schema.sql --db-url "$DATABASE_URL"
+ptah db read --db-url sqlite://app.db
 ```
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL,
+  "created_at" TEXT
+);
+```
+
+The column is there, in `app.db` rather than in `schema.sql`.
+
+## 5. Use drift as a CI gate
+
+The same check belongs in automation, with the URL coming from the
+environment: `ptah schema drift --schema-file schema.sql --db-url "$DATABASE_URL"`.
 
 Branch on the exit status, not on captured prose:
 
