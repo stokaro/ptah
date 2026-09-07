@@ -85,8 +85,9 @@ landing page as an explicit child such as `Overview`.
   heading remains a disclosure control, while its parent breadcrumb links to
   that first child.
 - The validated top-level order is Getting started; Versioned migrations;
-  Direct schema changes; Inference migrations; Schemas; Databases; Test,
-  deliver, and operate; Extend and integrate; Reference; Atlas compatibility. Versioned and direct work remain separate because they are
+  Direct schema changes; Inference migrations; Schemas; Databases;
+  Testing and safety; Deliver and operate; Extend and integrate; Reference;
+  Atlas compatibility. Versioned and direct work remain separate because they are
   different operational choices, not subdivisions of one reader task.
 - Advanced inference strategy, reference, generated reference, and Atlas
   evidence groups are collapsed by default.
