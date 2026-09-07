@@ -1743,8 +1743,8 @@
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
-      "visibleWords": 3000,
-      "sourceBytes": 24548
+      "visibleWords": 3117,
+      "sourceBytes": 25337
     },
     {
       "path": "docs/site/src/content/docs/extend/query-builder.md",
