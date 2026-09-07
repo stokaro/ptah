@@ -63,7 +63,7 @@ async function keyboardChecks(page, origin, base) {
   const problems = [];
 
   await page.goto(`${origin}${base}/schema/document/`, { waitUntil: 'load' });
-  const sidebarSummary = page.locator('nav.sidebar summary', { hasText: 'Define and understand schemas' }).first();
+  const sidebarSummary = page.locator('nav.sidebar summary', { hasText: 'Schemas' }).first();
   if (await sidebarSummary.count() !== 1) {
     problems.push('/schema/document/: schema sidebar disclosure is absent');
   } else {
