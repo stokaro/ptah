@@ -24,16 +24,53 @@ sourceMode: source-neutral
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Use this page after the [default quick start](../quick-start/), while
-`ptah-quick-start/schema.sql` and `app.db` still exist. You will add a column,
-inspect the `ALTER TABLE` Ptah derives, apply it, and prove the database has not
-drifted from the file.
+Use this page after the [default quick start](../quick-start/). It continues
+from that tutorial's `schema.sql` and `app.db`, and rebuilds them below if you
+have already cleaned up. You will add a column, inspect the `ALTER TABLE` Ptah
+derives, apply it, and prove the database has not drifted from the file.
 
 ## Prerequisites
 
 - Your terminal is in `ptah-quick-start`.
 - `app.db` contains the `users` table from the default quick start.
 - `schema.sql` still describes that table.
+
+If you already removed the directory, rebuild that state here rather than
+working through the quick start again. The commands are its first and third
+steps:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir ptah-quick-start
+cd ptah-quick-start
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-quick-start | Out-Null
+Set-Location ptah-quick-start
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content schema.sql
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+</Tabs>
 
 ## 1. Change the desired schema
 

@@ -5457,8 +5457,8 @@
       "inboundLinks": [
         "/start/quick-start/"
       ],
-      "visibleWords": 255,
-      "sourceBytes": 3664
+      "visibleWords": 294,
+      "sourceBytes": 4531
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
@@ -5563,8 +5563,8 @@
         "/start/overview/",
         "/start/quick-start-direct/"
       ],
-      "visibleWords": 282,
-      "sourceBytes": 3981
+      "visibleWords": 321,
+      "sourceBytes": 4274
     },
     {
       "path": "docs/site/src/content/docs/testing/ci.md",
