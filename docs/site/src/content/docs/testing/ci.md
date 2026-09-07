@@ -93,6 +93,118 @@ separate JSON safety run drives the destructive-change gate. With
 after the comment is posted; lint failures also fail the job after the comment
 is posted.
 
+### What the Action posts
+
+The comment is assembled from the three commands above. On a pull request that
+adds one table it reads:
+
+````markdown
+## Ptah migration plan
+
+Safety: safe.
+Plan command: exit 0.
+Safety command: exit 0.
+Lint command: exit 0.
+
+<details><summary>Migration SQL and safety text</summary>
+
+```sql
+Generating migration from ./models to database sqlite://app.db
+=== GENERATE MIGRATION SQL ===
+
+Safety classification:
+  #  severity      subject                  reason
+  1  safe         *ast.CreateTableNode     does not remove data or tighten constraints
+=== MIGRATION SQL ===
+
+-- Migration generated from schema differences
+-- Generated on: now
+-- Source: ./models
+-- Target: sqlite://app.db
+
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+
+Generated 1 migration statements.
+⚠️  Review the SQL carefully before executing!
+
+```
+
+</details>
+
+<details><summary>Safety JSON</summary>
+
+```json
+{
+  "highest": "safe",
+  "destructive": false,
+  "assessments": [
+    {
+      "index": 1,
+      "node_type": "*ast.CreateTableNode",
+      "statement": "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY,\n  \"email\" TEXT NOT NULL\n)",
+      "severity": "safe",
+      "reason": "does not remove data or tighten constraints"
+    }
+  ]
+}
+
+```
+
+</details>
+
+<details><summary>Lint JSON (0 finding(s))</summary>
+
+```json
+{
+  "failed": false,
+  "failure_threshold": "error",
+  "dialect": "sqlite",
+  "dir": "./migrations",
+  "findings": []
+}
+
+```
+
+</details>
+````
+
+The summary lines are the review surface; the collapsed sections carry the
+evidence. A reviewer who only reads the four lines still learns the safety
+verdict and whether any command failed.
+
+The check run beside it, `Ptah destructive-change verdict`, carries the same
+facts in the form a branch protection rule can require:
+
+```text
+Ptah migration safety: safe
+
+Safety verdict: safe.
+Destructive changes: no.
+Plan command exit code: 0.
+Safety command exit code: 0.
+Lint command exit code: 0.
+Lint findings: 0.
+```
+
+Its conclusion is `failure` when any of the three commands exited non-zero, and
+when the plan is destructive and `allow-destructive` is not set.
+
+To reproduce the comment body without a pull request, run the three commands
+into files and call the Action's own assembler, which is exported for this:
+
+```bash
+node -e '
+  const { buildComment } = require("./.github/actions/ptah/comment.js");
+  console.log(buildComment());
+'
+```
+
+with `PTAH_PLAN_PATH`, `PTAH_SAFETY_PATH`, `PTAH_LINT_PATH`, their `_ERROR_`
+counterparts, and the three `_EXIT_CODE` variables pointing at that run.
+
 ### Inputs
 
 | Input | Default | Description |

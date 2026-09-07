@@ -92,6 +92,11 @@ function buildComment() {
   return truncateComment(lines.join("\n"));
 }
 
+// buildComment is exported so the documented comment body can be produced by
+// running the same code the Action runs, rather than transcribed by hand into
+// a page that then drifts from it.
+module.exports.buildComment = buildComment;
+
 function readText(path) {
   if (!path) {
     return "";
