@@ -186,9 +186,15 @@ the target dropped on its own, so it stays quiet about:
   for this target, where the schema already says what this target gets.
 
 Reporting is not yet exhaustive over every property every dialect drops. It
-covers what a renderer names as skipped and the table options a target cannot
-carry; [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records
-what remains.
+covers what a renderer names as skipped, the table options a target cannot
+carry, and the comments a target does not store;
+[stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
+remains.
+
+A comment is reported wherever the target does not store it, including where the
+render writes it as a `-- text` line. SQLite and SQL Server keep none of a
+table, column or index comment; the MySQL family, Oracle and ClickHouse keep the
+first two and have no clause for the third.
 
 ## Format HCL schema files
 

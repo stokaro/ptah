@@ -503,6 +503,9 @@ func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
 
 // VisitIndex renders a CREATE INDEX statement for MySQL
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+	// The MySQL family has an index COMMENT clause and this renderer writes
+	// none, so the declaration reaches the output nowhere at all.
+	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
 	var parts []string
 
 	parts = append(parts, "CREATE")
