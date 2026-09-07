@@ -3327,8 +3327,8 @@
         "/operate/kubernetes-operator/",
         "/versioned/maintain-history/"
       ],
-      "visibleWords": 694,
-      "sourceBytes": 6714
+      "visibleWords": 1041,
+      "sourceBytes": 9067
     },
     {
       "path": "docs/site/src/content/docs/operate/kubernetes-operator.md",
