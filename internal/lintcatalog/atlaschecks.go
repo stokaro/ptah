@@ -98,9 +98,9 @@ var atlasChecks = []AtlasCheck{
 	{Code: "BC102", Meaning: "renaming a column", PtahRules: []string{"BC101"}, Status: StatusCovered, Note: "one rule reports both object kinds"},
 	{
 		Code: "BC103", Meaning: "dropping a table", PtahRules: []string{"BC103"}, Status: StatusCovered,
-		Note: "the rollout break, not the row loss DS101 reports on the same statement: separately " +
-			"suppressible, because an operator accepting the data loss has not accepted deployed clients " +
-			"failing; reported by `ptah migrations lint`, not by the compatibility surface and not by an apply gate",
+		Note: "the rollout break, not the row loss DS101 reports on the same statement, and separately " +
+			"suppressible: accepting the data loss is not accepting deployed clients failing. Native " +
+			"`ptah migrations lint` only; no apply gate",
 	},
 	{
 		Code: "BC104", Meaning: "dropping a column", PtahRules: []string{"BC104"}, Status: StatusCovered,

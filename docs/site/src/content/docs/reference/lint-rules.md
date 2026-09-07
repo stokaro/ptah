@@ -339,7 +339,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | covered — PG303 on PostgreSQL, CockroachDB, YugabyteDB and Spanner, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse; every engine measured, each with its own failure named |
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
-| `BC103` | dropping a table | no | `BC103` | covered — the rollout break, not the row loss DS101 reports on the same statement: separately suppressible, because an operator accepting the data loss has not accepted deployed clients failing; reported by `ptah migrations lint`, not by the compatibility surface and not by an apply gate |
+| `BC103` | dropping a table | no | `BC103` | covered — the rollout break, not the row loss DS101 reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |
 | `BC104` | dropping a column | no | `BC104` | covered — as BC103, beside DS102, and reported on the same surface; a column of a table this migration itself created is exempt, which DS102 is deliberately not |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
 | `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `MY102` | covered |

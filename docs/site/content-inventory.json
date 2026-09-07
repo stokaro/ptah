@@ -3952,8 +3952,8 @@
         "/schema/security/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5781,
-      "sourceBytes": 38490
+      "visibleWords": 5770,
+      "sourceBytes": 38430
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
