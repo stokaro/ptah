@@ -10,46 +10,60 @@ import (
 	"ptah.run/internal/cli/atlas"
 )
 
-// TestSchemaUIFlagsAreRegisteredRefusals pins the decision taken on --web: it
-// parses, and it refuses with a named reason.
+// TestSchemaExportRefusesWhatItCannotSelect pins the one UI-bound refusal left.
 //
-// --export was here too until stokaro/ptah#1620 implemented it. What is left of
-// it in this table is the case where there is nothing to select, which still
-// has to refuse for the reason the whole flag once did.
+// --web and --export were both registered refusals. --export was implemented in
+// stokaro/ptah#1620 and --web in stokaro/ptah#3011, so what remains here is the
+// case where --export has nothing to select, which still has to refuse for the
+// reason the whole flag once did: emitting the ordinary report would let an
+// operator believe their exporter ran.
+func TestSchemaExportRefusesWhatItCannotSelect(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(c.TempDir(), "ui-flags.db")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--from", "sqlite://" + dbPath,
+		"--to", "sqlite://" + dbPath,
+		"--export",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out.String(), qt.Contains, "an exporter is declared by an atlas.hcl `exporter` block")
+}
+
+// TestSchemaWebWritesAnArtifactAndSaysWhereItWent pins what replaced the
+// refusal, on both verbs and on both spellings of the flag.
 //
-// Reverted, both rows fail with `unknown flag`, which is the state that made a
-// script passing the spelling unable to learn anything. Turned into a silent
-// accept, both rows fail on the exit status instead — which is the outcome this
-// pins against, because an accepted-and-ignored --export would report an export
-// that never happened.
-func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
+// CI is set for the whole test, so the run is one that cannot open a browser
+// and the assertion is about the artifact rather than about this machine's
+// desktop. That the suppression is honored on a machine that COULD open is
+// pinned in internal/fileopen, where the environment is a parameter.
+func TestSchemaWebWritesAnArtifactAndSaysWhereItWent(t *testing.T) {
 	tests := []struct {
 		name string
 		args func(dbPath string) []string
-		want string
 	}{
 		{
 			name: "schema inspect --web",
 			args: func(dbPath string) []string {
 				return []string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--web"}
 			},
-			want: "atlas schema inspect accepts --web, but Ptah does not implement its behavior",
 		},
 		{
 			name: "schema inspect -w",
 			args: func(dbPath string) []string {
 				return []string{"schema", "inspect", "--url", "sqlite://" + dbPath, "-w"}
 			},
-			want: "render it with --format '{{ mermaid . }}'",
 		},
-		// --export left this table in stokaro/ptah#1620: it is implemented, so
-		// there is no refusal to word. Its own refusals -- the ones that keep
-		// an export nobody declared from silently emitting the ordinary
-		// report -- are covered by TestSchemaExportRefusesWhatItCannotResolve.
 		{
-			// The twin of the two inspect rows above. It answered `unknown
-			// flag` until the flag was registered, which is the state a script
-			// passing the documented spelling could learn nothing from.
 			name: "schema diff --web",
 			args: func(dbPath string) []string {
 				return []string{
@@ -59,7 +73,6 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 					"--web",
 				}
 			},
-			want: "atlas schema diff accepts --web, but Ptah does not implement its behavior",
 		},
 		{
 			name: "schema diff -w",
@@ -71,24 +84,12 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 					"-w",
 				}
 			},
-			want: "render it with --format '{{ mermaid . }}'",
-		},
-		{
-			name: "schema diff --export with no project config",
-			args: func(dbPath string) []string {
-				return []string{
-					"schema", "diff",
-					"--from", "sqlite://" + dbPath,
-					"--to", "sqlite://" + dbPath,
-					"--export",
-				}
-			},
-			want: "an exporter is declared by an atlas.hcl `exporter` block",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			t.Setenv("CI", "true")
 			dbPath := filepath.Join(c.TempDir(), "ui-flags.db")
 			createSQLiteSchemaCleanTable(c, dbPath, "users")
 
@@ -100,8 +101,9 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(out.String(), qt.Contains, test.want)
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Contains, "ERD written to ")
+			c.Assert(out.String(), qt.Contains, "not opened: CI is set")
 		})
 	}
 }

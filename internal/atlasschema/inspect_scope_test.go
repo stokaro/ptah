@@ -28,11 +28,12 @@ func TestInspect_EmptyDatabaseReportsItsSchema(t *testing.T) {
 	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty.db"))
 	defer dbschema.CloseAndWarn(conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "json",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Equals, `{"schemas":[{"name":"main"}]}`)
 }
 
@@ -47,11 +48,12 @@ func TestInspect_EmptyDatabaseRendersItsSchemaBlock(t *testing.T) {
 	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty-hcl.db"))
 	defer dbschema.CloseAndWarn(conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `schema "main" {`)
 	c.Assert(rendered, qt.Not(qt.Contains), "not supported")
 }
@@ -66,11 +68,12 @@ func TestInspect_SQLOutputHasNoStatementForTheDefaultNamespace(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	createInspectSchema(c, conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "sql",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `CREATE TABLE "users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "not supported")
 	c.Assert(rendered, qt.Not(qt.Matches), "(?s)^;.*")

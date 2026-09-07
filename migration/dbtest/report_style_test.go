@@ -65,8 +65,15 @@ func TestReportHTML_FetchesNothing(t *testing.T) {
 
 	page := styledReport(c)
 
-	c.Assert(regexp.MustCompile(`(?i)(https?:)?//[a-z0-9.-]+\.[a-z]{2,}`).FindAllString(page, -1), qt.HasLen, 0)
+	// The subject is fetching, not mentioning: the footer links to Ptah, and an
+	// anchor is inert until somebody clicks it. What is forbidden is the markup
+	// that fetches without being asked, and `src` is the attribute that does --
+	// `href` is not in the pattern because the only element that fetches through
+	// one is <link>, which the loop forbids outright.
+	c.Assert(regexp.MustCompile(`(?i)src\s*=\s*"(https?:)?//`).FindAllString(page, -1), qt.HasLen, 0)
 	for _, element := range []string{"<script", "<link", "<img", "@import"} {
 		c.Assert(page, qt.Not(qt.Contains), element)
 	}
+	// One outside address, and it is the footer's anchor.
+	c.Assert(regexp.MustCompile(`(?i)<a [^>]*href="https?://`).FindAllString(page, -1), qt.HasLen, 1)
 }

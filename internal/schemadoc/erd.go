@@ -24,6 +24,9 @@ type node struct {
 	Name       string
 	X, Y, W, H float64
 	Layer, Row int
+	// Change is what a comparison found about the table, carried onto the
+	// canvas so the rectangle can say it. Empty draws the ordinary node.
+	Change ChangeKind
 }
 
 // renderERD draws the tables and their foreign keys as an SVG element.
@@ -61,7 +64,8 @@ func renderERD(doc document) string {
 		out.WriteString(edgePath(from, to))
 	}
 	for _, n := range nodes {
-		fmt.Fprintf(&out, `<rect class="node" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2"/>`, n.X, n.Y, n.W, n.H)
+		fmt.Fprintf(&out, `<rect class="node%s" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2"/>`,
+			nodeChangeClass(n.Change), n.X, n.Y, n.W, n.H)
 		fmt.Fprintf(&out, `<text class="label" x="%.1f" y="%.1f" text-anchor="middle" dominant-baseline="middle">%s</text>`,
 			n.X+n.W/2, n.Y+n.H/2, escapeText(n.Name))
 	}
@@ -87,9 +91,11 @@ func edgePath(from, to node) string {
 func placeNodes(doc document) []node {
 	depth := layerDepths(doc)
 	rows := make(map[int][]string)
+	marks := make(map[string]ChangeKind, len(doc.Tables))
 	for _, table := range doc.Tables {
 		layer := depth[table.Name]
 		rows[layer] = append(rows[layer], table.Name)
+		marks[table.Name] = table.Change
 	}
 	layers := make([]int, 0, len(rows))
 	for layer := range rows {
@@ -114,7 +120,7 @@ func placeNodes(doc document) []node {
 		for row, name := range rows[layer] {
 			nodes = append(nodes, node{
 				Name: name, X: x, Y: y, W: widths[layer], H: nodeHeight,
-				Layer: layer, Row: row,
+				Layer: layer, Row: row, Change: marks[name],
 			})
 			y += nodeHeight + rowGap
 		}
@@ -179,4 +185,16 @@ func nodeWidth(name string) float64 {
 		return nodeMinWidth
 	}
 	return width
+}
+
+// nodeChangeClass is the extra class a marked node carries, with the leading
+// space, or the empty string. It is built here rather than at the call site so
+// an unmarked node renders the exact markup it rendered before marks existed --
+// a trailing space inside class="node " would be invisible in a browser and
+// loud in the byte comparison the document tests make.
+func nodeChangeClass(kind ChangeKind) string {
+	if kind == "" {
+		return ""
+	}
+	return " chg-" + string(kind)
 }

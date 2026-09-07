@@ -226,7 +226,7 @@ a synced schema.
 
 `--from` and `--to` also accept one directly connectable database URL, one migration directory replayed on the required `--dev-url` dev database, or one `env://` reference resolved through the evaluated `atlas.hcl` env, with the dialect pinned by `--dev-url` first and then by database URLs.
 
-`--schema` and `--include` positively scope both diff sides with the same selection semantics as `schema apply`. Dev-database simulation and export remain incomplete. The pinned Atlas CE flag surface does not register `schema diff --web`, so Ptah rejects it as unknown.
+`--schema` and `--include` positively scope both diff sides with the same selection semantics as `schema apply`. Dev-database simulation and export remain incomplete. The pinned Atlas CE flag surface does not register `schema diff --web`. Ptah registers it and writes a self-contained HTML ERD of the compared schemas locally, marking each table added, changed or removed; nothing is published.
 
 **Conformance status.** Partially measured with local schema-file default, custom-template, no-op-template, invalid-template, exclude, config-driven skip-drop probes, and CLI-surface flag probes.
 

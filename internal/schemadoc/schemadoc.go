@@ -9,10 +9,43 @@ import (
 	"ptah.run/internal/htmlstyle"
 )
 
+// ChangeKind is what a comparison found about one table.
+//
+// The three values are what a schema comparison can say about a table and
+// nothing more. A column that changed marks its table changed: the diagram
+// draws tables, so a mark it cannot place is a mark it cannot show, and the
+// table card below the diagram is where the column-level detail already is.
+type ChangeKind string
+
+// The marks a comparison can carry. An unrecognized value marks nothing rather
+// than rendering as one of these, because a document that guessed would show a
+// table as removed on the strength of a typo.
+const (
+	ChangeAdded   ChangeKind = "added"
+	ChangeRemoved ChangeKind = "removed"
+	ChangeChanged ChangeKind = "changed"
+)
+
+// valid reports whether the renderer knows this mark.
+func (c ChangeKind) valid() bool {
+	return c == ChangeAdded || c == ChangeRemoved || c == ChangeChanged
+}
+
 // Options selects what the document covers and what it is called.
 type Options struct {
 	IncludeTables []string
 	ExcludeTables []string
+	// Changes marks tables with what a comparison found about them, keyed by
+	// table name. An empty map renders exactly the document that rendered
+	// before marks existed.
+	//
+	// The document takes the marks as data rather than comparing two schemas
+	// itself, for the reason [ptah.run/internal/schemaviz.Options.Annotations]
+	// gives about findings: a renderer that knew how to diff would have to
+	// learn the next comparison too. It also means the caller decides what a
+	// removed table is -- this package draws one schema, so a table that only
+	// the earlier state had is one the caller put into the schema it passed.
+	Changes map[string]ChangeKind
 	// Title heads the document. Empty uses a neutral default rather than
 	// inventing a project name.
 	Title string
@@ -200,9 +233,49 @@ func writeDiagram(out *strings.Builder, doc document) {
 		return
 	}
 	out.WriteString(`<h2 id="diagram">Diagram</h2>`)
-	out.WriteString(`<div class="card"><div class="erd">` + svg +
-		`<div class="erd-note">Left to right by dependency: a table sits right of everything it references, ` +
+	out.WriteString(`<div class="card"><div class="erd">` + svg)
+	writeChangeLegend(out, doc)
+	out.WriteString(`<div class="erd-note">Left to right by dependency: a table sits right of everything it references, ` +
 		`so this order is one the tables can be created in.</div></div></div>`)
+}
+
+// writeChangeLegend names the colors, and only when the diagram uses them.
+//
+// A legend on an unmarked document would describe three states none of its
+// tables are in. It lists only the kinds actually present for the same reason:
+// a reader who sees "removed" in the key looks for a removed table.
+func writeChangeLegend(out *strings.Builder, doc document) {
+	present := make(map[ChangeKind]bool, 3)
+	for _, table := range doc.Tables {
+		present[table.Change] = true
+	}
+	shown := make([]ChangeKind, 0, 3)
+	for _, kind := range []ChangeKind{ChangeAdded, ChangeChanged, ChangeRemoved} {
+		if present[kind] {
+			shown = append(shown, kind)
+		}
+	}
+	if len(shown) == 0 {
+		return
+	}
+	out.WriteString(`<div class="erd-legend">`)
+	for _, kind := range shown {
+		fmt.Fprintf(out, `<span class="chg chg-%s">%s</span>`, string(kind), changeLabel(kind))
+	}
+	out.WriteString(`</div>`)
+}
+
+// changeLabel is the word a reader sees for a mark.
+func changeLabel(kind ChangeKind) string {
+	switch kind {
+	case ChangeAdded:
+		return "added"
+	case ChangeRemoved:
+		return "removed"
+	case ChangeChanged:
+		return "changed"
+	}
+	return ""
 }
 
 func writeTables(out *strings.Builder, doc document) {
@@ -232,6 +305,9 @@ func writeTableCard(out *strings.Builder, table tableDoc, declared map[string]bo
 	fmt.Fprintf(out, `<section id="%s" class="card">`, anchor(table.Name))
 	out.WriteString(`<div class="card-head">`)
 	fmt.Fprintf(out, `<h3>%s</h3>`, escapeText(table.Name))
+	if table.Change != "" {
+		fmt.Fprintf(out, `<span class="chg chg-%s">%s</span>`, string(table.Change), changeLabel(table.Change))
+	}
 	if table.Comment != "" {
 		fmt.Fprintf(out, `<span class="card-note">%s</span>`, escapeText(table.Comment))
 	}

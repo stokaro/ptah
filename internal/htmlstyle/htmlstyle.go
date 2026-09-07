@@ -44,22 +44,36 @@ func Base() string { return baseCSS }
 // surroundings is a different mark.
 func Mark() string { return markSVG }
 
-// Footer closes a document with the note the caller wants and the version of
-// the binary that wrote the file.
+// Footer closes a document with the note the caller wants, and with the mark,
+// version and address of the binary that wrote the file.
 //
 // The version is there because these documents are shared and archived, and
 // "which Ptah produced this" is a question their reader cannot otherwise
-// answer. The note is expected to be trusted text the caller wrote, not
-// anything read out of a schema or a database.
+// answer. The address is there for the half of that question the version does
+// not answer: a document reaches people who did not run the command and have no
+// way to find out what made it.
+//
+// The link changes nothing about self-containment. An anchor is inert until
+// somebody clicks it, so a document that fetched nothing when it was opened
+// still fetches nothing -- which is the property the exported document promises
+// and the reason none of these pages carries a remote stylesheet or script.
+//
+// The note is expected to be trusted text the caller wrote, not anything read
+// out of a schema or a database.
 func Footer(note string) string {
 	var out strings.Builder
 	out.WriteString(`<div class="footer"><span>`)
 	out.WriteString(note)
-	out.WriteString(`</span><span class="footer-mark">`)
+	out.WriteString(`</span><a class="footer-mark" href="`)
+	out.WriteString(buildinfo.URL)
+	// A document is opened from disk, so a link that replaced it would strand
+	// the reader with no way back. rel closes the tab-nabbing hole that comes
+	// with target.
+	out.WriteString(`" target="_blank" rel="noopener noreferrer">`)
 	out.WriteString(markSVG)
 	out.WriteString(`ptah `)
 	out.WriteString(buildinfo.Resolve().Version)
-	out.WriteString(`</span></div>`)
+	out.WriteString(`</a></div>`)
 	return out.String()
 }
 

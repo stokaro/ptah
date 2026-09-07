@@ -94,8 +94,13 @@ staged beside its destination and published atomically, so a reader either sees
 the previous contents or the complete new document, never a partial one. Nothing
 is written to stdout on the --output path.
 
--w/--web is registered and refused: opening a viewer has no local counterpart,
-and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
+-w/--web writes the schema ERD as one self-contained HTML file and opens it.
+Nothing is published and nothing is fetched: the file is on this machine, the
+browser opens that file, and the schema does not leave the host. The path is
+printed on stderr, so the inspected schema on stdout is unchanged. A run that
+cannot open a browser -- a continuous integration job, a session with no
+display -- writes the file, says why it opened nothing, and exits 0. Set
+PTAH_SKIP_BROWSER_OPEN to write the file without opening it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -139,9 +144,12 @@ source or database work. The default ptah-compat policy retains all three.`
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
-	// The refusal lands before any config or database work: a flag Ptah does
-	// not implement must not be answered with an inspection that ignored it.
-	if err := refuseAtlasUIFlag(cmd, "schema", "inspect", atlasSchemaWebFlag()); err != nil {
+	// Resolved before any config or database work, so a malformed value is a
+	// configuration error on every inspect rather than on the ones that reach
+	// the artifact step. See AGENTS.md, "resolve the variables a command owns
+	// before its early returns".
+	web, skipOpen, err := atlasWebRequest(cmd)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// The variable this verb owns is resolved here, before the project file is
@@ -245,13 +253,23 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if web {
+		if err := writeAtlasSchemaERD(cmd, atlasSchemaERD{
+			schema:   rendered.Schema,
+			title:    "Inspected schema",
+			source:   atlasSchemaERDSource(opts.url),
+			skipOpen: skipOpen,
+		}); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if path := strings.TrimSpace(opts.output); path != "" {
-		if err := writeAtlasOutputFile(path, []byte(rendered)); err != nil {
+		if err := writeAtlasOutputFile(path, []byte(rendered.Rendered)); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 		return nil
 	}
-	fmt.Fprint(cmd.OutOrStdout(), rendered)
+	fmt.Fprint(cmd.OutOrStdout(), rendered.Rendered)
 	return nil
 }
 

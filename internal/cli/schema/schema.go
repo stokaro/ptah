@@ -17,10 +17,12 @@ import (
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/webartifact"
 	"ptah.run/internal/cli/schemapull"
 	"ptah.run/internal/cli/schemapush"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/docsrender"
+	"ptah.run/internal/fileopen"
 	"ptah.run/internal/goannotationexport"
 	"ptah.run/internal/graphqlrender"
 	"ptah.run/internal/openapirender"
@@ -36,6 +38,7 @@ const (
 	exportRootDirFlag        = "root-dir"
 	exportSchemaFileFlag     = "schema-file"
 	exportOutFlag            = "out"
+	exportOpenFlag           = "open"
 	exportIncludeTablesFlag  = "include-tables"
 	exportFieldPolicyFlag    = "api-field-policy"
 	exportExcludeTablesFlag  = "exclude-tables"
@@ -224,6 +227,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var excludeTables []string
 	var title string
 	var graphqlOperations []string
+	var open bool
 	var cleanupAnnotations bool
 	var cleanupDryRun bool
 	var cleanupDiff bool
@@ -318,6 +322,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				excludeTables:             excludeTables,
 				title:                     title,
 				graphqlOperations:         graphqlOperations,
+				open:                      open,
 				cleanupAnnotations:        cleanupAnnotations,
 				cleanupDryRun:             cleanupDryRun,
 				cleanupDiff:               cleanupDiff,
@@ -353,6 +358,8 @@ part of the compatibility state, so all of them must be committed together.`,
 	flags.StringSliceVar(&graphqlOperations, graphqlOperationsFlag, nil,
 		"Operation shapes to generate (comma-separated): none, list, by-id, create-input, "+
 			"or update-input; the default is a types-only schema (graphql only)")
+	flags.BoolVar(&open, exportOpenFlag, false,
+		"Open the rendered document in the browser; the file is written either way (--to html only)")
 	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations after a lossless HCL export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
@@ -388,14 +395,18 @@ type exportOptions struct {
 	rootDir      string
 	// rootDirExplicit records whether --root-dir was passed, so its "." default
 	// is not merged into a schema-file export as a second source.
-	rootDirExplicit    bool
-	schemaFiles        []string
-	outPath            string
-	includeTables      []string
-	fieldPolicy        string
-	excludeTables      []string
-	title              string
-	graphqlOperations  []string
+	rootDirExplicit   bool
+	schemaFiles       []string
+	outPath           string
+	includeTables     []string
+	fieldPolicy       string
+	excludeTables     []string
+	title             string
+	graphqlOperations []string
+	// open asks for the rendered document to be shown, not just written.
+	open bool
+	// skipOpen is the resolved suppression, read once at the top of the run.
+	skipOpen           bool
 	cleanupAnnotations bool
 	cleanupDryRun      bool
 	cleanupDiff        bool
@@ -418,6 +429,16 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 	// annotation-cleanup step below.
 	opts.from = strings.TrimSpace(opts.from)
 	opts.to = normalizeExportFormat(opts.to)
+	// Resolved on every export, not only the ones that reach the html branch
+	// with --open. A malformed value is a configuration error the operator
+	// should hear about the first time they run the command, not on the day
+	// they first ask for a document (AGENTS.md, "resolve the variables a
+	// command owns before its early returns").
+	skipOpen, err := fileopen.SkipRequested()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	opts.skipOpen = skipOpen
 	if err := validateExportOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -477,6 +498,9 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", diagnostic)
 		}
 		if err := emitAPISchema(cmd, opts, db, rendered.Data, nil, "schema documentation"); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if err := openExportedDocument(cmd, opts, rendered.Data); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	case exportFormatMarkdown:
@@ -674,4 +698,41 @@ func resolveOutputPath(path string) (string, error) {
 		return "", fmt.Errorf("create output directory: %w", err)
 	}
 	return cleaned, nil
+}
+
+// openExportedDocument shows the rendered document when --open asked for it.
+//
+// This is the native half of the capability the Atlas-compatible `--web` uses:
+// the same renderer, the same artifact and the same opener, so neither surface
+// can grow a second answer to "what does the diagram look like". See
+// internal/cli/internal/webartifact.
+//
+// With --out the file the operator named is the one that opens; without it the
+// document went to standard output, which is nothing a browser can be pointed
+// at, so a copy is written where the compatibility surface writes one. Opening
+// never fails the export: the document is already delivered by the time this
+// runs.
+func openExportedDocument(cmd *cobra.Command, opts exportOptions, data []byte) error {
+	if !opts.open {
+		return nil
+	}
+	var err error
+	path := strings.TrimSpace(opts.outPath)
+	if path == "" {
+		written, err := webartifact.WriteBytes(data)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", exportOpenFlag, err)
+		}
+		path = written
+	} else {
+		path, err = resolveOutputPath(path)
+		if err != nil {
+			return err
+		}
+	}
+	opened := fileopen.Open(cmd.Context(), path, fileopen.Options{Skip: opts.skipOpen})
+	webartifact.Report(cmd.ErrOrStderr(), webartifact.Result{
+		Path: path, Opened: opened.Opened, Reason: opened.Reason,
+	})
+	return nil
 }

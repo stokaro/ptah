@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/buildinfo"
 	"ptah.run/internal/cli/banner"
 )
 
@@ -73,7 +74,7 @@ func TestText_NamesTheToolHappyPath(t *testing.T) {
 
 			got := banner.Text(test.tool, test.version)
 
-			c.Assert(got, qt.Contains, "\n"+test.want+"\n"+banner.URL+"\n")
+			c.Assert(got, qt.Contains, "\n"+test.want+"\n"+buildinfo.URL+"\n")
 			c.Assert(got, qt.Contains, wordmark)
 		})
 	}

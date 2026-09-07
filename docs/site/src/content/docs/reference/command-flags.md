@@ -1416,6 +1416,7 @@ Read the columns as follows.
 | `--go-package` | `string` | — | `PTAH_GO_PACKAGE` | — |
 | `--graphql-operations` | `stringSlice` | `[]` | `PTAH_GRAPHQL_OPERATIONS` | — |
 | `--include-tables` | `stringSlice` | `[]` | `PTAH_INCLUDE_TABLES` | — |
+| `--open` | `bool` | `false` | `PTAH_OPEN` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--proto-comments` | `string` | `none` | `PTAH_PROTO_COMMENTS` | — |

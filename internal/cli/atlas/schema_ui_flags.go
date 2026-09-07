@@ -20,14 +20,15 @@ import (
 // present and `--frobnicate-nonsense` missing as controls. So the reference is
 // the source, and the spelling below matches it.
 //
-// Neither is implemented, and the reasons differ:
+// --web is implemented; see internal/cli/atlas/schema_web.go for what it does
+// and for the two places it diverges from the vendor description. It was a
+// registered refusal until stokaro/ptah#3011, on the reasoning that opening a
+// viewer has no local counterpart. That reasoning covered the second half of
+// the flag and skipped the first: the ERD is local, Ptah already draws it, and
+// what the refusal actually declined was handing the operator the file.
 //
-//   - --web names a browser action. Its payload is not the problem: Ptah renders
-//     the same ERD locally, as `schema inspect --format '{{ mermaid . }}'` and as
-//     `ptah viz`. What Ptah has no counterpart for is opening a viewer, and a
-//     CLI that launches a browser is the wrong shape for the pipelines this
-//     surface exists to serve. The refusal names the local spelling that
-//     produces the diagram, so the capability stays reachable.
+// --export is not implemented, and the reason is different in kind:
+//
 //   - --export selects an exporter declared by an atlas.hcl `exporter` block.
 //     Ptah's project-config evaluator tolerates that block and evaluates nothing
 //     from it, so there is no exporter for the flag to select. Accepting the
@@ -51,9 +52,16 @@ const (
 )
 
 func atlasSchemaWebFlag() atlasargs.Flag {
-	return atlasargs.UnsupportedBoolReason(
-		atlasSchemaWebFlagName, "w", "Open the schema ERD in the browser",
-		"opening a viewer is a UI action with no local counterpart; the ERD itself is local — render it with --format '{{ mermaid . }}' or `ptah viz`",
+	// The usage line says local, because the vendor description does not and a
+	// reader is entitled to assume the flag publishes the schema somewhere.
+	//
+	// It does not name the suppressing variable. The `[env: PTAH_...]` marker
+	// on a flag line means that flag's own binding, and this flag's is
+	// PTAH_WEB; naming a different variable there would make the marker say
+	// something it does not mean everywhere else.
+	return atlasargs.Bool(
+		atlasSchemaWebFlagName, "w",
+		"Write the schema ERD to a local HTML file and open it",
 	)
 }
 
@@ -135,16 +143,6 @@ func resolveAtlasExporter(cmd *cobra.Command, project atlasExportProject) (strin
 	// nothing from one that was never chosen, and would quietly print the
 	// default report for the first.
 	return exporter.Template, true, nil
-}
-
-// refuseAtlasUIFlag rejects a registered UI-bound flag that was actually passed.
-// Registration alone is help parity; the refusal is what keeps the flag from
-// being accepted and ignored.
-func refuseAtlasUIFlag(cmd *cobra.Command, group, use string, flag atlasargs.Flag) error {
-	if !cmd.Flags().Changed(flag.Name) {
-		return nil
-	}
-	return atlasargs.UnsupportedFlagError(group, use, flag, "--"+flag.Name)
 }
 
 func registerAtlasUIFlag(cmd *cobra.Command, flag atlasargs.Flag) {

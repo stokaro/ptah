@@ -203,13 +203,13 @@ func refuseInspectDevURLForm(devURL string) error {
 // materialized on it (schema files executed, migration directories replayed),
 // and the result is introspected so the output is normalized by a real
 // database of the target dialect.
-func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, error) {
+func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResult, error) {
 	if err := ValidateInspectOptions(opts); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	set, err := atlassource.ClassifySet("--url", []string{opts.URL}, opts.ProjectEnv)
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 
 	inspectOpts := InspectOptions{
@@ -231,7 +231,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)
 		if err != nil {
-			return "", fmt.Errorf("connect to --url: %w", err)
+			return InspectResult{}, fmt.Errorf("connect to --url: %w", err)
 		}
 		defer dbschema.CloseAndWarn(conn)
 		return Inspect(ctx, conn, inspectOpts)
@@ -275,14 +275,14 @@ func inspectOnDev(
 	set atlassource.Set,
 	opts InspectSourceOptions,
 	inspectOpts InspectOptions,
-) (string, error) {
+) (InspectResult, error) {
 	if err := refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	devURL := strings.TrimSpace(opts.DevURL)
 	dialect, _, err := atlassource.PinDialect(devURL, set)
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 
 	// Load and verify the source before the dev database is touched, so bad
@@ -292,7 +292,7 @@ func inspectOnDev(
 	switch set.Kind {
 	case atlassource.KindLocalFile:
 		if err := validateInspectLocalSources(set, opts.ValidateLocalSchemaSource); err != nil {
-			return "", err
+			return InspectResult{}, err
 		}
 		// The source URL is the file itself, so --dev-url is the only URL that
 		// can limit this run to a schema.
@@ -313,7 +313,7 @@ func inspectOnDev(
 			Vars:                  opts.Vars,
 		})
 		if err != nil {
-			return "", err
+			return InspectResult{}, err
 		}
 	case atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
 		// Both resolve to a schema IR rather than to files: an external program
@@ -325,7 +325,7 @@ func inspectOnDev(
 			ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 		})
 		if err != nil {
-			return "", err
+			return InspectResult{}, err
 		}
 		desired = state.Schema
 	case atlassource.KindMigrationDir:
@@ -334,13 +334,13 @@ func inspectOnDev(
 			opts.ValidateMigrationSource,
 		)
 		if err != nil {
-			return "", err
+			return InspectResult{}, err
 		}
 	default:
-		return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+		return InspectResult{}, fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
 	}
 	if err := validateInspectDesiredSchema(desired, opts.ValidateDesiredSchema); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 
 	// The container is started here and not at the top of the function: every
@@ -357,21 +357,21 @@ func inspectOnDev(
 	// wants still happens; it happens to the answer.
 	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	defer releaseDev()
 	devURL = strings.TrimSpace(resolved)
 
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
 	if err != nil {
-		return "", fmt.Errorf("connect to --dev-url: %w", err)
+		return InspectResult{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	devConn.SchemaWriter().SetDryRun(false)
 
 	switch set.Kind {
 	case atlassource.KindMigrationDir:
-		var rendered string
+		var rendered InspectResult
 		err := migrationreplay.WithReplayedSnapshot(
 			ctx,
 			devConn,
@@ -394,11 +394,11 @@ func inspectOnDev(
 			},
 		)
 		if err != nil {
-			return "", fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
+			return InspectResult{}, fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
 		}
 		return rendered, nil
 	case atlassource.KindLocalFile, atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
-		var rendered string
+		var rendered InspectResult
 		err := withMaterializedDevSchema(
 			ctx,
 			devConn,
@@ -416,11 +416,11 @@ func inspectOnDev(
 			},
 		)
 		if err != nil {
-			return "", err
+			return InspectResult{}, err
 		}
 		return rendered, nil
 	}
-	return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+	return InspectResult{}, fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
 }
 
 func validateInspectLocalSources(set atlassource.Set, validate func(string) error) error {

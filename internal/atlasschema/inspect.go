@@ -93,30 +93,30 @@ func NormalizeInspectFormat(format string) (string, error) {
 // Inspect reads a live schema and renders it with Atlas-compatible
 // formatting, applying any split/write file exports the format template
 // planned.
-func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (InspectResult, error) {
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if conn == nil {
-		return "", errors.New("schema inspect requires database connection")
+		return InspectResult{}, errors.New("schema inspect requires database connection")
 	}
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 
 	schema, names, err := readInspectSchemaWithNames(ctx, conn, opts.Schemas)
 	if err != nil {
-		return "", fmt.Errorf("read database schema: %w", err)
+		return InspectResult{}, fmt.Errorf("read database schema: %w", err)
 	}
 	schema, err = prepareInspectSchema(schema, opts.PrepareSchema)
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if err := ValidateLiveObjects(conn, names, opts.ValidateLiveObject); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	// A description scoped to the roles the inspected schemas use omits roles
 	// that exist on the server, and the rendered document is the only thing
@@ -154,6 +154,26 @@ func validateInspectSchema(schema *catalog.Database, validate func(*schemamodel.
 	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema, ""))
 }
 
+// InspectResult is a rendered inspection and the schema it describes.
+//
+// The two travel together because a caller that wants a diagram wants the same
+// schema the document describes, and re-reading the source to get it would give
+// a second answer -- from a database that may have changed, or from a dev
+// database materialized a second time.
+//
+// Schema is the SCOPED schema: --schema, --include and --exclude have already
+// narrowed it, exactly as they narrowed Rendered. A diagram drawn from a wider
+// schema than the document beside it would show tables the operator asked not
+// to see.
+type InspectResult struct {
+	// Rendered is the document --format asked for.
+	Rendered string
+	// Schema is the same schema as a model, for a caller rendering something
+	// else from it. It is nil only when Rendered is empty and an error is
+	// returned.
+	Schema *schemamodel.Database
+}
+
 // renderInspectSchema is the shared inspect tail for every source kind:
 // exclude filtering, report construction, format rendering, and application
 // of the planned split/write file exports.
@@ -161,13 +181,13 @@ func renderInspectSchema(
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	opts InspectOptions,
-) (string, error) {
+) (InspectResult, error) {
 	format, err := NormalizeInspectFormat(opts.Format)
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
 	// Inspection is read-only and its documented answer for an empty selection
@@ -178,7 +198,7 @@ func renderInspectSchema(
 		err = nil
 	}
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	// Inspection looks at exactly one state, so its own report is already the
 	// across-states answer.
@@ -214,15 +234,15 @@ func renderInspectSchema(
 		},
 	))
 	if err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if err := reportOmittedVirtualTables(schema, output, opts); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
 	if err := applyInspectFileExports(output.Files); err != nil {
-		return "", err
+		return InspectResult{}, err
 	}
-	return output.Text, nil
+	return InspectResult{Rendered: output.Text, Schema: dbsch}, nil
 }
 
 // reportOmittedVirtualTables answers for a SQLite virtual table the rendering

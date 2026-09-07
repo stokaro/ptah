@@ -519,7 +519,7 @@ func boundaryConnectedRole(c *qt.C, dbURL string) string {
 func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 	c.Helper()
 
-	rendered, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
+	renderedResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
 		URL:    dbURL,
 		Format: "hcl",
 		// The diagnostics stream carries the compatibility surface's report of
@@ -532,7 +532,7 @@ func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 		IgnoreUnknownHCLNames:  compatibility,
 	})
 	c.Assert(err, qt.IsNil)
-	return rendered
+	return renderedResult.Rendered
 }
 
 // boundaryParseBack reads an inspected document back into Ptah's IR. A parse

@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/buildinfo"
 	"ptah.run/internal/htmlstyle"
 )
 
@@ -96,4 +97,28 @@ func usedIn(css string) map[string]bool {
 		found[match[1]] = true
 	}
 	return found
+}
+
+// Every HTML document Ptah writes carries the same way back to Ptah. The
+// footer is the one place that decides it, so this asserts the shape rather
+// than each of the four documents asserting it again.
+func TestFooter_LinksBackToPtah(t *testing.T) {
+	c := qt.New(t)
+
+	footer := htmlstyle.Footer("Rendered by Ptah from a fixture.")
+
+	c.Assert(footer, qt.Contains, `<a class="footer-mark" href="`+buildinfo.URL+`"`)
+	c.Assert(footer, qt.Contains, `target="_blank"`)
+	// A document opened from disk has no history to go back to, and a link that
+	// opens a tab and grants it window.opener is the tab-nabbing hole.
+	c.Assert(footer, qt.Contains, `rel="noopener noreferrer"`)
+	c.Assert(footer, qt.Contains, `</a></div>`)
+}
+
+// The address comes from the declaration every other surface reads, so moving
+// it moves the banner and the four documents together.
+func TestFooter_TakesTheAddressFromTheOneDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(htmlstyle.Footer("note"), qt.Contains, buildinfo.URL)
 }

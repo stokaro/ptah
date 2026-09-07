@@ -17,11 +17,12 @@ func TestInspect_HappyPathHCL(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	createInspectSchema(c, conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
 }
@@ -32,11 +33,12 @@ func TestInspect_HappyPathCustomTemplate(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	createInspectSchema(c, conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: `{{ len .Realm.Schemas }}/{{ len (index .Schema.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Equals, "1/2/a-b_c/CREATE")
 }
 
@@ -46,12 +48,13 @@ func TestInspect_ExcludeFilter(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	createInspectSchema(c, conn)
 
-	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format:  "hcl",
 		Exclude: []string{"posts"},
 	})
 
 	c.Assert(err, qt.IsNil)
+	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), `table "posts"`)
 	c.Assert(rendered, qt.Not(qt.Contains), `posts_user_fk`)
@@ -64,12 +67,13 @@ func TestInspect_IncludeSelection(t *testing.T) {
 		defer dbschema.CloseAndWarn(conn)
 		createInspectSchema(c, conn)
 
-		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+		renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			Format:  "hcl",
 			Include: []string{"users"},
 		})
 
 		c.Assert(err, qt.IsNil)
+		rendered := renderedResult.Rendered
 		c.Assert(rendered, qt.Contains, `table "users"`)
 		c.Assert(rendered, qt.Contains, `column "email"`)
 		c.Assert(rendered, qt.Contains, `users_email_key`)
@@ -82,13 +86,13 @@ func TestInspect_IncludeSelection(t *testing.T) {
 		defer dbschema.CloseAndWarn(conn)
 		createInspectSchema(c, conn)
 
-		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+		renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			Format:  "hcl",
 			Include: []string{"posts"},
 		})
 
 		c.Assert(err, qt.ErrorMatches, `(?s)the --schema/--include selection drops objects.*`)
-		c.Assert(rendered, qt.Equals, "")
+		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 
 	t.Run("exclusion-only inspection is unchanged", func(t *testing.T) {
@@ -110,27 +114,27 @@ func TestInspect_IncludeSelection(t *testing.T) {
 		})
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(withEmptyInclude, qt.Equals, withoutInclude)
-		c.Assert(withoutInclude, qt.Contains, `table "users"`)
-		c.Assert(withoutInclude, qt.Not(qt.Contains), `table "posts"`)
+		c.Assert(withEmptyInclude.Rendered, qt.Equals, withoutInclude.Rendered)
+		c.Assert(withoutInclude.Rendered, qt.Contains, `table "users"`)
+		c.Assert(withoutInclude.Rendered, qt.Not(qt.Contains), `table "posts"`)
 	})
 }
 
 func TestInspect_FailurePath(t *testing.T) {
 	t.Run("invalid format before connection", func(t *testing.T) {
 		c := qt.New(t)
-		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{
+		renderedResult, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{
 			Format: "{{ if }}",
 		})
 		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
-		c.Assert(rendered, qt.Equals, "")
+		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
-		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{})
+		renderedResult, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{})
 		c.Assert(err, qt.ErrorMatches, "schema inspect requires database connection")
-		c.Assert(rendered, qt.Equals, "")
+		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 
 	t.Run("dev url dialect mismatch", func(t *testing.T) {
@@ -138,11 +142,11 @@ func TestInspect_FailurePath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
+		renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			DevURL: "postgres://localhost/dev",
 		})
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
-		c.Assert(rendered, qt.Equals, "")
+		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 }
 

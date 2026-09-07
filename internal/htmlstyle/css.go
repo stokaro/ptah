@@ -133,7 +133,8 @@ td.num { font-family: var(--mono); color: var(--text-mute); text-align: right; w
 
 .empty { color: var(--text-mute); font-style: italic; padding: 18px; }
 .footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-mute); font-size: 12.5px; }
-.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; }
+.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; color: var(--text-mute); text-decoration: none; }
+.footer-mark:hover { color: var(--text); text-decoration: underline; }
 
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

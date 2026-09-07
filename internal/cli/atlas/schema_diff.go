@@ -58,7 +58,14 @@ check.`
 
 Hosted report output is not implemented. --export is registered and refused:
 it selects an exporter declared by an atlas.hcl ` + "`exporter`" + ` block,
-which Ptah does not evaluate.`
+which Ptah does not evaluate.
+
+-w/--web writes an ERD of the compared schemas as one self-contained HTML file
+and opens it. The diagram draws the end state plus the tables that leave it,
+marking each table added, changed or removed. Nothing is published and nothing
+is fetched. The path is printed on stderr, so the diff on stdout is unchanged,
+and a run that cannot open a browser still writes the file and exits 0. Set
+PTAH_SKIP_BROWSER_OPEN to write the file without opening it.`
 	}
 	cmd := &cobra.Command{
 		Use:   "diff",
@@ -94,9 +101,11 @@ which Ptah does not evaluate.`
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
-	// Before any config or database work, as on `schema inspect`: a flag Ptah
-	// does not implement must not be answered with a diff that ignored it.
-	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaWebFlag()); err != nil {
+	// Resolved before any config or database work, as on `schema inspect`, so a
+	// malformed suppression is refused on every diff rather than on the ones
+	// that ask for the diagram.
+	web, skipOpen, err := atlasWebRequest(cmd)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
@@ -180,7 +189,10 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	report, err := atlasschema.Diff(cmd.Context(), atlasschema.DiffOptions{
+	// DiffReportingChanges rather than Diff: Diff is the same call with the
+	// structured comparison discarded, and that comparison is what says which
+	// tables the diagram marks.
+	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		FromURLs:    opts.fromURLs,
 		ToURLs:      opts.toURLs,
 		DevURL:      opts.devURL,
@@ -201,6 +213,18 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if web {
+		drawn, marks := atlasDiffERD(report, changes)
+		if err := writeAtlasSchemaERD(cmd, atlasSchemaERD{
+			schema:   drawn,
+			title:    "Schema diff",
+			source:   atlasSchemaERDSource(firstNonEmpty(opts.toURLs)),
+			changes:  marks,
+			skipOpen: skipOpen,
+		}); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), format, report); err != nil {
 		return cmdutil.Fail(cmd, err)
