@@ -337,7 +337,7 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	srcDir := filepath.Dir(filename)        // .../integration/gonative
 	integrationDir := filepath.Dir(srcDir)  // .../integration
 	rootDir := filepath.Dir(integrationDir) // module root
-	absFixture := filepath.Join(rootDir, "integration/fixtures/entities/023-go-annotations-objects")
+	absFixture := filepath.Join(rootDir, "integration/internal/fixtures/entities/023-go-annotations-objects")
 	result, err := goschema.ParseDir(absFixture)
 	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
 

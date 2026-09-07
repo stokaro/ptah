@@ -135,7 +135,7 @@ role, user and table a name unique to the run and drop it in a cleanup.
 - **`fixtures/migrations/partial_failure/`** - Multi-step migrations with failures
 - **`fixtures/migrations/partial_failure_mysql/`** - MySQL and MariaDB partial failure set
 - **`fixtures/migrations/partial_failure_sqlserver/`** - SQL Server variant of the partial failure set
-- **`fixtures/entities/`** - Go entity definitions for schema generation tests
+- **`internal/fixtures/entities/`** - Go entity definitions for schema generation tests
 
 ## Running Tests
 

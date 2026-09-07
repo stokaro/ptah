@@ -109,8 +109,8 @@ tree shipped by `cmd/ptah-compat`. `cmd/integration-test` is the suite runner
 and `cmd/ptah-ls` the language server. Both command trees are adapters; see
 [Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership).
 
-Entities to test against: `internal/stubs/`, `examples/`, and the numbered fixture
-series in `integration/fixtures/entities/`.
+Entities to test against: `internal/stubs/`, `examples/`, and the numbered
+fixture series in `integration/internal/fixtures/entities/`.
 
 ## Schema Annotations
 

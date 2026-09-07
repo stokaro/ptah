@@ -4,17 +4,30 @@ package integration_test
 
 import (
 	"embed"
+	"io/fs"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dbtarget"
 	ptahintegration "ptah.run/internal/integrationharness"
 )
 
-//go:embed fixtures
-var testFixtures embed.FS
+//go:embed internal/fixtures
+var embeddedFixtures embed.FS
+
+// testFixtures is the fixture tree in the shape the harness reads: an FS rooted
+// where a version directory is `fixtures/entities/<version>`.
+//
+// The two roots exist because two things supply the tree. `go:embed` cannot
+// name a path outside its own package directory, so the directive has to spell
+// the internal one and the extra segment is trimmed back here; the Docker suite
+// mounts the same directory at /app/fixtures and hands the harness an FS rooted
+// one level further in. Trimming here keeps this caller on the shape it already
+// used, so the move changed where the fixtures live and not how they are read.
+var testFixtures = must.Must(fs.Sub(embeddedFixtures, "internal"))
 
 func TestVersionedEntityManager(t *testing.T) {
 	c := qt.New(t)

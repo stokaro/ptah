@@ -86,7 +86,7 @@ services:
     # Add additional volumes for development
     # volumes:
     #   - ./integration/reports:/app/reports
-    #   - ./integration/fixtures:/app/fixtures
+    #   - ./integration/internal/fixtures:/app/fixtures
     #   - ./local-fixtures:/app/local-fixtures  # Example: additional local test data
 
 # Additional services for local development

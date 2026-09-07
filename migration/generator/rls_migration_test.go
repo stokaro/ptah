@@ -16,7 +16,7 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test entities with RLS annotations
-	desired, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
+	desired, err := goschema.ParseDir("../../integration/internal/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// Create an empty database schema (simulating a fresh database)

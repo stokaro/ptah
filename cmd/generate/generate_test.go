@@ -128,7 +128,7 @@ func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) 
 func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
+	fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", "029-roundtrip-mutual-cycle")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
 	stdout, stderr, err := executeGenerate(c, cmd)
@@ -148,7 +148,7 @@ func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 func TestGenerateCommand_JsonEmbeddedFieldRendersOnce(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "023-go-annotations-objects")
+	fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", "023-go-annotations-objects")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
 	stdout, stderr, err := executeGenerate(c, cmd)
@@ -189,7 +189,7 @@ tables:
 func TestGenerateCommand_OmittedDialectForeignKeyFailureKeepsStdoutEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
+	fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", "029-roundtrip-mutual-cycle")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir})
 	stdout, stderr, err := executeGenerate(c, cmd)

@@ -181,7 +181,7 @@ services:
       SPANNER_URL: "spanner://spanner:5432/ptah_test?sslmode=disable"
     volumes:
       - ./integration/reports:/app/reports
-      - ./integration/fixtures:/app/fixtures
+      - ./integration/internal/fixtures:/app/fixtures
     profiles:
       - test
 

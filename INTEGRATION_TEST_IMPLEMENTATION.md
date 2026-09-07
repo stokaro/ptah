@@ -87,7 +87,7 @@ All scenarios from the original plan have been implemented:
   - Multi-step migrations with mid-process failures
   - For testing recovery scenarios
 
-- **Entity Definitions** (`fixtures/entities/`)
+- **Entity Definitions** (`internal/fixtures/entities/`)
   - Go structs with schema annotations
   - For testing schema generation and comparison
 

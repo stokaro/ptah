@@ -12,11 +12,14 @@ import (
 	"ptah.run/internal/integrationharness"
 )
 
-// fixturesRoot is the repository's integration fixture tree, which stays under
-// integration/ because the live-database tests read it from there too. The
-// harness itself takes the filesystem as a parameter, so this is the only place
-// that has to know where the fixtures live relative to this package.
-var fixturesRoot = filepath.Join("..", "..", "integration")
+// fixturesRoot is the directory holding the repository's integration fixture
+// tree, which stays under integration/ because the live-database tests read it
+// from there too. It names the parent of `fixtures/` rather than `fixtures/`
+// itself, because the harness looks for `fixtures/entities/<version>` from the
+// root it is given. The harness takes the filesystem as a parameter, so this is
+// the only place that has to know where the fixtures live relative to this
+// package.
+var fixturesRoot = filepath.Join("..", "..", "integration", "internal")
 
 func TestGetAllScenariosIncludesStaticAndDynamicScenarios(t *testing.T) {
 	c := qt.New(t)

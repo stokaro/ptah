@@ -15,20 +15,20 @@ The migration generator validation test ensures that:
 ## Test Steps
 
 ### Step 1: Initial Migration (000-initial)
-- Load entity definitions from `fixtures/entities/000-initial`
+- Load entity definitions from `internal/fixtures/entities/000-initial`
 - Generate and apply the initial migration
 - Validate database schema matches goschema output
 - Ensure schemadiff reports no differences
 
 ### Step 2: Add Fields (001-add-fields)  
-- Load entity definitions from `fixtures/entities/001-add-fields`
+- Load entity definitions from `internal/fixtures/entities/001-add-fields`
 - Generate migration on top of the applied 000-initial migration
 - Apply the migration (UP)
 - Validate database schema matches goschema output
 - Ensure schemadiff reports no differences
 
 ### Step 3: Add Posts (002-add-posts)
-- Load entity definitions from `fixtures/entities/002-add-posts`
+- Load entity definitions from `internal/fixtures/entities/002-add-posts`
 - Generate migration on top of the applied 001-add-fields migration
 - Apply the migration (UP)
 - Validate database schema matches goschema output
@@ -131,7 +131,7 @@ The test uses the following components:
 1. **Database Connection**: Ensure test database URL is correctly set
 2. **Permissions**: Database user needs CREATE/DROP table permissions
 3. **Clean State**: Test requires starting with an empty database
-4. **Fixtures**: Entity fixtures must be present in `fixtures/entities/` directory
+4. **Fixtures**: Entity fixtures must be present in `internal/fixtures/entities/` directory
 
 ### Debug Output
 

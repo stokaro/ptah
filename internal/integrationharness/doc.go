@@ -1,6 +1,6 @@
 // Package integrationharness implements Ptah's dynamic integration-test
 // framework: it loads versioned entity fixtures from an injected filesystem
-// (integration/fixtures/entities in this repository), runs migration scenarios
+// (integration/internal/fixtures/entities in this repository), runs migration scenarios
 // (up, down, idempotency, round-trip) against live databases, and produces the
 // reports consumed by the integration-test binary.
 //

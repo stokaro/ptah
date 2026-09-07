@@ -12,7 +12,7 @@ func TestRLSPolicyGenerationMultipleFiles(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the directory with multiple files containing RLS annotations
-	database, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
+	database, err := goschema.ParseDir("../../integration/internal/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// Debug output
