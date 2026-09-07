@@ -396,6 +396,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it.
+	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
 	if strings.TrimSpace(node.Condition) != "" {
 		// Oracle has no WHERE clause on CREATE INDEX. The equivalent it does
 		// have -- a function-based index whose expression is NULL for the rows

@@ -969,6 +969,9 @@ func (r *Renderer) VisitConstraint(*ast.ConstraintNode) error { return nil }
 // `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
 // `granularity=` keys on //ptah:schema:index.
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+	// A data-skipping index carries no comment clause, so the declaration
+	// reaches the output nowhere at all.
+	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no target table)", node.Name)
 		return nil
