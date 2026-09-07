@@ -1,0 +1,159 @@
+---
+title: Deliver a schema change
+description: Follow one schema change from a reviewed pull request to a verified database, and see which guide owns each stage.
+type: how-to
+audience:
+  - "platform-engineer"
+  - "ci-operator"
+readerQuestion: "How does a reviewed schema change reach a production database?"
+goal: "Carry one change through publish, promotion, apply and verification."
+sourceOfTruth:
+  - "internal/cli/migrationspush"
+  - "internal/cli/migrations"
+  - "internal/cli/oci"
+generated: false
+searchAliases:
+  - "deploy migrations from OCI"
+  - "promote to production"
+  - "deployment pipeline"
+overlaps:
+  - /operate/oci-registry/
+  - /testing/ci/
+disposition: keep
+sourceMode: oci-artifact-only
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+[Run checks in CI](../../testing/ci/) ends where a pull request is approved.
+This page starts there and ends at a database whose state has been observed
+after the change. It owns the sequence, not the detail: each stage links to the
+guide that owns it.
+
+## The sequence
+
+| Stage | Consumes | Produces | Proves |
+| --- | --- | --- | --- |
+| Review | The migration files or the desired schema | An approved pull request | The change was read by a person, and lint and tests passed on those bytes |
+| Publish | The reviewed directory | An OCI artifact and its manifest digest | The bytes that ship are the bytes that were reviewed |
+| Promote | The digest | A tag in the target environment's repository | The same artifact reaches the next environment |
+| Apply | The digest and a database URL | Applied revisions | The database executed those statements |
+| Verify | The database | An observation | The database is in the state the change intended |
+
+The stages after Review are content-bound except the last two. An artifact
+proves what it contains; it cannot prove anything about a database it has not
+been applied to.
+
+## Publish the reviewed directory
+
+Hash and verify before uploading, then publish. The command prints the manifest
+digest, which is the only identifier worth carrying forward:
+
+```bash
+ptah migrations hash --dir ./migrations
+
+ptah migrations push \
+  oci://ghcr.io/acme/app-migrations \
+  --migrations-dir ./migrations \
+  --dir-format ptah \
+  --verify-sum \
+  --tag stable
+```
+
+`--verify-sum` makes a missing integrity file an error rather than a warning. A
+mismatched integrity file fails before the upload either way.
+
+[OCI registry artifacts](../oci-registry/) covers authentication, private
+registries, and attaching lint and plan reports to the artifact.
+
+## Resolve the tag once, then carry the digest
+
+A tag moves. Resolve it at the start of a deployment and use the digest for
+every later step, so a retag between two commands cannot change what is
+applied halfway through:
+
+```bash
+MIGRATIONS=oci://ghcr.io/acme/app-migrations@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+ptah migrations status \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir "$MIGRATIONS" \
+  --json
+```
+
+`ptah oci tag` moves an alias without rebuilding the artifact, and `ptah oci
+copy` preserves the manifest digest across repositories. Attached reports stay
+at the source unless the copy is recursive, so a destination that must carry
+its lint or plan evidence needs `--recursive`.
+
+Promotion moves an artifact. It does not move a plan or an observation: both of
+those are specific to the database they were made against, so staging's clean
+apply is not evidence about production.
+
+## Apply
+
+```bash
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir "$MIGRATIONS" \
+  --verify-sum
+```
+
+`ptah migrations down` accepts the same pinned source. Moving a tag backwards
+is not a rollback: the database has already executed the statements, so
+reversing them is [a rollback](../../versioned/rollback/) or a forward repair,
+decided by what the failed change did.
+
+Ptah publishes a deployment record to the registry after a successful apply.
+That upload is best-effort, and its failure does not mean the migration failed.
+Read the exit code of the apply, not the presence of the record, and use
+`--skip-report` where the deploy credential has no push rights.
+
+## Verify
+
+An apply that exits `0` reports that the statements ran. Whether the database
+now matches the schema the change intended is a separate question, and drift
+detection is what answers it:
+
+```bash
+ptah migrations status --db-url "$DATABASE_URL" --migrations-dir "$MIGRATIONS"
+ptah schema drift --db-url "$DATABASE_URL" --schema-file schema.sql
+```
+
+## Direct schema changes take a different path
+
+The versioned path above ships a reviewed directory. A directly managed schema
+ships a desired state instead: publish it with `ptah schema push`, and apply it
+with a reviewed plan and, where configured, an approval. See
+[Apply a direct schema change](../../direct/apply/).
+
+A direct change produces no migration history. Do not describe it as one, and
+do not expect `ptah migrations status` to report on it.
+
+## Where the apply runs
+
+<Tabs>
+<TabItem label="A CI job">
+
+The commands above, in a job that holds a database credential and the digest.
+This is the path that works everywhere, including a platform with no Ptah
+integration.
+
+</TabItem>
+<TabItem label="Kubernetes">
+
+The [Ptah Operator](../kubernetes-operator/) reconciles a desired schema from
+an OCI artifact continuously, with plans and approvals as cluster resources.
+
+It does not apply a versioned migration directory: `PtahSchema` reconciles a
+desired schema, and a versioned-migration controller does not exist yet. On the
+versioned path the operator does not replace the apply step above.
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+- [OCI registry artifacts](../oci-registry/) for the artifact operations.
+- [Kubernetes operator](../kubernetes-operator/) for the cluster path.
+- [Rollback](../../versioned/rollback/) for recovering a bad change.
