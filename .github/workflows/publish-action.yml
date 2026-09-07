@@ -3,6 +3,10 @@ name: Publish the GitHub Action
 # stokaro/ptah-action is a published copy of .github/actions/ptah, not a place
 # to edit. This mirrors the directory there so the two cannot drift, which is
 # what stokaro/ptah#3024 records having happened twice in one day.
+#
+# Authentication is the ptah-automation GitHub App, which is already installed
+# across the organisation. It needs Contents: Read and write, which it does not
+# have by default -- metadata, issues and pull requests are not enough to push.
 
 on:
   push:
@@ -36,16 +40,34 @@ jobs:
       - name: Refuse a tree that cannot be published
         run: scripts/check-action-publishable.sh
 
+      # A GitHub App rather than a personal token. The credential is not tied
+      # to whoever created it, so it survives that person's access changing,
+      # and the token it mints expires in an hour rather than on a date
+      # somebody picked. The name is PUBLISH_ rather than PTAH_ACTION_ because
+      # the repository has two more jobs of this shape -- the Homebrew formula
+      # and the site redeploy -- and one app with contents:write, narrowed per
+      # run by `repositories:`, is the credential all three should share.
+      - name: Mint a GitHub App token
+        id: app-token
+        if: vars.PUBLISH_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_KEY }}
+          repositories: ptah-action
+
       - name: Report whether publishing is configured
         id: configured
         env:
-          TOKEN: ${{ secrets.PTAH_ACTION_PUBLISH_TOKEN }}
+          TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           if [ -z "${TOKEN}" ]; then
             echo "configured=false" >>"$GITHUB_OUTPUT"
             {
               printf '## Action publish skipped\n\n'
-              printf 'PTAH_ACTION_PUBLISH_TOKEN is not set, so stokaro/ptah-action was not updated.\n'
+              printf 'No App token was minted, so stokaro/ptah-action was not updated.\n'
+              printf 'Set the PUBLISH_APP_ID variable and the PUBLISH_APP_KEY secret,\n'
+              printf 'and give the app Contents: Read and write on stokaro/ptah-action.\n\n'
               printf 'The directory was still checked, so this run says the tree is publishable and not that it was published.\n'
             } >>"$GITHUB_STEP_SUMMARY"
           else
@@ -53,11 +75,11 @@ jobs:
           fi
 
       # A dispatch is somebody asking for a publish. Telling them it was
-      # skipped in a summary nobody opens is how a missing secret survives.
-      - name: A dispatch without the token is an error
+      # skipped in a summary nobody opens is how a missing credential survives.
+      - name: A dispatch without a token is an error
         if: github.event_name == 'workflow_dispatch' && steps.configured.outputs.configured != 'true'
         run: |
-          echo "PTAH_ACTION_PUBLISH_TOKEN is required to publish" >&2
+          echo "PUBLISH_APP_ID and PUBLISH_APP_KEY are required to publish" >&2
           exit 1
 
       - name: Check out the published repository
@@ -65,7 +87,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: stokaro/ptah-action
-          token: ${{ secrets.PTAH_ACTION_PUBLISH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           path: published
           fetch-depth: 0
 
