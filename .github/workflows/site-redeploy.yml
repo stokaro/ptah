@@ -28,8 +28,6 @@ name: Site redeploy
 # personal token would carry an expiry date, and this job is exactly where that
 # costs something: nothing here runs on a schedule, so the first sign of an
 # expired token is a release whose version never reached the site.
-# PTAH_RUN_DISPATCH_TOKEN stays as the second rung so the switch can happen in
-# either order; remove it once PUBLISH_APP_ID and PUBLISH_APP_KEY are set.
 #
 # workflow_dispatch is the by-hand form, for a redeploy nobody wants to wait
 # six hours for and for proving the token still works.
@@ -85,26 +83,15 @@ jobs:
           repositories: ptah.run
 
       - name: The dispatch token must be present
-        id: token
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          PAT: ${{ secrets.PTAH_RUN_DISPATCH_TOKEN }}
         run: |
           set -euo pipefail
-          # App first. Both spellings reach the same endpoint, and the app one
-          # is the one that does not expire on a date somebody picked.
-          if [ -n "${APP_TOKEN}" ]; then
-            echo "::add-mask::${APP_TOKEN}"
-            echo "value=${APP_TOKEN}" >>"${GITHUB_OUTPUT}"
-            echo "the dispatch authenticates as the app"
-          elif [ -n "${PAT}" ]; then
-            echo "::add-mask::${PAT}"
-            echo "value=${PAT}" >>"${GITHUB_OUTPUT}"
-            echo "the dispatch authenticates as PTAH_RUN_DISPATCH_TOKEN"
-          else
-            echo "::error::no dispatch credential is configured. ptah.run would not learn about this change until its next scheduled deploy. Set the PUBLISH_APP_ID variable with a PUBLISH_APP_KEY secret, giving the app contents:write on stokaro/ptah.run, then re-run this job." >&2
+          if [ -z "${APP_TOKEN}" ]; then
+            echo "::error::no app token was minted, so ptah.run would not learn about this change until its next scheduled deploy. Set the PUBLISH_APP_ID variable with a PUBLISH_APP_KEY secret, giving the app contents:write on stokaro/ptah.run, then re-run this job." >&2
             exit 1
           fi
+          echo "the dispatch authenticates as the app"
 
       # A Release run that succeeded is expected to have left a release behind.
       # Asking for it here, before the dispatch, turns "the site kept showing
@@ -129,7 +116,7 @@ jobs:
       # the latest release for itself.
       - name: Send the dispatch
         env:
-          GH_TOKEN: ${{ steps.token.outputs.value }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           EVENT_NAME: ${{ github.event_name }}
           CHOSEN_EVENT_TYPE: ${{ inputs.event_type }}
           RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
