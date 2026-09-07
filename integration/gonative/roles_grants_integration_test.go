@@ -679,8 +679,8 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 		Diagnostics: &inspectDiag,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(inspected, qt.Not(qt.Contains), "ptah_undescribed_outside_137")
-	c.Assert(inspected, qt.Not(qt.Contains), "PTAH_POSTGRES_INSPECT_ALL_ROLES",
+	c.Assert(inspected.Rendered, qt.Not(qt.Contains), "ptah_undescribed_outside_137")
+	c.Assert(inspected.Rendered, qt.Not(qt.Contains), "PTAH_POSTGRES_INSPECT_ALL_ROLES",
 		qt.Commentf("the note belongs on the diagnostics stream, never in the document"))
 	c.Assert(inspectDiag.String(), qt.Contains, "roles Ptah manages on this server are not described")
 	c.Assert(inspectDiag.String(), qt.Contains, "Set PTAH_POSTGRES_INSPECT_ALL_ROLES=1")
