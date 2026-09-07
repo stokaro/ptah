@@ -230,6 +230,7 @@ export const sidebar = [
     collapsed: true,
     items: [
       { slug: 'extend/overview', label: 'Overview' },
+      { slug: 'extend/editor-and-shell' },
       {
         label: 'Go integration',
         items: [

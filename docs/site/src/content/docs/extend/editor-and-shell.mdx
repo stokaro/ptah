@@ -1,0 +1,94 @@
+---
+title: Editor and shell setup
+description: Enable shell completion and the Ptah language server, and check that each one works.
+type: how-to
+audience:
+  - "new-user"
+readerQuestion: "How do I get completion in my shell and annotation support in my editor?"
+goal: "Enable and verify shell completion and the Ptah language server."
+sourceOfTruth:
+  - "cmd/ptah-ls"
+  - "editors/vscode"
+generated: false
+searchAliases:
+  - "configure VS Code"
+  - "shell completion"
+  - "language server"
+overlaps:
+  - /reference/go-annotations/
+disposition: keep
+---
+
+Both are optional and both are quick. Neither changes what Ptah does; they
+change how much you have to remember while using it. The Go-only scope below is
+the language server's, not Ptah's -- every other source works the same from a
+plain terminal, and [Work with a source](../../schema/work-with-a-source/) is
+the source-neutral path.
+
+## Shell completion
+
+`ptah completion` generates a script for `bash`, `zsh`, `fish` or
+`powershell`:
+
+```bash
+ptah completion zsh > "${fpath[1]}/_ptah"
+```
+
+The exact line differs by shell and platform, and the binary prints the one for
+yours rather than this page guessing: `ptah completion zsh --help` gives the
+current-session form, the every-session form, and the Homebrew path on macOS.
+Read it there, because it moves with the shell rather than with Ptah.
+
+Start a new shell afterwards. To check it took:
+
+```bash
+ptah mig<TAB>
+```
+
+Completion should offer `migrations`. If nothing happens, the script was
+written somewhere the shell does not read, and the shell's own completion
+system has to be enabled first -- `ptah completion zsh --help` says how for
+zsh.
+
+## The language server
+
+`ptah-ls` serves hover documentation, attribute completion and diagnostics for
+`//ptah:` annotations in Go source, from the same directive metadata as the
+[annotation reference](../../reference/go-annotations/). Build it:
+
+```bash
+go build -o bin/ptah-ls ./cmd/ptah-ls
+```
+
+It speaks the Language Server Protocol over stdio and takes no arguments in
+serve mode, so any LSP-capable editor can run it directly. For Visual Studio
+Code, the extension in
+[`editors/vscode`](https://github.com/stokaro/ptah/tree/master/editors/vscode)
+starts it for Go files; point `ptah.languageServer.path` at the binary you
+built.
+
+To check it is running, open a Go file with an annotated struct and:
+
+- hover a directive such as `//ptah:schema:index` -- its documentation appears;
+- type `//ptah:schema:index ` and ask for completion -- the attribute names are
+  offered;
+- misspell an attribute -- a diagnostic marks it, which is the same rejection
+  the parser makes at build time.
+
+If all three are silent the editor is not starting the binary; if only the
+diagnostic is missing the file is probably not part of a package the server
+resolved.
+
+### What it is not
+
+A language server for SQL, HCL, YAML or DBML schema files. It reads `//ptah:`
+annotations in Go source and nothing else. Those formats are edited with
+whatever your editor already does for them, and
+[`ptah schema validate`](../../schema/validate-and-format/) is the check that
+replaces a language server for them.
+
+## Next steps
+
+- [Go annotations](../../reference/go-annotations/) is the directive reference
+  the server serves.
+- [Install Ptah](../../start/install/) covers the binaries themselves.
