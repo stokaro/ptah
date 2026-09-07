@@ -76,10 +76,9 @@ sample package documentation reaches carries no guarantee.
 directory holding only `_test.go` files publish no import path and are outside
 the surface for that reason. What is left is behind an `internal/` boundary --
 matched as a whole path segment, so `core/internal` is a boundary and
-`internalized` is not. The gate still carries a named exemption per subtree
-whose move has not landed (`cmd`, `integration`); each is deleted by
-the change that internalizes its subtree under stokaro/ptah#2974, and none may
-be added. Additive API changes get normal code review: do not commit a generated
+`internalized` is not. One named exemption is left, `cmd`, and the change that
+internalizes it under stokaro/ptah#2974 deletes it; none may be added.
+Additive API changes get normal code review: do not commit a generated
 snapshot of exported declarations to make them show up twice in a diff
 (`docs/public_api.snapshot` and its gate were removed in stokaro/ptah#2572 for
 that reason).

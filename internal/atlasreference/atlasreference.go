@@ -9,6 +9,12 @@
 // (stokaro/ptah#1887).
 //
 // The dialect keeps the name, because it is the engine's.
+//
+// It sits here rather than beside the suites that read it because an
+// integration tree holds nothing but tagged test files: library code they use
+// lives outside it, with its own unit tests. As a package under
+// integration/ it was also a public import path Go published, which is the
+// wider count stokaro/ptah#2974 works through.
 package atlasreference
 
 import "os"

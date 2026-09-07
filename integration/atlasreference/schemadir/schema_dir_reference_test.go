@@ -4,7 +4,7 @@ package schemadir_test
 
 import (
 	"errors"
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"

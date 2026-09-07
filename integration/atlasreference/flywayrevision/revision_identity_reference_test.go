@@ -7,7 +7,7 @@ package flywayrevision_test
 import (
 	"database/sql"
 	"errors"
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 	"io/fs"
 	"net/url"
 	"os"

@@ -5,7 +5,7 @@ package migrateapply_test
 import (
 	"database/sql"
 	"errors"
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
