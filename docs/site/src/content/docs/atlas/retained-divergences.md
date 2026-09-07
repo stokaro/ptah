@@ -8,12 +8,12 @@ audience:
 readerQuestion: "Where does ptah-compat deliberately differ from the pinned Atlas community binary?"
 goal: "Evaluate each measured compatibility difference and its current policy."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 lastVerified: "2026-08-30"
 evidence:
-  - "cmd/atlas/compat_1241_retained_divergence_test.go"
+  - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
 searchAliases:
   - "retained divergences"
@@ -339,9 +339,9 @@ against the same root before output or mutation.
 ## What holds the #1241 entries
 
 The issue #1241 entries above are pinned by a test in
-`cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
+`internal/cli/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
-`cmd/atlas/compat_overstrict_test.go`. The same focused file also pins all three
+`internal/cli/atlas/compat_overstrict_test.go`. The same focused file also pins all three
 orders of the prefix insertion: the default refuses, `--exec-order
 non-linear` applies and remains idempotent, and `--exec-order linear-skip`
 leaves the insertion unapplied and stays that way on a repeat run. The last of

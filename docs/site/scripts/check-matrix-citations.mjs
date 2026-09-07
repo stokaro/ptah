@@ -8,7 +8,7 @@ const rowsPath = join(scriptDir, 'data', 'feature-matrix-rows.json');
 const repoRoot = join(scriptDir, '..', '..', '..');
 
 // A matrix cell's evidence names the files that settle it, and files move. Three
-// citations already pointed at nothing: schemaload.go left cmd/internal/,
+// citations already pointed at nothing: schemaload.go left internal/cli/internal/,
 // clean_live_test.go left internal/schemaclean/, and test_vars_test.go was
 // folded into test_test.go. Every claim was still true and still tested -- what
 // had been lost was the reader's way of checking it, which is the whole job of

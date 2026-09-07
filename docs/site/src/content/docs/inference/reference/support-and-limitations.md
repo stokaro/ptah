@@ -8,12 +8,12 @@ audience:
 readerQuestion: "Which inference migration guarantees are measured, unsupported, or owned by the operator?"
 goal: "Distinguish measured, unsupported, and operator-owned inference guarantees."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 lastVerified: "2026-08-30"
 evidence:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 overlaps: []
 disposition: keep

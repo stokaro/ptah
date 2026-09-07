@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/dbtarget"
 )
 

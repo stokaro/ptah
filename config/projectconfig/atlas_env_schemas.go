@@ -53,7 +53,7 @@ var ignoreEnvSchemas = envbool.New(IgnoreEnvSchemasEnvVar, false, envbool.Gated)
 // it looks at the file system; a caller that may reach neither still owes the
 // refusal.
 //
-// cmd/atlas's compatibility adapter is exactly such a caller. It opens the
+// internal/cli/atlas's compatibility adapter is exactly such a caller. It opens the
 // project file itself and returns "no project" when the file is absent, so on
 // that arm it reaches no entry point here. Measured on that adapter with
 // `PTAH_ATLAS_IGNORE_ENV_SCHEMAS` exported empty, running

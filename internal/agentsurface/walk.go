@@ -106,8 +106,8 @@ type Node struct {
 //
 // Both initializers are idempotent, which is what makes calling them here a
 // completion of the tree rather than an override of it. `ptah-compat` is the
-// case that proves it: cmd/atlas registers `completion` itself, calling
-// InitDefaultCompletionCmd at cmd/atlas/atlas.go:469 so that Atlas-style group
+// case that proves it: internal/cli/atlas registers `completion` itself, calling
+// InitDefaultCompletionCmd at internal/cli/atlas/atlas.go:469 so that Atlas-style group
 // help can rewrite the command afterwards. That tree is short by `help` alone,
 // not by six names, and InitDefaultCompletionCmd returns early against it
 // rather than replacing the rewritten command.
@@ -126,7 +126,7 @@ type Node struct {
 // one of them" read at the place it applies here. The two paragraphs above are
 // the recognition: which commands a shipped tree holds is decided by two
 // initializer calls whose correctness differs per binary, and a walk that
-// restated them would be wrong about `ptah-compat` on the day `cmd/atlas`
+// restated them would be wrong about `ptah-compat` on the day `internal/cli/atlas`
 // changed which of them it makes for itself. So Nodes is the only place in
 // this repository that visits a `*cobra.Command`'s children.
 func Nodes(root *cobra.Command) []Node {

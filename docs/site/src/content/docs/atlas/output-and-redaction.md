@@ -7,7 +7,7 @@ audience:
 readerQuestion: "What data does ptah-compat expose to format templates, and how are URLs redacted?"
 goal: "Write an Atlas-compatible format template without exposing URL credentials."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlasreport"
 generated: false
 searchAliases:

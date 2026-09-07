@@ -40,7 +40,7 @@ package integration_test
 // alone. Which rows it covers, and which it deliberately does not, is in
 // TestParse_MySQLUniqueKeyNameSpellings_HappyPath.
 //
-// The commands are driven in process through the cobra tree `cmd/schema`
+// The commands are driven in process through the cobra tree `internal/cli/schema`
 // builds, which is the shape mysql_inline_index_naming_e2e_test.go and
 // mysql_typed_index_roundtrip_e2e_test.go already establish for the native
 // schema verbs: the same user-facing surface `ptah schema apply` and

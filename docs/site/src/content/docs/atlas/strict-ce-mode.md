@@ -10,12 +10,12 @@ goal: "Run and interpret a strict Atlas CE conformance invocation."
 sourceOfTruth:
   - "internal/atlascompatpolicy"
   - "internal/envbool"
-  - "cmd/atlas"
+  - "internal/cli/atlas"
 generated: false
 lastVerified: "2026-08-30"
 evidence:
   - "internal/atlascompatpolicy"
-  - "cmd/atlas/strict_compat_policy_test.go"
+  - "internal/cli/atlas/strict_compat_policy_test.go"
   - "github:stokaro/ptah-atlas-conformance"
 searchAliases:
   - PTAH_ATLAS_STRICT_COMPAT

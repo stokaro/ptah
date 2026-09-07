@@ -18,7 +18,7 @@ import (
 // subprocess, which is the only way to assert real process exit codes.
 //
 // Caution when iterating on behavior these tests pin: the Go test cache keys on
-// this package's own inputs, so an edit under cmd/atlas does not invalidate a
+// this package's own inputs, so an edit under internal/cli/atlas does not invalidate a
 // cached PASS here even though it changes the binary being built. Run
 // `go test ./cmd/ptah-compat/... -count=1` after touching the command tree, or
 // a mutation you expect to fail will silently report a stale PASS.
@@ -43,7 +43,7 @@ func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 // Per stokaro/ptah#1019 the prefix is punctuation owned by the surface, not by
 // the message: everything this binary prints as a process-level diagnostic is
 // prefixed "Error: ", and the native ptah binary prefixes "error: " (pinned by
-// TestNativeDiagnosticsKeepTheNativePrefix in cmd/root). Before that decision
+// TestNativeDiagnosticsKeepTheNativePrefix in internal/cli/root). Before that decision
 // the two prefixes were split inside this one binary — `migrate set` was the
 // only command that overrode a printer, so it answered "Error: unknown flag"
 // while `migrate status`, `schema inspect`, `version` and the rest answered
@@ -118,7 +118,7 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 		},
 		// Reaches a native command the adapter executes detached from this
 		// tree, so its diagnostic is printed by the native package's own
-		// cmdutil.Fail call rather than by anything under cmd/atlas.
+		// cmdutil.Fail call rather than by anything under internal/cli/atlas.
 		{
 			name:       "forwarded native target failure",
 			args:       []string{"migrate", "rm", "20990101000000"},
@@ -408,7 +408,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		// bytes on standard error and nothing on standard output, so the
 		// missing driver really does precede the version. This verb has no
 		// required-flag check on either binary; see cell 9.14 of
-		// stokaro/ptah#1235 and cmd/atlas/compat_url_diagnostic.go.
+		// stokaro/ptah#1235 and internal/cli/atlas/compat_url_diagnostic.go.
 		c.Assert(stderr.String(), qt.Equals,
 			"Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n")
 	})

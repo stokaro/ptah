@@ -105,7 +105,7 @@ func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 // It asserted zero findings, and now asserts nothing above info. The difference
 // is SQL004, which says no rule examined the statement -- true of CREATE POLICY,
 // and the point of reporting it. Only SeverityError decides the exit code
-// (cmd/sql/sql.go), so the run still succeeds and the claim this test was
+// (internal/cli/sql/sql.go), so the run still succeeds and the claim this test was
 // written to make is unchanged (stokaro/ptah#1270).
 func TestLintSource_CreatePolicyIsSupported(t *testing.T) {
 	c := qt.New(t)

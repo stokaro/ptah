@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I apply pending migrations and verify their state?"
 goal: "Apply pending migrations and verify their state."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 searchAliases:

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I ask Ptah a model-assisted question and see what it verified?"
 goal: "Run one Ptah Assist question and distinguish the model answer from Ptah tool evidence."
 sourceOfTruth:
-  - "cmd/assist"
+  - "internal/cli/assist"
   - "internal/assistloop"
 generated: false
 searchAliases:

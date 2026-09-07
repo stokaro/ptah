@@ -4,7 +4,7 @@
 // It is a vocabulary rather than an analysis: nothing here inspects a schema.
 // Severity, Rank, IsBlocking and SARIFLevel answer "how bad is this, and does
 // it block", and the packages that decide WHAT is bad -- migration/safety,
-// migration/lint, internal/schemasecurity, the lint gate and cmd/viz -- all
+// migration/lint, internal/schemasecurity, the lint gate and internal/cli/viz -- all
 // express their answers on this scale. migration/safety is one consumer among
 // several rather than this package's subject (stokaro/ptah#2246 section 2.2).
 package risk

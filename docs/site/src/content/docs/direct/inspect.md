@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models?"
 goal: "Choose the required output format and inspect a live schema."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "migration/schemadiff"
   - "migration/planner"
 generated: false

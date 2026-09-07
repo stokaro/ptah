@@ -12,11 +12,11 @@ Usage:
 A spec is JSON:
 
     {
-      "packages": ["./cmd/atlas/", "./internal/migratesum/"],
+      "packages": ["./internal/cli/atlas/", "./internal/migratesum/"],
       "env": {"PTAH_ATLAS_FUZZ_N": "60"},
       "mutations": [
         {"name": "the query no longer wins over the flag",
-         "file": "cmd/atlas/migrate_integrity.go",
+         "file": "internal/cli/atlas/migrate_integrity.go",
          "old": "...exact source text, must occur exactly once...",
          "new": "..."}
       ]

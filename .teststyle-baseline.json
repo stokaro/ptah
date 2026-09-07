@@ -1,7 +1,7 @@
 {
   "test_conditionals": [
     {
-      "path": "cmd/internal/migrateflags/migrateflags_test.go",
+      "path": "internal/cli/internal/migrateflags/migrateflags_test.go",
       "function": "TestParseMigrationLockTimeout",
       "kind": "if",
       "count": 1
@@ -783,7 +783,7 @@
   ],
   "white_box_files": [
     {
-      "path": "cmd/atlas/atlas_test.go",
+      "path": "internal/cli/atlas/atlas_test.go",
       "package": "atlas",
       "reason": "same-package test file is not named *_internal_test.go"
     },
@@ -793,7 +793,7 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/migrateup/migrateup_test.go",
+      "path": "internal/cli/migrateup/migrateup_test.go",
       "package": "migrateup",
       "reason": "same-package test file is not named *_internal_test.go"
     },

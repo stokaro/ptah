@@ -206,7 +206,7 @@ const atlasCheckpointDirective = "-- atlas:checkpoint"
 // fresh database would then run the checkpoint and replay that migration on top
 // of it. Callers writing into a directory Ptah will read must take the maximum
 // of this and the newest version from a recursive walk — see
-// resolveCheckpointVersion in cmd/migratecheckpoint. The signature is kept free
+// resolveCheckpointVersion in internal/cli/migratecheckpoint. The signature is kept free
 // of that bound on purpose; supplying it is the caller's job.
 func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 	return nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())

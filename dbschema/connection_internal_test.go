@@ -269,11 +269,11 @@ func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {
 	c.Assert(got.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
 }
 
-// defaultCLILogLevel is the threshold cmd/internal/cliobs.QuietDefaultLogger
+// defaultCLILogLevel is the threshold internal/cli/cliobs.QuietDefaultLogger
 // installs before any command runs, and therefore the level at which library
 // slog calls reach a user's stderr on a default invocation. It is duplicated
-// rather than imported because cliobs lives under cmd/internal and this
-// package cannot reach it.
+// rather than imported because cliobs lives under internal/cli, which is the
+// command tree, and a library package does not reach into it.
 const defaultCLILogLevel = slog.LevelWarn
 
 // captureResolutionReport runs the reporter with a default logger writing to a

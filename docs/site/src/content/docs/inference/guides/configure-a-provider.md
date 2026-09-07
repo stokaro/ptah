@@ -9,7 +9,7 @@ readerQuestion: "How do I configure and check the embedding endpoint a generatio
 goal: "Configure an embedding endpoint and check it before running a migration."
 sourceOfTruth:
   - "internal/embedprovider"
-  - "cmd/inference/probe.go"
+  - "internal/cli/inference/probe.go"
 generated: false
 overlaps: []
 disposition: keep

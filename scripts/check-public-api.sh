@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Fails when a library package is importable from outside this module and
-# docs/public_api.md classifies it under neither category.
+# docs/public_api.md classifies it under neither category. There are no
+# exemptions.
+#
+# Each one this gate used to carry named a subtree Go published while the
+# ledger declined to mention it, and stokaro/ptah#2974 closed them one at a
+# time by moving the subtree rather than by widening the rule -- so the
+# path-shaped escape hatch goes with the last of them. A tree that should not
+# be published belongs behind an internal boundary, which is the thing that
+# actually stops Go from publishing it.
 #
 # "Library package" is read out of package metadata rather than out of a path
 # pattern. `go list` reports a directory holding only `_test.go` files, and such
@@ -15,7 +23,6 @@ export GOWORK=off
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-module_path="$(go list -m -f '{{.Path}}')"
 allowlist="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$allowlist" "$packages"' EXIT
@@ -90,17 +97,6 @@ is_internal() {
 	return 1
 }
 
-# The one exemption left, deleted by the change that internalizes the subtree it
-# names (stokaro/ptah#2974). An exemption is not a boundary: it keeps a package
-# out of docs/public_api.md while Go goes on publishing it, so it is a recorded
-# debt with an owner rather than a policy. None may be added.
-is_exempt() {
-	case "$1" in
-		"$module_path"/cmd | "$module_path"/cmd/*) return 0 ;;
-	esac
-	return 1
-}
-
 missing=0
 libraries=0
 while IFS='|' read -r import_path package_name go_files cgo_files; do
@@ -115,9 +111,6 @@ while IFS='|' read -r import_path package_name go_files cgo_files; do
 		continue
 	fi
 	libraries=$((libraries + 1))
-	if is_exempt "$import_path"; then
-		continue
-	fi
 	if ! grep -Fxq "$import_path" "$allowlist"; then
 		printf 'unclassified public package: %s\n' "$import_path" >&2
 		missing=1

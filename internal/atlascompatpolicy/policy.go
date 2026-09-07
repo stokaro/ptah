@@ -646,7 +646,7 @@ func Resolve() (Policy, error) {
 //
 // This list stays hand-written because it names variables that are NOT
 // booleans, and [envbool] governs booleans only: there is no registry to derive
-// it from. cmd/internal/envboolguard is what keeps it honest -- a `PTAH_*` name
+// it from. internal/cli/internal/envboolguard is what keeps it honest -- a `PTAH_*` name
 // the tree mentions has to be either a declared boolean or a written-down
 // non-boolean, and a name in both classifications fails there.
 var gatedPresenceEnvVars = []string{
@@ -668,7 +668,7 @@ var gatedPresenceEnvVars = []string{
 //
 // The lists this replaced were maintained by hand next to a registry that
 // already knew the answer, so the two could drift and the drift was silent: a
-// variable declared correctly, and therefore invisible to cmd/internal/envboolguard,
+// variable declared correctly, and therefore invisible to internal/cli/internal/envboolguard,
 // could still be missing from the strict lists, and a malformed value for it was
 // ignored under strict mode instead of refused. Deriving from the registry means
 // a variable is validated by the act of declaring it. See [envbool.Class] for

@@ -258,7 +258,7 @@ function selftest() {
       'audience:',
       '  - database-engineer',
       'sourceOfTruth:',
-      '  - cmd/schema',
+      '  - internal/cli/schema',
       'overlaps: []',
       'generated: false',
       '---',
@@ -290,7 +290,7 @@ function selftest() {
   );
   const metadataFixture = {
     type: 'status', audience: ['operator'], readerQuestion: 'What is measured?', goal: 'Read the evidence.',
-    sourceOfTruth: ['cmd/schema'], overlaps: [], disposition: 'keep', generated: false,
+    sourceOfTruth: ['internal/cli/schema'], overlaps: [], disposition: 'keep', generated: false,
     evidence: ['stokaro/ptah#2571'],
   };
   assert(

@@ -7,8 +7,8 @@ audience:
 readerQuestion: "How do I publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry?"
 goal: "Publish and consume a pinned migration or schema artifact."
 sourceOfTruth:
-  - "cmd/migrationspush"
-  - "cmd/migrationspull"
+  - "internal/cli/migrationspush"
+  - "internal/cli/migrationspull"
   - "internal/schemaartifact"
 generated: false
 searchAliases:

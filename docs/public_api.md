@@ -598,7 +598,7 @@ parses SQL, HCL, or YAML stdout into Ptah's schema IR. Empty output is rejected
 to prevent an accidentally broken provider from becoming an empty desired
 schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
 and terminal-safe. Embedders can use the same external desired-schema contract
-as the CLI without depending on Cobra or any `cmd/internal` package.
+as the CLI without depending on Cobra or any command-tree package.
 
 `migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How does Ptah model the lifecycle?"
 goal: "Explain Ptah's model for the lifecycle."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

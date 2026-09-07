@@ -32,7 +32,7 @@ between costed alternatives rather than inventing one.
 ### 2.1 The transport seam exists
 
 `mcpserver.Run` hardcodes `&mcp.StdioTransport{}` and has exactly one caller,
-`cmd/mcp/run.go`. No test calls it. Everything else — including `ptah assist` —
+`internal/cli/mcp/run.go`. No test calls it. Everything else — including `ptah assist` —
 builds the server with `mcpserver.New` and connects it over a transport of its
 own choosing; assist already uses an in-memory pair. **A remote transport is a
 third caller of `New`, not a change to `New`.**

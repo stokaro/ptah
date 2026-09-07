@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/atlas"
+	"ptah.run/internal/cli/atlas"
 )
 
 // TestAtlasCompatLeadingSchemaTypeSelectorE2E pins the deliberate

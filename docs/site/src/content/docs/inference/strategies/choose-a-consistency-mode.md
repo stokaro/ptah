@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Which consistency mode fits my source-write behavior?"
 goal: "Choose a consistency mode for the source-write behavior."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

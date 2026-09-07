@@ -19,9 +19,9 @@
 // and it is not answered by the verb's name. `repair` reads as metadata
 // maintenance and is exactly that WITHOUT --resume-from; with it, the verb
 // executes migration statements and belongs here. The gate is therefore applied
-// per invocation there, not per verb — see cmd/migraterepair. The enumeration
+// per invocation there, not per verb — see internal/cli/migraterepair. The enumeration
 // itself lives beside the namespace that registers the verbs, in
-// cmd/migrations/integrity_class_test.go, so a new verb has a visible place
+// internal/cli/migrations/integrity_class_test.go, so a new verb has a visible place
 // where its verdict is missing.
 //
 // Verification guarding only the constructive direction is backwards. `down` is
@@ -37,7 +37,7 @@
 // So the predicate is expressed once, here, and called by every verb in the
 // class rather than reimplemented per verb. The compat surface reached the same
 // conclusion for the same reason; see the file comment on
-// cmd/atlas/migrate_integrity_gate.go, which records that leaving the rule
+// internal/cli/atlas/migrate_integrity_gate.go, which records that leaving the rule
 // inside `migrate apply` produced #974 and then #1095.
 //
 // # What the gate does NOT change
@@ -115,7 +115,7 @@ type CheckpointEditAuthorization struct {
 // `cli-surface` tier asserts flag parity against the community binary, so a new
 // flag on any verb this gate guards would break it. Every boolean `PTAH_*` is
 // declared once through [ptah.run/internal/envbool]; see
-// cmd/internal/envboolguard for the guard that enforces it.
+// internal/cli/internal/envboolguard for the guard that enforces it.
 //
 // Using it is never silent. A flag leaves a trace in the command line an
 // operator can read back afterwards; an environment variable exported three

@@ -136,8 +136,8 @@ func Notice() []string {
 			"that publishes no step is refused rather than listed.",
 		"6. Not that a dialect row is a promise. A dialect being accepted is not a promise that every construct renders on it; docs/capabilities.md and `ptah db capabilities` answer that.",
 		"7. Not that the walk reaches every spelling the binary answers to. `__complete` and `__completeNoDesc` come from cobra's unexported initCompleteCmd and no walk can reach them; internal/agentsurface/walk.go says so.",
-		"8. Not the compatibility tree. AGENTS.md holds cmd/ptah-compat/main.go as the only non-test file outside cmd/atlas " +
-			"that may import cmd/atlas, so no tool here can walk that tree. Adding the kind is a maintainer decision about " +
+		"8. Not the compatibility tree. AGENTS.md holds cmd/ptah-compat/main.go as the only non-test file outside internal/cli/atlas " +
+			"that may import internal/cli/atlas, so no tool here can walk that tree. Adding the kind is a maintainer decision about " +
 			"that rule, not a discovery.",
 		"9. Not a verification date. There is no last-verified column: the file is regenerated on every continuous-integration run, and a stale one is a red gate.",
 	}

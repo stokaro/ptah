@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I reuse Atlas-compatible HCL schema files as Ptah's desired schema?"
 goal: "Render a desired schema from Atlas-compatible HCL."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
   - "internal/atlashcl"
   - "internal/atlashclrender"

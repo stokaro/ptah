@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I merge several schema sources into one desired schema?"
 goal: "Build and verify one desired schema from multiple sources."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
 generated: false
 overlaps: []

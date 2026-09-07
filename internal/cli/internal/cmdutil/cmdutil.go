@@ -1,0 +1,329 @@
+// Package cmdutil holds small helpers shared by CLI subcommands: consistent
+// usage-error reporting, command-tree error policies, and directory validation.
+package cmdutil
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+
+	"github.com/spf13/cobra"
+
+	"ptah.run/internal/cli/internal/exitcode"
+)
+
+const (
+	configuredAnnotation        = "ptah.exitcode_configured"
+	errorCodePolicyAnnotation   = "ptah.error_code_policy"
+	errorPrefixPolicyAnnotation = "ptah.error_prefix_policy"
+	unconfiguredErrorCode       = -1
+	nativeCommandErrorCode      = 2
+	// nativeErrorPrefix is the diagnostic prefix of the native ptah surface.
+	// Surfaces that need a different one declare it with
+	// [SetErrorPrefixPolicy] on their root command.
+	nativeErrorPrefix = "error"
+)
+
+// ConfigureCommand installs Ptah's common CLI error contract on cmd. It is
+// idempotent because many command constructors return package-level singletons.
+func ConfigureCommand(cmd *cobra.Command) {
+	ConfigureCommandArgs(cmd, NoPositionalArgs)
+}
+
+// ConfigureCommandArgs installs Ptah's common CLI error contract on cmd while
+// preserving a command-specific Args validator.
+func ConfigureCommandArgs(cmd *cobra.Command, args cobra.PositionalArgs) {
+	if cmd.Annotations != nil && cmd.Annotations[configuredAnnotation] == "true" {
+		return
+	}
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[configuredAnnotation] = "true"
+
+	cmd.Args = args
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetFlagErrorFunc(FlagErrorFunc)
+	if cmd.RunE != nil {
+		cmd.RunE = WrapRunE(cmd.RunE)
+	}
+}
+
+// SetErrorCodePolicy marks cmd and its future descendants with an inherited
+// process exit code. [NormalizeCommandError] applies the policy after Cobra
+// finishes command execution and validation.
+func SetErrorCodePolicy(cmd *cobra.Command, code int) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[errorCodePolicyAnnotation] = strconv.Itoa(code)
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+}
+
+// NormalizeCommandError applies the nearest configured ancestor error policy
+// to err. Commands without a configured policy preserve explicit exit codes
+// and map an ordinary error to fallback.
+func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
+	if err == nil {
+		return nil
+	}
+	// Before the exit-code policy and before anything is printed, because this
+	// is the one boundary every command reaches: ConfigureCommandArgs wraps the
+	// root's RunE alone, so a subcommand's failure never passes through
+	// WrapRunE. See [ErrCanceled].
+	err = asCancellation(cmd.Context(), err)
+	if code, ok := commandErrorCode(cmd); ok {
+		currentCode := exitcode.Code(err, unconfiguredErrorCode)
+		switch currentCode {
+		case code:
+			return err
+		case unconfiguredErrorCode:
+			printDiagnostic(cmd, err)
+		}
+		return exitcode.New(code, err)
+	}
+	if exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
+		return err
+	}
+	printDiagnostic(cmd, err)
+	return exitcode.New(fallback, err)
+}
+
+// SetErrorPrefixPolicy marks cmd and its descendants with the diagnostic
+// prefix every process-level diagnostic below cmd is printed with. The prefix
+// is punctuation owned by the surface, not by the message: the native ptah
+// tree keeps [nativeErrorPrefix], and the Atlas-compatible tree declares its
+// own so a contributor predicts the prefix from the binary alone.
+//
+// It panics on an empty prefix. A surface cannot declare "no prefix": every
+// printer here writes "<prefix>: <message>", so an empty value would emit a
+// leading ": ". Rejecting it at the wiring call is what keeps the
+// misconfiguration loud; silently ignoring it would resolve the surface to
+// whatever an ancestor declares, which is the class of accident this policy
+// exists to remove.
+func SetErrorPrefixPolicy(cmd *cobra.Command, prefix string) {
+	if prefix == "" {
+		panic("cmdutil: empty error prefix policy for command " + cmd.CommandPath())
+	}
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[errorPrefixPolicyAnnotation] = prefix
+}
+
+// ErrorPrefix resolves the nearest declared prefix policy for cmd, defaulting
+// to the native prefix. Every printer in this package routes through it, so a
+// surface declares its prefix once on its root instead of at each of the call
+// sites that print.
+//
+// The walk starts at cmd, so the nearest declaration wins: a subtree may
+// declare a prefix that differs from its root's. That is deliberate rather
+// than an oversight — [AdoptErrorPrefixPolicy] depends on it to hand a
+// detached forwarded target the calling surface's prefix. Ptah's own trees
+// declare the policy only on their roots.
+func ErrorPrefix(cmd *cobra.Command) string {
+	for current := cmd; current != nil; current = current.Parent() {
+		prefix, ok := current.Annotations[errorPrefixPolicyAnnotation]
+		if ok && prefix != "" {
+			return prefix
+		}
+	}
+	return nativeErrorPrefix
+}
+
+// AdoptErrorPrefixPolicy copies the prefix policy resolved for source onto
+// target and returns a function that restores target's previous policy.
+//
+// Forwarding adapters need this because a forwarded target is a detached
+// command tree that cannot reach the calling surface's root through
+// [ErrorPrefix]'s parent walk. Run the returned restore before the process
+// executes anything else: a target that outlives one forwarded execution would
+// otherwise carry the borrowed prefix into a later run on another surface.
+//
+// The restore returns target's annotations to their exact previous state,
+// including dropping the map [SetErrorPrefixPolicy] allocated for a target
+// that had none. Restoring "the key is gone" but leaving an allocated empty
+// map behind would make the restore observably incomplete to anything that
+// reads Annotations rather than a single key.
+func AdoptErrorPrefixPolicy(target, source *cobra.Command) func() {
+	allocated := target.Annotations == nil
+	previous, configured := target.Annotations[errorPrefixPolicyAnnotation]
+	SetErrorPrefixPolicy(target, ErrorPrefix(source))
+	return func() {
+		if configured {
+			target.Annotations[errorPrefixPolicyAnnotation] = previous
+			return
+		}
+		if allocated {
+			target.Annotations = nil
+			return
+		}
+		delete(target.Annotations, errorPrefixPolicyAnnotation)
+	}
+}
+
+// printDiagnostic writes err to cmd's stderr under the surface's prefix.
+func printDiagnostic(cmd *cobra.Command, err error) {
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", ErrorPrefix(cmd), err)
+}
+
+// ErrorCodePolicy reports the process exit code the nearest configured
+// ancestor of cmd declares, and whether any ancestor declares one. It exposes
+// the same lookup [NormalizeCommandError] performs, for the one decision made
+// outside command execution: the status an interrupted process exits with.
+// A surface that narrows every failure to one code narrows the interrupt too,
+// rather than leaking a signal status through a contract that does not have
+// one.
+func ErrorCodePolicy(cmd *cobra.Command) (int, bool) {
+	return commandErrorCode(cmd)
+}
+
+func commandErrorCode(cmd *cobra.Command) (int, bool) {
+	for current := cmd; current != nil; current = current.Parent() {
+		policy, ok := current.Annotations[errorCodePolicyAnnotation]
+		if !ok {
+			continue
+		}
+		code, err := strconv.Atoi(policy)
+		if err == nil {
+			return code, true
+		}
+	}
+	return 0, false
+}
+
+// ErrCanceled is what a command reports when the operator stopped it.
+//
+// A canceled command fails wherever the cancellation is first noticed, and that
+// is whichever subsystem happened to be mid-call: a store write answers
+// `save run r-1: context canceled`, a connection pool answers `driver: bad
+// connection`, and a provider request answers whatever its transport says.
+// Measured over sixteen interrupts at randomized delays, half of them leaked a
+// store or driver sentence to an operator who had pressed Ctrl-C
+// (stokaro/ptah#2649 finding 10).
+var ErrCanceled = errors.New("canceled")
+
+// WrapRunE maps ordinary command failures to exit code 2 while preserving
+// expected-negative results that already carry an explicit exit code.
+func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		if err == nil || exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
+			return err
+		}
+		printDiagnostic(cmd, err)
+		return exitcode.New(nativeCommandErrorCode, err)
+	}
+}
+
+// asCancellation replaces a canceled command's error with the cancellation.
+//
+// BOTH conditions are required, and the second is what makes this safe: the
+// command's context has to be canceled, and the error has to carry
+// context.Canceled. An interrupt that arrives while a command is already
+// failing for its own reason must not hide that reason -- the operator would
+// then be told they stopped something that had already gone wrong.
+//
+// A deadline is deliberately not a cancellation. `--provider-timeout` expiring
+// is a fact about the endpoint, and reporting it as "canceled" would take away
+// the one word saying which.
+func asCancellation(ctx context.Context, err error) error {
+	if err == nil || ctx == nil || ctx.Err() == nil {
+		return err
+	}
+	if !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return cancellation{cause: err}
+}
+
+// cancellation reads as the cancellation and still carries what noticed it.
+//
+// The cause stays reachable through errors.Is and errors.As, because a caller
+// asking whether this was a provider failure has to be able to find out; it is
+// only the SENTENCE that drops it, and the sentence is the part an operator
+// reads.
+type cancellation struct {
+	cause error
+}
+
+func (c cancellation) Error() string { return ErrCanceled.Error() }
+
+func (c cancellation) Unwrap() []error { return []error{ErrCanceled, c.cause} }
+
+// Fail prints err to the command's stderr and returns it as an exit-2 usage
+// error. Commands that set SilenceErrors must route their usage failures
+// through this so the message still reaches the user.
+func Fail(cmd *cobra.Command, err error) error {
+	printDiagnostic(cmd, err)
+	return exitcode.New(nativeCommandErrorCode, err)
+}
+
+// FlagErrorFunc reports a cobra flag-parse error (unknown flag, bad value)
+// with a printed message and exit code 2, matching every other usage error.
+// Install it with cmd.SetFlagErrorFunc.
+func FlagErrorFunc(cmd *cobra.Command, err error) error {
+	return Fail(cmd, err)
+}
+
+// NoPositionalArgs is a cobra Args validator that rejects any positional
+// argument with a printed message and exit code 2. Unlike cobra.NoArgs, whose
+// error is swallowed under SilenceErrors and degrades to a bare exit 1, this
+// routes through Fail so the failure is visible and carries the usage exit
+// code, so a stray positional value does not masquerade as success/drift.
+func NoPositionalArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return Fail(cmd, fmt.Errorf("unexpected positional arguments %q", args))
+	}
+	return nil
+}
+
+// NoPositionalArgsHint returns [NoPositionalArgs] with hint appended to the
+// refusal, naming the flag that carries the value the caller most likely meant.
+//
+// It exists for the Atlas-compatible surface, where refusing a stray positional
+// is a deliberate divergence: the pinned Atlas community binary v1.3.0 accepts
+// one and silently discards it, so `atlas migrate status --url … file://mig2`
+// exits 0 reporting on ./migrations instead of on the directory that was named
+// (stokaro/ptah#1241 item 13). A refusal is the right answer there, but only if
+// it tells the operator where the value belongs.
+//
+// The hint is a suffix rather than a rewrite so the leading sentence stays the
+// one every other Ptah surface prints for the same mistake.
+func NoPositionalArgsHint(hint string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		return Fail(cmd, fmt.Errorf("unexpected positional arguments %q: %s", args, hint))
+	}
+}
+
+// ExactArgs returns a Cobra validator that requires exactly count positional
+// arguments while preserving Ptah's printed exit-2 usage-error contract.
+func ExactArgs(count int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) != count {
+			return Fail(cmd, fmt.Errorf("expected exactly %d positional argument(s), got %d", count, len(args)))
+		}
+		return nil
+	}
+}
+
+// StatDir validates that dir exists and is a directory, returning an
+// actionable error (wrapping the underlying os.Stat error, and distinguishing
+// a path that exists but is a file) otherwise.
+func StatDir(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("migrations directory %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("migrations directory %s: not a directory", dir)
+	}
+	return nil
+}

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How does Ptah model embeddings and inference state?"
 goal: "Explain Ptah's model for embeddings and inference state."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

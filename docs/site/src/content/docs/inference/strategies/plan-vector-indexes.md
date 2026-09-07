@@ -8,7 +8,7 @@ audience:
 readerQuestion: "When should I build each type of vector index?"
 goal: "Choose a vector index type and when to build it."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ptah.run/cmd/root"
 	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/featureinventory"
 	"ptah.run/internal/quickstart"
 )

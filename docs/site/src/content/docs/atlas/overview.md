@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Which Ptah surface should an Atlas user choose?"
 goal: "Choose the correct Ptah or ptah-compat surface for an Atlas workflow."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 searchAliases:

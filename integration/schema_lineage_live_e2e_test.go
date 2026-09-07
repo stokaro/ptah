@@ -14,7 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	cmdschema "ptah.run/cmd/schema"
+	cmdschema "ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
 )
 

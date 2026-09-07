@@ -20,10 +20,10 @@ import (
 )
 
 // capabilityReportDefaultLogLevel is the threshold
-// cmd/internal/cliobs.QuietDefaultLogger installs before any command runs, and
+// internal/cli/cliobs.QuietDefaultLogger installs before any command runs, and
 // therefore the level at which a library slog call reaches a user's stderr on
 // a default invocation. It is duplicated rather than imported because cliobs
-// lives under cmd/internal.
+// lives under internal/cli, the command tree.
 const capabilityReportDefaultLogLevel = slog.LevelWarn
 
 // TestLiveCapabilityResolutionStaysOffDefaultStderrE2E pins that connecting to

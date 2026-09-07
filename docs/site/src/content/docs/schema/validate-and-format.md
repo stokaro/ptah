@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database?"
 goal: "Validate schema structure and enforce canonical HCL formatting."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemavalidate"
 generated: false
 overlaps: []

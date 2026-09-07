@@ -22,7 +22,7 @@ import (
 // saw EOF" are indistinguishable from inside the process.
 //
 // Caution when iterating on behavior these tests pin: the Go test cache keys on
-// this package's own inputs, so an edit under cmd/internal/buildinfo or
+// this package's own inputs, so an edit under internal/cli/internal/buildinfo or
 // internal/ptahls does not invalidate a cached PASS here even though it changes
 // the binary being built. Run `go test ./cmd/ptah-ls/... -count=1` after
 // touching either, or a mutation you expect to fail will silently report a

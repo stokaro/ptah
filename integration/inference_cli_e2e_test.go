@@ -20,7 +20,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrelease"
@@ -86,7 +86,7 @@ func TestInferenceCLIE2E(t *testing.T) {
 // assertAPostgreSQLURLIsNotRefusedAsAnotherEngine is the control for
 // stokaro/ptah#2386's refusal.
 //
-// The unit tests beside cmd/inference measure every engine this namespace turns
+// The unit tests beside internal/cli/inference measure every engine this namespace turns
 // away, and every one of them would still pass if the check had been written to
 // refuse everything. This is the half that needs a live server: a PostgreSQL URL
 // reaches the database and answers from it.

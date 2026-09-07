@@ -22,8 +22,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/db"
-	"ptah.run/cmd/schema"
+	"ptah.run/internal/cli/db"
+	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/sqlitevirtual"
 )
 

@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I use plain SQL DDL files as Ptah's desired schema?"
 goal: "Render a desired schema from SQL DDL."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
 generated: false
 overlaps: []

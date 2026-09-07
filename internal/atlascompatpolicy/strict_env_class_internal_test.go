@@ -3,7 +3,7 @@ package atlascompatpolicy
 // White-box testing required: the mapping from an [envbool.Class] to a refusal
 // is the design decision this file exists to pin, and the only class no
 // exported path can reach is the interesting one. Every declaration in the tree
-// states a class and cmd/internal/envboolguard keeps it that way, so an
+// states a class and internal/cli/internal/envboolguard keeps it that way, so an
 // unclassified variable cannot be constructed through Resolve without first
 // breaking that guard. Measured from outside, the fail-closed default would be
 // untested exactly where it matters.

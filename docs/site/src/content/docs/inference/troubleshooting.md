@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Which inference migration symptom am I seeing, and how do I recover?"
 goal: "Identify an inference migration symptom and follow its recovery path."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_outbox_prune_e2e_test.go"
 generated: false

@@ -3,7 +3,7 @@
 // record where the rule has been applied.
 //
 // It exists because that rule has to be recognized in two places at once.
-// cmd/internal/cmdflags INSTALLS the binding: it derives the variable name,
+// internal/cli/internal/cmdflags INSTALLS the binding: it derives the variable name,
 // annotates the flag's usage with `[env: PTAH_X]`, and reads the variable back
 // when the flag was not typed on the command line. internal/cmdref REPORTS the
 // binding onto the generated command reference. AGENTS.md's rule "Recognition
@@ -18,7 +18,7 @@
 // rather than by caller. [Disable] writes the annotation [Disabled] reads, and
 // [MarkInstalled] writes the one [InstalledPrefix] reads; a reader that lived
 // apart from its writer would be comparing against a key nothing sets. The
-// same pairing is why cmd/internal/cmdflags keeps no copy of either constant.
+// same pairing is why internal/cli/internal/cmdflags keeps no copy of either constant.
 package envbinding
 
 import (

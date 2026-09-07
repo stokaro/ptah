@@ -47,7 +47,7 @@
 // makes deriving the policy from [Registered] sound. Every variable in this tree
 // is declared in the package that implements the behavior it governs, so a
 // binary that does not link the package does not reach the behavior either and
-// has nothing to gate. cmd/internal/envboolguard measures the other direction:
+// has nothing to gate. internal/cli/internal/envboolguard measures the other direction:
 // every `PTAH_*` name the tree mentions is either declared here or written down
 // as a non-boolean.
 package envbool

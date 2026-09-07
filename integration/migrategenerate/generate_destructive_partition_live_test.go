@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/migrate"
+	"ptah.run/internal/cli/migrate"
 	"ptah.run/dbschema"
 )
 
@@ -28,7 +28,7 @@ import (
 //   - The refusal that quotes DS101 belongs to `migrations up`, which reads
 //     the written directory and declines to apply it. That gate is pinned by
 //     TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable in
-//     cmd/migrateup, which also asserts the table survives the refusal.
+//     internal/cli/migrateup, which also asserts the table survives the refusal.
 //
 // The fixture is a real partitioned parent rather than two ordinary tables,
 // because the neighboring over-reach this PR must not commit is to start

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "What does the current evidence establish about Atlas documentation coverage?"
 goal: "Interpret the current Atlas documentation coverage evidence and its gaps."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 lastVerified: "2026-08-30"

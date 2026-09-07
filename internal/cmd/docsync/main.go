@@ -19,9 +19,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"ptah.run/cmd/root"
 	"ptah.run/internal/agentsurface"
 	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/cmdrefviews"
 	"ptah.run/internal/docsync"
 	"ptah.run/internal/lintcatalog"

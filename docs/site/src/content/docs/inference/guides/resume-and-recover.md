@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I recover an inference migration after a provider or worker failure?"
 goal: "Recover an inference migration after a provider or worker failure."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_outbox_prune_e2e_test.go"
 generated: false

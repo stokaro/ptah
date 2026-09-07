@@ -22,9 +22,9 @@ func statusTextFS() fstest.MapFS {
 // TestWriteMigrateStatusText_MirrorsTheAtlasReport pins the report the compat
 // surface prints without --format, at the layer that renders it.
 //
-// Reverted, cmd/atlas prints its own block and this file does not compile,
+// Reverted, internal/cli/atlas prints its own block and this file does not compile,
 // because WriteMigrateStatusText is the function the revert removes. The
-// end-to-end reproduction lives in cmd/atlas/migrate_status_report_shape_test.go;
+// end-to-end reproduction lives in internal/cli/atlas/migrate_status_report_shape_test.go;
 // this one exists so a padding column or a sentinel string can be changed and
 // caught without a database.
 func TestWriteMigrateStatusText_MirrorsTheAtlasReport(t *testing.T) {

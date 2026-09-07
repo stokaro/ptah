@@ -70,21 +70,21 @@ function desiredCommand(command, help, owner, evidence, options = {}) {
 
 const fullDesiredVerified = [...localFiles, 'go-annotations', 'external-program', 'configured-external'];
 const commands = [
-  desiredCommand('ptah schema render', ['schema', 'render'], 'cmd/generate', ['cmd/generate/generate_test.go', 'scripts/check-source-equivalence.sh'], {
+  desiredCommand('ptah schema render', ['schema', 'render'], 'internal/cli/generate', ['internal/cli/generate/generate_test.go', 'scripts/check-source-equivalence.sh'], {
     verified: fullDesiredVerified,
     missing: ['oci-artifact', 'composite-source'],
     design: ['live-database', 'migration-directory'],
     composableSources: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'composite-source'],
     suffix: '--dialect sqlite',
   }),
-  desiredCommand('ptah schema validate', ['schema', 'validate'], 'cmd/schema/validate.go', ['cmd/schema/dbml_source_cli_test.go'], {
+  desiredCommand('ptah schema validate', ['schema', 'validate'], 'internal/cli/schema/validate.go', ['internal/cli/schema/dbml_source_cli_test.go'], {
     verified: ['sql-file', 'dbml-file'],
     missing: ['yaml-file', 'hcl-file', 'go-annotations', 'oci-artifact', 'composite-source'],
     design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
     composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     suffix: '--dialect sqlite',
   }),
-  desiredCommand('ptah schema compare', ['schema', 'compare'], 'cmd/compare', ['cmd/compare/compare_test.go'], {
+  desiredCommand('ptah schema compare', ['schema', 'compare'], 'internal/cli/compare', ['internal/cli/compare/compare_test.go'], {
     verified: ['sql-file', 'external-program', 'composite-source'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'go-annotations', 'configured-external', 'oci-artifact'],
     conditional: ['live-database'],
@@ -94,7 +94,7 @@ const commands = [
     limitations: { 'live-database': 'The live database is the current state, not the desired-schema source.' },
     suffix: '--db-url sqlite://current.db',
   }),
-  desiredCommand('ptah schema drift', ['schema', 'drift'], 'cmd/drift', ['cmd/drift/drift_test.go'], {
+  desiredCommand('ptah schema drift', ['schema', 'drift'], 'internal/cli/drift', ['internal/cli/drift/drift_test.go'], {
     verified: ['sql-file', 'external-program'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'go-annotations', 'configured-external', 'oci-artifact', 'composite-source'],
     conditional: ['live-database'],
@@ -104,7 +104,7 @@ const commands = [
     limitations: { 'live-database': 'The live database is the measured state, not the declaration.' },
     suffix: '--db-url sqlite://current.db --exit-code=false',
   }),
-  desiredCommand('ptah schema diff', ['schema', 'diff'], 'cmd/schema/diff.go', ['cmd/schema/diff_test.go'], {
+  desiredCommand('ptah schema diff', ['schema', 'diff'], 'internal/cli/schema/diff.go', ['internal/cli/schema/diff_test.go'], {
     verified: [...localFiles, 'live-database', 'migration-directory'],
     conditional: ['composite-source'],
     design: ['go-annotations', 'external-program', 'configured-external'],
@@ -120,7 +120,7 @@ const commands = [
     },
     limitations: { 'composite-source': 'Repeated sources on one side must all be the same source kind.' },
   }),
-  desiredCommand('ptah schema plan', ['schema', 'plan'], 'cmd/schema/plan.go', ['cmd/schema/plan_test.go'], {
+  desiredCommand('ptah schema plan', ['schema', 'plan'], 'internal/cli/schema/plan.go', ['internal/cli/schema/plan_test.go'], {
     verified: ['sql-file'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'go-annotations', 'oci-artifact', 'composite-source'],
     conditional: ['live-database'],
@@ -131,7 +131,7 @@ const commands = [
     limitations: { 'live-database': 'The live database is the target whose fingerprint the saved plan records.' },
     suffix: '--db-url sqlite://target.db --dry-run',
   }),
-  desiredCommand('ptah schema apply', ['schema', 'apply'], 'cmd/schema/apply.go', ['cmd/schema/apply_test.go'], {
+  desiredCommand('ptah schema apply', ['schema', 'apply'], 'internal/cli/schema/apply.go', ['internal/cli/schema/apply_test.go'], {
     verified: ['sql-file'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'go-annotations', 'oci-artifact', 'composite-source'],
     conditional: ['live-database', 'migration-directory'],
@@ -147,7 +147,7 @@ const commands = [
     },
     suffix: '--db-url sqlite://target.db --dry-run',
   }),
-  desiredCommand('ptah schema inspect', ['schema', 'inspect'], 'cmd/schema/inspect.go', ['cmd/schema/inspect_dbml_test.go', 'cmd/schema/inspect_oci_test.go'], {
+  desiredCommand('ptah schema inspect', ['schema', 'inspect'], 'internal/cli/schema/inspect.go', ['internal/cli/schema/inspect_dbml_test.go', 'internal/cli/schema/inspect_oci_test.go'], {
     verified: ['sql-file', 'oci-artifact', 'live-database'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'migration-directory'],
     design: ['go-annotations', 'external-program', 'configured-external', 'composite-source'],
@@ -159,8 +159,8 @@ const commands = [
     suffix: '--dev-url sqlite://dev.db --format json',
   }),
   ...['openapi-v3', 'graphql', 'protobuf'].map((target) =>
-    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'cmd/schema', [
-      'cmd/schema/export_source_test.go',
+    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'internal/cli/schema', [
+      'internal/cli/schema/export_source_test.go',
       ...(target === 'protobuf' ? ['scripts/check-source-workflows.sh'] : []),
     ], {
       verified: target === 'graphql'
@@ -173,13 +173,13 @@ const commands = [
       composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     })),
   ...['markdown', 'html'].map((target) =>
-    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_dbml_test.go', 'internal/schemaexport'], {
+    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'internal/cli/schema', ['internal/cli/schema/export_dbml_test.go', 'internal/schemaexport'], {
       verified: ['go-annotations'],
       missing: [...localFiles, 'oci-artifact', 'composite-source'],
       design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
       composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     })),
-  desiredCommand('ptah schema export --to dbml', ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_dbml_test.go', 'internal/dbmlrender'], {
+  desiredCommand('ptah schema export --to dbml', ['schema', 'export'], 'internal/cli/schema', ['internal/cli/schema/export_dbml_test.go', 'internal/dbmlrender'], {
     verified: ['go-annotations'],
     missing: [...localFiles, 'oci-artifact', 'composite-source'],
     design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
@@ -197,12 +197,12 @@ const commands = [
       'DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.',
     ])),
   }),
-  desiredCommand('ptah schema export --to hcl', ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_source_test.go'], {
+  desiredCommand('ptah schema export --to hcl', ['schema', 'export'], 'internal/cli/schema', ['internal/cli/schema/export_source_test.go'], {
     verified: ['go-annotations'],
     design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'live-database', 'migration-directory', 'composite-source'],
     limitations: Object.fromEntries(allSourceIds.map((id) => [id, id === 'go-annotations' ? '' : 'HCL export rewrites Go annotations and deliberately accepts only --root-dir.'])),
   }),
-  desiredCommand('ptah schema test', ['schema', 'test'], 'cmd/schema/test.go', ['cmd/schema/test_test.go', 'cmd/schema/test_source_test.go'], {
+  desiredCommand('ptah schema test', ['schema', 'test'], 'internal/cli/schema/test.go', ['internal/cli/schema/test_test.go', 'internal/cli/schema/test_source_test.go'], {
     verified: [...localFiles, 'go-annotations', 'live-database', 'oci-artifact'],
     design: ['external-program', 'configured-external', 'migration-directory'],
     gap: ['composite-source'],
@@ -218,14 +218,14 @@ const commands = [
     limitations: { 'live-database': 'The destination must be throwaway; a non-SQLite source requires an explicit matching --db-url.' },
     suffix: '--dir ./tests',
   }),
-  desiredCommand('ptah schema lineage', ['schema', 'lineage'], 'cmd/schema/lineage.go', ['cmd/schema/lineage_test.go'], {
+  desiredCommand('ptah schema lineage', ['schema', 'lineage'], 'internal/cli/schema/lineage.go', ['internal/cli/schema/lineage_test.go'], {
     verified: ['sql-file'],
     missing: ['yaml-file', 'hcl-file', 'dbml-file', 'go-annotations', 'oci-artifact', 'live-database', 'composite-source'],
     gap: ['external-program', 'configured-external'],
     composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     suffix: '--dialect postgres --format json',
   }),
-  desiredCommand('ptah schema push', ['schema', 'push'], 'cmd/schemapush', ['cmd/schemapush/schemapush_test.go'], {
+  desiredCommand('ptah schema push', ['schema', 'push'], 'internal/cli/schemapush', ['internal/cli/schemapush/schemapush_test.go'], {
     missing: [...localFiles, 'go-annotations', 'composite-source'],
     design: ['oci-artifact', 'live-database', 'migration-directory'],
     gap: ['external-program', 'configured-external'],
@@ -233,7 +233,7 @@ const commands = [
     limitations: { 'oci-artifact': 'OCI is the destination of this command, not an input source.' },
     suffix: 'oci://registry.example/app:v1',
   }),
-  desiredCommand('ptah migrations plan', ['migrations', 'plan'], 'cmd/migrate', ['scripts/check-source-workflows.sh', 'cmd/migrate/source_oci_test.go'], {
+  desiredCommand('ptah migrations plan', ['migrations', 'plan'], 'internal/cli/migrate', ['scripts/check-source-workflows.sh', 'internal/cli/migrate/source_oci_test.go'], {
     verified: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'oci-artifact', 'composite-source'],
     conditional: ['live-database'],
     design: ['migration-directory'],
@@ -242,7 +242,7 @@ const commands = [
     limitations: { 'live-database': 'The live database supplies the current state through --db-url.' },
     suffix: '--db-url sqlite://current.db',
   }),
-  desiredCommand('ptah migrations generate', ['migrations', 'generate'], 'cmd/migrate', ['scripts/check-source-workflows.sh', 'cmd/migrate/source_oci_test.go'], {
+  desiredCommand('ptah migrations generate', ['migrations', 'generate'], 'internal/cli/migrate', ['scripts/check-source-workflows.sh', 'internal/cli/migrate/source_oci_test.go'], {
     verified: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'oci-artifact', 'composite-source'],
     conditional: ['live-database', 'migration-directory'],
     composableSources: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'composite-source'],
@@ -256,12 +256,12 @@ const commands = [
     },
     suffix: '--db-url sqlite://current.db --migrations-dir ./migrations --name canonical',
   }),
-  desiredCommand('ptah viz', ['viz'], 'cmd/viz', ['cmd/viz/viz_test.go'], {
+  desiredCommand('ptah viz', ['viz'], 'internal/cli/viz', ['internal/cli/viz/viz_test.go'], {
     verified: ['go-annotations'],
     design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'live-database', 'migration-directory', 'composite-source'],
     limitations: Object.fromEntries(allSourceIds.map((id) => [id, id === 'go-annotations' ? '' : 'The current command deliberately registers only --root-dir.'])),
   }),
-  desiredCommand('ptah schema serve', ['schema', 'serve'], 'cmd/internal/schemaserve', ['cmd/internal/schemaserve/schemaserve_test.go'], {
+  desiredCommand('ptah schema serve', ['schema', 'serve'], 'internal/cli/internal/schemaserve', ['internal/cli/internal/schemaserve/schemaserve_test.go'], {
     verified: ['go-annotations'],
     conditional: ['live-database'],
     design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'migration-directory', 'composite-source'],
@@ -272,7 +272,7 @@ const commands = [
     invocations: { 'live-database': '--root-dir ./models --db-url sqlite://current.db' },
     suffix: '--db-url sqlite://current.db',
   }),
-  desiredCommand('ptah introspect', ['introspect'], 'cmd/introspect', ['cmd/introspect/introspect_internal_test.go'], {
+  desiredCommand('ptah introspect', ['introspect'], 'internal/cli/introspect', ['internal/cli/introspect/introspect_internal_test.go'], {
     verified: ['live-database'],
     design: allSourceIds.filter((id) => id !== 'live-database'),
     limitations: { 'live-database': 'This is an output conversion to Go annotations, not a general desired-schema consumer.' },

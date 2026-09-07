@@ -15,7 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/cmd/readdb"
+	"ptah.run/internal/cli/readdb"
 	"ptah.run/core/goschema"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -361,7 +361,7 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
 
 	// Exercise the CLI's schema render entry point against the fixture, which
-	// is what drives the real ParseDir path in cmd/generate.
+	// is what drives the real ParseDir path in internal/cli/generate.
 	//
 	// The package rather than a file: `go run ./cmd/ptah` builds whatever that
 	// package holds, so a file added or renamed inside it needs no edit here.

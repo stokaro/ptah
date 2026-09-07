@@ -60,7 +60,7 @@ func newSurfaces(c *qt.C, rules []agentpolicy.Rule, targets ...agenttarget.Confi
 		session: session,
 		client:  connect(c, cfg, nil),
 		// Assist's path is a second client onto the same server, which is what
-		// cmd/assist builds. A private route would show up here as a surface
+		// internal/cli/assist builds. A private route would show up here as a surface
 		// that answered differently.
 		assist: connect(c, cfg, nil),
 	}

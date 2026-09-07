@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I add vectors to a table that has none, on a system where nothing is searching yet?"
 goal: "Create and verify the first searchable vector generation."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

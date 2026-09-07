@@ -229,7 +229,7 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 		"PTAH_URL=sqlite://must-not-be-ignored",
 		// Two of the three the hand-written lists had lost, measured at the
 		// process rather than at Resolve: each was declared through envbool and
-		// so satisfied cmd/internal/envboolguard, while strict mode exited 0
+		// so satisfied internal/cli/internal/envboolguard, while strict mode exited 0
 		// for both an enabled and a malformed value. See stokaro/ptah#1476.
 		// The third, PTAH_DIRECTIVES_ANYWHERE, no longer exists: the pre-v1
 		// fallback it opened was removed, so there is no declaration left to

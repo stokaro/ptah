@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"ptah.run/cmd/internal/banner"
 	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/cli/banner"
 	"ptah.run/internal/ptahls"
 )
 

@@ -289,7 +289,7 @@ linters:
       - linters:
           - gosec
         text: 'G101:'
-        path: '(dbschema/connection.*_test\.go|internal/dburldisplay/.*_test\.go|migration/migrator/(debug|example)_test\.go|cmd/internal/schemaserve/.*_test\.go)$'
+        path: '(dbschema/connection.*_test\.go|internal/dburldisplay/.*_test\.go|migration/migrator/(debug|example)_test\.go|internal/cli/internal/schemaserve/.*_test\.go)$'
       # gosec G602 false positives on `j-1` slice access inside guarded test loops
       # (`for j := 1; j < len(...); j++`). Limited to the field-order tests.
       - linters:
@@ -340,16 +340,16 @@ linters:
       - path: 'examples/ast\_demo/.*\.go$'
         linters:
           - unused
-      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
+      - path: '(ast_demo|cli|cmd|example[s]?|integration(harness)?)/.*\.go$'
         text: 'use of `fmt\..*` forbidden by pattern'
-      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
+      - path: '(ast_demo|cli|cmd|example[s]?|integration(harness)?)/.*\.go$'
         linters:
           - gocognit
           - nestif
           - gocyclo
-      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
+      - path: '(ast_demo|cli|cmd|example[s]?|integration(harness)?)/.*\.go$'
         text: 'deep-exit:'
-      - path: 'cmd/.*\.go$'
+      - path: '(cli|cmd)/.*\.go$'
         linters:
           - gochecknoinits
       - path: 'integration(harness)?/.*\.go$'

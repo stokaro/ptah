@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from?"
 goal: "Create a checkpoint and verify fresh-database bootstrap."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 overlaps: []

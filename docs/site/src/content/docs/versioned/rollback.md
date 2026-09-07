@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I roll back to an explicit revision safely?"
 goal: "Roll back to an explicit revision safely."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 searchAliases:

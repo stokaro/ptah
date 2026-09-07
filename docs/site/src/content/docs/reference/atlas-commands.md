@@ -7,7 +7,7 @@ audience:
 readerQuestion: "Which Atlas-compatible commands are implemented, limited, or unavailable?"
 goal: "Determine which Atlas-compatible commands are implemented, limited, or unavailable."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/cmdref"
 generated: false
 overlaps:

@@ -38,7 +38,7 @@
 //
 // WHAT IT CANNOT SEE, said here rather than left to be discovered. The native
 // command tree's help text carries the same rules and is checked by
-// cmd/internal/terminologyguard, which reads this same registry through Go;
+// internal/cli/internal/terminologyguard, which reads this same registry through Go;
 // neither reader covers the other's corpus, and the count assertion in that
 // package is what says the Go half is still reading the file at all. Nothing
 // here reads HCL, JSON fixtures, or Go comments.
@@ -428,7 +428,7 @@ const lineOf = (source, offset) => source.slice(0, offset).split('\n').length;
 // `| Declarative schema changes | The schema you want` heads `schema changes`
 // and not the sentence after it. A newline is whitespace, deliberately: the
 // single most valuable finding the census produced wraps mid-phrase in
-// cmd/root/root.go, where `grep -n 'declarative schema changes'` answers
+// internal/cli/root/root.go, where `grep -n 'declarative schema changes'` answers
 // nothing.
 //
 // Emphasis markers are skipped rather than stopping the scan. `a **declarative**
@@ -877,7 +877,7 @@ function selftest() {
   fires('the same way every other declarative verb takes it', 'a verb');
   fires('Both declarative paths accept desired-state sources.', 'paths');
 
-  // The phrase wraps in cmd/root/root.go, where a line-based grep answers
+  // The phrase wraps in internal/cli/root/root.go, where a line-based grep answers
   // nothing. The stream is matched across the break and the finding names the
   // line the phrase STARTS on.
   {
@@ -1049,7 +1049,7 @@ function selftest() {
       'a root record and a site source were not reachable from the workflow trigger',
     );
     assert(
-      unreachableFromWorkflow(['cmd/root/root.go'], patterns).length === 1,
+      unreachableFromWorkflow(['internal/cli/root/root.go'], patterns).length === 1,
       'a file outside every trigger pattern was reported reachable',
     );
     assert(

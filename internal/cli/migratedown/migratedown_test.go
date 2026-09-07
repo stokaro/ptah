@@ -1,0 +1,286 @@
+package migratedown_test
+
+import (
+	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+	"github.com/spf13/pflag"
+
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/migratedown"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrator"
+)
+
+func TestMigrateDownCommand_Creation(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	c.Assert(cmd, qt.IsNotNil)
+	c.Assert(cmd.Use, qt.Equals, "down")
+	c.Assert(cmd.Short, qt.Contains, "Roll back migrations")
+	c.Assert(cmd.Flag("migration-lock-timeout"), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogLevelFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.MetricsAddrFlagName), qt.IsNotNil)
+}
+
+func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.up.sql"), []byte("CREATE TABLE guarded_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE guarded_down;"), 0o600), qt.IsNil)
+
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+		"--confirm",
+		"--pre-down-hook", testutils.FailingHookCommand("rollback backup refused", 8),
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.ErrorMatches, "(?s).*down pre-flight custom command hook failed: exit status 8\nrollback backup refused")
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+
+	var count int
+	err = conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'guarded_down'").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+}
+
+func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.up.sql"), []byte("CREATE TABLE declined_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.down.sql"), []byte("DROP TABLE declined_down;"), 0o600), qt.IsNil)
+
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+	})
+
+	out, err := captureStdIO(c, "NO\n", cmd.Execute)
+	c.Assert(err, qt.IsNil)
+	c.Assert(out, qt.Contains, "Migration rollback canceled.")
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+}
+
+func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.up.sql"), []byte("CREATE TABLE verified_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.down.sql"), []byte("DROP TABLE verified_down;"), 0o600), qt.IsNil)
+
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "shadow.db")),
+		"--confirm",
+	})
+
+	out, err := captureStdIO(c, "", cmd.Execute)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Rollback plan verified on shadow database")
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+}
+
+func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.up.sql"), []byte("CREATE TABLE guarded_shadow (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	// The down file is broken, so the shadow replay must fail and the target
+	// must keep both its schema and a clean (non-dirty) revision state.
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE no_such_table;"), 0o600), qt.IsNil)
+
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "shadow.db")),
+		"--confirm",
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: roll back to version 0 on shadow database: .*no_such_table.*`)
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.DirtyRevision, qt.IsNil)
+
+	var count int
+	err = conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'guarded_shadow'").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+}
+
+// TestMigrateDownCommandReadsARelativeTraversalDirectory pins the behavior
+// stokaro/ptah#1622 restored: "../outside" and the identical destination
+// spelled absolutely are the same argument now. The refusal this used to assert
+// was a spelling filter -- the absolute form was always accepted -- and the
+// community Atlas binary reads both.
+//
+// The run still fails, on the directory not existing, which is what proves the
+// path was resolved and looked up rather than rejected out of hand.
+func TestMigrateDownCommandReadsARelativeTraversalDirectory(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(c.TempDir())
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://ignored",
+		"--migrations-dir", "../outside",
+		"--target", "0",
+		"--confirm",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "outside allowed root")
+	resetMigrateDownCommandForTest(c, cmd)
+}
+
+func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
+	c.Helper()
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+	}()
+
+	inR, inW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(inR.Close(), qt.IsNil) }()
+
+	_, err = inW.WriteString(input)
+	c.Assert(err, qt.IsNil)
+	c.Assert(inW.Close(), qt.IsNil)
+
+	outR, outW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(outR.Close(), qt.IsNil) }()
+
+	os.Stdin = inR
+	os.Stdout = outW
+
+	runErr := run()
+	c.Assert(outW.Close(), qt.IsNil)
+
+	output, err := io.ReadAll(outR)
+	c.Assert(err, qt.IsNil)
+	return string(output), runErr
+}
+
+func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
+	c.Helper()
+	for name, value := range map[string]string{
+		"db-url":                 "",
+		"migrations-dir":         "",
+		"target":                 "0",
+		"shadow-db":              "",
+		"dir-format":             "auto",
+		"atlas-env":              "",
+		"dry-run":                "false",
+		"verbose":                "false",
+		"confirm":                "false",
+		"exec-order":             "linear",
+		"migration-lock-timeout": "",
+		"lock-timeout":           "",
+		"statement-timeout":      "",
+		"pre-down-hook":          "",
+		"pg-dump-to":             "",
+		"mysqldump-to":           "",
+		"webhook":                "",
+		"log-format":             "text",
+		"log-level":              "info",
+		"metrics-addr":           "",
+		"connect-timeout":        "10s",
+		"config":                 "",
+		"env":                    "",
+		"migrations-schema":      "",
+		"migrations-table":       "",
+		"revision-format":        "ptah",
+	} {
+		flag := cmd.Flag(name)
+		c.Assert(flag, qt.IsNotNil, qt.Commentf("flag %s", name))
+		c.Assert(flag.Value.Set(value), qt.IsNil)
+		flag.Changed = false
+	}
+}

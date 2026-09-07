@@ -7,7 +7,7 @@ audience:
 readerQuestion: "Which command paths does the native `ptah` binary expose?"
 goal: "Look up every command path exposed by the native `ptah` binary."
 sourceOfTruth:
-  - "cmd/root"
+  - "internal/cli/root"
   - "internal/cmdref"
 generated: false
 overlaps:

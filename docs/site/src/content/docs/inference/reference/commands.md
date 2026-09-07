@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Which inference commands and flags does Ptah expose?"
 goal: "Look up the available inference commands and flags."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

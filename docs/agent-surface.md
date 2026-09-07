@@ -61,10 +61,10 @@ verdict on any of it.
 Five rows are cobra's rather than Ptah's: `help`, and `completion` for bash,
 fish, powershell and zsh. Nothing in the native command tree registers them:
 cobra adds them in `ExecuteC`, after the program has finished assembling its own
-tree, so they are absent from what `cmd/root` returns and present in what the
+tree, so they are absent from what `internal/cli/root` returns and present in what the
 binary answers to. The walk calls the same two initializers before it measures, which is what
 gives every leaf `ptah --help` reaches a row here. The compatibility binary
-differs: `cmd/atlas` registers `completion` itself, so that Atlas-style group
+differs: `internal/cli/atlas` registers `completion` itself, so that Atlas-style group
 help can rewrite it, and `help` is the only name that arrives that late there.
 
 Two spellings are not rows, and no walk can make them rows. `__complete` and its

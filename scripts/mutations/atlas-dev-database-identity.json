@@ -1,7 +1,7 @@
 {
   "packages": [
     "./internal/atlasschema/",
-    "./cmd/atlas/"
+    "./internal/cli/atlas/"
   ],
   "mutations": [
     {

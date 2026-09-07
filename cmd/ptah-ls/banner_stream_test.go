@@ -12,7 +12,7 @@ import (
 
 // wordmark is one line of the shared banner, enough to find it in a stream.
 //
-// Written out rather than imported: cmd/internal/banner is internal to a tree
+// Written out rather than imported: internal/cli/banner is internal to a tree
 // this package is outside of, and asking the package under test what it emits
 // would pass whatever it emitted.
 const wordmark = `|  ___/| |_ | (_| | | | |`

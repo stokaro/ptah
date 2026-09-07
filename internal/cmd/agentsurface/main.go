@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"os"
 
-	"ptah.run/cmd/root"
 	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/cli/root"
 )
 
 func main() {

@@ -5,7 +5,7 @@ package atlas_test
 import (
 	"bytes"
 
-	"ptah.run/cmd/atlas"
+	"ptah.run/internal/cli/atlas"
 )
 
 func runCompatInspect(args ...string) (stdout, stderr string, err error) {

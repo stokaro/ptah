@@ -8,7 +8,7 @@ audience:
 readerQuestion: "What does the current Atlas conformance evidence establish?"
 goal: "Interpret the current Atlas conformance evidence and its limits."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 lastVerified: "2026-08-30"
@@ -164,7 +164,7 @@ paths it creates.
 Re-run the focused evidence from the Ptah repository:
 
 ```bash
-go test ./cmd/atlas -run '^TestCompatMigrateNew' -count=1
+go test ./internal/cli/atlas -run '^TestCompatMigrateNew' -count=1
 go test ./cmd/ptah-compat -run '^TestCompatBinaryMigrateNew' -count=1
 go test ./cmd/ptah -run '^TestPtahNativeMigrationsCreateKeepsSuccessReport$' -count=1
 ```

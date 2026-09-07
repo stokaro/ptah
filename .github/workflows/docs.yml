@@ -61,6 +61,7 @@ jobs:
             generated:
               - '**/*.go'
               - 'cmd/**'
+              - 'internal/cli/**'
               - 'core/**'
               - 'dbschema/**'
               - 'internal/capabilityprobe/**'
@@ -109,6 +110,7 @@ jobs:
             examples:
               - '**/*.go'
               - 'cmd/**'
+              - 'internal/cli/**'
               - 'core/**'
               - 'migration/**'
               - 'examples/**'
@@ -117,7 +119,7 @@ jobs:
               - 'go.sum'
               - '.github/workflows/docs.yml'
             inference:
-              - 'cmd/inference/**'
+              - 'internal/cli/inference/**'
               # internal/embed*, not internal/inference*: the packages have
               # never been called that, so this filter matched nothing and an
               # outbox-only or provider-only change skipped this job in silence
@@ -134,6 +136,7 @@ jobs:
               - '.github/workflows/docs.yml'
             quickstart:
               - 'cmd/**'
+              - 'internal/cli/**'
               - 'core/**'
               - 'dbschema/**'
               - 'internal/quickstart/**'
@@ -196,10 +199,10 @@ jobs:
         run: |
           go test ./docs ./internal/docsembed -count=1
           go test \
-            ./cmd/atlas/internal/migratetests \
-            ./cmd/internal/terminologyguard \
-            ./cmd/oci \
-            ./cmd/root \
+            ./internal/cli/atlas/internal/migratetests \
+            ./internal/cli/internal/terminologyguard \
+            ./internal/cli/oci \
+            ./internal/cli/root \
             ./core/query \
             ./internal/agentapi \
             ./internal/agentdiag \
@@ -226,7 +229,7 @@ jobs:
       # check-terminology.mjs runs here for the same reason and one more: its
       # corpus reaches README.md and docs/*.md, which the site build never sees.
       # It covers the PROSE half of the terminology registry. The other half is
-      # the native command tree's help text, which cmd/internal/terminologyguard
+      # the native command tree's help text, which internal/cli/internal/terminologyguard
       # reads in `go test ./...` -- a Go-only change does not trigger this
       # workflow at all, so putting that half here would have left it ungated.
       - name: Check documentation style

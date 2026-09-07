@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I connect my MCP client to Ptah?"
 goal: "Start a Ptah MCP session and verify the client can describe it."
 sourceOfTruth:
-  - "cmd/mcp"
+  - "internal/cli/mcp"
   - "internal/mcpserver"
 generated: false
 searchAliases:

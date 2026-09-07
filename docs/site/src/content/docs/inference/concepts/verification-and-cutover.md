@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How does Ptah model verification, cutover, and rollback?"
 goal: "Explain Ptah's model for verification, cutover, and rollback."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

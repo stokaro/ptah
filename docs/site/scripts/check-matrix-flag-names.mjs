@@ -20,7 +20,7 @@ const repoRoot = join(scriptDir, '..', '..', '..');
 // This is the checkable subset that issue asks for first, and the direction it
 // catches is the one that actually recurs: a flag is RENAMED in the code and
 // the note keeps the old spelling. Renaming `check-destructive` in
-// cmd/migrate/generate.go turns this red on the row that names
+// internal/cli/migrate/generate.go turns this red on the row that names
 // `--check-destructive`, which is the whole point -- the note cannot drift away
 // from the flag set without saying so.
 //

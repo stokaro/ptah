@@ -33,7 +33,7 @@ const (
 //
 // Native `ptah migrations status` keeps its own block: only the compat surface
 // is a contract with an existing pipeline, and the native one answers to a
-// reader. See cmd/atlas/migrate_status.go for why that split is deliberate.
+// reader. See internal/cli/atlas/migrate_status.go for why that split is deliberate.
 func WriteMigrateStatusText(w io.Writer, opts MigrateStatusOptions) error {
 	report, err := NewMigrateStatus(opts)
 	if err != nil {

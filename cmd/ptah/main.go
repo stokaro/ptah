@@ -1,6 +1,6 @@
 package main
 
-import "ptah.run/cmd/root"
+import "ptah.run/internal/cli/root"
 
 func main() {
 	root.Execute()

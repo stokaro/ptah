@@ -15,9 +15,9 @@ const supportPath = join(repoRoot, 'docs', 'source-support.json');
 const defaultManifest = JSON.parse(readFileSync(supportPath, 'utf8'));
 
 const goOnlyCommands = new Map([
-  ['/schema/visualize/', { command: 'ptah viz', owner: 'cmd/viz', alternatives: ['/schema/document/'] }],
+  ['/schema/visualize/', { command: 'ptah viz', owner: 'internal/cli/viz', alternatives: ['/schema/document/'] }],
   ['/schema/serve/', {
-    command: 'ptah schema serve', owner: 'cmd/internal/schemaserve',
+    command: 'ptah schema serve', owner: 'internal/cli/internal/schemaserve',
     alternatives: ['/schema/document/', '/direct/compare-and-drift/'],
   }],
 ]);
@@ -496,7 +496,7 @@ export function pageContractProblems(page, source, manifest, options = {}) {
 function fixturePage(sourceMode, overrides = {}) {
   return {
     path: 'fixture.md', route: '/fixture/', title: 'Apply a desired schema',
-    description: 'Apply a desired schema.', sourceMode, sourceOfTruth: ['cmd/schema'],
+    description: 'Apply a desired schema.', sourceMode, sourceOfTruth: ['internal/cli/schema'],
     ...overrides,
   };
 }
@@ -543,21 +543,21 @@ function selftest() {
   }
   const goEarly = 'This command reads Go annotations only. Use the [source-neutral export](../document/).\n\n```bash\nptah viz --root-dir ./models\n```\n';
   if (pageContractProblems(
-    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['cmd/viz'] }),
+    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['internal/cli/viz'] }),
     goEarly, manifest, { sourceNeutralRoutes },
   ).length !== 0) {
     throw new Error('Go-only page with an early limitation failed');
   }
   const goBuried = `${'The command renders models. '.repeat(100)}\n\nGo annotations only. Use the [source-neutral export](../document/).`;
   if (!pageContractProblems(
-    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['cmd/viz'] }),
+    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['internal/cli/viz'] }),
     goBuried, manifest, { sourceNeutralRoutes },
   ).some((problem) => problem.includes('near the beginning'))) {
     throw new Error('Go-only page with a buried limitation passed');
   }
   const unrelatedAlternative = 'Go annotations only. Use the source-neutral [installation guide](../../start/install/).';
   if (!pageContractProblems(
-    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['cmd/viz'] }),
+    fixturePage('go-only', { route: '/schema/visualize/', sourceOfTruth: ['internal/cli/viz'] }),
     unrelatedAlternative, manifest, { sourceNeutralRoutes },
   ).some((problem) => problem.includes('canonical source-neutral alternative'))) {
     throw new Error('Go-only page with an unrelated link passed as an alternative');
@@ -605,7 +605,7 @@ function selftest() {
     '| Source | Selector | Limitation |\n| --- | --- | --- |\n' +
     '| SQL file | `--schema-file schema.sql` | Ptah DDL parser subset. |\n' +
     '| Go annotations | `--root-dir ./models` | Native Go annotation model. |\n';
-  const commandPage = fixturePage('command-specific', { route: '/fixture/', sourceOfTruth: ['cmd/migrate'] });
+  const commandPage = fixturePage('command-specific', { route: '/fixture/', sourceOfTruth: ['internal/cli/migrate'] });
   commandSpecificCommands.set('/fixture/', ['ptah migrations generate']);
   if (pageContractProblems(commandPage, commandSpecific, manifest).length !== 0) {
     throw new Error('command-specific page with explicit constraints failed');

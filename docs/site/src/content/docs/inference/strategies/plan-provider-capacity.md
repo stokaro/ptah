@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I size a backfill for my embedding provider's capacity and cost?"
 goal: "Size a backfill for my embedding provider's capacity and cost."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

@@ -43,7 +43,7 @@ package integration_test
 // `idx_<column>`: all three comparisons stay green and all three catalog
 // assertions redden.
 //
-// The commands are driven in process, through the cobra tree `cmd/schema`
+// The commands are driven in process, through the cobra tree `internal/cli/schema`
 // builds, rather than through a binary this test compiles. That is the shape
 // `integration/sqlitecmd` and `schema_lineage_live_e2e_test.go` already
 // establish for the native schema verbs: it is the same user-facing surface
@@ -67,7 +67,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver, which both engines here speak, for database/sql
 
-	cmdschema "ptah.run/cmd/schema"
+	cmdschema "ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
 )
 

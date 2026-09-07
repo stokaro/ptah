@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I roll back to a previous generation and retire old vectors safely?"
 goal: "Roll back to a previous generation and retire old vectors safely."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

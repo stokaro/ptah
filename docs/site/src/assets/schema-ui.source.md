@@ -33,5 +33,5 @@ document's footer, so the committed pixels and samples contain no
 machine-specific path, volatile timestamp, or per-build version.
 
 Review owner: documentation maintainers. Re-run the generator when
-`internal/schemadoc`, `cmd/internal/schemaserve`, or either named fixture
+`internal/schemadoc`, `internal/cli/internal/schemaserve`, or either named fixture
 changes.

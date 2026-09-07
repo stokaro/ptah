@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds?"
 goal: "Apply a seed file once and confirm its tracked state."
 sourceOfTruth:
-  - "cmd/seed"
+  - "internal/cli/seed"
   - "migration/seeder"
 generated: false
 overlaps: []

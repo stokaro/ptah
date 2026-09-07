@@ -538,8 +538,8 @@ own preset.
 
 All three spell it `--server-version`, and none of them spells it `--version`:
 on a CLI that is conventionally the program's own version, and `ptah --version`
-prints one. `cmd/internal/serverversion` registers the flag and marks it with one
-annotation, so `cmd/root`'s flag-surface walk can tell it from the two
+prints one. `internal/cli/internal/serverversion` registers the flag and marks it with one
+annotation, so `internal/cli/root`'s flag-surface walk can tell it from the two
 `--version` flags on the same command tree that mean something else entirely —
 `migrations checkpoint --version` names a checkpoint and `schema push
 --version` names an artifact tag. The annotation is what the walk reads, so a
