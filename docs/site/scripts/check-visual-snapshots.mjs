@@ -202,7 +202,13 @@ async function main() {
           await page.evaluate(() => window.scrollTo(0, 0));
 
           const file = snapshotName(entry, viewport, theme);
-          await page.screenshot({ path: join(outputRoot, file), fullPage: true });
+          // The capture is a review artifact, not an assertion: everything this
+          // script gates on has already run above. Playwright's default 30s is
+          // a limit nobody here chose, and a long reference page is tens of
+          // thousands of pixels tall -- measured 39322px for
+          // /atlas/schema-commands/ at desktop width, which encodes in about 34
+          // seconds. Timing that out would fail a page for being long.
+          await page.screenshot({ path: join(outputRoot, file), fullPage: true, timeout: 180_000 });
           manifest.push({
             route: entry.route,
             viewport: viewport.name,

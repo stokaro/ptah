@@ -57,6 +57,24 @@
       "deliveryState": "verified"
     },
     {
+      "id": "schema-diff-web",
+      "command": "ptah-compat schema diff --web",
+      "route": "/atlas/schema-commands/",
+      "proofType": "product-output",
+      "fixture": "docs/site/fixtures/product-output",
+      "fixtureClass": "necessary-source-specific",
+      "fixtureReason": "The diagram's whole subject is the marks, and one comparison has to produce all three of them plus the edges that make a dependency layout worth reading; erd-from.sql and erd-to.sql are that pair, and no existing fixture is one.",
+      "generator": "docs/site/scripts/generate-product-output-assets.mjs",
+      "primaryAsset": "schema-diff-web",
+      "variants": ["added", "changed", "removed", "legend"],
+      "downloads": ["self-contained-html"],
+      "themeBehavior": "prefers-color-scheme",
+      "requiredPlacement": "within-250-visible-words",
+      "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
+      "owner": "internal/cli/atlas",
+      "deliveryState": "verified"
+    },
+    {
       "id": "schema-serve",
       "command": "ptah schema serve",
       "route": "/schema/serve/",

@@ -102,7 +102,7 @@ func TestSchemaWebWritesAnArtifactAndSaysWhereItWent(t *testing.T) {
 			err := cmd.Execute()
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(out.String(), qt.Contains, "ERD written to ")
+			c.Assert(out.String(), qt.Contains, "Schema document written to ")
 			c.Assert(out.String(), qt.Contains, "not opened: CI is set")
 		})
 	}

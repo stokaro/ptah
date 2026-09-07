@@ -84,7 +84,7 @@ async function stopServer(server) {
 // a sample nobody can review.
 function stabilizeDocument(path) {
   const original = readFileSync(path, 'utf8');
-  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/span>)/, '$1ptah dev$2');
+  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/a>)/, '$1ptah dev$2');
   if (stabilized === original) {
     throw new Error(`${path}: no footer version to normalize; has the footer changed?`);
   }

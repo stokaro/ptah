@@ -724,6 +724,11 @@ func openExportedDocument(cmd *cobra.Command, opts exportOptions, data []byte) e
 			return fmt.Errorf("--%s: %w", exportOpenFlag, err)
 		}
 		path = written
+		// The export wrote the document to standard output, so this copy is a
+		// file nothing has mentioned yet. With --out the export has already
+		// printed where the document is, and naming it again in a second
+		// vocabulary reads as a second file.
+		webartifact.ReportArtifact(cmd.ErrOrStderr(), path)
 	} else {
 		path, err = resolveOutputPath(path)
 		if err != nil {
@@ -731,7 +736,7 @@ func openExportedDocument(cmd *cobra.Command, opts exportOptions, data []byte) e
 		}
 	}
 	opened := fileopen.Open(cmd.Context(), path, fileopen.Options{Skip: opts.skipOpen})
-	webartifact.Report(cmd.ErrOrStderr(), webartifact.Result{
+	webartifact.ReportOpen(cmd.ErrOrStderr(), webartifact.Result{
 		Path: path, Opened: opened.Opened, Reason: opened.Reason,
 	})
 	return nil

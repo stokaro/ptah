@@ -41,24 +41,29 @@ func TestSchemaExportOpenWritesADocumentToShow(t *testing.T) {
 	_, stderr, err := runSchemaExport("--to", "html", "--root-dir", dir, "--open")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(stderr, qt.Contains, "ERD written to ")
+	c.Assert(stderr, qt.Contains, "Schema document written to ")
 	c.Assert(stderr, qt.Contains, "not opened: CI is set")
 }
 
 // With --out the file the operator named is the one that opens. Writing a
 // second copy somewhere else would leave two documents and no way to tell which
 // the browser showed.
+//
+// The export has already printed where that file is, so --open adds only what
+// happened to it. A second path line in another vocabulary reads as a second
+// file, which is the reason the artifact sentence is skipped here.
 func TestSchemaExportOpenShowsTheFileTheOperatorNamed(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("CI", "true")
 	dir := writeOpenModel(c)
 	out := filepath.Join(c.TempDir(), "schema.html")
 
-	_, stderr, err := runSchemaExport("--to", "html", "--root-dir", dir, "--out", out, "--open")
+	stdout, stderr, err := runSchemaExport("--to", "html", "--root-dir", dir, "--out", out, "--open")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(stderr, qt.Contains, "ERD written to ")
-	c.Assert(stderr, qt.Contains, filepath.Base(out))
+	c.Assert(stdout, qt.Contains, filepath.Base(out))
+	c.Assert(stderr, qt.Not(qt.Contains), "Schema document written to ")
+	c.Assert(stderr, qt.Contains, "not opened: CI is set")
 	_, statErr := os.Stat(out)
 	c.Assert(statErr, qt.IsNil)
 }
@@ -74,7 +79,7 @@ func TestSchemaExportWithoutOpenSaysNothingAboutBrowsers(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(strings.HasPrefix(stdout, "<!doctype html>"), qt.IsTrue)
-	c.Assert(stderr, qt.Not(qt.Contains), "ERD written to ")
+	c.Assert(stderr, qt.Not(qt.Contains), "Schema document written to ")
 	c.Assert(stderr, qt.Not(qt.Contains), "not opened")
 }
 

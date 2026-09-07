@@ -472,7 +472,7 @@ source and connect to no database.
 | Target | Output | Diagram |
 | --- | --- | --- |
 | `markdown` | One Markdown document written to stdout, or to `--out`. | none |
-| `html` | One self-contained HTML file: the styling and the diagram sit inside it, and it names no resource outside itself. | inline SVG, laid out by Ptah |
+| `html` | One self-contained HTML file: the styling and the diagram sit inside it, and opening it fetches nothing. The one address it carries is the Ptah link in its footer. | inline SVG, laid out by Ptah |
 
 `--title`, `--include-tables` and `--exclude-tables` apply to both.
 [Generate schema documentation](../../schema/document/) is the guide.

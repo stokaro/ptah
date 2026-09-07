@@ -91,8 +91,9 @@ func TestWrite_ReportsThePathWhenNothingOpened(t *testing.T) {
 	c.Assert(result.Reason, qt.Equals, "CI is set")
 
 	var out strings.Builder
-	webartifact.Report(&out, result)
-	c.Assert(out.String(), qt.Contains, "ERD written to "+result.Path)
+	webartifact.ReportArtifact(&out, result.Path)
+	webartifact.ReportOpen(&out, result)
+	c.Assert(out.String(), qt.Contains, "Schema document written to "+result.Path)
 	c.Assert(out.String(), qt.Contains, "not opened: CI is set")
 }
 
@@ -114,14 +115,25 @@ func TestWrite_CarriesTheComparisonMarks(t *testing.T) {
 	c.Assert(string(data), qt.Contains, `class="node chg-added"`)
 }
 
-// A report that opened nothing still prints the path, and one that opened
-// something prints it too: the window may be on another desktop, and the path
-// is what a reviewer attaches.
-func TestReport_AlwaysNamesThePath(t *testing.T) {
+// The path is printed whether or not a browser came up: the window may be on
+// another desktop, and the path is what a reviewer attaches.
+func TestReportArtifact_NamesThePath(t *testing.T) {
 	c := qt.New(t)
 
 	var out strings.Builder
-	webartifact.Report(&out, webartifact.Result{Path: "/tmp/erd.html", Opened: true})
+	webartifact.ReportArtifact(&out, "/tmp/schema.html")
 
-	c.Assert(out.String(), qt.Equals, "ERD written to /tmp/erd.html\n")
+	c.Assert(out.String(), qt.Equals, "Schema document written to /tmp/schema.html\n")
+}
+
+// A run that opened a browser says nothing more. The window is the report, and
+// a line announcing it would be the whole output of a run that did what was
+// asked.
+func TestReportOpen_SaysNothingWhenSomethingOpened(t *testing.T) {
+	c := qt.New(t)
+
+	var out strings.Builder
+	webartifact.ReportOpen(&out, webartifact.Result{Path: "/tmp/schema.html", Opened: true})
+
+	c.Assert(out.String(), qt.Equals, "")
 }

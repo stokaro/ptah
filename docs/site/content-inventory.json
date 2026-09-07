@@ -530,7 +530,7 @@
       "sourceBytes": 42452
     },
     {
-      "path": "docs/site/src/content/docs/atlas/schema-commands.md",
+      "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
       "route": "/atlas/schema-commands/",
       "title": "Atlas schema commands",
       "description": "Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.",
@@ -569,7 +569,8 @@
         "/direct/inspect/",
         "/reference/atlas-commands/",
         "/reference/configuration/",
-        "/reference/lint-rules/"
+        "/reference/lint-rules/",
+        "/schema/document/"
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
@@ -582,8 +583,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12207,
-      "sourceBytes": 89126
+      "visibleWords": 12649,
+      "sourceBytes": 93073
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -4220,8 +4221,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7368,
-      "sourceBytes": 49818
+      "visibleWords": 7378,
+      "sourceBytes": 49868
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -4500,6 +4501,7 @@
         "/start/install/"
       ],
       "inboundLinks": [
+        "/atlas/schema-commands/",
         "/reference/native-commands/",
         "/schema/export/",
         "/schema/hcl/",
@@ -4509,8 +4511,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 1486,
-      "sourceBytes": 13446
+      "visibleWords": 1706,
+      "sourceBytes": 14894
     },
     {
       "path": "docs/site/src/content/docs/schema/export.mdx",

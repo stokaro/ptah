@@ -63,9 +63,9 @@ type Result struct {
 // can be pointed at. Both callers land in the same directory under the same
 // name pattern, so "where did the ERD go" has one answer.
 func WriteBytes(data []byte) (string, error) {
-	file, err := os.CreateTemp("", "ptah-erd-*.html")
+	file, err := os.CreateTemp("", "ptah-schema-*.html")
 	if err != nil {
-		return "", fmt.Errorf("create the ERD file: %w", err)
+		return "", fmt.Errorf("create the schema document: %w", err)
 	}
 	path := file.Name()
 	if _, err := file.Write(data); err != nil {
@@ -104,14 +104,27 @@ func Write(ctx context.Context, db *schemamodel.Database, opts Options) (Result,
 	return Result{Path: path, Opened: opened.Opened, Reason: opened.Reason}, rendered.Diagnostics, nil
 }
 
-// Report writes what happened where a person will read it.
+// ReportArtifact names where the document went.
 //
 // The path goes to the diagnostics stream rather than to standard output,
 // because on `schema inspect` standard output is the inspected schema and a
 // pipeline reads it. A run that opened a browser still prints the path: the
 // window may be on another desktop, and the path is what a reviewer attaches.
-func Report(diagnostics io.Writer, result Result) {
-	fmt.Fprintf(diagnostics, "ERD written to %s\n", result.Path)
+//
+// It is separate from [ReportOpen] because a caller that already named the file
+// owes the operator the second sentence and not the first. `ptah schema export
+// --out doc.html` is that caller: it has printed where the document is, and
+// printing it again in another vocabulary reads as a second file.
+func ReportArtifact(diagnostics io.Writer, path string) {
+	fmt.Fprintf(diagnostics, "Schema document written to %s\n", path)
+}
+
+// ReportOpen says why nothing opened, and says nothing when something did.
+//
+// Silence on success is deliberate: a browser that came up is its own report,
+// and a line saying so would be the only output of a run that did what was
+// asked.
+func ReportOpen(diagnostics io.Writer, result Result) {
 	if result.Opened {
 		return
 	}
