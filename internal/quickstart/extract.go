@@ -3,6 +3,7 @@ package quickstart
 import (
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -37,6 +38,7 @@ type entry struct {
 	path         string
 	body         string
 	expectations []Expectation
+	exitCode     int
 }
 
 // Extract reads one page and returns what it publishes.
@@ -96,6 +98,11 @@ type scanner struct {
 	// does not lose the introduction.
 	para     []string
 	lastPara []string
+	// exitCode is the status the fence being read declared with exits=, and 0
+	// for every fence that declared none. It is scanner state rather than a
+	// parameter because a block is dispatched by language through one switch,
+	// and threading it would give every arm an argument only two use.
+	exitCode int
 }
 
 func scanBlocks(path string, lines []string, from int) ([]entry, error) {
@@ -111,9 +118,15 @@ func scanBlocks(path string, lines []string, from int) ([]entry, error) {
 				// gets the highlighting.
 				language = ""
 			}
+			exitCode, err := fenceExitCode(path, i+1, match[3])
+			if err != nil {
+				return nil, err
+			}
+			s.exitCode = exitCode
 			if err := s.block(i, end, language); err != nil {
 				return nil, err
 			}
+			s.exitCode = 0
 			i = end
 			s.para, s.lastPara = nil, nil
 			continue
@@ -186,6 +199,40 @@ func isIllustration(options string) bool {
 	return false
 }
 
+// fenceExitCode reads an `exits=` option off a fence, and 0 when there is none.
+//
+// A step is expected to succeed, and the generated script stops on the first
+// one that does not. That is the right default and it cannot express the
+// journey a drift check belongs to: `ptah schema drift` exits 1 when it finds
+// drift, which is the command working, and a page teaching a pipeline gate has
+// nothing else to demonstrate (stokaro/ptah#3018).
+//
+// The status is declared rather than tolerated. A block saying "this may fail"
+// would pass whether the command exited 1 or 3, and would keep passing after
+// the command stopped failing at all -- which is the regression this page's
+// reader would care about most.
+//
+//	```console exits=1
+//	ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"
+//	```
+func fenceExitCode(path string, line int, options string) (int, error) {
+	for field := range strings.FieldsSeq(options) {
+		value, found := strings.CutPrefix(field, "exits=")
+		if !found {
+			continue
+		}
+		code, err := strconv.Atoi(value)
+		if err != nil || code < 0 || code > 255 {
+			return 0, &ExtractError{
+				Path: path, Line: line,
+				Problem: "exits= takes a process exit status from 0 to 255, not " + strconv.Quote(value),
+			}
+		}
+		return code, nil
+	}
+	return 0, nil
+}
+
 // intro returns the sentence that introduces the block about to be read.
 func (s *scanner) intro() string {
 	para := s.para
@@ -223,7 +270,7 @@ func (s *scanner) neutralStep(line int, body string) error {
 	if strings.TrimSpace(body) == "" {
 		return &ExtractError{Path: s.path, Line: line + 1, Problem: "an empty console block runs nothing"}
 	}
-	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: Shells(), body: body})
+	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: Shells(), body: body, exitCode: s.exitCode})
 	return nil
 }
 
@@ -239,7 +286,7 @@ func (s *scanner) step(line int, shell Shell, body string) error {
 	if strings.TrimSpace(body) == "" {
 		return &ExtractError{Path: s.path, Line: line + 1, Problem: "an empty " + string(shell) + " block runs nothing"}
 	}
-	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: []Shell{shell}, body: body})
+	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: []Shell{shell}, body: body, exitCode: s.exitCode})
 	return nil
 }
 
@@ -350,7 +397,8 @@ func buildPrograms(page *Page, entries []entry) {
 			if !slices.Contains(e.shells, shell) {
 				continue
 			}
-			action := Action{Kind: e.kind, Line: e.line, Path: e.path, Body: e.body, Expectations: e.expectations}
+			action := Action{Kind: e.kind, Line: e.line, Path: e.path, Body: e.body,
+				Expectations: e.expectations, ExitCode: e.exitCode}
 			if e.kind == ActionStep {
 				number++
 				action.Number = number

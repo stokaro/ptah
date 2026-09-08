@@ -1,0 +1,28 @@
+---
+title: A fixture that declares an exit status
+description: Three shell-neutral steps, the middle one declaring the status it must end with.
+quickstart: true
+---
+
+## A step that must succeed
+
+```console
+ptah version
+```
+
+## A step that must fail
+
+The status is the point of the command rather than a fault in it, which is what
+`exits=` says:
+
+```console exits=1
+ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"
+```
+
+## A step that must succeed again
+
+The run continues past a step whose declared status was met:
+
+```console
+ptah version
+```

@@ -903,6 +903,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/direct/compare-and-drift.md",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 9,
+          "expectations": 16
+        },
+        {
+          "shell": "powershell",
+          "steps": 9,
+          "expectations": 16
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/start/quick-start-direct.mdx",
       "shells": [
         {

@@ -55,11 +55,36 @@ func renderBash(program *Program) (string, error) {
 			}
 			continue
 		}
-		fmt.Fprintf(&out, "\n%s\n", strings.TrimRight(action.Body, "\n"))
+		writeBashStep(&out, action)
 		fmt.Fprintf(&out, "printf '%%s\\n' '%s'\n", Sentinel(action.Number))
 		fmt.Fprintf(&out, "printf '%%s\\n' '%s' >&2\n", Sentinel(action.Number))
 	}
 	return out.String(), nil
+}
+
+// writeBashStep emits one step's command and, where the page declared a status
+// with `exits=`, the comparison that holds it to exactly that.
+//
+// set -e ends the run on any failure, which is what makes a page's own checksum
+// and validation commands gates. A step the page says must fail therefore runs
+// with the option off for the length of that command, and its status is then
+// compared: any other status ends the run, and so does success where the page
+// said the command fails. Tolerating failure instead would keep passing after
+// the command stopped failing at all.
+func writeBashStep(out *strings.Builder, action Action) {
+	body := strings.TrimRight(action.Body, "\n")
+	if action.ExitCode == 0 {
+		fmt.Fprintf(out, "\n%s\n", body)
+		return
+	}
+	out.WriteString("\nset +e\n")
+	fmt.Fprintf(out, "%s\n", body)
+	out.WriteString("quickstart_status=$?\nset -e\n")
+	fmt.Fprintf(out,
+		"if [ \"$quickstart_status\" -ne %d ]; then\n"+
+			"  printf 'step exited %%s, page declared %d\\n' \"$quickstart_status\" >&2\n"+
+			"  exit 1\n"+
+			"fi\n", action.ExitCode, action.ExitCode)
 }
 
 func bashFile(out *strings.Builder, action Action) error {
@@ -93,11 +118,25 @@ func renderPowerShell(program *Program) (string, error) {
 			continue
 		}
 		fmt.Fprintf(&out, "\n%s\n", strings.TrimRight(action.Body, "\n"))
-		out.WriteString("if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n")
+		writePowerShellExitCheck(&out, action)
 		fmt.Fprintf(&out, "Write-Output '%s'\n", Sentinel(action.Number))
 		fmt.Fprintf(&out, "[Console]::Error.WriteLine('%s')\n", Sentinel(action.Number))
 	}
 	return out.String(), nil
+}
+
+// writePowerShellExitCheck emits the status comparison that follows one step.
+//
+// A step expected to succeed keeps the run's own status, so a failing page
+// reports what the command reported. A step the page declared with `exits=`
+// cannot: the status it must not have includes 0, so exiting with what the
+// command returned would end a wrong run successfully.
+func writePowerShellExitCheck(out *strings.Builder, action Action) {
+	if action.ExitCode == 0 {
+		out.WriteString("if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n")
+		return
+	}
+	fmt.Fprintf(out, "if ($LASTEXITCODE -ne %d) { exit 1 }\n", action.ExitCode)
 }
 
 func powerShellFile(out *strings.Builder, action Action) error {

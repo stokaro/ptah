@@ -487,6 +487,13 @@ once on its concept page and link; do not re-define them per page.
   page never creates, and for output quoted from a failure rather than captured
   from a step — without it such a block has to lose its language, which the
   fenced-block rule above refuses.
+- A step whose command is meant to end non-zero declares the status after its
+  language: ```` ```console exits=1 ````. The runner holds the step to exactly
+  that status, so success is a failure too, and the run continues past it. A
+  drift check is the case it exists for: `ptah schema drift` exits `1` when it
+  finds drift, and a page teaching a pipeline gate has nothing else to show.
+  Without the declaration the run stops there, and marking the block an
+  illustration would leave the page's central claim untested.
 - Do not publish identical Bash and PowerShell tabs. Use one `console` block
   for a command that has the same bytes and semantics in both shells.
   `check:editorial-shape` fails byte-equivalent tab panels after whitespace

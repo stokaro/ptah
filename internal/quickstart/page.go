@@ -71,6 +71,10 @@ type Action struct {
 	// Expectations are the output blocks bound to this step. Always empty for
 	// ActionFile.
 	Expectations []Expectation
+	// ExitCode is the process status this step is expected to end with, and 0
+	// for a step that must succeed. A page declares another with `exits=` on
+	// the fence; see fenceExitCode for why it is declared rather than tolerated.
+	ExitCode int
 	// Number is the step's 1-based position among the steps of its program.
 	// Zero for ActionFile. It is what a failure report names, and what the
 	// generated script's sentinels count.
