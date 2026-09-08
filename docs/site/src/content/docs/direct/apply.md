@@ -12,6 +12,7 @@ sourceOfTruth:
   - "migration/schemadiff"
   - "migration/planner"
 generated: false
+quickstart: true
 searchAliases:
   - "apply desired schema"
 overlaps: []
@@ -34,9 +35,47 @@ Prerequisites:
 - A desired schema as local files — the examples use a single `schema.sql`.
 - The URL of the database to change.
 
-The examples use a local SQLite database, `sqlite://$PWD/app.db`, whose one
+The examples use a local SQLite database, `sqlite://app.db`, whose one
 `users` table matches `schema.sql` except for a `created_at` column added to
 the file. Substitute your own database URL throughout.
+
+If you do not have that database, build it here. Start in an empty directory:
+
+```console
+mkdir ptah-direct-apply
+cd ptah-direct-apply
+```
+
+Save this as `schema.sql`:
+
+```sql
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+```
+
+Apply it, so the database exists and matches the file:
+
+```console
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-approve
+```
+
+Expected output on standard output:
+
+```text
+Schema apply completed successfully.
+```
+
+Now add the column the rest of this page applies, by replacing `schema.sql`:
+
+```sql
+CREATE TABLE users (
+    id         INTEGER PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TIMESTAMP
+);
+```
 
 :::caution
 A direct apply leaves no migration file to review and no revision history to
@@ -53,10 +92,10 @@ database, `--schema-file` (SQL, YAML, HCL, DBML, or OCI sources; repeatable),
 and `--root-dir` (Go annotations; repeatable) for the desired schema. These
 selectors match `schema compare` and `migrations generate`:
 
-```bash
-ptah schema apply --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --dry-run
-ptah schema plan  --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --output change.plan.json
-ptah schema apply --db-url "sqlite://$PWD/app.db" --plan change.plan.json
+```bash illustration
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --dry-run
+ptah schema plan  --db-url "sqlite://app.db" --schema-file schema.sql --output change.plan.json
+ptah schema apply --db-url "sqlite://app.db" --plan change.plan.json
 ```
 
 On the Atlas-compatible surface, `--to` additionally accepts a database URL
@@ -75,14 +114,11 @@ comparison sides.
 
 `--dry-run` prints the planned SQL and stops:
 
-```bash
-ptah schema apply \
-  --db-url "sqlite://$PWD/app.db" \
-  --schema-file schema.sql \
-  --dry-run
+```console
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --dry-run
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Planned schema changes:
@@ -94,15 +130,15 @@ ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 Without `--dry-run`, the command shows the same plan and asks for confirmation
 before executing; anything other than `YES` cancels:
 
-```bash
+```bash illustration
 ptah schema apply \
-  --db-url "sqlite://$PWD/app.db" \
+  --db-url "sqlite://app.db" \
   --schema-file schema.sql
 ```
 
-Expected output includes:
+Expected output on standard output:
 
-```text
+```text illustration
 Planned schema changes:
 ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 Apply these schema changes? Type 'YES' to confirm: Schema apply canceled.
@@ -110,7 +146,7 @@ Apply these schema changes? Type 'YES' to confirm: Schema apply canceled.
 
 `--auto-approve` skips the prompt for scripted runs:
 
-```text
+```text illustration
 Planned schema changes:
 ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 Auto-approval enabled; applying schema changes.
@@ -127,14 +163,11 @@ point. `ptah schema plan` computes the same plan and saves it as a local JSON
 file instead, so the SQL can be reviewed — or code-reviewed — before anything
 runs:
 
-```bash
-ptah schema plan \
-  --db-url "sqlite://$PWD/app.db" \
-  --schema-file schema.sql \
-  --output add-created-at.plan.json
+```console
+ptah schema plan --db-url "sqlite://app.db" --schema-file schema.sql --output add-created-at.plan.json
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Planned schema changes:
@@ -166,14 +199,11 @@ SHA-256 fingerprints of the starting and desired schema states:
 `ptah schema apply --plan` executes exactly the reviewed statements, after
 verifying that the database still matches the plan's starting fingerprint:
 
-```bash
-ptah schema apply \
-  --db-url "sqlite://$PWD/app.db" \
-  --plan add-created-at.plan.json \
-  --auto-approve
+```console
+ptah schema apply --db-url "sqlite://app.db" --plan add-created-at.plan.json --auto-approve
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Planned schema changes:
@@ -191,14 +221,11 @@ plan that carries no signature from a list of approvers you commit:
 
 After an apply, rerunning the dry run confirms nothing is left to change:
 
-```bash
-ptah schema apply \
-  --db-url "sqlite://$PWD/app.db" \
-  --schema-file schema.sql \
-  --dry-run
+```console
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --dry-run
 ```
 
-Expected output:
+Expected output on standard output:
 
 ```text
 Schema is synced, no changes to be made.
