@@ -1,12 +1,13 @@
 ---
 /**
  * The right-hand links of the header, as text rather than icons: the project
- * site, Install and the repository, the way ptah.run's own header reads them.
+ * site, Install, the Playground and the repository, the way ptah.run's own
+ * header reads them.
  * Replaces Starlight's SocialIcons, so it also renders inside the mobile menu
  * footer (stokaro/ptah#2893).
  */
 import config from 'virtual:starlight/user-config';
-import { SiteOrigin } from '../lib/docs-origin.mjs';
+import { PlaygroundOrigin, SiteOrigin } from '../lib/docs-origin.mjs';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
 const social = config.social ?? [];
@@ -20,6 +21,11 @@ const siteHost = new URL(SiteOrigin).host;
     the "Start" group in src/sidebar.mjs; the header names it by its route so
     it stays a plain link, the way ptah.run's header links here. */}
 <a class="ptah-nav-link" href={`${siteTitleHref}start/install/`}>Install</a>
+{/* Beside Install, because it is the other answer to "how do I try this": the
+    playground runs the real CLI against a real SQLite in the tab, with nothing
+    installed. It is a site of its own, so the address comes from the module
+    that declares it rather than from a route. */}
+<a class="ptah-nav-link" href={`${PlaygroundOrigin}/`}>Playground</a>
 {
   social.map(({ href, label }) => (
     <a class="ptah-nav-link" href={href} rel="me">

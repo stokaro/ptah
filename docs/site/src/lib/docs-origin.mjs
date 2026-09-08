@@ -45,6 +45,12 @@ export function RootURL(name) {
 // branch of this repository, so what a reader runs is what this tree holds.
 export const SiteOrigin = 'https://ptah.run';
 
+// PlaygroundOrigin is where Ptah runs in a browser tab: the real CLI compiled
+// to WebAssembly against a real SQLite, with nothing installed. It is a site of
+// its own rather than a page of the project site, so that the project's
+// homepage never loads a WebAssembly module a reader did not ask for.
+export const PlaygroundOrigin = 'https://play.ptah.run';
+
 // InstallURL is the advertised address of one installer.
 //
 // The documentation root keeps serving the same files at RootURL: every command
