@@ -35,8 +35,8 @@ schema. It does not accept a schema file or external loader. Use
 browsable reference, or [`ptah schema drift`](../../direct/compare-and-drift/)
 for a source-neutral live-database check with a pipeline exit code.
 
-`ptah schema serve` serves a read-only web page carrying two things: the desired
-schema, and how a live database differs from it. The page re-reads both on every
+`ptah schema serve` serves a read-only web page carrying the desired
+schema and how a live database differs from it. The page re-reads both on every
 request, so where `ptah schema compare` answers once, this keeps answering while
 you work.
 

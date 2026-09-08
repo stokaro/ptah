@@ -20,7 +20,7 @@ These are two different operations and confusing them is expensive.
 - **Rollback** moves the pointer back to the previous generation. Reversible.
 - **Retire** destroys a generation's vectors. Permanent.
 
-## Rollback needs three things to be true
+## Rollback needs three conditions
 
 A window, a maintained generation, and a generation that is still complete.
 
@@ -55,8 +55,8 @@ ptah inference catchup --spec previous-spec.yaml --db-url "$DB" \
   --run-id previous-run --maintain-for 1h
 ```
 
-`--maintain-for` does two things at once: it catches the generation up, and it
-extends the promise that it is current. Put it on a schedule for the length of
+`--maintain-for` catches the generation up and extends the promise that it is
+current, in one call. Put it on a schedule for the length of
 the window. A window extended without a catch-up behind it is a promise nobody
 kept; a catch-up whose window expired left a generation current and unusable.
 

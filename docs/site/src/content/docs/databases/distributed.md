@@ -141,7 +141,7 @@ by its text, because the server rewrites the value it stores:
   those are the same state: `ttl_pause = false` is stored nowhere, and setting
   it erases an existing `true` exactly as a reset does.
 
-### Two things the server does that Ptah works around
+### Two server behaviors Ptah works around
 
 **The interval is rewritten on the way in.** Measured on both declared lines,
 `ttl_expire_after = '72 hours'` is stored as `'72:00:00'`, `'5 minutes'` as

@@ -71,7 +71,8 @@ resolves nothing, and reports less than it should while the command still exits
 | statement text | The migration SQL, and nothing else. The default. |
 | baseline schema | The above, plus the schema state the version starts from, read from the replayed dev database. |
 
-Two things follow from the declaration:
+The declaration decides what a run reads, and what it says when a read is
+missing:
 
 - **Only the versions a rule asks about are read.** A directory with nothing to
   resolve costs no introspection, and a rule silenced by `--disable`, by

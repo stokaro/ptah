@@ -202,7 +202,7 @@ It also covers what a whole object declares: a table's partitioning, a schema's
 character set and collation, a role's comment, and a materialized view's refresh
 schedule.
 
-Two things are still outside it, and
+Two cases are still outside it, and
 [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) tracks them. The
 `DROP` path is one, because this check renders creates and never reaches a
 `DROP`. The other is an index's type, which needs a rule for telling a

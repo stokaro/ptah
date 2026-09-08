@@ -11,7 +11,7 @@ ADR 0002 pinned the agent surface to stdio and said why: a remote transport
 brings authentication, and that is a security surface a first release does not
 open. The package still says so at the top of `internal/mcpserver`.
 
-Two of the three things #1492 was waiting on have since arrived. The conformance
+Two of the three blockers #1492 was waiting on have since arrived. The conformance
 foundation it defers to is [#1490](https://github.com/stokaro/ptah/issues/1490),
 now closed. The names it refused to build against are pinned:
 `internal/mcpserver/testdata/agent-contract.json` holds every served tool with
@@ -47,7 +47,7 @@ This is the structural fact, and it is independent of authentication.
 
 `register` captures one `*agentapi.Session` in every tool handler by closure, so
 a single `mcp.Server` serving several connections hands all of them the same
-session. Four things follow, each measurable today:
+session. Four consequences follow, each measurable today:
 
 | shared state | consequence for a second client |
 | --- | --- |
@@ -159,7 +159,7 @@ infrastructure it does not ship.
 None yet. This record exists so the next person starts from §2, which is
 measured, and chooses among §3 rather than deriving it again.
 
-Two things should be decided together rather than separately:
+Two open questions should be decided together rather than separately:
 
 **Open question 1.** Whether per-connection session scoping (§2.2) is worth
 doing on its own. It is required by every option except §3.1, it is the larger

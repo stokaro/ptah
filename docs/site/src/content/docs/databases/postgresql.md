@@ -396,7 +396,7 @@ on a PostgreSQL-family target that has the capability, without any
 transaction with an actionable message rather than failing at the server, so
 `--tx-mode none` is the answer it names.
 
-Two things bound it, and they are the same two the heuristic uses:
+Two limits bound it, and they are the same two the heuristic uses:
 
 - **A partitioned parent is excluded**, not refused. PostgreSQL has no
   concurrent index form for `relkind` `'p'`, and refusing would leave a project

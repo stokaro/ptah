@@ -66,8 +66,7 @@ and on 21 it is refused before any SQL — a column declared with a type the
 target cannot create would be left naming something the server has no
 definition of.
 
-Two things about Oracle's own catalog are worth knowing, because they decide
-whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
+Two of Oracle's catalog behaviors decide whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
 own, named by the server and numbered per database, and Ptah reads the
 nullability off the column instead so the plan does not carry that constraint
 back and forth. And `DROP TABLE` is rendered with `PURGE`: a dropped table

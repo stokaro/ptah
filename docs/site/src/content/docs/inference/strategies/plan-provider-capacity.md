@@ -81,7 +81,7 @@ that line reads `the provider reported no token usage` instead of two zeros,
 because a provider that charged nothing and one that said nothing are not the
 same fact and the counts alone cannot tell them apart.
 
-Two things drive the bill more than anything else:
+The row count and the input length drive the bill more than anything else:
 
 - **The row count.** `source.filter` is the lever. Embedding rows nobody searches
   is the most common avoidable cost.

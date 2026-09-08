@@ -33,7 +33,7 @@ guardrail" and that enforcement belongs in a deterministic tool. What Atlas
 ships instead is `atlas copilot`, a Pro-tier, account-bound assistant, and a set
 of skill files that teach a general-purpose agent to drive the CLI.
 
-Two things follow. The first is that a safe write surface is a real product
+Two conclusions follow. The first is that a safe write surface is a real product
 difference rather than catch-up. The second is the harder one: Atlas's stated
 objection is the standard this design has to meet. If any control here can be
 satisfied by the model choosing to comply, the objection lands.

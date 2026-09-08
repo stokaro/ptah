@@ -452,7 +452,7 @@ rather than tables. An empty extra schema is enough:
 Error: sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required
 ```
 
-At that scope only two things are tolerated: an empty `public`, and the schema
+At that scope only two schemas are tolerated: an empty `public`, and the one
 holding this run's revision table. Anything else — another schema, empty or
 not, or a table in `public` — refuses, and the refusal names the first offender
 by name. A `public` holding a table is reported as `found schema "public"`, not
@@ -640,7 +640,7 @@ ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
   --dry-run --format '{{ json . }}' 2>&1 | jq
 ```
 
-Three things still reach stderr, by design. A command that fails prints its
+Three diagnostics still reach stderr, by design. A command that fails prints its
 `Error: …` diagnostic there and exits `1`. A Warn-level runtime diagnostic that
 exists on no other channel — such as function ordering or a dev database that
 would not close — is still reported. An `atlas.hcl` name that Atlas CE accepts
@@ -1102,8 +1102,8 @@ only in the directory that was captured and verified. When the directory came
 from `atlas.hcl`, both handles are opened through the project root, so a
 replacement cannot move the write outside that root either.
 
-Two things stay keyed to the pathname on purpose. The cross-process lock file
-is created beside the directory before any handle exists, because it is
+The lock file and the `--edit` callback stay keyed to the pathname on purpose.
+The cross-process lock file is created beside the directory before any handle exists, because it is
 cooperative mutual exclusion between Ptah processes rather than a boundary
 against a hostile writer, and every verb has to agree on its identity. The
 `--edit` callback also receives absolute staged paths, because an external
