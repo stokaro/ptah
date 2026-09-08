@@ -933,6 +933,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/versioned/generate.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 6,
+          "expectations": 8
+        },
+        {
+          "shell": "powershell",
+          "steps": 6,
+          "expectations": 8
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/versioned/rollback.mdx",
       "shells": [
         {
