@@ -1,5 +1,11 @@
 [
   {
+    "route": "/atlas/docs-coverage/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The coverage matrix indexes one evidence section per area, and each row is only readable beside the Atlas documentation, Ptah documentation, implementation status and conformance status it points at."
+  },
+  {
     "route": "/atlas/feature-matrix/",
     "check": "page-length",
     "target": "page",

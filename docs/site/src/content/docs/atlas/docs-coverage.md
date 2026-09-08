@@ -62,6 +62,7 @@ when it separates Open, Pro, and Cloud behavior.
 | Partial | Ptah implements or documents part of the Atlas area, but gaps remain. |
 | Gap | The area needs implementation, conformance, or documentation work before parity can be claimed. |
 | Out of scope | The area is Atlas Pro, Cloud, registry, account, UI, or commercial behavior rather than an Atlas OSS drop-in target. |
+| Native | Atlas keeps the workflow in its Pro or Cloud build, and Ptah implements it natively and free. It sits beside Out of scope rather than inside it: the same Atlas gating, and the opposite answer here. |
 | Measured | `ptah-atlas-conformance` has probes for this area. |
 | Unmeasured | The behavior may exist, but current conformance reports do not prove it. |
 
