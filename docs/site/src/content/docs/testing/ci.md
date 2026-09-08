@@ -265,7 +265,7 @@ directly:
 
 ```bash
 docker run --rm -v "$PWD:/src" -w /src \
-  ghcr.io/stokaro/ptah:v0.4.0 \
+  ghcr.io/stokaro/ptah:0.5.0 \
   migrations lint --dir ./migrations --dialect postgres --format json
 ```
 
