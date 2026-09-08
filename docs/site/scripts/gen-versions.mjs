@@ -29,7 +29,21 @@ function compareSemver(a, b) {
   return 0;
 }
 
+// computeDefault names the version the apex redirect serves, and the one its
+// canonical link points at.
+//
+// Edge, while Ptah is pre-GA. A release is a snapshot of what shipped; edge is
+// what master documents, and before v1 the difference between them is most of
+// the product -- a reader arriving at the apex is asking what Ptah does, not
+// what the last tag did. Nothing is hidden by the choice: every release keeps
+// its own stable URL, and the picker lists them all, so a reader who wants the
+// version they installed is one selection away.
+//
+// The newest tag is still the answer where there is no edge folder at all: a
+// deployment assembled from tags alone needs a default, and the highest one is
+// the only sensible pick.
 export function computeDefault(slugs) {
+  if (slugs.includes(EDGE)) return EDGE;
   let best = null;
   for (const slug of slugs) {
     const semver = parseSemver(slug);
@@ -96,10 +110,14 @@ function selftest() {
   assert(!isVersionFolder('latest'), 'latest is not accepted');
   assert(!isVersionFolder('_astro'), '_astro is not accepted');
   assert(computeDefault(['edge']) === 'edge', 'edge is default without tags');
-  assert(computeDefault(['edge', 'v1.2.0', 'v1.10.0']) === 'v1.10.0', 'numeric compare');
+  assert(computeDefault(['edge', 'v1.2.0', 'v1.10.0']) === 'edge', 'edge outranks a release');
+  // Without edge the newest tag wins, and the compare is numeric rather than
+  // lexical: 'v1.10.0' sorts before 'v1.2.0' as a string.
+  assert(computeDefault(['v1.2.0', 'v1.10.0']) === 'v1.10.0', 'numeric compare');
+  assert(computeDefault([]) === 'edge', 'edge is the answer with nothing to choose from');
 
   const index = buildIndex(['v1.0.0', 'edge', 'v1.2.0']);
-  assert(index.default === 'v1.2.0', 'highest tag is default');
+  assert(index.default === 'edge', 'edge is default beside releases');
   assert(index.versions.map((v) => v.slug).join(',') === 'edge,v1.2.0,v1.0.0', 'stable order');
 
   const tmp = mkdtempSync(join(tmpdir(), 'ptah-docs-versions-'));
@@ -110,7 +128,8 @@ function selftest() {
     generate(tmp);
     const json1 = readFileSync(join(tmp, 'versions.json'), 'utf8');
     const html1 = readFileSync(join(tmp, 'index.html'), 'utf8');
-    assert(html1.includes('/v1.2.0/'), 'redirect targets default');
+    assert(html1.includes('/edge/'), 'redirect targets default');
+    assert(!html1.includes('/v1.2.0/'), 'redirect does not target a release while edge exists');
     assert(!json1.includes('_astro'), 'non-version folders are ignored');
     generate(tmp);
     assert(json1 === readFileSync(join(tmp, 'versions.json'), 'utf8'), 'versions json is idempotent');
