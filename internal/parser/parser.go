@@ -3,6 +3,7 @@ package parser
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -2076,17 +2077,25 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			if p.dialect == platform.ClickHouse {
 				return p.parseInlineSkippingIndex(table)
 			}
+			if !tableBodyReadsKeywordAsIndex(p.dialect, keyword) {
+				break
+			}
+			start := p.current.Start
 			constraint, index, err := p.parseTableConstraint()
 			if err != nil {
-				return err
+				return p.describeIndexKeywordElement(keyword, start, err)
 			}
 			addTableConstraintOrIndex(table, constraint, index)
 			return nil
 		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE",
 			"SPATIAL", "FULLTEXT", "KEY":
+			if !tableBodyReadsKeywordAsIndex(p.dialect, keyword) {
+				break
+			}
+			start := p.current.Start
 			constraint, index, err := p.parseTableConstraint()
 			if err != nil {
-				return err
+				return p.describeIndexKeywordElement(keyword, start, err)
 			}
 			addTableConstraintOrIndex(table, constraint, index)
 			return nil
@@ -3864,7 +3873,7 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 		return nil
 	}
 	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return fmt.Errorf("expected '(' for constraint columns: %w", err)
+		return fmt.Errorf("%w: %w", errConstraintColumnListMissing, err)
 	}
 
 	p.skipWhitespace()
@@ -5465,6 +5474,83 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 		return isMySQLFamilyDialect(p.dialect)
 	default:
 		return false
+	}
+}
+
+// errConstraintColumnListMissing marks the one failure that means a table
+// element opening with an index keyword never became an index: its column list
+// did not open. It carries the wording the message always had, so the text a
+// caller sees is unchanged and only the branching is new.
+var errConstraintColumnListMissing = errors.New("expected '(' for constraint columns")
+
+// describeIndexKeywordElement says what a token class and a byte offset cannot:
+// the element began with a word this dialect reads as a table-level index, so a
+// document that meant it as a column name is refused at the type rather than at
+// the name.
+//
+// The refusal itself is right where it fires. MySQL and MariaDB reserve KEY,
+// SPATIAL, FULLTEXT and INDEX, so `key TEXT NOT NULL` is DDL those engines
+// refuse too. What was missing is the reason: the reader was left with
+// `expected Operator, got Identifier at position 45` (stokaro/ptah#3089).
+func (p *Parser) describeIndexKeywordElement(keyword string, start int, err error) error {
+	switch keyword {
+	case "KEY", "SPATIAL", "FULLTEXT", "INDEX":
+	default:
+		return err
+	}
+	// Only the element that never opened a column list is a candidate for
+	// having meant a column name. Every other failure here -- a WITH PARSER on
+	// an ordinary index, an access method the dialect does not have -- comes
+	// from a document that did declare an index, and saying otherwise would
+	// describe the author's intent wrongly.
+	if !errors.Is(err, errConstraintColumnListMissing) {
+		return err
+	}
+	return fmt.Errorf(
+		"a table element opening with %s at position %d declares a table-level index on %s "+
+			"rather than a column named after the word: %w",
+		keyword, start, describeFunctionalKeyDialect(p.dialect), err)
+}
+
+// tableBodyReadsKeywordAsIndex reports whether a table element beginning with
+// one of MySQL's index keywords declares an index rather than a column carrying
+// the word as its name.
+//
+// The question only arises for KEY, SPATIAL, FULLTEXT and INDEX. CONSTRAINT,
+// PRIMARY, UNIQUE, FOREIGN, CHECK and EXCLUDE are reserved wherever Ptah
+// renders, so no column can be named after them and no dialect has to be asked.
+//
+// PostgreSQL and SQLite declare no index inside CREATE TABLE, so a table element
+// opening with one of these words there can only be a column, and both engines
+// leave the name free. Measured on PostgreSQL 17 and SQLite 3.51:
+// `CREATE TABLE t (a INT, key TEXT)` is accepted by both, `spatial` and
+// `fulltext` likewise, and `index` by PostgreSQL alone -- SQLite reserves that
+// one, which is why it is not listed for it. MySQL 8 refuses all four as column
+// names and reads `KEY idx_ab (a, b)` in the same position as an index, so the
+// MySQL family keeps the keyword.
+//
+// Reading the word as an index everywhere refused valid DDL: a PostgreSQL file
+// with a column named `key` failed with a token class and a byte offset
+// (stokaro/ptah#3089), and the repository's own examples/viz/schema.sql was one.
+//
+// A dialect this does not name keeps the previous reading, generic mode
+// included. The best-effort mode has no family to ask, and turning an
+// unrecognized KEY into a column there would drop an index without a word --
+// the defect stokaro/ptah#2778 fixed on the ALTER path, whose
+// isAlterAddConstraintStart asks this same question for ALTER TABLE ADD.
+func tableBodyReadsKeywordAsIndex(dialect, keyword string) bool {
+	switch keyword {
+	case "KEY", "SPATIAL", "FULLTEXT", "INDEX":
+	default:
+		return true
+	}
+	switch dialect {
+	case platform.Postgres:
+		return false
+	case platform.SQLite:
+		return keyword == "INDEX"
+	default:
+		return true
 	}
 }
 

@@ -172,6 +172,13 @@ SQL:
   table written with `FULLTEXT INDEX` comes back out of `mysqldump` as
   `FULLTEXT KEY`. An index left unnamed takes the name its server would give
   it, by the rule above.
+- `KEY`, `SPATIAL`, `FULLTEXT` and `INDEX` open a table-level index here, and
+  both engines reserve all four, so no column carries those names bare. Ptah
+  reads the word as an index on this family and in dialect-neutral documents,
+  which have no family to ask. PostgreSQL and SQLite declare no index inside
+  `CREATE TABLE` and leave `key`, `spatial` and `fulltext` free, so a `.sql`
+  source read for those dialects gets a column; reading the word as an index
+  everywhere refused DDL both engines accept (stokaro/ptah#3089).
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique
