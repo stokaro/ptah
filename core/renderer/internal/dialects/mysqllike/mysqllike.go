@@ -540,6 +540,12 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// The FULLTEXT parser is written below; index storage parameters are a
 	// PostgreSQL clause and reach the output nowhere here.
 	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
+	// FULLTEXT and SPATIAL are written as a prefix below and HASH as a USING
+	// clause. Any other access method has no spelling here, so it reaches the
+	// output nowhere.
+	if mysqlIndexPrefixType(node.Type) == "" && mysqlindex.Method(node.Type) == "" {
+		r.sink.RecordLostIndexType(node.Name, node.Type)
+	}
 	var parts []string
 
 	parts = append(parts, "CREATE")
