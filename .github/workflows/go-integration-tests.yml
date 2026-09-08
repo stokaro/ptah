@@ -105,7 +105,7 @@ jobs:
       # on answering as a server WITHOUT it -- that is the control every
       # extension-gated read is measured against (stokaro/ptah#1026).
       timescaledb:
-        image: timescale/timescaledb:2.29.2-pg17
+        image: timescale/timescaledb:2.30.0-pg17
         env:
           POSTGRES_DB: ptah_test
           POSTGRES_USER: ptah_user
