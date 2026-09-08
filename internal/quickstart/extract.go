@@ -260,11 +260,19 @@ func (s *scanner) block(open, end int, language string) error {
 	}
 }
 
+// neutralStep records a console block, which is one command for both shells.
+//
+// The refusal below is about a shell-specific tab, and only a tab whose label
+// selects one shell is that. A page may also tab something else -- the adoption
+// page tabs four representations of one schema, SQL beside HCL, DBML and Go --
+// and there the panel is not a shell at all, so a shell-neutral command inside
+// it is exactly right. Refusing every tab made such a page choose between
+// running its commands and keeping its layout (stokaro/ptah#3018).
 func (s *scanner) neutralStep(line int, body string) error {
-	if s.tabLabel != "" {
+	if len(tabShells(s.tabLabel)) == 1 {
 		return &ExtractError{
 			Path: s.path, Line: line + 1,
-			Problem: "a console block is shell-neutral and must sit outside shell-specific tabs",
+			Problem: "a console block is shell-neutral and must sit outside a tab that selects one shell",
 		}
 	}
 	if strings.TrimSpace(body) == "" {
