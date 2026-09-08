@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
-	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemasecurity"
 	"ptah.run/internal/schemaviz"
 	"ptah.run/internal/servertarget"
@@ -24,6 +24,7 @@ import (
 
 const (
 	rootDirFlag        = "root-dir"
+	schemaFileFlag     = "schema-file"
 	formatFlag         = "format"
 	includeColumnsFlag = "include-columns"
 	excludeTablesFlag  = "exclude-tables"
@@ -34,7 +35,8 @@ const (
 )
 
 type options struct {
-	rootDir        string
+	rootDirs       []string
+	schemaFiles    []string
 	format         string
 	includeColumns bool
 	excludeTables  string
@@ -42,6 +44,9 @@ type options struct {
 	security       bool
 	dialect        string
 	serverVersion  string
+	plainHTTP      bool
+	configPath     string
+	envName        string
 }
 
 // NewCommand returns the native schema visualization command.
@@ -52,10 +57,14 @@ func NewCommand() *cobra.Command {
 		Short: "Render desired schema diagrams",
 		Long: `Render desired schema diagrams.
 
-The command scans Go annotations and writes Graphviz DOT, Mermaid erDiagram, or
-SVG output to stdout:
+The command reads a desired schema and writes Graphviz DOT, Mermaid erDiagram,
+or SVG output to stdout. --root-dir scans annotated Go entities, --schema-file
+reads a SQL, YAML, HCL, DBML or OCI source, and both are repeatable and merge
+into one composite schema. With neither, the current directory is scanned for
+Go entities.
 
   ptah viz --root-dir ./models --format mermaid --include-columns
+  ptah viz --schema-file schema.sql --dialect postgres
 
 --security runs the schema security rules over the same schema and marks the
 tables they attach to, so the diagram shows where the findings are rather than
@@ -69,7 +78,10 @@ sending the reader to a separate report:
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.rootDir, rootDirFlag, ".", "Root directory to scan for Go annotations")
+	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil,
+		"Directory to scan for annotated Go entities (repeatable; defaults to ./ when no source is given)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil,
+		"SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with --root-dir)")
 	flags.StringVar(&opts.format, formatFlag, schemaviz.FormatMermaid, "Output format: dot, mermaid, or svg")
 	flags.BoolVar(&opts.includeColumns, includeColumnsFlag, false, "Include table columns in the diagram")
 	flags.StringVar(&opts.excludeTables, excludeTablesFlag, "", "Comma-separated table names to omit from the diagram")
@@ -79,21 +91,36 @@ sending the reader to a separate report:
 	flags.StringVar(&opts.dialect, dialectFlag, "postgres",
 		"Dialect the schema is read for, which decides which security rules can run")
 	serverversion.Register(flags, &opts.serverVersion)
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
+	dbcli.RegisterConfigFlag(flags, &opts.configPath)
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func run(cmd *cobra.Command, opts options) error {
-	rootDir, err := pathguard.ResolveCLIPath(opts.rootDir)
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("invalid root directory: %w", err))
-	}
-	if err := cmdutil.StatDir(rootDir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	db, err := goschema.ParseDir(rootDir)
+	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("parse Go annotations: %w", err))
+		return cmdutil.Fail(cmd, err)
+	}
+	// One loader, the same one every other desired-schema verb uses, so a
+	// diagram is reachable from every source a plan or an export is. --dialect
+	// is passed as the SQL parsing hint too, which keeps a `.sql` source and
+	// the security rules read over it on one engine.
+	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:        opts.rootDirs,
+		SchemaFiles:     opts.schemaFiles,
+		ProjectEnv:      schemaSourceEnv,
+		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+		Dialect:         opts.dialect,
+		PlainHTTP:       opts.plainHTTP,
+	})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	format := strings.ToLower(strings.TrimSpace(opts.format))
 	renderFormat := format
@@ -159,9 +186,11 @@ func securityAnnotations(
 	if err != nil {
 		return nil, nil, err
 	}
-	// No memberships: this diagram is drawn from Go annotations, which model no
-	// role graph. The rules that need one report themselves skipped, and those
-	// lines are drawn as comments like every other rule that could not run.
+	// No memberships: a diagram is drawn from a desired schema with no server
+	// behind it, and the role graph is something only a live target can answer
+	// for, whatever source the schema came from. The rules that need one report
+	// themselves skipped, and those lines are drawn as comments like every
+	// other rule that could not run.
 	report := schemasecurity.Analyze(db, schemasecurity.Options{Capabilities: target.Capabilities})
 	annotations := make(map[string]schemaviz.Annotation, len(report.Findings))
 	unattached := make([]string, 0, len(report.SkippedRules))

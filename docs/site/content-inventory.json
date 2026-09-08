@@ -3785,8 +3785,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8723,
-      "sourceBytes": 86064
+      "visibleWords": 8752,
+      "sourceBytes": 86360
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4229,8 +4229,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7378,
-      "sourceBytes": 49868
+      "visibleWords": 7383,
+      "sourceBytes": 49918
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -5165,7 +5165,7 @@
       "searchAliases": [
         "visualize schema"
       ],
-      "sourceMode": "go-only",
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/schema/document/",
         "/schema/serve/"
@@ -5190,8 +5190,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 1088,
-      "sourceBytes": 12231
+      "visibleWords": 1291,
+      "sourceBytes": 13692
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",

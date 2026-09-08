@@ -59,6 +59,40 @@ render_and_inspect() {
 	fi
 }
 
+# The diagram carries the entities and the relationships, which is the part of
+# the schema every source describes the same way. Columns are left out on
+# purpose: a type keeps the spelling of the document it was written in --
+# `integer` in the HCL and DBML fixtures, `INTEGER` in the SQL and YAML ones --
+# so --include-columns would compare the fixtures' prose rather than what Ptah
+# derived from them.
+viz_diagram() {
+	local name="$1"
+	shift
+	local drawn="$work_dir/viz-$name.mmd"
+
+	"$ptah_bin" viz "$@" --dialect sqlite >"$drawn"
+
+	if [ ! -s "$drawn" ]; then
+		echo "check-source-equivalence: viz $name produced no diagram" >&2
+		exit 1
+	fi
+	for marker in 'authors {' 'books {' 'tags {' 'book_tags {' \
+		'authors ||--o{ books' 'books ||--o{ book_tags' 'tags ||--o{ book_tags'; do
+		if ! grep -Fq "$marker" "$drawn"; then
+			echo "check-source-equivalence: viz $name omitted $marker" >&2
+			exit 1
+		fi
+	done
+
+	if [ ! -f "$work_dir/viz-baseline.mmd" ]; then
+		cp "$drawn" "$work_dir/viz-baseline.mmd"
+	elif ! cmp -s "$work_dir/viz-baseline.mmd" "$drawn"; then
+		echo "check-source-equivalence: viz $name differs from the canonical SQL source" >&2
+		diff -u "$work_dir/viz-baseline.mmd" "$drawn" >&2 || true
+		exit 1
+	fi
+}
+
 render_and_inspect sql --schema-file "$fixture/schema.sql"
 render_and_inspect yaml --schema-file "$fixture/schema.yaml"
 render_and_inspect hcl --schema-file "$fixture/schema.hcl"
@@ -72,4 +106,10 @@ render_and_inspect external --schema-cmd "$fixture/external-schema.sh" --schema-
 		--allow-external-schema
 )
 
-echo "check-source-equivalence: OK (SQL, YAML, HCL, DBML, Go, explicit external, and configured external)"
+viz_diagram sql --schema-file "$fixture/schema.sql"
+viz_diagram yaml --schema-file "$fixture/schema.yaml"
+viz_diagram hcl --schema-file "$fixture/schema.hcl"
+viz_diagram dbml --schema-file "$fixture/schema.dbml"
+viz_diagram go --root-dir "$fixture/models"
+
+echo "check-source-equivalence: OK (SQL, YAML, HCL, DBML, Go, explicit external, and configured external; ptah viz draws one diagram from the five local sources)"

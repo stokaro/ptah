@@ -225,6 +225,172 @@ func TestSVGRespectsTheCallersDeadline(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
 }
 
+// TestCommandRendersEveryFileSource proves a diagram is reachable from each
+// desired-schema file format, and not from Go annotations alone
+// (stokaro/ptah#3088).
+//
+// The rows carry the source text and nothing else. Every format is asserted
+// against the same three lines on purpose: which format described the schema
+// decides nothing about the diagram drawn from it, and a row that needed its
+// own assertions would be saying the opposite.
+func TestCommandRendersEveryFileSource(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+		body string
+	}{
+		{
+			name: "sql",
+			file: "schema.sql",
+			body: `CREATE TABLE authors (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(120) NOT NULL
+);
+
+CREATE TABLE books (
+    id INTEGER PRIMARY KEY,
+    author_id INTEGER NOT NULL REFERENCES authors(id)
+);
+`,
+		},
+		{
+			name: "yaml",
+			file: "schema.yaml",
+			body: `tables:
+  authors:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      name:
+        type: VARCHAR(120)
+        not_null: true
+  books:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      author_id:
+        type: INTEGER
+        not_null: true
+        foreign: authors(id)
+`,
+		},
+		{
+			name: "hcl",
+			file: "schema.hcl",
+			body: `table "authors" {
+  column "id" {
+    type = integer
+  }
+
+  column "name" {
+    type = varchar(120)
+    null = false
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+}
+
+table "books" {
+  column "id" {
+    type = integer
+  }
+
+  column "author_id" {
+    type = integer
+    null = false
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+
+  foreign_key "fk_books_author_id" {
+    columns     = [column.author_id]
+    ref_columns = [table.authors.column.id]
+  }
+}
+`,
+		},
+		{
+			name: "dbml",
+			file: "schema.dbml",
+			body: `Table authors {
+  id integer [pk, not null]
+  name varchar(120) [not null]
+}
+
+Table books {
+  id integer [pk, not null]
+  author_id integer [not null]
+}
+
+Ref: books.author_id > authors.id
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			path := filepath.Join(dir, test.file)
+			writeSchemaFile(c, path, test.body)
+
+			cmd := viz.NewCommand()
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{"--schema-file", path, "--dialect", "postgres"})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+			c.Assert(stdout.String(), qt.Contains, "erDiagram\n")
+			c.Assert(stdout.String(), qt.Contains, "  authors {\n")
+			c.Assert(stdout.String(), qt.Contains, "  books {\n")
+			c.Assert(stdout.String(), qt.Contains, `  authors ||--o{ books : "fk_books_author_id"`)
+		})
+	}
+}
+
+// TestCommandMergesAGoRootWithASchemaFile proves the two source kinds combine
+// into one diagram. Without both halves asserted, a run where one source
+// silently replaced the other would still draw a valid picture.
+func TestCommandMergesAGoRootWithASchemaFile(t *testing.T) {
+	c := qt.New(t)
+	goDir := t.TempDir()
+	writeModel(c, goDir)
+	fileDir := t.TempDir()
+	schemaPath := filepath.Join(fileDir, "schema.sql")
+	writeSchemaFile(c, schemaPath, `CREATE TABLE authors (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(120) NOT NULL
+);
+`)
+
+	cmd := viz.NewCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--root-dir", goDir, "--schema-file", schemaPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stdout.String(), qt.Contains, "  users {\n")
+	c.Assert(stdout.String(), qt.Contains, "  authors {\n")
+}
+
+// writeSchemaFile writes one desired-schema source for a test to point at.
+func writeSchemaFile(c *qt.C, path, body string) {
+	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
+}
+
 func skipOnWindows(t *testing.T) {
 	t.Helper()
 

@@ -105,6 +105,12 @@ func ociSchemaSourceVerbs() []ociSourceVerb {
 			},
 		},
 		{
+			verb: "viz",
+			args: func(reference string) []string {
+				return []string{"viz", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}
+			},
+		},
+		{
 			verb: "schema render",
 			args: func(reference string) []string {
 				return []string{"schema", "render", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}
