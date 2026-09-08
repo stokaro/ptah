@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/cli/migrations"
   - "migration"
 generated: false
+quickstart: true
 searchAliases:
   - "apply migrations"
 overlaps: []
@@ -23,23 +24,56 @@ You have a hashed migration directory and a database that needs to catch up.
 Preview the apply, run it with integrity verification, read the resulting state
 in scripts and CI, and add the operational controls the target needs.
 
-Prerequisites: a migration directory sealed with `ptah migrations hash` (see
+## Prerequisites
+
+A migration directory sealed with `ptah migrations hash` (see
 [Generate migrations](../generate/)). The examples use a local SQLite file;
 substitute your own `--db-url`.
+
+If you do not have one, build it here. Start in an empty directory:
+
+```console
+mkdir ptah-apply
+cd ptah-apply
+```
+
+Save the pair as `migrations/1785255952_init.up.sql`:
+
+```sql
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+```
+
+and `migrations/1785255952_init.down.sql`:
+
+```sql
+DROP TABLE users;
+```
+
+Seal the directory:
+
+```console
+ptah migrations hash --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+2 migration file(s) hashed
+```
 
 ## Preview with a dry run
 
 On a fresh target, `--dry-run` prints every statement that would execute,
 without touching the database:
 
-```bash
-ptah migrations up \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations \
-  --dry-run
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --dry-run
 ```
 
-Expected output on stdout:
+Expected output on standard output:
 
 ```text
 === DRY RUN MODE ===
@@ -52,7 +86,7 @@ Would have applied 1 migrations
 The statement-by-statement narration is a log record, not report output, so it
 goes to the log stream — stderr by default:
 
-```text
+```text illustration
 level=INFO msg="[DRY RUN] Would begin transaction"
 level=INFO msg="[DRY RUN] Would execute SQL" sql="CREATE TABLE \"users\" ..."
 level=INFO msg="[DRY RUN] Would commit transaction"
@@ -94,14 +128,11 @@ JSON document, while `2>&1` would mix those notes into it. See
 
 ## Apply with integrity verification
 
-```bash
-ptah migrations up \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations \
-  --verify-sum
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --verify-sum
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 === MIGRATE UP ===
@@ -138,48 +169,53 @@ when the directory is a registry artifact.
 Applied versions land in the revision table. Rerunning the same command is a
 safe no-op:
 
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --verify-sum
+```
+
+Expected output on standard output:
+
 ```text
-Pending migrations: 0
 ✅ Database is already up to date!
 ```
 
 ## Check status
 
-```bash
-ptah migrations status \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
-=== MIGRATION STATUS ===
 Current Version: 1785255952
-Total Migrations: 2
+Total Migrations: 1
 Applied Migrations: 1
-Pending Migrations: 1
+Pending Migrations: 0
 Out-of-order Migrations: 0
-Status: ⚠️  Pending migrations available
+Status: ✅ Database is up to date
 ```
 
 For scripts, `--json` prints the same state as one object:
 
-```bash
-ptah migrations status \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations \
-  --json
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations --json
 ```
 
 ```json
 {
-  "current_version": 1785255953,
-  "applied_migrations": [1785255952, 1785255953],
+  "current_version": 1785255952,
+  "applied_migrations": [
+    1785255952
+  ],
+  "applied_migration_keys": [
+    "1785255952"
+  ],
   "pending_migrations": [],
   "out_of_order_migrations": [],
-  "total_migrations": 2,
-  "has_pending_changes": false
+  "total_migrations": 1,
+  "has_pending_changes": false,
+  "current_version_key": "1785255952"
 }
 ```
 
@@ -442,7 +478,7 @@ All of these can live in `ptah.yaml` instead of the command line; see
 directory, so the artifact your CI published is exactly what production runs
 — pin it by immutable digest:
 
-```bash
+```bash illustration
 ptah migrations push \
   oci://ghcr.io/acme/app-migrations \
   --migrations-dir ./migrations \
@@ -463,7 +499,7 @@ The run still succeeds; a digest reference gets no such line.
 
 To keep the readable name and the pin together, write both:
 
-```bash
+```bash illustration
 ptah migrations up \
   --db-url "$DATABASE_URL" \
   --migrations-dir oci://ghcr.io/acme/app-migrations:release@sha256:<digest> \
@@ -482,7 +518,7 @@ authentication, tag and digest semantics, referrer reports, and CI wiring.
 
 **Integrity drift aborts before anything runs** (exit `2`):
 
-```text
+```text illustration
 error: migration sum verification failed:
 migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
@@ -491,7 +527,7 @@ migration directory does not match ptah.sum:
 **Destructive pending migrations are refused by default** (exit `2`); rerun
 with `--allow-destructive` after review:
 
-```text
+```text illustration
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
 - 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; ...
 ```
@@ -563,7 +599,7 @@ statement is skipped rather than retried and reports no error. Ptah refuses to
 run the migration while an index a conditional create expects is unusable, and
 names the `REINDEX INDEX CONCURRENTLY` that rebuilds it:
 
-```text
+```text illustration
 error: error running migrations: migration 1785756328 cannot be applied: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, so this run would record the migration applied over a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again
 ```
 
