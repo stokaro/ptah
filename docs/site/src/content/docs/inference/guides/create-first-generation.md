@@ -21,7 +21,7 @@ reading one. Nothing can break, because nothing depends on the result yet.
 If your table already has vectors and you are replacing them, read
 [Migrate to another model](../migrate-to-another-model/) instead.
 
-## Decide four things
+## Decide what goes into the specification
 
 Before writing the specification, decide:
 

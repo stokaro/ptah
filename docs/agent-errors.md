@@ -30,7 +30,7 @@ Every failed tool call carries one diagnostic:
 
 ## Where it appears on MCP
 
-Two places, because two things read it.
+Two places, because a model and a client program each read it.
 
 A **model** reads the tool result's text content, which leads with the code:
 

@@ -1520,8 +1520,8 @@ counts.
 **Findings do not change the exit code.** A plan carrying a destructive change
 exits 0 with the change described. A plan is a document an operator reviews and
 approves, the lint report is what they review it with, and a report that
-refuses on their behalf is one they cannot approve anything with. Two things
-follow, and both are deliberate:
+refuses on their behalf is one they cannot approve anything with. Both of the
+following are deliberate:
 
 - Set `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` when a pipeline needs the report
   to gate. An error-severity finding then exits 1, with the report still on

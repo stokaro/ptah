@@ -44,7 +44,7 @@ those. It manages the database state around inference and nothing else.
 
 ## Who does what
 
-Four things are involved, and keeping them apart is the fastest way to
+Four components are involved, and keeping them apart is the fastest way to
 understand everything else here.
 
 | Component | Responsibility |

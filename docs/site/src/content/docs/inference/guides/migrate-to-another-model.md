@@ -21,7 +21,7 @@ You have a working generation and you are changing the model. The new vectors go
 in a **new column**, beside the old ones, and your queries switch when you say
 so.
 
-## Copy the specification and change two things
+## Copy the specification and change two fields
 
 ```yaml
 model:

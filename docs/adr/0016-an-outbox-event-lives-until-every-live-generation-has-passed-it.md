@@ -94,7 +94,7 @@ the failure is silent, not because it is unlikely.
 
 **A configurable retention window, deleting below the floor and older than the
 window.** Rejected for this record, and it is the alternative with a real case.
-It would answer the audit half directly. Three things weigh against it. Nothing
+It would answer the audit half directly. Three objections weigh against it. Nothing
 consumes the data it would retain, so it is configuration governing a reader
 that does not exist. It would key on the `at` column, whose own declaration says
 it follows the system clock, can go backwards, and is never an ordering key.

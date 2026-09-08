@@ -186,7 +186,7 @@ undecided shapes in the table above.
 A procedural body is resolved for what it **writes**: the tables and columns its
 `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` statements name, including the ones
 inside an `IF` or a loop. Its reads are not derived, so it is always reported in
-`undecided` as well, and the reason says which of two things happened:
+`undecided` as well, and the reason says which of the two happened:
 
 | Reason ends | Meaning |
 | --- | --- |
@@ -201,7 +201,7 @@ depends on the engine rather than on the body:
 | `the reads are those of its statements that name one table` | reads were derived; a statement with two tables in scope contributed none |
 | `the columns it reads are not resolved, because a declared variable takes precedence over a column of the same name on this engine ...` | MySQL, where the two cannot be told apart |
 
-Four things land in the second row: an `EXECUTE`, which composes its statement
+Four statements land in the second row: an `EXECUTE`, which composes its
 at run time; a statement whose leading word is not one this analysis knows,
 because `CALL`, `MERGE` and `COPY` all write; a `TRUNCATE` naming more than one
 table, refused rather than half-read; and a control-flow statement whose

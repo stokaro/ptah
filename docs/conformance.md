@@ -1565,7 +1565,7 @@ HCL writer, the SQL-DDL parser's shared node, the comparator, and the SQLite
 renderer — so the assumption survived being fixed anywhere less than all of
 them.
 
-Two things followed, both at exit 0, measured on 2026-08-08 against the pinned
+Two divergences followed, both at exit 0, measured on 2026-08-08 against the pinned
 Atlas CE v1.3.0 binary with each binary in its own directory
 ([`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235), findings
 5.1 and 6.3):

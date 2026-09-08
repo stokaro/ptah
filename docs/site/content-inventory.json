@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8375,
-      "sourceBytes": 58967
+      "visibleWords": 8374,
+      "sourceBytes": 58962
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -323,8 +323,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 13971,
-      "sourceBytes": 97754
+      "visibleWords": 13976,
+      "sourceBytes": 97786
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -526,8 +526,8 @@
         "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 6112,
-      "sourceBytes": 42452
+      "visibleWords": 6113,
+      "sourceBytes": 42462
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
@@ -871,8 +871,8 @@
         "/reference/go-annotations/",
         "/versioned/apply/"
       ],
-      "visibleWords": 3502,
-      "sourceBytes": 22775
+      "visibleWords": 3521,
+      "sourceBytes": 22889
     },
     {
       "path": "docs/site/src/content/docs/databases/distributed.md",
@@ -911,8 +911,8 @@
         "/databases/support-matrix/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1239,
-      "sourceBytes": 9303
+      "visibleWords": 1236,
+      "sourceBytes": 9292
     },
     {
       "path": "docs/site/src/content/docs/databases/mysql.md",
@@ -991,8 +991,8 @@
       "inboundLinks": [
         "/databases/support-matrix/"
       ],
-      "visibleWords": 917,
-      "sourceBytes": 6569
+      "visibleWords": 911,
+      "sourceBytes": 6533
     },
     {
       "path": "docs/site/src/content/docs/databases/overview.mdx",
@@ -1613,8 +1613,8 @@
         "/reference/native-commands/",
         "/start/quick-start-direct/"
       ],
-      "visibleWords": 1358,
-      "sourceBytes": 13192
+      "visibleWords": 1362,
+      "sourceBytes": 13210
     },
     {
       "path": "docs/site/src/content/docs/extend/components.md",
@@ -2184,8 +2184,8 @@
         "/inference/strategies/plan-provider-capacity/"
       ],
       "inboundLinks": [],
-      "visibleWords": 580,
-      "sourceBytes": 5272
+      "visibleWords": 583,
+      "sourceBytes": 5293
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-live-table.md",
@@ -2382,8 +2382,8 @@
         "/inference/strategies/production-rollout/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 878,
-      "sourceBytes": 6727
+      "visibleWords": 871,
+      "sourceBytes": 6701
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
@@ -2472,7 +2472,7 @@
         "/start/overview/"
       ],
       "visibleWords": 537,
-      "sourceBytes": 4618
+      "sourceBytes": 4622
     },
     {
       "path": "docs/site/src/content/docs/inference/quick-start.md",
@@ -2841,8 +2841,8 @@
         "/inference/guides/resume-and-recover/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 616,
-      "sourceBytes": 4813
+      "visibleWords": 621,
+      "sourceBytes": 4837
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-vector-indexes.md",
@@ -3690,8 +3690,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14286,
-      "sourceBytes": 99327
+      "visibleWords": 14285,
+      "sourceBytes": 99321
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -3967,8 +3967,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 480,
-      "sourceBytes": 4864
+      "visibleWords": 481,
+      "sourceBytes": 4874
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
@@ -4114,8 +4114,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5770,
-      "sourceBytes": 38430
+      "visibleWords": 5780,
+      "sourceBytes": 38473
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -4743,8 +4743,8 @@
         "/direct/compare-and-drift/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 1923,
-      "sourceBytes": 16784
+      "visibleWords": 1922,
+      "sourceBytes": 16775
     },
     {
       "path": "docs/site/src/content/docs/schema/orm-and-external.md",
@@ -4988,8 +4988,8 @@
       "inboundLinks": [
         "/reference/native-commands/"
       ],
-      "visibleWords": 1431,
-      "sourceBytes": 12317
+      "visibleWords": 1429,
+      "sourceBytes": 12304
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -5135,7 +5135,7 @@
         "/testing/overview/"
       ],
       "visibleWords": 2131,
-      "sourceBytes": 16681
+      "sourceBytes": 16680
     },
     {
       "path": "docs/site/src/content/docs/schema/visualize.mdx",

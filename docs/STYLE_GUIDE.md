@@ -263,6 +263,24 @@ Write:
   as missing" is correct, and it is why no checker reads this rule.
 - Prose that repeats the table or code block below it. Introduce the block, do
   not paraphrase it.
+- A count standing where the noun belongs: `Two things follow:`, `Decide four
+  things`, `asserts three things`. `thing` names nothing, and in front of a
+  list the count states what the reader can already see.
+
+  Swapping in a better noun is not the repair on its own. `Two rules follow:`
+  is the same sentence with a nicer word in it. In front of a list the lead-in
+  has to carry something the list does not -- what the items have in common, or
+  why they are together -- or it goes and the list speaks for itself. In
+  running prose, where there is no list to count, naming the noun is the whole
+  repair: `Three things weigh against it` is `Three objections weigh against
+  it`.
+
+  Two constructions are correct English and are left alone. `one thing` is
+  emphatic or contrastive rather than a list, as in `One thing is deliberately
+  absent:`. `<number> different things` and `<number> other things` say that a
+  term denotes distinct referents, which is the subject itself. `check-style.mjs`
+  refuses the banned shape in Markdown; code spans are skipped, which is what
+  lets this page and `AGENTS.md` name the phrase in order to ban it.
 
 ### 5.4 What plain does not mean
 

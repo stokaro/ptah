@@ -686,8 +686,7 @@ non-goals after it.
 
 **Corrected after landing.** Section 8 stage 0 originally read "Layer rule
 script; fix the two edges in section 1.3", and that plan could not be executed
-as written. Measuring the four forbidden directions found three things it got
-wrong:
+as written. Measuring the four forbidden directions found three errors in it:
 
 - there are three L1-to-L2 edges rather than two, and the third,
   `core/schemasource` → `internal/convert/toschema`, is in a package section 1.3

@@ -20,7 +20,7 @@ It decides nothing. Section 5 states four questions as questions.
 On a single unchanged index, recall@10 spans **26.5% to 100%** purely as a
 function of `ivfflat.probes`, a session-level setting Ptah can never own.
 
-That is the whole argument. Retrieval quality is a property of five things —
+That is the whole argument. Retrieval quality is a property of five inputs —
 the corpus, the embedding model, the index parameters, the query parameters, and
 the query itself — of which a schema tool owns two. A number Ptah measures is a
 reproduction of one caller's conditions, not a property of the database it
@@ -42,7 +42,7 @@ distinguish settings reports success for a broken index.
 
 ## 3. What Ptah owns today
 
-Corrections first, because two things the research said are no longer true:
+Corrections first, because two of the research's claims are no longer true:
 
 - **Index tuning is carried now.** #2183 closed via #2251: `m`,
   `ef_construction` and `lists` round-trip, owned by `internal/pgindexstorage`.
@@ -103,8 +103,8 @@ parameters**, without which two numbers are not comparable.
 
 ### 5.3 What does an evaluation compare against?
 
-The epic already names both, so this is a choice between two things rather than
-a design:
+The epic already names both, so this is a choice between two baselines rather
+than a design:
 
 - **Exact search on the same corpus** answers "how much did the index lose",
   which is a property of the index.

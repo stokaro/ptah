@@ -69,7 +69,7 @@ is the work that gave each change its own operands instead.
 
 ## What the prototype found
 
-Six things. Three of the first four were found by a test rather than by
+Six findings. Three of the first four were found by a test rather than by
 reading; the last two came from the families added afterwards.
 
 ### 1. Invariant 2 is not about identifiers

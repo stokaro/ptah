@@ -87,7 +87,8 @@ default. As with the engine, the refusal reads the closed PostgreSQL and MySQL
 sets rather than deciding what a ClickHouse type is, so a type from a future
 release renders unchanged.
 
-Two things follow that are worth knowing before adopting the round trip:
+Before adopting the round trip, know that both of these come from the server's
+answer rather than from the declaration's text:
 
 - **The settings are the server's resolved values, not the ones a `CREATE`
   named.** `system.tables` reports `index_granularity = 8192` for a table that
@@ -337,7 +338,7 @@ community binary has none and the conformance `cli-surface` tier asserts flag
 parity against it. `ptah-compat migrate apply`, `status` and `down` read the
 variable; the native verbs take either.
 
-Two things follow:
+Whichever command creates the table decides its engine, so both of these hold:
 
 - **Every command that can create the table has to be given the same value.**
   `migrations up`, `down`, `status`, `tag`, `baseline`, `repair`, and the

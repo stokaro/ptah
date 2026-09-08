@@ -695,7 +695,7 @@ does remove the plan.
 
 Ptah keeps the literal PostgreSQL answer on both source kinds. Making the
 selector a no-op only for a file diff would make one accepted scoping
-instruction mean two things depending on its input. It would also report success
+instruction mean two different things depending on its input. It would also report success
 while leaving exactly the table the selector names in the migration plan. This
 is a defect Ptah does not copy; the complete compatibility surface keeps the
 coherent behavior rather than narrowing it to this community-binary result.

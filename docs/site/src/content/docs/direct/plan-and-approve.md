@@ -340,7 +340,7 @@ error: ssh-keygen sign: exit status 255: Couldn't load public key nope_key: No s
 
 ## What the approval proves
 
-A verified approval proves two things:
+A verified approval proves what was signed, and by whom:
 
 - The plan file holds exactly the bytes that a key listed in `allowed_signers`
   signed, in the `ptah-plan` namespace.

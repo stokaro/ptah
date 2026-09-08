@@ -592,6 +592,76 @@ function imageAltViolations(lines) {
   return findings;
 }
 
+// outsideCodeSpans blanks the code spans in one line, keeping its length so a
+// match still reports the column a reader would count to, and returns the
+// backtick parity the next line starts from. An inline span may wrap inside one
+// paragraph, so the parity has to carry; a per-line strip mispairs the ticks on
+// such a line and reads a span's contents as prose.
+//
+// Both prose rules that must not read code call this rather than repeating the
+// arithmetic. Two copies agree when the second is written and stop agreeing
+// when the first is corrected, and neither rule's own test can see that.
+function outsideCodeSpans(line, inSpan) {
+  const segments = line.split('`');
+  let outside = '';
+  for (const [index, segment] of segments.entries()) {
+    const open = inSpan ? index % 2 === 1 : index % 2 === 0;
+    outside += open ? segment : ' '.repeat(segment.length);
+    outside += index < segments.length - 1 ? ' ' : '';
+  }
+  return { outside, inSpan: segments.length % 2 === 0 ? !inSpan : inSpan };
+}
+
+// countAsSubject matches a cardinal of two or more standing immediately in
+// front of `things`. See countAsSubjectViolations for what the rule is and
+// which neighbouring constructions it must leave alone.
+const countAsSubject =
+  /\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[2-9]|[1-9][0-9]+)\s+things\b/gi;
+
+// countAsSubjectViolations reports "<number> things", where the count states
+// what the reader can already see and `things` stands where the real noun
+// belongs (stokaro/ptah#2987).
+//
+// In front of a list the lead-in has to carry something the list does not --
+// what the items have in common, or why they are together -- or it goes and the
+// list speaks for itself. Swapping in a better noun is not the repair on its
+// own: "Two rules the parser will not state:" is the same sentence with a
+// nicer word in it. In running prose, where there is no list to count, naming
+// the noun is the whole repair.
+//
+// Two neighbouring constructions are correct English and must not fire, or the
+// rule gets worked around rather than obeyed. `one thing` is emphatic or
+// contrastive rather than a list, and does not match because one is not a
+// cardinal of two or more. `<number> different things` and `<number> other
+// things` say that a term denotes distinct referents, which is the subject
+// itself; neither matches, because the rule requires `things` immediately after
+// the count.
+//
+// Code spans are skipped, which is what lets AGENTS.md and docs/STYLE_GUIDE.md
+// name the phrase in order to ban it. AGENTS.md wraps one such span across a
+// line break, so nothing short of carrying the parity between lines covers it,
+// and an exemption list would have been the alternative.
+function countAsSubjectViolations(lines) {
+  const findings = [];
+  let inSpan = false;
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '') {
+      inSpan = false;
+      continue;
+    }
+    const span = outsideCodeSpans(line, inSpan);
+    inSpan = span.inSpan;
+    for (const match of span.outside.matchAll(countAsSubject)) {
+      findings.push({
+        line: index + 1,
+        message:
+          `"${match[0]}": the count is not the subject; name the noun, or drop the lead-in`,
+      });
+    }
+  }
+  return findings;
+}
+
 // bareFlagViolations reports a --flag written outside a code span. Astro's
 // smartypants pass renders a bare double hyphen as an en dash, so the reader
 // sees a typographic dash where a flag was meant and copies a broken token.
@@ -622,14 +692,9 @@ function bareFlagViolations(lines) {
       inSpan = false;
       continue;
     }
-    const segments = line.split('`');
-    let outside = '';
-    for (const [si, segment] of segments.entries()) {
-      const open = inSpan ? si % 2 === 1 : si % 2 === 0;
-      outside += open ? segment : ' '.repeat(segment.length);
-      outside += si < segments.length - 1 ? ' ' : '';
-    }
-    if (segments.length % 2 === 0) inSpan = !inSpan;
+    const span = outsideCodeSpans(line, inSpan);
+    const outside = span.outside;
+    inSpan = span.inSpan;
     for (const match of outside.matchAll(/(?<![`\w-])--[a-z][a-z0-9-]*/g)) {
       findings.push({
         line: index + 1,
@@ -705,6 +770,7 @@ export function analyze(source, options = {}) {
   findings.push(...contradictionViolations(text));
   findings.push(...trackingClaimViolations(text));
   findings.push(...imageAltViolations(prose));
+  findings.push(...countAsSubjectViolations(prose));
   if (siteContent) findings.push(...bareFlagViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
@@ -818,6 +884,13 @@ function selftest() {
     // the attribute-name exclusion must not reach it. Without this the
     // exclusion could be widened to "skip markup" and nothing would notice.
     '<svg role="img" aria-label="The colour of each stage box">',
+    '',
+    // The count standing where the noun belongs, once in front of a list and
+    // once in running prose, because the repair differs between them and the
+    // rule has to reach both.
+    'Two things follow:',
+    '',
+    'Three things weigh against it.',
   ].join('\n');
 
   const expected = [
@@ -843,6 +916,8 @@ function selftest() {
     { line: 78, needle: 'image has empty alt text' },
     { line: 80, needle: '<img> has no alt attribute' },
     { line: 82, needle: 'British spelling "colour"' },
+    { line: 84, needle: 'the count is not the subject' },
+    { line: 86, needle: 'the count is not the subject' },
   ];
 
   const findings = analyze(violating);
@@ -857,6 +932,27 @@ function selftest() {
   // that never fires, and it is the half that gets a rule deleted.
   const clean = [
     'The behavior is documented and a column may be named `cancelled`.',
+    '',
+    // What the count rule must not reach. `different` and `other` sit between
+    // the count and the noun, and there the count really is the subject; both
+    // discriminate, because a rule written as "any word before things" fires
+    // on them.
+    'Read-only is two different things, and the difference matters here.',
+    '',
+    'Only two other things are tolerated.',
+    '',
+    // `one thing` is emphatic English rather than a list. It is recorded
+    // because the rule must never reach it, not as a control: the pattern asks
+    // for a plural, so no plausible variant of it fires here.
+    'One thing is deliberately absent: a window frame clause.',
+    '',
+    // A code span opening mid-line and closing on the next, which is how
+    // AGENTS.md names the phrase in order to ban it. splitSource strips a span
+    // per line and leaves this one whole, so only carrying the backtick parity
+    // between lines blanks it; without that the rule fires on the file that
+    // states it, measured as AGENTS.md line 451.
+    'In running prose, name the noun: `Three things',
+    'weigh against it` is the repair.',
     '',
     '```sql',
     'SELECT * FROM orders WHERE status = \'cancelled\';',

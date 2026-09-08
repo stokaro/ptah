@@ -232,7 +232,7 @@ skipped case stays skipped either way.
 ### When a `cleanup` runs
 
 A `cleanup` block leaves the case body and joins the case's teardown, wherever
-it is written among the steps. Four things decide its behavior, and each is a
+it is written among the steps. Four rules decide its behavior, and each is a
 promise rather than an implementation detail:
 
 - **It runs in reverse written order.** A cleanup written beside the setup it

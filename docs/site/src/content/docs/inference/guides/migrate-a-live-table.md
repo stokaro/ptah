@@ -20,7 +20,7 @@ those changes.
 
 ## The mechanism
 
-`prepare` does two things that matter here. It installs a companion table and two
+`prepare` has two effects that matter here. It installs a companion table and two
 triggers on your source, and it records a **boundary** — the point in the
 database's transaction ordering that the backfill will embed the source as of.
 
