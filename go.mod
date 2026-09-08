@@ -14,7 +14,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/hcl/v2 v2.24.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/microsoft/go-mssqldb v1.11.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
