@@ -19,8 +19,25 @@ The parser supports the following SQL DDL statements:
 - Unicode identifiers and MySQL identifiers containing `$`
 
 A table element whose first word is none of `CONSTRAINT`, `PRIMARY`, `UNIQUE`,
-`FOREIGN`, `CHECK`, `EXCLUDE`, `SPATIAL`, `FULLTEXT`, `INDEX` or `KEY` is read as
-a column definition. The parser accepts a type it has never heard of, so
+`FOREIGN`, `CHECK` or `EXCLUDE` is read as a column definition. Those six are
+reserved wherever Ptah renders, so no column can be named after them.
+
+`KEY`, `SPATIAL`, `FULLTEXT` and `INDEX` ask the dialect first. Reading them as
+an index everywhere refused valid DDL (stokaro/ptah#3089).
+
+Measured on PostgreSQL 17, SQLite 3.51 and MySQL 8, as a bare column name:
+
+| Word | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `key` | accepted | accepted | reserved |
+| `spatial` | accepted | accepted | reserved |
+| `fulltext` | accepted | accepted | reserved |
+| `index` | accepted | reserved | reserved |
+
+MySQL and MariaDB open a table-level index with all four, so they keep the
+keyword, and so does the dialect-less best-effort mode, which has no family to
+ask. PostgreSQL and SQLite declare no index inside `CREATE TABLE`, so an element
+opening with an accepted word there is a column named after it. The parser accepts a type it has never heard of, so
 `geometry(Point, 4326)` and a domain declared elsewhere both reach the renderer
 verbatim — but it refuses a column whose type carries a parenthesised list whose
 every argument is a column of the same table. A type is not an expression and
