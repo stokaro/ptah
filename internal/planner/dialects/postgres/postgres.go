@@ -1142,9 +1142,15 @@ func (p *Planner) addNewIndexes(
 		// planner never emits it for a target that rejects it
 		// (issue #226; CockroachDB-style presets keep plain
 		// CREATE INDEX even when the policy is on).
-		if p.usesConcurrentIndex(ref) && p.capabilities().Has(capability.CreateIndexConcurrently) {
-			indexNode.Concurrently = true
-		}
+		//
+		// Assigned rather than switched on, because the converter carries the
+		// declaration too (stokaro/ptah#3042) and this is the path that owns
+		// the answer. A conditional that could only turn it ON would let a
+		// declaration past both gates here: the capability check above, and
+		// the partitioned-table exclusion concurrentindex.DeclaredRefs makes,
+		// where PostgreSQL refuses a concurrent build outright.
+		indexNode.Concurrently = p.usesConcurrentIndex(ref) &&
+			p.capabilities().Has(capability.CreateIndexConcurrently)
 		result = append(result, indexNode)
 	}
 	return result, nil

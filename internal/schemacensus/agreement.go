@@ -112,5 +112,16 @@ func SurfaceDifferences() []SurfaceDifference {
 			Field: "schemamodel.Field.IdentityIncrement", RenderOnly: true,
 			Reason: "the INCREMENT BY half of the same pair",
 		},
+		{
+			Field: "schemamodel.Index.Concurrently", RenderOnly: true,
+			Reason: "the render writes what the source declared, because its output is a " +
+				"script the reader runs and a concurrent build is a promise about the lock " +
+				"it takes. A plan cannot answer from the declaration alone: the statement " +
+				"cannot run inside a transaction block, so it lands in a migration file " +
+				"whose transaction mode the caller owns, and PostgreSQL refuses the build " +
+				"outright on a partitioned table. `internal/concurrentindex.DeclaredRefs` " +
+				"reads the same declaration, applies the capability and that exclusion, and " +
+				"hands the planner the refs that survive (stokaro/ptah#3042)",
+		},
 	}
 }

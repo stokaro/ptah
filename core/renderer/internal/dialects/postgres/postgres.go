@@ -1109,8 +1109,16 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	// CONCURRENTLY precedes IF NOT EXISTS in the PostgreSQL grammar:
 	// CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ...
-	if node.Concurrently && r.capabilities().Has(capability.CreateIndexConcurrently) {
-		parts = append(parts, "CONCURRENTLY")
+	//
+	// CockroachDB and Spanner are in this family and have neither capability,
+	// so the declaration is recorded rather than dropped in silence: the
+	// statement below is an ordinary CREATE INDEX whichever way this goes.
+	if node.Concurrently {
+		if r.capabilities().Has(capability.CreateIndexConcurrently) {
+			parts = append(parts, "CONCURRENTLY")
+		} else {
+			r.sink.RecordLostConcurrentBuild(node.Name)
+		}
 	}
 
 	if node.IfNotExists {
