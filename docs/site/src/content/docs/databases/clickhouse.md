@@ -76,6 +76,17 @@ ClickHouse engines and render as written. ClickHouse's engine set grows with
 every release, so nothing here decides whether a name *is* a ClickHouse engine:
 an engine Ptah has never heard of renders unchanged.
 
+A secondary index declaring a PostgreSQL or MySQL access method is refused the
+same way, and for the same reason: an index's type reaches the renderer through
+the field those families fill, so `USING GIN` in a SQL source arrives here
+looking like a data-skipping type. Rendering it produces an `ALTER TABLE` the
+server rejects with `Code: 80 ... Unknown Index type`, and the index is not
+added. Ptah names the type and points at the fix — declare a ClickHouse
+data-skipping type such as `minmax`, or drop the type to take the `minmax`
+default. As with the engine, the refusal reads the closed PostgreSQL and MySQL
+sets rather than deciding what a ClickHouse type is, so a type from a future
+release renders unchanged.
+
 Two things follow that are worth knowing before adopting the round trip:
 
 - **The settings are the server's resolved values, not the ones a `CREATE`

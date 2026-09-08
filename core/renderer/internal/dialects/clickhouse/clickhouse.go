@@ -528,6 +528,64 @@ func refuseMySQLFamilyEngine(table, engine string) error {
 	}
 }
 
+// foreignIndexAccessMethods holds index access-method names that belong to the
+// PostgreSQL or MySQL families and name no ClickHouse index type.
+//
+// An index's type reaches this renderer through the same field those families
+// fill, so `USING GIN` in a SQL source and a `type="GIN"` annotation arrive here
+// indistinguishable from a data-skipping index type authored for this target.
+// Rendering one produces syntactically valid ClickHouse the server refuses with
+// `Code: 80 ... Unknown Index type`, and the ALTER adds nothing
+// (stokaro/ptah#3060). It is the index-level twin of the engine refusal above.
+//
+// The same property makes the list safe to pin: this direction of the question
+// is closed. ClickHouse's index-type set moves between releases -- an inverted
+// index was renamed and a vector index added -- so "is this a ClickHouse index
+// type" cannot be decided here without a server, while the PostgreSQL and MySQL
+// access-method sets are fixed. Refusing only these can never refuse a valid
+// ClickHouse type, including one a future release adds.
+//
+// Measured against ClickHouse 25.8.33.6 on 2026-09-08: every name below is
+// refused as an index type, and none appears among the types the server names
+// in its own error. TestRenderSQL_KeepsAnIndexTypeThisRepositoryDoesNotKnow
+// pins that an unrecognized type still renders, so the list refuses by name
+// rather than by allow-list.
+var foreignIndexAccessMethods = map[string]bool{
+	"bloom":    true,
+	"brin":     true,
+	"btree":    true,
+	"fulltext": true,
+	"gin":      true,
+	"gist":     true,
+	"hash":     true,
+	"rtree":    true,
+	"spatial":  true,
+	"spgist":   true,
+}
+
+// refuseForeignIndexAccessMethod refuses an index whose type names a PostgreSQL
+// or MySQL access method, instead of rendering DDL this server cannot execute.
+//
+// The base name is taken before the parenthesis, because a ClickHouse type
+// carries arguments -- `tokenbf_v1(256, 2, 0)` -- and a foreign method written
+// with them would otherwise walk past the check.
+func refuseForeignIndexAccessMethod(index, indexType string) error {
+	base, _, _ := strings.Cut(strings.TrimSpace(indexType), "(")
+	if !foreignIndexAccessMethods[strings.ToLower(strings.TrimSpace(base))] {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: platform.ClickHouse,
+		Feature: "index types",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"index %q declares type %q, which names a PostgreSQL or MySQL access method and no"+
+				" ClickHouse index type, so the server would refuse the statement and add nothing"+
+				" — declare a ClickHouse data-skipping index type such as minmax, or drop the type"+
+				" to take the minmax default", index, strings.TrimSpace(indexType)),
+	}
+}
+
 // resolveTableEngineSpec extracts the engine + modifier set for a table.
 // Annotation overrides live in node.Options under uppercased keys; the
 // table's own Engine string is used as a fallback (it's the documented
@@ -1082,6 +1140,13 @@ func (r *Renderer) VisitConstraint(*ast.ConstraintNode) error { return nil }
 // `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
 // `granularity=` keys on //ptah:schema:index.
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+	// Before anything is recorded or written: a type this server cannot read
+	// makes the whole ALTER fail, so the author gets no index rather than a
+	// weaker one, and a record about a lesser loss would describe the wrong
+	// problem.
+	if err := refuseForeignIndexAccessMethod(node.Name, node.Type); err != nil {
+		return err
+	}
 	// A data-skipping index carries no comment clause, so the declaration
 	// reaches the output nowhere at all.
 	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
