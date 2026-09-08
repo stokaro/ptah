@@ -1564,20 +1564,41 @@ func hasSQLiteForeignKeysPragma(query url.Values) bool {
 	return false
 }
 
-// removePostgresPoolParams removes PostgreSQL connection pool parameters from a database URL.
-// These parameters (pool_max_conns and pool_min_conns) are specific to pgx driver configuration
-// and may interfere with standard database connections. This function ensures compatibility
-// by removing them while preserving all other query parameters.
-// If the URL cannot be parsed, it returns the original URL unchanged.
+// removePostgresPoolParams removes the pgx pool parameters from a database URL.
+// pool_max_conns and pool_min_conns configure pgx's own pool and are not
+// connection parameters, so a standard connection is opened without them. Every
+// other parameter is kept, and kept BYTE FOR BYTE.
+//
+// That last part is why this rewrites the raw query rather than going through
+// url.Values. Encode spells a space as "+", which is correct for a form and
+// wrong for a value libpq reads as content: `options=-c%20search_path%3Dextra`
+// came back as `options=-c+search_path%3Dextra`, and the server then refused
+// the connection for a startup parameter literally named "+search_path"
+// (SQLSTATE 42704). The function removed nothing from that URL and corrupted it
+// anyway, because it re-encoded unconditionally.
+//
+// A URL carrying neither parameter is returned unchanged, so the common path
+// does not re-serialize at all.
 func removePostgresPoolParams(dbURL string) string {
 	parsedURL, err := url.Parse(dbURL)
-	if err != nil {
+	if err != nil || parsedURL.RawQuery == "" {
 		return dbURL
 	}
-	q := parsedURL.Query()
-	q.Del("pool_max_conns")
-	q.Del("pool_min_conns")
-	parsedURL.RawQuery = q.Encode()
+	kept := make([]string, 0, strings.Count(parsedURL.RawQuery, "&")+1)
+	removed := false
+	for pair := range strings.SplitSeq(parsedURL.RawQuery, "&") {
+		rawKey, _, _ := strings.Cut(pair, "=")
+		key, decodeErr := url.QueryUnescape(rawKey)
+		if decodeErr == nil && (key == "pool_max_conns" || key == "pool_min_conns") {
+			removed = true
+			continue
+		}
+		kept = append(kept, pair)
+	}
+	if !removed {
+		return dbURL
+	}
+	parsedURL.RawQuery = strings.Join(kept, "&")
 	return parsedURL.String()
 }
 

@@ -1047,12 +1047,12 @@ func TestRemovePostgresPoolParams(t *testing.T) {
 		{
 			name:     "URL with pool params and multiple other params",
 			input:    "postgres://user:pass@localhost:5432/db?sslmode=disable&pool_max_conns=20&timeout=30&pool_min_conns=5&application_name=myapp",
-			expected: "postgres://user:pass@localhost:5432/db?application_name=myapp&sslmode=disable&timeout=30",
+			expected: "postgres://user:pass@localhost:5432/db?sslmode=disable&timeout=30&application_name=myapp",
 		},
 		{
 			name:     "URL with pool params at different positions",
 			input:    "postgres://user:pass@localhost:5432/db?first=1&pool_max_conns=10&middle=2&pool_min_conns=3&last=4",
-			expected: "postgres://user:pass@localhost:5432/db?first=1&last=4&middle=2",
+			expected: "postgres://user:pass@localhost:5432/db?first=1&middle=2&last=4",
 		},
 		{
 			name:     "URL with only pool params (should result in no query string)",
@@ -1067,7 +1067,7 @@ func TestRemovePostgresPoolParams(t *testing.T) {
 		{
 			name:     "URL with special characters in pool params",
 			input:    "postgres://user:pass@localhost:5432/db?pool_max_conns=10&other=special%20value&pool_min_conns=2",
-			expected: "postgres://user:pass@localhost:5432/db?other=special+value",
+			expected: "postgres://user:pass@localhost:5432/db?other=special%20value",
 		},
 		{
 			name:     "Empty URL",
@@ -1132,7 +1132,7 @@ func TestRemovePostgresPoolParams_EdgeCases(t *testing.T) {
 		{
 			name:     "URL with encoded characters",
 			input:    "postgres://user:pass%40word@localhost:5432/db?pool_max_conns=10&other=value%20with%20spaces",
-			expected: "postgres://user:pass%40word@localhost:5432/db?other=value+with+spaces",
+			expected: "postgres://user:pass%40word@localhost:5432/db?other=value%20with%20spaces",
 		},
 		{
 			name:     "URL with duplicate non-pool params (should preserve all)",
