@@ -460,7 +460,7 @@ section. `internal/countsubjectguard` holds Go comments to this, reading the
 comments rather than the source so a string literal carrying the phrase is left
 alone; `docs/site/scripts/check-style.mjs` holds Markdown. Both skip quoted and
 backticked text, which is what lets this file name the phrase in order to ban
-it. stokaro/ptah#2987 carries the remaining occurrences.
+it.
 
 ## Documentation Obligations
 
