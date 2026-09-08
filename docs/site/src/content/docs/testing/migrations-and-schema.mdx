@@ -52,6 +52,7 @@ Two commands share one test-case format:
 | Go annotations | `--root-dir ./models` | Uses the native Go annotation model and requires a Go source tree. |
 | OCI artifact | `--schema-file oci://registry.example/app:v1` | Reads the artifact's lossless canonical HCL document. |
 | Live database | `--source-db-url sqlite://source.db` | The database reader measures the live catalog; the destination must be throwaway and a non-SQLite source needs an explicit matching `--db-url`. |
+| Composite source | `--schema-file ./tables.sql --schema-file ./views.sql` | Repeated sources merge into one desired schema, and a conflicting definition fails instead of one side winning. |
 
 The live database is the desired input; `--db-url` still names the separate
 throwaway database where the assertions run.
