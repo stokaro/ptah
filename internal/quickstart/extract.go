@@ -104,7 +104,14 @@ func scanBlocks(path string, lines []string, from int) ([]entry, error) {
 		line := lines[i]
 		if match := fenceOpen.FindStringSubmatch(line); match != nil {
 			end := closingFence(lines, i, match[1])
-			if err := s.block(i, end, strings.ToLower(match[2])); err != nil {
+			language := strings.ToLower(match[2])
+			if isIllustration(match[3]) {
+				// A page that teaches a command it cannot run here says so on
+				// the fence, and the block keeps its language so a reader still
+				// gets the highlighting.
+				language = ""
+			}
+			if err := s.block(i, end, language); err != nil {
 				return nil, err
 			}
 			i = end
@@ -152,6 +159,31 @@ func (s *scanner) prose(line string) {
 		return
 	}
 	s.para = append(s.para, trimmed)
+}
+
+// isIllustration reports whether a fence's info string marks the block as one
+// this page shows rather than runs.
+//
+// A reference page carries commands the runner must not execute -- one against
+// a database the page never creates, one in a directory format it never builds
+// -- and output quoted from a failure rather than captured from a step. Before
+// this marker the only way to keep such a block out of a run was to drop its
+// language, which check-style refuses and which costs the highlighting, so a
+// page had to choose between two gates (stokaro/ptah#3018).
+//
+// The word sits after the language, where Starlight already reads fence
+// options, so the block renders as it always did:
+//
+//	```bash illustration
+//	ptah migrations repair --db-url "$DATABASE_URL" ...
+//	```
+func isIllustration(options string) bool {
+	for field := range strings.FieldsSeq(options) {
+		if strings.EqualFold(field, "illustration") {
+			return true
+		}
+	}
+	return false
 }
 
 // intro returns the sentence that introduces the block about to be read.

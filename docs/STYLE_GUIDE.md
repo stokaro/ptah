@@ -457,6 +457,12 @@ once on its concept page and link; do not re-define them per page.
   with `Expected output ... on standard output:` or
   `Expected output ... on standard error:` so the acceptance runner can attach
   the assertion to the preceding command.
+- A block the page shows rather than runs carries `illustration` after its
+  language: ```` ```bash illustration ````. The runner leaves it out of the run
+  and the block keeps its highlighting. Use it for a command against state the
+  page never creates, and for output quoted from a failure rather than captured
+  from a step — without it such a block has to lose its language, which the
+  fenced-block rule above refuses.
 - Do not publish identical Bash and PowerShell tabs. Use one `console` block
   for a command that has the same bytes and semantics in both shells.
   `check:editorial-shape` fails byte-equivalent tab panels after whitespace

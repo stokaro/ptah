@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/cli/migrations"
   - "migration"
 generated: false
+quickstart: true
 searchAliases:
   - "rollback migration"
 overlaps: []
@@ -25,25 +26,108 @@ Roll back to an explicit target version, prove the plan on a shadow database
 before touching the target, and use the down-file contract to understand what
 Ptah can reverse.
 
-Prerequisites: a migration directory and a database with applied migrations.
-The examples use a local SQLite file with two applied migrations
-(`1785255952_init` and `1785255953_add_posts`).
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+A migration directory and a database with applied migrations. The examples use
+a local SQLite file with two applied migrations, `1785255952_init` and
+`1785255953_add_posts`.
+
+If you do not have that state, build it here. The two migrations are written by
+hand so the versions match the ones this page rolls back:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir ptah-rollback
+cd ptah-rollback
+mkdir migrations
+cat > migrations/1785255952_init.up.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+cat > migrations/1785255952_init.down.sql <<'SQL'
+DROP TABLE users;
+SQL
+cat > migrations/1785255953_add_posts.up.sql <<'SQL'
+CREATE TABLE posts (
+    id    INTEGER PRIMARY KEY,
+    title TEXT NOT NULL
+);
+SQL
+cat > migrations/1785255953_add_posts.down.sql <<'SQL'
+DROP TABLE posts;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-rollback | Out-Null
+Set-Location ptah-rollback
+New-Item -ItemType Directory migrations | Out-Null
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content migrations/1785255952_init.up.sql
+'DROP TABLE users;' | Set-Content migrations/1785255952_init.down.sql
+@'
+CREATE TABLE posts (
+    id    INTEGER PRIMARY KEY,
+    title TEXT NOT NULL
+);
+'@ | Set-Content migrations/1785255953_add_posts.up.sql
+'DROP TABLE posts;' | Set-Content migrations/1785255953_add_posts.down.sql
+```
+
+</TabItem>
+</Tabs>
+
+Seal the directory and apply both, so there is something to roll back:
+
+```console
+ptah migrations hash --dir ./migrations
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+✅ Migrations completed successfully!
+Database is now at version: 1785255953
+```
 
 ## Roll back to a target version
 
 Rollback always takes an explicit `--target`: the version the database should
 end up at. Everything applied above it is rolled back, newest first.
 
-```bash
-ptah migrations down \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations \
-  --target 1785255952
+Check where the database is first:
+
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations
 ```
 
-An interactive run states the consequences and asks for confirmation:
+Expected output on standard output:
 
 ```text
+Current Version: 1785255953
+Total Migrations: 2
+Applied Migrations: 2
+Pending Migrations: 0
+```
+
+An interactive run states the consequences and asks for confirmation before it
+does anything:
+
+```text illustration
 Current version: 1785255953
 Migrations to roll back: 1
 
@@ -53,7 +137,35 @@ The following 1 migration(s) will be rolled back: [1785255953]
 Are you sure you want to continue? Type 'YES' to confirm:
 ```
 
-Type `YES` to proceed. Expected output includes:
+Type `YES` to proceed. Pass `--confirm` where there is no terminal to answer,
+which is what the run below does:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations down \
+  --db-url "sqlite://app.db" \
+  --migrations-dir ./migrations \
+  --target 1785255952 \
+  --confirm
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations down `
+  --db-url "sqlite://app.db" `
+  --migrations-dir ./migrations `
+  --target 1785255952 `
+  --confirm
+```
+
+</TabItem>
+</Tabs>
+
+Expected output on standard output:
 
 ```text
 ✅ Migration rollback completed successfully!
@@ -72,10 +184,29 @@ reading stdin; it does not accept `--confirm`.
 Verify with status: the rolled-back version moves from applied back to
 pending.
 
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
 ```text
 Current Version: 1785255952
 Applied Migrations: 1
 Pending Migrations: 1
+```
+
+The version is pending again, not gone, so the same `up` puts it back:
+
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+✅ Migrations completed successfully!
+Database is now at version: 1785255953
 ```
 
 Before rollback starts, Ptah verifies that every selected migration has a down
@@ -94,7 +225,7 @@ dropped clean, migrated up to the target's current version, and migrated down
 to the requested target. A failing or missing down migration aborts with the
 target untouched.
 
-```bash
+```bash illustration
 ptah migrations down \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations \
@@ -105,7 +236,7 @@ ptah migrations down \
 
 Expected output includes the verification pass before the real rollback:
 
-```text
+```text illustration
 ✅ Rollback plan verified on shadow database
 
 ✅ Migration rollback completed successfully!
@@ -119,7 +250,7 @@ then connects to the shadow and checks both live dialects and selected
 database/catalog names before resetting it. Equal live names fail closed even
 when the URLs use different hosts, driver overrides, or scheme spellings:
 
-```text
+```text illustration
 rollback verification failed: shadow database must be distinct from target database
 ```
 
@@ -139,7 +270,7 @@ Every version must have both an up and a down file. Ptah enforces the pair at
 registration, so a directory with a missing half fails every command that
 reads it (exit `2`):
 
-```text
+```text illustration
 error: error registering migrations: incomplete migrations found (missing up or down files): [1]
 ```
 
@@ -258,7 +389,7 @@ successful rollback still deletes the row.
 through the native command, using the same database, migration directory, and
 revision schema as the compat command:
 
-```bash
+```bash illustration
 ptah migrations repair \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations \
