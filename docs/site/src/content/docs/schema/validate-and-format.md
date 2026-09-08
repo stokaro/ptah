@@ -359,10 +359,12 @@ See [Exit codes](../../reference/exit-codes/) for the contract these follow.
   over the same source exits `2` with `clickhouse: SERIAL has no auto-increment
   equivalent`. Either pass the flag or render as well as validate before
   trusting a target.
-- `--no-skipped` reports the declarations the render path names and the table
-  options a target cannot carry. It is not a portability verdict: two targets
-  that both keep every declaration can still store and compare the data
-  differently.
+- `--no-skipped` reports the declarations the render path names, the table
+  options a target cannot carry, and the properties a target reads past on a
+  column, an index or a whole object. Coverage is widened deliberately rather
+  than assumed complete, and `stokaro/ptah#2983` records what is left. It is not
+  a portability verdict either: two targets that both keep every declaration can
+  still store and compare the data differently.
 - `ptah schema fmt` reads `.hcl` files only. A YAML, SQL or DBML schema file in
   the same directory is left alone and not reported, so a formatting gate over a
   mixed directory covers the HCL half of it.

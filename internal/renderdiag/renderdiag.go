@@ -388,6 +388,12 @@ const (
 	// column list and not the parts builds the index ascending, so a query
 	// written for the declared order scans instead of walking the index.
 	PartOrderProperty = "index part order"
+	// IndexTypeProperty is the access method a declaration asked for -- GIN,
+	// HASH, a MySQL FULLTEXT or SPATIAL prefix. It decides how the server
+	// searches the index, so a target that builds an ordinary tree instead
+	// answers a different set of queries quickly, on an object that looks
+	// created either way.
+	IndexTypeProperty = "index type"
 	// UniqueIndexProperty is a unique index the target creates as an ordinary
 	// one. The declaration decides which rows the database accepts, so losing
 	// it is the index-level twin of losing a column's UNIQUE.
@@ -427,6 +433,23 @@ func (s *Sink) RecordLostStorageParams(index string, params map[string]string) {
 // file and the database enforces nothing, which is the same outcome as silence.
 func (s *Sink) RecordLostUniqueIndex(index string) {
 	s.Record(PropertyOmission(IndexKind, index, UniqueIndexProperty, ""))
+}
+
+// RecordLostIndexType records a declared index access method the target does
+// not carry.
+//
+// A declared BTREE records nothing, and that is the whole of the rule this
+// needed (stokaro/ptah#2983). It names the default access method on every
+// target that has the concept: PostgreSQL and the MySQL family both write no
+// USING clause for it, and SQLite, SQL Server and Oracle build a tree with no
+// way to say otherwise. A render that leaves it out has normalized a default
+// rather than discarded a declaration, and the index the author gets is the
+// index they asked for. Every other name changes how the index is searched.
+func (s *Sink) RecordLostIndexType(index, indexType string) {
+	if strings.EqualFold(strings.TrimSpace(indexType), "BTREE") {
+		return
+	}
+	s.RecordLostProperty(IndexKind, index, IndexTypeProperty, indexType)
 }
 
 // RecordLostConcurrentBuild records an index the target builds under a lock,

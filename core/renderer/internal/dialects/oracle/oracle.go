@@ -433,6 +433,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// PostgreSQL clause; this target has neither.
 	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
 	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
+	// There is no clause here to name an access method, so a declared one
+	// reaches the output nowhere. A declared BTREE is not reported: it is what
+	// this target builds anyway.
+	r.sink.RecordLostIndexType(node.Name, node.Type)
 	if strings.TrimSpace(node.Condition) != "" {
 		// Oracle has no WHERE clause on CREATE INDEX. The equivalent it does
 		// have -- a function-based index whose expression is NULL for the rows
