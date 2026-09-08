@@ -1688,14 +1688,19 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exclude-tables` | `string` | — | `PTAH_EXCLUDE_TABLES` | — |
 | `--format` | `string` | `mermaid` | `PTAH_FORMAT` | — |
 | `--include-columns` | `bool` | `false` | `PTAH_INCLUDE_COLUMNS` | — |
-| `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--security` | `bool` | `false` | `PTAH_SECURITY` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--theme` | `string` | `light` | `PTAH_THEME` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
 

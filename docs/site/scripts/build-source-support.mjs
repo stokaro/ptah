@@ -272,11 +272,19 @@ const commands = [
     },
     suffix: '--db-url sqlite://current.db --migrations-dir ./migrations --name canonical',
   }),
-  desiredCommand('ptah viz', ['viz'], 'internal/cli/viz', ['internal/cli/viz/viz_test.go'], {
-    verified: ['go-annotations'],
-    design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'live-database', 'migration-directory', 'composite-source'],
-    limitations: Object.fromEntries(allSourceIds.map((id) => [id, id === 'go-annotations' ? '' : 'The current command deliberately registers only --root-dir.'])),
-  }),
+  desiredCommand('ptah viz', ['viz'], 'internal/cli/viz',
+    ['internal/cli/viz/viz_test.go', 'scripts/check-source-equivalence.sh'], {
+      verified: [...localFiles, 'go-annotations', 'composite-source'],
+      missing: ['oci-artifact'],
+      design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
+      composableSources: [...localFiles, 'go-annotations', 'oci-artifact', 'composite-source'],
+      limitations: {
+        'external-program': 'The command registers no --schema-cmd; render the program output to a file first.',
+        'configured-external': 'The command reads no project configuration for an external source.',
+        'live-database': 'A diagram is drawn from a desired schema. Introspect the database first, or inspect it into a schema file.',
+        'migration-directory': 'A migration directory is a script rather than a desired schema.',
+      },
+    }),
   desiredCommand('ptah schema serve', ['schema', 'serve'], 'internal/cli/internal/schemaserve', ['internal/cli/internal/schemaserve/schemaserve_test.go'], {
     verified: ['go-annotations'],
     conditional: ['live-database'],

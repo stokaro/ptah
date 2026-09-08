@@ -3095,53 +3095,57 @@
     {
       "command": "ptah viz",
       "source": "sql-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah viz --schema-file schema.sql",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah viz",
       "source": "yaml-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah viz --schema-file schema.yaml",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah viz",
       "source": "hcl-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah viz --schema-file schema.hcl",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah viz",
       "source": "dbml-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah viz --schema-file schema.dbml",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
@@ -3151,10 +3155,11 @@
       "invocation": "ptah viz --root-dir ./models",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
       "limitations": "",
-      "composable": false,
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
@@ -3164,9 +3169,10 @@
       "invocation": null,
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
+      "limitations": "The command registers no --schema-cmd; render the program output to a file first.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -3177,23 +3183,25 @@
       "invocation": null,
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
+      "limitations": "The command reads no project configuration for an external source.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
     {
       "command": "ptah viz",
       "source": "oci-artifact",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "supported-missing-command-test",
+      "invocation": "ptah viz --schema-file oci://registry.example/app:v1",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {
@@ -3203,9 +3211,10 @@
       "invocation": null,
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
+      "limitations": "A diagram is drawn from a desired schema. Introspect the database first, or inspect it into a schema file.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -3216,23 +3225,25 @@
       "invocation": null,
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
+      "limitations": "A migration directory is a script rather than a desired schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah viz",
       "source": "composite-source",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah viz --schema-file schema/tables.sql --schema-file schema/views.hcl",
       "implementationOwner": "internal/cli/viz",
       "evidence": [
-        "internal/cli/viz/viz_test.go"
+        "internal/cli/viz/viz_test.go",
+        "scripts/check-source-equivalence.sh"
       ],
-      "limitations": "The current command deliberately registers only --root-dir.",
-      "composable": false,
+      "limitations": "",
+      "composable": true,
       "externalExecutionRequiresOptIn": false
     },
     {

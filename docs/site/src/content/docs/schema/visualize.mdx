@@ -16,7 +16,7 @@ overlaps:
   - "/schema/document/"
   - "/schema/serve/"
 disposition: keep
-sourceMode: go-only
+sourceMode: source-neutral
 owns:
   - cli-ptah-viz
 ---
@@ -31,10 +31,15 @@ import securityDark from '../../../assets/schema-viz-security-dark.svg';
 
 export const visualizeSamples = `${import.meta.env.BASE_URL}samples/visualize/`;
 
-`ptah viz` currently reads **Go annotations only**. It does not accept a schema
-file or database URL. Point it at annotated models to write Mermaid `erDiagram`,
-Graphviz DOT, or SVG output; use [schema export](../document/) for a
-source-neutral HTML diagram.
+`ptah viz` draws the desired schema from whatever describes it: annotated Go
+entities under `--root-dir`, or a SQL, YAML, HCL, DBML or OCI source under
+`--schema-file`. Both flags repeat, and both combine into one diagram. The
+output is Mermaid `erDiagram`, Graphviz DOT, or SVG. For an HTML reference with
+an embedded diagram, use [schema export](../document/) instead.
+
+A diagram carries entities and the foreign keys between them, so what a source
+contributes here is what it says about tables and their references. A source
+that describes no foreign keys draws no edges, whatever else it declares.
 
 Mermaid is the default. This rendered diagram is built from the exact Mermaid
 stdout produced by the command below:
@@ -57,6 +62,32 @@ itself renders `--format svg`; Mermaid and DOT source need no extra tool.
 Regenerating this page's committed samples needs Docker instead, because the
 SVGs are drawn in a pinned environment rather than by whichever Graphviz the
 machine happens to carry.
+
+## Point it at a source
+
+Each of these draws the schema its source describes:
+
+```bash
+ptah viz --schema-file schema.sql --dialect postgres
+ptah viz --schema-file schema.yaml
+ptah viz --schema-file schema.hcl
+ptah viz --schema-file schema.dbml
+ptah viz --root-dir ./models
+```
+
+`--dialect` decides how a `.sql` source is parsed and which security rules can
+run. With no source at all, the current directory is scanned for annotated Go
+entities, which is what a run in a models package gets.
+
+Sources merge, which is how a vendored table joins a schema you own:
+
+```bash
+ptah viz --root-dir ./models --schema-file vendor.hcl
+```
+
+`scripts/check-source-equivalence.sh` holds this to one answer: the canonical
+fixture written as SQL, YAML, HCL, DBML and Go annotations draws a
+byte-identical diagram from all five.
 
 ## Render a diagram
 
@@ -275,11 +306,16 @@ a bug in the visualization path, not an acceptable example.
 
 ## Limitations
 
-- `ptah viz` reads Go annotations only (`--root-dir`); it does not accept
-  `--schema-file` or a database URL. To diagram a live database or a SQL
-  schema file, generate annotated models first with `ptah introspect` — the
-  committed example does exactly that. For a source-neutral HTML reference
-  with an embedded diagram, use
+- A live database is not a source here. To diagram one, introspect it into
+  annotated models first with `ptah introspect` — the committed example does
+  exactly that — or inspect it into a schema file and pass that file to
+  `--schema-file`.
+- A column type is drawn as its source document spells it. `type = INTEGER` in
+  HCL renders `INTEGER` and `id integer` in SQL renders `integer`, so two
+  documents describing one schema can differ under `--include-columns` while
+  drawing the same tables and the same edges.
+- For an HTML reference with an embedded diagram rather than a committable
+  Mermaid, DOT or SVG file, use
   [`ptah schema export --to html`](../document/) instead.
 
 ## Next steps
