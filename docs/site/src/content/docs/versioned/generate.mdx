@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/cli/migrations"
   - "migration"
 generated: false
+quickstart: true
 searchAliases:
   - "generate migrations from SQL"
   - "generate migrations from YAML"
@@ -45,8 +46,15 @@ YAML, HCL, or DBML.
 
 ## Generate a migration without Go
 
-Create an empty `./migrations` directory and save this desired schema as
-`schema.sql`. `app.db` does not need to exist yet.
+Start in an empty directory. The database does not need to exist yet:
+
+```console
+mkdir ptah-generate
+cd ptah-generate
+mkdir migrations
+```
+
+Save this desired schema as `schema.sql`:
 
 ```sql
 CREATE TABLE users (
@@ -87,13 +95,11 @@ not acquire every HCL object merely because both flags reach the same command.
 and prints the migration SQL with a safety classification — without writing
 any files:
 
-```bash
-ptah migrations plan \
-  --schema-file ./schema.sql \
-  --db-url "sqlite://app.db"
+```console
+ptah migrations plan --schema-file ./schema.sql --db-url "sqlite://app.db"
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Safety classification:
@@ -117,11 +123,8 @@ migrated database the plan contains only the delta.
 
 Use `--report json` when automation needs the safety verdict:
 
-```bash
-ptah migrations plan \
-  --schema-file ./schema.sql \
-  --db-url "sqlite://app.db" \
-  --report json
+```console
+ptah migrations plan --schema-file ./schema.sql --db-url "sqlite://app.db" --report json
 ```
 
 This form writes one `safety.Report` JSON document to standard output. Its
@@ -133,18 +136,19 @@ as the [CI](../../testing/ci/) workflow does.
 
 ## Generate the migration files
 
-```bash
-ptah migrations generate \
-  --schema-file ./schema.sql \
-  --db-url "sqlite://app.db" \
-  --migrations-dir ./migrations \
-  --name init
+```console
+ptah migrations generate --schema-file ./schema.sql --db-url "sqlite://app.db" --migrations-dir ./migrations --name init
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Generated migration files for sqlite://app.db:
+```
+
+The file names follow it:
+
+```text illustration
 UP:   .../migrations/1785255952_init.up.sql
 DOWN: .../migrations/1785255952_init.down.sql
 ```
@@ -153,7 +157,7 @@ The version prefix is a timestamp; `--name` becomes the description in the
 file name. Ptah writes both directions — the generated down file reverses the
 up file:
 
-```sql
+```sql illustration
 -- Migration rollback
 -- Direction: DOWN
 
@@ -202,12 +206,12 @@ nothing and exits `0`.
 Generation does not update the integrity file; sealing the directory is an
 explicit step so the hash always reflects what you reviewed:
 
-```bash
+```console
 ptah migrations hash --dir ./migrations
 ptah migrations validate --dir ./migrations
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Wrote ./migrations/ptah.sum
@@ -224,7 +228,7 @@ Commit the migration pair and `ptah.sum` together, then continue with
 `ptah schema render` and `ptah schema compare`. This example keeps three
 source-owned fragments separate and requires no Go toolchain:
 
-```bash
+```bash illustration
 ptah migrations generate \
   --schema-file ./schema.sql \
   --schema-file ./shared.yaml \
@@ -248,7 +252,7 @@ any files are kept. The shadow
 database is dropped clean, migrated up, rolled back one step, and migrated up
 again, so both directions of the new migration are proven executable:
 
-```bash
+```bash illustration
 ptah migrations generate \
   --schema-file ./schema.sql \
   --db-url "$DATABASE_URL" \
@@ -257,9 +261,9 @@ ptah migrations generate \
   --shadow-db "sqlite://shadow.db"
 ```
 
-Expected output includes the replay log before the generated files:
+The replay log comes before the generated files:
 
-```text
+```text illustration
 INFO Applying migration version=1785255953 description=add_posts
 INFO Rolling back migration version=1785255953 description=add_posts
 INFO Applying migration version=1785255953 description=add_posts
@@ -284,7 +288,7 @@ database (reset destructively first), and the next migration is generated
 from the difference between that replayed state and the desired sources. CI
 can generate the next migration from the repository alone:
 
-```bash
+```bash illustration
 ptah migrations generate \
   --replay \
   --dev-url "sqlite://replay-dev.db" \
@@ -316,14 +320,19 @@ it for every change, and a project that does still reaches for it whenever the
 change is one a schema difference cannot express — a data backfill, an index
 rebuild, a grant.
 
-```bash
+```console
 ptah migrations create add_invoices --migrations-dir ./migrations
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Generated empty migration files:
+```
+
+The file names follow it:
+
+```text illustration
 UP:   .../migrations/1785255954_add_invoices.up.sql
 DOWN: .../migrations/1785255954_add_invoices.down.sql
 ```
