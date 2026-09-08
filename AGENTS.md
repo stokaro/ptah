@@ -530,7 +530,10 @@ What a page change needs, beyond passing the gates:
   from `go list`, which cannot know what ships.
 - **A quick start** opts in with `quickstart: true`, and every command it
   publishes runs in CI on three platforms (`internal/quickstart` reads the page;
-  `scripts/check-quickstart.sh` runs it). Section 8 of the style guide is the
+  `scripts/check-quickstart.sh` runs it). A page that sends the reader onward
+  adds `quickstartContinues:`, and the journey then runs in one working
+  directory: a transition a reader cannot follow is invisible to a per-page run
+  and to `check-links` alike (stokaro/ptah#2995). Section 8 of the style guide is the
   shape it reads; an output block naming no stream, or an `sql` block naming no
   file, is refused rather than skipped. The inference quick start needs
   PostgreSQL, pgvector and an HTTP provider, so it has its own Compose fixture

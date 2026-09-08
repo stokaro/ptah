@@ -57,6 +57,21 @@ func Discover(root string) ([]*Page, error) {
 	return pages, nil
 }
 
+// DiscoverJourneys is Discover, with the pages a declared continuation joins
+// folded into the sequence a reader follows.
+//
+// Every command that executes or prints a run reads journeys; the derived
+// registers read Discover, because a register records what each page publishes
+// and a page keeps publishing its own steps whether or not another page leads
+// into it.
+func DiscoverJourneys(root string) ([]*Page, error) {
+	pages, err := Discover(root)
+	if err != nil {
+		return nil, err
+	}
+	return Sequences(pages)
+}
+
 // documentationFiles collects the pages to read, and reads none of them.
 //
 // Collecting first and opening afterwards keeps every filesystem operation out

@@ -75,6 +75,11 @@ type Action struct {
 	// for a step that must succeed. A page declares another with `exits=` on
 	// the fence; see fenceExitCode for why it is declared rather than tolerated.
 	ExitCode int
+	// Page is the page that published this step, set only when the step is
+	// part of a sequence built from several pages. A failure is attributed to
+	// it rather than to the sequence, so a reader is sent to the page that
+	// carries the command.
+	Page string
 	// Number is the step's 1-based position among the steps of its program.
 	// Zero for ActionFile. It is what a failure report names, and what the
 	// generated script's sentinels count.
@@ -116,6 +121,10 @@ type Page struct {
 	Path string
 	// Title is the frontmatter title, for reporting.
 	Title string
+	// Continues is the documentation-root-relative path of the page a reader
+	// is sent to next, and "" for a page that ends its journey. See
+	// continuesKey for why a journey is run as a sequence.
+	Continues string
 	// Programs holds one entry per shell the page has steps for.
 	Programs map[Shell]*Program
 }

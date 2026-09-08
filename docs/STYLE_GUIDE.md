@@ -487,6 +487,13 @@ once on its concept page and link; do not re-define them per page.
   page never creates, and for output quoted from a failure rather than captured
   from a step — without it such a block has to lose its language, which the
   fenced-block rule above refuses.
+- A page that sends the reader onward names where, in frontmatter:
+  `quickstartContinues: quick-start-migrations.mdx`, a path relative to the
+  page's own directory, and a comma-separated list where the page branches. The
+  runner then executes the pages in one working directory, in order, so a
+  transition that cannot be followed fails. Both halves of stokaro/ptah#2995
+  were internally correct and the move between them was impossible; a per-page
+  run and a link checker are both blind to that.
 - A step whose command is meant to end non-zero declares the status after its
   language: ```` ```console exits=1 ````. The runner holds the step to exactly
   that status, so success is a failure too, and the run continues past it. A
