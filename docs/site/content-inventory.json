@@ -871,8 +871,8 @@
         "/reference/go-annotations/",
         "/versioned/apply/"
       ],
-      "visibleWords": 3375,
-      "sourceBytes": 22054
+      "visibleWords": 3502,
+      "sourceBytes": 22775
     },
     {
       "path": "docs/site/src/content/docs/databases/distributed.md",
