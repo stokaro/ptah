@@ -96,6 +96,21 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
+
+	// DropAllTables leaves the revision table behind, because it is metadata
+	// rather than part of the schema under test. On a shadow database reused
+	// from an earlier verification the rows it holds name versions the replay
+	// below then skips, so the rollback tries to revert a migration whose
+	// objects were never created and fails on a missing table -- an error about
+	// the schema, for a state left by the previous run (stokaro/ptah#3065).
+	//
+	// The baseline verification drops the same table for the same reason. It
+	// does so after its replay, where the point is a clean introspection; here
+	// the point is a clean starting version, so it happens before.
+	if err := shadowdb.DropMigrationMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
+		return fmt.Errorf("rollback verification failed: drop shadow revision metadata: %w", err)
+	}
+
 	if err := mig.MigrateTo(ctx, opts.CurrentVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return fmt.Errorf("rollback verification failed: replay migrations: %s", description)

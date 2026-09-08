@@ -55,6 +55,42 @@ func TestVerifyRollback_HappyPathReplaysUpThenDown(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// TestVerifyRollback_HappyPathReusesOneShadowDatabase is the reproduction from
+// stokaro/ptah#3065.
+//
+// A shadow database is meant to be reusable -- the documentation tells an
+// operator to keep an empty scratch database of the same engine for it -- so
+// running two verifications against one is ordinary use rather than an edge.
+//
+// DropAllTables leaves the revision table behind, because it is metadata rather
+// than part of the schema under test. The rows the first verification left named
+// versions the second replay then skipped, so the rollback tried to revert a
+// migration whose objects were never created and failed with `no such table:
+// users`: an error about the schema, for a state left by the previous run.
+func TestVerifyRollback_HappyPathReusesOneShadowDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeRollbackShadowMigrations(c, dir, "ALTER TABLE users DROP COLUMN email;\n")
+	shadowURL := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	verify := func(target int64) error {
+		return shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
+			TargetConnection: openRollbackTarget(
+				c,
+				"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+			),
+			ShadowDatabaseURL: shadowURL,
+			FS:                os.DirFS(dir),
+			CurrentVersion:    2,
+			TargetVersion:     target,
+		})
+	}
+
+	c.Assert(verify(1), qt.IsNil)
+	c.Assert(verify(0), qt.IsNil,
+		qt.Commentf("the second verification reuses the shadow database the first one left behind"))
+}
+
 func TestVerifyRollback_FailurePathBrokenDownMigrationReported(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
