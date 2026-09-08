@@ -6391,7 +6391,7 @@
       "sourceBytes": 6662
     },
     {
-      "path": "docs/site/src/content/docs/versioned/rollback.md",
+      "path": "docs/site/src/content/docs/versioned/rollback.mdx",
       "route": "/versioned/rollback/",
       "title": "Roll back migrations",
       "description": "Roll a database back to an explicit target version, verify the plan on a shadow database first, and understand the down-file contract.",
@@ -6441,8 +6441,8 @@
         "/versioned/maintain-history/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1725,
-      "sourceBytes": 13420
+      "visibleWords": 1832,
+      "sourceBytes": 16298
     }
   ]
 }
