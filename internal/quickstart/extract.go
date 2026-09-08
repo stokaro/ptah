@@ -14,6 +14,16 @@ import (
 // pasted a command into it.
 const optInKey = "quickstart"
 
+// continuesKey names the page a reader is sent to next, as a path relative to
+// the documentation root.
+//
+// A journey is a sequence, and #2995 is what a per-page runner cannot see: the
+// quick start ended by deleting its own working directory and linked to a
+// continuation whose first line assumed that directory. Every command on each
+// page was correct, the link resolved, and the transition was impossible. A
+// declared continuation is what lets the runner cross that boundary.
+const continuesKey = "quickstartContinues"
+
 var (
 	fenceOpen  = regexp.MustCompile("^\\s*(`{3,}|~{3,})\\s*(\\S+)(.*)$")
 	tabItemTag = regexp.MustCompile(`<TabItem\b[^>]*\blabel="([^"]*)"`)
@@ -59,7 +69,10 @@ func Extract(path string, source []byte) (*Page, error) {
 		return nil, err
 	}
 
-	page := &Page{Path: path, Title: front["title"], Programs: make(map[Shell]*Program)}
+	page := &Page{
+		Path: path, Title: front["title"], Continues: front[continuesKey],
+		Programs: make(map[Shell]*Program),
+	}
 	buildPrograms(page, entries)
 	return page, nil
 }
@@ -331,14 +344,23 @@ func (s *scanner) expectation(line int, body string) error {
 	}
 	expectation := Expectation{Line: line + 1, Stream: stream, Lines: strings.Split(body, "\n")}
 
+	// A shell-neutral step belongs to both shells, so both lookups land on the
+	// same entry and the expectation would be attached twice -- checked twice
+	// and counted twice, which inflates every published assertion count on a
+	// page written with console blocks. Attach once per entry.
 	attached := false
+	carried := make(map[int]bool, len(Shells()))
 	for _, shell := range tabShells(s.tabLabel) {
 		index, ok := s.lastStep(shell)
 		if !ok {
 			continue
 		}
-		s.entries[index].expectations = append(s.entries[index].expectations, expectation)
 		attached = true
+		if carried[index] {
+			continue
+		}
+		carried[index] = true
+		s.entries[index].expectations = append(s.entries[index].expectations, expectation)
 	}
 	if !attached {
 		return &ExtractError{

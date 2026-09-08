@@ -89,7 +89,7 @@ func newListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pages, err := quickstart.Discover(options.docsDir)
+			pages, err := quickstart.DiscoverJourneys(options.docsDir)
 			if err != nil {
 				return err
 			}
@@ -124,7 +124,7 @@ func newScriptCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pages, err := quickstart.Discover(options.docsDir)
+			pages, err := quickstart.DiscoverJourneys(options.docsDir)
 			if err != nil {
 				return err
 			}
@@ -169,7 +169,7 @@ func run(ctx context.Context, cmd *cobra.Command, options *options) error {
 		return err
 	}
 
-	pages, err := quickstart.Discover(options.docsDir)
+	pages, err := quickstart.DiscoverJourneys(options.docsDir)
 	if err != nil {
 		return err
 	}

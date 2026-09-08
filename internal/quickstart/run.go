@@ -252,6 +252,15 @@ func environment(ptahDir string) []string {
 // proof that this runner can fail a plain unit test rather than something only
 // a workflow can demonstrate.
 func Check(page string, program *Program, stdout, stderr string) (failures []Failure, asserted int) {
+	// A step joined from another page carries its own, so a journey's failure
+	// names the page a reader would be looking at rather than the head of the
+	// sequence.
+	attribute := func(action Action) string {
+		if action.Page != "" {
+			return action.Page
+		}
+		return page
+	}
 	outChunks, outSeen := splitOnSentinels(stdout, program.Steps())
 	errChunks, errSeen := splitOnSentinels(stderr, program.Steps())
 
@@ -262,7 +271,7 @@ func Check(page string, program *Program, stdout, stderr string) (failures []Fai
 		index := action.Number - 1
 		if !outSeen[index] {
 			failures = append(failures, Failure{
-				Page: page, Line: action.Line, Step: action.Number, Command: action.Body,
+				Page: attribute(action), Line: action.Line, Step: action.Number, Command: action.Body,
 				Problem: "the step did not finish; the run stopped here",
 				Got:     strings.TrimRight(errChunks[index], "\n"),
 			})
@@ -289,7 +298,7 @@ func Check(page string, program *Program, stdout, stderr string) (failures []Fai
 					Got:      strings.TrimRight(chunk, "\n"),
 				}
 			}
-			failure.Page, failure.Line, failure.Step, failure.Command = page, action.Line, action.Number, action.Body
+			failure.Page, failure.Line, failure.Step, failure.Command = attribute(action), action.Line, action.Number, action.Body
 			failures = append(failures, failure)
 		}
 	}

@@ -893,12 +893,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 10
+          "expectations": 5
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 10
+          "expectations": 5
         }
       ]
     },
@@ -908,12 +908,12 @@
         {
           "shell": "bash",
           "steps": 9,
-          "expectations": 16
+          "expectations": 8
         },
         {
           "shell": "powershell",
           "steps": 9,
-          "expectations": 16
+          "expectations": 8
         }
       ]
     },
@@ -923,12 +923,12 @@
         {
           "shell": "bash",
           "steps": 15,
-          "expectations": 18
+          "expectations": 9
         },
         {
           "shell": "powershell",
           "steps": 15,
-          "expectations": 18
+          "expectations": 9
         }
       ]
     },
@@ -938,12 +938,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 6
+          "expectations": 3
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 6
+          "expectations": 3
         }
       ]
     },
@@ -953,12 +953,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         }
       ]
     },
@@ -968,12 +968,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         }
       ]
     },
@@ -983,12 +983,12 @@
         {
           "shell": "bash",
           "steps": 7,
-          "expectations": 10
+          "expectations": 5
         },
         {
           "shell": "powershell",
           "steps": 7,
-          "expectations": 10
+          "expectations": 5
         }
       ]
     },
@@ -998,12 +998,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 8
+          "expectations": 4
         }
       ]
     },
@@ -1013,12 +1013,12 @@
         {
           "shell": "bash",
           "steps": 6,
-          "expectations": 9
+          "expectations": 5
         },
         {
           "shell": "powershell",
           "steps": 6,
-          "expectations": 9
+          "expectations": 5
         }
       ]
     }
