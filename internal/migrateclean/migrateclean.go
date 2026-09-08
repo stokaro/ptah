@@ -11,7 +11,7 @@
 //
 // # Two scopes, not one
 //
-// The pinned community binary evaluates one of two things depending on what the
+// The pinned community binary evaluates one of two scopes depending on what the
 // URL pinned, and the operands are not the same:
 //
 //   - Schema scope, selected by a PostgreSQL-family `search_path` on the URL or
@@ -359,7 +359,7 @@ func (s Scope) Refusal() error {
 // other. Byte order is the sort: with "Zed" and "app" present the binary
 // reports "Zed".
 //
-// A schema fails unless one of two things is true:
+// A schema fails unless one of two conditions holds:
 //
 //   - it is `public` and holds no table. Measured: an empty database applies at
 //     exit 0, while an EMPTY `extra` beside it refuses. `public` is tolerated by

@@ -1252,7 +1252,7 @@ type pairedSide struct {
 // plansVirtualTableRemoval reports whether an undeclared live virtual table is
 // a removal this comparison has to answer for.
 //
-// Two things make it not one. The caller may delete the statement again:
+// Two cases make it not one. The caller may delete the statement again:
 // `skip drop_table` filters this table out of TablesRemoved before the plan is
 // rendered, so the DROP the refusal exists to prevent is never emitted, and
 // refusing would send an operator to an opt-in for a plan that drops nothing.

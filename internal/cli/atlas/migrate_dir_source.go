@@ -47,8 +47,8 @@ import (
 //
 // It is [atlasmigrate.ResolveApplyDirFormat], the resolver `migrate apply`
 // uses, so the verbs that read a converted directory cannot drift on which
-// spelling wins or on which values are accepted. Two things follow from that,
-// both measured against the pinned community binary v1.3.0:
+// spelling wins or on which values are accepted. Both of the following were
+// measured against the pinned community binary v1.3.0:
 //
 //   - The `?format=` query outranks `--dir-format`, in both directions.
 //     `--dir 'file://gm?format=golang-migrate' --dir-format atlas` and

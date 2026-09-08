@@ -20,7 +20,7 @@ type Passage struct {
 
 // splitPassages cuts a markdown document at its ATX headings.
 //
-// Three things in a markdown file look like a heading and are not, and each one
+// Three constructs in a markdown file look like a heading and are not, and each
 // produced a passage boundary in the wrong place before this handled them: a
 // `#` inside a fenced code block (every shell transcript in this repository
 // starts a comment that way), the `---` frontmatter block every site page opens

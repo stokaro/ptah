@@ -543,7 +543,7 @@ func (r *Reader) generatedExpressionExpr() string {
 // ownedSequenceExpr renders the projection naming the sequence a serial column
 // owns, or a constant on a target without sequences.
 //
-// It takes two keys, because it needs two things. A target with no sequences
+// It takes two keys, because it asks two questions. A target with no sequences
 // has no answer to give, and a target without pg_catalog's helpers has no way
 // to fetch one: Spanner refuses this projection twice over, and
 // `Postgres function format(text, text, text) is not supported` comes first,

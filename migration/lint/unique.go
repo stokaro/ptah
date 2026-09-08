@@ -30,7 +30,7 @@ import (
 //	                                          only under NULLS NOT DISTINCT
 //	ADD UNIQUE USING INDEX over a plain index PostgreSQL refuses: "t_idx" is not a unique index
 //
-// Two things the file knows without a database: a table this migration
+// Two facts the file knows without a database: a table this migration
 // creates holds no rows when the index is built, and a column this migration
 // adds holds NULL in every existing row unless the clause gives it a DEFAULT
 // -- in which case every row holds the same value and the build fails on the
@@ -39,7 +39,7 @@ import (
 // What the file does not know is the data. The dev database a run replays
 // the directory on holds the schema and nothing else, so a proven violation
 // is not claimed; the message carries the GROUP BY that proves or clears it.
-// The schema does settle two things the text cannot (stokaro/ptah#2957): a
+// The schema does settle two cases the text cannot (stokaro/ptah#2957): a
 // unique index or primary key already covering the key's columns, or a
 // subset of them, proves the rows unique, so the build cannot fail and
 // neither rule fires; and an index the file drops by name is known by its

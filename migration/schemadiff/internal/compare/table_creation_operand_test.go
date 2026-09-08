@@ -19,7 +19,7 @@ import (
 // schema and filtering it there. The filtering happens once, where the schema
 // is already in hand (stokaro/ptah#2315).
 //
-// Three things travel: the declaration, this table's columns with embedded
+// Three inputs travel: the declaration, this table's columns with embedded
 // fields already folded in, and the enums those columns name. The other table's
 // column is the control -- a bundle carrying every column would satisfy an
 // assertion that only counted this one.

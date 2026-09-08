@@ -32,7 +32,7 @@ import (
 //
 // This test is the guard that the choice cannot be forgotten on the next verb.
 // It enumerates every table-driven verb, builds its native target, and measures
-// two things per verb — whether the target registers --log-level, and what
+// two properties per verb — whether the target registers --log-level, and what
 // value the verb's prefix pins it to. A new forwarded verb whose target starts
 // a runtime fails here by name, and so does a verb whose prefix drifts to a
 // different level.

@@ -340,7 +340,7 @@ type candidateKey struct {
 // whatever does, which is why the same foreign key sometimes takes a name in
 // the index namespace and sometimes takes none.
 //
-// Two things decide it that a column-name comparison alone gets wrong, both
+// Two properties decide it that a column-name comparison alone gets wrong, both
 // measured on live MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#2769).
 //
 // Column identity FOLDS CASE, on both engines:

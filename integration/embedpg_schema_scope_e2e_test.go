@@ -25,7 +25,7 @@ import (
 // Every generated object name and every catalog read used a bare relation name,
 // so `search_path` decided which table a statement meant. Two same-named tables
 // in two schemas is not an exotic arrangement -- it is what a tenant-per-schema
-// database looks like -- and it made four things go wrong at once, each of them
+// database looks like -- and it went wrong in four places at once, each of them
 // silently:
 //
 //   - retiring a generation in one schema dropped the vector columns and the

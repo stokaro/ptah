@@ -157,7 +157,7 @@ func TestTablePrimaryKeyIncludeFailsClosed(t *testing.T) {
 // An unnamed primary key is reported by its table, because "" in the middle of a
 // sentence names nothing and the reader still has to find the declaration.
 //
-// This is one of the two things the declared gate covers that the AST gate does
+// This is one of the two cases the declared gate covers that the AST gate does
 // not: a key with no name reaches prepareConstraintNode carrying "", so removing
 // validateDeclaredConstraintIncludes leaves the refusal firing and the sentence
 // naming nothing. Measured by deleting that call and watching this test, and

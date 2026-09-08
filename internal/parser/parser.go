@@ -1243,7 +1243,7 @@ func (p *Parser) parseFunctionSecurity(function *ast.CreateFunctionNode) error {
 
 // parseFunctionSetting reads one `SET` clause of a routine header.
 //
-// Three spellings mean two things. `SET name = value` and `SET name TO value`
+// Three spellings mean two different things. `SET name = value` and `SET name TO value`
 // both set the value, and a catalog reports one spelling for both, so both are
 // recorded as `name=value`. `SET name FROM CURRENT` keeps its own words,
 // because the server resolves it at definition time and no declared form can

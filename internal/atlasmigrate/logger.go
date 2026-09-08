@@ -19,8 +19,8 @@ import (
 // a transaction-mode directive the run did not honor and did not mention.
 //
 // Warn and above on stderr is the rule the compat surface already documents
-// (docs/site/src/content/docs/atlas/migrate-commands.md, "Three things still
-// reach stderr, by design"), and the rule internal/cli/cliobs applies to the
+// (docs/site/src/content/docs/atlas/migrate-commands.md, on what still reaches
+// stderr by design), and the rule internal/cli/cliobs applies to the
 // process-wide default logger for the same reason. Parity survives it because a
 // clean run emits nothing at that level: the diagnostics appear only when
 // something is genuinely wrong.

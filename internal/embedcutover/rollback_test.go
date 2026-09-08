@@ -130,7 +130,7 @@ func TestEvaluateRollback_APolicyWithoutAWindowDoesNotExpire(t *testing.T) {
 // absent generation from listing everything that is also unknown about it.
 //
 // A generation that is not there has no stale rows, no index and no
-// maintenance either, and reporting four things wrong with a thing that does
+// maintenance either, and reporting four faults with a generation that does
 // not exist buries the one that matters.
 func TestEvaluateRollback_AGoneGenerationSaysSoAndStops(t *testing.T) {
 	tests := []struct {

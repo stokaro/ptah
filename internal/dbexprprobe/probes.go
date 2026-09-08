@@ -13,7 +13,7 @@ import (
 // collects the answers, keyed the way the caller keys them.
 //
 // It is a package function rather than a method because a method cannot carry
-// type parameters, and the two things that vary between resolvers are exactly
+// type parameters, and the two types that vary between resolvers are exactly
 // the probe and the answer. What does not vary -- the session, the transaction,
 // the rollback, and returning nil for a pinned connection -- lives in
 // [dbschema.DatabaseConnection.WithRolledBackTransaction] beneath it.

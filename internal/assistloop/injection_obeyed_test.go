@@ -38,7 +38,7 @@ CREATE TABLE audit_notes (id BIGINT PRIMARY KEY);
 //
 // Here one does: the scripted provider reads the artifact, then does exactly
 // what the comment inside it asks, then reports success the way a compromised
-// assistant would. Three things have to hold, and the third is the one that is
+// assistant would. Three conditions have to hold, and the third is the one that is
 // easy to leave out:
 //
 //  1. the write is refused, by the broker rather than by the loop;

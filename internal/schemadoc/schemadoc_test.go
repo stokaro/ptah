@@ -237,7 +237,7 @@ func TestRender_ResolvesEveryCustomPropertyItUses(t *testing.T) {
 // TestPage_LeavesTheDocumentToTheDocument pins what the live dashboard gets.
 //
 // Page returns the schema's own parts for a caller that supplies the page
-// around them. Three things must not come with them: the rail, because the
+// around them. Three parts must not come with them: the rail, because the
 // caller writes its own and nesting one inside it draws two; the provenance
 // line, because a dashboard reads a live database and "not a live database"
 // would be false there; and the footer, because the caller's page ends its own

@@ -2898,7 +2898,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDi
 //
 // The reference is resolved through [rlsscope.Resolver], which keys by the
 // owning table under the target's identifier semantics and by the policy's own
-// name. Two things follow, and both are the point of the resolver existing.
+// name. Two consequences follow, and both are the point of the resolver existing.
 //
 // The name alone does not identify a policy: two tables may each carry a
 // policy called "tenant_isolation", and matching on the name picked whichever

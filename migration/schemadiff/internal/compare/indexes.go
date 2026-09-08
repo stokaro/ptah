@@ -387,7 +387,7 @@ func mysqlAnotherIndexCoversForeignKey(
 //
 // An index whose Parts the reader dropped is ascending throughout -- the MySQL
 // reader clears a parts list that says nothing its column names do not, and a
-// descending part is one of the two things that keep it.
+// descending part is one of the two reasons it is kept.
 func mysqlIndexCoversForeignKey(
 	index catalog.Index,
 	table string,

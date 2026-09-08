@@ -268,7 +268,7 @@ func makeThePointerRecordItAsPrevious(
 	c.Assert(err, qt.IsNil)
 }
 
-// assertASkipIsNotAGapAndAGapIsNotASkip separates the two things a coverage
+// assertASkipIsNotAGapAndAGapIsNotASkip separates the two outcomes a coverage
 // layer reports about a rollback target.
 //
 // A row the specification declined to embed is a deliberate gap and does not

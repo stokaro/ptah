@@ -162,7 +162,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 // (my_local_created) is not droppable; a standalone index carrying the name
 // PostgreSQL would have generated for a copy (events_2026_id_idx) is. Neither
 // the name nor the table separates them -- pg_inherits over the INDEX relation
-// does. Three things this fixture is built to refuse:
+// does. Three heuristics this fixture is built to refuse:
 //
 //   - The naming convention. events_2026_id_idx carries the name a copy would
 //     have and is droppable; my_local_created is a copy and is not.

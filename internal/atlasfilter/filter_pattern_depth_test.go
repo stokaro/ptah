@@ -280,7 +280,7 @@ func TestValidateExcludeSelectors_RefusesDepthNoScopeCanAddress(t *testing.T) {
 	}
 }
 
-// TestPatternDepthRefusalNamesTheSpellingThatWorks pins the three things the
+// TestPatternDepthRefusalNamesTheSpellingThatWorks pins the three messages the
 // refusal is allowed to say, one per scope it can be asked in.
 //
 // The issue this closes asked for two of them: the text must quote what the

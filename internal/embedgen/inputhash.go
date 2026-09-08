@@ -8,7 +8,7 @@ import (
 // given, bound to the generation that gave it.
 //
 // It answers "does this target row still match its source" without reading the
-// vector, which is what makes four things possible: refusing a result computed
+// vector, which is what makes four operations possible: refusing a result computed
 // from source text that has since changed, verifying freshness across a whole
 // corpus, skipping rows whose input did not move, and recomputing selectively.
 //

@@ -298,7 +298,7 @@ func execOracle(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnection,
 // TestOracleRoleManagementPlansAndConvergesE2E is the assertion the
 // role_management capability key could not be flipped without.
 //
-// The key promises four things at once -- Ptah plans a role and a grant,
+// The key promises four operations at once -- Ptah plans a role and a grant,
 // renders them, reads them back, and finds nothing left to do -- and the
 // failure when one is missing is not a compile error. It is a plan that
 // reports the same pending change forever, because the reader never sees what

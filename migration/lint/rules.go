@@ -704,7 +704,7 @@ func enumValueRemovedRule() Rule {
 // classic PostgreSQL privilege-escalation shape.
 //
 // PRV02 already reports every definer routine (internal/schemasecurity), and
-// two things separate this from it: PRV02 needs a live server and never sees a
+// two differences separate this from it: PRV02 needs a live server and never sees a
 // migration directory, and it cannot tell a pinned routine from an unpinned one
 // because nothing read proconfig. Its own suggestion asked for what it could
 // not check.

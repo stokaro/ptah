@@ -164,7 +164,7 @@ func TestPassageHeadingTrail(t *testing.T) {
 	}
 }
 
-// Three things look like a heading and are not. Each one cut a passage in the
+// Three constructs look like a heading and are not. Each one cut a passage in the
 // wrong place before the splitter knew about it.
 func TestSplitterIgnoresWhatOnlyLooksLikeAHeading(t *testing.T) {
 	tests := []struct {

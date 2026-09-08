@@ -24,7 +24,7 @@ import (
 // TestSQLServerLiveSequenceRoundTrip is the test the Sequences capability could
 // not have been flipped without.
 //
-// The key promises three things at once -- Ptah renders the object, reads it
+// The key promises three operations at once -- Ptah renders the object, reads it
 // back, and plans it again -- and the failure mode when one is missing is not a
 // compile error. It is an apply loop that emits the same CREATE forever,
 // because the reader never sees what the renderer made. No offline test can

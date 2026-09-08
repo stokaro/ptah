@@ -107,7 +107,7 @@ func writeDiffArtifacts(
 	)
 }
 
-// diffWriteLayout carries the two things one `migrate diff` write needs to know
+// diffWriteLayout carries what one `migrate diff` write needs to know
 // about the directory's layout that the file contents themselves do not say.
 //
 // versionFS is separate from the base snapshot on purpose. The next version is

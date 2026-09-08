@@ -9,7 +9,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 )
 
-// TestRefuse_CarriesTheSentinelAndTheReason pins the two things every caller
+// TestRefuse_CarriesTheSentinelAndTheReason pins the two guarantees every caller
 // depends on: a sentinel it can branch on, and one wording.
 //
 // The sentinel is deliberately not ErrUnknownAttribute. A caller branching on

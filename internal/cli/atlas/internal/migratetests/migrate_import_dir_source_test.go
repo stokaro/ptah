@@ -82,7 +82,7 @@ func TestCompatMigrateImportRejectsTheFixtureUnderGoose(t *testing.T) {
 // TestCompatMigrateImportSourceResolutionMatchesTheOracle pins the order
 // `migrate import` answers its refusals in, and the values it accepts.
 //
-// Two things are measured here, and they are one change because they are one
+// Two behaviors are measured here, and they are one change because they are one
 // resolution. Measured on the pinned community binary v1.3.0 on 2026-08-12,
 // every exit code read from an unpiped invocation:
 //

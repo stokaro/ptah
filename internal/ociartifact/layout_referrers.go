@@ -147,7 +147,7 @@ func layoutIndexProbe() indexProbe {
 // attachmentEndpoint is everything an attachment needs about its destination,
 // resolved once for a registry or an image layout.
 //
-// Attach needs four things where Push needed two, and three of them used to be
+// Attach needs four inputs where Push needed two, and three of them used to be
 // registry-shaped: the repository that resolves the subject, the target the
 // referrer is written to, and the probe that answers what discovery the policy
 // requires. Resolving them together is what lets a layout be the same

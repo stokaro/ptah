@@ -56,7 +56,7 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 	}
 }
 
-// TestAssignDefault_SeparatesOraclesOwnBookkeeping pins the three things
+// TestAssignDefault_SeparatesOraclesOwnBookkeeping pins the three values
 // DATA_DEFAULT can hold.
 //
 // Reading it as a user default made a schema Ptah had just applied read back
