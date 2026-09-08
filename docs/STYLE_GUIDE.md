@@ -278,9 +278,15 @@ Write:
   Two constructions are correct English and are left alone. `one thing` is
   emphatic or contrastive rather than a list, as in `One thing is deliberately
   absent:`. `<number> different things` and `<number> other things` say that a
-  term denotes distinct referents, which is the subject itself. `check-style.mjs`
-  refuses the banned shape in Markdown; code spans are skipped, which is what
-  lets this page and `AGENTS.md` name the phrase in order to ban it.
+  term denotes distinct referents, which is the subject itself.
+
+  Two readers hold the rule, because neither can see the other's corpus.
+  `check-style.mjs` refuses the shape in Markdown. `internal/countsubjectguard`
+  refuses it in Go comments, parsing the files rather than matching the source
+  so a string literal carrying the phrase is left alone -- a doc comment is
+  documentation, read through godoc by embedders who never open this
+  repository. Both skip quoted and backticked text, which is what lets this
+  page and `AGENTS.md` name the phrase in order to ban it.
 
 ### 5.4 What plain does not mean
 
