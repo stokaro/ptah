@@ -60,6 +60,22 @@ the same columns. The engine is taken with its parameters — a
 is the one that changes what the data does rather than how fast it is read: a
 table replayed without it keeps rows it was configured to delete.
 
+A MySQL-family storage engine is refused rather than rendered. A table's engine
+reaches the renderer through the same key both families fill, so `engine =
+"InnoDB"` on a struct, and `ENGINE=InnoDB` in a SQL source, arrive
+indistinguishable from a value written for ClickHouse. Rendering one produces
+statements the server rejects with `Code: 56 ... Unknown table engine`, and
+because the whole `CREATE TABLE` is lost the author gets no table at all rather
+than a weaker one. Ptah names the engine instead and points at the two ways to
+declare a working one: `platform.clickhouse.engine` on a struct, or the `ENGINE`
+clause of a SQL source. Removing the engine takes the `MergeTree` default.
+
+Only names that belong to the MySQL and MariaDB families are refused, and only
+those they do not share with ClickHouse — `Memory`, `Merge` and `S3` are real
+ClickHouse engines and render as written. ClickHouse's engine set grows with
+every release, so nothing here decides whether a name *is* a ClickHouse engine:
+an engine Ptah has never heard of renders unchanged.
+
 Two things follow that are worth knowing before adopting the round trip:
 
 - **The settings are the server's resolved values, not the ones a `CREATE`

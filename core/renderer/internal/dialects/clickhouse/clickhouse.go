@@ -452,6 +452,82 @@ func (s tableEngineSpec) isMergeTreeFamily() bool {
 	return strings.HasSuffix(upper, "MERGETREE")
 }
 
+// mysqlFamilyOnlyEngines holds storage engine names that belong to the MySQL
+// and MariaDB families and name no ClickHouse table engine.
+//
+// A table's engine reaches this renderer through the same ENGINE option key the
+// MySQL family fills, so `engine="InnoDB"` on a struct, and `ENGINE=InnoDB` in
+// a SQL source, arrive here indistinguishable from a value authored for this
+// target. Rendering one produces syntactically valid ClickHouse that the server
+// refuses with `Code: 56 ... Unknown table engine`, and because the whole
+// CREATE TABLE is lost the author gets no table rather than a weaker one
+// (stokaro/ptah#3002).
+//
+// A name check answers this only because this direction of the question is
+// closed. ClickHouse's engine set is open-ended and grows with every release,
+// so "is this a ClickHouse engine" cannot be decided here without a server; the
+// MySQL and MariaDB storage-engine sets are fixed, and no name on this list
+// will become a ClickHouse engine later. Refusing only these can therefore
+// never refuse a valid ClickHouse engine, including one a future release adds
+// -- which is the property that makes the list safe to pin.
+//
+// Measured against ClickHouse 25.8.33.6 on 2026-09-08: of the MySQL and MariaDB
+// engine names, system.table_engines reports Memory, Merge and S3. Those three
+// are deliberately absent below, because they are real ClickHouse engines and
+// rendering them is correct.
+// TestRenderSQL_KeepsTheEnginesClickHouseAlsoHas_HappyPath pins that absence
+// by rendering each of them.
+var mysqlFamilyOnlyEngines = map[string]bool{
+	"aria":               true,
+	"archive":            true,
+	"blackhole":          true,
+	"columnstore":        true,
+	"connect":            true,
+	"csv":                true,
+	"example":            true,
+	"federated":          true,
+	"federatedx":         true,
+	"innodb":             true,
+	"mroonga":            true,
+	"mrg_myisam":         true,
+	"myisam":             true,
+	"myrocks":            true,
+	"ndb":                true,
+	"ndbcluster":         true,
+	"oqgraph":            true,
+	"performance_schema": true,
+	"sequence":           true,
+	"sphinxse":           true,
+	"spider":             true,
+	"tokudb":             true,
+}
+
+// refuseMySQLFamilyEngine refuses a table whose engine names a MySQL-family
+// storage engine, instead of rendering DDL this server cannot execute.
+//
+// The refusal names both routes to a working declaration, because which one an
+// author has depends on where the schema came from: a Go struct sets
+// platform.clickhouse.engine, and a SQL source writes the ClickHouse engine
+// directly. Saying only one of them sends half the readers looking for a
+// spelling their source has no room for.
+func refuseMySQLFamilyEngine(table, engine string) error {
+	base, _, _ := strings.Cut(strings.TrimSpace(engine), "(")
+	if !mysqlFamilyOnlyEngines[strings.ToLower(strings.TrimSpace(base))] {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: platform.ClickHouse,
+		Feature: "table engines",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"table %q declares engine %q, which names a MySQL-family storage engine and no"+
+				" ClickHouse engine, so the server would refuse the statement and create nothing"+
+				" — set platform.clickhouse.engine (or the ENGINE clause of a SQL source) to a"+
+				" ClickHouse engine such as MergeTree, or drop the engine to take the MergeTree"+
+				" default", table, strings.TrimSpace(engine)),
+	}
+}
+
 // resolveTableEngineSpec extracts the engine + modifier set for a table.
 // Annotation overrides live in node.Options under uppercased keys; the
 // table's own Engine string is used as a fallback (it's the documented
@@ -736,6 +812,10 @@ func sortKeyColumnSet(spec tableEngineSpec) map[string]struct{} {
 // PRIMARY KEY being a prefix of ORDER BY).
 func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tableEngineSpec, error) {
 	spec := resolveTableEngineSpec(node)
+
+	if err := refuseMySQLFamilyEngine(node.Name, spec.engine); err != nil {
+		return spec, err
+	}
 
 	if spec.isMergeTreeFamily() && spec.orderBy == "" {
 		pkCols := tablePrimaryKeyColumns(node)
