@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/cli/schema"
   - "internal/cli/migrations"
 generated: false
+quickstart: true
 searchAliases:
   - "adopt existing database"
   - "adopt database as SQL"
@@ -38,7 +39,45 @@ Prerequisites:
 - A `ptah` binary on your machine ([Install Ptah](../install/)).
 - The URL of the database you are adopting.
 
-The examples use a local SQLite file, `sqlite://$PWD/app.db`, containing two tables, `customers` and `orders`, so every command runs without a database daemon. Substitute your own database URL throughout.
+The examples use a local SQLite file, `sqlite://app.db`, containing two tables,
+`customers` and `orders`, so every command runs without a database daemon.
+Substitute your own database URL throughout.
+
+If you do not have such a database, build one here. Start in an empty
+directory:
+
+```console
+mkdir ptah-adopt
+cd ptah-adopt
+```
+
+Save this as `legacy.sql`, standing in for the schema another tool built:
+
+```sql
+CREATE TABLE customers (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE orders (
+    id          INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL,
+    total       INTEGER NOT NULL
+);
+```
+
+Create the database from it. Nothing after this step treats `legacy.sql` as the
+desired-schema source; it exists only to give the adoption something to adopt:
+
+```console
+ptah schema apply --db-url "sqlite://app.db" --schema-file legacy.sql --auto-approve
+```
+
+Expected output on standard output:
+
+```text
+Schema apply completed successfully.
+```
 
 If the database was migrated with golang-migrate, Goose, Flyway, or Liquibase and you want to keep that history, jump to [Keep history from another tool](#keep-history-from-another-tool). Otherwise follow the numbered steps.
 
@@ -51,19 +90,52 @@ same live database, but their expressiveness boundaries differ.
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
 
-```bash
-ptah db read --db-url "sqlite://$PWD/app.db" > schema.sql
+```console
+ptah db read --db-url "sqlite://app.db"
+```
+
+Expected output on standard output:
+
+```text
+CREATE TABLE "customers" (
+  "id" INTEGER PRIMARY KEY,
+  "name" TEXT NOT NULL
+);
 ```
 
 Keep `schema.sql` when reviewed DDL is the desired-schema source. `db read`
 writes SQL to stdout; connection diagnostics stay on stderr and do not enter
-the file.
+the file, so redirecting it is enough:
+
+```bash illustration
+ptah db read --db-url "sqlite://app.db" > schema.sql
+```
+
+The redirection is the one step of this page that is not shell-neutral. A
+PowerShell redirect writes UTF-16 or a byte-order mark depending on the
+version, and Ptah's SQL reader refuses either with `expected SQL keyword, got
+Operator at position 0`. On Windows, write the file with
+`Set-Content -Encoding ascii` or save the output from an editor. For the rest
+of this page, `schema.sql` holds exactly what the command printed:
+
+```sql
+CREATE TABLE "customers" (
+  "id" INTEGER PRIMARY KEY,
+  "name" TEXT NOT NULL
+);
+
+CREATE TABLE "orders" (
+  "id" INTEGER PRIMARY KEY,
+  "customer_id" INTEGER NOT NULL,
+  "total" INTEGER NOT NULL
+);
+```
 
 </TabItem>
 <TabItem label="HCL">
 
-```bash
-ptah schema inspect --db-url "sqlite://$PWD/app.db" > schema.hcl
+```bash illustration
+ptah schema inspect --db-url "sqlite://app.db" > schema.hcl
 ```
 
 HCL is the default `schema inspect` output. It is the broadest static
@@ -72,9 +144,9 @@ representation for Ptah and Atlas-shaped schema objects.
 </TabItem>
 <TabItem label="DBML">
 
-```bash
+```bash illustration
 ptah schema inspect \
-  --db-url "sqlite://$PWD/app.db" \
+  --db-url "sqlite://app.db" \
   --format dbml > schema.dbml
 ```
 
@@ -85,9 +157,9 @@ could not represent.
 </TabItem>
 <TabItem label="Go annotations">
 
-```bash
+```bash illustration
 ptah introspect \
-  --db-url "sqlite://$PWD/app.db" \
+  --db-url "sqlite://app.db" \
   --out ./models \
   --package models
 ```
@@ -107,35 +179,35 @@ From this point, edit the selected source rather than the database.
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
 
-```bash
-ptah schema drift --schema-file schema.sql --db-url "sqlite://$PWD/app.db"
+```console
+ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"
 ```
 
 </TabItem>
 <TabItem label="HCL">
 
-```bash
-ptah schema drift --schema-file schema.hcl --db-url "sqlite://$PWD/app.db"
+```bash illustration
+ptah schema drift --schema-file schema.hcl --db-url "sqlite://app.db"
 ```
 
 </TabItem>
 <TabItem label="DBML">
 
-```bash
-ptah schema drift --schema-file schema.dbml --db-url "sqlite://$PWD/app.db"
+```bash illustration
+ptah schema drift --schema-file schema.dbml --db-url "sqlite://app.db"
 ```
 
 </TabItem>
 <TabItem label="Go annotations">
 
-```bash
-ptah schema drift --root-dir ./models --db-url "sqlite://$PWD/app.db"
+```bash illustration
+ptah schema drift --root-dir ./models --db-url "sqlite://app.db"
 ```
 
 </TabItem>
 </Tabs>
 
-Expected output:
+Expected output on standard output:
 
 ```text
 No schema drift detected.
@@ -153,21 +225,17 @@ generated migration creates a fresh environment.
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
 
-```bash
-ptah migrations generate \
-  --schema-file schema.sql \
-  --db-url "sqlite://$PWD/empty.db" \
-  --migrations-dir ./migrations \
-  --name init
+```console
+ptah migrations generate --schema-file schema.sql --db-url "sqlite://empty.db" --migrations-dir ./migrations --name init
 ```
 
 </TabItem>
 <TabItem label="HCL">
 
-```bash
+```bash illustration
 ptah migrations generate \
   --schema-file schema.hcl \
-  --db-url "sqlite://$PWD/empty.db" \
+  --db-url "sqlite://empty.db" \
   --migrations-dir ./migrations \
   --name init
 ```
@@ -175,10 +243,10 @@ ptah migrations generate \
 </TabItem>
 <TabItem label="DBML">
 
-```bash
+```bash illustration
 ptah migrations generate \
   --schema-file schema.dbml \
-  --db-url "sqlite://$PWD/empty.db" \
+  --db-url "sqlite://empty.db" \
   --migrations-dir ./migrations \
   --name init
 ```
@@ -186,10 +254,10 @@ ptah migrations generate \
 </TabItem>
 <TabItem label="Go annotations">
 
-```bash
+```bash illustration
 ptah migrations generate \
   --root-dir ./models \
-  --db-url "sqlite://$PWD/empty.db" \
+  --db-url "sqlite://empty.db" \
   --migrations-dir ./migrations \
   --name init
 ```
@@ -197,19 +265,21 @@ ptah migrations generate \
 </TabItem>
 </Tabs>
 
-Seal the selected result:
+`generate` names the pair it wrote, with the timestamp it chose:
 
-```bash
-ptah migrations hash --dir ./migrations
-```
-
-Expected output includes:
-
-```text
+```text illustration
 Generated migration files for sqlite://.../empty.db:
 UP:   .../<timestamp>_init.up.sql
 DOWN: .../<timestamp>_init.down.sql
 ```
+
+Seal the selected result:
+
+```console
+ptah migrations hash --dir ./migrations
+```
+
+Expected output on standard output:
 
 ```text
 Wrote ./migrations/ptah.sum
@@ -220,19 +290,21 @@ Wrote ./migrations/ptah.sum
 
 The adopted database already has this schema, so the initial migration must never run against it. `ptah migrations baseline` writes revision-table rows only — it does not execute migration SQL on the target. Preview the rows first:
 
-```bash
-ptah migrations baseline \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations \
-  --dry-run
+```console
+ptah migrations baseline --db-url "sqlite://app.db" --migrations-dir ./migrations --dry-run
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 === DRY RUN BASELINE ===
 No metadata rows will be written.
-...
+```
+
+The rest of that preview names the version it would write, which is the
+timestamp `generate` chose:
+
+```text illustration
 Baseline version: <timestamp>
 Rows:
 - version=<timestamp> description="Init"
@@ -240,16 +312,13 @@ Rows:
 
 Then baseline with a disposable [shadow database](../../concepts/database-urls-and-dev-databases/). Ptah replays the baselined migrations on it and verifies they reproduce the target schema before writing any rows:
 
-```bash
-ptah migrations baseline \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations \
-  --shadow-db "sqlite://$PWD/shadow.db"
+```console
+ptah migrations baseline --db-url "sqlite://app.db" --migrations-dir ./migrations --shadow-db "sqlite://shadow.db"
 ```
 
-Expected output ends with:
+The run ends by naming the version it recorded:
 
-```text
+```text illustration
 Baselined 1 migration(s) through version <timestamp> in "schema_migrations"
 ```
 
@@ -262,18 +331,11 @@ reproduces the adopted schema.
 
 ## 5. Verify the adoption
 
-```bash
-ptah migrations status \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations
-
-ptah migrations up \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations \
-  --verify-sum
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations
 ```
 
-Expected output includes:
+Expected output on standard output:
 
 ```text
 Total Migrations: 1
@@ -281,6 +343,12 @@ Applied Migrations: 1
 Pending Migrations: 0
 Status: ✅ Database is up to date
 ```
+
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --verify-sum
+```
+
+Expected output on standard output:
 
 ```text
 ✅ Database is already up to date!
@@ -299,7 +367,7 @@ nullable `note` column to the `orders` declaration in the selected source:
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
 
-```sql
+```sql illustration
 note TEXT
 ```
 
@@ -319,7 +387,7 @@ column "note" {
 </TabItem>
 <TabItem label="DBML">
 
-```text
+```text illustration
 note text
 ```
 
@@ -338,41 +406,55 @@ Place the field on the annotated `Order` struct.
 </TabItem>
 </Tabs>
 
+For the SQL path, `schema.sql` now reads in full:
+
+```sql
+CREATE TABLE customers (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE orders (
+    id          INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL,
+    total       INTEGER NOT NULL,
+    note        TEXT
+);
+```
+
 Generate the delta from the same source you adopted:
 
 <Tabs syncKey="schema-source">
 <TabItem label="SQL">
 
-```bash
-ptah migrations generate --schema-file schema.sql \
-  --db-url "sqlite://$PWD/app.db" --migrations-dir ./migrations \
-  --name add_order_note
+```console
+ptah migrations generate --schema-file schema.sql --db-url "sqlite://app.db" --migrations-dir ./migrations --name add_order_note
 ```
 
 </TabItem>
 <TabItem label="HCL">
 
-```bash
+```bash illustration
 ptah migrations generate --schema-file schema.hcl \
-  --db-url "sqlite://$PWD/app.db" --migrations-dir ./migrations \
+  --db-url "sqlite://app.db" --migrations-dir ./migrations \
   --name add_order_note
 ```
 
 </TabItem>
 <TabItem label="DBML">
 
-```bash
+```bash illustration
 ptah migrations generate --schema-file schema.dbml \
-  --db-url "sqlite://$PWD/app.db" --migrations-dir ./migrations \
+  --db-url "sqlite://app.db" --migrations-dir ./migrations \
   --name add_order_note
 ```
 
 </TabItem>
 <TabItem label="Go annotations">
 
-```bash
+```bash illustration
 ptah migrations generate --root-dir ./models \
-  --db-url "sqlite://$PWD/app.db" --migrations-dir ./migrations \
+  --db-url "sqlite://app.db" --migrations-dir ./migrations \
   --name add_order_note
 ```
 
@@ -381,41 +463,59 @@ ptah migrations generate --root-dir ./models \
 
 The generated up file contains:
 
-```sql
+```sql illustration
 ALTER TABLE "orders" ADD COLUMN "note" TEXT;
 ```
 
 Seal and apply the new pair:
 
-```bash
+```console
 ptah migrations hash --dir ./migrations
-ptah migrations up \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations \
-  --verify-sum
-ptah migrations status \
-  --db-url "sqlite://$PWD/app.db" \
-  --migrations-dir ./migrations
 ```
 
-Expected status includes `Pending Migrations: 0`. Rerun the matching drift
-command from step 2; it prints `No schema drift detected.` The adopted source,
-migration history, and live database now agree after a real follow-up change.
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --verify-sum
+```
+
+```console
+ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Pending Migrations: 0
+```
+
+Rerun the drift check from step 2:
+
+```console
+ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"
+```
+
+Expected output on standard output:
+
+```text
+No schema drift detected.
+```
+
+The adopted source, migration history, and live database now agree after a real
+follow-up change.
 
 ## Keep history from another tool
 
 `ptah migrations import` converts a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format. The source tool is auto-detected; `--from` overrides the detection. Preview first:
 
-```bash
+```bash illustration
 ptah migrations import \
   --source-dir ./legacy \
   --migrations-dir ./migrations \
   --dry-run
 ```
 
-Expected output includes:
+That prints, for a directory holding two golang-migrate pairs:
 
-```text
+```text illustration
 Dry run: would write 4 migration file(s) to ./migrations
   0000000001_init.up.sql
   0000000001_init.down.sql
@@ -425,7 +525,7 @@ Dry run: would write 4 migration file(s) to ./migrations
 
 Rerun without `--dry-run` to write the files:
 
-```text
+```text illustration
 Wrote 4 migration file(s) to ./migrations
 Wrote ./migrations/ptah.sum
 ```

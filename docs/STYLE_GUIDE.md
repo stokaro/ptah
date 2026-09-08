@@ -497,7 +497,10 @@ once on its concept page and link; do not re-define them per page.
 - Do not publish identical Bash and PowerShell tabs. Use one `console` block
   for a command that has the same bytes and semantics in both shells.
   `check:editorial-shape` fails byte-equivalent tab panels after whitespace
-  normalization.
+  normalization. A `console` block may sit inside a tab whose panels are not
+  shells — four representations of one schema, say — because such a panel makes
+  no claim about which shell runs it. Inside a panel labeled for one shell it is
+  refused, since the two statements contradict each other.
 - Placeholders are environment-variable style (`"$DATABASE_URL"`). Never real
   credentials, hosts, or tokens.
 - Prefer SQLite for examples that must run without a daemon.

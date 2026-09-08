@@ -918,6 +918,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 15,
+          "expectations": 18
+        },
+        {
+          "shell": "powershell",
+          "steps": 15,
+          "expectations": 18
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/start/quick-start-direct.mdx",
       "shells": [
         {
