@@ -1050,6 +1050,21 @@ func FromIndex(index schemamodel.Index) *ast.IndexNode {
 		tableName = index.StructName
 	}
 
+	return indexNodeOn(index, tableName)
+}
+
+// indexNodeOn is the one place a schemamodel.Index becomes an ast.IndexNode.
+//
+// The exported converters differ in how they resolve the table name and in
+// nothing else, so the copying lives here rather than in each of them. It was
+// written twice before, and the second copy is where a declaration goes to be
+// forgotten: Concurrently reached neither, and the render path built a locking
+// index for a schema that asked for a concurrent one (stokaro/ptah#3042).
+//
+// A field added to schemamodel.Index belongs in this function, and
+// TestIndexConverters_CarryTheSameDeclaration requires both entry points to
+// agree about every one that is here.
+func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
 	if len(index.Parts) > 0 {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
@@ -1085,6 +1100,15 @@ func FromIndex(index schemamodel.Index) *ast.IndexNode {
 	if index.Operator != "" {
 		indexNode.Operator = index.Operator
 	}
+
+	// A concurrent build is the difference between a migration and an outage on
+	// a table large enough for the request to be worth making, so it travels
+	// with the declaration rather than being decided here. The PostgreSQL
+	// renderer emits CONCURRENTLY where the target has the capability and
+	// records the loss where it does not; internal/txrequire reads the same
+	// field to route the statement out of a transaction block, which is what a
+	// concurrent build cannot run inside.
+	indexNode.Concurrently = index.Concurrently
 
 	// Granularity is ClickHouse-only; non-ClickHouse renderers ignore it.
 	// Zero propagates unchanged and signals "use renderer default".
@@ -2312,49 +2336,7 @@ func FromIndexWithTableMapping(index schemamodel.Index, structToTableMap map[str
 		}
 	}
 
-	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
-	if len(index.Parts) > 0 {
-		indexNode.SetParts(toASTIndexParts(index.Parts))
-	}
-	indexNode.IncludeColumns = index.IncludeColumns
-	indexNode.NullsDistinct = cloneBoolPtr(index.NullsDistinct)
-	indexNode.StorageParams = maps.Clone(index.StorageParams)
-
-	// Set unique constraint
-	if index.Unique {
-		indexNode.Unique = true
-	}
-
-	// Set comment
-	if index.Comment != "" {
-		indexNode.Comment = index.Comment
-	}
-
-	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
-	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
-	if index.Type != "" {
-		indexNode.Type = index.Type
-	}
-
-	if index.Parser != "" {
-		indexNode.Parser = index.Parser
-	}
-
-	if index.Condition != "" {
-		indexNode.Condition = index.Condition
-	}
-
-	if index.Operator != "" {
-		indexNode.Operator = index.Operator
-	}
-
-	// Granularity is ClickHouse-only; non-ClickHouse renderers ignore it.
-	indexNode.Granularity = index.Granularity
-
-	// Set IF NOT EXISTS for idempotent migrations
-	indexNode.IfNotExists = true
-
-	return indexNode
+	return indexNodeOn(index, tableName)
 }
 
 func cloneBoolPtr(value *bool) *bool {

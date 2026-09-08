@@ -392,6 +392,16 @@ const (
 	// one. The declaration decides which rows the database accepts, so losing
 	// it is the index-level twin of losing a column's UNIQUE.
 	UniqueIndexProperty = "unique index"
+	// ConcurrentBuildProperty is an index the target builds while holding a
+	// write lock on the table, where the declaration asked for a concurrent
+	// build. On a table large enough for the request to be worth making, that
+	// is the difference between a migration and an outage, and the statement
+	// reads as ordinary either way.
+	// The drop side has no constant here on purpose. DROP INDEX takes the same
+	// lock and a target can decline CONCURRENTLY there too, but a sink is
+	// attached on the create path alone, so a record written for a drop would
+	// be handling that can never fire.
+	ConcurrentBuildProperty = "concurrent index build"
 )
 
 // RecordLostStorageParams records every index storage parameter a target drops.
@@ -417,6 +427,15 @@ func (s *Sink) RecordLostStorageParams(index string, params map[string]string) {
 // file and the database enforces nothing, which is the same outcome as silence.
 func (s *Sink) RecordLostUniqueIndex(index string) {
 	s.Record(PropertyOmission(IndexKind, index, UniqueIndexProperty, ""))
+}
+
+// RecordLostConcurrentBuild records an index the target builds under a lock,
+// where the declaration asked for a concurrent build.
+//
+// The rendered statement is a valid CREATE INDEX either way, which is what
+// makes the loss worth a record: nothing in the file says the lock is coming.
+func (s *Sink) RecordLostConcurrentBuild(index string) {
+	s.Record(PropertyOmission(IndexKind, index, ConcurrentBuildProperty, ""))
 }
 
 // Kinds an omission names beside [TableKind], [ColumnKind] and [IndexKind].

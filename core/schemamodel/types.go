@@ -411,6 +411,15 @@ type Index struct {
 	// worth making, that is the difference between a migration and an outage
 	// (stokaro/ptah#1663). It is the same loss the Granularity comment in
 	// internal/sqlschema records for ClickHouse.
+	//
+	// Three readers act on it, and the render path was the last to arrive
+	// (stokaro/ptah#3042). internal/planner/dialects/postgres plans the build,
+	// internal/modelast carries it onto the AST so the PostgreSQL renderer can
+	// emit the keyword, and internal/txrequire reads that node to route the
+	// statement out of a transaction block -- which is what a concurrent build
+	// cannot run inside. A target in this family without the capability, such
+	// as CockroachDB or Spanner, records the loss rather than building under a
+	// lock without saying so.
 	Concurrently bool
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
