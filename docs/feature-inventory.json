@@ -933,6 +933,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/versioned/apply.md",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 7,
+          "expectations": 10
+        },
+        {
+          "shell": "powershell",
+          "steps": 7,
+          "expectations": 10
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/versioned/generate.mdx",
       "shells": [
         {
