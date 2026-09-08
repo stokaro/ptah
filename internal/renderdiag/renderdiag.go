@@ -502,7 +502,7 @@ func (s *Sink) RecordLostRefresh(view string, spec *ast.MatViewRefreshSpec) {
 // A table declaring none records nothing.
 //
 // The spec is described here rather than by each renderer. Five targets drop
-// it, and five descriptions of the same declaration are five things to keep in
+// it, and five descriptions of the same declaration are five sentences to keep in
 // step; taking the node is what makes the sentence one.
 func (s *Sink) RecordLostPartition(table string, spec *ast.PartitionSpec) {
 	if s == nil || spec == nil {

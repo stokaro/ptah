@@ -198,7 +198,7 @@ func clickhouseCells(dialect string) dmlMatrixRow {
 // sqlServerCells is the pinned rendering for SQL Server: bracket identifier
 // quoting with @pN placeholders, and T-SQL's row-limiting clause.
 //
-// The SELECT carries two things no other row does. `OFFSET 0 ROWS` is
+// The SELECT carries two clauses no other row does. `OFFSET 0 ROWS` is
 // synthesized because T-SQL requires OFFSET before FETCH, and
 // `ORDER BY (SELECT NULL)` because it accepts neither without an ORDER BY --
 // a limited query with no ordering is a syntax error there rather than an

@@ -516,7 +516,7 @@ const runtimeVariableSlowResponse = 2 * time.Second
 // before any deadline elapses, so a test built on one is green whatever the
 // timeout does — including when it is never read.
 //
-// Two things are asserted and one deliberately is not. Resolution fails, and it
+// Two properties are asserted and one deliberately is not. Resolution fails, and it
 // fails naming the source and the operation, which is Ptah's half of the
 // message; and it returns far sooner than the server answers, which is the only
 // observation that distinguishes a deadline that was honored from one that was

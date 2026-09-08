@@ -65,7 +65,7 @@ func constraintNamed(constraints []catalog.Constraint, name string) *catalog.Con
 }
 
 // The SQL-standard catalog answers the same question pg_constraint does, with
-// two things in it that no schema wrote.
+// two entries in it that no schema wrote.
 func TestReadInformationSchemaConstraints(t *testing.T) {
 	tests := []struct {
 		name       string

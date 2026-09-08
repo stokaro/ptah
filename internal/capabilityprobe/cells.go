@@ -137,7 +137,7 @@ type Cell struct {
 	// Emulated says the only container this dialect has is the vendor's
 	// emulator rather than the product itself.
 	//
-	// It exists to keep two things apart that CI would otherwise conflate: a
+	// It exists to keep two claims apart that CI would otherwise conflate: a
 	// line can be worth running on every pull request -- an emulator catches a
 	// preset that drifts from the interface -- and still not be evidence about
 	// the managed service. The two already differ measurably: the reference

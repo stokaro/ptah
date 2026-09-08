@@ -157,7 +157,7 @@ func TestWriteSecurityReport_JSONCarriesEveryFieldTheTableShows(t *testing.T) {
 }
 
 // reportWith builds a report with count findings and the given summary, for the
-// threshold rows above, which read only those two things.
+// threshold rows above, which read only the summary and the count.
 func reportWith(summary schemasecurity.Summary, count int) schemasecurity.Report {
 	findings := make([]schemasecurity.Finding, 0, count)
 	for range count {

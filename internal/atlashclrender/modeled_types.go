@@ -38,8 +38,8 @@ import (
 //
 // A hand-copied table mirroring another tool's registry drifts, and
 // internal/atlashcl/sqlrawexpr.go records why this repository refused to carry
-// one before: "a wrong row in that table breaks drop-in silently". Two things
-// answer that here.
+// one before: "a wrong row in that table breaks drop-in silently". Two
+// properties of this list answer that.
 //
 // The first is that the failure is asymmetric, so a list that is too SHORT is
 // safe and a list that is too LONG is not: wrapping a type that did not need it

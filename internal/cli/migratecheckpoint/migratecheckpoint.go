@@ -282,7 +282,7 @@ func warnUnlockableShadowDialect(cmd *cobra.Command, opts *options) {
 // checkEditPreconditions refuses an --edit run that could not finish, before
 // any database work happens.
 //
-// Two things can make an editor session impossible, and both are silent
+// Two conditions can make an editor session impossible, and both are silent
 // failures if left to the editor itself: no editor is configured (the run would
 // write a checkpoint and then stop), and no terminal is attached (an
 // interactive editor started without one blocks forever, which in CI is

@@ -1,7 +1,7 @@
 // Package exeext carries the one fact that differs between operating systems
 // about what an executable file is called.
 //
-// Two things need it and must not disagree. A test that builds a helper binary
+// Two callers need it and must not disagree. A test that builds a helper binary
 // has to write the name the platform will run -- `go build -o dir/tool` on
 // Windows produces a file exec refuses, reported as `executable file not found
 // in %PATH%` for a program given by absolute path. And a command that derives

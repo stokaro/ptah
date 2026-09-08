@@ -8,7 +8,7 @@
 // was `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` and nothing else. The layout
 // existed as a shape and not as an object Ptah made.
 //
-// Two things follow that this file measures rather than assumes. Creating the
+// Two consequences follow, and this file measures them rather than assuming them. Creating the
 // relation is not enough on its own: Ptah creates it EMPTY and the write path
 // was an UPDATE, so a backfill against a relation of Ptah's own would have
 // matched no rows and reported success having written nothing. And a relation
@@ -103,8 +103,8 @@ func TestInferencePreparesBackfillsAndRetiresATableItCreatedE2E(t *testing.T) {
 // TestInferenceRefusesARelationItDidNotCreateE2E is the refusal that keeps the
 // layout from being a way to hand Ptah an application's table.
 //
-// Adopting it would do two things at once: overwrite whatever the application's
-// own comment said, and authorize the retirement that follows to DROP the
+// Adopting it would overwrite whatever the application's own comment said, and
+// would authorize the retirement that follows to DROP the
 // relation with every row the application keeps in it.
 func TestInferenceRefusesARelationItDidNotCreateE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)

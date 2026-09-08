@@ -47,7 +47,7 @@ func walkRoutineStatements(statements []ast.PostgresRoutineStatement, routine, k
 	return writes, unresolved
 }
 
-// classifyRoutineStatement answers one of three things about a statement: the
+// classifyRoutineStatement gives one of three answers about a statement: the
 // writes it performs, that it cannot write, or that this analysis cannot tell.
 //
 // The third is the one that has to stay reachable. An EXECUTE composes SQL at
@@ -127,7 +127,7 @@ func classifyRawStatement(sql, routine, kind string) (writes []RoutineWrite, unr
 // isAssignment reports whether a statement assigns to a variable or a record
 // field, which touches no table.
 //
-// Two things make this less obvious than it looks. The lexer is the SQL one,
+// Two details make this less obvious than it looks. The lexer is the SQL one,
 // where `:=` is two operator tokens rather than one: SQL has no assignment, and
 // this body is the PL/pgSQL sub-language borrowing that tokenizer. And the
 // target is often qualified -- `NEW.email := lower(NEW.email)` is what a

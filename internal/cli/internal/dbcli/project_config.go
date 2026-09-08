@@ -390,7 +390,7 @@ func externalSchemaCommandsFromConfig(
 		// looks like the one that should keep one: it names the working
 		// directory of a program Ptah EXECUTES.
 		//
-		// Two things say otherwise. The control on this surface is the opt-in
+		// Two arguments say otherwise. The control on this surface is the opt-in
 		// flag above -- once an operator has authorized running an arbitrary
 		// program, restricting which directory it starts in prevents nothing
 		// the program cannot undo with one chdir. And by the time the value

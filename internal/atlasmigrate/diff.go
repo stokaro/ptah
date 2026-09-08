@@ -67,7 +67,7 @@ type DiffOptions struct {
 	// Atlas layout, which is what every caller outside the Atlas-compatible
 	// `migrate diff` wants.
 	//
-	// A foreign layout changes four things and only four: the existing
+	// A foreign layout changes four steps and only four: the existing
 	// directory is converted before it is replayed, the next version is chosen
 	// from that converted view, the files are named and composed in that
 	// layout, and atlas.sum is computed over that layout's covered set.

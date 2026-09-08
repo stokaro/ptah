@@ -8,7 +8,7 @@
 // with the others. They agreed on a fold no target uses: `strings.ToLower`
 // applied to the components joined with a dot.
 //
-// Two things were wrong with that, and they fail differently:
+// That was wrong in two ways, and they fail differently:
 //
 //   - The fold was hard-coded rather than the target's. PostgreSQL reports `t`
 //     and `T` as two tables and each may carry a constraint of the same name,

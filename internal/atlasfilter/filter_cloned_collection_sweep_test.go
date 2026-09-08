@@ -198,7 +198,7 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
-			// An ownership row names two things a selector can reach: the role
+			// An ownership row names both ends a selector can reach: the role
 			// that owns and the object owned. This row names the object, and
 			// the owner is a name no other row uses.
 			field: "ObjectOwners", present: "owned_table", absent: "nosuch_owned_object",

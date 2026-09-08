@@ -208,7 +208,7 @@ type Provider interface {
 // ErrorKind classifies a provider failure into the categories a caller acts on
 // differently.
 //
-// The categories are chosen so a person reading a message can tell four things
+// The categories are chosen so a person reading a message can tell four failures
 // apart that otherwise all read as "it did not work": their key is wrong, their
 // model name is wrong, the provider is busy, and the model produced something
 // unusable. #1488 asks for exactly that distinction, and names the failure to

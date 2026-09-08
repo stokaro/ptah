@@ -18,7 +18,7 @@ import (
 )
 
 // exitStatusOf reports the process exit code a run finished with. The exit code
-// is one of the five things #1074 asks to align, so it is read as a number
+// is one of the five outputs #1074 asks to align, so it is read as a number
 // rather than matched as the text of an error -- a nil error and an error that
 // is not an exit status are different outcomes, and only one of them means the
 // process exited 0.

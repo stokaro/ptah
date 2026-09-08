@@ -26,8 +26,8 @@ import (
 //
 // This drives the whole read rather than the query, because the direction has
 // to survive the part assembly and the pass that drops a parts list saying
-// nothing the column names do not -- a descending part is one of the two things
-// that keep it, and a unit test over the query alone would not see that pass.
+// nothing the column names do not -- a descending part is one of the two reasons
+// it is kept, and a unit test over the query alone would not see that pass.
 //
 // The ascending index is not decoration. An assertion that only looked at the
 // descending one would pass just as well against a reader that marked every

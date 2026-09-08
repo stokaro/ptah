@@ -427,7 +427,7 @@ func (r *renderer) referencedSchemas() []string {
 // held aside, then the header and the schema blocks that body turned out to
 // reference are written, then the body goes back on the end.
 //
-// Two things force that. Every schema a reference names has to be declared
+// Two constraints force that. Every schema a reference names has to be declared
 // somewhere in the file, and Ptah writes the declarations at the top -- so the
 // only way to declare exactly the set the body references is to have rendered
 // the body before writing them.

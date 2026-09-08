@@ -110,7 +110,7 @@ func Names(categories []Category) []string {
 // another list -- naming the removals a UNIQUE constraint backs, or the columns
 // a foreign-key drop must be ordered by -- so every object it holds is already
 // printed under the list it qualifies, and printing it again tells an operator
-// that two things changed where one did. It stays on the wire, where a machine
+// that two changes happened where one did. It stays on the wire, where a machine
 // needs the qualifier; see [difftypes.SupplementLists].
 //
 // It is exported because the guard that asserts every category reaches a report

@@ -24,7 +24,7 @@ import (
 // interrupted state, replace the directory underneath the bound writer, and
 // then call recovery directly.
 //
-// Both rows assert the same two things, because either one alone can be
+// Both rows assert the same pair, because either one alone can be
 // satisfied by the wrong code: recovery repaired the directory it opened, AND
 // it left the replacement completely untouched. A recovery that follows the
 // pathname satisfies neither -- it withdraws the decoy's copy and leaves the

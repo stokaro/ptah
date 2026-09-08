@@ -39,7 +39,7 @@ const referenceDevURL = "sqlite://file?mode=memory"
 // unmodeled name is re-measured against the pinned community binary here,
 // rather than frozen in a comment nothing can invalidate.
 //
-// Each case asserts three things, and the second is the one that carries the
+// Each case asserts three properties, and the second is the one that carries the
 // weight: the reference exits 0, the DDL it emits is byte-identical to the DDL of
 // the same schema with the construct deleted (so the name was dropped and not
 // implemented), and Ptah's tolerant parse produces exactly the IR of that same

@@ -301,7 +301,7 @@ func WithdrawEnvValue(flags *pflag.FlagSet, name string) error {
 // are environment-bound, where the reader behind the group prefers one member
 // over another.
 //
-// Two things happen, and doing only the first is how a loud refusal becomes a
+// Two steps happen, and doing only the first is how a loud refusal becomes a
 // silent wrong answer:
 //
 //   - more than one member typed on the command line is refused, in cobra's own

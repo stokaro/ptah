@@ -21,7 +21,7 @@ const (
 // the server would have refused.
 //
 // The intervals are canonicalized ([CanonicalInterval]) and the dependencies
-// are qualified with schema, because those are the two things the server
+// are qualified with schema, because those are the two values the server
 // rewrites: a comparison against what it stored has to start from the same
 // place or a synchronized view reads as drifted forever.
 func Canonical(spec *ast.MatViewRefreshSpec, schema string) (*ast.MatViewRefreshSpec, error) {

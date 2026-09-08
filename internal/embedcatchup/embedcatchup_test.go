@@ -196,7 +196,7 @@ func TestAssess_DualWriteIsAlwaysPartialEvenWhenItPasses(t *testing.T) {
 	})
 }
 
-// TestAssess_DualWriteRefusesTheEvidenceItDoesNotHave walks the six things the
+// TestAssess_DualWriteRefusesTheEvidenceItDoesNotHave walks the six properties the
 // epic says a dual-write contract must define.
 func TestAssess_DualWriteRefusesTheEvidenceItDoesNotHave(t *testing.T) {
 	tests := []struct {

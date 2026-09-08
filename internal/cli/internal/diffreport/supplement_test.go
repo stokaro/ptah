@@ -11,7 +11,7 @@ import (
 
 // TestCategoriesOmitsASupplementList is stokaro/ptah#2476: a list that
 // qualifies another list was reported as a change category of its own, so an
-// operator was told two things had changed where one had.
+// operator was told two changes had happened where one had.
 func TestCategoriesOmitsASupplementList(t *testing.T) {
 	t.Run("constraint-backed index removal", func(t *testing.T) {
 		c := qt.New(t)

@@ -21,7 +21,7 @@ var embeddedFixtures embed.FS
 // testFixtures is the fixture tree in the shape the harness reads: an FS rooted
 // where a version directory is `fixtures/entities/<version>`.
 //
-// The two roots exist because two things supply the tree. `go:embed` cannot
+// The two roots exist because two sources supply the tree. `go:embed` cannot
 // name a path outside its own package directory, so the directive has to spell
 // the internal one and the extra segment is trimmed back here; the Docker suite
 // mounts the same directory at /app/fixtures and hands the harness an FS rooted

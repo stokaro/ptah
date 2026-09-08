@@ -25,7 +25,7 @@ func deriveMySQLWrites(routine schemamodel.Function, kind string) (writes []Rout
 	return writes, unresolved
 }
 
-// classifyMySQLStatement answers one of three things about a statement: the
+// classifyMySQLStatement gives one of three answers about a statement: the
 // writes it performs, that it cannot write, or that this analysis cannot tell.
 func classifyMySQLStatement(statement ast.MySQLRoutineStatement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
 	switch statement.Kind {

@@ -324,7 +324,7 @@ func BuildCutoverPlan(
 			SourceRows:           report.SourceRows,
 		},
 		// When the EVIDENCE was last established, not when this process
-		// started. Two things follow, and both are the point.
+		// started. Two consequences follow, and both are the point.
 		//
 		// The digest is stable across invocations, so the operator who runs
 		// this to see the plan and runs it again with an approval is approving

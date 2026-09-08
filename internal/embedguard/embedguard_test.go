@@ -21,7 +21,7 @@ const moduleRoot = "../.."
 // behavior that is not in effect looks exactly like coverage of behavior that
 // is.
 //
-// A finding here means one of two things, and the second is the common one: the
+// A finding here has one of two causes, and the second is the common one: the
 // declaration is dead and should go, or the behavior it describes is missing
 // and something should call it. Neither is a reason to add it to Exempt without
 // saying which.

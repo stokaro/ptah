@@ -95,7 +95,7 @@ func TestEmbedPGCompositeKeyE2E(t *testing.T) {
 	assertTheScanQuotesFiltersAndOrders(c, ctx, db)
 }
 
-// assertTheScanQuotesFiltersAndOrders covers the three things the well-behaved
+// assertTheScanQuotesFiltersAndOrders covers the three properties the well-behaved
 // fixture above cannot say anything about.
 //
 // The notes table has a primary key starting with `tenant`, so PostgreSQL

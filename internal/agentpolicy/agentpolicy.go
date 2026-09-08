@@ -328,7 +328,7 @@ var capabilityScope = map[Capability]scopeKind{
 //
 // The order is the declaration order above rather than alphabetical, so a
 // rendered policy reads as Ptah's own documentation, then project, schema,
-// database, artifact, and the four things this surface refuses to be.
+// database, artifact, and the four capabilities this surface refuses.
 func Capabilities() []Capability {
 	return []Capability{
 		DocsRead,

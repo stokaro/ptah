@@ -287,7 +287,7 @@ func TableDropOrder(tableNames []string, schema *schemamodel.Database) []string 
 }
 
 // TableDropOrderWithDependencies is [TableDropOrder] for a caller holding the
-// two things it reads rather than the whole schema.
+// two inputs it reads rather than the whole schema.
 //
 // A planner is that caller: the diff carries the table list and the dependency
 // graph, and handing the pieces over is what lets it order its drops without

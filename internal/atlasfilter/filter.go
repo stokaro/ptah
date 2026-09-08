@@ -809,7 +809,7 @@ func (s *exclusionState) childNameCandidates(schema, table, child string) []stri
 // filterSchemas subtracts the schemas an exclude selector names.
 //
 // Schemas were the last collection this package cloned and never offered to
-// the patterns. That made two things wrong at once. A selector naming a real
+// the patterns. That made two answers wrong at once. A selector naming a real
 // schema was reported as having matched nothing, so `schema apply` refused a
 // selection that in fact named an object the description renders -- the very
 // failure the unmatched report exists to prevent. And it was destructive:
@@ -1203,7 +1203,7 @@ func (s *exclusionState) filterRoles(roles []catalog.Role) []catalog.Role {
 // filterObjectOwners drops an ownership row whose owner or whose object is
 // excluded.
 //
-// An ownership row names two things a selector can reach: the role that owns
+// An ownership row names both ends a selector can reach: the role that owns
 // and the object owned. Keeping a row for an excluded object would say who owns
 // something this description no longer contains (stokaro/ptah#1950).
 func (s *exclusionState) filterObjectOwners(
