@@ -297,6 +297,13 @@ at the root itself and address the site as a whole:
 | `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
 | `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
 
+That default is `edge` while Ptah is pre-GA. A release is a snapshot of what
+shipped; edge is what master documents, and before v1 the difference between
+them is most of the product. Every release keeps its own stable URL and the
+picker lists them all, so a reader who wants the version they installed is one
+selection away. `computeDefault` falls back to the newest tag where a
+deployment carries no edge folder at all.
+
 The installers have to answer at the root because the commands published
 before the site had its own address carry no version, and the retired host's
 redirect lands here: `https://docs.ptah.run/install.sh` and
