@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 85,
+  "claimed": 93,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -373,7 +373,7 @@
       "id": "cli-ptah-oci-capabilities",
       "kind": "native-verb",
       "surface": "ptah oci capabilities",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-copy",
@@ -385,25 +385,25 @@
       "id": "cli-ptah-oci-fetch",
       "kind": "native-verb",
       "surface": "ptah oci fetch",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-inspect",
       "kind": "native-verb",
       "surface": "ptah oci inspect",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-login",
       "kind": "native-verb",
       "surface": "ptah oci login",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-logout",
       "kind": "native-verb",
       "surface": "ptah oci logout",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-referrers",
@@ -415,13 +415,13 @@
       "id": "cli-ptah-oci-reindex",
       "kind": "native-verb",
       "surface": "ptah oci reindex",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-resolve",
       "kind": "native-verb",
       "surface": "ptah oci resolve",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-tag",
@@ -433,7 +433,7 @@
       "id": "cli-ptah-oci-tags",
       "kind": "native-verb",
       "surface": "ptah oci tags",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-verify",

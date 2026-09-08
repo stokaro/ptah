@@ -46,8 +46,8 @@ several it refuses and prints them, so a pipeline that would have silently
 taken "the latest" fails while its author is watching instead. Narrow with
 --` + typeFlag + `, or name one exactly with --` + digestFlag + `:
 
-    ptah oci fetch ghcr.io/acme/db:latest --` + typeFlag + ` deployment
-    ptah oci fetch ghcr.io/acme/db:latest --` + digestFlag + ` sha256:...
+    ptah oci fetch oci://ghcr.io/acme/db:latest --` + typeFlag + ` deployment
+    ptah oci fetch oci://ghcr.io/acme/db:latest --` + digestFlag + ` sha256:...
 
 The same rule applies to the files inside the chosen referrer: one file is
 written, several require --` + fileFlag + `.`,

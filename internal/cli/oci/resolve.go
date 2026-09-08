@@ -38,7 +38,7 @@ func newResolveCommand() *cobra.Command {
 The text output is the pinned reference alone, so a CI step can capture it and
 pass it to the verbs that consume an artifact:
 
-    DIGEST=$(ptah oci resolve ghcr.io/acme/db:latest)
+    DIGEST=$(ptah oci resolve oci://ghcr.io/acme/db:latest)
     ptah migrations up --from "$DIGEST"
 
 Pinning is what makes the two steps describe the same artifact. A tag moved

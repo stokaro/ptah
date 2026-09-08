@@ -26,8 +26,8 @@ artifact that arrives in production is then an equal one rather than the same
 one. This moves the alias instead: the manifest digest is unchanged by
 construction, because nothing is built and nothing is uploaded.
 
-    ptah oci tag ghcr.io/acme/db@sha256:... staging
-    ptah oci tag ghcr.io/acme/db:staging production
+    ptah oci tag oci://ghcr.io/acme/db@sha256:... staging
+    ptah oci tag oci://ghcr.io/acme/db:staging production
 
 Aliases move one at a time. If a later one fails, the ones already applied are
 reported by name, because an operator told only that it failed still has to go

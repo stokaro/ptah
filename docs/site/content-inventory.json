@@ -3442,7 +3442,15 @@
       "owns": [
         "cli-ptah-migrations-pull",
         "cli-ptah-migrations-push",
+        "cli-ptah-oci-capabilities",
+        "cli-ptah-oci-fetch",
+        "cli-ptah-oci-inspect",
+        "cli-ptah-oci-login",
+        "cli-ptah-oci-logout",
         "cli-ptah-oci-referrers",
+        "cli-ptah-oci-reindex",
+        "cli-ptah-oci-resolve",
+        "cli-ptah-oci-tags",
         "cli-ptah-schema-pull",
         "cli-ptah-schema-push"
       ],
@@ -3479,8 +3487,8 @@
         "/versioned/lint/",
         "/versioned/maintain-history/"
       ],
-      "visibleWords": 2521,
-      "sourceBytes": 21765
+      "visibleWords": 3027,
+      "sourceBytes": 25265
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
