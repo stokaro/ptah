@@ -19,7 +19,15 @@ sourceMode: oci-artifact-only
 owns:
   - cli-ptah-migrations-pull
   - cli-ptah-migrations-push
+  - cli-ptah-oci-capabilities
+  - cli-ptah-oci-fetch
+  - cli-ptah-oci-inspect
+  - cli-ptah-oci-login
+  - cli-ptah-oci-logout
   - cli-ptah-oci-referrers
+  - cli-ptah-oci-reindex
+  - cli-ptah-oci-resolve
+  - cli-ptah-oci-tags
   - cli-ptah-schema-pull
   - cli-ptah-schema-push
 ---
@@ -81,6 +89,24 @@ docker login ghcr.io
 Ptah honors `DOCKER_CONFIG`, Docker's default `config.json`, `credsStore`, and
 per-registry `credHelpers`. Do not include credentials in the `oci://`
 reference.
+
+Ptah also keeps a store of its own, for a machine with no Docker installed:
+
+```bash
+ptah oci login ghcr.io
+ptah oci logout ghcr.io
+```
+
+The credential is checked against the registry before anything is written, so a
+typo fails there rather than at the next push. The password is never taken from
+the command line — it is read from the terminal, or from standard input when
+one is piped in. A platform credential helper is used where one exists;
+otherwise the credential goes to a Docker-format file under `~/.ptah`, and the
+command says which of the two happened.
+
+`ptah oci logout` removes what Ptah stored and nothing else. A credential
+`docker login` placed is left alone, because taking it away would log you out
+of something you did not ask about.
 
 HTTPS is the default. `--plain-http` disables transport encryption and is only
 for an explicitly trusted local registry used for development or tests. Do not
@@ -342,12 +368,73 @@ type, and size; JSON output also contains annotations when present.
 [Native commands](../../reference/native-commands/). It writes the published
 bytes and does not interpret them.
 
+A registry that gained the referrers index after Ptah published through its
+durable tag holds attachments no other OCI client can find, and nothing about
+the artifact says so. `ptah oci reindex` repairs that by republishing the
+manifest: the content is byte-identical, so the digest does not move, and a
+registry serving the index builds the entry when it receives a manifest
+carrying a subject. The pass ends by asking the registry again, because one
+that accepted the manifest and built no entry looks exactly like one that did
+until somebody checks — anything still missing is reported as unrepaired rather
+than counted as fixed.
+
 The subject follows the ordinary reference rules. An unqualified subject
 resolves to `:latest`, a tag resolves to its current manifest, and a digest
 selects an immutable subject. Use a digest to inspect attachments for the exact
 artifact used by a deployment or analysis run. The command uses Docker
 credentials and HTTPS by default; `--plain-http` is only for an explicitly
 trusted local registry.
+
+## Read a repository before you consume it
+
+Four questions come up before an artifact is applied, and each has a verb.
+
+**Which aliases exist?** `ptah oci tags` lists them. The aliases are what a
+promotion moves and what a pin replaces, so this is the view that says which of
+them a repository currently carries.
+
+```bash
+ptah oci tags oci://ghcr.io/acme/db
+```
+
+**Which artifact does this alias name today?** `ptah oci resolve` answers with
+the pinned reference alone, so a step can capture it:
+
+```bash
+DIGEST=$(ptah oci resolve oci://ghcr.io/acme/db:latest)
+ptah migrations up --from "$DIGEST"
+```
+
+Pinning is what makes the two commands describe the same artifact. A tag moved
+between them would otherwise change what runs without changing the pipeline.
+
+**What does the artifact declare?** `ptah oci inspect` reads the manifest and
+stops there — the descriptor, the artifact type, the subject when the artifact
+is itself a referrer, the annotations, and each layer's name, media type, size
+and digest. Nothing is downloaded.
+
+```bash
+ptah oci inspect "$DIGEST"
+```
+
+It reports referrer discovery too, and the source column is the part worth
+reading. Ptah writes both the standard referrers index and its own
+content-derived durable tag; a referrer listed as `durable-tag` came back from
+the second mechanism only, which means Ptah finds it and another OCI client may
+not. `--no-referrers` skips that lookup.
+
+**Will another client find what Ptah published?** `ptah oci capabilities` asks
+the registry rather than inferring it:
+
+```bash
+ptah oci capabilities oci://ghcr.io/acme/db
+```
+
+The question is put with the client pinned to the referrers API, so it cannot
+quietly fall back to the tag schema and report a success that came from
+somewhere else. A refusal naming the API as unsupported is the registry saying
+no; anything else is a failure to ask, and is reported as an error rather than
+as a no.
 
 ## Publish a desired schema
 
