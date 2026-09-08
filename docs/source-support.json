@@ -816,7 +816,7 @@
       "evidence": [
         "internal/cli/schema/diff_test.go"
       ],
-      "limitations": "",
+      "limitations": "--from and --to refuse an oci:// URL; they accept local schema files, migration directories, database URLs, and env:// references.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -933,7 +933,7 @@
       "evidence": [
         "internal/cli/schema/plan_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --schema-cmd.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -946,7 +946,7 @@
       "evidence": [
         "internal/cli/schema/plan_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --allow-external-schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -1076,7 +1076,7 @@
       "evidence": [
         "internal/cli/schema/apply_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --schema-cmd.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -1089,7 +1089,7 @@
       "evidence": [
         "internal/cli/schema/apply_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --allow-external-schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2487,8 +2487,8 @@
     {
       "command": "ptah schema test",
       "source": "composite-source",
-      "status": "unsupported-gap",
-      "invocation": null,
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema test --schema-file tables.sql --schema-file views.sql --dir ./tests",
       "implementationOwner": "internal/cli/schema/test.go",
       "evidence": [
         "internal/cli/schema/test_test.go",
@@ -2572,7 +2572,7 @@
       "evidence": [
         "internal/cli/schema/lineage_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --schema-cmd.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -2585,7 +2585,7 @@
       "evidence": [
         "internal/cli/schema/lineage_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --allow-external-schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2715,7 +2715,7 @@
       "evidence": [
         "internal/cli/schemapush/schemapush_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --schema-cmd.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -2728,7 +2728,7 @@
       "evidence": [
         "internal/cli/schemapush/schemapush_test.go"
       ],
-      "limitations": "",
+      "limitations": "The command registers no --allow-external-schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
