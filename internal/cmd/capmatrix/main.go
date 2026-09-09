@@ -19,11 +19,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +55,7 @@ func newCommand() *cobra.Command {
 		newDockerArgsCommand(), newSuiteEnvCommand(),
 		newSuiteSkipCommand(),
 		newProbeCommand(), newRecordCommand(), newReportCommand(),
+		newStatusCommand(),
 	)
 	return root
 }
@@ -303,6 +306,110 @@ func newRecordCommand() *cobra.Command {
 	cmd.Flags().IntVar(&suiteExit, "suite-exit", 0, "exit code the integration runner returned")
 	cmd.Flags().StringVar(&suiteReports, "suite-report-dir", "", "directory the integration runner wrote its JSON report to")
 	return cmd
+}
+
+// newStatusCommand writes the tracked status file and the per-engine badge
+// documents from one tier's results.
+//
+// It is a sibling of `report` rather than a flag on it because the two have
+// different jobs. `report` decides the run's exit code, so it must run whatever
+// the results look like; `status` publishes what was measured, and a run that
+// measured nothing must not overwrite last night's answer with an empty table.
+func newStatusCommand() *cobra.Command {
+	var (
+		tier     int
+		results  string
+		expected string
+		out      string
+		badgeDir string
+		measured string
+		commit   string
+		runID    string
+		runURL   string
+	)
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Write the tracked capability status file and its badge documents",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cells, err := capmatrix.ReadResults(results)
+			if err != nil {
+				return err
+			}
+			matrix, err := expectedMatrix(expected)
+			if err != nil {
+				return err
+			}
+			aggregate := capmatrix.Aggregate{Tier: tier, Matrix: matrix, Results: cells}
+			provenance := capmatrix.Provenance{
+				Measured: measured, Commit: commit, RunID: runID, RunURL: runURL,
+			}
+			return writeStatus(aggregate, provenance, out, badgeDir)
+		},
+	}
+	cmd.Flags().IntVar(&tier, "tier", 0, "which tier is being reported")
+	cmd.Flags().StringVar(&results, "results", "", "directory holding the per-cell result JSON files")
+	cmd.Flags().StringVar(&expected, "expected", "",
+		"comma-separated cell ids this run asked for; empty means every runnable cell")
+	cmd.Flags().StringVar(&out, "out", "", "path to write the status markdown to")
+	cmd.Flags().StringVar(&badgeDir, "badge-dir", "", "directory to write one shields.io endpoint document per engine to")
+	cmd.Flags().StringVar(&measured, "measured", "", "RFC 3339 time the run started")
+	cmd.Flags().StringVar(&commit, "commit", "", "commit the matrix probed")
+	cmd.Flags().StringVar(&runID, "run-id", "", "Actions run id that produced the results")
+	cmd.Flags().StringVar(&runURL, "run-url", "", "address of that run")
+	return cmd
+}
+
+// writeStatus renders both artifacts, or neither.
+//
+// The badge documents and the table are one measurement, so a partial write is
+// the shape to avoid: a badge refreshed beside a table that was not is exactly
+// the drift that kept the table off the front page.
+func writeStatus(a capmatrix.Aggregate, p capmatrix.Provenance, out, badgeDir string) error {
+	var rendered bytes.Buffer
+	capmatrix.WriteStatus(&rendered, a, p)
+
+	badges := make(map[string][]byte)
+	for _, dialect := range capmatrix.BadgeDialects(a) {
+		encoded, err := capmatrix.MarshalBadge(capmatrix.BadgeFor(a, dialect))
+		if err != nil {
+			return err
+		}
+		badges[filepath.Join(badgeDir, dialect+".json")] = encoded
+	}
+
+	// An unchanged verdict leaves the tracked file alone, stamp and all. The
+	// provenance moves every run, so writing it back would make a pull request
+	// every night for a matrix that said the same thing -- and re-stamping a
+	// verdict with a run that merely re-confirmed it also loses the answer to
+	// "when did this last change".
+	if existing, err := os.ReadFile(out); err == nil {
+		if capmatrix.VerdictOf(string(existing)) == capmatrix.VerdictOf(rendered.String()) {
+			fmt.Fprintf(os.Stderr, "capmatrix status: the verdict is unchanged; %s is left as it is\n", out)
+			return nil
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return fmt.Errorf("create the status directory: %w", err)
+	}
+	if err := os.MkdirAll(badgeDir, 0o755); err != nil {
+		return fmt.Errorf("create the badge directory: %w", err)
+	}
+	// #nosec G306 -- the status file and the badge documents are published
+	// artifacts: a reader opens one in the repository and shields.io fetches
+	// another over HTTP. 0600 would make them unreadable to everything but the
+	// process that wrote them.
+	if err := os.WriteFile(out, rendered.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", out, err)
+	}
+	for path, encoded := range badges {
+		// #nosec G306 -- a badge document is fetched over HTTP; see above.
+		if err := os.WriteFile(path, encoded, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func newReportCommand() *cobra.Command {
