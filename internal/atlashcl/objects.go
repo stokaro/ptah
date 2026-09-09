@@ -971,7 +971,7 @@ func (p *parser) parseSequence(block *hclsyntax.Block) error {
 		MaxValue:    maxValue,
 		Cache:       cache,
 		Cycle:       cycle,
-		OwnedBy:     p.optionalString(block.Body.Attributes["owned_by"]),
+		OwnedBy:     p.sequenceOwnedBy(block.Body.Attributes["owned_by"]),
 		IfNotExists: ifNotExists,
 		Comment:     p.optionalString(block.Body.Attributes["comment"]),
 	}
@@ -1473,4 +1473,28 @@ func (p *parser) rejectUnsupportedContinuousAggregateAttrs(block *hclsyntax.Bloc
 		"materialized_only": true,
 		"comment":           true,
 	}, "continuous_aggregate")
+}
+
+// sequenceOwnedBy reads `owned_by` in either spelling a schema author reaches
+// for: the string `"rooms.id"`, and the reference `table.rooms.column.id` that
+// every other column-naming attribute in this format takes.
+//
+// The reference form went through optionalString, which stringifies a traversal
+// whole. The renderer then split `table.rooms.column.id` on its dots and emitted
+// `OWNED BY "table"."rooms"."column"."id"` -- a four-part name PostgreSQL
+// refuses as an improper qualified name. That is accept-and-corrupt on the axis
+// this parser refuses everywhere else (stokaro/ptah#3121).
+//
+// [parser.tableColumnFromExpr] is the same reader `index.on` and a foreign key's
+// `ref_columns` use, so the spelling this attribute accepts cannot drift from
+// theirs. An expression naming no column falls through to the string form, which
+// keeps `"rooms.id"` and every other literal reading exactly as it did.
+func (p *parser) sequenceOwnedBy(attr *hclsyntax.Attribute) string {
+	if attr == nil {
+		return ""
+	}
+	if table, column := p.tableColumnFromExpr(attr.Expr); table != "" && column != "" {
+		return table + "." + column
+	}
+	return p.optionalString(attr)
 }
