@@ -304,6 +304,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The runner image ships apt sources for repositories nothing here
+      # installs from, and one of them republishing its index makes apt-get
+      # update exit 100 with the Ubuntu archive already fetched. The script
+      # names them and says the rest.
+      - name: Drop the third-party apt sources
+        run: scripts/ci-drop-third-party-apt-lists.sh
+
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -713,6 +720,13 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+
+      # The runner image ships apt sources for repositories nothing here
+      # installs from, and one of them republishing its index makes apt-get
+      # update exit 100 with the Ubuntu archive already fetched. The script
+      # names them and says the rest.
+      - name: Drop the third-party apt sources
+        run: scripts/ci-drop-third-party-apt-lists.sh
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -879,6 +893,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      # The runner image ships apt sources for repositories nothing here
+      # installs from, and one of them republishing its index makes apt-get
+      # update exit 100 with the Ubuntu archive already fetched. The script
+      # names them and says the rest.
+      - name: Drop the third-party apt sources
+        run: scripts/ci-drop-third-party-apt-lists.sh
       - uses: actions/setup-node@v7
         with:
           node-version: '24'

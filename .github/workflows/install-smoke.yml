@@ -86,6 +86,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The runner image ships apt sources for repositories nothing here
+      # installs from, and one of them republishing its index makes apt-get
+      # update exit 100 with the Ubuntu archive already fetched. The script
+      # names them and says the rest.
+      - name: Drop the third-party apt sources
+        run: scripts/ci-drop-third-party-apt-lists.sh
+
       # Linux runners have neither busybox nor a second POSIX shell by default,
       # and macOS runners have neither busybox nor dash. The gate refuses to
       # pass under one shell, so this is what makes its matrix real rather than
