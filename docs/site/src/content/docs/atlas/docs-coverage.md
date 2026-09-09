@@ -499,7 +499,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Ptah documentation.** [OCI registry artifacts](../../operate/oci-registry/), [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Atlas Registry remains out of scope: Ptah has no Atlas Cloud dependency, account model, `atlas://` resolver, hosted UI, or Atlas deployment API. Ptah independently provides native `ptah migrations push/pull`, `ptah schema push/pull`, and `ptah oci referrers` commands for bring-your-own OCI registries, plus direct native consumers and best-effort deployment-report referrers. `ptah oci fetch` cannot read back a report Ptah attaches to an artifact; [`stokaro/ptah#3120`](https://github.com/stokaro/ptah/issues/3120) owns that.
+**Implementation status.** Atlas Registry remains out of scope: Ptah has no Atlas Cloud dependency, account model, `atlas://` resolver, hosted UI, or Atlas deployment API. Ptah independently provides native `ptah migrations push/pull`, `ptah schema push/pull`, and `ptah oci referrers` commands for bring-your-own OCI registries, plus direct native consumers and best-effort deployment-report referrers.
 
 The referrers command lists descriptor metadata but does not pull report payloads. The Atlas-compatible `migrate push` and `schema push` paths remain registered but not implemented and use Ptah-owned diagnostics.
 

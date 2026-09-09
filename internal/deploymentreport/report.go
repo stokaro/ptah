@@ -25,7 +25,7 @@ const (
 	FileName = "deployment.json"
 
 	// LayerMediaType identifies a deployment report JSON layer.
-	LayerMediaType = "application/vnd.stokaro.ptah.deployment.report.v1+json"
+	LayerMediaType = ociartifact.DeploymentReportLayerMediaType
 
 	// SchemaVersion identifies the deployment report JSON contract.
 	SchemaVersion = 1

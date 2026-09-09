@@ -24,7 +24,7 @@ const (
 	FileName = "plan.json"
 
 	// LayerMediaType identifies a migration safety-plan JSON layer.
-	LayerMediaType = "application/vnd.stokaro.ptah.migration.plan.v1+json"
+	LayerMediaType = ociartifact.PlanLayerMediaType
 
 	// SchemaVersion identifies the plan artifact JSON contract.
 	SchemaVersion = 1
