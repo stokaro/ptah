@@ -4,12 +4,15 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/schemaserve"
 )
 
@@ -154,4 +157,138 @@ func TestHandler_ResolvesEveryCustomPropertyItUses(t *testing.T) {
 		c.Assert(declared[token], qt.IsTrue,
 			qt.Commentf("var(%s) resolves to nothing: no block declares it", token))
 	}
+}
+
+// registrySourceRow is one --schema-file value naming a registry artifact.
+type registrySourceRow struct {
+	name        string
+	schemaFiles []string
+}
+
+// TestHandler_RefusesARegistrySchemaSource_FailurePath pins that an oci://
+// source is refused where the server starts.
+//
+// The refusal is the decision this view makes about its own contract: it reads
+// its source again on every request, and a registry artifact fits neither
+// reading of that. Deciding by omission is what left the whole flag out
+// (stokaro/ptah#3103), so the decision is stated and asserted instead.
+func TestHandler_RefusesARegistrySchemaSource_FailurePath(t *testing.T) {
+	rows := []registrySourceRow{
+		{name: "alone", schemaFiles: []string{"oci://ghcr.io/acme/schema:v1"}},
+		{name: "padded", schemaFiles: []string{"  oci://ghcr.io/acme/schema:v1"}},
+		// Second in the list, because a check that reads only the first entry
+		// passes every single-source row above it.
+		{name: "after a local file", schemaFiles: []string{"schema.sql", "oci://ghcr.io/acme/schema:v1"}},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			built, err := schemaserve.Handler(schemaserve.Options{
+				DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
+				SchemaFiles: row.schemaFiles,
+			})
+
+			c.Assert(err, qt.ErrorIs, schemaserve.ErrRegistrySchemaSource)
+			c.Assert(err, qt.ErrorMatches, `(?s).*ptah schema drift --schema-file .*`)
+			c.Assert(built, qt.IsNil)
+		})
+	}
+}
+
+// TestHandler_AcceptsALocalSchemaFile_HappyPath is the control for the refusal
+// above: it passes whether or not the oci:// check exists, and fails if that
+// check grew into a refusal of schema files as a category.
+func TestHandler_AcceptsALocalSchemaFile_HappyPath(t *testing.T) {
+	rows := []registrySourceRow{
+		{name: "sql", schemaFiles: []string{"schema.sql"}},
+		{name: "yaml", schemaFiles: []string{"schema.yaml"}},
+		{name: "hcl", schemaFiles: []string{"schema.hcl"}},
+		{name: "dbml", schemaFiles: []string{"schema.dbml"}},
+		// A path is not refused for the substring it contains.
+		{name: "a directory named oci", schemaFiles: []string{"oci/schema.sql"}},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			built, err := schemaserve.Handler(schemaserve.Options{
+				DatabaseURL: "postgres://unreachable.invalid:1/none?sslmode=disable",
+				SchemaFiles: row.schemaFiles,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(built, qt.IsNotNil)
+		})
+	}
+}
+
+// writeSchemaFile writes a desired-schema file and returns its path.
+func writeSchemaFile(c *qt.C, dir, body string) string {
+	c.Helper()
+	path := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
+	return path
+}
+
+// fileBackedHandler serves a schema file against an empty SQLite database, so
+// every table the file declares is drift the page has to show.
+func fileBackedHandler(c *qt.C, schemaFile string) http.Handler {
+	c.Helper()
+	built, err := schemaserve.Handler(schemaserve.Options{
+		DatabaseURL: atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "app.db")),
+		SchemaFiles: []string{schemaFile},
+	})
+	c.Assert(err, qt.IsNil)
+	return built
+}
+
+// get renders the page once.
+func get(c *qt.C, built http.Handler) string {
+	c.Helper()
+	recorder := httptest.NewRecorder()
+	built.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	c.Assert(recorder.Code, qt.Equals, http.StatusOK)
+	return recorder.Body.String()
+}
+
+// TestHandler_ServesTheSchemaFileItWasGiven_HappyPath pins that a schema file
+// reaches the rendered page.
+//
+// The negative half is what makes it discriminate: a page that named every
+// table in the world would satisfy the first assertion alone.
+func TestHandler_ServesTheSchemaFileItWasGiven_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	schemaFile := writeSchemaFile(c, c.TempDir(),
+		"CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n")
+
+	body := get(c, fileBackedHandler(c, schemaFile))
+
+	c.Assert(body, qt.Contains, "products")
+	c.Assert(body, qt.Not(qt.Contains), "invoices")
+}
+
+// TestHandler_ReadsTheSchemaFileOnEveryRequest is the contract that makes a
+// schema file servable at all.
+//
+// An annotation root is re-scanned on every request, and this asserts a schema
+// file is read on the same schedule. A handler that loaded its file once would
+// serve a stale schema for as long as it ran, and every other test in this file
+// would still pass: the first page is the control that says the second page's
+// table arrived from the edit.
+func TestHandler_ReadsTheSchemaFileOnEveryRequest(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	schemaFile := writeSchemaFile(c, dir, "CREATE TABLE products (id INTEGER PRIMARY KEY);\n")
+	built := fileBackedHandler(c, schemaFile)
+
+	before := get(c, built)
+	writeSchemaFile(c, dir,
+		"CREATE TABLE products (id INTEGER PRIMARY KEY);\nCREATE TABLE invoices (id INTEGER PRIMARY KEY);\n")
+	after := get(c, built)
+
+	c.Assert(before, qt.Not(qt.Contains), "invoices")
+	c.Assert(after, qt.Contains, "invoices")
 }

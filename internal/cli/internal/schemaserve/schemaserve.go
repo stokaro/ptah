@@ -19,6 +19,7 @@ package schemaserve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"ptah.run/internal/cli/internal/schemaops"
+	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/migration/safety"
 )
@@ -35,14 +37,18 @@ import (
 type Options struct {
 	// DatabaseURL is the database to compare against. Required.
 	DatabaseURL string
-	// RootDirs names the declared schema.
-	//
-	// There is no schema-file counterpart on purpose: such a file may name an
-	// oci:// artifact, and this process re-reads on a timer, so pulling one
-	// would put a registry request on a schedule nobody asked for. What that
-	// should mean is a design question rather than an oversight
-	// (stokaro/ptah#1863).
+	// RootDirs names the declared schema as Go annotation roots.
 	RootDirs []string
+	// SchemaFiles names the declared schema as files, and combines with
+	// RootDirs. Each is re-read on every request, exactly as an annotation root
+	// is re-scanned, so the page shows what its source says now.
+	//
+	// [Handler] refuses an oci:// reference. Re-reading on a timer is the whole
+	// contract here, and a registry artifact satisfies neither half of it:
+	// pulling on every request puts a registry on a schedule nobody asked for,
+	// and pulling once serves a copy that stopped matching the reference from a
+	// page whose only reason to exist is freshness (stokaro/ptah#3103).
+	SchemaFiles []string
 	// Schemas limits the read to named schemas.
 	Schemas []string
 	// Title heads the page.
@@ -76,10 +82,20 @@ type schemaSnapshot struct {
 	Content string
 }
 
+// ErrRegistrySchemaSource reports an oci:// schema source asked of a view that
+// re-reads its schema on every request. See [Options.SchemaFiles].
+var ErrRegistrySchemaSource = errors.New("oci:// schema source cannot be served")
+
 // Handler serves the dashboard.
 func Handler(opts Options) (http.Handler, error) {
 	if strings.TrimSpace(opts.DatabaseURL) == "" {
 		return nil, fmt.Errorf("database URL is required")
+	}
+	// Refused where the server starts rather than on the first request, so an
+	// operator watching a command they just ran is told, instead of a page
+	// nobody has opened yet.
+	if err := refuseRegistrySource(opts.SchemaFiles); err != nil {
+		return nil, err
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -88,6 +104,22 @@ func Handler(opts Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/", readOnly(http.HandlerFunc(server.page)))
 	return mux, nil
+}
+
+// refuseRegistrySource reports the first oci:// schema source, naming the
+// command that takes one.
+func refuseRegistrySource(schemaFiles []string) error {
+	for _, schemaFile := range schemaFiles {
+		if !strings.HasPrefix(strings.TrimSpace(schemaFile), ociartifact.Scheme) {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: %q: this view re-reads its schema on every request, "+
+				"so run \"ptah schema drift --schema-file %s\", which pulls once and answers once",
+			ErrRegistrySchemaSource, schemaFile, schemaFile,
+		)
+	}
+	return nil
 }
 
 // readOnly refuses every method that could mean a change.
@@ -127,6 +159,7 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 func (s *server) observe(ctx context.Context) observation {
 	result, err := schemaops.Compare(ctx, schemaops.CompareOptions{
 		RootDirs:       s.opts.RootDirs,
+		SchemaFiles:    s.opts.SchemaFiles,
 		DatabaseURL:    s.opts.DatabaseURL,
 		Schemas:        s.opts.Schemas,
 		ConnectTimeout: s.opts.ConnectTimeout,
