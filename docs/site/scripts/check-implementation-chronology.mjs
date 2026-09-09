@@ -21,10 +21,23 @@ const repoRoot = join(scriptDir, '..', '..', '..');
 // later; and a Ptah capability that arrives in "a later phase" is a promise with
 // no owner. Section 16.1 recorded them as the checkable subset and said to add
 // the rule once the pages were rewritten (stokaro/ptah#2504).
+//
+// Each is built with `gap` rather than written with a space, because prose
+// wraps: at 80 columns the phrase lands with one word at the end of a line and
+// the next at the start of the following one, and a pattern holding a literal
+// space cannot see it. Nothing in the tree is written that way today, so this
+// buys no finding -- it keeps the rule from going quietly out of effect the
+// first time somebody reflows a paragraph. internal/countsubjectguard and
+// check-style.mjs read a paragraph for the same reason (stokaro/ptah#3143).
+const gap = String.raw`(?:[ \t]+|[ \t]*\n[ \t]*)`;
+
 const phrases = [
-  { pattern: /\bnow supports?\b/gi, why: 'a release note; say what it supports' },
-  { pattern: /\brecently added\b/gi, why: 'no stable meaning; say what it is, not when it arrived' },
-  { pattern: /\b(?:a|the) later phase\b/gi, why: 'a promise with no owner; state the limitation, or link the issue that owns it' },
+  { pattern: new RegExp(String.raw`\bnow${gap}supports?\b`, 'gi'), why: 'a release note; say what it supports' },
+  { pattern: new RegExp(String.raw`\brecently${gap}added\b`, 'gi'), why: 'no stable meaning; say what it is, not when it arrived' },
+  {
+    pattern: new RegExp(String.raw`\b(?:a|the)${gap}later${gap}phase\b`, 'gi'),
+    why: 'a promise with no owner; state the limitation, or link the issue that owns it',
+  },
 ];
 
 // A clause dating a statement to a Ptah issue -- the fourth shape with no
@@ -92,7 +105,7 @@ export function findingsIn(source) {
     let match;
     while ((match = pattern.exec(prose)) !== null) {
       const line = prose.slice(0, match.index).split('\n').length;
-      found.push({ line, phrase: match[0], why });
+      found.push({ line, phrase: match[0].replace(/\s+/g, ' '), why });
     }
   }
 
@@ -174,6 +187,24 @@ function selftest() {
     { name: 'a dated adjective is reported', source: 'The recently added flag does this.', want: ['recently added'] },
     { name: 'an unowned promise is reported', source: 'They return when a later phase can supply one.', want: ['a later phase'] },
     { name: 'the singular verb is reported too', source: 'Ptah now support this.', want: ['now support'] },
+    {
+      name: 'the phrase wrapped onto the next line',
+      source: 'Ptah now\nsupports include columns.',
+      want: ['now supports'],
+    },
+    {
+      name: 'an unowned promise wrapped onto the next line',
+      source: 'They return when a\nlater phase can supply one.',
+      want: ['a later phase'],
+    },
+    {
+      // A word ending one paragraph is not part of the next paragraph's first
+      // phrase. Without the boundary the gap would span the blank line and
+      // report a sentence nobody wrote.
+      name: 'across a paragraph break',
+      source: 'The paragraph ends on the word now\n\nsupports arrived with the release.',
+      want: [],
+    },
 
     // The dating clause. The reference is written four ways across this site,
     // and the rule has to reach every one: a linked code span, a bare number, a

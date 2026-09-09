@@ -1110,7 +1110,10 @@ Three of the narrow phrases are enforced. `now supports`, `recently added` and
 is read, an adjective with no stable meaning, and a promise with no owner — and
 `check-implementation-chronology.mjs` reports them over every Markdown file in
 the tree, on the prose stream `check-terminology.mjs` builds, so a code span or
-a fenced block is not a finding. Its self-test carries the clean-fixture shapes
+a fenced block is not a finding. Each phrase is matched across a line wrap and
+not across a blank line: prose wraps at 80 columns, and a pattern holding a
+literal space would stop seeing the phrase the moment somebody reflowed the
+paragraph. Its self-test carries the clean-fixture shapes
 this section named: an Atlas subject, a runtime state, `legacy-tested`, and the
 purpose sense of `used to`.
 
