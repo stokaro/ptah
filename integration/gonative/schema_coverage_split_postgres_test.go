@@ -126,7 +126,7 @@ func coverageSplitInspect(c *qt.C, dbURL, split string) []string {
 
 	root := c.TempDir()
 	_, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
-		URL:                    dbURL,
+		URLs:                   []string{dbURL},
 		Format:                 fmt.Sprintf(`{{ hcl . | %s | write %q }}`, split, root),
 		Diagnostics:            nil,
 		OmitAtlasRefusedBlocks: true,

@@ -179,7 +179,7 @@ func readScopeInspected(c *qt.C, sourceURL string) string {
 	c.Helper()
 
 	renderedResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
-		URL:                    sourceURL,
+		URLs:                   []string{sourceURL},
 		Format:                 "hcl",
 		Diagnostics:            io.Discard,
 		OmitAtlasRefusedBlocks: true,

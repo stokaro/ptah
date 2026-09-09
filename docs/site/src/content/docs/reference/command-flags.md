@@ -1461,7 +1461,7 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--out-dir` | `string` | — | `PTAH_OUT_DIR` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `--schema-file` | `string` | — | `PTAH_SCHEMA_FILE` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |

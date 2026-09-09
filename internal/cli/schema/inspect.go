@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,7 +46,7 @@ const inspectOCIMaterializedName = "schema.hcl"
 
 type schemaInspectOptions struct {
 	dbURL          string
-	schemaFile     string
+	schemaFiles    []string
 	migrationsDir  string
 	devURL         string
 	schemas        string
@@ -97,7 +99,9 @@ inspected output never references an object it omitted.`,
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, inspectDBURLFlag, "", "Live database URL to inspect")
-	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Schema file to inspect: a local .hcl, .yaml, .yml, .sql, or .dbml file, or an oci:// schema artifact; requires --dev-url")
+	flags.StringArrayVar(&opts.schemaFiles, inspectSchemaFileFlag, nil,
+		"Schema file to inspect: a local .hcl, .yaml, .yml, .sql, or .dbml file, or an oci:// "+
+			"schema artifact (repeatable; values merge into one composite schema); requires --dev-url")
 	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
 	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
@@ -120,7 +124,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if opts.schemaFile == "" && opts.migrationsDir == "" {
+	if len(opts.schemaFiles) == 0 && opts.migrationsDir == "" {
 		opts.dbURL = dbcli.EffectiveString(
 			cmd,
 			inspectDBURLFlag,
@@ -147,20 +151,20 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	// An oci:// --schema-file is resolved here, into a real local file, before
 	// anything classifies the value. See materializeOCISchemaFile for why the
 	// shared classifier is deliberately left alone.
-	materialized, cleanup, err := materializeOCISchemaFile(cmd, opts, projectCfg)
+	materialized, cleanup, err := materializeOCISchemaFiles(cmd, opts, projectCfg)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if cleanup != nil {
 		// Deliberately function-scoped rather than block-scoped: the
-		// materialized file has to outlive this block and be removed on every
+		// materialized files have to outlive this block and be removed on every
 		// exit path below, including the ones that fail. A nil cleanup means
 		// nothing was materialized, so there is nothing to remove.
 		defer cleanup()
-		opts.schemaFile = materialized
+		opts.schemaFiles = materialized
 	}
 
-	sourceURL, err := resolveInspectSource(opts)
+	sourceURLs, err := resolveInspectSources(opts)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -170,7 +174,8 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	}
 
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
-		URL:            sourceURL,
+		URLs:           sourceURLs,
+		URLFlag:        inspectSourceFlag(opts),
 		DevURL:         opts.devURL,
 		Schemas:        dbcli.ParseSchemas(opts.schemas),
 		Include:        opts.include,
@@ -268,14 +273,14 @@ func resolveInspectLocals(
 // `ptah schema pull` uses. The bytes inspected are byte-for-byte the bytes
 // `schema pull` would have written, because it is not a second implementation
 // of the pull.
-func materializeOCISchemaFile(
+func materializeOCISchemaFiles(
 	cmd *cobra.Command,
 	opts schemaInspectOptions,
 	projectCfg projectconfig.Config,
-) (string, func(), error) {
-	reference := strings.TrimSpace(opts.schemaFile)
-	if !strings.HasPrefix(reference, ociartifact.Scheme) {
-		return "", nil, nil
+) ([]string, func(), error) {
+	sources := trimmedSchemaFiles(opts)
+	if !slices.ContainsFunc(sources, isOCISchemaReference) {
+		return nil, nil, nil
 	}
 
 	// Every purely local argument error is answered before the registry is
@@ -299,7 +304,7 @@ func materializeOCISchemaFile(
 	// two ways receives, which is a behavior change this defect does not
 	// license.
 	if _, err := resolveInspectLocals(cmd, opts, projectCfg); err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(atlasschema.InspectSourceOptions{
 		Format:  opts.format,
@@ -307,54 +312,102 @@ func materializeOCISchemaFile(
 		Exclude: opts.exclude,
 		DevURL:  opts.devURL,
 	}); err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 
 	dir, err := os.MkdirTemp("", "ptah-inspect-oci-")
 	if err != nil {
-		return "", nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
+		return nil, nil, fmt.Errorf("create temporary directory for the pulled schema artifacts: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	_, output, err := schemaartifact.PullToFile(
-		cmd.Context(),
-		reference,
-		filepath.Join(dir, inspectOCIMaterializedName),
-		opts.plainHTTP,
-	)
-	if err != nil {
-		cleanup()
-		return "", nil, err
+	materialized := make([]string, 0, len(sources))
+	for index, reference := range sources {
+		if !isOCISchemaReference(reference) {
+			materialized = append(materialized, reference)
+			continue
+		}
+		// One directory per reference. The file name is canonical rather than
+		// unique -- the resolver reads the format off the extension -- so two
+		// artifacts written side by side would overwrite each other and the
+		// second pull would silently win.
+		target := filepath.Join(dir, strconv.Itoa(index))
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
+		}
+		_, output, err := schemaartifact.PullToFile(
+			cmd.Context(),
+			reference,
+			filepath.Join(target, inspectOCIMaterializedName),
+			opts.plainHTTP,
+		)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		materialized = append(materialized, output)
 	}
-	return output, cleanup, nil
+	return materialized, cleanup, nil
+}
+
+// isOCISchemaReference reports whether a --schema-file value names a registry
+// artifact rather than a path on this machine.
+func isOCISchemaReference(reference string) bool {
+	return strings.HasPrefix(reference, ociartifact.Scheme)
 }
 
 // resolveInspectSource maps the native source flags onto one inspection URL.
-func resolveInspectSource(opts schemaInspectOptions) (string, error) {
+// inspectSourceFlag names the flag the chosen source came from, so a refusal
+// quotes what the operator typed rather than the Atlas surface's --url.
+func inspectSourceFlag(opts schemaInspectOptions) string {
+	switch {
+	case strings.TrimSpace(opts.migrationsDir) != "":
+		return "--" + inspectMigrationsDirFlag
+	case len(trimmedSchemaFiles(opts)) != 0:
+		return "--" + inspectSchemaFileFlag
+	default:
+		return "--" + inspectDBURLFlag
+	}
+}
+
+// trimmedSchemaFiles drops the values that carry nothing, so a stray
+// `--schema-file ""` neither counts as a source nor reaches the classifier.
+func trimmedSchemaFiles(opts schemaInspectOptions) []string {
+	trimmed := make([]string, 0, len(opts.schemaFiles))
+	for _, raw := range opts.schemaFiles {
+		if value := strings.TrimSpace(raw); value != "" {
+			trimmed = append(trimmed, value)
+		}
+	}
+	return trimmed
+}
+
+func resolveInspectSources(opts schemaInspectOptions) ([]string, error) {
 	switch {
 	case strings.TrimSpace(opts.migrationsDir) != "":
 		dir, err := pathguard.ResolveCLIPath(opts.migrationsDir)
 		if err != nil {
-			return "", fmt.Errorf("invalid migrations directory: %w", err)
+			return nil, fmt.Errorf("invalid migrations directory: %w", err)
 		}
 		if err := cmdutil.StatDir(dir); err != nil {
-			return "", err
+			return nil, err
 		}
 		source, err := atlassource.Classify(dir)
 		if err != nil {
-			return "", fmt.Errorf("--%s %q: %w", inspectMigrationsDirFlag, opts.migrationsDir, err)
+			return nil, fmt.Errorf("--%s %q: %w", inspectMigrationsDirFlag, opts.migrationsDir, err)
 		}
 		if source.Kind != atlassource.KindMigrationDir {
-			return "", fmt.Errorf(
+			return nil, fmt.Errorf(
 				"--%s %q is not recognized as a migration directory (missing atlas.sum); only Atlas-format directories can be inspected",
 				inspectMigrationsDirFlag, opts.migrationsDir)
 		}
-		return dir, nil
-	case strings.TrimSpace(opts.schemaFile) != "":
-		return strings.TrimSpace(opts.schemaFile), nil
+		return []string{dir}, nil
+	case len(trimmedSchemaFiles(opts)) != 0:
+		return trimmedSchemaFiles(opts), nil
 	case strings.TrimSpace(opts.dbURL) != "":
-		return strings.TrimSpace(opts.dbURL), nil
+		return []string{strings.TrimSpace(opts.dbURL)}, nil
 	default:
-		return "", fmt.Errorf(
+		return nil, fmt.Errorf(
 			"an inspection source is required: pass --%s, --%s, or --%s",
 			inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag)
 	}

@@ -220,7 +220,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		return cmdutil.Fail(cmd, err)
 	}
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
-		URL:            opts.url,
+		URLs:           []string{opts.url},
 		DevURL:         opts.devURL,
 		Schemas:        opts.schemas,
 		Include:        opts.include,
