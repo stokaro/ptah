@@ -29,9 +29,16 @@ const inspectDevCleanupTimeout = 30 * time.Second
 
 // InspectSourceOptions configures URL-driven Atlas schema inspection.
 type InspectSourceOptions struct {
-	// URL is the raw --url inspection source: a database URL, a local schema
-	// file, a migration directory, or an env:// reference.
-	URL string
+	// URLs are the raw inspection sources: a database URL, a local schema file,
+	// a migration directory, or an env:// reference. Several local schema files
+	// merge into one composite desired schema, the way every other verb that
+	// takes repeated sources does; a database URL, a migration directory and an
+	// env:// reference each have to stand alone, which ClassifySet enforces.
+	URLs []string
+	// URLFlag names the flag these values came from, so a refusal quotes the
+	// flag the operator typed. Empty means --url, which is the Atlas-compatible
+	// surface's spelling.
+	URLFlag string
 	// DevURL is the dev database used to evaluate non-database sources. The
 	// dev database is reset destructively before the source is materialized
 	// on it.
@@ -141,6 +148,17 @@ func ValidateInspectOptions(opts InspectSourceOptions) error {
 // fetch the source before it can be classified use this to answer that error
 // without fetching anything. [InspectSource] reaches the same predicate through
 // its own path, so the two cannot disagree about the message.
+// sourceFlag is the flag name a refusal quotes. The Atlas-compatible surface
+// reads its source from --url and says so; the native command reads repeated
+// --schema-file values and has to name that flag instead, or the operator is
+// told to fix a flag their command does not have.
+func (o InspectSourceOptions) sourceFlag() string {
+	if o.URLFlag == "" {
+		return "--url"
+	}
+	return o.URLFlag
+}
+
 func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
 	if err := ValidateInspectOptions(opts); err != nil {
 		return err
@@ -207,7 +225,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	if err := ValidateInspectOptions(opts); err != nil {
 		return InspectResult{}, err
 	}
-	set, err := atlassource.ClassifySet("--url", []string{opts.URL}, opts.ProjectEnv)
+	set, err := atlassource.ClassifySet(opts.sourceFlag(), opts.URLs, opts.ProjectEnv)
 	if err != nil {
 		return InspectResult{}, err
 	}

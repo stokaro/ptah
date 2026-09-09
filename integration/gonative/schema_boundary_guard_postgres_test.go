@@ -520,7 +520,7 @@ func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 	c.Helper()
 
 	renderedResult, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
-		URL:    dbURL,
+		URLs:   []string{dbURL},
 		Format: "hcl",
 		// The diagnostics stream carries the compatibility surface's report of
 		// what it left out. It is discarded here on purpose: this guard asks

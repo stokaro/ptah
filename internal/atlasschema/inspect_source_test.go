@@ -29,7 +29,7 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 	dbPath := seedInspectSQLiteDB(c)
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		Format: "hcl",
 	})
 
@@ -45,7 +45,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	diagnosticCalled := false
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		DevURL: "notadriver://x",
 		Format: "hcl",
 		DevURLDiagnostic: func(string) error {
@@ -70,7 +70,7 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"), 0o600), qt.IsNil)
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "file://" + schemaPath,
+		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
@@ -104,7 +104,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	blockedCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	renderedResult, err := atlasschema.InspectSource(blockedCtx, atlasschema.InspectSourceOptions{
-		URL:    "file://" + schemaPath,
+		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
@@ -113,7 +113,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	c.Assert(lock.Release(), qt.IsNil)
 
 	renderedResult, err = atlasschema.InspectSource(t.Context(), atlasschema.InspectSourceOptions{
-		URL:    "file://" + schemaPath,
+		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
@@ -137,7 +137,7 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE fresh_table (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "file://" + schemaPath,
+		URLs:   []string{"file://" + schemaPath},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
@@ -163,7 +163,7 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "file://" + migrationsDir,
+		URLs:   []string{"file://" + migrationsDir},
 		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
@@ -199,7 +199,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 	), qt.IsNil)
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "env://src",
+		URLs:   []string{"env://src"},
 		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
 		Format: "hcl",
 		ProjectEnv: atlassource.ProjectEnv{
@@ -223,7 +223,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	outDir := filepath.Join(t.TempDir(), "schema")
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ hcl . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
@@ -265,7 +265,7 @@ CREATE TABLE sessions (
 	outDir := filepath.Join(dir, "schema-sql")
 
 	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ sql . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 	c.Assert(err, qt.IsNil)
@@ -298,7 +298,7 @@ func TestInspectSource_WriteRootMayLeaveTheWorkingDirectory(t *testing.T) {
 	t.Chdir(work)
 
 	_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		Format: `{{ sql . | split | write "../outside-ptah" }}`,
 	})
 
@@ -314,7 +314,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	live, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "sqlite://" + dbPath,
+		URLs:   []string{"sqlite://" + dbPath},
 		Format: "hcl",
 	})
 	c.Assert(err, qt.IsNil)
@@ -322,7 +322,7 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	c.Assert(os.WriteFile(exported, []byte(live.Rendered), 0o600), qt.IsNil)
 
 	reloaded, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-		URL:    "file://" + exported,
+		URLs:   []string{"file://" + exported},
 		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
 		Format: "hcl",
 	})
@@ -338,7 +338,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
 		renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL: "file://" + schemaPath,
+			URLs: []string{"file://" + schemaPath},
 		})
 
 		c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`)
@@ -360,7 +360,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:    "file://" + schemaPath,
+			URLs:   []string{"file://" + schemaPath},
 			DevURL: "docker://sqlite",
 		})
 
@@ -370,7 +370,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	t.Run("unsupported source scheme", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL: "atlas://remote/app",
+			URLs: []string{"atlas://remote/app"},
 		})
 
 		c.Assert(err, qt.ErrorMatches, `--url "atlas://remote/app": atlas:// registry URLs name a hosted namespace.*`)
@@ -381,7 +381,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// reaching the database would produce a connection error instead.
 		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:     "postgres://127.0.0.1:1/unreachable",
+			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Exclude: []string{"a[type=table].b[type=column]"},
 		})
 
@@ -393,7 +393,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// reaching the database would produce a connection error instead.
 		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:     "postgres://127.0.0.1:1/unreachable",
+			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Include: []string{"*[type=column]"},
 		})
 
@@ -409,7 +409,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		// fails here.
 		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:     "postgres://127.0.0.1:1/unreachable",
+			URLs:    []string{"postgres://127.0.0.1:1/unreachable"},
 			Include: []string{"public.users.email"},
 		})
 
@@ -419,7 +419,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	t.Run("invalid format before source resolution", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:    "sqlite://ignored.db",
+			URLs:   []string{"sqlite://ignored.db"},
 			Format: "{{ if }}",
 		})
 
@@ -432,7 +432,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		outDir := filepath.Join(c.TempDir(), "dup")
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:    "sqlite://" + dbPath,
+			URLs:   []string{"sqlite://" + dbPath},
 			Format: `{{ $s := sql . | split }}{{ $s | write ` + strconv.Quote(outDir) + ` }}{{ $s | write ` + strconv.Quote(outDir) + ` }}`,
 		})
 

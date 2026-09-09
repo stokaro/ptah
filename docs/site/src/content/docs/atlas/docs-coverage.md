@@ -87,7 +87,7 @@ sections carry the detail.
 | [Schema inspection](#schema-inspection) | Partial |
 | [Declarative schema apply](#declarative-schema-apply) | Documented |
 | [Declarative schema diff](#declarative-schema-diff) | Documented |
-| [Desired-state sources](#desired-state-sources) | Partial |
+| [Desired-state sources](#desired-state-sources) | Documented |
 | [Atlas HCL schema syntax](#atlas-hcl-schema-syntax) | Partial |
 | [Atlas project config (`atlas.hcl`)](#atlas-project-config-atlashcl) | Partial |
 | [Dev database](#dev-database) | Documented |
@@ -225,13 +225,16 @@ a synced schema.
 
 **Ptah documentation.** [Composite desired schema](../../schema/composite/), [ORM and external loaders](../../schema/orm-and-external/), [OCI registry artifacts](../../operate/oci-registry/), [HCL schema](../../schema/hcl/)
 
-**Implementation status.** Partial. Native Ptah reads YAML, Go annotations, supported HCL, SQL, live databases, external programs and canonical desired-schema artifacts from a bring-your-own OCI registry, and the same `ptah.yaml external_schema` block feeds render, compare, drift and migration generation. `ptah schema inspect` declares `--schema-file` as a scalar where its siblings take a repeatable one, so a second value is dropped without a diagnostic; [`stokaro/ptah#3112`](https://github.com/stokaro/ptah/issues/3112) owns it.
+**Implementation status.** Documented. Native Ptah reads YAML, Go annotations, supported HCL, SQL, live databases, external programs and canonical desired-schema artifacts from a bring-your-own OCI registry, and the same `ptah.yaml external_schema` block feeds render, compare, drift and migration generation. `--schema-file` is repeatable on every verb that takes it, `schema inspect` included, and repeated values merge into one composite schema; that flag was a scalar there until [`stokaro/ptah#3112`](https://github.com/stokaro/ptah/issues/3112).
 
 The native OCI source is available to `schema compare` and `drift` through
 `--schema-file`; it is not Atlas Registry parity or an `atlas://` source for
 Atlas-compatible commands. Atlas HCL `data "external_schema"` is implemented
 for both binaries, gated behind `--allow-external-schema` (native) or
-`PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`). The Atlas OSS `data "sql"`,
+`PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`). The native `ptah.yaml
+external_schema` block carries the same gate rather than running unguarded:
+without the flag a render refuses with `ptah.yaml external_schema is disabled by
+default; pass --allow-external-schema to execute it`. The Atlas OSS `data "sql"`,
 `data "external"`, `data "runtimevar"`, and `data "template_dir"` project
 sources are also implemented. Registry-backed desired-state sources remain
 outside the supported compatibility subset.
