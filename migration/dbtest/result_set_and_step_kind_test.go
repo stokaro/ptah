@@ -14,11 +14,10 @@ import (
 // TestRunTest_AResultSetIsTheWholeResult is the defect this closes, not merely
 // a feature it adds (stokaro/ptah#2866).
 //
-// An `exec` carrying `output` used to compare the first value of the first row.
-// Measured against the previous binary, `output = "1"` PASSED for a query
-// answering `(1,'x'),(2,'y')`: two rows and two columns, of which one value was
-// checked and three were not. The expectation was satisfied by a result nobody
-// would call equal to it.
+// An `exec` carrying `output` that compares the first value of the first row
+// PASSES `output = "1"` for a query answering `(1,'x'),(2,'y')`: two rows and
+// two columns, of which one value is checked and three are not. The expectation
+// is satisfied by a result nobody would call equal to it.
 func TestRunTest_AResultSetIsTheWholeResult(t *testing.T) {
 	c := qt.New(t)
 

@@ -14,10 +14,10 @@ import (
 //
 // Two of the four identifiers are produced by the parse path, which runs before
 // any rule object exists, so the per-rule check inside the statement loop never
-// sees them. A selector naming SQL001 or SQL002 used to be accepted and
-// silently ignored: the finding was still reported and `ptah sql lint` still
-// exited 1. A flag that is accepted and does nothing is worse than a flag that
-// refuses, and the reference page tells an operator this one works.
+// sees them. A selector naming SQL001 or SQL002 that is accepted and silently
+// ignored leaves the finding reported and `ptah sql lint` exiting 1. A flag
+// that is accepted and does nothing is worse than a flag that refuses, and the
+// reference page tells an operator this one works.
 
 // reportedCodes lints one source and returns the identifiers that survived.
 func reportedCodes(tb testing.TB, sql string, disabled []string) []string {

@@ -47,9 +47,9 @@ func TestResolve_ResolvesSilently(t *testing.T) {
 			want:    capability.ForDialect(platform.Postgres),
 		},
 		{
-			// The no-ladder note in TestResolve_SaysWhatItPlannedInstead is the
-			// one CockroachDB used to receive for a dotted version, and it was
-			// false: the ladder existed and the string simply never reached it.
+			// The no-ladder note in TestResolve_SaysWhatItPlannedInstead is
+			// false for CockroachDB on a dotted version: the ladder exists, and
+			// only a string that never reaches it produces that note.
 			name:    "a dotted CockroachDB version selects a measured line",
 			dialect: platform.CockroachDB,
 			version: "25.4.5",

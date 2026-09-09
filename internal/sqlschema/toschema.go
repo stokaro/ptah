@@ -2,8 +2,8 @@
 //
 // [Read] is the whole of it: parse the source, convert the statements, and
 // finalize the result. Both SQL schema sources -- core/schemasource and
-// internal/schemafile -- used to spell those three steps themselves against a
-// general-purpose AST-to-model package that sat beside its own inverse, which
+// internal/schemafile -- call it rather than spelling those three steps against
+// a general-purpose AST-to-model package sitting beside its own inverse, which
 // is the shape stokaro/ptah#2725 retired.
 //
 // The per-node conversions below are the decomposition Read is built from, not
@@ -265,9 +265,10 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
 		if constraint.Type == ast.PrimaryKeyConstraint {
-			// The name comes across with the columns. This is where it used to
-			// be dropped: everything else about the constraint was carried and
-			// the one field that identifies it was not (stokaro/ptah#2180).
+			// The name comes across with the columns. This is where it is
+			// easiest to drop: everything else about the constraint is carried
+			// and the one field that identifies it is not
+			// (stokaro/ptah#2180).
 			tableSchema.PrimaryKeyName = constraint.Name
 			tableSchema.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)

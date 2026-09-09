@@ -59,9 +59,9 @@ func TestConnectContextForSpendsTheBudgetOnTheConnect(t *testing.T) {
 // TestConnectContextForLeavesTheRunUnbounded is the other half, and the defect
 // this was written for: the run must not inherit the connect's deadline.
 //
-// The caller's context is what governs planning, rendering and publication. It
-// used to be the connect budget, so a 10s default expired during file
-// publication on a slow runner and was reported as
+// The caller's context is what governs planning, rendering and publication.
+// Governing them with the connect budget instead lets a 10s default expire
+// during file publication on a slow runner, reported as
 // `error creating migration files: context deadline exceeded`.
 func TestConnectContextForLeavesTheRunUnbounded(t *testing.T) {
 	c := qt.New(t)
