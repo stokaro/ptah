@@ -313,7 +313,13 @@ func (p atlasProject) replaySource(dir atlasargs.LocalDir) fs.FS {
 
 func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagValues) {
 	if flags.Lookup(atlasConfigFlagName) == nil {
-		flags.StringVarP(&target.configPath, atlasConfigFlagName, "c", "file://"+projectconfig.AtlasFileName, "select config (project) file using URL format")
+		// Registered as [atlasConfigValue] rather than as a plain string so a
+		// selection naming more than one file is refused by name. See the type.
+		target.configPath = "file://" + projectconfig.AtlasFileName
+		flags.VarP(
+			newAtlasConfigValue(&target.configPath), atlasConfigFlagName, "c",
+			"select config (project) file using URL format",
+		)
 	}
 	// --var is registered before --env, and the order is load-bearing:
 	// dbcli.RegisterEnvFlag also registers --var (idempotently), so letting it

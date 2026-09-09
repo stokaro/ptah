@@ -130,6 +130,50 @@ own measurement conditions.
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
 
+## A `--config` selection naming more than one file
+
+**Type.** Deliberate divergence
+
+**Current boundary.** The pinned community binary registers `-c/--config` as
+`strings`: comma-separated and repeatable, defaulting to `[file://atlas.hcl]`.
+Ptah reads one project file, and `ptah-compat` refuses a selection that names
+more than one rather than reducing it.
+
+What the pinned binary registers is read from the capture this repository
+commits beside its schema-plan tests, `atlas-v1.3.0-schema-plan-help/new.txt`,
+whose `provenance.json` pins the binary by digest:
+
+```text
+-c, --config strings   select config (project) files using URL format
+                       (comma-separated) (default [file://atlas.hcl])
+```
+
+`strings` and `(comma-separated)` are what that capture establishes. How that
+binary resolves two files is not measured here and is not claimed.
+
+Measured on `ptah-compat`, with two project files declaring one env each:
+
+| invocation | `ptah-compat` |
+| --- | --- |
+| `-c "file://first.hcl,file://second.hcl" --env first` | exit `1`, `--config names 2 files (…), and Ptah reads one` |
+| `-c file://first.hcl -c file://second.hcl --env first` | exit `1`, `--config was given more than once, and Ptah reads one project file` |
+| `-c file://first.hcl --env first` | exit `0` |
+
+The refusal exists because the alternative is a silent reduction. A surface that
+reads one file out of two the operator named has to say which one it dropped, or
+the next diagnostic blames whatever the missing half declared: an env selected
+from the discarded file reads as an env that does not exist, which sends the
+operator to fix the file they actually passed.
+
+The flag keeps its `string` type rather than claiming CE's `strings`.
+Advertising a list this surface then refuses would trade a silent loss for a
+false promise, and the reader learns the limit from the refusal at the moment it
+matters.
+
+Reading several project files is the capability behind this boundary, and it is
+not implemented. Nothing here forecloses it: the refusal names the flag, so a
+run that starts working when the capability lands changes no spelling.
+
 ## A trailing positional argument
 
 **Type.** Deliberate divergence
