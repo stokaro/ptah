@@ -37,7 +37,45 @@ const (
 	DeploymentArtifactType = "application/vnd.stokaro.ptah.deployment.v1"
 	// FileMediaType identifies an individual file layer.
 	FileMediaType = "application/vnd.stokaro.ptah.file.v1"
+
+	// LintReportLayerMediaType, PlanLayerMediaType and
+	// DeploymentReportLayerMediaType are the layer media types the three
+	// referrer kinds above carry, declared beside the artifact types they
+	// belong to rather than only in the packages that write them.
+	//
+	// One declaration, because reading and writing a referrer must recognize
+	// the same pair. They did not: the writers named these media types and the
+	// reader defaulted every pull to FileMediaType, so fetchFileLayers refused
+	// each of the three referrer kinds `ptah oci fetch --type` accepts and the
+	// reports were write-only (stokaro/ptah#3120).
+	LintReportLayerMediaType       = "application/vnd.stokaro.ptah.migration.lint.report.v1+json"
+	PlanLayerMediaType             = "application/vnd.stokaro.ptah.migration.plan.v1+json"
+	DeploymentReportLayerMediaType = "application/vnd.stokaro.ptah.deployment.report.v1+json"
 )
+
+// referrerLayerMediaTypes maps a referrer's artifact type to the layer media
+// type its payload carries.
+//
+// It is the one predicate joining the writer and the reader. A kind added to
+// the artifact types above without an entry here keeps the FileMediaType
+// default, which is what made the three existing kinds unreadable, so
+// [TestReferrerLayerMediaTypeCoversEveryReportArtifactType] measures this map
+// against the artifact types rather than trusting the literal.
+var referrerLayerMediaTypes = map[string]string{
+	LintArtifactType:       LintReportLayerMediaType,
+	PlanArtifactType:       PlanLayerMediaType,
+	DeploymentArtifactType: DeploymentReportLayerMediaType,
+}
+
+// ReferrerLayerMediaType returns the layer media type a referrer of the given
+// artifact type carries, and whether that artifact type is one Ptah attaches.
+//
+// A caller that pulls a referrer without consulting it gets [FileMediaType],
+// which no report layer uses.
+func ReferrerLayerMediaType(artifactType string) (string, bool) {
+	mediaType, ok := referrerLayerMediaTypes[artifactType]
+	return mediaType, ok
+}
 
 const (
 	defaultMaxFiles        = 10_000
@@ -217,9 +255,6 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 		selector = DefaultTag
 	}
 	opts.Limits = opts.Limits.normalized()
-	if opts.LayerMediaType == "" {
-		opts.LayerMediaType = FileMediaType
-	}
 
 	descriptor, manifestBytes, err := oras.FetchBytes(ctx, target, selector, oras.FetchBytesOptions{
 		MaxBytes: opts.Limits.ManifestBytes,
@@ -248,7 +283,7 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 	if kind := manifest.Annotations[annotationArtifactKind]; kind != "" && kind != manifest.ArtifactType {
 		return Artifact{}, fmt.Errorf("%w: artifact annotation %q does not match %q", ErrUnexpectedArtifactType, kind, manifest.ArtifactType)
 	}
-	files, err := fetchFileLayers(ctx, target, manifest.Layers, opts.LayerMediaType, opts.Limits)
+	files, err := fetchFileLayers(ctx, target, manifest.Layers, acceptedLayerMediaTypes(opts.LayerMediaType, manifest.ArtifactType), opts.Limits)
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -377,7 +412,7 @@ func fetchFileLayers(
 	ctx context.Context,
 	target oras.ReadOnlyTarget,
 	layers []ocispec.Descriptor,
-	mediaType string,
+	accepted []string,
 	limits Limits,
 ) (map[string][]byte, error) {
 	if len(layers) > limits.Files {
@@ -393,7 +428,7 @@ func fetchFileLayers(
 		if _, exists := files[name]; exists {
 			return nil, fmt.Errorf("%w: duplicate file %q", ErrUnsafeArtifactPath, name)
 		}
-		if layer.MediaType != mediaType {
+		if !slices.Contains(accepted, layer.MediaType) {
 			return nil, fmt.Errorf("%w: file %q has media type %q", ErrUnexpectedArtifactType, name, layer.MediaType)
 		}
 		if layer.Size < 0 || layer.Size > limits.FileBytes {
@@ -495,4 +530,25 @@ func verifyWriteOnceTags(
 		}
 	}
 	return nil
+}
+
+// acceptedLayerMediaTypes is the set of layer media types a pull admits.
+//
+// A caller that named one gets exactly that, because a migration or schema pull
+// states what it expects. A caller that named none gets [FileMediaType] plus,
+// for a referrer, the media type its own artifact type declares.
+//
+// Both, rather than the report media type alone: the report writers always name
+// theirs, but an artifact carrying plain file layers under a report artifact
+// type read back before and must keep reading back. Swapping one strict
+// expectation for another would have replaced a refusal of what Ptah writes
+// with a refusal of what Ptah once wrote (stokaro/ptah#3120).
+func acceptedLayerMediaTypes(requested, artifactType string) []string {
+	if requested != "" {
+		return []string{requested}
+	}
+	if mediaType, ok := ReferrerLayerMediaType(artifactType); ok {
+		return []string{FileMediaType, mediaType}
+	}
+	return []string{FileMediaType}
 }

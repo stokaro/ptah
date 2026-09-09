@@ -21,7 +21,7 @@ const (
 	FileName = "lint.json"
 
 	// LayerMediaType identifies a migration lint report JSON layer.
-	LayerMediaType = "application/vnd.stokaro.ptah.migration.lint.report.v1+json"
+	LayerMediaType = ociartifact.LintReportLayerMediaType
 )
 
 // NewFS returns an immutable filesystem containing the canonical JSON report.
