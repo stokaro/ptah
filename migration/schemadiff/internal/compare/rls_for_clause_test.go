@@ -16,8 +16,8 @@ import (
 // Both directions are pinned because both occur. A declaration that omits FOR
 // is the model's zero value and meets a catalog reporting ALL; a declaration
 // that writes ALL meets a catalog that reports nothing, which is what a SQL
-// Server filter predicate does. Either way the plan used to be a DROP and a
-// CREATE of the policy on every apply, forever.
+// Server filter predicate does. Comparing the two as different makes the plan a
+// DROP and a CREATE of the policy on every apply, forever.
 func TestRLSPolicyDefinitions_AnUnspecifiedForClauseEqualsALL(t *testing.T) {
 	tests := []struct {
 		name       string

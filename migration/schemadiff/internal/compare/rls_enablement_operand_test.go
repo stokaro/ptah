@@ -15,11 +15,10 @@ import (
 // TestRLSEnabledTables_AnAdditionCarriesItsDeclaration pins the operand half of
 // the enablement lists.
 //
-// They used to be table names alone, so a planner rendering anything beyond the
-// name -- a declared comment, on the targets that carry one -- had to find the
-// declaration in a schema handed to it alongside the diff, and planned NOTHING
-// for an enablement whose table that schema spelled differently
-// (stokaro/ptah#2315).
+// Table names alone leave a planner rendering anything beyond the name -- a
+// declared comment, on the targets that carry one -- to find the declaration in
+// a schema handed to it alongside the diff, and to plan NOTHING for an
+// enablement whose table that schema spells differently (stokaro/ptah#2315).
 //
 // A removal carries the name and nothing else, and that is not an oversight:
 // the enablement being removed is one the database reports and no declaration

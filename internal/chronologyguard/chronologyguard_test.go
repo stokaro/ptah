@@ -42,7 +42,7 @@ var datedToAnIssue = regexp.MustCompile(
 // of the style guide already records for the broad words: the gate holds what
 // has no second reading, and the sweep that added it went further by hand
 // (stokaro/ptah#3134).
-var narratedPast = regexp.MustCompile(`(?i)\b(?:it|this|that|ptah)[ \t\n]+used to[ \t\n]+[a-z]+`)
+var narratedPast = regexp.MustCompile(`(?i)\b(?:it|this|that|ptah)[ \t\n]+used[ \t\n]+to[ \t\n]+[a-z]+`)
 
 // TestNoCommentNarratesPtahsOwnPast is the second rule.
 //
@@ -88,6 +88,80 @@ func TestNoCommentDatesAStatementToAPtahIssue(t *testing.T) {
 			" cite an issue that still owns something as \"(stokaro/ptah#N)\"."+
 			" See section 6.7 of docs/STYLE_GUIDE.md:\n%s",
 		strings.Join(found, "\n")))
+}
+
+// TestGuardSeesPtahsOwnPastNarrated is the self-test for the second rule.
+func TestGuardSeesPtahsOwnPastNarrated(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "a pronoun subject",
+			src:  "package p\n\n// It used to be read from the run log on stderr.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "this",
+			src:  "package p\n\n// This used to render a comment.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "that",
+			src:  "package p\n\n// The verb that used to answer here is gone.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the product by name",
+			src:  "package p\n\n// Ptah used to read credentials from one place.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the clause wraps onto the next comment line",
+			src:  "package p\n\n// The value is kept. It used\n// to be discarded here.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// The purpose sense, which shares the two words. Nothing but the
+			// noun separates it, which is why the subject list is the rule.
+			name: "an instrument, not a subject",
+			src:  "package p\n\n// The key columns used to decide whether the rows match.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "the passive purpose sense",
+			src:  "package p\n\n// This node is used to remove an extension.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			// `refused to read` contains the two words without a boundary in
+			// front of `used`, which is what the \b is for.
+			name: "used inside another word",
+			src:  "package p\n\n// A message quoting the file it refused to read cannot pass.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "backticked",
+			src:  "package p\n\n// Never write `It used to be` in a comment.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "a string literal is not a comment",
+			src:  "package p\n\nconst x = \"It used to be\"\n",
+			want: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
+
+			c.Assert(narratedPastIn(c, dir, "p.go"), qt.HasLen, test.want)
+		})
+	}
 }
 
 // TestGuardSeesAStatementDatedToAPtahIssue is the self-test.

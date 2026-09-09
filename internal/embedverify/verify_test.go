@@ -158,8 +158,8 @@ func TestVerify_CountsMatchingIsNotCoverage(t *testing.T) {
 // TestVerify_ARowCountMatchWithStaleVectorsFails is the epic's sentence, tested.
 //
 // Every key is present and every count agrees; one vector was computed from
-// text the source has since changed. That corpus retrieves a document by what
-// it used to say.
+// text the source has since changed. That corpus retrieves a document by text
+// the source no longer holds.
 func TestVerify_ARowCountMatchWithStaleVectorsFails(t *testing.T) {
 	tests := []struct {
 		name   string

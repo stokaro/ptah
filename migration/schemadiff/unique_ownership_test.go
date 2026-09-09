@@ -376,9 +376,9 @@ func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *test
 	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes[0].Name = "users_email_key"
-	// The constraint is what makes the index the constraint's object. It used
-	// to be the index's NAME, which hid a user's own index from comparison and
-	// never planned the removal they asked for (stokaro/ptah#2615); a catalog
+	// The constraint is what makes the index the constraint's object. Deciding
+	// it from the index's NAME hides a user's own index from comparison and
+	// never plans the removal they asked for (stokaro/ptah#2615); a catalog
 	// reporting a backing index without its constraint is a shape a fixture can
 	// have and a reader does not produce.
 	database.Constraints = []catalog.Constraint{{
