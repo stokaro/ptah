@@ -161,11 +161,10 @@ func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *tes
 	// -- and that IS the claim: a malformed SQLite toggle is not validated on a
 	// path that never reaches SQLite.
 	//
-	// The assertion used to read the toggle's absence off a path refusal, with
+	// Reading the toggle's absence off a path refusal instead, with
 	// "--migrations-dir ../outside" short-circuiting the run before the
-	// connection. stokaro/ptah#1622 removed that refusal, and leaning on an
-	// unrelated guard to prove this claim was the weaker spelling anyway: it
-	// passed for any early failure at all.
+	// connection, leans on a guard stokaro/ptah#1622 removed -- and on an
+	// unrelated one at that, which passes for any early failure at all.
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), sqlitevirtual.AllowDropEnvVar)
 }

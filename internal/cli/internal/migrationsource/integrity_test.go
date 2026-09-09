@@ -135,14 +135,14 @@ func TestMutableTagSumWarning(t *testing.T) {
 // TestVerifySumQualifier_DoesNotPromiseAuthenticityFromADigest pins the half of
 // the sentence that over-claimed in the opposite direction.
 //
-// The qualifier exists so `--verify-sum` does not read as tamper detection. Its
-// closing clause used to say "pin a digest for authenticity", which fixes the
-// first over-claim by making a second one: a digest identifies exact bytes and
-// says nothing about who produced them. An attacker able to repoint a tag makes
-// the command resolve, display, and then pin THEIR digest — reproducibly
-// installing the attacker's bytes. docs/oci_registry.md has said this under
-// "Identity, integrity, and authenticity" all along, so the help contradicted
-// the repository's own security section.
+// The qualifier exists so `--verify-sum` does not read as tamper detection. A
+// closing clause saying "pin a digest for authenticity" fixes the first
+// over-claim by making a second one: a digest identifies exact bytes and says
+// nothing about who produced them. An attacker able to repoint a tag makes the
+// command resolve, display, and then pin THEIR digest — reproducibly installing
+// the attacker's bytes. docs/oci_registry.md says this under "Identity,
+// integrity, and authenticity", so such a help line contradicts the
+// repository's own security section.
 //
 // The banned phrases are the spellings that actually appeared, not a guess at
 // every possible one; this is a regression guard, not a prose linter. The

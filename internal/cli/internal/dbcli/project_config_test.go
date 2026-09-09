@@ -382,12 +382,11 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 }
 
 // TestExternalSchemaCommandsResolvesAWorkingDirectoryThatLeavesTheProject
-// records what stokaro/ptah#1622 decided about this call site rather than what
-// it used to refuse.
+// records what stokaro/ptah#1622 decided about this call site.
 //
-// The refusal was a spelling filter: the same directory named absolutely was
-// always accepted, and the config layer has already joined a relative
-// working_dir onto the atlas.hcl directory before the value arrives here. The
+// A refusal here is a spelling filter: the same directory named absolutely is
+// accepted, and the config layer has already joined a relative working_dir onto
+// the atlas.hcl directory before the value arrives. The
 // control on this surface is the opt-in flag, which the next test pins -- once
 // an operator authorizes running an arbitrary program, the directory it starts
 // in is not a boundary.
@@ -488,9 +487,9 @@ func envCommand(c *qt.C, envName string) *cobra.Command {
 	return cmd
 }
 
-// An Atlas project config that is not ./atlas.hcl used to be reachable from
-// ptah-compat and unreachable from ptah, which is backwards for a feature whose
-// job is moving projects the other way. --config now names one
+// An Atlas project config that is not ./atlas.hcl has to be reachable from
+// ptah as well as from ptah-compat -- the reverse is backwards for a feature
+// whose job is moving projects the other way. --config names one
 // (stokaro/ptah#1215).
 
 // TestLoadProjectConfigReadsAnAtlasConfigNamedOnConfig is the closed gap.

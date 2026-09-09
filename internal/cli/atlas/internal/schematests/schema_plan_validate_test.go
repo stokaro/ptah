@@ -746,8 +746,8 @@ func TestSchemaPlanValidateRefusesUnimplementedTransitionFlags(t *testing.T) {
 	}{
 		{name: "repo", args: []string{"--repo", "atlas://app"}, want: "accepts --repo, but schema repositories require a hosted registry"},
 		// This verb reports a verdict on a plan rather than producing one, so
-		// --format has no plan document to render and says so, instead of the
-		// "not yet" it used to answer with (stokaro/ptah#1700).
+		// --format has no plan document to render and says so, rather than
+		// answering "not yet" (stokaro/ptah#1700).
 		{
 			name: "format",
 			args: []string{"--format", "{{ json . }}"},

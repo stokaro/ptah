@@ -183,8 +183,8 @@ func parseAtlasMigrateNewArgs(
 }
 
 // runAtlasMigrateNewConverted creates an empty migration in a source tool's own
-// directory convention, for the four external layouts `migrate new` used to
-// refuse outright (stokaro/ptah#845).
+// directory convention, for the four external layouts a bare `migrate new`
+// refuses outright (stokaro/ptah#845).
 //
 // The order below is the whole point of the function and is measured, not
 // stylistic. The community binary refuses an unhashed or drifted directory
@@ -193,7 +193,7 @@ func parseAtlasMigrateNewArgs(
 // found` and leaves the directory untouched — so the gate runs first, over the
 // covered set of the SELECTED layout rather than the Atlas one. Writing first
 // and hashing after would rewrite atlas.sum over drift and hide it from
-// `migrate validate`, which is the failure stokaro/ptah#1086 was.
+// `migrate validate`, which is the failure stokaro/ptah#1086 names.
 //
 // A directory that does not exist yet is not an integrity error: both binaries
 // create it. That exemption lives in [verifyAtlasWriteDirCoveredChecksum].

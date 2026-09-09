@@ -262,12 +262,12 @@ func runAtlasMigrateLint(
 		},
 	}
 	// The changeset selection is required, and requireAtlasMigrateLintScope
-	// above is the one place that asks. This branch used to ask again here,
-	// through migrationlintreport.SelectorConfigured, and became a duplicate
-	// when #1307 landed the same requirement earlier in the run -- earlier
-	// matters, because the unscoped argv reached --dev-url and CLEANED it before
-	// a check at this point could answer. Two gates for one rule is two
-	// sentences that have to agree, so this one is gone rather than kept.
+	// above is the one place that asks. Asking again here, through
+	// migrationlintreport.SelectorConfigured, duplicates the requirement
+	// #1307 places earlier in the run -- and earlier matters, because the
+	// unscoped argv reaches --dev-url and CLEANS it before a check at this
+	// point could answer. Two gates for one rule is two sentences that have to
+	// agree.
 	captured, err := captureAtlasDirSource(source.FileSystem, format)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))

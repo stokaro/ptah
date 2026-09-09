@@ -124,22 +124,22 @@ func MutableTagSumWarning(source Source, verifiedSumFile string) string {
 // itself the deliverable of stokaro/ptah#928 item 5. The flag must not read as
 // tamper detection anywhere: rewriting a migration AND re-hashing it produces
 // an artifact that passes `--verify-sum` at exit 0 and installs whatever the
-// rewrite said. `migrations up` was reworded for that in stokaro/ptah#1093 and
-// `migrations push` was not, so one surface went on promising more than it
-// checks for months. Sharing the sentence makes that drift impossible rather
+// rewrite said. Wording it per verb lets one surface promise more than it
+// checks: `migrations up` carries the qualifier (stokaro/ptah#1093) and
+// `migrations push` can silently not. Sharing the sentence makes that drift
+// impossible rather
 // than merely fixed once, and the flag-surface gate in internal/cli/migrations asserts
 // every registration ends with it.
 //
 // # What the closing clause may and may not promise
 //
-// It used to end "pin a digest for authenticity", and that over-claimed in the
-// opposite direction from the one this constant exists to fix. A digest
-// identifies exact bytes; it does not identify who produced them. An attacker
-// who can repoint a tag can make the command resolve, display, and then pin
-// THEIR digest — the operator would be pinning the attacker's bytes
-// reproducibly. docs/oci_registry.md has said so under "Identity, integrity,
-// and authenticity" all along, so the flag help was contradicting the
-// repository's own security section.
+// Ending it "pin a digest for authenticity" over-claims in the opposite
+// direction from the one this constant exists to fix. A digest identifies exact
+// bytes; it does not identify who produced them. An attacker who can repoint a
+// tag can make the command resolve, display, and then pin THEIR digest — the
+// operator would be pinning the attacker's bytes reproducibly.
+// docs/oci_registry.md says so under "Identity, integrity, and authenticity",
+// so such a help line contradicts the repository's own security section.
 //
 // The clause therefore promises reproducibility, which is what a digest
 // delivers, and points at the controls that actually establish a publisher.

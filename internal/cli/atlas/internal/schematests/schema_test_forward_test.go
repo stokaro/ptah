@@ -115,14 +115,13 @@ func TestCompatCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^does-not-match\$"`)
 }
 
-// TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly replaces a test
-// that pinned the refusal this change removes.
+// TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly pins what is
+// left to guarantee once a database URL is a supported desired-state source.
 //
-// A database URL used to be rejected outright as "only local file:// migration
-// directories are supported", so the old test asserted that message. Database
-// URLs are a supported desired-state source now, which makes the guarantee
-// worth pinning a different one: an unusable database source must still fail
-// loudly and non-zero, never report a green run it did not perform.
+// Rejecting one outright as "only local file:// migration directories are
+// supported" makes the message the whole guarantee. With the source supported,
+// the guarantee worth pinning is different: an unusable database source must
+// fail loudly and non-zero, never report a green run it did not perform.
 func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T) {
 	tests := []struct {
 		name string

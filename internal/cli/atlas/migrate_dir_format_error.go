@@ -56,11 +56,10 @@ func (e atlasUnknownDirFormatDisplayError) Unwrap() error {
 // atlasDirFormatError wraps the error a migration-directory format resolution
 // returned, for the verb that ran it and the spelling that carried the value.
 //
-// It is the shared replacement for the `fmt.Errorf("atlas migrate %s %s: %w")`
-// each call site used to write itself. The semantic chain is built exactly as
-// before, so an error this does NOT recognize is textually unchanged; a
-// rejected format value is additionally displayed as the community binary
-// displays it.
+// It is the shared form of the `fmt.Errorf("atlas migrate %s %s: %w")` each
+// call site would otherwise write itself. The semantic chain is the same, so an
+// error this does NOT recognize is textually identical; a rejected format value
+// is additionally displayed as the community binary displays it.
 //
 // The value is read off the typed sentinel rather than off the spelling that
 // carried it, because the two disagree: `--dir 'file://m?format=bogus'` is
