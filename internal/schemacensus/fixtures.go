@@ -105,6 +105,7 @@ func Fixtures() []Fixture {
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
 		{Name: "rls", Schema: rlsFixture()},
+		{Name: "rls-strength", Schema: rlsStrengthFixture()},
 		{Name: "embedded-json", Schema: embeddedJSONFixture()},
 		{Name: "embedded-relation", Schema: embeddedRelationFixture()},
 		{Name: "embedded-inline", Schema: embeddedInlineFixture()},
@@ -1138,6 +1139,29 @@ func rlsFixture() schemamodel.Database {
 		StructName: "T", Name: "t_read", Table: "t", PolicyFor: "SELECT",
 		ToRoles: "app_reader", UsingExpression: "true", WithCheckExpression: "true",
 		Comment: "read policy", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// rlsStrengthFixture declares the stronger of each row-level-security pair:
+// a table whose owner its policies also bind, and a policy that narrows access
+// rather than widening it.
+//
+// It is separate from [rlsFixture] rather than an edit to it. The weaker
+// spelling of each is what most declarations use and what the renderer must
+// leave unmarked, so a single fixture carrying only the stronger one would stop
+// measuring that.
+func rlsStrengthFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{
+		StructName: "T", Table: "t", Forced: true,
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	db.RLSPolicies = []schemamodel.RLSPolicy{{
+		StructName: "T", Name: "t_tenant", Table: "t", PolicyFor: "ALL",
+		ToRoles: "app_reader", UsingExpression: "true", Restrictive: true,
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db
 }

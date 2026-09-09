@@ -645,7 +645,13 @@ Enables row-level security on a table.
 | --- | --- | --- |
 | `comment` | No | RLS enablement comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `force` | No | Apply the table's policies to its owner too. `true`/`false`. |
 | `table` | No | Target table. |
+
+Enabling row-level security leaves the table's owner exempt from every policy on
+it. `force="true"` adds `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, which binds
+the owner as well. The two are separate flags on the relation, so the render
+emits two statements.
 
 ### `//ptah:schema:rls:policy`
 
@@ -653,6 +659,7 @@ Declares a row-level security policy.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
+| `as` | No | `PERMISSIVE` (the default) or `RESTRICTIVE`. |
 | `comment` | No | Policy comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `for` | No | Policy command, such as ALL or SELECT. |
@@ -661,6 +668,14 @@ Declares a row-level security policy.
 | `to` | No | Comma-separated roles. |
 | `using` | No | USING expression. |
 | `with_check` | No | WITH CHECK expression. |
+
+A row passes when at least one permissive policy admits it and every restrictive
+policy admits it, so the two combine differently and neither substitutes for the
+other. `PERMISSIVE` is the server's default and is left out of the rendered
+statement. Any value other than the two is refused at parse time rather than
+read as the default: permissive is the weaker of the two, so a misspelled
+`RESTRICTIVE` folded into it would grant the access the policy was written to
+withhold.
 
 ## Reference data
 

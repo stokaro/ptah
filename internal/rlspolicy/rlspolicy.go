@@ -38,3 +38,24 @@ func Command(policyFor string) string {
 	}
 	return folded
 }
+
+// AsClause names the AS clause a restrictive flag stands for.
+//
+// The renderer and the comparison both need the word, and they must agree:
+// a diff that reported one spelling while the DDL emitted another would name a
+// change the plan does not make. Unlike [Command] this is not a fold -- both
+// spellings are exact, and PERMISSIVE is the server's default rather than an
+// omitted value that means something else (stokaro/ptah#3121).
+func AsClause(restrictive bool) string {
+	return asClauses[restrictive]
+}
+
+// asClauses names both spellings, keyed by the flag that selects one.
+//
+// The lookup carries the pair rather than a branch so that neither spelling can
+// be written at a call site: a literal "RESTRICTIVE" somewhere else is what
+// makes the renderer and the comparison drift apart.
+var asClauses = map[bool]string{
+	false: "PERMISSIVE",
+	true:  "RESTRICTIVE",
+}

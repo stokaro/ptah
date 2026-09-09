@@ -254,6 +254,16 @@ declares a policy without declaring enablement is enabled with the table,
 because `CREATE POLICY` on a table whose row-level security is off protects
 nothing.
 
+Two attributes select the stronger posture of each pair, and both are read back
+from the catalog so a comparison can see them. `force="true"` on the enablement
+adds `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, read back from
+`pg_class.relforcerowsecurity`; without it the table's owner reads and writes
+past every policy on it. `as="restrictive"` on a policy renders `AS
+RESTRICTIVE`, read back from `pg_policy.polpermissive`. Permissive policies are
+OR-ed with each other and restrictive ones AND-ed over the result, so a row
+passes when some permissive policy admits it and every restrictive one does.
+`PERMISSIVE` is the server's default and stays out of the rendered statement.
+
 Which table a policy belongs to is decided under the target's identifier rules
 rather than by spelling, so a policy declared on `orders` and a table created
 as `public.orders` are one table and the enablement is emitted once. Matching

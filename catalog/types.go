@@ -211,8 +211,12 @@ type Table struct {
 	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
 	Partitioned     bool     `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
 	RLSEnabled      bool     `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
-	Strict          bool     `json:"strict,omitempty"`            // SQLite STRICT table option
-	WithoutRowID    bool     `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+	// RLSForced reports pg_class.relforcerowsecurity: the table's policies
+	// apply to its owner as well. It is independent of RLSEnabled, which
+	// leaves the owner exempt (stokaro/ptah#3121).
+	RLSForced    bool `json:"rls_forced,omitempty"`
+	Strict       bool `json:"strict,omitempty"`        // SQLite STRICT table option
+	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
 	// ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
 	// that is not simply its primary-key columns.
 	//
@@ -1504,6 +1508,11 @@ type RLSPolicy struct {
 	UsingExpression     string `json:"using_expression"`      // USING clause expression
 	WithCheckExpression string `json:"with_check_expression"` // WITH CHECK clause expression
 	Comment             string `json:"comment"`               // Policy comment/description
+	// Restrictive reports AS RESTRICTIVE, read from pg_policy.polpermissive.
+	// A permissive policy widens access and a restrictive one narrows it, so
+	// a comparison that ignores the flag calls two policies equal when one
+	// grants what the other withholds (stokaro/ptah#3121).
+	Restrictive bool `json:"restrictive"`
 }
 
 // Role represents a PostgreSQL role read from the database

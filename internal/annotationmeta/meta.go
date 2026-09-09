@@ -694,6 +694,7 @@ var directives = []Directive{
 			attr("to", "Comma-separated roles.", valueList, false, false),
 			attr("using", "USING expression.", valueSQL, false, false),
 			attr("with_check", "WITH CHECK expression.", valueSQL, false, false),
+			attr("as", "PERMISSIVE (the default) or RESTRICTIVE.", valueString, false, false),
 			attr("comment", "Policy comment.", valueString, false, false),
 			dialectsAttr(),
 		},
@@ -704,6 +705,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeFile, ScopeStruct},
 		Attributes: []Attribute{
 			attr("table", "Target table.", valueString, false, false),
+			attr("force", "Apply the table's policies to its owner too.", valueBoolean, false, false),
 			attr("comment", "RLS enablement comment.", valueString, false, false),
 			dialectsAttr(),
 		},

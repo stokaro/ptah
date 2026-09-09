@@ -440,6 +440,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		       ` + rowStatsUnknown + ` AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled,
+		       COALESCE(c.relforcerowsecurity, false) AS rls_forced,
 		       ` + r.rowTTLOptionsExpr() + `,
 		       ` + r.rowDeletionPolicyExpr() + `
 			FROM information_schema.tables t
@@ -471,6 +472,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			&table.RowStatsUnknown,
 			&table.Partitioned,
 			&table.RLSEnabled,
+			&table.RLSForced,
 			&rowTTLOptions,
 			&rowDeletionPolicy,
 		)
@@ -3373,7 +3375,8 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 			END AS to_roles,
 			COALESCE(pg_get_expr(pol.polqual, pol.polrelid), '') AS using_expression,
 			COALESCE(pg_get_expr(pol.polwithcheck, pol.polrelid), '') AS with_check_expression,
-			COALESCE(obj_description(pol.oid, 'pg_policy'), '') AS comment
+			COALESCE(obj_description(pol.oid, 'pg_policy'), '') AS comment,
+			NOT pol.polpermissive AS restrictive
 		FROM pg_policy pol
 		JOIN pg_class c ON c.oid = pol.polrelid
 		JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -3399,6 +3402,7 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 			&policy.UsingExpression,
 			&policy.WithCheckExpression,
 			&policy.Comment,
+			&policy.Restrictive,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan RLS policy: %w", err)

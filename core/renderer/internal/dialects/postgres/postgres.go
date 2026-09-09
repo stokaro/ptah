@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/rlspolicy"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -2118,6 +2119,12 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	var parts []string
 	parts = append(parts, "CREATE POLICY", r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
 
+	// AS clause. PERMISSIVE is the server default and is left unwritten, so a
+	// policy that never asked for restrictive renders exactly as before.
+	if node.Restrictive {
+		parts = append(parts, "AS", rlspolicy.AsClause(node.Restrictive))
+	}
+
 	// FOR clause
 	if node.PolicyFor != "" {
 		parts = append(parts, "FOR", node.PolicyFor)
@@ -2158,6 +2165,13 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 	// Build ALTER TABLE ENABLE ROW LEVEL SECURITY statement
 	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
+
+	// FORCE is a second flag on the same relation rather than a stronger
+	// ENABLE, so it is a second statement. Without it the table's owner reads
+	// and writes past every policy.
+	if node.Force {
+		r.w.WriteLinef("ALTER TABLE %s FORCE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
+	}
 
 	return nil
 }

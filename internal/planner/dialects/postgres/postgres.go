@@ -2809,14 +2809,21 @@ func (p *Planner) enableRLSOnTables(
 	semantics identifier.Semantics,
 ) []ast.Node {
 	tablesNeedingRLS := make(map[string]string)
+	// Which of them the declaration also binds the owner to. It is keyed the
+	// same way, so a table named by both sources answers once and the two maps
+	// cannot come apart.
+	forcedTables := make(map[string]bool)
 	rememberTable := func(tableName string) {
 		key := semantics.QualifiedTableIdentityKey(tableName)
 		if _, seen := tablesNeedingRLS[key]; !seen {
 			tablesNeedingRLS[key] = tableName
 		}
 	}
-	for _, tableName := range diff.RLSEnabledTablesAdded.Names() {
-		rememberTable(tableName)
+	for _, enabled := range diff.RLSEnabledTablesAdded {
+		rememberTable(enabled.Table)
+		if enabled.Forced {
+			forcedTables[semantics.QualifiedTableIdentityKey(enabled.Table)] = true
+		}
 	}
 
 	addedTables := make(map[string]string, len(diff.TablesAdded))
@@ -2838,6 +2845,9 @@ func (p *Planner) enableRLSOnTables(
 	for _, tableName := range slices.Sorted(maps.Values(tablesNeedingRLS)) {
 		enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
 			SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
+		if forcedTables[semantics.QualifiedTableIdentityKey(tableName)] {
+			enableRLSNode.SetForce()
+		}
 		result = append(result, enableRLSNode)
 	}
 	return result

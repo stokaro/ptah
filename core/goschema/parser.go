@@ -1098,6 +1098,10 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		return nil
 	}
 
+	restrictive, err := rlsPolicyRestrictive(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                policyName,
@@ -1107,6 +1111,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		UsingExpression:     kv["using"],
 		WithCheckExpression: kv["with_check"],
 		Comment:             kv["comment"],
+		Restrictive:         restrictive,
 		Dialects:            scope,
 	})
 	seen.policies[key] = struct{}{}
@@ -1140,6 +1145,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 		StructName: structName,
 		Table:      tableName,
 		Comment:    kv["comment"],
+		Forced:     kv["force"] == "true",
 		Dialects:   scope,
 	})
 	seen.enabledTables[tableName] = struct{}{}
@@ -1802,6 +1808,10 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
+	restrictive, err := rlsPolicyRestrictive(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                kv["name"],
@@ -1811,9 +1821,45 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 		UsingExpression:     kv["using"],
 		WithCheckExpression: kv["with_check"],
 		Comment:             kv["comment"],
+		Restrictive:         restrictive,
 		Dialects:            scope,
 	})
 	return nil
+}
+
+// rlsPolicyRestrictive reads a policy's `as`, which decides how the policy
+// combines with the table's others rather than how it is written.
+//
+// An unrecognized value is refused rather than treated as the default:
+// PERMISSIVE is the weaker of the two, so folding a misspelled RESTRICTIVE
+// into it grants the access the policy was written to withhold
+// (stokaro/ptah#3121).
+func rlsPolicyRestrictive(kv map[string]string, ctx annotationErrorContext) (bool, error) {
+	raw, ok := kv["as"]
+	if !ok {
+		return false, nil
+	}
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "", "PERMISSIVE":
+		return false, nil
+	case "RESTRICTIVE":
+		return true, nil
+	default:
+		slog.Error("unsupported RLS policy as value",
+			"directive", ctx.directive,
+			"value", raw,
+			"location", ctx.location,
+		)
+		return false, &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "as",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("as on %s at %s: must be PERMISSIVE or RESTRICTIVE, got %q",
+				ctx.directive, ctx.location, raw),
+		}
+	}
 }
 
 func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structName string) error {
@@ -1830,6 +1876,7 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
+		Forced:     kv["force"] == "true",
 		Dialects:   scope,
 	})
 	return nil
