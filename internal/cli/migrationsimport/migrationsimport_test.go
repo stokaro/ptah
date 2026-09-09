@@ -82,7 +82,7 @@ func TestImportCommand_UnknownTool(t *testing.T) {
 
 // writeSourceWithADroppedMigration lays out a golang-migrate source whose second
 // migration sits one directory down and whose third has a name off by one
-// segment -- the two shapes that used to import silently short.
+// segment -- the two shapes an unreporting import takes silently short.
 func writeSourceWithADroppedMigration(t *testing.T) string {
 	c := qt.New(t)
 	dir := t.TempDir()

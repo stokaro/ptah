@@ -178,10 +178,10 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 	})
 
 	// A deadline of this test's own, because the assertion is about the
-	// diagnostic and not about the clock. The render used to impose ten seconds
-	// on every caller, so on a loaded machine the fake `dot` lost to that
-	// deadline and this reported a broken Graphviz diagnostic when the
-	// diagnostic was fine -- twice, in one sitting.
+	// diagnostic and not about the clock. A render imposing ten seconds on
+	// every caller leaves the fake `dot` losing to that deadline on a loaded
+	// machine, and this then reports a broken Graphviz diagnostic when the
+	// diagnostic is fine.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 

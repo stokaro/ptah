@@ -7,15 +7,14 @@ package postgres
 //
 // The property under test is that the schema list and the objects underneath it
 // come from ONE decision: readSchemas must report exactly schemasToRead(), the
-// list readTables and every other read below iterates. It used to report
-// nothing at all unless an allow-list had been passed, so an unscoped read
-// described tables in `public` while denying it had read any schema
-// (stokaro/ptah#1276).
+// list readTables and every other read below iterates. Reporting nothing at all
+// unless an allow-list was passed leaves an unscoped read describing tables in
+// `public` while denying it read any schema (stokaro/ptah#1276).
 //
 // The fake server answers per bound schema name, which is what makes the count
-// assertion load-bearing: a reader that reported a name it never asked about
-// would leave the count behind, and a reader that asked and discarded the answer
-// would lose the comment. Both spellings of the defect are therefore visible
+// assertion load-bearing: a reader reporting a name it never asked about leaves
+// the count behind, and one that asks and discards the answer loses the
+// comment. Both spellings of the defect are therefore visible
 // here, and neither is visible from the parsers alone.
 
 import (

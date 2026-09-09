@@ -594,13 +594,13 @@ func TestMigrateCheckpointCommand_AllowsCheckpointBesideItsOwnSum(t *testing.T) 
 	// checkpoint refreshes. This is the fixture that separates "a second sum
 	// file" from "any sum file at all".
 	//
-	// It is a REAL atlas.sum rather than the `h1:stale` placeholder it used to
-	// be. Checkpoint replays the history onto the shadow database, so it now
-	// verifies the directory first, and a placeholder that no parser accepts is
-	// refused before the question this test asks is reached. The refusal is
-	// correct — the old fixture depended on checkpoint executing a directory
-	// whose integrity file could not be read at all — and a valid sum keeps the
-	// test measuring what its name says.
+	// It is a REAL atlas.sum rather than an `h1:stale` placeholder. Checkpoint
+	// replays the history onto the shadow database, so it verifies the
+	// directory first, and a placeholder that no parser accepts is refused
+	// before the question this test asks is reached. That refusal is correct --
+	// a placeholder fixture depends on checkpoint executing a directory whose
+	// integrity file cannot be read at all -- and a valid sum keeps the test
+	// measuring what its name says.
 	sumBefore, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sumBefore, qt.IsNotNil)

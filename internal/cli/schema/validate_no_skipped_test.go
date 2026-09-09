@@ -153,7 +153,7 @@ func TestSchemaValidateWithoutNoSkippedIsUnchanged(t *testing.T) {
 }
 
 // TestSchemaValidateNoSkippedFailsARenderRefusal covers the limitation the
-// documentation used to name.
+// documentation names.
 //
 // A SERIAL column validates against ClickHouse and exits 0 while
 // `schema render` over the same source exits 2. Under this flag the verb owes

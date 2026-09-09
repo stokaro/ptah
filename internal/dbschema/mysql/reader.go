@@ -656,9 +656,9 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 // destroys someone else's work, which is why this refuses the read instead of
 // returning a value it knows is wrong.
 //
-// The trade is deliberate and it is a narrowing: a read that used to return a
-// fabricated body now returns an error naming the routine and the privilege.
-// Reporting a schema this account cannot actually read was never a capability.
+// The trade is deliberate and it is a narrowing: an error naming the routine
+// and the privilege, in place of a fabricated body. Reporting a schema this
+// account cannot actually read is not a capability.
 func hiddenRoutineBodyError(dbName, routine string) error {
 	return fmt.Errorf(
 		"cannot read the body of function %s.%s: information_schema reports its "+
@@ -794,18 +794,19 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 // COLUMNS: this engine has no enum type in its catalog, only a column whose
 // type carries a value list.
 //
-// Each one is named after the column that holds it. It used to be named after
-// its VALUES -- `enum_active_inactive` -- which made the identity a function of
-// the thing most likely to change. Adding one value to a live column renamed
-// the declaration `ptah schema inspect` printed, and renamed the Go type and
-// every constant `ptah introspect` generated: EnumActiveInactive became
-// EnumActiveInactiveArchived, EnumActiveInactiveActive became
-// EnumActiveInactiveArchivedActive. A schema author who had committed those
-// models got a rename across their code for adding a value (stokaro/ptah#1716).
+// Each one is named after the column that holds it. Naming it after its VALUES
+// -- `enum_active_inactive` -- makes the identity a function of the thing most
+// likely to change: adding one value to a live column renames the declaration
+// `ptah schema inspect` prints, and renames the Go type and every constant
+// `ptah introspect` generates, so EnumActiveInactive becomes
+// EnumActiveInactiveArchived and EnumActiveInactiveActive becomes
+// EnumActiveInactiveArchivedActive. A schema author who has committed those
+// models gets a rename across their code for adding a value
+// (stokaro/ptah#1716).
 //
 // Two columns holding the same value list are therefore two enums here, not
 // one. That is what the engine has: there is no shared type for them to be,
-// and collapsing them under one synthesized name asserted a relationship the
+// and collapsing them under one synthesized name asserts a relationship the
 // database does not record. The comparison is unaffected either way -- the
 // MySQL family folds a declared enum into its column's type before comparing,
 // so this list is what INSPECTION reports, not what convergence rests on.

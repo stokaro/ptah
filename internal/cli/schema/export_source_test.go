@@ -226,8 +226,8 @@ func gridFixture(c *qt.C) string {
 // comparing one empty artifact with another.
 //
 // The row describes the target; [runExportTarget] knows how to run each kind.
-// It used to carry the "how" as a closure, which put the checker in a table row
-// and left the two kinds looking like two unrelated functions rather than one
+// Carrying the "how" as a closure puts the checker in a table row and leaves
+// the two kinds looking like two unrelated functions rather than one
 // difference. See AGENTS.md, "A Table Row Carries Data, Not A Checker".
 type exportTarget struct {
 	name   string

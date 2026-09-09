@@ -63,9 +63,9 @@ func Identity(
 // It never rewrites a spelling and never replaces an identity a producer
 // resolved, so running it twice changes nothing.
 //
-// It used to do a second job: synthesize a record for a name the diff carried
-// with none. There are no bare names any more -- a constraint change IS its
-// record -- so that half is gone (stokaro/ptah#2315).
+// It does no second job. Synthesizing a record for a name the diff carries with
+// none has nothing to answer: a constraint change IS its record, and there are
+// no bare names (stokaro/ptah#2315).
 func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if diff == nil {
 		return

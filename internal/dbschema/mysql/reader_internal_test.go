@@ -321,12 +321,12 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 }
 
 // TestReadIndexes_ReportsAKeyPartItCannotName covers a functional key part,
-// whose STATISTICS row carries the expression and a NULL COLUMN_NAME. The read
-// used to fail outright -- `converting NULL to string is unsupported`, exit 1
-// on a MySQL 9.7.1 database the pinned community binary v1.3.0 reports synced
-// -- because GROUP_CONCAT collapsed the whole row. The part is now reported as
-// missing from Columns so a comparison can decline to read a partial key as a
-// whole one.
+// whose STATISTICS row carries the expression and a NULL COLUMN_NAME. A read
+// that lets GROUP_CONCAT collapse the whole row fails outright --
+// `converting NULL to string is unsupported`, exit 1 on a MySQL 9.7.1 database
+// the pinned community binary v1.3.0 reports synced. The part is reported as
+// missing from Columns instead, so a comparison can decline to read a partial
+// key as a whole one.
 func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -445,17 +445,18 @@ var enumColumnsColumns = []string{
 // half.
 //
 // MySQL has no enum type in its catalog: an enum is a COLUMN whose type carries
-// a value list. The read used to name each one after those values --
-// `enum_active_inactive` -- which made the identity a function of the thing most
-// likely to change. Adding one value renamed the declaration `schema inspect`
-// prints and, through `introspect`, the generated Go type and every constant:
-// EnumActiveInactive became EnumActiveInactiveArchived and EnumActiveInactiveActive
-// became EnumActiveInactiveArchivedActive, so an author who had committed those
-// models got a rename across their code for adding a value.
+// a value list. Naming each one after those values -- `enum_active_inactive` --
+// makes the identity a function of the thing most likely to change: adding one
+// value renames the declaration `schema inspect` prints and, through
+// `introspect`, the generated Go type and every constant, so
+// EnumActiveInactive becomes EnumActiveInactiveArchived and
+// EnumActiveInactiveActive becomes EnumActiveInactiveArchivedActive, and an
+// author who has committed those models gets a rename across their code for
+// adding a value.
 //
-// The rows below are what the two behaviors disagree about. The same value list
+// The rows below are what the two namings disagree about. The same value list
 // on two columns is TWO enums here, because the engine has no shared type for
-// them to be; naming by values collapsed them into one and asserted a
+// them to be; naming by values collapses them into one and asserts a
 // relationship the database does not record.
 func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 	tests := []struct {

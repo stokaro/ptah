@@ -351,8 +351,8 @@ func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Func
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.QualifiedName(),
 			// The kind travels with the routine. Dropping it here would turn
-			// every read-back procedure into a function, which is what the
-			// reader used to do by filtering them out (stokaro/ptah#1722).
+			// every read-back procedure into a function, which is also what
+			// filtering them out at the reader does (stokaro/ptah#1722).
 			Kind:       dbFunction.Kind,
 			Parameters: dbFunction.Parameters,
 			Returns:    dbFunction.Returns,
@@ -621,8 +621,8 @@ func convertRLSEnabledTables(
 				// qualified name, convertViews and convertMaterializedViews use
 				// QualifiedName, convertTriggers uses QualifiedTable.
 				//
-				// The bare name that used to be here resolves against the search
-				// path, so a description of a table outside the connection's
+				// A bare name here resolves against the search path, so a
+				// description of a table outside the connection's
 				// default schema enabled row security on whatever `users` the
 				// path found first -- leaving that table with no policy, which
 				// returns no rows to anyone but its owner, and leaving the real

@@ -7,12 +7,12 @@ package migrateup
 // package is what stops two in-process registries drifting into disagreeing
 // about what a tag resolves to.
 //
-// The provenance PREDICATE this file used to reach into is no longer private:
-// it is [ptah.run/internal/cli/internal/migrationsource.MutableTagSumWarning],
-// exported when `migrations down` and `status` gained --verify-sum and needed
-// the same qualifier (stokaro/ptah#928 item 4). Its own rows moved with it, to
-// internal/cli/internal/migrationsource, because a predicate reachable through an
-// exported API no longer justifies a white-box test. What stays here is the
+// The provenance PREDICATE is not private and is not reached from here: it is
+// [ptah.run/internal/cli/internal/migrationsource.MutableTagSumWarning],
+// exported because `migrations down` and `status` need the same qualifier for
+// --verify-sum (stokaro/ptah#928 item 4). Its rows live beside it, in
+// internal/cli/internal/migrationsource, because a predicate reachable through
+// an exported API does not justify a white-box test. What stays here is the
 // wiring half, which drives the real apply path.
 
 import (

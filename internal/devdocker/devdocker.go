@@ -73,12 +73,12 @@ const DefaultDatabase = "dev"
 // passwordBytes is the entropy of the superuser password set inside each
 // throwaway container.
 //
-// The password is generated per instance, not fixed. It used to be the constant
-// `ptah-dev`, justified by the container publishing on loopback only -- and that
-// premise stopped being true the moment a remote daemon began publishing on
-// every interface of its host, which is a machine other peers can reach. A
-// known superuser password on a reachable ephemeral port lets any of them read
-// the replayed schema, or write to it and quietly corrupt a lint or diff result.
+// The password is generated per instance, not fixed. A constant like `ptah-dev`
+// rests on the container publishing on loopback only, and that premise fails
+// the moment a remote daemon publishes on every interface of its host, which is
+// a machine other peers can reach. A known superuser password on a reachable
+// ephemeral port lets any of them read the replayed schema, or write to it and
+// quietly corrupt a lint or diff result.
 //
 // The fix is the credential rather than the binding, because the binding cannot
 // be tightened: a daemon can only publish on interfaces it owns, and the one

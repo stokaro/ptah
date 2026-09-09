@@ -1590,10 +1590,10 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 // RESTRICT, which is the authority on dependency order either way, so an object
 // that cannot be dropped still fails loudly instead of being skipped.
 //
-// The retry survives too, and used to not. It was written around a savepoint
-// and so was given up with one, which left this path a single ordered pass that
-// has to get dependency order right the first time -- see
-// [dropCleanupObjectsRetrying] for the server that showed it cannot.
+// The retry survives too. Written around a savepoint it would be given up with
+// one, leaving this path a single ordered pass that has to get dependency order
+// right the first time -- see [dropCleanupObjectsRetrying] for the server that
+// shows it cannot.
 func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context) error {
 	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
 	if err != nil {
@@ -1727,13 +1727,12 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	}
 	// "public" comes back even when it is not the root schema.
 	//
-	// It used to be the root on every run, because the connection reported
-	// "public" unconditionally, so dropping it and restoring it above was one
-	// step. Now that the root follows the dev URL's search_path, selecting any
-	// other schema left "public" dropped and never restored -- and a migration
-	// that writes `public.users` then failed with `schema "public" does not
-	// exist`, which is the same shape of damage this whole change set is fixing,
-	// just moved to the other schema.
+	// A connection reporting "public" unconditionally makes it the root on
+	// every run, so dropping it and restoring it above is one step. With the
+	// root following the dev URL's search_path, selecting any other schema
+	// leaves "public" dropped and never restored -- and a migration that writes
+	// `public.users` then fails with `schema "public" does not exist`, which is
+	// the same shape of damage moved to the other schema.
 	//
 	// Emptying it is the point of a realm cleanup; removing it is not. Every
 	// PostgreSQL database is created with it, and DDL that names no schema

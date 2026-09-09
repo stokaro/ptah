@@ -82,9 +82,9 @@ func TestViewBody_TakesTheHeaderOff(t *testing.T) {
 			want:       "SELECT 1 AS one",
 		},
 		{
-			// The bracket half. An unbalanced bracket inside a comment used to
-			// leave the scan at a depth it never returned from, so the real AS
-			// was skipped and the whole statement came back as the body.
+			// The bracket half. An unbalanced bracket inside a comment leaves a
+			// naive scan at a depth it never returns from, so the real AS is
+			// skipped and the whole statement comes back as the body.
 			name:       "a comment holding an unbalanced bracket",
 			definition: "CREATE VIEW dbo.v /* see [orders */ AS SELECT 1 AS one",
 			want:       "SELECT 1 AS one",

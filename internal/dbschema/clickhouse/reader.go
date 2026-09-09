@@ -334,12 +334,12 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 //
 // A refresh strategy is not read, because there is none to read: refreshing is
 // an operation rather than schema state, and Ptah carries no strategy on either
-// side of the comparison. This read used to report "manual" for every view --
-// a value no catalog holds, invented to match the PostgreSQL reader's own
-// invented default (stokaro/ptah#1625).
+// side of the comparison. Reporting "manual" for every view invents a value no
+// catalog holds, to match the PostgreSQL reader's own invented default
+// (stokaro/ptah#1625).
 //
 // ClickHouse's own REFRESH EVERY|AFTER is a real, engine-scheduled property and
-// is NOT what that field carried; modeling it needs a ClickHouse-specific
+// is NOT what such a field would carry; modeling it needs a ClickHouse-specific
 // declaration, tracked separately.
 //
 // What this read cannot tell apart, stated rather than hidden: a view created
