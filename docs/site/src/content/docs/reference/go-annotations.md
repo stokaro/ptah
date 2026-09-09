@@ -472,12 +472,28 @@ Declares a database function.
 | `comment` | No | Function comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `language` | No | Function language. |
+| `leakproof` | No | Marks the function `LEAKPROOF`. `true`/`false`. |
 | `name` | No | Function name. |
+| `parallel` | No | Parallel level: `SAFE`, `RESTRICTED` or `UNSAFE`. |
 | `params` | No | Function parameter list. |
 | `returns` | No | Return type. |
 | `schema` | No | Target schema/namespace. |
 | `security` | No | Security mode, such as DEFINER. |
+| `settings` | No | Routine configuration settings, `name=value`, separated by `;`. |
 | `volatility` | No | Volatility class. |
+
+`leakproof` and `parallel` decide how the query planner may use the routine, and
+the first decides it across a security boundary: a filter using a leakproof
+function may be pushed past a row-level-security predicate, so a function marked
+leakproof by mistake can reveal rows a policy withholds. PostgreSQL reserves the
+attribute for a superuser for that reason. `UNSAFE` is the server's default and
+is left out of the rendered statement, so a routine that states no level renders
+as it did; a level that is none of the three is refused at parse time rather
+than read as a default, because neither direction of that guess is safe.
+
+`settings` pins the routine's own configuration, and `search_path` is the entry
+that matters: a `SECURITY DEFINER` routine without one resolves unqualified
+names through whatever the caller had set.
 
 `schema` places the routine in a named schema, and is also accepted on
 `view` and `matview`. A function, view or materialized view carries its schema

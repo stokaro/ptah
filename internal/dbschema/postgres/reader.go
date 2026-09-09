@@ -3271,7 +3271,13 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			-- The routine's own configuration settings, which is where a pinned
 			-- search_path lives. A routine with none reports NULL rather than an
 			-- empty array (stokaro/ptah#2356).
-			COALESCE(array_to_string(p.proconfig, E'\n'), '') AS settings
+			COALESCE(array_to_string(p.proconfig, E'\n'), '') AS settings,
+			p.proleakproof AS leakproof,
+			CASE p.proparallel
+				WHEN 's' THEN 'SAFE'
+				WHEN 'r' THEN 'RESTRICTED'
+				ELSE 'UNSAFE'
+			END AS parallel
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
@@ -3321,6 +3327,8 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			&fn.Comment,
 			&fn.Kind,
 			&settings,
+			&fn.Leakproof,
+			&fn.Parallel,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)

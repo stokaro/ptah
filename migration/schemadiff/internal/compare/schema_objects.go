@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/routineparallel"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -753,6 +754,22 @@ func FunctionDefinitionsWithDialect(
 	// Compare volatility (VOLATILE/STABLE/IMMUTABLE)
 	if genFunction.Volatility != dbFunction.Volatility {
 		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
+	}
+
+	// Compare LEAKPROOF, which decides whether the planner may push a filter
+	// using this routine past a security barrier. A comparison that skipped it
+	// could report a routine unchanged while rows a row-level-security policy
+	// withholds became reachable through it.
+	if genFunction.Leakproof != dbFunction.Leakproof {
+		functionDiff.Changes["leakproof"] = fmt.Sprintf("%t -> %t",
+			dbFunction.Leakproof, genFunction.Leakproof)
+	}
+
+	// Compare the PARALLEL level, folded so a declaration stating none and a
+	// catalog reporting the server's default are the same routine.
+	if routineparallel.Level(genFunction.Parallel) != routineparallel.Level(dbFunction.Parallel) {
+		functionDiff.Changes["parallel"] = fmt.Sprintf("%s -> %s",
+			routineparallel.Level(dbFunction.Parallel), routineparallel.Level(genFunction.Parallel))
 	}
 
 	// Compare the routine's own configuration settings, folded onto one

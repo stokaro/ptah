@@ -1228,6 +1228,10 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		return err
 	}
 
+	parallel, err := routineParallelLevel(kv, ctx)
+	if err != nil {
+		return err
+	}
 	fn := schemamodel.Function{
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
@@ -1237,6 +1241,8 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		Security:   kv["security"],
 		Volatility: kv["volatility"],
 		Settings:   routinesetting.NormalizeAll(splitRoutineSettings(kv["settings"])),
+		Leakproof:  kv["leakproof"] == "true",
+		Parallel:   parallel,
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Dialects:   scope,
@@ -1247,6 +1253,42 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 	fn.Canonicalize()
 	s.functions = append(s.functions, fn)
 	return nil
+}
+
+// routineParallelLevel reads a routine's `parallel`, which names how the
+// planner may use it.
+//
+// An unrecognized level is refused rather than folded into a default. UNSAFE is
+// the most restrictive of the three, so folding a misspelled SAFE into it would
+// quietly forbid the parallelism the author asked for, and folding the other
+// way would quietly permit what they did not (stokaro/ptah#3121).
+func routineParallelLevel(kv map[string]string, ctx annotationErrorContext) (string, error) {
+	raw, ok := kv["parallel"]
+	if !ok {
+		return "", nil
+	}
+	level := strings.ToUpper(strings.TrimSpace(raw))
+	switch level {
+	case "":
+		return "", nil
+	case "SAFE", "RESTRICTED", "UNSAFE":
+		return level, nil
+	default:
+		slog.Error("unsupported routine parallel level",
+			"directive", ctx.directive,
+			"value", raw,
+			"location", ctx.location,
+		)
+		return "", &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "parallel",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("parallel on %s at %s: must be SAFE, RESTRICTED or UNSAFE, got %q",
+				ctx.directive, ctx.location, raw),
+		}
+	}
 }
 
 func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName string) error {

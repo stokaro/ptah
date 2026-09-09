@@ -2009,6 +2009,52 @@ func renderRoutineSetting(setting string) string {
 }
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
+// routineAttributes assembles the clauses that follow a routine's signature,
+// in the order PostgreSQL prints them back.
+//
+// Three of them are refused inside a procedure -- VOLATILE, LEAKPROOF and
+// PARALLEL. Measured on PostgreSQL, a procedure carrying any of them answers
+// `ERROR: invalid attribute in procedure definition`, while SECURITY is
+// accepted on both kinds (stokaro/ptah#2435).
+//
+// A clause the routine does not state is not written. UNSAFE is the server's
+// default PARALLEL level, so emitting it would change the DDL of every routine
+// that never asked about parallelism.
+func routineAttributes(node *ast.CreateFunctionNode) []string {
+	var attributes []string
+	if node.Language != "" {
+		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
+	}
+	if node.Security != "" {
+		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
+	}
+	if node.IsProcedure() {
+		return append(attributes, routineSettingClauses(node)...)
+	}
+	if node.Volatility != "" {
+		attributes = append(attributes, node.Volatility)
+	}
+	if node.Leakproof {
+		attributes = append(attributes, "LEAKPROOF")
+	}
+	if node.Parallel != "" {
+		attributes = append(attributes, "PARALLEL "+node.Parallel)
+	}
+	return append(attributes, routineSettingClauses(node)...)
+}
+
+// routineSettingClauses renders the routine's own configuration settings.
+//
+// Without them Ptah emitted SECURITY DEFINER routines that no author could pin
+// a search_path on (stokaro/ptah#2356).
+func routineSettingClauses(node *ast.CreateFunctionNode) []string {
+	clauses := make([]string, 0, len(node.Settings))
+	for _, setting := range node.Settings {
+		clauses = append(clauses, renderRoutineSetting(setting))
+	}
+	return clauses
+}
+
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure decides against its own key. The two kinds are one catalog
 	// object and one node, and they are still two different claims: SQL Server
@@ -2045,33 +2091,7 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		parts = append(parts, "RETURNS", node.Returns)
 	}
 
-	// Language specification and other attributes
-	var attributes []string
-	if node.Language != "" {
-		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
-	}
-
-	// Security attribute
-	if node.Security != "" {
-		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
-	}
-
-	// Volatility attribute. A procedure takes none, for the same reason it
-	// takes no RETURNS: measured on PostgreSQL 18, `CREATE PROCEDURE ...
-	// LANGUAGE plpgsql SECURITY INVOKER VOLATILE` answers `ERROR: invalid
-	// attribute in procedure definition` and the identical statement without
-	// it succeeds. SECURITY is accepted on both (stokaro/ptah#2435).
-	if node.Volatility != "" && !node.IsProcedure() {
-		attributes = append(attributes, node.Volatility)
-	}
-
-	// The routine's own configuration settings. Emitted after the volatility
-	// so the header reads in the order PostgreSQL prints it back, and emitted
-	// at all because without them Ptah rendered SECURITY DEFINER routines that
-	// no author could pin a search_path on (stokaro/ptah#2356).
-	for _, setting := range node.Settings {
-		attributes = append(attributes, renderRoutineSetting(setting))
-	}
+	attributes := routineAttributes(node)
 
 	if node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic {
 		parts = append(parts, attributes...)

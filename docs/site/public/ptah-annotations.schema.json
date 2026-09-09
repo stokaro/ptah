@@ -677,8 +677,20 @@
               "description": "Function language.",
               "type": "string"
             },
+            "leakproof": {
+              "description": "Marks the function LEAKPROOF, letting a filter using it be pushed past a security barrier.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "name": {
               "description": "Function name.",
+              "type": "string"
+            },
+            "parallel": {
+              "description": "Parallel level: SAFE, RESTRICTED or UNSAFE.",
               "type": "string"
             },
             "params": {
