@@ -37,7 +37,7 @@ render a report, and return a non-zero status when any case fails.
 | `--dir-format` | `auto`, `ptah`, or `atlas` | No | `ptah` |
 | `--db-url` | Optional explicit throwaway database | Optional explicit throwaway database | Ephemeral SQLite |
 | `--schema` | No | Repeatable desired-schema allow-list; database-wide extensions remain regardless of installation placement | All schemas |
-| `--var` | No | Repeatable `name=value` override for an HCL desired-schema file | No overrides |
+| `--var` | No | Repeatable `name=value` value for a `variable` block of an HCL desired-schema file or a `.test.hcl` document | No overrides |
 | `--run` | Go regular expression matched against case names | Go regular expression matched against case names | All cases |
 | `--report` | `text`, `json`, or `html` | `text`, `json`, or `html` | `text` |
 
@@ -78,7 +78,9 @@ is introspected. Naming two is refused before the throwaway database is
 provisioned. `--root-dir` also accepts a file or a database URL, which is what
 it did before the other two selectors existed; such a run reports on standard
 error which selector names that source exactly. HCL files also accept repeatable
-`--var name=value` overrides.
+`--var name=value` values. The same values reach a `.test.hcl` document's own
+`variable` blocks: a supplied value wins over a `default` and satisfies a block
+that has none, and a block with neither is refused by name.
 
 ## Exit contract
 

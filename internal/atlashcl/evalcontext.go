@@ -72,6 +72,16 @@ func newEvalContext(
 // community binary v1.3.0: `--var a=1,b=2` sets both. Repeating the flag for one
 // name collects a list, which then fails the variable's declared scalar type the
 // way that binary fails it ("variable \"v\": string required").
+// ParseVarOverrides decodes the `--var` grammar into values.
+//
+// Exported because it is the one grammar for that flag, and a second reader of
+// it would agree on the day it was written and stop agreeing the next time the
+// spelling grows. migration/dbtest supplies `.test.hcl` variables through it
+// (stokaro/ptah#3119).
+func ParseVarOverrides(vars []string) (map[string]cty.Value, error) {
+	return parseVarOverrides(vars)
+}
+
 func parseVarOverrides(vars []string) (map[string]cty.Value, error) {
 	overrides := make(map[string]cty.Value)
 	for _, raw := range vars {

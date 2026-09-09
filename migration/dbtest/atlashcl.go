@@ -8,6 +8,8 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+
+	"ptah.run/internal/atlashcl"
 )
 
 // AtlasTestKind selects which family of Atlas `.test.hcl` cases to load.
@@ -71,13 +73,17 @@ func ParseAtlasTestCases(
 		return nil, fmt.Errorf("parse %s: unexpected body type %T", filename, file.Body)
 	}
 
-	variables, err := atlasVariables(body, filename)
-	if err != nil {
-		return nil, err
-	}
 	evalOptions := atlasEvalOptions{}
 	for _, option := range options {
 		option(&evalOptions)
+	}
+	supplied, err := atlashcl.ParseVarOverrides(evalOptions.vars)
+	if err != nil {
+		return nil, err
+	}
+	variables, err := atlasVariables(body, filename, supplied)
+	if err != nil {
+		return nil, err
 	}
 
 	var cases []Case

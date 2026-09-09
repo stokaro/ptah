@@ -109,7 +109,8 @@ ptah migrations test --dir ./tests --migrations-dir ./migrations --seed-dir ./se
 # Schema tests: apply a static desired schema, then assert.
 ptah schema test --dir ./tests --schema-file ./schema.sql --seed-dir ./seeds
 
-# HCL variables reach an HCL desired schema through repeatable --var values.
+# Repeatable --var values reach an HCL desired schema and a .test.hcl
+# document's own variable blocks.
 ptah schema test --dir ./tests --schema-file ./schema.hcl --var tenant=test
 
 # Go annotations.
