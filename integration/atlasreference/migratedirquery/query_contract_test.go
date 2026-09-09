@@ -7,11 +7,12 @@ package migratedirquery_test
 import (
 	"bytes"
 	"errors"
-	"ptah.run/internal/atlasreference"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ type verbRow struct {
 func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
@@ -57,7 +58,7 @@ func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
@@ -71,7 +72,7 @@ func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
@@ -85,7 +86,7 @@ func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, row := range flagVerbRows() {
 		t.Run(row.name, func(t *testing.T) {
@@ -99,7 +100,7 @@ func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 func TestDirQueryContract_KeepsExtensionOnlyVerbsFailClosed(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, row := range extensionOnlyVerbRows() {
 		t.Run(row.name, func(t *testing.T) {
@@ -515,14 +516,6 @@ func withoutPtahEnvironment(environment []string) []string {
 		result = append(result, item)
 	}
 	return result
-}
-
-func buildCompatBinary(c *qt.C) string {
-	c.Helper()
-	path := filepath.Join(c.TempDir(), "ptah-compat")
-	out, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", out))
-	return path
 }
 
 func requireAtlasReference(t *testing.T) string {

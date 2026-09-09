@@ -22,6 +22,7 @@ import (
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"
 )
@@ -85,7 +86,7 @@ func runReferenceHelper(arguments []string) int {
 func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	reference := requireAtlasReference(t)
 	buildCheck := qt.New(t)
-	compat := buildCompatBinary(buildCheck)
+	compat := clirun.Build(buildCheck, clirun.Compat)
 
 	t.Run("sql", func(t *testing.T) {
 		c := qt.New(t)
@@ -193,7 +194,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	tests := []struct {
 		name        string
 		args        []string
@@ -237,7 +238,7 @@ func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
 func TestTemplateDirectoryDiffWritebackMatchesPinnedAtlas(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	atlasFixture := templateDirectoryDiffCommandFixture(c, t.TempDir())
 	ptahFixture := templateDirectoryDiffCommandFixture(c, t.TempDir())
 	states := compareTemplateDirectoryCommand(
@@ -411,7 +412,7 @@ func normalizeGeneratedTemplateContents(files []string) []string {
 func TestExternalFailureKeepsPinnedExitAndProgramStderr(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	directory := t.TempDir()
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "external" "failure" {
@@ -436,7 +437,7 @@ env "local" {
 func TestUnreferencedUnsupportedNamesKeepPinnedRefusal(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	tests := []string{"composite_schema", "definitely_unknown"}
 	for _, sourceType := range tests {
 		t.Run(sourceType, func(t *testing.T) {
@@ -796,14 +797,6 @@ env "local" {
 	// The run exists only to consume Atlas's first-use edition notice. The real
 	// differential command reports any subsequent startup failure.
 	_ = command.Run()
-}
-
-func buildCompatBinary(c *qt.C) string {
-	c.Helper()
-	path := filepath.Join(c.TempDir(), "ptah-compat")
-	output, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", output))
-	return path
 }
 
 func requireAtlasReference(t *testing.T) string {
