@@ -106,6 +106,18 @@ in [issue 1879](https://github.com/stokaro/ptah/issues/1879). A faithful emulato
 a credential-free per-PR service, or an explicit change to Ptah's evidence
 standard would justify reopening the decision.
 
+## What the last run measured
+
+The evidence chain above says how a release line is measured.
+[Database capability status](../capability-status/) is what it measured most
+recently: one row per declared line, the verdict the probe returned for it, and
+the run that produced it. A support claim on this page can be traced to the
+execution behind it rather than to the declaration that promised it.
+
+That page changes only when a verdict changes. A run agreeing with the one
+before it leaves it alone, so the date it carries is the date the answer last
+moved rather than the date a job last ran.
+
 ## Refreshing the evidence
 
 Continuous-execution evidence is checked on every relevant change. Vendor
