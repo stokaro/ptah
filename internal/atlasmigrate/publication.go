@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/fsdurable"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/migrationversion"
 	"ptah.run/internal/pathguard"
 	"ptah.run/migration/migrationfile"
@@ -377,8 +378,16 @@ func preparePublicationSnapshot(
 	contents []MigrationFileContent,
 	format atlasmigrateimport.Format,
 ) (fsnapshot.Snapshot, *migratesum.SumFile, error) {
+	// Only the artifacts the capture reads back belong in the expected snapshot.
+	// A Flyway `<migration>.sql.conf` sidecar is published beside its migration
+	// and is invisible to that capture, so counting it here put a file on one
+	// side of the comparison alone and the publication reported the directory as
+	// having changed under itself (stokaro/ptah#3115).
 	files := make(map[string][]byte, len(batch.names))
 	for i, name := range batch.names {
+		if !migrationsnapshot.Covers(name) {
+			continue
+		}
 		files[name] = []byte(contents[i].SQL)
 	}
 	publishedSnapshot, err := baseSnapshot.WithFiles(files)
