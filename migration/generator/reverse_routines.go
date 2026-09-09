@@ -18,11 +18,10 @@ import (
 // reverseRoutinesOfKind splits the additions a forward diff recorded into the
 // removals a rollback plans, by the kind each one carries.
 //
-// The kind used to be looked up in the desired schema, because the forward diff
-// recorded an addition by name only. It travels with the change now
-// (stokaro/ptah#2315), so a rollback no longer depends on the declaration still
-// being there -- and the signature comes with it, which is what makes the DROP
-// addressable when the name is overloaded (stokaro/ptah#2296).
+// The kind travels with the change (stokaro/ptah#2315) rather than being looked
+// up in the desired schema, so a rollback does not depend on the declaration
+// still being there -- and the signature comes with it, which is what makes the
+// DROP addressable when the name is overloaded (stokaro/ptah#2296).
 //
 // A routine whose kind is unset is left with the functions, because a DROP
 // FUNCTION that is refused is a louder failure than a DROP PROCEDURE aimed at a

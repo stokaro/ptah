@@ -34,12 +34,12 @@ func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // # Every field of SchemaDiff is accounted for here
 //
 // This function builds a fresh SchemaDiff literal, and a literal that
-// enumerates fields has no compiler check for the ones it forgets. Nine fields
-// -- views, materialized views and triggers, added/removed/modified -- were
-// once simply absent, so every down migration silently dropped those whole
-// categories: an up that created a view rolled back to "No rollback operations
-// needed" and left the view in place (issue #1287). Three dispositions are
-// available, and every field must have exactly one:
+// enumerates fields has no compiler check for the ones it forgets. Nine
+// absent fields -- views, materialized views and triggers, added/removed/
+// modified -- make every down migration silently drop those whole categories:
+// an up that creates a view rolls back to "No rollback operations needed" and
+// leaves the view in place (issue #1287). Three dispositions are available, and
+// every field must have exactly one:
 //
 //   - Exchanged. Added and removed swap where both sides carry the same kind of
 //     value and the reverse operation is the inverse of the forward one:
@@ -249,8 +249,8 @@ func reverseSchemaDiffWithSchemaForDialect(
 
 		// Reverse RLS policy operations. Both directions carry the owning
 		// table, so reversing is a swap and no name-to-table resolution is
-		// needed -- the resolution that used to happen here keyed a map by
-		// policy name and lost one of two policies that shared one.
+		// needed. A resolution here would key a map by policy name and lose one
+		// of two policies that share one.
 		// Exchanged, and rewritten on the way. An addition renders CREATE POLICY
 		// from its operand and a removal is written from its two names, so the
 		// reversed addition needs the declaration the pre-change database held

@@ -574,9 +574,9 @@ func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 // control: an empty signature is the answer the bare list already gave, and it
 // drops correctly wherever the name is unique.
 //
-// What makes it empty changed with stokaro/ptah#2315. It used to be a lookup
-// that found nothing; it is now an addition that declared no parameters, which
-// is the same answer reached without depending on the schema still being there.
+// What makes it empty is an addition that declares no parameters, rather than a
+// lookup that finds nothing (stokaro/ptah#2315): the same answer, reached
+// without depending on the schema still being there.
 func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testing.T) {
 	c := qt.New(t)
 

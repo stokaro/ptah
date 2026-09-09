@@ -12,7 +12,8 @@ import (
 )
 
 // nestedGolangMigrateFS is a golang-migrate source whose second migration sits
-// one directory down, which is the layout that used to import silently short.
+// one directory down, which is the layout an unreporting import takes silently
+// short.
 func nestedGolangMigrateFS() fstest.MapFS {
 	return fstest.MapFS{
 		"000001_create.up.sql":     {Data: []byte("CREATE TABLE t (id INTEGER);")},
@@ -77,8 +78,8 @@ func TestImport_ACompleteSourceStillImportsWithoutAnOptIn(t *testing.T) {
 
 // Flyway sources are read recursively, which is Flyway's own contract for a
 // location, and what `ptah-compat migrate import` already did for the same
-// directory -- the two verbs used to convert it differently with neither saying
-// so (stokaro/ptah#2231).
+// directory. Two verbs converting it differently, with neither saying so, is
+// the shape stokaro/ptah#2231 closes.
 func TestFlywayParse_ReadsMigrationsBelowTheTopLevel(t *testing.T) {
 	c := qt.New(t)
 	parser, err := importer.ParserByName("flyway")

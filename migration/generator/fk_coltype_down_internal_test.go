@@ -30,8 +30,8 @@ var fkColumnTypeDialects = []struct {
 // TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse runs the real
 // generator up- and down-paths for issue #694: widening posts.user_slug from
 // VARCHAR(50) to VARCHAR(100) while it carries an unchanged foreign key to
-// users(slug). The bare ALTER TABLE ... MODIFY the planner used to emit is
-// rejected while the key exists (MySQL errno 3780, MariaDB errno 1832), so the
+// users(slug). A bare ALTER TABLE ... MODIFY is rejected while the key exists
+// (MySQL errno 3780, MariaDB errno 1832), so the
 // migration must drop the key, MODIFY the column, then recreate the key — and
 // the generated down migration must be the exact inverse. This runs the REAL
 // down-path (generateDownMigrationSQL -> reverseSchemaDiffWithSchema over the

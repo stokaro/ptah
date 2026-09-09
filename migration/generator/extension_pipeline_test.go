@@ -88,11 +88,11 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			},
 			// The down migration recreates the extension WHERE AND AS it was:
 			// the removal carries the extension the catalog reported, schema
-			// and version included (stokaro/ptah#2315). It used to emit a bare
-			// CREATE because the planner read the definition out of the
-			// stripped-down schema this test builds below, not because a bare
-			// one was the intent -- internal/convert/dbschematogo carries the
-			// version too, so a real down migration already looked like this.
+			// and version included (stokaro/ptah#2315). A planner reading the
+			// definition out of the stripped-down schema this test builds below
+			// emits a bare CREATE instead, which is an artifact of the fixture
+			// rather than the intent -- internal/convert/dbschematogo carries
+			// the version too, so a real down migration looks like this.
 			expectedDownSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public VERSION '1.6';",
 			},

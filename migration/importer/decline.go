@@ -12,13 +12,13 @@ import (
 // DeclinedFile is one file found under the source directory that the import did
 // not convert into a Ptah migration, together with the reason.
 //
-// Every file in the source tree is either converted or declined. The importer
-// used to drop whatever its parser did not recognize with
-// `continue // ignore non-migration files`, so a migration one directory down,
-// a Flyway baseline, or a name off by one character left no trace in the output
-// and no trace in `ptah.sum` -- which was then written over the surviving
-// subset, so the result validated clean and nothing downstream could establish
-// that SQL had been lost (stokaro/ptah#2231).
+// Every file in the source tree is either converted or declined. Dropping
+// whatever a parser does not recognize with
+// `continue // ignore non-migration files` leaves a migration one directory
+// down, a Flyway baseline, or a name off by one character with no trace in the
+// output and none in `ptah.sum` -- which is then written over the surviving
+// subset, so the result validates clean and nothing downstream can establish
+// that SQL was lost (stokaro/ptah#2231).
 type DeclinedFile struct {
 	// Path is the file's slash-separated path relative to the source root.
 	Path string

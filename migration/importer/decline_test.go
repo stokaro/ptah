@@ -11,12 +11,12 @@ import (
 
 // Every file under the source tree is accounted for -- stokaro/ptah#2231.
 //
-// The importer used to drop whatever its parser did not recognize with
-// `continue // ignore non-migration files`, in all five parsers. A migration one
-// directory down, a name off by one character, or an extension in the wrong case
-// left no trace in the output, and ptah.sum was then written over the surviving
-// subset -- so the truncated directory validated clean and nothing downstream
-// could establish that SQL had been lost.
+// Dropping whatever a parser does not recognize with
+// `continue // ignore non-migration files`, in all five parsers, leaves a
+// migration one directory down, a name off by one character, or an extension in
+// the wrong case with no trace in the output, and ptah.sum is then written over
+// the surviving subset -- so the truncated directory validates clean and
+// nothing downstream can establish that SQL was lost.
 //
 // The accounting is done by walking the tree rather than by asking each parser
 // to remember, so a parser that forgets to record a file it used over-reports
