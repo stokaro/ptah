@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
-lastVerified: "2026-08-30"
+lastVerified: "2026-09-09"
 evidence:
   - "docs/site/src/content/docs/atlas/docs-coverage.md"
   - "scripts/atlas-ce-reference.lock"
@@ -20,10 +20,19 @@ disposition: keep
 ---
 
 The matrix below maps the reviewed Atlas documentation areas to Ptah pages,
-implementation status, conformance coverage, and follow-up issues. It measures
-documentation coverage, not full parity.
+implementation status and conformance coverage. It measures documentation
+coverage, not full parity.
 
 Research date: July 28, 2026.
+
+Every issue that research opened has since closed, so no section names a
+tracker. Where a section reads `Partial`, that reading dates from the research
+date above and no open issue owns the remainder;
+[`stokaro/ptah#3106`](https://github.com/stokaro/ptah/issues/3106) owns
+re-measuring these status fields against the current binaries. The
+[feature matrix](../feature-matrix/) is generated per capability and is the
+maintained answer for anything it covers. Update this page when the conformance
+assets it cites change.
 
 Official Atlas sources reviewed:
 
@@ -69,8 +78,8 @@ when it separates Open, Pro, and Cloud behavior.
 ## Coverage matrix
 
 Each area below records how Atlas documents it, where Ptah documents it, the
-implementation status, the conformance status, and the follow-up. This table is
-the index; the sections carry the detail.
+implementation status and the conformance status. This table is the index; the
+sections carry the detail.
 
 | Atlas docs area | Ptah status |
 | --- | --- |
@@ -116,9 +125,6 @@ the index; the sections carry the detail.
 
 **Conformance status.** Unmeasured; docs structure is not a runtime behavior.
 
-**Follow-up.** [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) for full docs revision.
-
-
 ### Installation and CLI entry points
 
 **Atlas availability.** Open docs
@@ -129,9 +135,6 @@ the index; the sections carry the detail.
 
 **Conformance status.** Partially measured by command-resolution probes.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510) for remaining CLI semantics.
-
-
 ### CLI command and flag reference
 
 **Atlas availability.** Open for OSS commands; Pro/Cloud commands excluded from OSS target
@@ -141,13 +144,6 @@ the index; the sections carry the detail.
 **Implementation status.** Partial. Core command paths are documented, but full Atlas flag semantics are still being audited and implemented.
 
 **Conformance status.** Measured for selected command paths and flags only.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510),
-[`stokaro/ptah#514`](https://github.com/stokaro/ptah/issues/514) for the command
-tree, [`stokaro/ptah#621`](https://github.com/stokaro/ptah/issues/621) for the
-Atlas shorthand aliases (`-u`, `-c`, `-s`, `schema diff -f`, and the hidden
-`schema apply --file/-f`).
-
 
 ### Schema inspection
 
@@ -175,9 +171,6 @@ Local schema files, migration directories, and `env://` references are inspected
 `ptah-compat schema inspect --include` positively selects which top-level resources the output keeps, through the same selector engine as `schema apply` and `schema diff`: `--schema` names the universe for schema-owned resources, `--include` picks resources, and `--exclude` subtracts. Database-wide extensions remain visible across schema selection. An extension-only include controls which extension identities inspection renders; when a non-extension resource matches, all extensions ride as support even beside extension selectors. On comparison verbs that support is non-removing, while schema-only and extension-only scopes remain authoritative. Exclusions still subtract afterward. The pinned Atlas CE binary does not register the flag on this command and rejects it as an unknown flag, so this is a Pro-surface spelling Ptah implements openly rather than a CE parity target.
 
 **Conformance status.** Partially measured by live SQLite HCL/SQL/JSON/custom-template/split-write/exclude/compat probes and CLI flag probes.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640).
-
 
 ### Declarative schema apply
 
@@ -212,9 +205,6 @@ a synced schema.
 
 **Conformance status.** Partially measured with local schema files and live SQLite apply/no-op/dry-run/transaction-mode/exclude/config-driven format/schema-mode coverage, plus CLI-surface flag probes.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640).
-
-
 ### Declarative schema diff
 
 **Atlas availability.** Open
@@ -230,9 +220,6 @@ a synced schema.
 `--schema` and `--include` positively scope both diff sides with the same selection semantics as `schema apply`. Dev-database simulation and export remain incomplete. The pinned Atlas CE flag surface does not register `schema diff --web`. Ptah registers it and writes a self-contained HTML ERD of the compared schemas locally, marking each table added, changed or removed; nothing is published.
 
 **Conformance status.** Partially measured with local schema-file default, custom-template, no-op-template, invalid-template, exclude, config-driven skip-drop probes, and CLI-surface flag probes.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640).
-
 
 ### Desired-state sources
 
@@ -253,9 +240,6 @@ outside the supported compatibility subset.
 
 **Conformance status.** Native external programs are measured by a deterministic 20-observation SQL/HCL/YAML workflow through render, compare, drift, plan, generate, apply, live SQLite facts, and convergence. A separate zero-gap tier exercises pinned GORM and SQLAlchemy providers. The native OCI round trip remains covered by Ptah's own command and integration tests rather than Atlas conformance.
 
-**Follow-up.** [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511), [`stokaro/ptah#664`](https://github.com/stokaro/ptah/issues/664), [`stokaro/ptah#669`](https://github.com/stokaro/ptah/issues/669).
-
-
 ### Atlas HCL schema syntax
 
 **Atlas availability.** Open for core HCL schema; advanced objects and product-gated areas vary by feature matrix
@@ -265,9 +249,6 @@ outside the supported compatibility subset.
 **Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs. Current support includes core tables, columns, indexes, constraints, enums, schemas, selected generated/identity forms, and PostgreSQL include columns.
 
 **Conformance status.** Measured for current imported fixtures; not complete Atlas HCL coverage.
-
-**Follow-up.** [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511).
-
 
 ### Atlas project config (`atlas.hcl`)
 
@@ -308,9 +289,6 @@ tests cover the supported local subset, whole-document structural decisions,
 selected-environment evaluation, dependency-ordered project data sources,
 multi-target apply with partial failure and retry, and ignored-name warnings.
 
-**Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#583`](https://github.com/stokaro/ptah/issues/583), [`stokaro/ptah#581`](https://github.com/stokaro/ptah/issues/581), [`stokaro/ptah#619`](https://github.com/stokaro/ptah/issues/619).
-
-
 ### Dev database
 
 **Atlas availability.** Core concept for Atlas diff/apply/lint planning; Docker/dev blocks include Pro-only baseline forms in current Atlas docs
@@ -321,9 +299,6 @@ multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Conformance status.** Partially measured for migrate validate, migrate lint, and selected migrate diff/schema paths.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510).
-
-
 ### Versioned migrations overview
 
 **Atlas availability.** Open
@@ -333,9 +308,6 @@ multi-target apply with partial failure and retry, and ignored-name warnings.
 **Implementation status.** Documented for Ptah native workflow and Atlas-compatible command names. Runtime parity still depends on command-specific rows below.
 
 **Conformance status.** Partially measured.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510).
-
 
 ### Migration apply
 
@@ -351,7 +323,7 @@ External Atlas OSS directory formats (`golang-migrate`, `goose`, `flyway`, `liqu
 
 Directory URL `?format=` overrides `migration.format` whether the URL comes from project config or CLI.
 
-Three of those flags come from the wider Atlas distribution's documented flag surface rather than from the pinned community binary's. That binary answers `unknown flag: --to-version`, `unknown flag: --lock-name`, and `unknown flag: --skip-lock`, word for word the answer it gives a misspelled flag, so it does not register them at all. Ptah implements all three anyway, tracked as adopted compatibility spellings under [`stokaro/ptah#951`](https://github.com/stokaro/ptah/issues/951). That is a statement about three flags, not a parity claim about any non-community Atlas distribution.
+Three of those flags come from the wider Atlas distribution's documented flag surface rather than from the pinned community binary's. That binary answers `unknown flag: --to-version`, `unknown flag: --lock-name`, and `unknown flag: --skip-lock`, word for word the answer it gives a misspelled flag, so it does not register them at all. Ptah implements all three anyway, as adopted compatibility spellings decided in [`stokaro/ptah#951`](https://github.com/stokaro/ptah/issues/951). That is a statement about three flags, not a parity claim about any non-community Atlas distribution.
 
 Behavior below was executed against a `ptah-compat` build from this repository, on PostgreSQL 17.10 unless a line says otherwise:
 
@@ -360,9 +332,6 @@ Behavior below was executed against a `ptah-compat` build from this repository, 
 - `--skip-lock` acquires no lock. With `ptah_migrate` still held elsewhere, a run with nothing pending still times out under the default lock, and exits `0` under `--skip-lock` in the same state. It cannot be combined with `--lock-name`, and on SQLite an explicit `--lock-name` prints a stderr note naming the lock that was not acquired.
 
 **Conformance status.** Measured for selected migration-directory and live SQLite amount, baseline, `LINEAR_SKIP` state semantics, dry-run baseline, JSON format, custom template, config-driven format, per-format up-only external-format execution (goose, dbmate, liquibase, golang-migrate, flyway), CLI and project URL-format precedence, unknown-format pre-connect rejection, no-op format, invalid-template preflight, redacted URL, failed-apply format cases, and the CLI-surface tier, which projects out the three adopted flags through its closed per-command allowlist and rejects any other flag the pinned binary does not register.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640), [`stokaro/ptah#741`](https://github.com/stokaro/ptah/issues/741), [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
-
 
 ### Migration down and rollback
 
@@ -379,9 +348,6 @@ from the schema difference instead of running the down bodies. Atlas's
 registry-approved down planning stays out of scope.
 
 **Conformance status.** Partially measured.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
-
 
 ### Migration diff generation
 
@@ -408,9 +374,6 @@ writes Atlas-style migration files. It:
 
 **Conformance status.** Partially measured with local SQLite dev DB, local schema-file, schema-filter, custom-format, config-driven format/env defaults, dry-run, invalid-format, lock-timeout, qualifier, and txmode-split coverage, CLI-surface flag probes, and a real-PostgreSQL end-to-end test for database desired-state scoping, concurrent-index metadata, and qualifier artifacts, plus real MySQL and MariaDB source-preservation and convergence tests.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#618`](https://github.com/stokaro/ptah/issues/618), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640), [`stokaro/ptah#842`](https://github.com/stokaro/ptah/issues/842), [`stokaro/ptah#668`](https://github.com/stokaro/ptah/issues/668) for the `diff` policy block (`diff.skip`, `diff.concurrent_index`).
-
-
 ### Migration linting
 
 **Atlas availability.** Mixed in current Atlas docs: feature page lists migration linting CLI as Pro while also listing a basic Open lint-rule set
@@ -425,9 +388,6 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Conformance status.** Partially measured with static lint, explicit Atlas dir-format latest selection, Git changeset selection, config-driven latest selection, policy-driven severity, compatibility-wrapper env policy, live SQLite dev-database replay, and Atlas Go-template output coverage.
 
-**Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#622`](https://github.com/stokaro/ptah/issues/622).
-
-
 ### Migration directory integrity, hash, and validation
 
 **Atlas availability.** Open versioned workflow concept
@@ -437,9 +397,6 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 **Implementation status.** Documented. Ptah supports `ptah.sum`, Atlas-compatible `atlas.sum`, hash, validate, and `migrate validate --dev-url` SQL replay paths. `ptah-compat migrate hash` and `validate` register Atlas `--dir-format` with default `atlas`; external migration-tool formats are read directly, and `migrate new` plus `migrate diff` write them. Goose represents either direction's no-transaction requirement with its whole-file directive. The other four foreign layouts refuse those plans before publication. Remaining parity depends on exact Atlas edge cases.
 
 **Conformance status.** Measured for selected directory fixtures, Atlas-default hash output, and live SQLite dev-database replay.
-
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#622`](https://github.com/stokaro/ptah/issues/622).
-
 
 ### Migration import
 
@@ -451,9 +408,6 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Conformance status.** Partially measured.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510).
-
-
 ### Manual migrations and troubleshooting
 
 **Atlas availability.** Open docs
@@ -464,9 +418,6 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Conformance status.** Partially measured.
 
-**Follow-up.** [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) for docs polish; [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510) for runtime semantics.
-
-
 ### Drift detection
 
 **Atlas availability.** Feature page lists drift detection as Pro
@@ -476,9 +427,6 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 **Implementation status.** Ptah has native `ptah schema drift`; Atlas Cloud/Pro drift monitoring is out of scope.
 
 **Conformance status.** Ptah-native behavior is tested in repo; Atlas Cloud parity is not a target.
-
-**Follow-up.** None for Cloud parity; [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) for docs depth.
-
 
 ### Checkpoints
 
@@ -492,9 +440,6 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 
 **Conformance status.** Measured by native command tests and Atlas-compatibility tests that verify `ptah-compat migrate checkpoint` forwards to the native implementation.
 
-**Follow-up.** [`stokaro/ptah#660`](https://github.com/stokaro/ptah/issues/660), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
-
-
 ### Pre-migration checks and policy workflows
 
 **Atlas availability.** Feature page lists pre-migration checks as Pro
@@ -504,9 +449,6 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 **Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and Atlas txtar `checks.sql` / `checks/*.sql` sections, including file-level `atlas:assert oneof`. They are enforced as pre-migration gates rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope.
 
 **Conformance status.** Measured against Atlas: a failing txtar assertion aborts the apply before any body statement on both binaries, and no revision row is recorded. Ptah also covers Atlas's documented named check files and one-of grouping.
-
-**Follow-up.** [`stokaro/ptah#956`](https://github.com/stokaro/ptah/issues/956) closed the txtar `checks.sql` gap; no Atlas OSS issue unless a further Open check surface is identified.
-
 
 ### Testing framework
 
@@ -520,9 +462,6 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Conformance status.** Measured by native command tests and Atlas-compatibility tests that exercise these forwards.
 
-**Follow-up.** [`stokaro/ptah#659`](https://github.com/stokaro/ptah/issues/659), [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758).
-
-
 ### Declarative reference data
 
 **Atlas availability.** Feature page lists declarative data management as Pro
@@ -532,9 +471,6 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 **Implementation status.** Implemented natively and free. `ptah migrations data` diffs declarative reference rows against a live table and writes a reversible data migration (`INSERT`/`UPDATE`/`DELETE`) with an exact inverse `down` — a workflow Atlas keeps in its Pro build and Atlas CE cannot inspect declaratively.
 
 **Conformance status.** Measured by native command and round-trip reversibility tests.
-
-**Follow-up.** [`stokaro/ptah#663`](https://github.com/stokaro/ptah/issues/663).
-
 
 ### Supported databases
 
@@ -546,9 +482,6 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Conformance status.** Partially measured by local, live, and conformance tests.
 
-**Follow-up.** [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) for fuller object-level docs; implementation gaps should be filed from concrete findings.
-
-
 ### Database object kinds
 
 **Atlas availability.** Core object kinds open for common drivers; advanced PostgreSQL objects such as partitions, views, functions, sequences, extensions, and RLS are listed as Pro examples in Atlas docs
@@ -558,9 +491,6 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 **Implementation status.** Partial and not product-identical. Ptah supports some objects Atlas lists as Pro-gated, but HCL/config parity is still a subset until audited.
 
 **Conformance status.** Partially measured.
-
-**Follow-up.** [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511).
-
 
 ### Atlas Registry
 
@@ -574,9 +504,6 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Conformance status.** Atlas-compatible push stubs remain measured by CLI-surface conformance. Native OCI behavior is tested in Ptah and is not evidence of Atlas Cloud parity.
 
-**Follow-up.** [`stokaro/ptah#638`](https://github.com/stokaro/ptah/issues/638), [`stokaro/ptah#664`](https://github.com/stokaro/ptah/issues/664).
-
-
 ### Atlas Cloud deployment reporting
 
 **Atlas availability.** Cloud
@@ -586,9 +513,6 @@ The referrers command lists descriptor metadata but does not pull report payload
 **Implementation status.** Out of scope. Ptah can be used in CI, but it does not report deployments to Atlas Cloud.
 
 **Conformance status.** Not measured.
-
-**Follow-up.** None for OSS parity.
-
 
 ### Cloud-only workflows and account commands
 
@@ -602,9 +526,6 @@ Out of scope is the hosted service, not the capability: Ptah publishes and promo
 
 **Conformance status.** Not measured.
 
-**Follow-up.** None for OSS parity.
-
-
 ### CI integrations
 
 **Atlas availability.** Mixed: local CLI usage is open; Atlas Cloud deployment and lint reporting can require Pro/Cloud
@@ -614,9 +535,6 @@ Out of scope is the hosted service, not the capability: Ptah publishes and promo
 **Implementation status.** Documented for Ptah-native CI and conformance interpretation. Atlas's official integrations are not cloned one by one.
 
 **Conformance status.** Ptah CI is measured by repository workflows; Atlas integration parity is unmeasured.
-
-**Follow-up.** [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498).
-
 
 ### Conformance evidence
 
@@ -628,9 +546,6 @@ Out of scope is the hosted service, not the capability: Ptah publishes and promo
 
 **Conformance status.** Measured in `ptah-atlas-conformance`, with current limits documented there.
 
-**Follow-up.** [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167).
-
-
 ### License and implementation boundary
 
 **Atlas availability.** Atlas source is a separate third-party project; Ptah compatibility must stay license-clean
@@ -641,23 +556,23 @@ Out of scope is the hosted service, not the capability: Ptah publishes and promo
 
 **Conformance status.** Not a runtime conformance area.
 
-**Follow-up.** Keep this page updated when conformance assets change.
-
 ## Follow-up issue coverage
 
-The fresh docs pass did not expose a product or conformance gap that lacks a
-tracking issue. Current follow-up coverage is:
+The docs pass recorded here opened four trackers, and each has closed:
+[`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510) for Atlas
+command runtime and flag semantics,
+[`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511) for HCL schema
+and project config parity,
+[`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) for the
+documentation revision, and
+[`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167)
+for conformance breadth. Nothing open inherits them, which is what
+[`stokaro/ptah#3106`](https://github.com/stokaro/ptah/issues/3106) exists to
+settle.
 
-| Gap family | Tracking issue |
-| --- | --- |
-| Atlas command runtime and flag semantics | [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510) |
-| HCL schema and Atlas project config parity | [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511) |
-| Full Ptah documentation revision | [`stokaro/ptah#498`](https://github.com/stokaro/ptah/issues/498) |
-| Live and differential conformance breadth | [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
-
-When a future Atlas docs audit finds a concrete unsupported OSS behavior not
-covered by those issues, file a focused implementation or conformance issue
-before claiming the area as covered.
+When a future Atlas docs audit finds a concrete unsupported OSS behavior, file
+a focused implementation or conformance issue before claiming the area as
+covered.
 
 ## How to use this matrix
 

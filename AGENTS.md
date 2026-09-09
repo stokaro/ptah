@@ -93,8 +93,8 @@ under `internal/dialects/`), `core/platform`, `core/yamlschema`, `dbschema`,
 
 Internal packages worth knowing: `internal/lexer`, `internal/parser` and
 `internal/dialectlexer` (SQL tokenizer and DDL parser); `internal/convert/...`
-(remaining representation conversions; stokaro/ptah#2725 owns removing the SQL
-one); `internal/schemaprep` (model-to-model preparation shared by renderers and
+(conversions between the Go and database schema representations);
+`internal/schemaprep` (model-to-model preparation shared by renderers and
 planners); `internal/modelast` (lowering to AST nodes); `internal/tablelookup`;
 `internal/dbschema/...` (per-dialect readers and writers); `internal/envbool`
 (the one grammar for boolean `PTAH_*` variables); `internal/capabilityprobe`,

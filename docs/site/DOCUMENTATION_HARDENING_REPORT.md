@@ -227,15 +227,17 @@ source_commit: 0ef7afb42ed9f26934f3bb3d318e0d14389fb6e3
 built_at: 2026-08-30T14:16:51.348Z
 ```
 
-That commit predates the current default-branch base of PR #2593 and the
-unmerged hardening change. It is evidence for the public site's current state,
-not evidence that this implementation has deployed.
+That commit predates the default-branch base of PR #2593 and the hardening
+change. It is evidence for the public site's state at capture time, not
+evidence that this implementation has deployed.
 
-- Expected implementation commit: the merge commit of PR #2593, not yet
-  created.
-- Observed implementation commit: not deployed; the public site still reports
-  `0ef7afb42ed9f26934f3bb3d318e0d14389fb6e3`.
-- Deployment workflow run: not started because PR #2593 is unmerged.
+- Expected implementation commit:
+  `63ef7718277f543edc397f611e62da9013a8e5cd`. PR #2593 merged at
+  2026-08-30T15:55:18Z, after the capture above was taken at 14:16Z.
+- Observed implementation commit: not measured since that merge. The capture
+  reports `0ef7afb42ed9f26934f3bb3d318e0d14389fb6e3`, which predates it.
+- Deployment workflow run: not recorded here. Re-read the published
+  `build-info.json` to replace both lines above with a measurement.
 
 ## Public smoke-test result
 
@@ -243,9 +245,9 @@ Deployment run
 [#33316131267](https://github.com/stokaro/ptah/actions/runs/33316131267)
 published the currently observed commit; deploy job `99272175567` succeeded.
 Its smoke job `99272174987` exposed the stale alternate-text selector. The
-current checker uses stable visual-proof identifiers and bounded retries. A
-result against the implementation commit cannot exist until PR #2593 merges;
-this record does not claim one.
+current checker uses stable visual-proof identifiers and bounded retries. No
+result against the implementation commit is recorded here, and this record does
+not claim one.
 
 The checker covers `/`, `/schema/visualize/`, `/schema/document/`,
 `/schema/serve/`, `/schema/security/`, `/schema/lineage/`,
