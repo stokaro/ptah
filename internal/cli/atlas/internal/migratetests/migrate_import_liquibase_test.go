@@ -42,7 +42,10 @@ CREATE TABLE conventional_table (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, "")
+	// The changeset carries a --rollback line an Atlas single-file
+	// migration cannot hold, so the import names the file
+	// (stokaro/ptah#3116).
+	c.Assert(stderr, qt.Contains, "was not imported")
 	_, statErr := os.Stat(filepath.Join(target, "1_numbered_first.sql"))
 	c.Assert(statErr, qt.IsNil)
 	_, statErr = os.Stat(filepath.Join(target, "2_conventional_second.sql"))

@@ -44,22 +44,29 @@ func writeMigrateImportFiles(c *qt.C, dir string, files map[string]string) {
 	}
 }
 
-func runMigrateImport(c *qt.C, args []string) (*bytes.Buffer, error) {
+func runMigrateImport(c *qt.C, args []string) (stdout, stderr *bytes.Buffer, err error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
-	out := &bytes.Buffer{}
-	cmd.SetOut(out)
-	cmd.SetErr(out)
+	stdout = &bytes.Buffer{}
+	stderr = &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
 	cmd.SetArgs(append([]string{"migrate", "import"}, args...))
 
-	return out, cmd.Execute()
+	return stdout, stderr, cmd.Execute()
 }
 
 // TestCompatMigrateImportSuccessIsSilent pins the whole of what a successful
 // compatibility import reports: the destination directory and its atlas.sum,
-// and not a single byte on the command's writer. Both documented spellings of
-// the source format are covered, because the format is resolved from the
-// --from query parameter and from --dir-format on separate code paths.
+// and not a single byte on stdout. Both documented spellings of the source
+// format are covered, because the format is resolved from the --from query
+// parameter and from --dir-format on separate code paths.
+//
+// stderr is no longer silent, and that is the point of stokaro/ptah#3116: an
+// Atlas single-file migration holds no rollback, so a source layout's undo file
+// or down section cannot come across, and the import names each file it left one
+// in. The Flyway row writes no undo file, so its expectation is empty -- the
+// control that the report fires only where something was dropped.
 func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 	tests := []struct {
 		name string
@@ -69,23 +76,29 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 		// and the two are resolved on separate code paths.
 		files map[string]string
 		args  func(source, target string) []string
+		// droppedRollback is the source file this layout keeps its rollback
+		// in, empty where the row writes none.
+		droppedRollback string
 	}{
 		{
-			name:  "goose via format query parameter",
-			files: map[string]string{"00001_init.sql": gooseImportFixture},
+			name:            "goose via format query parameter",
+			droppedRollback: "00001_init.sql",
+			files:           map[string]string{"00001_init.sql": gooseImportFixture},
 			args: func(source, target string) []string {
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + target}
 			},
 		},
 		{
-			name:  "goose via dir-format flag",
-			files: map[string]string{"00001_init.sql": gooseImportFixture},
+			name:            "goose via dir-format flag",
+			droppedRollback: "00001_init.sql",
+			files:           map[string]string{"00001_init.sql": gooseImportFixture},
 			args: func(source, target string) []string {
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "goose"}
 			},
 		},
 		{
-			name: "golang-migrate via format query parameter",
+			name:            "golang-migrate via format query parameter",
+			droppedRollback: "1_init.down.sql",
 			files: map[string]string{
 				"1_init.up.sql":   "CREATE TABLE users (id int);\n",
 				"1_init.down.sql": "DROP TABLE users;\n",
@@ -95,7 +108,8 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 			},
 		},
 		{
-			name: "golang-migrate via dir-format flag",
+			name:            "golang-migrate via dir-format flag",
+			droppedRollback: "1_init.down.sql",
 			files: map[string]string{
 				"1_init.up.sql":   "CREATE TABLE users (id int);\n",
 				"1_init.down.sql": "DROP TABLE users;\n",
@@ -105,15 +119,17 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 			},
 		},
 		{
-			name:  "dbmate via format query parameter",
-			files: map[string]string{"20240101010101_init.sql": dbmateImportFixture},
+			name:            "dbmate via format query parameter",
+			droppedRollback: "20240101010101_init.sql",
+			files:           map[string]string{"20240101010101_init.sql": dbmateImportFixture},
 			args: func(source, target string) []string {
 				return []string{"--from", "file://" + source + "?format=dbmate", "--to", "file://" + target}
 			},
 		},
 		{
-			name:  "dbmate via dir-format flag",
-			files: map[string]string{"20240101010101_init.sql": dbmateImportFixture},
+			name:            "dbmate via dir-format flag",
+			droppedRollback: "20240101010101_init.sql",
+			files:           map[string]string{"20240101010101_init.sql": dbmateImportFixture},
 			args: func(source, target string) []string {
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "dbmate"}
 			},
@@ -136,10 +152,11 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 			target := filepath.Join(root, "target")
 			writeMigrateImportFiles(c, source, tt.files)
 
-			out, err := runMigrateImport(c, tt.args(source, target))
+			stdout, stderr, err := runMigrateImport(c, tt.args(source, target))
 
-			c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-			c.Assert(out.String(), qt.Equals, "")
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout.String(), qt.Equals, "")
+			assertDroppedRollbackReport(c, stderr.String(), tt.droppedRollback)
 			_, statErr := os.Stat(filepath.Join(target, "atlas.sum"))
 			c.Assert(statErr, qt.IsNil)
 		})
@@ -160,14 +177,17 @@ func TestCompatMigrateImportHelpUsesUpdatedRootWriter(t *testing.T) {
 	writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 
 	cmd := atlas.NewCompatCommand("atlas")
-	var firstOut bytes.Buffer
+	var firstOut, firstErrOut bytes.Buffer
 	cmd.SetOut(&firstOut)
-	cmd.SetErr(&firstOut)
+	cmd.SetErr(&firstErrOut)
 	cmd.SetArgs([]string{"migrate", "import", "--from", "file://" + source + "?format=goose", "--to", "file://" + target})
 
 	firstErr := cmd.Execute()
 
-	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", firstOut.String()))
+	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", firstErrOut.String()))
+	// The streams are separate here because the goose fixture carries a Down
+	// section the import cannot take across and reports on stderr; this test is
+	// about where --help lands, so only stdout has to be empty.
 	c.Assert(firstOut.String(), qt.Equals, "")
 	var secondOut bytes.Buffer
 	cmd.SetOut(&secondOut)
@@ -262,7 +282,8 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 			writeMigrateImportFiles(c, source, tt.sourceFiles)
 			writeMigrateImportFiles(c, target, tt.targetFiles)
 
-			out, err := runMigrateImport(c, tt.args(source, target))
+			out, errOut, err := runMigrateImport(c, tt.args(source, target))
+			out.Write(errOut.Bytes())
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out.String(), qt.Contains, "Error: ")
@@ -315,7 +336,7 @@ func TestCompatMigrateImportRefusesADirectoryAlreadyInTargetFormat(t *testing.T)
 			to := filepath.Join(t.TempDir(), "dst")
 			writeMigrateImportFixture(c, from, "20240101010101_init.sql", "CREATE TABLE users (id int);\n")
 
-			_, err := runMigrateImport(c, tt.args(from, to))
+			_, _, err := runMigrateImport(c, tt.args(from, to))
 
 			c.Assert(err, qt.ErrorMatches, `cannot import a migration directory already in "atlas" format`)
 			_, statErr := os.Stat(to)

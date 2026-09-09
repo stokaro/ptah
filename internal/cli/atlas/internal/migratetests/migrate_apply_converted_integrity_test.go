@@ -54,30 +54,38 @@ type convertedApplyFixture struct {
 	extra string
 	// extraBody is the content written for extra, in the layout's own syntax.
 	extraBody string
+	// droppedRollback is the source file whose rollback an import into the
+	// Atlas single-file layout cannot carry, empty where the fixture writes
+	// none. Flyway's is empty because this fixture has no undo file, which is
+	// what makes it the control for the report (stokaro/ptah#3116).
+	droppedRollback string
 }
 
 func convertedApplyFixtures() []convertedApplyFixture {
 	return []convertedApplyFixture{
 		{
-			format:    "goose",
-			files:     map[string]string{"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n"},
-			covered:   "1_init.sql",
-			extra:     "2_extra.sql",
-			extraBody: "-- +goose Up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
+			format:          "goose",
+			droppedRollback: "1_init.sql",
+			files:           map[string]string{"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE widgets;\n"},
+			covered:         "1_init.sql",
+			extra:           "2_extra.sql",
+			extraBody:       "-- +goose Up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
 		},
 		{
-			format:    "dbmate",
-			files:     map[string]string{"1_init.sql": "-- migrate:up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- migrate:down\nDROP TABLE widgets;\n"},
-			covered:   "1_init.sql",
-			extra:     "2_extra.sql",
-			extraBody: "-- migrate:up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
+			format:          "dbmate",
+			droppedRollback: "1_init.sql",
+			files:           map[string]string{"1_init.sql": "-- migrate:up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n-- migrate:down\nDROP TABLE widgets;\n"},
+			covered:         "1_init.sql",
+			extra:           "2_extra.sql",
+			extraBody:       "-- migrate:up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
 		},
 		{
-			format:    "liquibase",
-			files:     map[string]string{"1_init.sql": "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE widgets;\n"},
-			covered:   "1_init.sql",
-			extra:     "2_extra.sql",
-			extraBody: "--liquibase formatted sql\n--changeset app:2\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
+			format:          "liquibase",
+			droppedRollback: "1_init.sql",
+			files:           map[string]string{"1_init.sql": "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE widgets;\n"},
+			covered:         "1_init.sql",
+			extra:           "2_extra.sql",
+			extraBody:       "--liquibase formatted sql\n--changeset app:2\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n",
 		},
 		{
 			format:    "flyway",
@@ -89,7 +97,8 @@ func convertedApplyFixtures() []convertedApplyFixture {
 		{
 			// The discriminating layout: Atlas CE covers only the up file, so
 			// the down file below is present in every state and never hashed.
-			format: "golang-migrate",
+			format:          "golang-migrate",
+			droppedRollback: "1_init.down.sql",
 			files: map[string]string{
 				"1_init.up.sql":   "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 				"1_init.down.sql": "DROP TABLE widgets;\n",

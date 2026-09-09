@@ -4857,7 +4857,9 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "")
+	// The source keeps a rollback the Atlas single-file layout cannot hold,
+	// so the import names the file it left it in (stokaro/ptah#3116).
+	c.Assert(out.String(), qt.Contains, "was not imported")
 	// The surviving baseline B1 lands in the low band and V2 in the versioned
 	// band, so the baseline executes first whatever its own version. A silent
 	// import reports itself through the destination directory, so the names are
@@ -4889,7 +4891,9 @@ func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "")
+	// The source keeps a rollback the Atlas single-file layout cannot hold,
+	// so the import names the file it left it in (stokaro/ptah#3116).
+	c.Assert(out.String(), qt.Contains, "was not imported")
 	_, statErr := os.Stat(filepath.Join(target, "1_initial.sql"))
 	c.Assert(statErr, qt.IsNil)
 	c.Assert(readAtlasTestFile(c, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")

@@ -102,11 +102,43 @@ func runAtlasMigrateImport(
 	if err := policy.ValidateMigrationSource(captured.Source); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if _, err := captured.Write(); err != nil {
+	result, err := captured.Write()
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	reportDroppedRollbacks(cmd, result.DroppedRollbacks)
 
 	return nil
+}
+
+// reportDroppedRollbacks names the source files whose rollback the conversion
+// left behind.
+//
+// An Atlas single-file migration is up-only, so the undo file or down section a
+// source layout carries has nowhere to go. That is the conversion's shape; doing
+// it in silence was the defect. Every import of every layout exited 0 with
+// nothing on either stream, so an operator had no way to learn their undo
+// scripts stayed in the source directory (stokaro/ptah#3116).
+//
+// It goes to stderr, so the report does not enter output a caller parses.
+func reportDroppedRollbacks(cmd *cobra.Command, dropped []string) {
+	if len(dropped) == 0 {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"warning: an Atlas migration holds no rollback, so the rollback in %s was not imported:\n",
+		pluralizeFiles(len(dropped)))
+	for _, file := range dropped {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", file)
+	}
+}
+
+// pluralizeFiles keeps the count out of the sentence above.
+func pluralizeFiles(count int) string {
+	if count == 1 {
+		return "this source file"
+	}
+	return fmt.Sprintf("these %d source files", count)
 }
 
 // resolveAtlasMigrateImportSource resolves `migrate import`'s source directory

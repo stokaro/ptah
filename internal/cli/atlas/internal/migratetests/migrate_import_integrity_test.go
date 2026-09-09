@@ -90,8 +90,12 @@ func TestCompatMigrateImport_HashedCleanSourceImports(t *testing.T) {
 			stdout, stderr, err := compatImport(source, target, fixture.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			// An Atlas single-file migration holds no rollback, so the import
+			// names each source file it left one in. The Flyway row writes no
+			// undo file, and its empty expectation is the control that the
+			// report fires only where something was dropped (stokaro/ptah#3116).
 			c.Assert(stdout, qt.Equals, "")
-			c.Assert(stderr, qt.Equals, "")
+			assertDroppedRollbackReport(c, stderr, fixture.droppedRollback)
 			_, statErr := os.Stat(filepath.Join(target, "atlas.sum"))
 			c.Assert(statErr, qt.IsNil)
 		})
@@ -120,8 +124,12 @@ func TestCompatMigrateImport_UnhashedSourceStillImports(t *testing.T) {
 			stdout, stderr, err := compatImport(source, target, fixture.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			// An Atlas single-file migration holds no rollback, so the import
+			// names each source file it left one in. The Flyway row writes no
+			// undo file, and its empty expectation is the control that the
+			// report fires only where something was dropped (stokaro/ptah#3116).
 			c.Assert(stdout, qt.Equals, "")
-			c.Assert(stderr, qt.Equals, "")
+			assertDroppedRollbackReport(c, stderr, fixture.droppedRollback)
 			_, statErr := os.Stat(filepath.Join(target, "atlas.sum"))
 			c.Assert(statErr, qt.IsNil)
 		})
@@ -416,4 +424,17 @@ func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 			assertNothingImported(c, target)
 		})
 	}
+}
+
+// assertDroppedRollbackReport keeps the conditional out of the table loops: a
+// row naming a file expects the report to name it, and a row naming none
+// expects no report at all.
+func assertDroppedRollbackReport(c *qt.C, stderr, dropped string) {
+	c.Helper()
+	if dropped == "" {
+		c.Assert(stderr, qt.Equals, "")
+		return
+	}
+	c.Assert(stderr, qt.Contains, "was not imported")
+	c.Assert(stderr, qt.Contains, dropped)
 }
