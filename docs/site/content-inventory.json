@@ -583,8 +583,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12656,
-      "sourceBytes": 93116
+      "visibleWords": 12663,
+      "sourceBytes": 93154
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -3690,8 +3690,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14285,
-      "sourceBytes": 99321
+      "visibleWords": 14301,
+      "sourceBytes": 99423
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -5037,8 +5037,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1317,
-      "sourceBytes": 11125
+      "visibleWords": 1470,
+      "sourceBytes": 12043
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

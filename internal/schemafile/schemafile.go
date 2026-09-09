@@ -444,7 +444,7 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(resolved)
 	case ".sql":
-		return loadSQLFile(resolved, opts)
+		return loadSQLFileTree(resolved, opts)
 	case ".dbml":
 		return loadDBMLFile(resolved, opts)
 	default:

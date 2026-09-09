@@ -1046,7 +1046,8 @@ shorthands.
 `{{ sql . | split | write "schema" }}` support the documented Atlas split
 strategies: per object (the default, with a `main.sql` `atlas:import` entry
 point for SQL), `split "schema"`, and `split "type"`, plus an optional
-file-extension argument.
+file-extension argument. That entry point reads back: pointing a schema-file
+source at `main.sql` loads every file it imports.
 
 Exports render one output plan applied by a single writer. Duplicate output
 paths, traversal or escape from the output directory, planned file/directory
