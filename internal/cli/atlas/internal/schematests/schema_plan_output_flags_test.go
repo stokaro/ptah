@@ -195,8 +195,8 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	t.Chdir(dir)
 	// The table name is still chosen rather than arbitrary: .ToHash is Atlas's
 	// untagged Base64, so roughly a third of 12-character windows hold "/" or
-	// "+". This fixture has a clean window, and stokaro/ptah#1685 added
-	// .ToHashSafe so a template no longer has to depend on that.
+	// "+". This fixture has a clean window, and .ToHashSafe exists so a
+	// template does not have to depend on that (stokaro/ptah#1685).
 	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_accounts (id INTEGER PRIMARY KEY);`)
 	referencePath := filepath.Join(dir, "reference.plan.json")
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--output", referencePath)...)

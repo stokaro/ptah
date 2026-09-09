@@ -17,7 +17,7 @@ import (
 // and needed the same provenance qualifier: leaving it private in `up` would
 // have meant each new verb reimplementing the sentence, which is the shape that
 // let `down` go ungated in the first place. With the predicate exported the
-// white-box justification no longer holds, so the rows are black-box now.
+// white-box justification does not hold, so the rows are black-box.
 
 const (
 	provenanceDigest      = "sha256:" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

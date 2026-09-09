@@ -116,9 +116,9 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 	}
 }
 
-// The unsupported-attribute fixture is no longer a failure path: `project` is a
-// name the community binary parses and ignores, so refusing it was stricter
-// than Atlas. The fixture is kept and asserted from the tolerant side.
+// The unsupported-attribute fixture is not a failure path: `project` is a name
+// the community binary parses and ignores, so refusing it is stricter than
+// Atlas. The fixture is asserted from the tolerant side.
 func TestParseAtlasProjectConfigGoldenUnknownAttributeIsIgnored(t *testing.T) {
 	c := qt.New(t)
 	raw := readAtlasProjectConfigFixture(c, "unsupported-attribute.hcl")
@@ -1443,7 +1443,7 @@ func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
 
 	// `diff`, not `migration`. Both env.schema and env.migration decode `repo`
 	// into a struct on the pinned community binary v1.3.0 -- `migration { repo =
-	// "x" }` exits 1 there -- so `migration` no longer separates the scopes.
+	// "x" }` exits 1 there -- so `migration` does not separate the scopes.
 	// `env.diff` does: `diff { repo = "x" }` exits 0 on that binary.
 	elsewhere := `env "local" {
   url = "sqlite://s.db"

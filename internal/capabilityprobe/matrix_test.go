@@ -495,8 +495,8 @@ func markdownCells(row string) []string {
 // The declaration is what separates "probe-only on purpose" from "somebody left
 // the runner target blank" (stokaro/ptah#942).
 //
-// Spanner was the case that forced the split and is no longer an example of it:
-// it has a compose service and a suite target now (stokaro/ptah#1719). The
+// Spanner forced the split and is not an example of it: it has a compose
+// service and a suite target (stokaro/ptah#1719). The
 // table keeps both shapes so the separation stays measured -- ClickHouse's
 // 24.10 line is probed without the runner moving onto it.
 func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {

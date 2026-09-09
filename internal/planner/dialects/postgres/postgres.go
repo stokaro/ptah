@@ -1322,8 +1322,8 @@ func (p *Planner) plannedUserTypes(
 		})
 	}
 	// No lookup, and no `if found` around it. The change carries the range
-	// type, so a name the desired schema could not resolve no longer plans
-	// nothing at all (stokaro/ptah#2315).
+	// type, so a name the desired schema cannot resolve still plans its
+	// statement (stokaro/ptah#2315).
 	for _, rangeType := range diff.RangesAdded {
 		planned = append(planned, plannedUserType{
 			dep:  deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}},
@@ -1331,7 +1331,7 @@ func (p *Planner) plannedUserTypes(
 		})
 	}
 	// No lookup: the change carries the composite type, so a name the desired
-	// schema could not resolve no longer plans nothing (stokaro/ptah#2315).
+	// schema cannot resolve still plans its statement (stokaro/ptah#2315).
 	for _, composite := range diff.CompositeTypesAdded {
 		planned = append(planned, plannedUserType{
 			dep:  deporder.UserType{Name: composite.QualifiedName(), References: compositeFieldTypes(composite)},
@@ -2043,7 +2043,7 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 
 func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No search: the change carries the extension (stokaro/ptah#2315), so one
-	// the desired schema does not declare no longer plans nothing.
+	// the desired schema does not declare still plans its statement.
 	for _, extension := range diff.ExtensionsAdded {
 		result = append(result, modelast.FromExtension(extension))
 	}
@@ -2274,12 +2274,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
 	for _, view := range diff.ViewsAdded {
 		// The body travels WITH the change, so the dependency order this
-		// computes no longer depends on finding the view again.
+		// computes does not depend on finding the view again.
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 	}
 	for _, view := range diff.MaterializedViewsAdded {
 		// The body travels WITH the change, so the dependency order this
-		// computes no longer depends on finding the view again.
+		// computes does not depend on finding the view again.
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 	}
 
@@ -3384,7 +3384,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 //     drop a same-named constraint on the WRONG table (issue #199). Emitting the
 //     direct table-qualified drop eliminates the ambiguity.
 //
-// The name-only DO block (dropConstraintNode) is no longer used for a modify
+// The name-only DO block (dropConstraintNode) is not used for a modify
 // whose host the comparator recorded: the legacy ConstraintsAdded modify path
 // scopes its DROP via emitModifyDropForName too, and removeConstraints scopes
 // pure removals table-qualified as well. It remains in use only as a defensive

@@ -504,6 +504,16 @@ used to derive it`, `the Ping used to verify the connection` -- and nothing but
 the noun separates them, so read the subject before you reach for the phrase: a
 pronoun or the product's name is Ptah's past, a thing is what that thing is for.
 
+**`no longer`, `previously` and `originally` narrate the same way without the
+tell,** and no gate can catch them: in this tree most of their occurrences are
+current state, not history -- `a row the source no longer has` is the user's
+data, `the previously generated .proto` is the file the exporter reads back for
+its field numbers. So read the sentence and ask which the subject is. Where it
+says what the code stopped doing, write what the code does, or the ablation:
+`keyed on real host tables, the removal info never references the struct`, not
+`this previously emitted a bare ALTER`. Over Go comments a sweep read 314 of
+these and rewrote 95.
+
 `docs/site/scripts/check-implementation-chronology.mjs` holds Markdown to the
 dating clause and `internal/chronologyguard` holds Go comments to both rules --
 `until`, `before`, `since` and `as of` in front of a reference, and `used to`

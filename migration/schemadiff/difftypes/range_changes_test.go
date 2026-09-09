@@ -214,8 +214,8 @@ func TestSequenceChanges_TheWireShapeIsUnchanged(t *testing.T) {
 // TestSequenceChanges_TheDefinitionSurvivesInMemory is the other half.
 //
 // Ownership is the field that makes it matter: `OWNED BY` is planned from the
-// operand now, and a carry that dropped it would plan a sequence whose lifetime
-// is no longer tied to its column.
+// operand, and a carry that drops it plans a sequence whose lifetime is not
+// tied to its column.
 func TestSequenceChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
 	c := qt.New(t)
 

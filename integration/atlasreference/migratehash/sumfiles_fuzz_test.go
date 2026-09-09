@@ -417,9 +417,9 @@ func assertPtahMatchesReference(
 // writeLayout materializes one generated layout. An entry ending in "/" is a
 // LEAF DIRECTORY rather than a file.
 //
-// That spelling exists because the generator previously created directories
-// only as os.MkdirAll(filepath.Dir(...)) — parents of files it was about to
-// write — so a directory with nothing inside it was unreachable, and the
+// That spelling exists because a generator creating directories only as
+// os.MkdirAll(filepath.Dir(...)) — parents of files it is about to write —
+// leaves a directory with nothing inside it unreachable, and the
 // PTAH_ATLAS_FUZZ_LAYOUT round trip that makes a failure reducible had no way
 // to name one. Neither could the layout name a directory whose own name ends in
 // .sql, which is the shape #991 turns on.

@@ -3,8 +3,8 @@ package sqlite
 // White-box testing required: the subject is sqliteTableOptionKeys, the
 // unexported list writeTableOptions reports the complement of. A black-box test
 // would have to spell the list again, and two copies of a list cannot disagree
-// with each other in the way that matters here -- a key named as kept and no
-// longer written is a loss nothing reports (stokaro/ptah#2976).
+// with each other in the way that matters here -- a key named as kept and not
+// written is a loss nothing reports (stokaro/ptah#2976).
 
 import (
 	"testing"

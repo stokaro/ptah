@@ -86,7 +86,7 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 			want:    []coverage.Object{coverage.Refused(coverage.Role)},
 		},
 		{
-			// The grant read no longer names mysql.tables_priv: it reads the
+			// The grant read does not name mysql.tables_priv: it reads the
 			// privilege views instead, and SCHEMA_PRIVILEGES is the table this
 			// query is refused on (stokaro/ptah#2204).
 			name:    "the grant list is refused",

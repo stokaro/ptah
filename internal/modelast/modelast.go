@@ -63,7 +63,7 @@ func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string
 //
 // It survives only where the answer changes how a COLUMN is modeled -- the
 // default persistence of a generated column, which PostgreSQL spells STORED and
-// SQL Server spells PERSISTED. It no longer decides whether any declared object
+// SQL Server spells PERSISTED. It does not decide whether any declared object
 // is converted at all: CollectDatabase hands every object to the renderer and the
 // capability set answers there, so that `schema render` and `schema apply`
 // cannot disagree about the same file (stokaro/ptah#929).

@@ -33,8 +33,8 @@ func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff) [
 		return result
 	}
 	// No lookup on either branch: the change carries the sequence
-	// (stokaro/ptah#2315), so a name the desired schema could not resolve no
-	// longer plans nothing.
+	// (stokaro/ptah#2315), so a name the desired schema cannot resolve still
+	// plans its statement.
 	for _, sequence := range diff.SequencesAdded {
 		result = append(result, modelast.FromSequence(sequence))
 	}

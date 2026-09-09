@@ -147,8 +147,8 @@ func TestParseAtlasEnvSchemasRefusesValuesTheFieldCannotHold(t *testing.T) {
 		},
 		{
 			// The tolerance Atlas CE applies is name-level, not subtree-level,
-			// and this attribute is no longer an unknown name at all: its
-			// expression is evaluated like any other decoded attribute's.
+			// and this attribute is not an unknown name at all: its expression
+			// is evaluated like any other decoded attribute's.
 			name: "an unresolvable reference inside the list",
 			raw: `env "local" {
   schemas = [var.nope]

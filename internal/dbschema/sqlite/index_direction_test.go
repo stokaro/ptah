@@ -14,9 +14,9 @@ import (
 // SQLite records it only in PRAGMA index_xinfo's `desc` column: sqlite_schema
 // holds the CREATE INDEX text and index_list says nothing about ordering, so a
 // read that does not ask for that column cannot tell `t(a DESC)` from
-// `t(a)`. It did not ask, so both were described as ascending and replaying the
-// description built an index that no longer served the descending scan it was
-// created for (stokaro/ptah#2197).
+// `t(a)`. A read that does not ask describes both as ascending, and replaying
+// the description builds an index that does not serve the descending scan it
+// was created for (stokaro/ptah#2197).
 func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -227,9 +227,9 @@ func TestInferenceARollbackIsReversibleE2E(t *testing.T) {
 // forward-only table refused.
 //
 // Rolling a generation off the pointer and then retiring it is the ordinary end
-// of one nobody wants back. The retirement destroyed the vectors and the phase
-// change was refused, so the row stood at `rolled_back` describing a corpus that
-// no longer existed -- and the run never became complete.
+// of one nobody wants back. A retirement destroys the vectors, so a refused
+// phase change leaves the row at `rolled_back` describing a corpus that is gone
+// -- and the run never becomes complete.
 func TestInferenceARolledBackGenerationCanBeRetiredE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
 	c := qt.New(t)
@@ -260,8 +260,8 @@ func TestInferenceARolledBackGenerationCanBeRetiredE2E(t *testing.T) {
 
 	c.Assert(runPhase(c, ctx, db, "retire-second"), qt.Equals, "retired")
 	// And the run is complete, with no lease left on a generation that no
-	// longer exists. `complete` had no producer at all before this: every run
-	// ever built reported `running` for the life of the registry.
+	// longer exists. `complete` needs a producer: without one every run reports
+	// `running` for the life of the registry.
 	status, owner := runStatusAndLease(c, ctx, db, "retire-second")
 	c.Assert(status, qt.Equals, "complete")
 	c.Assert(owner, qt.Equals, "")

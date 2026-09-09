@@ -52,7 +52,7 @@ func TestExportedSchemaRendersDelegateTheModelWalk(t *testing.T) {
 
 // modelCallsIn counts the modelast entry points the named function calls.
 //
-// Both files are parsed because the exported entry points no longer share one:
+// Both files are parsed because the exported entry points do not share one:
 // a lookup limited to renderer.go would report zero calls for a function it
 // never found, which reads exactly like a function that makes none.
 func modelCallsIn(c *qt.C, name string) (walkCalls, wholeSchemaCollectorCalls int) {

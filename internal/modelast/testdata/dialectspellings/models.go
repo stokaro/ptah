@@ -22,9 +22,9 @@
 //     and isMySQLFamilyTarget (index emission order around ADD CONSTRAINT).
 //
 // The object block below -- role, sequence, domain, composite, range, function,
-// view, matview, trigger, RLS and grant -- no longer separates one dialect from
-// another here: CollectDatabase lowers every one of them for every target now,
-// and the renderer decides what each means (stokaro/ptah#929 item 5). It stays
+// view, matview, trigger, RLS and grant -- does not separate one dialect from
+// another here: CollectDatabase lowers every one of them for every target, and
+// the renderer decides what each means (stokaro/ptah#929 item 5). It stays
 // because it is what makes this fixture discriminate engines by their rendered
 // answers, which TestFromDatabase_FixtureDiscriminatesEngines asserts.
 //

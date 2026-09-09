@@ -33,7 +33,7 @@ var evolvedEnumMembers = []string{"planned", "draft", "queued", "processing", "s
 //	name "enumsortorder": converting driver.Value type float64 ("1.5")
 //	to a int: invalid syntax
 //
-// A unit test can assert the reader no longer asks for the column. Only a live
+// A unit test can assert the reader does not ask for the column. Only a live
 // server assigns the positions, so only this test proves the shape it produces
 // is one Ptah can read -- and it is the half that keeps working if the
 // projection is ever restored with a wider scan destination.

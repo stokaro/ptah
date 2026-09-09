@@ -62,7 +62,7 @@ func runMigrateImport(c *qt.C, args []string) (stdout, stderr *bytes.Buffer, err
 // format are covered, because the format is resolved from the --from query
 // parameter and from --dir-format on separate code paths.
 //
-// stderr is no longer silent, and that is the point of stokaro/ptah#3116: an
+// stderr is not silent, and that is the point of stokaro/ptah#3116: an
 // Atlas single-file migration holds no rollback, so a source layout's undo file
 // or down section cannot come across, and the import names each file it left one
 // in. The Flyway row writes no undo file, so its expectation is empty -- the

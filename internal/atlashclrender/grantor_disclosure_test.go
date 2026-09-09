@@ -28,8 +28,7 @@ import (
 // reports that it cannot. This warning is the "reports that it cannot", and it
 // is the field's only reader. Delete it and the field becomes populated with
 // nothing reading it, which the census calls a defect -- while the entry would
-// go on claiming a disclosure that no longer happens. Nothing tested it before
-// this.
+// go on claiming a disclosure that no longer happens.
 func TestRenderDisclosesAGrantorItCannotRepresent(t *testing.T) {
 	c := qt.New(t)
 

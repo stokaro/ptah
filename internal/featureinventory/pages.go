@@ -24,7 +24,7 @@ import (
 //
 // What survives is a claim, and the column is named claimed_by for that reason.
 // A page may claim a feature it does not document and the gate will not know;
-// what it can no longer do is have that claim raise a floor and lock itself in,
+// what it cannot do is have that claim raise a floor and lock itself in,
 // because the floor is a constant in source rather than a number this file
 // carries forward.
 const OwnsKey = "owns"

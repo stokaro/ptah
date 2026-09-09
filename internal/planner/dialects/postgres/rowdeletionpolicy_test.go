@@ -88,8 +88,8 @@ func TestPlanner_RowDeletionPolicyTransitions(t *testing.T) {
 // A migration that moves a policy off a column and drops that column is one
 // plan, and the two statements only work in one order: the column the policy
 // still names cannot be dropped while it names it. Placed after the column
-// removal — where it originally sat, beside the row-level TTL step — the plan
-// reads correctly statement by statement and fails as a whole.
+// removal, beside the row-level TTL step, the plan reads correctly statement by
+// statement and fails as a whole.
 func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 	c := qt.New(t)
 

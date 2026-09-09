@@ -1089,8 +1089,8 @@ type Widget struct {
 
 // TestParseField_ForeignKeyActions verifies that on_delete and on_update
 // attributes declared on a //ptah:schema:field annotation are captured on
-// the resulting Field (regression test for #117 — these keys were previously
-// whitelisted but silently dropped).
+// the resulting Field (regression test for #117 — keys that are whitelisted
+// and then silently dropped).
 func TestParseField_ForeignKeyActions(t *testing.T) {
 	c := qt.New(t)
 

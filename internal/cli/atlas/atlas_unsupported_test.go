@@ -60,8 +60,8 @@ type unsupportedCommandTest struct {
 // unsupportedCommandTests lists the compatibility verbs that remain
 // deliberate unsupported-boundary stubs. `migrate test`, `schema test`,
 // `migrate edit`, `migrate rebase`, `migrate rm`, `schema plan`,
-// `schema plan new`, `schema plan validate` and `schema plan lint` are no
-// longer here: they forward to or implement native Ptah behavior (see
+// `schema plan new`, `schema plan validate` and `schema plan lint` are not
+// among them: they forward to or implement native Ptah behavior (see
 // migrate_test_forward_test.go, schema_test_forward_test.go,
 // migrate_maint_forward_test.go, schema_plan_test.go,
 // schema_plan_new_test.go, schema_plan_validate_test.go and

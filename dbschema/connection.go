@@ -1654,7 +1654,7 @@ func reconnectCarryingSearchPath(
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		// The second failure is the one to report: the first was about a
-		// parameter this connection no longer sends.
+		// parameter this connection does not send.
 		return nil, fmt.Errorf("failed to ping database: %w",
 			explainRefusedStartupParameter(retryURL, dialect, err))
 	}

@@ -864,7 +864,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// THE ROW THE INDEX-AND-TRIGGER FINDING ADDED. `removeIndexes`
 			// renders DROP INDEX for a table it is not rebuilding, so this
 			// reaches the plan with TablesModified and TablesRemoved both
-			// empty and the gate previously saw nothing.
+			// empty, so a gate reading only those sees nothing.
 			//
 			// Reproduced on the command against an fts4 database this build
 			// cannot load, both sides naming the module's storage:

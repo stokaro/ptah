@@ -223,8 +223,8 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 		{
 			// A selection that matches nothing renders no objects rather than
 			// failing: inspection is read-only, so an empty description of an
-			// empty selection is a legitimate answer. It is no longer silent
-			// about it — see
+			// empty selection is a legitimate answer. It is not silent about it
+			// — see
 			// TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr for the
 			// notice, which this row deliberately does not assert because it
 			// is about the rendered output.

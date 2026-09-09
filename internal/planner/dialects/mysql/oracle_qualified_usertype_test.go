@@ -14,7 +14,7 @@ import (
 )
 
 // TestPlanner_OracleUserTypesPlanWhateverSchemaTheyName is the control for a
-// lookup this planner no longer makes.
+// lookup this planner does not make.
 //
 // It indexed the desired schema by the object's NAME and searched it by the
 // object's QUALIFIED name -- the same string only for a declaration that names

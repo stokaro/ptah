@@ -981,7 +981,7 @@ func assertSQLBefore(t *testing.T, sql, earlier, later string) {
 // acceptance test for the down half of issue #189: when an up migration changes
 // a field-level FK's ON DELETE action, the generated down migration must DROP
 // the new constraint and re-ADD it with the PRIOR action read back from the
-// (pre-change) database state. Previously the down migration was empty.
+// (pre-change) database state. Without that read the down migration is empty.
 func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *testing.T) {
 	noAction := "NO ACTION"
 	filesTable := "files"

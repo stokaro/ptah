@@ -12,9 +12,8 @@ import (
 )
 
 // TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing keeps this file's
-// subject on the refusal that is now correct: the message no longer names a
-// target, because no target refreshes as part of reconciliation
-// (stokaro/ptah#1625).
+// subject on the refusal: the message names no target, because no target
+// refreshes as part of reconciliation (stokaro/ptah#1625).
 func TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing(t *testing.T) {
 	tests := []struct {
 		name         string

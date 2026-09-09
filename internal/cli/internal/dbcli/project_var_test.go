@@ -162,7 +162,7 @@ func TestExplicitConfigOverNonYAMLNamesTheConfigFlag(t *testing.T) {
 }
 
 // TestExplicitHCLConfigRoutesToTheAtlasLoader is the case the test above gave
-// up. Naming an .hcl on --config no longer reports what --config accepts; it
+// up. Naming an .hcl on --config does not report what --config accepts; it
 // loads, and the diagnostic that comes back is the Atlas one about a variable
 // with no default -- which is the whole point of routing it there.
 func TestExplicitHCLConfigRoutesToTheAtlasLoader(t *testing.T) {

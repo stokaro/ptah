@@ -270,7 +270,7 @@ func TestCompatMigrateDirQuery_ForeignFormatControlWithoutTheLayoutSelection(t *
 }
 
 // TestCompatMigrateDirQuery_StrictEnvRefusesIgnoredKey_FailurePath pins the
-// capability the default no longer exercises.
+// capability the default does not exercise.
 //
 // The two writing verbs also assert the directory is unchanged, because a
 // refusal that exits 1 after writing is not the refusal an operator asked for.

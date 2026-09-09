@@ -405,11 +405,11 @@ type integrityFile struct {
 //
 // Deriving them again is not the same thing, and the difference is a file left
 // behind. Rehash writes a checksum file for the directory it finds, so on a
-// migration directory that had none -- a project's first patch -- the undo
-// CREATED one. The apply then reported `rolled_back: true` beside a
-// ResultDigest that no longer equalled BaseDigest, which is the invariant
-// Result documents, and the caller was left holding a digest that had gone
-// stale through an operation that said it changed nothing (stokaro/ptah#2066).
+// migration directory that has none -- a project's first patch -- an undo that
+// derives them CREATES one. The apply then reports `rolled_back: true` beside a
+// ResultDigest that does not equal BaseDigest, which is the invariant Result
+// documents, and the caller is left holding a digest gone stale through an
+// operation that said it changed nothing (stokaro/ptah#2066).
 func snapshotIntegrity(plan *Plan) ([]integrityFile, error) {
 	names := managedFiles[plan.patch.Class]
 	files := make([]integrityFile, 0, len(names))

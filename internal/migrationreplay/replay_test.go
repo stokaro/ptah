@@ -16,9 +16,8 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// TestReplayRoutesADockerDevURLToTheProvisioner replaced a test that asserted
-// replay REFUSED every docker:// dev URL. It no longer does: it provisions one
-// (stokaro/ptah#844).
+// TestReplayRoutesADockerDevURLToTheProvisioner pins that replay provisions a
+// docker:// dev URL rather than refusing it (stokaro/ptah#844).
 //
 // The URL is a docker one this build will not start, so the assertion needs no
 // container runtime and starts nothing. That is not a convenience -- measured on

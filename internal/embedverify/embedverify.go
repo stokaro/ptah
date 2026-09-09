@@ -116,8 +116,8 @@ const KeyFieldSeparator = "\x1f"
 // a control byte -- `(acme, 2)` and `(globex, 1)` came out as `acme2` and
 // `globex1`, so the only line telling an operator which rows to remove was
 // neither copy-pasteable nor unambiguous (stokaro/ptah#2649 finding 2). It is
-// no longer raw-printable at all: `6:acme1:2` is the identity, and anything
-// showing a key to a person calls [RenderKey].
+// not raw-printable at all: `6:acme1:2` is the identity, and anything showing a
+// key to a person calls [RenderKey].
 func KeyIdentity(components ...string) string {
 	return embeddigest.Encode(components...)
 }

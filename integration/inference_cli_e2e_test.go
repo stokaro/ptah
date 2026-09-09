@@ -1574,7 +1574,7 @@ func assertRollbackIsRefusedWithoutEvidence(
 	c.Helper()
 	registerBareGenerationInColumn(c, ctx, db, specPath, "an-unmaintained-one", "embedding_unmaintained")
 	// Rollback only accepts the pointer's exact previous generation. Merely
-	// registering an arbitrary generation no longer reaches the maintenance
+	// registering an arbitrary generation does not reach the maintenance
 	// decision this assertion is about.
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET previous_generation = 'an-unmaintained-one'

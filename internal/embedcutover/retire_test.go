@@ -137,9 +137,9 @@ func TestDecideRetirement_APlanThatDestroysNothingIsRefused(t *testing.T) {
 //
 // A generation whose vectors live in a relation of its own commonly has no
 // index and never has a column of its own to drop: the storage is the
-// relation. Judged by the two objects the rule originally named, every such
-// retirement destroyed nothing and was refused with a blocker listing two
-// things that layout does not have. Measured through the CLI first, on a
+// relation. Judged by the two objects a narrower rule names, every such
+// retirement destroys nothing and is refused with a blocker naming two objects
+// that layout does not have. Measured through the CLI first, on a
 // generation prepared and backfilled into a table Ptah created
 // (stokaro/ptah#2624).
 func TestDecideRetirement_DroppingTheTableIsDestroyingSomething(t *testing.T) {

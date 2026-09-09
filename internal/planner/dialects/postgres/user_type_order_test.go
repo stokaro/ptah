@@ -59,9 +59,9 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
 			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
 		},
-		// The subtypes travel WITH the change now; the ordering this test is
-		// about is computed from them, and the planner no longer reads them
-		// back out of the schema by name.
+		// The subtypes travel WITH the change; the ordering this test is about
+		// is computed from them, and the planner does not read them back out of
+		// the schema by name.
 		RangesAdded: difftypes.RangeChanges{
 			{Name: "myrange", Subtype: "integer"},
 			{Name: "posrange", Subtype: "d_int"},

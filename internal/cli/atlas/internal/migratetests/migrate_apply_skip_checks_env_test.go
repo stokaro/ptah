@@ -304,11 +304,11 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 // same way. That is the case where a preview is legitimately blocked and the
 // operator wants it back.
 //
-// This is deliberately NOT the fresh-database case any more. There, migration
-// 2's guard asks about state migration 1 would have created, the dry run
-// refuses to create it, and the failure was an artifact of the preview rather
-// than a finding — that is the #1005 bug, now fixed, so the bypass is no longer
-// needed to get a preview out of such a directory.
+// This is deliberately NOT the fresh-database case. There, migration 2's guard
+// asks about state migration 1 would create, the dry run refuses to create it,
+// and the failure is an artifact of the preview rather than a finding — the
+// #1005 shape, which the dry run answers on its own, so the bypass is not what
+// gets a preview out of such a directory.
 //
 // Both halves are pinned, because the workaround is only meaningful if the
 // unbypassed failure is real.

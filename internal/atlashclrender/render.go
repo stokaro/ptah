@@ -418,7 +418,7 @@ func (r *renderer) extensionSchemaFor(extension schemamodel.Extension) string {
 //
 // Collecting also gets the suppressed blocks right for free. A block the
 // Atlas-compatible surface leaves out never reaches [renderer.schemaRef], so an
-// omitted sequence no longer conjures a schema block declaring nothing.
+// omitted sequence does not conjure a schema block declaring nothing.
 func (r *renderer) referencedSchemas() []string {
 	return sortedMapKeys(r.schemaRefs)
 }

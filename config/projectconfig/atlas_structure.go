@@ -595,10 +595,10 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	"env": {
 		"include": atlasLeafStringList,
 	},
-	// `drop_column` and `drop_index` are NO LONGER here, for the reason the
+	// `drop_column` and `drop_index` are NOT here, for the reason the
 	// `baseline` note below gives: [atlasParser.parseDiffSkip] decodes both, so
 	// a row here would state a rule nothing applies. `drop_table` and
-	// `drop_schema` were never in this table, for the same reason.
+	// `drop_schema` are absent for the same reason.
 	//
 	// What is left is the Atlas names Ptah's diff policy models no change kind
 	// for. They stay type-checked and reported, because a policy Ptah cannot
@@ -620,16 +620,14 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	"lint": {
 		"review": atlasLeafString,
 	},
-	// `baseline` is NO LONGER here. It was the type half of stokaro/ptah#934
-	// item 5a -- tolerated, type-checked, and reported as having no effect --
-	// and `migrate apply` now acts on it, so it is decoded in
-	// [atlasParser.parseMigration] instead. A decoded name must not also sit in
-	// this table: the tolerance path never reaches it, and a stale row here
-	// would state a rule nothing applies.
+	// `baseline` is NOT here. `migrate apply` acts on it, so it is decoded in
+	// [atlasParser.parseMigration] instead (stokaro/ptah#934 item 5a). A decoded
+	// name must not also sit in this table: the tolerance path never reaches it,
+	// and a stale row here would state a rule nothing applies.
 	//
 	// The malformed arm keeps the same exit code and the same message, because
 	// [atlasParser.nullableStringAttr] ends in the same [wrongValueType] call
-	// this table's string kind used:
+	// this table's string kind makes:
 	//
 	//	migration { baseline = [1,2] }  (env)  binary 1, Ptah 1  must be a string
 	//
