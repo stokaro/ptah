@@ -1,5 +1,11 @@
 [
   {
+    "route": "/atlas/docs-coverage/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The register carries one section per reviewed Atlas documentation area, and a section is only readable beside the implementation status, the conformance status and, where the area is partial, the named remainder and the issue that owns it. Splitting it would separate a status from the measurement behind it."
+  },
+  {
     "route": "/atlas/feature-matrix/",
     "check": "page-length",
     "target": "page",
