@@ -869,7 +869,9 @@
       ],
       "disposition": "keep",
       "outboundLinks": [],
-      "inboundLinks": [],
+      "inboundLinks": [
+        "/databases/support-evidence/"
+      ],
       "visibleWords": 295,
       "sourceBytes": 3322
     },
@@ -1267,13 +1269,14 @@
       ],
       "disposition": "keep",
       "outboundLinks": [
+        "/databases/capability-status/",
         "/databases/support-matrix/"
       ],
       "inboundLinks": [
         "/databases/support-matrix/"
       ],
-      "visibleWords": 644,
-      "sourceBytes": 5475
+      "visibleWords": 748,
+      "sourceBytes": 6068
     },
     {
       "path": "docs/site/src/content/docs/databases/support-matrix.md",
