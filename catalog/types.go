@@ -1182,8 +1182,17 @@ type Function struct {
 	// reports them, each `name=value`. PostgreSQL keeps them in
 	// pg_proc.proconfig; a dialect without such a facility leaves this empty.
 	Settings []string `json:"settings,omitempty"`
-	Body     string   `json:"body"`    // Function body/implementation
-	Comment  string   `json:"comment"` // Function comment/description
+	// Leakproof reports pg_proc.proleakproof. A leakproof function may have a
+	// filter using it pushed past a security barrier such as a row-level
+	// security predicate, so a comparison that ignored it could report a
+	// routine as unchanged while the rows a policy withholds became reachable.
+	Leakproof bool `json:"leakproof,omitempty"`
+	// Parallel reports pg_proc.proparallel as SAFE, RESTRICTED or UNSAFE.
+	// A dialect with no such property leaves this empty, which is also what a
+	// declaration stating no level means; UNSAFE is the server's default.
+	Parallel string `json:"parallel,omitempty"`
+	Body     string `json:"body"`    // Function body/implementation
+	Comment  string `json:"comment"` // Function comment/description
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

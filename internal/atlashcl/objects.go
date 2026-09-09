@@ -157,11 +157,21 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	if err != nil {
 		return err
 	}
+	leakproof, err := p.boolAttr(block, "leakproof", blockType, false)
+	if err != nil {
+		return err
+	}
+	parallel, err := p.routineParallel(block, blockType)
+	if err != nil {
+		return err
+	}
 	function := schemamodel.Function{
 		Name:       tableref.Canonical(schema, name),
 		Kind:       kind,
 		Parameters: parameters,
 		Settings:   settings,
+		Leakproof:  leakproof,
+		Parallel:   parallel,
 		// Read only for a function. rejectUnsupportedRoutineAttrs refuses the
 		// attribute on a procedure, but the tolerant parser reports an unknown
 		// attribute instead of removing it, so the body still carries it and a
@@ -213,6 +223,29 @@ func (p *parser) routineSettings(block *hclsyntax.Block, blockType string) ([]st
 		settings = append(settings, name+"="+converted.AsString())
 	}
 	return settings, nil
+}
+
+// routineParallel reads a routine's `parallel`, which names how the planner may
+// use it: SAFE, RESTRICTED or UNSAFE.
+//
+// An unrecognized level is refused rather than folded into the default. UNSAFE
+// is the most restrictive of the three, so a misspelled SAFE folded into it
+// would quietly forbid the parallelism the author asked for -- and a misspelled
+// UNSAFE folded the other way would be worse, so neither direction is a
+// defensible guess (stokaro/ptah#3121).
+func (p *parser) routineParallel(block *hclsyntax.Block, blockType string) (string, error) {
+	attr := block.Body.Attributes["parallel"]
+	if attr == nil {
+		return "", nil
+	}
+	level := strings.ToUpper(strings.TrimSpace(p.optionalString(attr)))
+	switch level {
+	case "SAFE", "RESTRICTED", "UNSAFE":
+		return level, nil
+	default:
+		return "", p.blockError(block,
+			"%s parallel must be SAFE, RESTRICTED or UNSAFE", blockType)
+	}
 }
 
 // routineReturns reads the declared return type, which only a function has.
@@ -710,6 +743,8 @@ func (p *parser) rejectUnsupportedRoutineAttrs(block *hclsyntax.Block, blockType
 		"return":     blockType == routineBlockFunction,
 		"security":   true,
 		"volatility": true,
+		"leakproof":  blockType == routineBlockFunction,
+		"parallel":   blockType == routineBlockFunction,
 		"set":        true,
 		"as":         true,
 		"comment":    true,

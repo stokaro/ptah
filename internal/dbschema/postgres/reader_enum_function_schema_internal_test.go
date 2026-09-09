@@ -38,6 +38,7 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 		Columns: []string{
 			"function_name", "parameters", "identity_arguments", "returns", "language",
 			"security", "volatility", "body", "comment", "kind", "settings",
+			"leakproof", "parallel",
 		},
 		Rows: [][]driver.Value{{
 			"fn_app", "value integer DEFAULT 1, OUT doubled integer", "integer",
@@ -45,6 +46,8 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 			// A routine that sets nothing: proconfig is NULL, which the query
 			// coalesces to the empty string (stokaro/ptah#2356).
 			"",
+			// The two planner properties at their server defaults.
+			false, "UNSAFE",
 		}},
 	}, nil
 }

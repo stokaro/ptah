@@ -95,6 +95,7 @@ func Fixtures() []Fixture {
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
 		{Name: "function", Schema: functionFixture()},
+		{Name: "function-planner-properties", Schema: functionPlannerPropertiesFixture()},
 		{Name: "trigger", Schema: triggerFixture()},
 		{Name: "hypertable", Schema: hypertableFixture()},
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
@@ -1027,6 +1028,24 @@ func functionFixture() schemamodel.Database {
 		Language: "sql", Security: "DEFINER", Volatility: "STABLE",
 		Settings: []string{"search_path = public"}, Body: "SELECT a;",
 		Comment: "identity", Kind: "function",
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// functionPlannerPropertiesFixture declares the two properties that decide how
+// the planner may use a routine.
+//
+// It is separate from [functionFixture] rather than an edit to it. Neither
+// property is written when the routine states nothing, and that is the shape
+// most declarations take, so one fixture carrying both would stop measuring the
+// unmarked render.
+func functionPlannerPropertiesFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Functions = []schemamodel.Function{{
+		StructName: "F", Name: "pure", Parameters: "a integer", Returns: "integer",
+		Language: "sql", Volatility: "IMMUTABLE", Body: "SELECT a;",
+		Leakproof: true, Parallel: "SAFE", Kind: "function",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

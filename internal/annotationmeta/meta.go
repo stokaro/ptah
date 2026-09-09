@@ -495,6 +495,8 @@ var directives = []Directive{
 			attr("security", "Security mode, such as DEFINER.", valueString, false, false),
 			attr("volatility", "Volatility class.", valueString, false, false),
 			attr("settings", "Routine configuration settings, `name=value`, separated by `;`; pin `search_path` on a DEFINER routine.", valueString, false, false),
+			attr("leakproof", "Marks the function LEAKPROOF, letting a filter using it be pushed past a security barrier.", valueBoolean, false, false),
+			attr("parallel", "Parallel level: SAFE, RESTRICTED or UNSAFE.", valueString, false, false),
 			attr("body", "Function body SQL.", valueSQL, false, false),
 			attr("comment", "Function comment.", valueString, false, false),
 			dialectsAttr(),

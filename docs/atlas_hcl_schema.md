@@ -79,7 +79,8 @@ current schema IR:
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
   `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
-  `security`, `volatility`, `set`, `as`, and `comment`; the Ptah `params` parity
+  `security`, `volatility`, `leakproof`, `parallel`, `set`, `as`, and
+  `comment`; the Ptah `params` parity
   extension preserves parameter declarations that cannot be decomposed into
   Atlas-style `arg` blocks without changing their text. `set` is an object of
   `name = value` pairs and renders as the routine's `SET` clauses, read back
@@ -87,7 +88,9 @@ current schema IR:
   routine, which otherwise resolves unqualified names through whatever the
   caller had set
 - `procedure` blocks, taking every attribute `function` takes except `return`,
-  which a procedure does not have and which is refused inside one. This is a
+  `leakproof` and `parallel`, each of which is refused inside one. Measured on
+  PostgreSQL 17, a procedure carrying any of the three answers `ERROR: invalid
+  attribute in procedure definition`. This is a
   Ptah block: the Atlas community CLI has no procedure block, and a routine
   described as a `function` when it is a procedure is a different object from
   the one in the database
@@ -717,8 +720,8 @@ The HCL schema frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
 - grantor metadata
-- function options outside Ptah's current IR, such as `leakproof`, `parallel`,
-  `return_set`, `return_table`, and argument defaults. Routine configuration
+- function options outside Ptah's current IR, such as `return_set`,
+  `return_table`, and argument defaults. Routine configuration
   settings are not in this list: the IR carries them and this frontend reads
   them from `set`. The attribute name `config_params` is refused, like any other
   name the block does not define

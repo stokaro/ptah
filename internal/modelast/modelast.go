@@ -1323,6 +1323,9 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 		SetBody(function.Body).
 		SetComment(function.Comment)
 
+	functionNode.Leakproof = function.Leakproof
+	functionNode.Parallel = function.Parallel
+
 	return functionNode
 }
 
