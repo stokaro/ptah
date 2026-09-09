@@ -134,7 +134,7 @@
       "generated": false,
       "generator": null,
       "editSource": null,
-      "lastVerified": "2026-08-30",
+      "lastVerified": "2026-09-09",
       "evidence": [
         "docs/site/src/content/docs/atlas/docs-coverage.md",
         "scripts/atlas-ce-reference.lock"
@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5023,
-      "sourceBytes": 45714
+      "visibleWords": 4801,
+      "sourceBytes": 41487
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -232,7 +232,7 @@
         "/operate/troubleshooting/"
       ],
       "visibleWords": 8374,
-      "sourceBytes": 58962
+      "sourceBytes": 58975
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
