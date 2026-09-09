@@ -11,8 +11,8 @@ import (
 // preflightTransactionRequirements refuses a file that cannot run inside the
 // transaction it is about to run inside.
 //
-// Both shapes it catches used to reach the database and fail there with the
-// server's own SQLSTATE, after the earlier statements had already run:
+// Without it both shapes reach the database and fail there with the server's
+// own SQLSTATE, after the earlier statements have run:
 //
 //	CREATE INDEX CONCURRENTLY -> ERROR: cannot run inside a transaction block (25001)
 //	a used enum value         -> ERROR: unsafe use of new value ... (55P04)

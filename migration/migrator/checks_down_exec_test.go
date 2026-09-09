@@ -48,8 +48,8 @@ func newSQLiteDownCheckMigrator(t *testing.T, auditRows int) (*dbschema.Database
 // TestMigrateDown_FailingCheckAbortsWithNothingRolledBack is the assertion the
 // issue was filed for.
 //
-// A `-- +ptah check` in a down body used to be parsed by nothing: no error, no
-// warning, no assertion, and the rollback simply ran. A safety gate that is
+// A `-- +ptah check` in a down body that nothing parses gives no error, no
+// warning, no assertion, and a rollback that simply runs. A safety gate that is
 // accepted and discarded is worse than one that was never offered
 // (stokaro/ptah#1715).
 func TestMigrateDown_FailingCheckAbortsWithNothingRolledBack(t *testing.T) {

@@ -267,12 +267,12 @@ func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 // txtar check files first (in archive order), then `-- +ptah check` directives
 // parsed from the body the given direction is about to run.
 //
-// The direction used to be implicit, and always up. A `-- +ptah check` written
-// into a down body was parsed by nothing and ignored without a word -- no
-// error, no warning, no assertion, and the rollback simply ran. A rollback is
-// where a precondition is worth asserting most, and a safety gate that is
-// accepted and discarded is worse than one that was never offered
-// (stokaro/ptah#1715).
+// The direction is explicit rather than implicitly up. With it implicit, a
+// `-- +ptah check` written into a down body is parsed by nothing and ignored
+// without a word -- no error, no warning, no assertion, and the rollback simply
+// runs. A rollback is where a precondition is worth asserting most, and a
+// safety gate that is accepted and discarded is worse than one that was never
+// offered (stokaro/ptah#1715).
 //
 // Atlas txtar check files stay attached to the migration rather than to a
 // direction: the archive carries one checks.sql for the migration, and there is
@@ -389,7 +389,7 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 // migrations in the same transaction have already changed.
 //
 // Both refusals name the migration and the feature and point here, because a
-// user who adopts tx-mode all for atomicity used to discover the two
+// user who adopts tx-mode all for atomicity otherwise discovers the two
 // incompatibilities one migration at a time (stokaro/ptah#1713).
 const txModeAllExclusionAdvice = "tx-mode all runs every migration in one transaction, " +
 	"so a per-migration timeout would bound the whole batch and a per-migration check would " +

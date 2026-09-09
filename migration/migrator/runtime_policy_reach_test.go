@@ -15,17 +15,16 @@ import (
 // TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims states the two
 // policies as capability rows rather than as dialect lists.
 //
-// Both used to be a switch over names, and the lists had drifted from the
-// engines: CockroachDB and YugabyteDB answered "migration timeouts are not
-// supported" while both accept `SET LOCAL statement_timeout` and
-// `SET LOCAL lock_timeout` -- measured on CockroachDB v25.4.0 and on
-// YugabyteDB 2026.1, which reports itself as PostgreSQL 15.12-YB. A timeout is
-// the safety belt on a migration that takes a lock, and those are the two
-// PostgreSQL-shaped deployments where a long lock hurts most
-// (stokaro/ptah#1713).
+// A switch over names drifts from the engines: CockroachDB and YugabyteDB then
+// answer "migration timeouts are not supported" while both accept
+// `SET LOCAL statement_timeout` and `SET LOCAL lock_timeout` -- measured on
+// CockroachDB v25.4.0 and on YugabyteDB 2026.1, which reports itself as
+// PostgreSQL 15.12-YB. A timeout is the safety belt on a migration that takes a
+// lock, and those are the two PostgreSQL-shaped deployments where a long lock
+// hurts most (stokaro/ptah#1713).
 //
-// The table is the contract the migrator now reads, so a preset that changes
-// one of these values changes a runtime policy and says so here.
+// The table is the contract the migrator reads, so a preset that changes one of
+// these values changes a runtime policy and says so here.
 func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 	tests := []struct {
 		dialect      string

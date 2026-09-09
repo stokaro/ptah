@@ -313,10 +313,9 @@ func migrationExecutionProgress(
 	// overstating it skips a statement that never ran. Whether the earlier
 	// statements survived the failure is a property of the transaction mode, the
 	// dialect and — on the MySQL family — the statements themselves, which is
-	// what rolledBackApplied answers. This branch used to carry its own shorter,
-	// unnormalized list that omitted SQLite and SQL Server and so recorded
-	// applied=1 for a file whose transaction had rolled the whole body back
-	// (#966).
+	// what rolledBackApplied answers. A shorter, unnormalized list on this
+	// branch omits SQLite and SQL Server and records applied=1 for a file whose
+	// transaction rolled the whole body back (#966).
 	applied = rolledBackApplied(dialect, txMode, applied)
 	return migrationProgress{
 		Applied: applied, Total: execErr.Total,
@@ -491,13 +490,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
 // restartMigrationSQL rewrites an existing revision row so a retry of the same
 // version reuses it instead of inserting a second one.
 //
-// beginMigrationSQL is a bare INSERT, and the up path used to run it
-// unconditionally. Once a failed body had recorded a dirty row, every retry —
+// beginMigrationSQL is a bare INSERT, and running it unconditionally on the up
+// path means that once a failed body has recorded a dirty row, every retry —
 // including the one the operator asked for with --allow-dirty after fixing the
-// migration — died on `UNIQUE constraint failed` on the version column instead
+// migration — dies on `UNIQUE constraint failed` on the version column instead
 // of running, with `migrations repair` the only way out (#966). This is the
-// up-direction counterpart of beginRollbackSQL, which has always rewritten the
-// row in place for the down direction.
+// up-direction counterpart of beginRollbackSQL, which rewrites the row in place
+// for the down direction.
 func (m *Migrator) restartMigrationSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return revisionUpdateSQL(
@@ -922,8 +921,8 @@ func atlasVersionNumberExpressionFor(dialect string) string {
 func (m *Migrator) createAtlasRevisionsTableSQL() string {
 	// connectionDialect keeps this usable on a zero-value Migrator, so the
 	// generated-SQL guard tests can assert every dialect branch without a live
-	// database. The method used to dereference m.conn.Info() directly, which
-	// panicked before any assertion could run.
+	// database. Dereferencing m.conn.Info() directly panics there, before any
+	// assertion can run.
 	return atlasRevisionsTableDDL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
@@ -1108,11 +1107,11 @@ checksum = VALUES(checksum)`
 // dirtyRevision reads the lowest revision row that is not cleanly applied.
 //
 // Only the ptah layout's predicate takes an argument; the Atlas layout compares
-// applied against total and needs none. This used to issue the ptah query first
-// and then overwrite the result for the Atlas layout, which left a *sql.Row that
-// nothing ever scanned — and an unscanned Row keeps its connection, and its open
-// read cursor, checked out for the life of the process. On SQLite that read lock
-// blocks the next write against the same file, so a dirty-guard refusal poisoned
+// applied against total and needs none. Issuing the ptah query first and then
+// overwriting the result for the Atlas layout leaves a *sql.Row that nothing
+// ever scans — and an unscanned Row keeps its connection, and its open read
+// cursor, checked out for the life of the process. On SQLite that read lock
+// blocks the next write against the same file, so a dirty-guard refusal poisons
 // every later write in the same process with `database is locked (SQLITE_BUSY)`:
 // exactly the recovery run this guard exists to send the operator towards
 // (#966).

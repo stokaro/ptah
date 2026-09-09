@@ -322,10 +322,10 @@ func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
 // TestMySQLReferencedExternalSchemas pins which qualified references name a
 // database other than the connected one.
 //
-// The answer decides which databases the tx-mode file preflight inspects. It
-// used to decide which migrations were refused outright, and narrowing that to
-// an inspection is stokaro/ptah#2975; the cases are unchanged, because what
-// counts as a reference did not change.
+// The answer decides which databases the tx-mode file preflight inspects, rather
+// than which migrations are refused outright: narrowing that to an inspection
+// is stokaro/ptah#2975, and the cases are the same either way, because what
+// counts as a reference does not change.
 //
 // The comparison stays byte-exact on purpose. A database named in a different
 // case is a different name to this scan, so it is inspected rather than assumed

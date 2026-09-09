@@ -659,9 +659,9 @@ func TestNewFSMigrationProvider_EmptyFilesystem(t *testing.T) {
 func TestNewFSMigrationProvider_DescriptionEndingInUpIsNotAMigration(t *testing.T) {
 	c := qt.New(t)
 
-	// Regression for issue #245: with the unescaped dot in fileNameRe,
-	// 0000000003_cleanup.sql used to register as version 3's UP migration
-	// (description "Clea") and its SQL would run on migrate-up.
+	// Regression for issue #245: with an unescaped dot in fileNameRe,
+	// 0000000003_cleanup.sql registers as version 3's UP migration
+	// (description "Clea") and its SQL runs on migrate-up.
 	fsys := fstest.MapFS{
 		"0000000001_create_users.up.sql": &fstest.MapFile{
 			Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);"),
