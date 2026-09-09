@@ -92,7 +92,9 @@ current schema IR:
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
   `comment`
 - PostgreSQL `sequence` blocks with `type`, `start`, `increment`, `min_value`,
-  `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`
+  `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`.
+  `owned_by` takes the column reference `table.rooms.column.id` or the string
+  `"rooms.id"`, and both name the same column
 - PostgreSQL `domain` blocks with `type`, `null`, `default`, `check`, and
   `comment`
 - PostgreSQL `composite` blocks with ordered `field` sub-blocks (each a name
