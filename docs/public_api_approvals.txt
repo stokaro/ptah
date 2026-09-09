@@ -323,3 +323,11 @@ v0.3.0 ptah.run/migration/schemadiff
 v0.3.0 ptah.run/migration/schemadiff/difftypes
 v0.3.0 ptah.run/migration/seeder
 v0.3.0 ptah.run/migration/shadow
+
+# `.test.hcl` documents take `--var` values, so the unexported options struct
+# behind AtlasTestOption carries a []string and is no longer comparable.
+# Nothing compares it: the type is unexported, so no caller can name it,
+# construct one, or compare two. apidiff reports the property because
+# AtlasTestOption's signature mentions the type, not because a caller could
+# observe it (stokaro/ptah#3119).
+v0.5.0 ptah.run/migration/dbtest

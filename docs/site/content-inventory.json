@@ -4319,8 +4319,8 @@
         "/testing/migrations-and-schema/",
         "/testing/overview/"
       ],
-      "visibleWords": 519,
-      "sourceBytes": 4255
+      "visibleWords": 560,
+      "sourceBytes": 4488
     },
     {
       "path": "docs/site/src/content/docs/reference/yaml-schema.md",
@@ -5842,7 +5842,7 @@
         "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 1185,
-      "sourceBytes": 11801
+      "sourceBytes": 11828
     },
     {
       "path": "docs/site/src/content/docs/testing/overview.mdx",

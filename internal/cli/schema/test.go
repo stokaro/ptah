@@ -194,7 +194,7 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.run, testRunFlag, "", "Run only case names matching this Go regular expression")
 	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
 	flags.StringArrayVar(&opts.vars, testVarFlag, nil,
-		"Supply a value for a variable block of an HCL schema file, as name=value (repeatable)")
+		"Supply a value for a variable block of an HCL schema file or a .test.hcl document, as name=value (repeatable)")
 	// --schema-file reaches the shared loader, which pulls an oci:// reference
 	// the way it does for every other verb taking that flag. Registering the
 	// opt-out here is what makes a local registry reachable; without it the
@@ -225,7 +225,8 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 	// the database the cases run against -- a container provisioned here has an
 	// address the flag never held.
 	cases, err := dbtest.LoadCasesOfKind(
-		opts.dir, dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDevURL(opts.dbURL))
+		opts.dir, dbtest.AtlasTestKindSchema,
+		dbtest.WithAtlasTestDevURL(opts.dbURL), dbtest.WithAtlasTestVars(opts.vars))
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}
@@ -256,7 +257,8 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 	defer releaseDev()
 
 	cases, err = dbtest.LoadCasesOfKind(
-		opts.dir, dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDevURL(dbURL))
+		opts.dir, dbtest.AtlasTestKindSchema,
+		dbtest.WithAtlasTestDevURL(dbURL), dbtest.WithAtlasTestVars(opts.vars))
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}

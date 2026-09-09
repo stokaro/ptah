@@ -46,6 +46,7 @@ type atlasIteration struct {
 type atlasEvalOptions struct {
 	devURL string
 	dir    string
+	vars   []string
 }
 
 // AtlasTestOption configures how an Atlas `.test.hcl` document is read.
@@ -59,6 +60,12 @@ type AtlasTestOption func(*atlasEvalOptions)
 // neither the test nor the omission that produced it.
 func WithAtlasTestDevURL(devURL string) AtlasTestOption {
 	return func(o *atlasEvalOptions) { o.devURL = devURL }
+}
+
+// WithAtlasTestVars supplies `--var` values to the document's `variable`
+// blocks, in the spelling [atlashcl.ParseVarOverrides] decodes.
+func WithAtlasTestVars(vars []string) AtlasTestOption {
+	return func(o *atlasEvalOptions) { o.vars = vars }
 }
 
 // WithAtlasTestDir names the directory `file()` reads from.
@@ -79,11 +86,25 @@ func WithAtlasTestDir(dir string) AtlasTestOption {
 // atlasVariables reads the top-level `variable` blocks into the values `var.*`
 // resolves against.
 //
-// A variable with no `default` is refused. Nothing here supplies one from
-// outside yet, so accepting it would bind `var.name` to null and let it reach a
-// statement as the string "null" -- a test that runs, passes, and asserts
-// against a value nobody wrote.
-func atlasVariables(body *hclsyntax.Body, filename string) (map[string]cty.Value, error) {
+// A supplied value wins over a `default` and satisfies a block that has none,
+// which is what `--var` means everywhere else in Ptah. Before it was threaded
+// here the flag was accepted by the test verbs and discarded: a document
+// declaring a variable without a default was refused however the flag was
+// spelled, and one with a default ran on the default while the flag said
+// nothing (stokaro/ptah#3119).
+//
+// A variable that neither supplies nor defaults is still refused. Binding
+// `var.name` to null would let it reach a statement as the string "null" -- a
+// test that runs, passes, and asserts against a value nobody wrote.
+//
+// A supplied name matching no `variable` block is NOT an error: the same
+// `--var` reaches the schema file a run compares against, so refusing here
+// would break the spelling that already works.
+func atlasVariables(
+	body *hclsyntax.Body,
+	filename string,
+	supplied map[string]cty.Value,
+) (map[string]cty.Value, error) {
 	values := make(map[string]cty.Value)
 	for _, block := range body.Blocks {
 		if block.Type != "variable" {
@@ -97,10 +118,14 @@ func atlasVariables(body *hclsyntax.Body, filename string) (map[string]cty.Value
 		if err := atlasRejectUnknownAttrs(block, filename, "default", "type"); err != nil {
 			return nil, err
 		}
+		if value, given := supplied[name]; given {
+			values[name] = value
+			continue
+		}
 		attr, ok := block.Body.Attributes["default"]
 		if !ok {
-			return nil, fmt.Errorf("%s:%d: variable %q has no `default`, and nothing supplies one",
-				filename, block.TypeRange.Start.Line, name)
+			return nil, fmt.Errorf("%s:%d: variable %q has no `default`, and nothing supplies one: pass --var %s=<value>",
+				filename, block.TypeRange.Start.Line, name, name)
 		}
 		value, diags := attr.Expr.Value(nil)
 		if diags.HasErrors() {
