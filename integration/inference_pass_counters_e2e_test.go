@@ -64,7 +64,7 @@ func TestInferenceAPassReportsItsOwnWorkE2E(t *testing.T) {
 
 // assertASecondBackfillReportsNothing is finding 2.
 //
-// The run is exhausted, so this pass scans nothing — and used to print the
+// The run is exhausted, so this pass scans nothing — and must not print the
 // first pass's three rows as its own work.
 func assertASecondBackfillReportsNothing(c *qt.C, ctx context.Context, specPath, dbURL string) {
 	c.Helper()

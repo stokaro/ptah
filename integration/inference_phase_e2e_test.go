@@ -46,10 +46,10 @@ func TestInferencePhaseE2E(t *testing.T) {
 	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
 	c.Assert(phaseOf(c, ctx, specPath, dbName), qt.Equals, "boundary_captured")
 
-	// A completed backfill leaves `backfilled`, not `backfilling`. The phase
-	// used to be set to `backfilling` AFTER the walk finished, which made it
-	// the phase of a backfill that had ended and left verification with no
-	// fact to read (stokaro/ptah#2649).
+	// A completed backfill leaves `backfilled`, not `backfilling`. Setting the
+	// phase to `backfilling` AFTER the walk finishes makes it the phase of a
+	// backfill that has ended, and leaves verification with no fact to read
+	// (stokaro/ptah#2649).
 	runInference(c, ctx, "backfill",
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
 	c.Assert(phaseOf(c, ctx, specPath, dbName), qt.Equals, "backfilled")

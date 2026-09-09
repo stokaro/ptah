@@ -102,8 +102,8 @@ func assertARollbackToTheActiveGenerationIsRefused(
 	c.Assert(previousPointerOf(c, ctx, db), qt.Equals, before)
 }
 
-// assertARollbackToARetiredGenerationIsRefusedByName is the designed refusal
-// that a read failure used to preempt.
+// assertARollbackToARetiredGenerationIsRefusedByName is the designed refusal a
+// read failure can preempt.
 //
 // The message matters as much as the exit code. `column does not exist` sends
 // an operator to look at their schema; "the generation was retired" tells them

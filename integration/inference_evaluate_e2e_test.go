@@ -530,9 +530,9 @@ cases:
 
 	// The same two documents, the same query, the other metric, the other
 	// answer. The metric is part of the generation identity, so this is a
-	// second generation -- and a generation writes its own column. It used to
-	// name the same one, which worked only because nothing stopped it from
-	// overwriting the first (stokaro/ptah#2391).
+	// second generation -- and a generation writes its own column. Naming the
+	// same one works only because nothing stops it from overwriting the first
+	// (stokaro/ptah#2391).
 	l2Spec := writeCLISpecWithMetric(c, endpointURL, "l2", "embedding_l2")
 	backfillFor(c, ctx, l2Spec, metricURL, "l2-run")
 

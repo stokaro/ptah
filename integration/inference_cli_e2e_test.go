@@ -187,9 +187,8 @@ func assertRetirementRecordsWhatItDestroyed(
 	c.Assert(record.Approver, qt.Equals, "an operator")
 	// Named rather than counted, and named for what was ACTUALLY there. This
 	// generation was registered and never built, so it has no index, and the
-	// record says so: `DropsIndex` used to be a literal `true` and the record
-	// claimed an index had been dropped whether or not one existed
-	// (stokaro/ptah#2642).
+	// record says so: a literal `true` for `DropsIndex` claims an index was
+	// dropped whether or not one existed (stokaro/ptah#2642).
 	c.Assert(record.Objects, qt.HasLen, 1)
 	c.Assert(record.Objects[0], qt.Contains, "column ")
 	c.Assert(strings.Join(record.Objects, " "), qt.Not(qt.Contains), "index over")
@@ -1130,8 +1129,8 @@ func assertPrepareIsIdempotent(c *qt.C, ctx context.Context, specPath, dbURL str
 	// The columns exist now, and running prepare twice did not disturb them.
 	assertTargetColumns(c, ctx, dbURL)
 
-	// And the plan stops proposing the work. This is the assertion the fixture
-	// used to satisfy by writing the DDL itself, which made it a statement
+	// And the plan stops proposing the work. A fixture that writes the DDL
+	// itself satisfies this assertion too, which would make it a statement
 	// about the fixture rather than about prepare.
 	after := runInference(c, ctx, "plan", "--spec", specPath, "--db-url", dbURL)
 	c.Assert(after, qt.Contains, "target.exists = true (measured)")
@@ -1200,12 +1199,12 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "cutover refused")
 	// The mode's STATE, not its absence. This specification declares
-	// `consistency.mode: outbox`, and the refusal used to tell the operator
-	// they had declared none -- the plan blanked the mode whenever the
-	// guarantee was incomplete, so "yours has not caught up yet" arrived as
-	// "you configured nothing" (stokaro/ptah#2646). Both halves are asserted,
-	// because a refusal that merely stopped saying the wrong thing would be a
-	// run refused for no stated reason.
+	// `consistency.mode: outbox`, and the refusal must not tell the operator
+	// they declared none -- a plan that blanks the mode whenever the guarantee
+	// is incomplete turns "yours has not caught up yet" into "you configured
+	// nothing" (stokaro/ptah#2646). Both halves are asserted, because a refusal
+	// that merely stops saying the wrong thing is a run refused for no stated
+	// reason.
 	c.Assert(output, qt.Contains, "the backfill's boundary is")
 	c.Assert(output, qt.Not(qt.Contains),
 		"the source is mutable and the run declared no consistency mode")

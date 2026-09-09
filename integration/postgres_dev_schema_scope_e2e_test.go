@@ -42,12 +42,11 @@ func countDevSchema(c *qt.C, ctx context.Context, db *sql.DB, name string) int {
 // PostgreSQL connection reports, because a writer decides from it which schemas
 // belong to the caller and which are strangers it may drop.
 //
-// It used to be the constant "public": the code assigned "public", then branched
-// on the URL path to assign "public" again. A dev URL naming another schema was
-// therefore not merely ignored — the realm cleanup treated that schema as a
-// stranger and DROPPED it, and the replay that followed ran under a search_path
-// resolving to nothing, failing with "no schema has been selected to create in"
-// (stokaro/ptah#1198). The pinned community binary leaves the schema standing.
+// A constant "public" here — assigned, then branched on the URL path and
+// assigned again — does not merely ignore a dev URL naming another schema: the
+// realm cleanup treats that schema as a stranger and DROPS it, and the replay
+// that follows runs under a search_path resolving to nothing, failing with
+// "no schema has been selected to create in" (stokaro/ptah#1198). The pinned community binary leaves the schema standing.
 //
 // The rows are a pair plus the fallback: only the search_path moves.
 func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {

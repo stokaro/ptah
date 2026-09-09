@@ -20,9 +20,9 @@ import (
 // TestTransactionPreflight_RefusesBeforeReachingPostgres is the test the
 // preflight cannot be trusted without.
 //
-// Both shapes used to reach the database and fail there with the server's own
-// SQLSTATE after the earlier statements had run. The discriminating
-// observable is not that the migration fails -- it failed before -- but that
+// Without it both shapes reach the database and fail there with the server's
+// own SQLSTATE, after the earlier statements have run. The discriminating
+// observable is not that the migration fails -- it fails either way -- but that
 // the failure is Ptah's sentence rather than PostgreSQL's code: an error
 // carrying 25001 or 55P04 proves the statement was sent (stokaro/ptah#996).
 func TestTransactionPreflight_RefusesBeforeReachingPostgres(t *testing.T) {

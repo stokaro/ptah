@@ -20,8 +20,8 @@ import (
 )
 
 // postgresTestURL resolves the live PostgreSQL address. dbtarget refuses an
-// address carrying another engine's scheme, so the dialect guard this helper
-// used to carry has nothing left to catch.
+// address carrying another engine's scheme, so a dialect guard in this helper
+// would have nothing to catch.
 func postgresTestURL(t *testing.T) string {
 	t.Helper()
 

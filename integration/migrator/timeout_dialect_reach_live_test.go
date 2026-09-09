@@ -14,15 +14,15 @@ import (
 	"ptah.run/migration/migrator"
 )
 
-// TestMigrateUp_CockroachDBHonorsPerMigrationTimeouts is the reach the dialect
-// switch used to deny.
+// TestMigrateUp_CockroachDBHonorsPerMigrationTimeouts is the reach a narrow
+// dialect switch denies.
 //
-// `timeoutStatements` handled three dialect names, so CockroachDB answered
+// `timeoutStatements` handling three dialect names leaves CockroachDB answering
 // `migration timeouts are not supported for dialect "cockroachdb"` -- while the
 // server takes `SET LOCAL statement_timeout` and `SET LOCAL lock_timeout`
 // exactly as PostgreSQL does, measured on v25.4.0. It speaks the PostgreSQL
-// wire protocol, so what refused it was Ptah's switch rather than the engine,
-// on one of the two deployments where a long lock hurts most
+// wire protocol, so what refuses it is Ptah's switch rather than the engine, on
+// one of the two deployments where a long lock hurts most
 // (stokaro/ptah#1713).
 //
 // The assertion is that the migration APPLIES. A timeout the server rejects

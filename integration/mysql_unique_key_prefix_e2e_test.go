@@ -74,7 +74,7 @@ import (
 // prefix and dropped the direction leaves every assertion about `slug`
 // standing. Measured on MySQL 26.7 and MariaDB 12.3, both report `COLLATION D`
 // for it and `A` for every other part, and both apply and read the direction
-// back -- the constraint form Ptah used to render reports `A`.
+// back, while the constraint form reports `A`.
 const uniqueKeyPrefixSchema = `CREATE TABLE accounts (
   id BIGINT NOT NULL PRIMARY KEY,
   slug VARCHAR(64) NOT NULL,
@@ -144,7 +144,7 @@ func TestAUniqueKeyPrefixRejectsTheDuplicateItsConstraintFormWouldAccept(t *test
 			// The two slugs differ, and share their first seven characters.
 			// That is what makes the second write a question about the PREFIX:
 			// a unique index over the whole column accepts both, which is
-			// exactly what the constraint form Ptah used to render is.
+			// exactly what the constraint form renders.
 			c.Assert(insertAccount(ctx, target, 1, "abcdefg-one", "one@example.test", "one"), qt.IsNil)
 			refused := insertAccount(ctx, target, 2, "abcdefg-two", "two@example.test", "two")
 			c.Assert(refused, qt.IsNotNil)
@@ -202,9 +202,9 @@ func newUniqueKeyPrefixDatabase(c *qt.C, ctx context.Context, engine dbtarget.En
 //
 // The two are the fields this test exists for, and they are two rather than one
 // because the reader decides them separately: they are what separates the index
-// the author declared from the whole-column, ascending unique constraint Ptah
-// used to render in its place, and a reader that kept one attribute and dropped
-// the other satisfies an assertion carrying only the one it kept.
+// the author declared from the whole-column, ascending unique constraint that
+// would stand in its place, and a reader that keeps one attribute and drops the
+// other satisfies an assertion carrying only the one it kept.
 type uniqueKeyPart struct {
 	Column    string
 	SubPart   string
