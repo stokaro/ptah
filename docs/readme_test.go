@@ -225,3 +225,57 @@ func TestReadmeRoutesToTheSupportMatrix(t *testing.T) {
 		qt.Commentf("the README links %s nowhere, so a reader whose engine is not"+
 			" in the row above has no route to the answer", supportMatrixRoute))
 }
+
+// badgeDir holds one shields.io endpoint document per engine, written by the
+// capability matrix on a push to master.
+const badgeDir = "badges"
+
+// badgeEndpoint reads the engine id out of a README badge URL.
+var badgeEndpoint = regexp.MustCompile(`/docs/badges/([a-z0-9]+)\.json`)
+
+// TestReadmeBadgesEveryEngineTheMatrixPublishes holds the status row to the
+// documents behind it.
+//
+// The badge documents are derived: the generator writes one per dialect the
+// declared cells name, so adding a release line for an engine nobody probed
+// before publishes a document nothing points at. A README row that named nine
+// of ten would report a green fleet while one engine's verdict reached no
+// reader, which is the failure this row exists to close rather than repeat.
+//
+// It reads the directory rather than a list written here for the same reason
+// the engine row is held to the support matrix: a second hand-typed list is a
+// claim that was true when it was typed.
+func TestReadmeBadgesEveryEngineTheMatrixPublishes(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(readmeBadgeEngines(c), qt.DeepEquals, publishedBadgeEngines(c))
+}
+
+// readmeBadgeEngines returns the engine ids the README's badge URLs name.
+func readmeBadgeEngines(c *qt.C) []string {
+	body, err := os.ReadFile(readmePath)
+	c.Assert(err, qt.IsNil)
+
+	var engines []string
+	for _, match := range badgeEndpoint.FindAllStringSubmatch(string(body), -1) {
+		engines = append(engines, match[1])
+	}
+	// A floor as well as a comparison: a README that stopped naming any badge
+	// would otherwise agree with a directory the generator had emptied, and
+	// two empty lists compare equal.
+	c.Assert(len(engines) >= minimumEngineLinks, qt.IsTrue,
+		qt.Commentf("the README names %d badge documents, which is too few to be the status row", len(engines)))
+	return sorted(engines)
+}
+
+// publishedBadgeEngines returns the engine ids the badge directory carries.
+func publishedBadgeEngines(c *qt.C) []string {
+	entries, err := os.ReadDir(badgeDir)
+	c.Assert(err, qt.IsNil)
+
+	var engines []string
+	for _, entry := range entries {
+		engines = append(engines, strings.TrimSuffix(entry.Name(), ".json"))
+	}
+	return sorted(engines)
+}
