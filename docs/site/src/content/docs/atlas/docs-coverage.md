@@ -93,7 +93,7 @@ sections carry the detail.
 | [Dev database](#dev-database) | Documented |
 | [Versioned migrations overview](#versioned-migrations-overview) | Documented |
 | [Migration apply](#migration-apply) | Documented |
-| [Migration down and rollback](#migration-down-and-rollback) | Partial |
+| [Migration down and rollback](#migration-down-and-rollback) | Documented |
 | [Migration diff generation](#migration-diff-generation) | Partial |
 | [Migration linting](#migration-linting) | Partial |
 | [Migration directory integrity, hash, and validation](#migration-directory-integrity-hash-and-validation) | Partial |
@@ -340,7 +340,7 @@ Behavior below was executed against a `ptah-compat` build from this repository, 
 
 **Ptah documentation.** [Roll back migrations](../../versioned/rollback/), [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Partial. Ptah rolls back through pre-planned down files. `ptah-compat migrate down --dev-url` replays and verifies the rollback plan on the dev database before touching the target (native `ptah migrations down --shadow-db`), and `--format` renders an Atlas Go-template report. `--skip-checks` is dropped on that verification replay; [`stokaro/ptah#3114`](https://github.com/stokaro/ptah/issues/3114) owns it.
+**Implementation status.** Documented. Ptah rolls back through pre-planned down files. `ptah-compat migrate down --dev-url` replays and verifies the rollback plan on the dev database before touching the target (native `ptah migrations down --shadow-db`), and `--format` renders an Atlas Go-template report. `--skip-checks` waives the pre-migration checks on that verification replay as well as on the target; it reached only the target until [`stokaro/ptah#3114`](https://github.com/stokaro/ptah/issues/3114), so the flag and a dev database could not be used together.
 
 `--to-tag` resolves against the tags `ptah migrations tag` records in the
 database rather than against a hosted registry, `--skip-checks` bypasses the

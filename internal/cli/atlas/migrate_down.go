@@ -273,6 +273,7 @@ func runAtlasMigrateDownFormat(
 				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 			},
 			ConnectTimeout: dbcli.DefaultConnectTimeout,
+			SkipChecks:     opts.skipChecks,
 		})
 		if err != nil {
 			return err
