@@ -7,12 +7,13 @@ package flywayrevision_test
 import (
 	"database/sql"
 	"errors"
-	"ptah.run/internal/atlasreference"
 	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 	"slices"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ type identityCase struct {
 func TestFlywayRevisionIdentityMatchesAtlasCE(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, test := range identityCases() {
 		t.Run(test.name, func(t *testing.T) {
@@ -80,7 +81,7 @@ func TestFlywayRevisionIdentityMatchesAtlasCE(t *testing.T) {
 func TestFlywayApplyBaselineUsesExactSourceToken(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "B1.5__base.sql", body: "CREATE TABLE exact_baseline (id INTEGER PRIMARY KEY);\n"},
 		{name: "V2__later.sql", body: "CREATE TABLE after_exact_baseline (id INTEGER PRIMARY KEY);\n"},
@@ -113,7 +114,7 @@ func TestFlywayApplyBaselineUsesExactSourceToken(t *testing.T) {
 func TestFlywayApplyToVersionExtensionUsesExactSourceToken(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V1__one.sql", body: "CREATE TABLE exact_bound_one (id INTEGER PRIMARY KEY);\n"},
 		{name: "V1.5__half.sql", body: "CREATE TABLE exact_bound_half (id INTEGER PRIMARY KEY);\n"},
@@ -141,7 +142,7 @@ func TestFlywayApplyToVersionExtensionUsesExactSourceToken(t *testing.T) {
 func TestFlywaySameTokenBaselineInteropFailsClosedWhenAtlasTypeIsAmbiguous(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V2__base.sql", body: "CREATE TABLE same_token_base (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__base.sql", body: "CREATE TABLE same_token_base (id INTEGER PRIMARY KEY);\n"},
@@ -170,7 +171,7 @@ func TestFlywaySameTokenBaselineInteropFailsClosedWhenAtlasTypeIsAmbiguous(t *te
 func TestFlywaySameTokenBaselineSetMarkerKeepsCEReadableHistory(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V2__base.sql", body: "CREATE TABLE set_same_token_base (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__base.sql", body: "CREATE TABLE set_same_token_base (id INTEGER PRIMARY KEY);\n"},
@@ -238,7 +239,7 @@ func TestFlywayDotPrefixedTokenAtlasCEContract(t *testing.T) {
 func TestFlywayExecutionFailureNeverLeaksConvertedOrderKey(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V1.5__broken.sql", body: "INVALID SQL;\n"},
 	})
@@ -258,7 +259,7 @@ func TestFlywayExecutionFailureNeverLeaksConvertedOrderKey(t *testing.T) {
 func TestFlywayDirtyOpaqueStatusCurrentMatchesFailedExactToken(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "Vx__broken.sql", body: "CREATE TABLE dirty_opaque (id INTEGER PRIMARY KEY);\nINVALID SQL;\n"},
 	})
@@ -303,7 +304,7 @@ func TestFlywayDirtyOpaqueStatusCurrentMatchesFailedExactToken(t *testing.T) {
 func TestFlywayCrossToolReuseContinuesEitherHistory(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, test := range interoperableIdentityCases() {
 		t.Run(test.name, func(t *testing.T) {
@@ -335,7 +336,7 @@ func TestFlywayCrossToolReuseContinuesEitherHistory(t *testing.T) {
 func TestFlywayOnlyRepeatableCrossToolReuseMatchesExactEmptyIdentity(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "R__only.sql", body: "CREATE TABLE only_repeatable_identity (id INTEGER PRIMARY KEY);\n"},
 	})
@@ -366,7 +367,7 @@ func TestFlywayOnlyRepeatableCrossToolReuseMatchesExactEmptyIdentity(t *testing.
 func TestFlywayRepeatableBodyChangeRemainsSettled(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	for _, binary := range []string{reference, compat} {
 		dir := writeHashedFlywayDir(c, reference, []migrationFile{
 			{name: "R__only.sql", body: "CREATE TABLE repeatable_settled (id INTEGER PRIMARY KEY);\n"},
@@ -408,7 +409,7 @@ func assertCrossToolReuseResult(c *qt.C, direction string, result commandResult)
 func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	tests := []struct {
 		name     string
 		files    []migrationFile
@@ -486,7 +487,7 @@ func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
 func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	tests := []struct {
 		name        string
 		retiredFile migrationFile
@@ -565,7 +566,7 @@ func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
 func TestFlywayMigrateSetEmptyIdentityNamesTokenExplicitly(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{{
 		name: "R__only.sql",
 		body: "CREATE TABLE set_repeatable (id INTEGER PRIMARY KEY);\n",
@@ -590,7 +591,7 @@ func TestFlywayMigrateSetEmptyIdentityNamesTokenExplicitly(t *testing.T) {
 func TestFlywaySetRemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, binary := range []string{reference, compat} {
 		dir := writeHashedFlywayDir(c, reference, []migrationFile{{
@@ -626,7 +627,7 @@ func TestFlywaySetRemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 func TestGolangMigrateIdentityRemainsNumeric(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.up.sql"), []byte("CREATE TABLE gm_identity (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.down.sql"), []byte("DROP TABLE gm_identity;\n"), 0o600), qt.IsNil)
@@ -646,7 +647,7 @@ func TestFlywayRevisionIdentityMatchesAtlasCEOnPostgres(t *testing.T) {
 	reference := requireAtlasReference(t)
 	postgresURL := requirePostgresURL(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V01__padded.sql", body: "CREATE TABLE padded_identity (id BIGINT PRIMARY KEY);\n"},
 		{name: "V1.5__dotted.sql", body: "CREATE TABLE dotted_identity (id BIGINT PRIMARY KEY);\n"},
@@ -678,7 +679,7 @@ func requirePostgresURL(t *testing.T) string {
 func TestFlywayRevisionIdentityRefusesDuplicateEmptyTokensBeforeMutation(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V1__table.sql", body: "CREATE TABLE duplicate_empty_control (id INTEGER PRIMARY KEY);\n"},
 		{name: "R1__a.sql", body: "CREATE VIEW repeatable_a AS SELECT id FROM duplicate_empty_control;\n"},
@@ -980,15 +981,6 @@ func environmentWithoutPtahVariables(environment []string) []string {
 	return filtered
 }
 
-func buildCompatBinary(c *qt.C) string {
-	c.Helper()
-	path := filepath.Join(c.TempDir(), "ptah-compat")
-	result := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat")
-	output, err := result.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", output))
-	return path
-}
-
 func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 	reference := os.Getenv(referenceEnv)
@@ -1023,7 +1015,7 @@ func requireAtlasReference(t *testing.T) string {
 func TestFlywayContinuesAtlasCEHistoryWithoutHandover(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	for _, test := range linearlyExtendableIdentityCases() {
 		t.Run(test.name, func(t *testing.T) {
@@ -1111,7 +1103,7 @@ func linearlyExtendableIdentityCases() []identityCase {
 func TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V1__ooo_first.sql", body: "CREATE TABLE ooo_first (id INTEGER PRIMARY KEY);\n"},
@@ -1166,7 +1158,7 @@ func TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides(t *testing.T) {
 func TestFlywayEditedAppliedFileStaysRefusedAfterCEWroteIt(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V1__edited.sql", body: "CREATE TABLE edited_applied (id INTEGER PRIMARY KEY);\n"},

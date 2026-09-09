@@ -4,10 +4,11 @@ package schemadir_test
 
 import (
 	"errors"
-	"ptah.run/internal/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 	"strings"
 	"testing"
 
@@ -68,7 +69,7 @@ func writeEmptySchemaHCL(c *qt.C) string {
 func TestReferenceAgreesOnSQLSchemaDirectories(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	tests := []struct {
 		name      string
@@ -130,7 +131,7 @@ func TestReferenceAgreesOnSQLSchemaDirectories(t *testing.T) {
 func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	t.Run("hcl redeclared", func(t *testing.T) {
 		c := qt.New(t)
@@ -205,21 +206,6 @@ func runForExitCode(c *qt.C, binary string, args ...string) int {
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s %s\n%s", binary, strings.Join(args, " "), out))
 	return 0
-}
-
-// buildCompatBinary builds ptah-compat from this tree.
-//
-// The subject of this run is a process EXIT CODE, so the measurement has to be
-// a process. Calling the command in this package would compare an error value
-// against an exit status and could not see a regression in how one becomes the
-// other.
-func buildCompatBinary(c *qt.C) string {
-	c.Helper()
-
-	path := filepath.Join(c.TempDir(), "ptah-compat")
-	out, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", out))
-	return path
 }
 
 // requireAtlasReference resolves the pinned binary and refuses a different build.

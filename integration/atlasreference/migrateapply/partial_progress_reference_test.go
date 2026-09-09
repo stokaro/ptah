@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/clirun"
 )
 
 const (
@@ -53,7 +55,7 @@ func TestReferencePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	})
 
 	reference := requireAtlasReference(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	tests := []struct {
 		name              string

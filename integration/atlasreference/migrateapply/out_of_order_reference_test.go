@@ -5,10 +5,11 @@ package migrateapply_test
 import (
 	"database/sql"
 	"errors"
-	"ptah.run/internal/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ const (
 func TestReferenceDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 	reference := requireAtlasReference(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := clirun.Build(c, clirun.Compat)
 
 	t.Run("prefix insertion is the retained divergence", func(t *testing.T) {
 		c := qt.New(t)
@@ -191,14 +192,6 @@ func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []str
 	c.Assert(versionRows.Err(), qt.IsNil)
 	c.Assert(versionRows.Close(), qt.IsNil)
 	c.Assert(versions, qt.DeepEquals, wantVersions)
-}
-
-func buildCompatBinary(c *qt.C) string {
-	c.Helper()
-	path := filepath.Join(c.TempDir(), "ptah-compat")
-	out, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", out))
-	return path
 }
 
 func requireAtlasReference(t *testing.T) string {
