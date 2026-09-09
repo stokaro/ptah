@@ -138,12 +138,12 @@ func rules() []rule {
 			Summary: "the canonical model (core/) must not import comparison, planning or conversion",
 			violations: func(pkg *packages.Package) []finding {
 				// internal/sqlschema is named here beside internal/convert/
-				// deliberately. It IS the former internal/convert/toschema,
-				// renamed when stokaro/ptah#2725 gave it one purpose and one
-				// entry point, and the edge core/schemasource -> it is the same
-				// dependency it always was. Leaving it out would have dropped
-				// this count from 2 to 1 for no reason but a rename, which is
-				// the ratchet reporting an improvement that did not happen.
+				// deliberately. It is the package internal/convert/toschema
+				// was renamed to (stokaro/ptah#2725), and the edge
+				// core/schemasource -> it is the same dependency under either
+				// name. Leaving it out would drop this count from 2 to 1 for
+				// no reason but a rename, which is the ratchet reporting an
+				// improvement that did not happen.
 				return importEdges(pkg, under("core/"), anyUnder(
 					"internal/planner/", "migration/schemadiff", "internal/convert/",
 					"internal/sqlschema", "internal/modelast"))

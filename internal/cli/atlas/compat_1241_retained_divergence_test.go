@@ -312,7 +312,7 @@ func TestCompatCommand_HashRefusesATrailingPositional(t *testing.T) {
 }
 
 // TestCompatCommand_HashAcceptsAVar is the parity half of the pair above: item
-// 12 of #1241, also unread until stokaro/ptah#1623.
+// 12 of #1241.
 //
 // Both binaries exit 0 on `migrate hash --dir file://mig --var x=1` and print
 // nothing. The row exists so the acceptance is held: a later change that made

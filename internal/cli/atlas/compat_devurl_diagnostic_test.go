@@ -402,12 +402,10 @@ func TestCompatDevURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 // `docker` is such a scheme. Without its explicit exemption every docker dev
 // database would be answered `unknown driver "docker"` — the exact trade the
 // compatibility policy forbids, a specific diagnostic replaced by a vague one,
-// and since stokaro/ptah#844 it would also refuse a URL this build can
-// provision.
+// and it would also refuse a URL this build can provision.
 //
-// What the exemption protects changed with that work but the control did not:
-// the value must still reach the layer that owns it and be answered in that
-// layer's words. `docker://sqlite/3/dev` is used because it is answered without
+// Either way the control is the same: the value must reach the layer that owns
+// it and be answered in that layer's words. `docker://sqlite/3/dev` is used because it is answered without
 // starting anything — measured, the pinned community binary v1.3.0 refuses it
 // `unsupported docker image "sqlite"` and exits 1 — so this control cannot
 // become an image pull.

@@ -64,9 +64,9 @@ func commentLines(text string) []string {
 // assertGeneratedHeader pins the three lines every generated file carries, so a
 // count assertion cannot be satisfied by the wrong three lines.
 // assertGeneratedHeader checks the three generated lines at the END of the
-// comment list. They live at the foot of the file since #1148: as the file's
-// leading comment they were protoc-gen-go's leading comment too, so every
-// consumer's .pb.go carried Ptah's content digest.
+// comment list. They live at the foot of the file: as the file's leading
+// comment they would be protoc-gen-go's leading comment too, so every
+// consumer's .pb.go would carry Ptah's content digest.
 func assertGeneratedHeader(c *qt.C, lines []string) {
 	c.Helper()
 	c.Assert(len(lines) >= 3, qt.IsTrue, qt.Commentf("comment lines: %q", lines))

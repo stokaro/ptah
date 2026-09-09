@@ -106,14 +106,14 @@ func newSelectRenderer(dialect string) (*selectRenderer, error) {
 //
 // The PostgreSQL family is resolved through platform.IsPostgresFamily rather
 // than by listing member names, so this table cannot disagree with the rest of
-// the repository about who is in that family. It used to list Postgres,
-// CockroachDB and YugabyteDB by name and so omitted Spanner, which every other
-// subsystem already treats as PostgreSQL: platform.IsPostgresFamily("spanner")
+// the repository about who is in that family. Listing Postgres, CockroachDB and
+// YugabyteDB by name omits Spanner, which every other subsystem treats as
+// PostgreSQL: platform.IsPostgresFamily("spanner")
 // is true, sqlutil.Rebind gives it $n, NewRendererWithCapabilities routes its
 // DDL through the PostgreSQL renderer, and dbschema reads it over pgx.
 //
-// SQL Server and ClickHouse are both present as of stokaro/ptah#941, and what
-// each needed is worth recording because neither was a missing map entry.
+// SQL Server and ClickHouse are both present, and what each needs is worth
+// recording because neither is a missing map entry.
 //
 // SQL Server needed a third placeholder style (@p1, @p2, … — the same style
 // sqlutil.Rebind already emits for it) and T-SQL pagination in place of LIMIT;

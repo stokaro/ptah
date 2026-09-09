@@ -55,7 +55,7 @@ func TestEmbedPGCatchUpHonorsTheSourceFilterE2E(t *testing.T) {
 	engine, outbox, source := aFilteredCatchUpEngine(c, ctx, db, spec)
 
 	// The pass's own progress, which is what Backfill returns beside the run
-	// since stokaro/ptah#2645. Two of the four rows are published, and a
+	// Two of the four rows are published, and a
 	// backfill that embedded more would make every assertion below meaningless.
 	_, backfilled, err := engine.Backfill(ctx, filterRunID)
 	c.Assert(err, qt.IsNil)

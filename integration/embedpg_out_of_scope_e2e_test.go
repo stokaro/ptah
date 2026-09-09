@@ -10,9 +10,9 @@
 // number of vectors in the column.
 //
 // The out-of-scope vector is written directly rather than produced by a defect.
-// How it got there is not the question -- catch-up made them before #2638, a
-// hand-run UPDATE makes them now -- and a test that reproduced one particular
-// cause would stop covering the check the moment that cause was fixed.
+// How it got there is not the question -- a hand-run UPDATE is enough -- and a
+// test that reproduced one particular cause would stop covering the check the
+// moment that cause was fixed.
 
 package integration_test
 

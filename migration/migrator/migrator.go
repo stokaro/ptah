@@ -2573,8 +2573,8 @@ func (m *Migrator) applyUpMigrationObserved(
 // have: `ptah-compat migrate apply` registers no --skip-checks (Atlas has none
 // either), so a check failure that recorded a dirty row would force every
 // subsequent apply through --allow-dirty even after the data that tripped the
-// check was fixed. (It would no longer wedge outright — since #966 that flag
-// reuses the dirty row instead of failing on a re-insert — but a gate that
+// check was fixed. (It would not wedge outright — that flag reuses the dirty
+// row instead of failing on a re-insert — but a gate that
 // leaves nothing behind needs no recovery at all.) Atlas itself writes no row
 // when its checks fail, and the retry simply works (#956).
 // observesApplyState says whether this migration observes the state a real

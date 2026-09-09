@@ -94,8 +94,8 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 		},
 	)
 
-	// Cycle 2: nothing is left to plan. Before #997 this published
-	// DROP INDEX IF EXISTS "events_2026_tenant_idx", which the server refuses.
+	// Cycle 2: nothing is left to plan. A second cycle that publishes
+	// DROP INDEX IF EXISTS "events_2026_tenant_idx" is refused by the server.
 	second, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   targetURL,

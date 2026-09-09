@@ -210,7 +210,7 @@ None.
 | `schemamodel.Field.DefaultSet` | `ddl` | — |
 | `schemamodel.Field.Deferrable` | `ddl` | — |
 | `schemamodel.Field.Enum` | `ddl` | — |
-| `schemamodel.Field.FieldName` | `source` | the Go struct field the column was read from; the column's own name is its identity. Recorded as DDL until stokaro/ptah#2968, when the only render that ever moved under its ablation turned out to be the PostgreSQL-family renderer walking table options in map order |
+| `schemamodel.Field.FieldName` | `source` | the Go struct field the column was read from; the column's own name is its identity. The only render that moves under its ablation is the PostgreSQL-family renderer walking table options in map order |
 | `schemamodel.Field.Foreign` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyName` | `ddl` | — |
 | `schemamodel.Field.GeneratedExpression` | `ddl` | — |

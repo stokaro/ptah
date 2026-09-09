@@ -4,11 +4,10 @@ package integration_test
 
 // Live PostgreSQL coverage for the columns a generation writes into.
 //
-// Nothing created them until stokaro/ptah#2390: `Spec.TargetObjects` derived
-// what a generation needs and every caller read the answer to verify or to
-// retire, while the only ALTER TABLE in the tree was the DROP. These tests are
-// about the half that was missing, and each of them reads the catalog rather
-// than what a verb said about itself.
+// `Spec.TargetObjects` derives what a generation needs, and its callers read
+// that answer to verify or to retire -- neither of which creates a column.
+// These tests are about the creating half, and each of them reads the catalog
+// rather than what a verb said about itself.
 
 import (
 	"context"

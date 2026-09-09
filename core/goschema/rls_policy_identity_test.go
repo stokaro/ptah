@@ -154,12 +154,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// database holding only `orders` exits 1 with `relation "ORDERS"
 			// does not exist`.
 			//
-			// This row asserted the collapse until stokaro/ptah#1311 was
-			// reviewed. Collapsing meant the author wrote `ORDERS` and Ptah
-			// secured `orders`: a relocated access-control declaration, the
-			// same defect the SQL frontend had, on the surface where the
-			// quoting question has only one answer. Two spellings, two
-			// policies, and the render reproduces the database's own answer.
+			// Collapsing the two would mean the author writes `ORDERS` and
+			// Ptah secures `orders`: a relocated access-control declaration,
+			// on the surface where the quoting question has only one answer.
+			// Two spellings, two policies, and the render reproduces the
+			// database's own answer.
 			name:   "a case variant of one unqualified table is a second relation",
 			tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
 			policies: []schemamodel.RLSPolicy{

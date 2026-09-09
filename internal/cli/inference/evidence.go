@@ -69,12 +69,12 @@ func (e evidenceOptions) destinationNamed() bool {
 // publishRecord writes a record where it was asked to and says where it went.
 //
 // The two destinations are decided by the same policy, and that is the whole
-// point of this function taking one. A failed publication was already the
-// caller's decision to swallow or to fail on; a failed FILE write was nobody's
-// -- it reported itself on standard output and returned nil, so `plan
-// --evidence-file` into a directory that does not exist printed the failure and
-// exited 0, exactly as `--publish-evidence` had before #2683 fixed only the
-// registry half (stokaro/ptah#2649 finding 7).
+// point of this function taking one. A failed publication is the caller's
+// decision to swallow or to fail on; a failed FILE write is nobody's if it
+// reports itself on standard output and returns nil, because then `plan
+// --evidence-file` into a directory that does not exist prints the failure and
+// exits 0. Fixing the registry half alone leaves exactly that
+// (stokaro/ptah#2683, stokaro/ptah#2649 finding 7).
 //
 // Both destinations are attempted even when the first one fails. A run naming
 // both asked for both, and stopping at the first failure would leave the

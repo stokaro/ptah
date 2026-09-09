@@ -71,9 +71,10 @@ func TestReferenceReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 
 			t.Run("qualified", func(t *testing.T) {
 				c := qt.New(t)
-				// The spelling Ptah wrote before stokaro/ptah#1260, produced from
-				// the accepted document so that nothing else differs between the
-				// two runs.
+				// The qualified spelling, produced from the accepted document so
+				// that nothing else differs between the two runs. It is the
+				// spelling a reader expects to work, which is why the refusal is
+				// measured rather than assumed.
 				long := strings.ReplaceAll(short, "table.users", "table."+schema+".users")
 				c.Assert(long, qt.Not(qt.Equals), short,
 					qt.Commentf("the qualified variant is identical to the accepted one, so this row measures nothing"))

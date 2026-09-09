@@ -11,10 +11,10 @@ import (
 
 // TestParse_AProcedureBlockCarriesTheKind pins that the kind arrives.
 //
-// Until stokaro/ptah#2209 a routine read out of HCL was always a function,
-// whatever it had been in the database it was described from, and the
-// comparator keys routines by kind: the described procedure and the real one
-// never met, so applying a database's own description dropped it.
+// A routine read out of HCL as always a function, whatever it was in the
+// database it was described from, never meets the real one: the comparator keys
+// routines by kind, so applying a database's own description drops the
+// procedure.
 func TestParse_AProcedureBlockCarriesTheKind(t *testing.T) {
 	tests := []struct {
 		name string

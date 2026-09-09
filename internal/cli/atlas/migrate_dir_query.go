@@ -104,31 +104,30 @@ func atlasDirFormatSpelling(query url.Values) string {
 // no spelling for at all (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA,
 // PTAH_SKIP_CHECKS).
 //
-// WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah refused every `--dir` query on
-// every verb until stokaro/ptah#1087 and #1135 relaxed it, on the eight verbs
-// that read the query, to match — `checkpoint`, `down`, `edit`, `rebase`, `rm`
-// and `test` register `--dir` only on Ptah and still refuse one. Those richer
-// verbs are outside stokaro/ptah#1013's eight-verb CE contract; keeping their
-// generic query parsing fail closed is why this doc says "the verbs this
-// variable governs" rather than "every verb". That refusal caught something
-// real on its way out:
-// a misspelled key such as `?fromat=goose` selects nothing on either binary, so
-// the directory is read in the native Atlas layout while the operator believes
-// it is being read as Goose. Reaching parity means the default can no longer fail that run —
-// but it does not mean the check has to be deleted, only moved off the default
-// path. The report below keeps the information on every run; this variable
-// keeps the refusal available to a pipeline that wants a typo to stop it.
+// WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah accepts a `--dir` query on the
+// eight verbs that read it, to match the community binary — `checkpoint`,
+// `down`, `edit`, `rebase`, `rm` and `test` register `--dir` only on Ptah and
+// refuse one. Those richer verbs are outside stokaro/ptah#1013's eight-verb CE
+// contract; keeping their generic query parsing fail closed is why this doc
+// says "the verbs this variable governs" rather than "every verb". A blanket
+// refusal catches something real: a misspelled key such as `?fromat=goose`
+// selects nothing on either binary, so the directory is read in the native
+// Atlas layout while the operator believes it is being read as Goose. Parity
+// means the default cannot fail that run — but it does not mean the check has
+// to be deleted, only moved off the default path. The report below keeps the
+// information on every run; this variable keeps the refusal available to a
+// pipeline that wants a typo to stop it.
 //
 // An invalid value is a hard error rather than a silent false, for the reason
 // PTAH_SKIP_CHECKS states: a typo in a CI environment file must not read as
 // "off" to the tool while the operator believes it is on. That promise is only
 // kept if the value is READ on every run of the verbs this variable governs,
 // which is why [reportIgnoredDirQuery] resolves it before it looks at the query
-// keys. Resolving it after the key check made `PTAH_STRICT_DIR_QUERY=nope` exit
-// 0 in silence on every invocation carrying no ignored key — the whole of a
-// healthy pipeline, and the only runs a CI environment file is read on until
+// keys. Resolving it after the key check lets `PTAH_STRICT_DIR_QUERY=nope`
+// exit 0 in silence on every invocation carrying no ignored key — the whole of
+// a healthy pipeline, and the only runs a CI environment file is read on until
 // someone makes the very typo the variable is set to catch. PTAH_SKIP_CHECKS
-// resolves unconditionally on every `migrate apply`; this now matches it.
+// resolves unconditionally on every `migrate apply`; this matches it.
 const dirQueryStrictEnvVar = "PTAH_STRICT_DIR_QUERY"
 
 // atlasDirQueryStrictFromEnv resolves whether an ignored `--dir` query key is

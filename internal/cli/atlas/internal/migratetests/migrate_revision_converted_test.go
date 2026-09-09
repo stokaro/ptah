@@ -30,7 +30,7 @@ const (
 	revisionConvertedSecond = "V2__second.sql"
 	// revisionConvertedFirstToken is the version the FIRST file spells: what
 	// Flyway calls it, what the pinned community binary v1.3.0 calls it, and
-	// since stokaro/ptah#1206 what `migrate set` takes here.
+	// what `migrate set` takes here.
 	revisionConvertedFirstToken = "1"
 )
 
@@ -173,12 +173,10 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 // carries, would still exit 0 here — and would then report two pending
 // migrations rather than one.
 //
-// The operand is the Flyway version TOKEN since stokaro/ptah#1206. It used to be
-// the int64 ordering key the token converts to, read back out of the importer;
-// that spelling was the only one this build accepted and the only one the
-// pinned community binary v1.3.0 refuses, so it is retired here rather than
-// carried alongside. The convertedFlywayVersions helper this test used to call
-// went with it — nothing else consulted the projection.
+// The operand is the Flyway version TOKEN, not the int64 ordering key it
+// converts to. The pinned community binary v1.3.0 refuses that key, so Ptah
+// does not accept it either, and there is no projection helper for reading one
+// back out of the importer.
 func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)

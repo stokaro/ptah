@@ -194,13 +194,13 @@ func postgresScopedDependencyObjectCount(t *testing.T, dbURL string) int {
 }
 
 // TestSchemaCleanScopeRollsBackWhenAForeignKeyBlocksTheDrop keeps the savepoint
-// and rollback machinery under test after stokaro/ptah#1704.
+// and rollback machinery under test.
 //
 // The dependents pre-check reads pg_rewrite, which records the definitions of
 // views and materialized views. A FOREIGN KEY is not recorded there, so a drop
 // blocked by one still reaches the server, still answers 2BP01, and still rolls
-// the whole transaction back -- the path the sibling rollback test exercised
-// before its own case started being refused early.
+// the whole transaction back -- the path the sibling rollback test cannot
+// reach, because its own case is refused early.
 //
 // Without this, the pre-check would have quietly retired the coverage for the
 // machinery it sits in front of.

@@ -2711,13 +2711,13 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		column.SetNotNullConstraintName(name)
 		return nil
 	case p.current.MatchIdentifierValue("PRIMARY"):
-		// Read only since stokaro/ptah#2180. Before it, the renderer collapsed
-		// a single-column primary key back into the column and the name was
-		// dropped on the way out -- `CONSTRAINT c_pk PRIMARY KEY (b)` applied
-		// as `t_pkey` on PostgreSQL 17 while --dry-run answered
-		// `Schema is synced`. Reading the column-level spelling then would have
-		// handed a name to that path and lost it just as quietly. With the name
-		// surviving, reading it is what keeps it.
+		// Reading the column-level spelling is correct only because the name
+		// survives the render. A renderer that collapses a single-column
+		// primary key back into the column drops the name on the way out --
+		// `CONSTRAINT c_pk PRIMARY KEY (b)` applies as `t_pkey` on PostgreSQL
+		// 17 while --dry-run answers `Schema is synced` -- and reading the name
+		// here would hand it to that path to lose just as quietly. With the
+		// name surviving, reading it is what keeps it.
 		return p.namedSingleColumnPrimaryKey(table, column, name)
 	default:
 		// DEFAULT stays refused: a default is a value with nowhere to put a

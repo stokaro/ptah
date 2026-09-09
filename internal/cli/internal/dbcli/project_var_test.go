@@ -143,11 +143,10 @@ func TestRegisterEnvFlagAnnotatesTheProjectEnvFlag(t *testing.T) {
 // registers. The projectconfig package cannot import this one, so it spells
 // "config" itself; this is what stops the two from drifting apart.
 //
-// The fixture is a .conf file rather than the atlas.hcl this test used to
-// pass. Since stokaro/ptah#1215 a --config path ending in .hcl routes to the
-// Atlas loader and never reaches this diagnostic, so an .hcl fixture would
-// have measured the routing instead of the spelling and quietly stopped
-// guarding anything. A non-.hcl file holding non-YAML still lands here, which
+// The fixture is a .conf file rather than an atlas.hcl. A --config path ending
+// in .hcl routes to the Atlas loader and never reaches this diagnostic, so an
+// .hcl fixture would measure the routing instead of the spelling and quietly
+// stop guarding anything. A non-.hcl file holding non-YAML lands here, which
 // is the case an operator hits by giving their project config an unfamiliar
 // name.
 func TestExplicitConfigOverNonYAMLNamesTheConfigFlag(t *testing.T) {

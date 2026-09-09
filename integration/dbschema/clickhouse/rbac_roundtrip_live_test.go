@@ -50,11 +50,11 @@ import (
 // through create, converge, change, converge, and revoke, re-reading the live
 // description between every step.
 //
-// The convergence assertions are the ones worth having. Before stokaro/ptah#1025
-// a ClickHouse target described no roles and no grants at all, so a declared
-// role was absent from every inspection and the very next comparison planned it
-// again -- forever, at exit 0. `qt.HasLen, 0` on the second plan is what that
-// build could never satisfy.
+// The convergence assertions are the ones worth having. A ClickHouse target
+// that describes no roles and no grants leaves a declared role absent from
+// every inspection, so the very next comparison plans it again -- forever, at
+// exit 0. `qt.HasLen, 0` on the second plan is what such a build can never
+// satisfy.
 func TestClickHouseRoleAndGrantLifecycleRoundTripsLive(t *testing.T) {
 	c := qt.New(t)
 	conn := openLiveClickHouseRBACTarget(c)

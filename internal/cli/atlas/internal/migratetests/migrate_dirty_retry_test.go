@@ -166,12 +166,12 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 // TestCompatCommand_MigrateStatusReportsTheDirtyMigration covers the reporting
 // half: while a version is half-applied, status has to say so.
 //
-// Reverted to the pre-#1102 block, every assertion below goes red: the output
+// Reverted to the block #1102 replaced, every assertion below goes red: the output
 // is `=== MIGRATION STATUS ===` / `Current Version: 20240301000002` /
 // `Dirty Migration: version=20240301000002 applied=0/2` / `Error Statement:` /
 // `Error:` / `Status: Pending migrations available`. It carries the same facts
-// under names no Atlas-shaped parser reads. Reverted further, to before #966,
-// the facts are gone too: the failed version is named as Current Version and
+// under names no Atlas-shaped parser reads. Reverted further, to the one #966
+// replaced, the facts are gone too: the failed version is named as Current Version and
 // nothing else says the attempt failed.
 func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	c := qt.New(t)

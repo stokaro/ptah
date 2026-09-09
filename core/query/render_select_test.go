@@ -356,9 +356,8 @@ func TestRenderSelect_Errors(t *testing.T) {
 		{
 			name: "unsupported dialect",
 			stmt: &query.SelectStatement{From: "t"},
-			// A dialect the renderer has never been taught. ClickHouse stood
-			// here until stokaro/ptah#941 taught it, which is why the example
-			// is now a name outside platform's set entirely: an example the
+			// A dialect the renderer has never been taught. The name sits
+			// outside platform's set entirely, deliberately: an example the
 			// builder supports asserts nothing.
 			dialect:     "db2",
 			wantErrLike: `renderer: SELECT rendering is not supported for dialect "db2"`,

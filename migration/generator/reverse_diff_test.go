@@ -723,9 +723,9 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 	// prior one to re-add, the host to drop -- and both come from the schema
 	// and the pre-change database this entry point was not given.
 	//
-	// It swapped the bare NAME lists until stokaro/ptah#2315, which produced a
-	// down diff naming constraints it could not describe; a planner refuses
-	// exactly that now (stokaro/ptah#2532). Carrying nothing is what a caller
+	// Swapping bare NAME lists instead would produce a down diff naming
+	// constraints it cannot describe, which a planner refuses
+	// (stokaro/ptah#2532). Carrying nothing is what a caller
 	// that supplied nothing gets, and TestReverseConstraintAdditions_* cover
 	// the direction that is given a database.
 	c.Assert(result.ConstraintsAdded, qt.HasLen, 0)

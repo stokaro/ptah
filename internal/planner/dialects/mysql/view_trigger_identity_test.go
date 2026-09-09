@@ -66,10 +66,9 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 // instead -- one string, with no tier for "unqualified matches qualified when
 // only one candidate does", because that tier needs the whole candidate set.
 //
-// Until stokaro/ptah#2436 this test recorded the measurement rather than the
-// wish: one addition and one removal, so the plan dropped the trigger and
-// created it again on every run. It succeeded each time, and each apply left a
-// window in which the table had no trigger.
+// Pairing triggers that way produces one addition and one removal, so the plan
+// drops the trigger and creates it again on every run. It succeeds each time,
+// and each apply leaves a window in which the table has no trigger.
 func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 	c := qt.New(t)
 

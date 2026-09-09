@@ -37,11 +37,10 @@ const versionBlockPattern = `Version: [^\n]+\n` +
 	`Go: [^\n]+\n` +
 	`Platform: [^\n]+\n`
 
-// commandBudget bounds every row. Before stokaro/ptah#1064, `ptah-ls version`
-// dropped the positional and fell through to the server loop: with stdin at
-// EOF that was a silent exit 0, and with stdin held open it never returned at
-// all. The budget is what turns the second case into a failing test instead of
-// a hung run.
+// commandBudget bounds every row. A `ptah-ls version` that drops the positional
+// falls through to the server loop: with stdin at EOF that is a silent exit 0,
+// and with stdin held open it never returns at all. The budget is what turns
+// the second case into a failing test instead of a hung run.
 const commandBudget = 20 * time.Second
 
 // TestPtahLSArgumentHandling pins the whole argv surface of ptah-ls in one

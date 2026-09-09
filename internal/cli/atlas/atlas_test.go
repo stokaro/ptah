@@ -876,10 +876,10 @@ func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			// Run somewhere with no ./migrations. Since stokaro/ptah#1241 item
-			// 2 gave `migrate apply` the Atlas-documented `--dir` default,
-			// omitting the flag no longer stops at `migrations directory is
-			// required`; the run reaches the directory and fails to open it.
+			// Run somewhere with no ./migrations. `migrate apply` carries the
+			// Atlas-documented `--dir` default, so omitting the flag does not
+			// stop at `migrations directory is required`; the run reaches the
+			// directory and fails to open it.
 			// The proxy still proves what this test is about — every spelling
 			// of --url got past `database URL is required` — but it now
 			// depends on the working directory, so it is pinned rather than
@@ -1469,7 +1469,7 @@ func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	// The scheme is required on this verb since stokaro/ptah#1186: it WRITES,
+	// The scheme is required on this verb: it WRITES,
 	// and the community binary refuses `--dir <bare path>` there.
 	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", "file://" + dir})
 
@@ -2001,12 +2001,11 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 //
 // Six verbs are deliberately absent. Five of them READ a directory rather than
 // rewrite one, so a foreign layout can be converted in memory and reported on:
-// `migrate hash` and `migrate validate` have been in that set since #992 (see
-// migrate_integrity_formats_test.go), `migrate status` and `migrate set` joined
-// it in #1002 (see migrate_revision_converted_test.go), and `migrate lint`
-// joined it in #1013 (see migrate_lint_converted_test.go). `migrate new` is the
-// sixth and the only one that WRITES: since stokaro/ptah#845 it emits the
-// selected layout's own skeleton files (see migrate_new_converted_test.go).
+// `migrate hash` and `migrate validate` (see migrate_integrity_formats_test.go),
+// `migrate status` and `migrate set` (see migrate_revision_converted_test.go),
+// and `migrate lint` (see migrate_lint_converted_test.go). `migrate new` is the
+// sixth and the only one that WRITES: it emits the selected layout's own
+// skeleton files (see migrate_new_converted_test.go).
 //
 // The verbs that remain here rewrite migration bodies — an editor round trip, a
 // renumbering, a removal, a replay — and none of them has anything to emit those
@@ -3354,9 +3353,9 @@ func TestCompatCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
 		"-s", "public",
 		"--to", "file://schema.sql",
 		// A docker URL this build will not start, so the shorthand is measured
-		// without provisioning anything. The old fixture named
-		// `docker://postgres/15/dev`, which since stokaro/ptah#844 starts a
-		// container -- this test would pull an image to assert a flag parse.
+		// without provisioning anything. `docker://postgres/15/dev` will not
+		// do: that URL starts a container, and this test would pull an image to
+		// assert a flag parse.
 		"--dev-url", "docker://sqlite/3/dev",
 	})
 
@@ -3846,8 +3845,8 @@ CREATE TABLE users (
 
 	err = cmd.Execute()
 
-	// Since stokaro/ptah#1086 the refusal comes from the shared atlas.sum gate
-	// running BEFORE the dev database is touched, so it is byte-identical to
+	// The refusal comes from the shared atlas.sum gate, running BEFORE the dev
+	// database is touched, so it is byte-identical to
 	// what `migrate apply`, `migrate status` and `migrate validate` print on
 	// the same directory -- and to what the pinned community binary v1.3.0
 	// prints, which puts the guidance block on stdout and `Error: checksum
@@ -4632,8 +4631,8 @@ func atlasSchemaInspectJSONColumnByName(
 
 // writeAtlasApplyMigration writes one Atlas migration into dir and refreshes
 // atlas.sum, leaving the directory hashed the way `atlas migrate new` and
-// `atlas migrate hash` leave it. Since stokaro/ptah#970 the compat apply path
-// refuses an unhashed Atlas directory, so an apply fixture must carry a valid
+// `atlas migrate hash` leave it. The compat apply path refuses an unhashed
+// Atlas directory, so an apply fixture must carry a valid
 // integrity file; tests that deliberately exercise an unhashed directory write
 // their files directly instead.
 func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {

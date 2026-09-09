@@ -462,6 +462,42 @@ alone; `docs/site/scripts/check-style.mjs` holds Markdown. Both skip quoted and
 backticked text, which is what lets this file name the phrase in order to ban
 it.
 
+### Say what holds now, not when it changed
+
+**Never date a statement to a Ptah issue.** Not in a page, and not in a comment:
+
+```text
+X was Y until stokaro/ptah#1048 gave it a parser arm
+the reader has honored this key since #942
+Before #1242 this field did not exist
+the exception until [#982](https://github.com/stokaro/ptah/issues/982)
+```
+
+The clause gives a reader nothing to act on. The behavior it describes is what
+the code in front of them already does, `git log -L` answers when it changed,
+and pre-GA there is no upgrade path for it to document -- Ptah owes no
+compatibility with its own previous behavior, so nobody is coming from the
+earlier state. A comment is read by whoever changes the code next, and the
+narration is one more paragraph they have to decide is stale.
+
+Rewrite it as the part that is still true. The ablation is the usual
+replacement, because it says what the dating clause was reaching for and stays
+true after the next change: `without this call the write path renders an
+unconditional UPDATE and every write wins`, not `before #2391 nothing called
+it`. A measurement keeps its numbers and loses its calendar: `0 CREATE ROLE
+under the scoping and 4 without it`, not `4 before #1267 and 0 after`. An issue
+that still owns something -- an open gap, a decision, the measurement's home --
+is cited plainly: `(stokaro/ptah#2209)` is a pointer, `since stokaro/ptah#2209`
+is a date.
+
+`docs/site/scripts/check-implementation-chronology.mjs` holds Markdown to this
+and `internal/chronologyguard` holds Go comments, on `until`, `before`, `since`
+and `as of`. `after` is yours to get right: `after stokaro/ptah#2725 removes the
+converter` is a forward reference to work with an owner, and no pattern
+separates it from the backward reading. Section 6.7 of
+[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) is the rule in full
+(stokaro/ptah#3134).
+
 ## Documentation Obligations
 
 **Before finishing any change that affects external behavior, inspect and

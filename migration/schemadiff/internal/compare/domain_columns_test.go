@@ -41,9 +41,9 @@ func domainColumn() catalog.Column {
 // A domain over a USER-DEFINED base type does not report its base type in
 // data_type the way `positive` above does. Measured on PostgreSQL 17.10, the
 // catalog answers data_type 'USER-DEFINED', udt_name 'color' -- the BASE type --
-// domain_name 'd_enum' and format_type 'd_enum'. Nothing in the tree built this
-// shape until stokaro/ptah#1242 landed, so the branch that answers from udt_name
-// before consulting the domain was invisible to every test.
+// domain_name 'd_enum' and format_type 'd_enum'. This fixture is what makes the
+// branch that answers from udt_name before consulting the domain visible:
+// without a column of this shape, no test reaches it.
 func domainOverEnumColumn() catalog.Column {
 	return catalog.Column{
 		Name:          "qty",

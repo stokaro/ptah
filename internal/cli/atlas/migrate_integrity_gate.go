@@ -79,9 +79,9 @@ const (
 // What this gate verifies is also what the caller consumes, for every layout.
 // That holds structurally rather than by agreement: the importer selects the
 // file set it converts with the same [atlasmigrateimport.SumFileNames] rule
-// this gate hashes. It was not always true — until #982 the Flyway importer ran
-// a wider selection than the checksum covered, so a superseded baseline and a
-// lowercase-prefixed file executed on a directory both tools called clean.
+// this gate hashes. An importer selecting a wider set than the checksum covers
+// breaks that: a superseded baseline and a lowercase-prefixed file then execute
+// on a directory both tools call clean.
 //
 // Under requireAtlasSum an empty covered set is exempt from the missing-sum
 // refusal, and that predicate is measured rather than assumed. CE's refusal
@@ -158,9 +158,8 @@ func checkCoveredAtlasEntriesReadable(cmd *cobra.Command, fsys fs.FS, names []st
 // directory a WRITING verb is about to write into, before it writes anything.
 //
 // `migrate new` and `migrate diff` are the two verbs that create a migration
-// file and a fresh atlas.sum, and until stokaro/ptah#1086 they were the two
-// that never checked the one they were about to overwrite. That is the worst
-// place to leave the gate out: every other verb reports on a drifted directory,
+// file and a fresh atlas.sum, which makes them the worst place to leave the
+// gate out: every other verb reports on a drifted directory,
 // while these two rewrite the checksum over it, so the drift stops being
 // visible to `migrate validate` afterwards. Measured against the pinned
 // community binary v1.3.0, an unhashed one-migration directory and a
@@ -181,7 +180,7 @@ func checkCoveredAtlasEntriesReadable(cmd *cobra.Command, fsys fs.FS, names []st
 // [failUnhashedAtlasDir] and are shared with every other verb.
 // The format parameter is the layout the run SELECTED, and the gate runs over
 // that layout's covered set rather than the Atlas one. `migrate diff` can be
-// pointed at a foreign layout since stokaro/ptah#1013; verifying a
+// pointed at a foreign layout (stokaro/ptah#1013); verifying a
 // golang-migrate directory as if it were an Atlas one would refuse the pair it
 // legitimately holds — atlas.sum covers the `.up.sql` halves alone there — and
 // then rewrite the sum over the wrong set.
@@ -363,11 +362,11 @@ func declinedAtlasFiles(fsys fs.FS) ([]string, error) {
 // here.
 //
 // The scan reads the top level only, matching both the community binary's view
-// and — since #976 — Ptah's own. It used to recurse, and the justification was
-// that Ptah's registrar executed nested files, so keying the exemption on the
-// shallower view would have let unhashed migrations run unverified. That
-// premise is gone: the registrar now selects exactly the set atlas.sum covers
-// (migrator.retainAtlasSumCovered), so a nested file is not a migration on
+// and Ptah's own. A recursing scan would rest on the registrar executing nested
+// files, which would make keying the exemption on the shallower view let
+// unhashed migrations run unverified. The registrar selects exactly the set
+// atlas.sum covers (migrator.retainAtlasSumCovered), so a nested file is not a
+// migration on
 // either tool and refusing the directory it sits in protects nothing. Measured
 // with only the loader change applied, an unhashed directory whose sole `.sql`
 // is one level down still exited 1 here against the community binary's 0 —

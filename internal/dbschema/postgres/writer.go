@@ -746,9 +746,9 @@ const (
 // preset already reports no extensions and no user functions, so the filter
 // removes nothing it would have removed.
 //
-// The reader has honored this key since stokaro/ptah#942; the cleanup path did
-// not, which is why a scenario that creates a table could not clean up after
-// itself on Spanner even after the transaction half was fixed.
+// The reader honors this key too (stokaro/ptah#942). Without the same
+// treatment on the cleanup path, a scenario that creates a table cannot clean
+// up after itself on Spanner even with the transaction half in place.
 func extensionOwnedRoutineFilter(caps capability.Capabilities) string {
 	if !caps.Has(capability.CatalogDependencies) {
 		return ""

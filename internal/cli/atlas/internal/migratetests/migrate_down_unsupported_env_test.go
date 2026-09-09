@@ -10,30 +10,18 @@ import (
 	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
 
-// `migrate down`'s --skip-checks was explicit-only until stokaro/ptah#1621: it
-// was never synthesized from PTAH_SKIP_CHECKS, because `migrate apply` reads
-// that variable as its pre-migration check bypass (internal/cli/atlas/migrate_apply.go)
-// while down had no checks of its own, so on this verb an ambient value was not
-// an ask at all. Before that exclusion, exporting the variable for an apply made
-// every `migrate down` in the same shell fail with "accepts --skip-checks, but
-// Ptah does not implement its behavior".
+// PTAH_SKIP_CHECKS means the same thing on `migrate down` as it does on
+// `migrate apply`, which reads it as the pre-migration check bypass
+// (internal/cli/atlas/migrate_apply.go). Down bodies carry `-- +ptah check`
+// directives that abort a rollback, and --skip-checks bypasses them, so the
+// variable is honored here like any other environment twin. --plan is honored
+// the same way, and `migrate down` waives neither.
 //
-// Both halves of that premise are gone. stokaro/ptah#1715 taught `-- +ptah
-// check` the down direction, so down bodies carry checks that abort a rollback,
-// and #1621 implemented --skip-checks to bypass them. The variable now means the
-// same thing on both verbs, so it is honored here like any other twin.
-//
-// --plan followed in the same issue, so `migrate down` now waives nothing and
-// the tests that pinned its refusals are gone. What replaced them is
-// TestCompatCommand_MigrateDownImplementedFlags, which holds that all three
-// flags are accepted: with no refusal left to word, the failure worth catching
-// is a flag silently reaching the native command as unknown.
-//
-// The environment twins still matter, and for the reason the refusals did. An
-// ignored flag on this verb is not a harmless no-op: the rollback target parses
-// as 0, and the whole history rolls back — silent data loss where the operator
-// asked for something bounded. That is now held by the twins being honored
-// rather than refused.
+// The twins matter for the reason a refusal would. An ignored flag on this verb
+// is not a harmless no-op: the rollback target parses as 0, and the whole
+// history rolls back — silent data loss where the operator asked for something
+// bounded. Honoring the twin is what holds that, and
+// downUnsupportedFlagRefusal below is the wording no run may produce.
 //
 // Both down paths are covered because they parse flags separately: the default
 // path goes through the atlasargs mapper, while --format has its own flag set

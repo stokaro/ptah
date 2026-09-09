@@ -576,7 +576,7 @@ func assertASameNamedTableInAnotherSchemaIsAnotherSource(
 
 // assertARunRecordedBeforeTheIdentityStillCounts is the safety half.
 //
-// A run created before stokaro/ptah#2724 holds a bare table name. Excluding it
+// A run can hold a bare table name rather than a source identity. Excluding it
 // would raise the floor and prune events it still owes, which is the one
 // direction this query may not be wrong in -- so the bare name is matched too,
 // deliberately, and this is what says so.
@@ -741,7 +741,7 @@ func assertARunWithNoPositionIsSkipped(c *qt.C, ctx context.Context, store *floo
 // seedReader registers a live generation and a run that has caught up to a
 // position.
 // seedReaderIn seeds a reader of a source in a named schema, and seedLegacyReader
-// one recorded the way a Ptah before stokaro/ptah#2724 recorded it.
+// one recorded under a bare table name rather than a source identity.
 //
 // Three seeders rather than a flag, because what varies is the value written
 // into the column under test, and a test that asked a helper to decide it would
@@ -787,8 +787,8 @@ func seedReaderWithSource(
 // the recorded source from the caller.
 //
 // The source comes off `positioned` rather than from the `source` argument,
-// because what a run records is the thing under test: a current one records the
-// identity and one created before stokaro/ptah#2724 recorded the bare name.
+// because what a run records is the thing under test: one run records the
+// source identity and another the bare table name.
 func seedRun(
 	c *qt.C, ctx context.Context, store *floorPruneStore,
 	sourceSchema, generation, runID, source string, positioned embedrun.Run, at time.Time,

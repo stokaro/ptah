@@ -134,8 +134,8 @@ func PreparePlanFile(
 		Policy:    opts.Policy,
 		// Carried so the dev URL's schema decides which schema an unqualified
 		// desired-state file is loaded into, which is what `schema apply` does
-		// with the same value. Before stokaro/ptah#1635 this literal dropped it
-		// and the flag was accepted, dialect-checked and then read by nothing.
+		// with the same value. A literal that drops it leaves the flag accepted,
+		// dialect-checked and then read by nothing.
 		DevURL: opts.DevURL,
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.

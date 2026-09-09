@@ -130,11 +130,10 @@ checksum state captured immediately before it: a rival that wrote its own
 `atlas.sum` or `ptah.sum` in between is reported, and its bytes are left in
 place.
 
-`atlas.sum` and `ptah.sum` take the same path. Until
-[#1118](https://github.com/stokaro/ptah/issues/1118) closed it, `ptah.sum` was
-written by pathname and unconditionally, which let a checkpoint or data
-migration land in one directory while its checksum landed in another, leaving
-the first uncovered and the second describing a snapshot it never held.
+`atlas.sum` and `ptah.sum` take the same path. Writing `ptah.sum` by pathname
+and unconditionally lets a checkpoint or data migration land in one directory
+while its checksum lands in another, leaving the first uncovered and the second
+describing a snapshot it never held ([#1118](https://github.com/stokaro/ptah/issues/1118)).
 
 Replacing the directory after the run validated it therefore cannot redirect
 what it writes, and a directory configured through `atlas.hcl` stays inside the

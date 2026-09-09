@@ -122,8 +122,8 @@ func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
 				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
 		},
 		{
-			// The refusal changes shape here since stokaro/ptah#1334: a value
-			// that is not a boolean is a configuration error, not a denial, and
+			// The refusal has a different shape here: a value that is not a
+			// boolean is a configuration error, not a denial, and
 			// telling the operator "disabled by default" when they had in fact
 			// enabled it sends them looking in the wrong place.
 			name:    "garbage",

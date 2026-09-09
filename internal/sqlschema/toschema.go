@@ -670,8 +670,8 @@ func ToDatabase(
 // dropped, which is what issue #932 reported for views, domains, composite and
 // range types, extensions, functions and triggers.
 //
-// The comment saying so has stood above this switch since #932, and three more
-// node kinds went missing under it anyway (stokaro/ptah#2435). A comment is read
+// A comment saying so stood above this switch and three more node kinds went
+// missing under it anyway (stokaro/ptah#2435). A comment is read
 // by whoever is already thinking about this function, which is never the person
 // adding a node kind somewhere else. So the default refuses by name, and a kind
 // this package deliberately does not model says so in a case of its own rather

@@ -131,10 +131,10 @@ type atlasCompatExtensionRoundTripCase struct {
 // in a plpgsql body, which PostgreSQL does not resolve at creation time, so the
 // first row still materializes. A TYPE member does, because a column's type is
 // resolved when the table is created -- so the second row records the reason in
-// `unreplayable` and asserts the block alone. Before stokaro/ptah#1294 that row
-// materialized only because the reader described the extension's own domain as
-// a user domain, which is the defect that issue is about; the round trip was
-// passing because of the bug, not despite it. The word in
+// `unreplayable` and asserts the block alone. That row materializes only if the
+// reader describes the extension's own domain as a user domain, which is a
+// defect of its own (stokaro/ptah#1294): a round trip passing that way passes
+// because of the bug rather than despite it. The word in
 // that body is also indistinguishable from the false positives above, which is
 // the whole point: the decision cannot be made from the word, only from what
 // the extension is the only supplier of.
@@ -382,9 +382,9 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			wantBlock: true,
 			// The constraint arm of the same shape. pg_get_constraintdef prints
 			// the class here for the same reason, and it lands in the rendered
-			// `elements` string, which the reference scan has always read -- so
-			// this row was already answerable by name before #1286 and was
-			// nonetheless reported as a catalog-only edge.
+			// `elements` string, which the reference scan reads -- so this row
+			// is answerable by name, and reporting it as a catalog-only edge is
+			// the error it guards against.
 			why: "gist_trgm_ops is not the default gist class for text either, so the constraint" +
 				" definition prints it and the rendered elements string carries it",
 		},

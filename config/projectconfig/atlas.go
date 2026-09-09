@@ -558,22 +558,21 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // lint.destructive is decoded by CE too, but Ptah already implements it, so it
 // never reaches the tolerance path and is not listed here.
 //
-// The map is empty. lint.condrop, diff.skip.drop_schema and schema.repo were
-// its three entries until stokaro/ptah#1048 gave each a parser arm of its own,
-// which puts them in the same position as lint.destructive: decoded, so never
-// reaching the tolerance path, so nothing to hold back here. env.schemas was
-// the fourth candidate and took the same resolution in stokaro/ptah#934: a
-// parser arm rather than a refusal, because the value has a meaning Ptah can
-// carry out -- see [parseEnvAttr] and [IgnoreEnvSchemasEnvVar]. The map and
+// The map is empty. lint.condrop, diff.skip.drop_schema, schema.repo and
+// env.schemas each have a parser arm of their own, which puts them in the same
+// position as lint.destructive: decoded, so never reaching the tolerance path,
+// so nothing to hold back here. A parser arm rather than a refusal is the
+// answer wherever the value has a meaning Ptah can carry out -- see
+// [parseEnvAttr] and [IgnoreEnvSchemasEnvVar]. The map and
 // enforcedByCE stay because the criterion above is the standing rule for the
 // next name a probe catches -- an entry here is the holding pen for a construct
 // CE acts on that Ptah has not implemented yet, and refusing is where such a
 // construct waits.
 //
-// The class this map used to record and not answer -- a name CE decodes into a
-// struct written as an OBJECT-VALUED ATTRIBUTE rather than as a block -- is
-// answered in the structure validator's attribute/block split instead, which is
-// where it belonged. It is not a holding-pen case: the attribute spelling
+// One class this map does not record -- a name CE decodes into a struct
+// written as an OBJECT-VALUED ATTRIBUTE rather than as a block -- is answered
+// in the structure validator's attribute/block split instead, which is where it
+// belongs. It is not a holding-pen case: the attribute spelling
 // carries no configuration on CE either, so matching it is a refusal and not an
 // unimplemented setting. See [atlasStructAttributeRule].
 //

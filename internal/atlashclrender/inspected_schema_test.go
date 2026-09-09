@@ -583,10 +583,9 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 			// All three targets come back qualified, and that uniformity is
 			// the point. schemamodel.Finalize reads a grant's schema off the block
 			// it names, and an inspected render now attributes a view and a
-			// materialized view to the read's schema exactly as it has always
-			// attributed a table. Before stokaro/ptah#1138 only this row was
-			// qualified; the other two came back bare, which was the asymmetry
-			// rather than the rule.
+			// materialized view to the read's schema exactly as it attributes a
+			// table. A render that qualified only this row and left the other
+			// two bare would be reporting an asymmetry rather than the rule.
 			name: "a table",
 			db: func() *schemamodel.Database {
 				return relationTargetDocument(schemamodel.Grant{

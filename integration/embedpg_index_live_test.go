@@ -5,9 +5,9 @@ package integration_test
 // Live PostgreSQL coverage for the vector index a generation is queried
 // through.
 //
-// Nothing built one until stokaro/ptah#2415: the plan listed `[index] build the
-// vector index and wait for it to be valid`, `Spec.TargetObjects` derived the
-// index, and the only consumers read it -- to verify one, to drop one. These
+// The plan lists `[index] build the vector index and wait for it to be valid`
+// and `Spec.TargetObjects` derives the index, but deriving an index and
+// verifying or dropping one are not building one. These
 // tests read the catalog rather than what the verb said about itself, because
 // the failure this is about is a verb reporting work it did not do.
 

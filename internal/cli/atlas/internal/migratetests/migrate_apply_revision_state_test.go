@@ -35,8 +35,8 @@ func writeTxModeAllCheckedDir(c *qt.C, dir string) string {
 
 // tx-mode all refuses a checked directory because a check on the pool
 // connection cannot observe the batch's uncommitted state. That rationale is
-// about a transaction that actually runs, so since #1005 a dry run — which
-// opens no batch transaction at all — is exempt and previews the directory
+// about a transaction that actually runs, so a dry run — which opens no batch
+// transaction at all — is exempt and previews the directory
 // under the ordinary deferral rule instead.
 //
 // Whichever branch answers, the diagnostic must never name --skip-checks:

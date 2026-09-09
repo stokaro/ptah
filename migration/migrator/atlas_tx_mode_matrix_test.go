@@ -128,12 +128,11 @@ func assertAtlasTxModeRejectedBeforeWrites(
 func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 	// This matrix pins effective mode selection for #998.
 	//
-	// wantApplied and wantTable now agree in every row, and that agreement is
-	// the point: the first statement creates the table, so applied is 1 exactly
+	// wantApplied and wantTable agree in every row, and that agreement is the
+	// point: the first statement creates the table, so applied is 1 exactly
 	// when the table survived the failure and 0 when the body was rolled back.
-	// Before #966 the four rolled-back rows still recorded applied=1, which a
-	// retry would have read as "statement 1 is committed, resume at 2" and so
-	// skipped a CREATE TABLE that never ran.
+	// A rolled-back row recording applied=1 reads to a retry as "statement 1 is
+	// committed, resume at 2", which skips a CREATE TABLE that never ran.
 	tests := []struct {
 		name        string
 		globalMode  migrator.MigrationTxMode

@@ -24,9 +24,9 @@ import (
 //
 // The reverse re-creates the table, and the re-created body already carries the
 // primary key inline and has its field-level foreign key re-added by the
-// planner's new-table pass. Before stokaro/ptah#1013 the swapped constraint
-// lists said both a second time, and the rollback was refused at the second
-// statement — measured on PostgreSQL 17.10
+// planner's new-table pass. Swapped constraint lists say both a second time,
+// and the rollback is then refused at the second statement — measured on
+// PostgreSQL 17.10
 // (`multiple primary keys for table "gadgets" are not allowed`, exit 3) and on
 // MySQL 9.7 (`ERROR 1068 (42000): Multiple primary key defined`, exit 1),
 // through `ptah migrations generate` and through the Atlas-compatible

@@ -80,7 +80,7 @@ issue that owns each.
 | --- | --- | --- |
 | `schemamodel.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
 | `difftypes.SchemaDiff` per-family name lists | Closed: a change carries its own operands, so the planner takes the change set alone — `GenerateSchemaDiffAST(diff, dialect)`. One `[]string` remains, `TablesRemoved`, because `DROP TABLE` is written from the name. The whole-target validation the second parameter fed is `schemadiff.ValidateDesiredSchema`, made where the whole target is supplied. | closed |
-| Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
+| Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band ([#1209](https://github.com/stokaro/ptah/issues/1209)). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
 | Single-column uniqueness | Closed: `renderer.tableHasUniqueKey` accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a whole column list, so a composite key is a key. The credit previously went to `schemastate.UniqueKey`, which never shipped. | closed |
 

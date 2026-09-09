@@ -7,20 +7,19 @@
 //	a valid boolean       parsed and honored
 //	anything else         a configuration error naming the variable and the value
 //
-// Before stokaro/ptah#1334 the direct feature toggles each spelled their own
-// read as
+// Spelling the read at each toggle as
 //
 //	value, err := strconv.ParseBool(os.Getenv(name))
 //	return err == nil && value
 //
-// which answers the same `false` for four distinguishable states: the variable
+// answers the same `false` for four distinguishable states: the variable
 // is absent, it is set to a false spelling, it is set to the empty string, and
 // it holds a typo. An operator who wrote `PTAH_ALLOW_RESERVED_ROLE_NAMES=yes`
 // in a CI environment file, a container manifest or a systemd unit believes
 // they changed the behavior, and nothing tells them otherwise. Every boolean
 // toggle in this tree opts IN to the more permissive side, so the typo lands on
 // the strict default and fails closed -- which is why this is a usability
-// defect today and would be a security one the first time a boolean `PTAH_*`
+// defect and would be a security one the first time a boolean `PTAH_*`
 // variable defaults to the permissive side. The guard test over [Registered]
 // asserts every declared default is false, so that flip cannot happen quietly.
 //

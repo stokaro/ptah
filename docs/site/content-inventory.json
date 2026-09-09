@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5467,
-      "sourceBytes": 46180
+      "visibleWords": 5389,
+      "sourceBytes": 45466
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -323,8 +323,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 13976,
-      "sourceBytes": 97786
+      "visibleWords": 13970,
+      "sourceBytes": 97753
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -829,8 +829,8 @@
       "inboundLinks": [
         "/versioned/overview/"
       ],
-      "visibleWords": 1616,
-      "sourceBytes": 11505
+      "visibleWords": 1612,
+      "sourceBytes": 11479
     },
     {
       "path": "docs/site/src/content/docs/databases/clickhouse.md",
@@ -6174,8 +6174,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5018,
-      "sourceBytes": 34970
+      "visibleWords": 5002,
+      "sourceBytes": 34875
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

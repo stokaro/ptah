@@ -60,9 +60,9 @@ func (e coveredDirectoryError) Is(target error) bool {
 // The kind is settled by fs.Stat rather than by matching on the read error's
 // text, so the answer is the same whether fsys is an os.DirFS over the real
 // directory or an [ptah.run/internal/fsnapshot.Snapshot] captured from it.
-// Those two disagreed before #991: the snapshot had no way to record a
-// directory holding no captured file, so the same tree read as "file does not
-// exist" through one and "is a directory" through the other.
+// They disagree if the snapshot has no way to record a directory holding no
+// captured file: the same tree then reads as "file does not exist" through one
+// and "is a directory" through the other.
 func readCoveredEntry(fsys fs.FS, name string) ([]byte, error) {
 	data, err := fs.ReadFile(fsys, name)
 	if err == nil {

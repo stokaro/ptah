@@ -26,11 +26,10 @@ const ceSumCorpusCases = 92
 // ceRefusedCorpusCases is the number of shapes the oracle DECLINED to hash,
 // recorded as an atlas.refused marker instead of an atlas.sum.
 //
-// The two counts are separate on purpose. Until #991 the corpus had no way to
-// represent a refusal at all — regenerate.sh ran under `set -e` and any
-// non-zero oracle exit aborted the whole regeneration — so the only outcome it
-// could hold was agreement, and the shape Atlas CE refuses was structurally
-// unrecordable.
+// The two counts are separate on purpose. A corpus with no way to represent a
+// refusal holds only agreement, and the shape Atlas CE refuses becomes
+// structurally unrecordable — which is what regenerate.sh under a bare `set -e`
+// produces, since any non-zero oracle exit aborts the whole regeneration.
 const ceRefusedCorpusCases = 5
 
 const sqlBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
@@ -97,9 +96,9 @@ func oracleRefusedEntry(c *qt.C, marker string) string {
 // (stokaro/ptah#991).
 //
 // Membership and readability are separate questions, and this test keeps them
-// that way. SumFileNames must still return the directory's name — dropping it,
-// which is what Ptah did before #991, is precisely the defect: it produced a sum
-// over the remainder that the community binary then refused to read. The
+// that way. SumFileNames must return the directory's name. Dropping it is
+// precisely the defect: it produces a sum over the remainder that the community
+// binary then refuses to read. The
 // refusal has to come from the READ, so the assertion is that selection
 // succeeds and hashing fails, and that the entry Ptah blames is the one the
 // oracle blamed.

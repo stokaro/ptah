@@ -142,8 +142,8 @@ func MaterializedViews(desired *schemamodel.Database, current *catalog.Database,
 //
 // The planner answers that with a CREATE before the removal, and ClickHouse
 // refuses it -- "Table ... already exists. (TABLE_ALREADY_EXISTS)" -- while the
-// plain view beside it, which has matched bare names against a uniquely-named
-// database view since #1276, reported nothing at all.
+// plain view beside it, which matches bare names against a uniquely-named
+// database view, reports nothing at all.
 func MaterializedViewsWithDialect(
 	desired *schemamodel.Database,
 	database *catalog.Database,

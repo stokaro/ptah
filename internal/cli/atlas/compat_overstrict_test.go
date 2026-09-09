@@ -621,10 +621,10 @@ func TestCompatMigrateLintScopeOptIn(t *testing.T) {
 // a check that anything at all disables, and from being one a typo disables in
 // silence.
 //
-// Before stokaro/ptah#1334 `yes please` produced `--latest or --git-base is
-// required`, which reads to the operator as "the opt-in does not cover this
-// run" rather than "the opt-in was never read". The refusal now names the
-// variable and the value the operator typed.
+// Read as false, `yes please` produces `--latest or --git-base is required`,
+// which reads to the operator as "the opt-in does not cover this run" rather
+// than "the opt-in was never read". The refusal names the variable and the
+// value the operator typed instead.
 func TestCompatMigrateLintScopeOptInRefusesANonBoolean(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()

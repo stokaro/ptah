@@ -21,12 +21,12 @@ import (
 //
 // `Facts.Undetailed` reports facts whose provenance owes a reason and that
 // carry none -- an inference without its premise, an unknown without its
-// reason. Each is a sentence that sounds like an answer and is not one. Nothing
-// called it until stokaro/ptah#2474.
+// reason. Each is a sentence that sounds like an answer and is not one. A
+// self-check nothing drives reports nothing, and this test is what drives it.
 //
-// It found one immediately: source.table took the specification's NAME as its
-// source, which read as `source.table = articles (configured: articles)` when
-// the two matched, and as no detail at all when the specification carried no
+// The shape it catches: source.table taking the specification's NAME as its
+// source, which reads as `source.table = articles (configured: articles)` when
+// the two match, and as no detail at all when the specification carries no
 // name.
 func TestConfiguredFacts_EveryFactThatOwesAnExplanationGivesOne(t *testing.T) {
 	tests := []struct {

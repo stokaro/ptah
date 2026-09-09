@@ -101,8 +101,8 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			want: "materialized \"mv\" {\n  schema = schema.public\n",
 		},
 		{
-			// Already correct before stokaro/ptah#1138, and here so the table
-			// says so rather than leaving it to be rediscovered.
+			// The control. This row needs nothing the rows around it needed,
+			// and the table says so rather than leaving it to be rediscovered.
 			name: "an enum",
 			declare: func(db *schemamodel.Database) {
 				db.Enums = []schemamodel.Enum{{Name: "mood", Values: []string{"sad", "ok"}}}
@@ -110,8 +110,8 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			want: "enum \"mood\" {\n  schema = schema.public\n",
 		},
 		{
-			// The synonym block arrived after this table was written
-			// (stokaro/ptah#1031), and takes the same fallback. Its neighbour
+			// The synonym block takes the same fallback
+			// (stokaro/ptah#1031). Its neighbour
 			// the extended property deliberately does NOT -- an empty schema
 			// there is the DATABASE scope rather than an unreported one, which
 			// is what

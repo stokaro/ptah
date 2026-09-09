@@ -39,11 +39,10 @@ var (
 //
 // The native verb resolves an `oci://` --dir through the same puller
 // `migrations up`, `down`, `status` and `lint` use, and registers --plain-http
-// so a local registry is reachable. Before stokaro/ptah#1499 it was the one
-// verb in that neighborhood that stat'ed the reference as a path, which left
-// the read-only integrity question — "do these artifact bytes match the sum
-// they carry" — with no spelling that did not also execute or roll back
-// migrations.
+// so a local registry is reachable. A verb that stat'ed the reference as a path
+// instead would leave the read-only integrity question — "do these artifact
+// bytes match the sum they carry" — with no spelling that does not also execute
+// or roll back migrations.
 func NewMigrateValidateCommand() *cobra.Command {
 	src := &source{registryBacked: true}
 	cmd := newMigrateValidateCommand(

@@ -17,9 +17,8 @@ import (
 // `err` being non-nil with `index on column contains unsupported reference
 // "(column.n)"` (and the row's own text for the others); the pinned Atlas
 // community binary v1.3.0 plans all of them at exit 0. The `columns = [...]`
-// rows were never part of the #1182 regression -- the list reader has read source
-// text since before #1165 -- and they go red the same way, which is why they are
-// here.
+// rows are not part of the #1182 regression -- the list reader reads source
+// text -- and they go red the same way, which is why they are here.
 //
 // Deleting only the ParenthesesExpr arm reddens the parenthesised rows and
 // leaves the conditional rows green; deleting only the ConditionalExpr arm does

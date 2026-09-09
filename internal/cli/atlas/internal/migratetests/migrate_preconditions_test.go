@@ -96,8 +96,7 @@ func TestCompatCommand_MigrateLintWithoutDevURLOptIn(t *testing.T) {
 
 // TestCompatCommand_MigrateLintOptInIsABoolean pins that the opt-in is a
 // boolean, so an operator who exported it as a word does not get a silently
-// looser CLI -- and, since stokaro/ptah#1334, does not get a silently STRICTER
-// one either.
+// looser CLI -- and does not get a silently STRICTER one either.
 //
 // The two answers are different on purpose. A valid false keeps the community
 // binary's own refusal, word for word, because that is the compatibility

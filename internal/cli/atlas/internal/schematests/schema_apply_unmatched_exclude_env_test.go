@@ -21,8 +21,8 @@ import (
 // The selector NAMES AN OBJECT THAT EXISTS, so there is no unmatched selector on
 // this run and the opt-in's value cannot change what the command does. That is
 // the shape of every healthy run of a pipeline that exports the variable, and
-// before stokaro/ptah#1334 it was the shape on which a typo was invisible: the
-// value was read beside the refusal, and the refusal never fired.
+// the shape on which a typo goes invisible if the value is read beside the
+// refusal rather than before it: on such a run the refusal never fires.
 //
 // The row assertions are not the exit code alone. `applied` reads the target
 // back through the real reader afterwards, so a refusal that landed after the

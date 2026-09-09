@@ -37,8 +37,7 @@ import (
 // for an identical schema. psql refuses that CREATE at exit 3 with `syntax
 // error at or near "tsvector_ops"`, and the DROP ahead of it had already
 // committed, so applying the plan left the table with no index at all.
-// `i_desc`, `i_nullsfirst` and `i_opclass` were lost the same way, and had been
-// since before #1242.
+// `i_desc`, `i_nullsfirst` and `i_opclass` are lost the same way.
 func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)

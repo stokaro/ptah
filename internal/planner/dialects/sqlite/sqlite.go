@@ -327,9 +327,8 @@ func existingTablesWithConstraintChanges(
 	// A change that names no host cannot be planned here: SQLite rebuilds the
 	// table around a constraint, and there is no table to rebuild.
 	//
-	// It asked this of the bare NAME list until stokaro/ptah#2315 -- a name with
-	// no record beside it -- and a name is always described now, so the question
-	// is asked of the record that is missing a host.
+	// Every name is described, so the question is asked of the record that is
+	// missing a host rather than of a bare name with no record beside it.
 	unattributed := slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
 		return add.TableName == ""
 	}) || slices.ContainsFunc(diff.ConstraintsRemoved, func(removal difftypes.ConstraintRemovalInfo) bool {

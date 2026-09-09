@@ -802,10 +802,10 @@ func TestVerify_AnUnmeasuredVectorCheckIsNotABlocker(t *testing.T) {
 // TestVerify_FreshnessIsTheLayerThatHadNoTest is the rule that decides whether
 // a corpus is recomputed.
 //
-// Until stokaro/ptah#2474 nothing here named LayerFreshness. The only tests of
-// staleness exercised `embedgen.TargetRow.Stale`, a second implementation with
-// no caller -- so the rule that runs was untested and the rule that was tested
-// did not run. Comparing the two is what found the defect the last row pins.
+// This names LayerFreshness. Testing staleness through
+// `embedgen.TargetRow.Stale` instead exercises a second implementation with no
+// caller, so the rule that runs goes untested and the rule that is tested does
+// not run. Comparing the two is what finds the defect the last row pins.
 func TestVerify_FreshnessIsTheLayerThatHadNoTest(t *testing.T) {
 	tests := []struct {
 		name string
@@ -841,8 +841,8 @@ func TestVerify_FreshnessIsTheLayerThatHadNoTest(t *testing.T) {
 			// is no earlier version to have moved FROM, and the input hash --
 			// which matches -- is what answers freshness here.
 			//
-			// Reported stale before stokaro/ptah#2474, which recomputed a
-			// corpus whose text had not changed, at the provider's price.
+			// Reporting it stale recomputes a corpus whose text has not
+			// changed, at the provider's price.
 			name:       "the row carries no version and the source does",
 			sourceHash: "hash-1", targetHash: "hash-1",
 			sourceVersion: "8", targetVersion: "",

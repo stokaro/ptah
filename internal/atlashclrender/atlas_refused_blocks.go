@@ -80,10 +80,11 @@ func KeepAtlasRefusedBlocks() (bool, error) {
 //	sequence "order_seq" {}     exit 1  postgres: sequences are not supported by this version
 //	policy "accounts_all" {}    exit 1  postgres: policies are not supported by this version
 //
-// The blocks are empty on purpose. A `sequence` carrying the `type = bigint`
-// Ptah wrote before #1255 is refused with `There is no variable named "bigint"`
-// instead, which is Ptah's own rendering defect and was fixed rather than
-// suppressed. Stripping the block to its label separates the two verdicts: what
+// The blocks are empty on purpose. A `sequence` carrying a `type = bigint`
+// attribute is refused with `There is no variable named "bigint"` instead,
+// which is Ptah's own rendering defect (stokaro/ptah#1255) rather than the
+// block refusal measured here. Stripping the block to its label separates the
+// two verdicts: what
 // survives is a refusal of the block type itself, which no spelling can lift.
 //
 // Nothing else Ptah's inspect emits belongs here, and that too is measured. Off

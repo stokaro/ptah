@@ -43,7 +43,7 @@ var atlasToleratedBlockTypes = map[string][]string{
 	platform.Postgres: {
 		"role",
 		"function",
-		// A procedure is its own block since stokaro/ptah#2209. It is measured
+		// A procedure is its own block (stokaro/ptah#2209). It is measured
 		// here rather than suppressed for the same reason `function` is: that
 		// binary drops a top-level block it does not model and carries on, so
 		// leaving procedures out of the compatibility surface would withhold

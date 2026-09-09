@@ -636,10 +636,10 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 
 // strictNameRe is the documented migration naming convention, encoded
 // independently of the migrator's parser: WellFormedName checks this strict
-// form while Direction follows the migrator, so if the two ever diverge
-// again (as they did before #245, when the migrator's unescaped dot made
-// 0000000001_cleanup.sql run as an up migration) lint keeps scanning
-// whatever the migrator would execute and MF103 explains the ambiguity.
+// form while Direction follows the migrator, so if the two ever diverge —
+// an unescaped dot in the migrator's pattern makes 0000000001_cleanup.sql run
+// as an up migration (stokaro/ptah#245) — lint keeps scanning whatever the
+// migrator would execute and MF103 explains the ambiguity.
 var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
 // rawStatement is one raw SQL statement plus the line it starts on.

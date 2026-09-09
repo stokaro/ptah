@@ -4,10 +4,10 @@ package integration_test
 
 // The run phase, driven through the verbs that own each step.
 //
-// Until stokaro/ptah#2441 it never moved: `embedrun.Run.Advance` was the only
-// thing that could move one and had no non-test caller, so `status` reported
-// whatever `prepare` wrote while the progress counters beside it climbed. Two
-// halves of one line, disagreeing.
+// `embedrun.Run.Advance` is the only thing that moves one, and with no
+// non-test caller it moves nothing: `status` then reports whatever `prepare`
+// wrote while the progress counters beside it climb. Two halves of one line,
+// disagreeing.
 //
 // These read the phase back from the store rather than from what a verb said,
 // because the failure this is about is a verb reporting a step it did not
