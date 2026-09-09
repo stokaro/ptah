@@ -6,6 +6,8 @@
 
 <p align="center">
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-unit-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-unit-tests.yml?branch=master&label=tests&logo=github" alt="Status of the unit test workflow on the master branch"></a>
+  <a href="https://github.com/stokaro/ptah/actions/workflows/go-integration-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-integration-tests.yml?branch=master&label=integration&logo=github" alt="Status of the integration test workflow on the master branch"></a>
+  <a href="https://github.com/stokaro/ptah/actions/workflows/capability-matrix.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/capability-matrix.yml?branch=master&label=databases&logo=github" alt="Status of the capability matrix workflow on the master branch, which probes every declared database release line"></a>
   <a href="https://github.com/stokaro/ptah/releases/latest"><img src="https://img.shields.io/github/v/release/stokaro/ptah?label=release&logo=github" alt="The latest published release tag"></a>
   <a href="https://pkg.go.dev/ptah.run"><img src="https://pkg.go.dev/badge/ptah.run.svg" alt="The Go package reference for ptah.run"></a>
   <a href="https://github.com/stokaro/ptah/blob/master/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/stokaro/ptah?label=go&logo=go&logoColor=white" alt="The Go version declared in go.mod"></a>
