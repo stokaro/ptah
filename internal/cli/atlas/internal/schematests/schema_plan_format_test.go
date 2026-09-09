@@ -25,7 +25,8 @@ func planFormatFixture(c *qt.C, name string) planFixture {
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE added (id INTEGER PRIMARY KEY);")
 }
 
-// TestSchemaPlanFormatRendersTheTemplate is what `--format` used to refuse.
+// TestSchemaPlanFormatRendersTheTemplate pins that `--format` renders rather
+// than refusing.
 func TestSchemaPlanFormatRendersTheTemplate(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratchC(c)

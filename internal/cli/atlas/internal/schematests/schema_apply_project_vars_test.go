@@ -110,9 +110,9 @@ func TestSchemaDiffScopesHCLSchemaVarsToProjectSources(t *testing.T) {
 // than through a substituted file URL.
 //
 // `schema inspect` materializes its desired state on the dev database itself
-// instead of going through the shared resolver, and it used to hand the loader
-// the URLs read back out of the classified set — which drops the scope those
-// sources carry. Measured on the pinned Atlas community binary v1.3.0,
+// instead of going through the shared resolver, so handing the loader the URLs
+// read back out of the classified set drops the scope those sources carry.
+// Measured on the pinned Atlas community binary v1.3.0,
 // `schema inspect --env local --url env://src`, exit codes read directly from
 // unpiped invocations: 0 with `default = "acme"` there, 1 with `missing value
 // for required variable "tenant"` here.

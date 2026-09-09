@@ -47,9 +47,9 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 
 // TestSchemaApplyFormatRendersJSON is the end-to-end half of the
 // stokaro/ptah#940 item C regression test: on the command line
-// `--format '{{ json . }}'` used to exit 1 at template-parse time with
-// `function "json" not defined`, where the pinned community binary v1.3.0
-// rendered the document and exited 0.
+// `--format '{{ json . }}'` exits 1 at template-parse time with
+// `function "json" not defined` unless the helper is registered, where the
+// pinned community binary v1.3.0 renders the document and exits 0.
 func TestSchemaApplyFormatRendersJSON(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

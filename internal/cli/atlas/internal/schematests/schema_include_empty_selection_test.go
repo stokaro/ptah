@@ -100,9 +100,9 @@ func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 }
 
 // TestSchemaApplyIncludeEmptySelectionRefuses pins the other half of the
-// divergence. `schema apply` used to answer "Schema is synced, no changes to
-// be made." with exit 0 and an untouched database — a verb reporting success
-// for work it did not do. It now refuses.
+// divergence. Answering "Schema is synced, no changes to be made." with exit 0
+// and an untouched database is a verb reporting success for work it did not do,
+// so `schema apply` refuses instead.
 //
 // This is a deliberate choice, not a match: the pinned Atlas community binary
 // implements no --include flag at all, and its sibling positive selector

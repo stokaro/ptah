@@ -340,7 +340,7 @@ func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) 
 // identity ordering used when the current directory no longer contains a
 // recorded migration. Measured on Atlas CE v1.3.0: after V2 is applied and
 // replaced on disk by V1, `migrate set 1` records V1 and removes V2. Mapping
-// the retired row to runtime zero used to leave V2 silently applied.
+// the retired row to runtime zero leaves V2 silently applied.
 func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
@@ -372,7 +372,7 @@ func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 // TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget proves
 // that metadata movement uses Flyway's numeric component order rather than the
 // byte order of the persisted source tokens. In byte order "9" sorts after
-// "10", which used to delete the already-applied V9 row while setting V10.
+// "10", which deletes the already-applied V9 row while setting V10.
 func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)

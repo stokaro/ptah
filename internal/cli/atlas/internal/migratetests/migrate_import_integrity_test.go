@@ -293,8 +293,8 @@ func TestCompatMigrateImport_TamperedSourceIsNotLaunderedIntoACleanDirectory(t *
 // On the pinned binary a tampered source is refused for its checksum even when
 // the destination already holds SQL, and even when --to names the source
 // itself; both of those are refusals `migrate import` produces on its own, and
-// both used to win here because they ran first. The order matters beyond the
-// message: the destination checks are the last thing standing between a
+// either wins here if it runs first. The order matters beyond the message: the
+// destination checks are the last thing standing between a
 // tampered source and a written directory, so any of them passing on a source
 // the checksum has not cleared is the bug.
 //

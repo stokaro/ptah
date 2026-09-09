@@ -124,9 +124,9 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 }
 
 // TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable isolates the
-// connection leak the recovery path used to walk into: the dirty guard's own
-// query left an unscanned *sql.Row on the Atlas revision layout, pinning its
-// connection and its SQLite read lock for the rest of the process.
+// connection leak the recovery path walks into otherwise: the dirty guard's own
+// query leaving an unscanned *sql.Row on the Atlas revision layout, which pins
+// its connection and its SQLite read lock for the rest of the process.
 //
 // Reverted, `migrate set` after the refusal fails with "failed to commit Atlas
 // revision set transaction: database is locked (5) (SQLITE_BUSY)" — and so does

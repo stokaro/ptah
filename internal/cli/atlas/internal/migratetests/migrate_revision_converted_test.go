@@ -208,14 +208,14 @@ func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 //
 // The community binary matches the format value verbatim: measured on v1.3.0,
 // `--dir-format ATLAS`, `--dir-format ' atlas '` and `?format=FLYWAY` each exit
-// 1 with `unknown dir format`, while the lowercase spellings exit 0. Status and
-// set used to lower-and-trim the flag, so the first two exited 0 — looser than
+// 1 with `unknown dir format`, while the lowercase spellings exit 0. A status
+// or set that lower-and-trims the flag exits 0 on the first two — looser than
 // the binary being mirrored, which is the direction that must never happen.
 //
-// Reverting the change makes the two `ATLAS` rows and the two ` atlas ` rows
-// exit 0. The `?format=FLYWAY` row held before it too — the query spelling was
-// already resolved verbatim — and is here so the two spellings stay pinned to
-// one rule rather than drifting apart again.
+// Under that lower-and-trim the two `ATLAS` rows and the two ` atlas ` rows
+// exit 0. The `?format=FLYWAY` row holds either way, because the query spelling
+// is resolved verbatim, and it is here so the two spellings stay pinned to one
+// rule rather than drifting apart.
 func TestCompatMigrateRevisionVerbs_DirFormatIsVerbatim(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

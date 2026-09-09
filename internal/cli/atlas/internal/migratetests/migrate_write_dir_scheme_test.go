@@ -356,16 +356,13 @@ func writeAtlasWriteInvocationFiles(c *qt.C, root string, files map[string]strin
 	}
 }
 
-// TestCompatMigrateRead_RequiresTheSchemeToo is the boundary this test used to
-// pin from the other side. It read
-// `TestCompatMigrateRead_StillAcceptsADirectoryNamingNoScheme`, and the
-// requirement belonged to the verbs that can CREATE a directory, because
-// widening it was "a separate decision with a measurable blast radius"
-// (stokaro/ptah#1186).
+// TestCompatMigrateRead_RequiresTheSchemeToo carries the boundary to the
+// reading verbs.
 //
-// That decision was taken and the blast radius was measured, so the assertion
-// is inverted rather than deleted: the reading verbs now refuse the same
-// spelling, with the same message.
+// Confining the requirement to the verbs that can CREATE a directory was "a
+// separate decision with a measurable blast radius" (stokaro/ptah#1186). The
+// radius is measured below: the reading verbs refuse the same spelling, with
+// the same message.
 //
 // Measured on the pinned community binary v1.3.0, `--dir mig --dir-format
 // goose`, each verb in its own directory:

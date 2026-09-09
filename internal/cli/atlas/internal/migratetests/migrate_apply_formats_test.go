@@ -269,15 +269,13 @@ func TestMigrateApplyRejectsDuplicateConvertedVersionBeforeOpeningDatabase(t *te
 }
 
 // TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase covers dbmate
-// only. It used to cover goose too, asserting that a goose file with no
-// directives was refused; stokaro/ptah#981 is that refusal being wrong. Atlas
-// executes such a file's bytes verbatim and records the revision honestly, and a
-// file with no directives has no rollback section that could leak onto the apply
-// path — measured, including on the goose fixture this test used to carry, which
-// Atlas runs to completion and converts to a byte-identical atlas.sum. The goose
-// behavior now lives in TestMigrateApplyGooseDirectiveParsing, which asserts both
-// that directive-free files execute and that BROKEN directive sets are still
-// refused.
+// only. Refusing a goose file with no directives is wrong (stokaro/ptah#981):
+// Atlas executes such a file's bytes verbatim and records the revision
+// honestly, and a file with no directives has no rollback section that could
+// leak onto the apply path — measured, on a goose fixture Atlas runs to
+// completion and converts to a byte-identical atlas.sum. The goose behavior
+// lives in TestMigrateApplyGooseDirectiveParsing, which asserts both that
+// directive-free files execute and that BROKEN directive sets are refused.
 //
 // The dbmate refusal stays, and stays deliberately: see the divergence table in
 // docs/conformance.md and the doc comment on dbmateUpSQL.

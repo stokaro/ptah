@@ -35,13 +35,13 @@ func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
 // second migration's down SQL chosen by the caller, written BEFORE the
 // directory is hashed.
 //
-// The ordering is the point. These tests used to build the healthy fixture,
-// hash it, and only then overwrite `2_add_audit.down.sql` with SQL that fails —
-// leaving a directory whose atlas.sum no longer covered the bytes about to run,
-// and depending on `migrate down` executing them anyway. That dependency WAS the
-// defect: `migrate down` was the one verb reading a native Atlas directory and
-// executing SQL from it outside the integrity gate, so the fixture only worked
-// because the gate was missing.
+// The ordering is the point. Building the healthy fixture, hashing it, and only
+// then overwriting `2_add_audit.down.sql` with SQL that fails leaves a
+// directory whose atlas.sum does not cover the bytes about to run, and depends
+// on `migrate down` executing them anyway. That dependency IS the defect: it
+// makes `migrate down` the one verb reading a native Atlas directory and
+// executing SQL from it outside the integrity gate, so the fixture works only
+// while the gate is missing.
 //
 // Writing the failing rollback before the hash keeps every assertion these
 // tests make — the rollback still fails at execution time, on the same
@@ -750,18 +750,16 @@ func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "planned=2")
 }
 
-// TestCompatCommand_MigrateDownImplementedFlags replaces the waiver-rationale
-// table that used to sit here.
+// TestCompatCommand_MigrateDownImplementedFlags holds that each of the three
+// flags is accepted, not merely unwaived.
 //
-// That table pinned the wording of three refusals. stokaro/ptah#1621
-// implemented all three flags, so there is no refusal left to word, and what
-// has to be held instead is that each one is accepted -- not merely unwaived.
-// A waiver removed without an implementation behind it would show up here as an
-// unknown-flag error rather than a refusal, which is the same failure wearing a
-// different message.
+// stokaro/ptah#1621 implemented all three, so there is no refusal wording left
+// to pin. A waiver removed without an implementation behind it shows up here as
+// an unknown-flag error rather than a refusal, which is the same failure
+// wearing a different message.
 //
-// The refusal machinery itself is unchanged and still covered where a flag
-// still needs it; atlasMigrateDownUnsupportedFlags is simply empty now.
+// The refusal machinery is covered where a flag needs it;
+// atlasMigrateDownUnsupportedFlags is empty.
 func TestCompatCommand_MigrateDownImplementedFlags(t *testing.T) {
 	for _, tt := range []struct {
 		name string

@@ -321,19 +321,20 @@ func TestCompatMigrateApply_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T) 
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-// TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute re-expresses
-// what used to be TestCompatMigrateApply_UnhashedDirWithNestedSQLRefuses.
+// TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute replaces a
+// refusal on the same shape.
 //
-// That test pinned a compensator, not a behavior worth keeping: the exemption
+// A refusal there pins a compensator, not a behavior worth keeping: the
+// exemption
 // scan recursed because the registrar recursed, so refusing was the only way to
 // stop an unhashed nested migration running unverified. The registrar selects
 // exactly the set atlas.sum covers, so a nested file is not a migration on
 // either tool — the directory has nothing to execute and the community binary's
 // exit 0 is reachable without giving anything up.
 //
-// The post-condition is strictly stronger than the old one. Refusing only
-// proved the file did not run in THIS invocation; asserting the table is absent
-// after a successful apply proves it is not a migration at all. The stderr
+// The post-condition is the stronger of the two. Refusing proves only that the
+// file did not run in THIS invocation; asserting the table is absent after a
+// successful apply proves it is not a migration at all. The stderr
 // notice is asserted with it, because "did not run" and "nobody was told" is
 // the failure mode this fix exists to avoid, not a lesser version of it.
 func TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute(t *testing.T) {

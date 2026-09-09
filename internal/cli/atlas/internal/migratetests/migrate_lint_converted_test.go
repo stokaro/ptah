@@ -15,15 +15,16 @@ import (
 // both spellings that select it, converted in memory, and analyzed — instead of
 // being refused.
 //
-// Before this change every row here printed one of two refusals:
+// Without the conversion every row here prints one of two refusals:
 //
 //	atlas migrate lint --dir: Atlas accepts ?format=golang-migrate, but Ptah
 //	  does not implement that directory format for this command yet
 //	atlas migrate lint --dir-format: Atlas accepts --dir-format=golang-migrate,
 //	  but Ptah does not implement that directory format yet
 //
-// except TestCompatMigrateLint_RejectsNonVerbatimDirFormat, which used to exit 0
-// and now exits 1, and the control rows, which are unchanged by design.
+// except TestCompatMigrateLint_RejectsNonVerbatimDirFormat, which exits 0
+// without the verbatim rule and 1 with it, and the control rows, which the
+// conversion does not reach.
 //
 // Measured against the pinned community binary v1.3.0 on the same fixtures,
 // 2026-08-03. The golang-migrate fixture is what makes the flip visible: its

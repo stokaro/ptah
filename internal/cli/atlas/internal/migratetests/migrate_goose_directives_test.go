@@ -94,7 +94,7 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			assertDB:  gooseDirectiveNoTables("a"),
 		},
 		{
-			// Never-looser: ptah-compat used to exit 0 here and create widgets.
+			// Never-looser: exiting 0 here creates widgets.
 			name:      "Down before Up is refused",
 			format:    "goose",
 			file:      "-- +goose Down\nDROP TABLE widgets;\n-- +goose Up\n" + widgets,
@@ -102,7 +102,7 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			assertDB:  gooseDirectiveNoTables("widgets"),
 		},
 		{
-			// Never-looser: ptah-compat used to exit 0 here and create a and b.
+			// Never-looser: exiting 0 here creates a and b.
 			name:      "a second Up is refused",
 			format:    "goose",
 			file:      "-- +goose Up\nCREATE TABLE a (id INTEGER PRIMARY KEY);\n-- +goose Up\nCREATE TABLE b (id INTEGER PRIMARY KEY);\n",
@@ -110,7 +110,7 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			assertDB:  gooseDirectiveNoTables("a", "b"),
 		},
 		{
-			// Never-looser: ptah-compat used to exit 0 here and create a.
+			// Never-looser: exiting 0 here creates a.
 			name:      "StatementEnd with no StatementBegin is refused",
 			format:    "goose",
 			file:      "-- +goose Up\nCREATE TABLE a (id INTEGER PRIMARY KEY);\n-- +goose StatementEnd\n",

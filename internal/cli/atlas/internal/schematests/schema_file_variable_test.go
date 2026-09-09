@@ -37,7 +37,7 @@ const schemaFileEmptyHCL = "schema \"main\" {\n}\n"
 // writeSchemaFileVariableFixture writes the fixture pair into a directory that
 // deliberately holds NO atlas.hcl, and makes it the working directory. The
 // absence is the point: the pinned Atlas community binary v1.3.0 accepts --var
-// there, and Ptah used to demand a project file that binary never reads.
+// there, so demanding a project file that binary never reads is a divergence.
 func writeSchemaFileVariableFixture(t *testing.T) (from, to string) {
 	t.Helper()
 	c := qt.New(t)
