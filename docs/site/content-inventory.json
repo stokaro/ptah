@@ -1183,8 +1183,8 @@
         "/concepts/dialects-and-capabilities/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2017,
-      "sourceBytes": 15330
+      "visibleWords": 2078,
+      "sourceBytes": 15687
     },
     {
       "path": "docs/site/src/content/docs/databases/support-evidence.md",
@@ -3840,8 +3840,8 @@
         "/schema/orm-and-external/",
         "/versioned/apply/"
       ],
-      "visibleWords": 2940,
-      "sourceBytes": 21237
+      "visibleWords": 3021,
+      "sourceBytes": 21717
     },
     {
       "path": "docs/site/src/content/docs/reference/exit-codes.md",
@@ -4229,8 +4229,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7412,
-      "sourceBytes": 50113
+      "visibleWords": 7540,
+      "sourceBytes": 50811
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",

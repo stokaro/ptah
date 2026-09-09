@@ -337,16 +337,27 @@ variable.
 
 ## What a machine reads, and from where
 
-Every verb that has a machine-readable format writes that document to **stdout**,
-whatever the outcome, and keeps stderr for diagnostics. That includes the
+Every verb that has a machine-readable format, except the two lint verbs below,
+writes that document to **stdout** whatever the outcome, and keeps stderr for
+diagnostics. That includes the
 expected-negative cases: `ptah schema drift --format json` writes its report to
 stdout and exits 1 when there is drift, exactly as
 `ptah migrations status --json --exit-code` writes its report to stdout and
 exits 1 when migrations are pending.
 
+`ptah sql lint` and `ptah migrations lint` are the exception, and it is
+deliberate. They trade the streams on the outcome: a failing run writes the
+report to stderr and leaves stdout for the run's prose, and a passing run writes
+the report to stdout and the prose to stderr. Neither stream ever carries a
+sentence inside a document a consumer decodes, which is what that choice buys.
+It applies to every format each verb accepts -- `text` and `json` for
+`ptah sql lint`, and `text`, `json`, `github-actions`, `sarif` and `gitlab` for
+`ptah migrations lint`. A caller therefore reads stderr on exit `1` and stdout
+on exit `0`, or merges the two with `2>&1`; reading stdout alone on a failing
+run gets the prose or nothing, never the report.
+
 The distinction a caller needs is the exit code, not the stream: `0` success,
-`1` an expected negative result, `2` a command or usage error. A parser reading
-stdout therefore gets a document in every case except `2`.
+`1` an expected negative result, `2` a command or usage error.
 
 ## The banner, and where it is not
 

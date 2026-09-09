@@ -66,12 +66,16 @@ exactly the pre-migration state the migration is about to change.
   changes, so it would silently evaluate a precondition against stale state. Run
   such migrations with the default per-file mode.
 
-Checks are evaluated for the **up** direction only (they guard forward,
-typically destructive, migrations); a `-- +ptah check` in a down migration is
-ignored. A failing assertion produces a `CheckFailedError` that names the
-migration version and assertion. An Atlas `oneof` file in which every assertion
-is falsy produces a `CheckGroupFailedError` that names the file and assertion
-count. In both cases, `ptah migrations up` exits non-zero.
+A `-- +ptah check` runs in the direction it was written. One in the up body
+guards `ptah migrations up`; one in the down body guards the rollback and runs
+before any rollback statement, so a failing assertion aborts with nothing rolled
+back. Neither direction's directive guards the other: an up-body check is not
+re-evaluated during a rollback. A failing assertion produces a
+`CheckFailedError` that names the migration version and assertion. An Atlas
+`oneof` file in which every assertion is falsy produces a
+`CheckGroupFailedError` that names the file and assertion count. In both cases
+the verb that ran the check -- `ptah migrations up` or `ptah migrations down` --
+exits non-zero.
 
 A failed check writes **no revision row**. Checks run before the migration's
 bookkeeping row is created, so a blocked migration is recorded as never
@@ -154,9 +158,10 @@ SELECT NOT EXISTS (SELECT * FROM user_roles);
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 
-Txtar checks follow every rule on this page: truthiness interpretation,
-up-direction only, the `--tx-mode all` refusal, and the `--skip-checks`
-bypass on native `ptah migrations up`. `ptah-compat migrate apply` has no
+Txtar checks follow the truthiness interpretation, the `--tx-mode all`
+refusal, and the `--skip-checks` bypass. They do not follow the direction rule:
+a `checks.sql` section is read from the up file and evaluated in both
+directions, so it guards the rollback as well as the forward migration. `ptah-compat migrate apply` has no
 `--skip-checks` flag (parity with Atlas, which has none either); it reads the
 `PTAH_SKIP_CHECKS` environment variable instead — see
 [Bypassing checks](#bypassing-checks).
@@ -195,7 +200,8 @@ Checks are an additive, finer-grained safety gate that composes with the coarse
 `--check-destructive` / `--allow-destructive` gate. For an emergency override,
 `ptah migrations up --skip-checks` skips all pre-migration checks — both
 `-- +ptah check` directives and all Atlas txtar check files — mirroring the
-`--allow-destructive` bypass. Use it only after review.
+`--allow-destructive` bypass. `ptah migrations down --skip-checks` is the same
+override for the checks a rollback would run. Use either only after review.
 
 On the Atlas-compatible surface the same bypass is spelled as an environment
 variable, `PTAH_SKIP_CHECKS`:
@@ -239,17 +245,16 @@ uses for `atlas.hcl` `data "external_schema"`.
 `atlas.sum` verification still refuses a tampered or unhashed migration
 directory, and revision bookkeeping is unchanged.
 
-`ptah-compat migrate down` accepts an Atlas `--skip-checks` flag it does not
-implement and refuses it loudly. That one refusal is explicit-only:
-`PTAH_SKIP_CHECKS` does not trigger it, so exporting the variable for an apply
-does not break rollbacks in the same shell, and `migrate down --help` shows no
-`[env: ...]` suffix for it.
+`ptah-compat migrate down` registers the same `--skip-checks` flag Atlas does,
+and implements it. A down body's checks run before its statements and abort the
+rollback, so there is a real thing to bypass. The flag reads `PTAH_SKIP_CHECKS`
+like every other native flag's environment twin, and `migrate down --help`
+prints the `[env: PTAH_SKIP_CHECKS]` suffix.
 
-That exception stops there. `migrate down`'s other waivers — `--to-tag` and
-`--plan` — keep their environment twins, because those names mean nothing else:
-setting `PTAH_TO_TAG` *is* a request for a capability Ptah lacks, and refusing
-it is the right answer. Ignoring it would not be a harmless no-op — the target
-would parse as version `0` and the rollback would revert the entire history.
+The variable therefore means the same thing on both verbs. A value exported for
+an apply also skips the checks a rollback in the same shell would run, so scope
+the export to the command that needs it. `--to-tag` and `--plan` are implemented
+on this verb as well, and keep their `PTAH_TO_TAG` and `PTAH_PLAN` twins.
 
 ## Integrity
 

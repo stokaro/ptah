@@ -42,7 +42,8 @@ jobs:
 | `version` | `latest` | Ptah release tag to download. |
 | `binary-path` | empty | Existing Ptah binary path. Skips release download. |
 | `setup-go` | `true` | Set up the Go toolchain before running Ptah. |
-| `go-version` | `1.26.5` | Go version passed to `actions/setup-go`. |
+| `go-version` | empty | Go version passed to `actions/setup-go`. Empty reads the toolchain from `go-version-file` instead; set it only to override. |
+| `go-version-file` | `go.mod` | Go module file the toolchain is read from, relative to the calling repository. Used when `go-version` is empty. |
 | `dir` | empty | Root directories scanned for Go schema entities, one per line. |
 | `schema-file` | empty | SQL, YAML, HCL, DBML, or `oci://` sources, one per line. |
 | `schema-cmd` | empty | External program whose standard output is the desired schema. |

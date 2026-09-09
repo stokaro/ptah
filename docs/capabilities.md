@@ -315,11 +315,11 @@ and `YugabyteDB24()` the 2024 LTS line below the PostgreSQL 11 to 15 engine
 swap; `SpannerPostgres()` is deliberately conservative because Spanner's
 PostgreSQL interface is not a drop-in PostgreSQL server.
 
-`SQLServer2022()` covers Ptah's initial portable SQL Server/Azure SQL subset:
-schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
-indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone
-sequence objects and drift-safe normalization for SQL Server-specific view,
-trigger, and index metadata are outside the initial SQL Server subset.
+`SQLServer2022()` covers Ptah's portable SQL Server/Azure SQL subset: schemas,
+tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic indexes,
+raw-SQL view/trigger rendering, `XML` columns, standalone sequences, and
+row-level security in the shape T-SQL has a form for. Drift-safe normalization
+for SQL Server-specific view, trigger, and index metadata is outside it.
 
 ### Saturation: servers newer than the newest measured line
 

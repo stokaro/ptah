@@ -299,14 +299,18 @@ rendered SQL always preserves your annotation text verbatim.
 
 ## Limitations
 
-- No PostgreSQL-style extensions, row-level security, roles and grants, or
-  materialized views.
+- No PostgreSQL-style extensions and no materialized views.
+- Row-level security renders as `CREATE SECURITY POLICY`, and only where T-SQL
+  has a form for the declaration. The `USING` predicate must invoke a two-part
+  function, and a policy carries no `TO` role list, because SQL Server scopes a
+  predicate inside the function body. A declaration outside that shape is named
+  in the output as not created, rather than rendered into something the engine
+  would refuse or accept with a different meaning.
 - Column drift planning emits direct `ALTER COLUMN` only for type and
   nullability changes; default, generated-expression, unique, and `CHECK`
   changes need a manual migration.
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
-- Standalone sequence objects are outside the subset.
 - A synonym's target is recorded and resolved by the server, not validated by
   Ptah: a synonym naming an object that does not exist is created successfully
   and fails when something uses it, which is SQL Server's own behavior.

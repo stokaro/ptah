@@ -36,17 +36,25 @@ environment twin, including when that environment value is malformed. An empty
 value remains unset for every flag type except boolean, where it is rejected;
 see [Boolean environment variables](#boolean-environment-variables).
 
-## The one flag with no environment variable
+## The flags with no environment variable
 
-Approval flags do **not** bind to a `PTAH_*` variable. They have to be typed, or
+A few flags do **not** bind to a `PTAH_*` variable. They have to be typed, or
 written into a command line somebody wrote:
 
 | flag | on |
 | --- | --- |
 | `--auto-approve` | `ptah schema apply`, `ptah db drop-all`, `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
 | `--allow-database-inspect` | `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
+| `--db-url` | `ptah schema test`, `ptah migrations test` |
 
 Every other flag in the native CLI binds to one.
+
+The approval flags are the first two. `--db-url` on the two test verbs is the
+third, for a neighboring reason: those verbs mutate the database they are given
+and treat it as disposable. Bound to the environment, an operator with
+`PTAH_DB_URL` exported for ordinary work runs the suite against that database by
+omitting a flag. Requiring the flag costs nothing, because a throwaway target is
+a decision rather than a default.
 
 That is deliberate, and it is the reason every other flag can safely have one: a
 container, a CI job, or a Kubernetes Job can be configured entirely through the

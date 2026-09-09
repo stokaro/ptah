@@ -163,7 +163,7 @@ language surface the first two claims had been standing in for.
 
 **Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched.
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`) but deliberately retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`) but deliberately retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; `--to-tag` resolves against the tags `ptah migrations tag` records in the database, `--skip-checks` bypasses the pre-migration checks the down bodies carry, and `--plan` derives the rollback from the schema difference instead of running those bodies.
 
 **Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features.
 
@@ -206,19 +206,19 @@ Atlas documentation but are entirely absent from the pinned conformance Atlas CE
 v1.3.0 binary (each resolves to `unknown command`, not a community-version abort
 stub), so they are outside the CLI-surface parity target today.
 
-Outside the parity target is not the same as unbuilt. `migrate ls` and
-`migrate show` are implemented, as native verbs with a compatibility spelling
-each; the pin decides what the `cli-surface` tier measures, and
-`PTAH_ATLAS_STRICT_COMPAT=1` is where that measurement happens, so neither verb
-is registered under the strict profile. Triage outcome, to revisit when the
+Outside the parity target is not the same as unbuilt. All four are
+implemented, as native verbs with a compatibility spelling each; the pin decides
+what the `cli-surface` tier measures, and `PTAH_ATLAS_STRICT_COMPAT=1` is where
+that measurement happens, so none of them is registered under the strict
+profile. Triage outcome, to revisit when the
 conformance Atlas pin advances past v1.3.0:
 
 | Atlas verb | Current Atlas docs behavior | Triage |
 | --- | --- | --- |
 | `migrate ls` | List migration files in the directory (`--latest`, `--short`). | Implemented: `ptah migrations ls` lists a migration directory with no database, and `ptah-compat migrate ls` forwards to it. Not `ptah migrations status`, which an earlier triage claimed covered it: status needs `--db-url` and answers a different question. |
 | `migrate show` | Print the contents of one or more migration files. | Implemented: `ptah migrations show` prints a stored migration's SQL with no database, and `ptah-compat migrate show {name \| version}...` forwards to it. |
-| `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
-| `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
+| `schema stats` | Inspect database schema statistics in OpenMetrics format. | Implemented: `ptah schema stats` counts the objects in a live schema and writes them as OpenMetrics, and `ptah-compat schema stats inspect` forwards to it. An earlier triage called this out of scope as an observability surface rather than a schema one. |
+| `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Implemented: `ptah schema validate` reports a desired schema's structural problems with no database, exiting 0 silently and 1 with one line each, and `ptah-compat schema validate` forwards to it. Not `ptah schema render`, which an earlier triage claimed covered it: render answers whether the schema produces SQL, not what is wrong with it. |
 | `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Being implemented best-effort from published information ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)). |
 | `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Being implemented as a pointer rather than a command group ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)). |
 

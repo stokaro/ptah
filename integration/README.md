@@ -25,7 +25,8 @@ The integration test suite covers all aspects of the migration system as outline
 ### 🔀 Parallel Execution Smoke
 - Launch two migrate up processes in parallel
 - Verify at least one runner succeeds and the final migration state is consistent
-- Ptah does not yet provide a migration-level lock; enforce a single production runner externally until #124 lands
+- `migrate up` runs under a session-scoped advisory lock named `ptah_migrate`, so a second runner waits rather than interleaving; `--lock-timeout` bounds that wait
+- The lock is real on PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server (`internal/dblock.Supported`); every other dialect takes a no-op lock, so a deployment there still enforces a single runner outside Ptah
 
 ### 🧪 Partial Failure Recovery
 - Handle multi-step migrations with intentional failures
