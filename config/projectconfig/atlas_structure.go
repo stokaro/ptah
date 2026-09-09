@@ -168,6 +168,15 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 						"git":              {body: atlasTolerantLeafStructure("base", "dir")},
 						"incompatible":     {body: atlasTolerantLeafStructure("error")},
 						"nestedtx":         {body: atlasTolerantLeafStructure("error")},
+						// `naming` is honored -- config/projectconfig/atlas.go
+						// parses it and the policy drives both the diagnostics
+						// and the exit code. It was missing here, so the walk
+						// took it for an unknown block, recorded it in
+						// IgnoredConstructs, and the command told the operator
+						// their enforced policy "is ignored for Atlas
+						// compatibility and has no effect" on the very run it
+						// had just failed (stokaro/ptah#3117).
+						"naming": {body: atlasNamingStructure()},
 						// `rule` is Ptah's own: it declares a lint check rather
 						// than configuring one of CE's analyzers
 						// (stokaro/ptah#1706). It is listed here so the
@@ -246,6 +255,27 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 					},
 				},
 			},
+		},
+	}
+}
+
+// atlasNamingStructure is the `lint { naming { ... } }` policy's shape: a
+// default convention, and one optional override per kind of name.
+//
+// The kinds are the ones the parser routes, so a policy naming a kind Ptah does
+// not read is still reported rather than quietly accepted.
+func atlasNamingStructure() atlasBodyStructure {
+	pattern := atlasBlockStructure{body: atlasTolerantLeafStructure("match", "message")}
+	return atlasBodyStructure{
+		attributes:             []string{"match", "message", "error"},
+		allowUnknownAttributes: true,
+		blocks: map[string]atlasBlockStructure{
+			"schema":      pattern,
+			"table":       pattern,
+			"column":      pattern,
+			"index":       pattern,
+			"foreign_key": pattern,
+			"check":       pattern,
 		},
 	}
 }
