@@ -1854,9 +1854,19 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
+	// The names acted on are the ones Ptah's own diff policy models. The
+	// community binary decodes fifteen, {add, modify, drop} x {schema, table,
+	// column, index, foreign_key}; the rest are type-checked and reported
+	// through the tolerance path, because a policy Ptah cannot apply must be
+	// visible rather than silently accepted.
+	//
+	// drop_column and drop_index were type-checked and dropped while
+	// migration/diffpolicy already modeled both and ptah.yaml already reached
+	// them, so the compatibility surface honored less of the same policy than
+	// the native spelling of it (stokaro/ptah#3111).
 	for attrName, attr := range block.Body.Attributes {
 		switch attrName {
-		case "drop_table", "drop_schema":
+		case "drop_table", "drop_schema", "drop_column", "drop_index":
 		default:
 			if err := p.tolerateUnknownAttr("diff.skip", attrName, attr); err != nil {
 				return err
@@ -1872,6 +1882,10 @@ func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
 			cfg.Diff.Skip.DropTable = value
 		case "drop_schema":
 			cfg.Diff.Skip.DropSchema = value
+		case "drop_column":
+			cfg.Diff.Skip.DropColumn = value
+		case "drop_index":
+			cfg.Diff.Skip.DropIndex = value
 		}
 	}
 	if len(block.Body.Blocks) > 0 {

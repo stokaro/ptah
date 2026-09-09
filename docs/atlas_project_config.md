@@ -115,6 +115,8 @@ The supported attributes map to Ptah settings as follows:
 | `format.migrate.lint` | `ptah-compat migrate lint --format` default |
 | `format.migrate.status` | `ptah-compat migrate status --format` default |
 | `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
+| `diff.skip.drop_column` | Column-drop suppression for local schema diff/apply planning |
+| `diff.skip.drop_index` | Standalone index-drop suppression for local schema diff/apply planning |
 | `diff.skip.drop_schema` | Accepted and type-checked; Ptah's planner emits no schema drop for it to suppress |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 | `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
@@ -246,7 +248,12 @@ there: `format { migrate { apply = { k = "v" } } }` fails with
 
 `diff.skip.drop_table = true` removes table drops from supported local
 declarative diff/apply plans and also removes index or constraint drops owned by
-those dropped tables. `diff.skip.drop_schema` is accepted and type-checked but
+those dropped tables. `drop_column` and `drop_index` behave the same way for
+column and standalone index removals. Those three are the names Ptah's own diff policy models. The rest of the Atlas
+set is type-checked and reported as having no effect, because a policy Ptah
+cannot apply has to be visible rather than silently accepted.
+
+`diff.skip.drop_schema` is accepted and type-checked but
 changes no plan: Ptah's schema diff has no removed-schema list and no code path
 renders `DROP SCHEMA`, so the suppression has nothing to omit. Because the
 setting only ever removes a statement, honoring it vacuously can never make Ptah

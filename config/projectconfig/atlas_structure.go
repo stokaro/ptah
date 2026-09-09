@@ -100,7 +100,16 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 						},
 						"skip": {
 							body: atlasBodyStructure{
-								attributes:             []string{"drop_schema", "drop_table"},
+								// The names [atlasParser.parseDiffSkip] decodes.
+								// One list, because an env-scoped diff block and
+								// a top-level one must recognize the same set:
+								// they did not, and drop_column set inside an
+								// env was reported as having no effect while the
+								// identical top-level block acted on it
+								// (stokaro/ptah#3111).
+								attributes: []string{
+									"drop_schema", "drop_table", "drop_column", "drop_index",
+								},
 								allowUnknownAttributes: true,
 							},
 						},
@@ -556,15 +565,22 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	"env": {
 		"include": atlasLeafStringList,
 	},
+	// `drop_column` and `drop_index` are NO LONGER here, for the reason the
+	// `baseline` note below gives: [atlasParser.parseDiffSkip] decodes both, so
+	// a row here would state a rule nothing applies. `drop_table` and
+	// `drop_schema` were never in this table, for the same reason.
+	//
+	// What is left is the Atlas names Ptah's diff policy models no change kind
+	// for. They stay type-checked and reported, because a policy Ptah cannot
+	// apply has to be visible rather than silently accepted
+	// (stokaro/ptah#3111).
 	"diff.skip": {
 		"add_column":         atlasLeafBool,
 		"add_foreign_key":    atlasLeafBool,
 		"add_index":          atlasLeafBool,
 		"add_schema":         atlasLeafBool,
 		"add_table":          atlasLeafBool,
-		"drop_column":        atlasLeafBool,
 		"drop_foreign_key":   atlasLeafBool,
-		"drop_index":         atlasLeafBool,
 		"modify_column":      atlasLeafBool,
 		"modify_foreign_key": atlasLeafBool,
 		"modify_index":       atlasLeafBool,
