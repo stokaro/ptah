@@ -18,10 +18,10 @@ import (
 // install itself refuses a destination that appeared in between. These pin
 // that refusal for both kinds of entry that can appear there.
 //
-// The file row used to be Unix-only (stokaro/ptah#1547), because the install
-// was os.Rename, which refuses an existing destination on Unix and asks for
-// replacement on Windows. Both rows run everywhere now that the install is a
-// conditional move.
+// The file row runs everywhere because the install is a conditional move. An
+// install spelled os.Rename refuses an existing destination on Unix and asks
+// for replacement on Windows, which confines the row to Unix
+// (stokaro/ptah#1547).
 //
 // The directory row is here because a destination that appears mid-write can
 // be either kind, and the two are refused by different means: nothing in the

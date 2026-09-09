@@ -113,14 +113,14 @@ func routingFixture() schemamodel.Database {
 // of stokaro/ptah#929 item 5: whether an object is converted is not a question
 // the dialect name answers.
 //
-// Emission used to be gated by three name lists -- emitsStandaloneSequences,
-// reportsUnsupportedSchemaObjects and supportsStandaloneViewsAndTriggers -- and a
-// kind not on the list for a target was deleted here, before any renderer could
-// report it. Measured with `ptah schema render` over one fixture declaring a
-// sequence, a domain, a role, a table, a view and a function: fifteen objects
-// were absent at exit 0 with no comment and no warning, across clickhouse,
-// mysql, mariadb, sqlserver and sqlite. Each earlier fix added one more name to
-// one of those lists, which closed an instance and left the class.
+// Gating emission by name lists -- emitsStandaloneSequences,
+// reportsUnsupportedSchemaObjects, supportsStandaloneViewsAndTriggers -- deletes
+// a kind not on the list for a target here, before any renderer can report it.
+// Measured with `ptah schema render` over one fixture declaring a sequence, a
+// domain, a role, a table, a view and a function: fifteen objects absent at exit
+// 0 with no comment and no warning, across clickhouse, mysql, mariadb,
+// sqlserver and sqlite. Adding one more name to one of those lists closes an
+// instance and leaves the class.
 //
 // The assertion reports the missing (dialect, kind) pairs, so a regression names
 // what disappeared where.

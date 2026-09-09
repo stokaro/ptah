@@ -66,11 +66,11 @@ func TestPushReportsTheLayoutItWroteTo(t *testing.T) {
 // TestPushStillRefusesADigestForARegistry is the control on the resolution
 // swap.
 //
-// `Push` used to refuse a digest reference itself; it now delegates to
-// `copyDestination`, which makes the same refusal. A refusal that moved and
-// quietly stopped happening would let a publish address content that already
-// exists, so the check is asserted where the caller meets it rather than only
-// where it is implemented.
+// `Push` does not refuse a digest reference itself: it delegates to
+// `copyDestination`, which makes the refusal. A refusal that moves and quietly
+// stops happening lets a publish address content that already exists, so the
+// check is asserted where the caller meets it rather than only where it is
+// implemented.
 func TestPushStillRefusesADigestForARegistry(t *testing.T) {
 	c := qt.New(t)
 

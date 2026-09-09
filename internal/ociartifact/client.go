@@ -129,8 +129,8 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 	// The same resolution the copy verb uses, for the reason stated at
 	// copyDestination: an export to a directory is not a second operation, and
 	// an air-gapped producer must not be given a second code path to trust.
-	// copyDestination refuses a digest, which is the check this function used
-	// to make for itself.
+	// copyDestination refuses a digest, so this function does not make that
+	// check for itself.
 	endpoint, err := c.copyDestination(rawRef)
 	if err != nil {
 		return PushResult{}, err
@@ -156,8 +156,8 @@ func (c *Client) Pull(ctx context.Context, rawRef string, opts PullOptions) (Art
 	defer cancel()
 
 	// A layout is readable here for the same reason it is writable above.
-	// embedrelease.Fetch used to branch on the reference kind itself because
-	// this function could not, which is one recognition living in two places.
+	// Without it, embedrelease.Fetch has to branch on the reference kind
+	// itself, which is one recognition living in two places.
 	endpoint, err := c.copySource(rawRef)
 	if err != nil {
 		return Artifact{}, err

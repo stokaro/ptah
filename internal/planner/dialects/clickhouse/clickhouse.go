@@ -6,9 +6,9 @@
 // functions and row-level security policies are PostgreSQL-shaped and have no
 // direct equivalent here, so this planner emits no runnable SQL for them.
 //
-// Roles and grants used to be in that list and are not any more
-// (stokaro/ptah#1025). ClickHouse's access control is its own shape rather than
-// PostgreSQL's with different keywords -- a role carries no attributes at all,
+// Roles and grants are not in that list (stokaro/ptah#1025). ClickHouse's
+// access control is its own shape rather than PostgreSQL's with different
+// keywords -- a role carries no attributes at all,
 // and a grant's scope is a two-part pattern with no object-type keyword -- so
 // what a declaration may say is narrowed by internal/clickhouserbac before a
 // plan is built, and rbac.go plans what survives. See rbac.go for the ordering
@@ -91,8 +91,8 @@ func (p *Planner) capabilities() capability.Capabilities {
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	var result []ast.Node
 
-	// The identity check the resolver used to carry. Nothing is resolved: an
-	// addition carries its own declaration (stokaro/ptah#2315).
+	// The identity check alone. Nothing is resolved: an addition carries its
+	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(
 		platform.ClickHouse,
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),

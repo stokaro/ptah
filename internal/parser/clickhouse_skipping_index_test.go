@@ -270,13 +270,11 @@ func TestAnInlineSkippingIndexSurvivesARoundTrip(t *testing.T) {
 // not capture MySQL, which spells a table-level index the same way and means
 // something else.
 //
-// The expectation changed with stokaro/ptah#2713. It used to assert that MySQL
-// produced a CONSTRAINT, because that is what the parser did -- a plain KEY or
-// INDEX became an ast.UniqueConstraint, which is a uniqueness guarantee the
-// declaration never made. MySQL now produces an ordinary non-unique index, and
-// the discriminator this test exists for is unchanged and asserted below: a
-// ClickHouse skipping index carries a TYPE and a GRANULARITY, and this one
-// carries neither.
+// MySQL produces an ordinary non-unique index here (stokaro/ptah#2713). A
+// parser that turns a plain KEY or INDEX into an ast.UniqueConstraint asserts a
+// uniqueness guarantee the declaration never made. The discriminator this test
+// exists for is separate and asserted below: a ClickHouse skipping index
+// carries a TYPE and a GRANULARITY, and this one carries neither.
 func TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex(t *testing.T) {
 	c := qt.New(t)
 
