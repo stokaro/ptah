@@ -3249,52 +3249,52 @@
     {
       "command": "ptah schema serve",
       "source": "sql-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema serve --schema-file schema.sql --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/internal/schemaserve",
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah schema serve",
       "source": "yaml-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema serve --schema-file schema.yaml --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/internal/schemaserve",
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah schema serve",
       "source": "hcl-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema serve --schema-file schema.hcl --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/internal/schemaserve",
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah schema serve",
       "source": "dbml-file",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema serve --schema-file schema.dbml --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/internal/schemaserve",
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -3320,7 +3320,7 @@
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "The command registers no --schema-cmd; render the program output to a file first.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -3333,7 +3333,7 @@
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "The command reads no project configuration for an external source.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -3346,7 +3346,7 @@
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "The page re-reads its source on every request, so a registry artifact would be pulled on that schedule or shown stale. Use ptah schema drift, which pulls once and answers once.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -3372,20 +3372,20 @@
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "A migration directory is a script rather than a desired schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
     {
       "command": "ptah schema serve",
       "source": "composite-source",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema serve --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/internal/schemaserve",
       "evidence": [
         "internal/cli/internal/schemaserve/schemaserve_test.go"
       ],
-      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "limitations": "",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },

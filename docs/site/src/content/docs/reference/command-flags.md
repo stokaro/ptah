@@ -1583,6 +1583,7 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--refresh` | `duration` | `30s` | `PTAH_REFRESH` | — |
 | `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--title` | `string` | — | `PTAH_TITLE` | — |
 

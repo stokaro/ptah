@@ -458,6 +458,7 @@ database. Nothing about it becomes a dependency of a migration.
 | `--refresh` | `30s` | Self-reload interval as a Go duration. `0` serves a page that does not reload. |
 | `--title` | `Schema dashboard` | Heading, browser title and sidebar name. |
 | `--root-dir` | working directory | Go annotation tree to read the declared schema from. Repeatable. |
+| `--schema-file` | none | SQL, YAML, HCL or DBML file to read the declared schema from. Repeatable, and combines with `--root-dir`. An `oci://` reference is refused before the server listens. |
 | `--schemas` | connection default | Comma-separated schemas the database read is limited to. |
 | `--db-url` | none | Database to compare against. Required. |
 

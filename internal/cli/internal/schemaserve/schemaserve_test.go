@@ -292,3 +292,40 @@ func TestHandler_ReadsTheSchemaFileOnEveryRequest(t *testing.T) {
 	c.Assert(before, qt.Not(qt.Contains), "invoices")
 	c.Assert(after, qt.Contains, "invoices")
 }
+
+// writeAnnotationRoot writes a Go annotation root declaring one table and
+// returns its directory.
+func writeAnnotationRoot(c *qt.C, table string) string {
+	c.Helper()
+	dir := c.TempDir()
+	source := "package models\n\n" +
+		"//ptah:schema:table name=\"" + table + "\"\n" +
+		"type Model struct {\n" +
+		"\t//ptah:schema:field name=\"id\" type=\"INTEGER\" primary\n" +
+		"\tID int `db:\"id\"`\n" +
+		"}\n"
+	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
+	return dir
+}
+
+// TestHandler_MergesASchemaFileWithAnAnnotationRoot_HappyPath pins that the two
+// sources combine, which is what the flag help promises and what the source
+// register records as a composite source.
+//
+// Asserting only the merged page would pass on a handler that dropped either
+// source, so each table is asserted by name.
+func TestHandler_MergesASchemaFileWithAnAnnotationRoot_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	schemaFile := writeSchemaFile(c, c.TempDir(), "CREATE TABLE invoices (id INTEGER PRIMARY KEY);\n")
+	built, err := schemaserve.Handler(schemaserve.Options{
+		DatabaseURL: atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "app.db")),
+		RootDirs:    []string{writeAnnotationRoot(c, "products")},
+		SchemaFiles: []string{schemaFile},
+	})
+	c.Assert(err, qt.IsNil)
+
+	body := get(c, built)
+
+	c.Assert(body, qt.Contains, "invoices")
+	c.Assert(body, qt.Contains, "products")
+}

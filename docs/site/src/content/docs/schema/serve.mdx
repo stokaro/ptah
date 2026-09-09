@@ -15,7 +15,7 @@ overlaps:
   - "/schema/document/"
   - "/direct/compare-and-drift/"
 disposition: keep
-sourceMode: go-only
+sourceMode: source-neutral
 owns:
   - cli-ptah-schema-serve
 ---
@@ -28,12 +28,6 @@ import schemaServeMatches from '../../../assets/schema-serve-matches.png';
 
 export const schemaServeMatchesSample = `${import.meta.env.BASE_URL}samples/schema-serve-matches.html`;
 export const schemaServeDriftSample = `${import.meta.env.BASE_URL}samples/schema-serve-drift.html`;
-
-`ptah schema serve` currently reads **Go annotations only** for the desired
-schema. It does not accept a schema file or external loader. Use
-[generated HTML schema documentation](../document/) for a source-neutral
-browsable reference, or [`ptah schema drift`](../../direct/compare-and-drift/)
-for a source-neutral live-database check with a pipeline exit code.
 
 `ptah schema serve` serves a read-only web page carrying the desired
 schema and how a live database differs from it. The page re-reads both on every
@@ -71,48 +65,44 @@ writes to the database, and no migration depends on the server having run.
 Prerequisites:
 
 - A `ptah` binary on your machine ([Install Ptah](../../start/install/)).
-- A desired schema written as [Go annotations](../go-annotations/) under a
-  directory. `schema serve` reads that source and no other; see
+- A desired schema, as a `--schema-file` in SQL, YAML, HCL or DBML, or as
+  [Go annotations](../go-annotations/) under a `--root-dir`. An `oci://`
+  artifact is the one source this command refuses; see
   [Limitations](#limitations).
 - The URL of the database to compare against.
 
 ## Starting state
 
-The examples use two annotated models and a local SQLite database that already
-matches them. Save this as `models/schema.go`:
+The examples use two tables and a local SQLite database that already matches
+them. Save this as `schema.sql`:
 
-```go
-package models
+```sql
+-- schema.sql
+CREATE TABLE customers (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE
+);
 
-//ptah:schema:table name="customers"
-type Customer struct {
-	//ptah:schema:field name="id" type="INTEGER" primary="true"
-	ID int
-	//ptah:schema:field name="email" type="TEXT" not_null="true" unique="true"
-	Email string
-}
-
-//ptah:schema:table name="orders"
-type Order struct {
-	//ptah:schema:field name="id" type="INTEGER" primary="true"
-	ID int
-	//ptah:schema:field name="customer_id" type="INTEGER" not_null="true" foreign="customers(id)"
-	CustomerID int
-}
+CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id)
+);
 ```
 
 Create the database from it:
 
 ```bash
-ptah schema apply --root-dir ./models --db-url "sqlite://$PWD/shop.db" --auto-approve
+ptah schema apply --schema-file schema.sql --db-url "sqlite://$PWD/shop.db" --auto-approve
 ```
 
-Substitute your own model directory and database URL throughout.
+Substitute your own schema and database URL throughout. The same two tables
+written as [Go annotations](../go-annotations/) serve identically: pass
+`--root-dir ./models` in place of `--schema-file`, or pass both to merge them.
 
 ## Start the server
 
 ```bash
-ptah schema serve --root-dir ./models --db-url "sqlite://$PWD/shop.db"
+ptah schema serve --schema-file schema.sql --db-url "sqlite://$PWD/shop.db"
 ```
 
 Expected output includes:
@@ -155,13 +145,16 @@ database address with any credentials removed, and each table.
 
 ## Watch drift appear
 
-The models and the database are read again for each request, so a change to
-either shows up on the next page load with no restart. Add this field to the
-`Order` struct in `models/schema.go`:
+The desired schema and the database are read again for each request, so a change
+to either shows up on the next page load with no restart. Replace the `orders`
+table in `schema.sql` with one carrying an extra column:
 
-```go
-	//ptah:schema:field name="placed_at" type="TEXT"
-	PlacedAt *string
+```sql
+CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    placed_at TEXT
+);
 ```
 
 Reload the page. The counters read one differing category, of which one is a
@@ -182,6 +175,8 @@ serves a page that does not reload.
   it.
 - `--root-dir` is repeatable, so a schema split across directories is served
   from one page.
+- `--schema-file` is repeatable too, and combines with `--root-dir`: a schema
+  split across files, or across files and annotations, is served from one page.
 - `--schemas` limits the database read to the named schemas, comma-separated.
 
 :::caution
@@ -191,7 +186,8 @@ means.
 :::
 
 Each of these also reads an environment variable, printed on its `--help` line:
-`PTAH_TITLE`, `PTAH_ADDR`, `PTAH_REFRESH`, `PTAH_ROOT_DIR`, `PTAH_SCHEMAS`.
+`PTAH_TITLE`, `PTAH_ADDR`, `PTAH_REFRESH`, `PTAH_ROOT_DIR`, `PTAH_SCHEMA_FILE`,
+`PTAH_SCHEMAS`.
 
 ## Read the page from a script
 
@@ -242,22 +238,26 @@ Three inputs stop the command before it listens, each with exit code `2`:
 | --- | --- |
 | `error: database URL is required` | No `--db-url`, and no `url:` in a project config in the working directory. |
 | `error: listen on 127.0.0.1:7070: listen tcp 127.0.0.1:7070: bind: address already in use` | Another process holds the address. Pass a different `--addr`. |
-| `error: unknown flag: --schema-file` | A flag `schema serve` does not register. Run `ptah schema serve --help` for the set it does. |
+| `error: oci:// schema source cannot be served: ...` | An `oci://` reference passed to `--schema-file`. The rest of the message names [`ptah schema drift`](../../direct/compare-and-drift/), which reads that source and answers once. |
 
 ## Limitations
 
-- **Go annotations are the only desired-schema source.** `--schema-file` is not
-  registered, so a YAML, HCL, SQL, DBML or `oci://` schema cannot be served. The
-  reason is in the long help: such a file may name an `oci://` artifact, and a
-  process that re-reads on a timer would put a registry request on a schedule.
-  [`ptah schema drift`](../../direct/compare-and-drift/) reads those sources and
-  answers once.
-- **Without `--root-dir`, the working directory is scanned.** Started where no
-  annotated Go file exists, the desired schema is empty and the whole database
+- **An `oci://` artifact cannot be served.** Reading the source again on every
+  request is this command's whole contract, and a registry artifact fits neither
+  reading of it: pulling on every request puts a registry on a schedule nobody
+  asked for, and pulling once shows a copy that has stopped matching the
+  reference. The refusal happens before the server listens.
+  [`ptah schema drift`](../../direct/compare-and-drift/) takes the reference and
+  answers once. An external loader is absent for a separate reason: the command
+  registers no `--schema-cmd`, so render that program's output to a file first.
+- **With neither `--schema-file` nor `--root-dir`, the working directory is
+  scanned for Go annotations.** Started where no annotated Go file exists, the
+  desired schema is empty and the whole database
   reads as drift to remove: against the database built above, the panel reports
-  `2 differing categories` with `2 destructive`, rows `constraints_removed` (4
-  objects) and `tables_removed` (2 objects), and a sidebar reading `0 tables`.
-  Nothing on the page says the desired side was empty.
+  `2 differing categories` with `2 destructive`, and rows `constraints_removed`
+  (4 objects) and `tables_removed` (2 objects). No schema section is drawn, and
+  the sidebar carries the title and the database address alone. Nothing on the
+  page says the desired side was empty.
 - **The drift panel counts only the categories the safety classification
   names.** A view declared in the models and missing from the database renders
   `0 differing categories` here, while `ptah schema compare` reports

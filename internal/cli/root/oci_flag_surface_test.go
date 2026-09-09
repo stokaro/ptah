@@ -192,19 +192,22 @@ func ociSchemaSourceVerbs() []ociSourceVerb {
 // --schema-file whose value is NOT dispatched to the OCI loader, so the
 // coverage check above has somewhere to put them.
 //
-// It is empty today, and that is a measured result rather than a stub: every
-// command in the built tree registering --schema-file resolves oci:// and is
-// driven by a row above. The function stays because the alternative to an empty
-// accounted-for list is a coverage check with no way to record a deliberate
-// exception, which is how such checks come to be weakened when the first
-// exception appears. An entry added here needs its reason written beside it.
+// An entry here needs its reason written beside it, and carries one:
+//
+//   - `schema serve` refuses an oci:// value before it listens, so the value
+//     never reaches the loader. Reading the source again on every request is
+//     that command's contract, and a registry artifact satisfies neither half
+//     of it: pulling on every request puts a registry on a schedule nobody
+//     asked for, and pulling once serves a copy that stopped matching the
+//     reference. It registers no --plain-http for the same reason -- there is
+//     no registry request to make unencrypted (stokaro/ptah#3103).
 //
 // `schema test --root-dir` is the near miss worth naming: it also reaches
 // schemaload, but through --root-dir rather than --schema-file, and an oci://
 // value there is stat'ed as a path and left to the runner rather than pulled.
 // It is outside this walk because it registers no --schema-file.
 func schemaFileVerbsThatDoNotResolveOCI() []string {
-	return nil
+	return []string{"schema serve"}
 }
 
 // TestOCISchemaSourceVerbs_RegisterPlainHTTP is the registration gate.

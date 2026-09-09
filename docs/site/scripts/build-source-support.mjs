@@ -286,11 +286,14 @@ const commands = [
       },
     }),
   desiredCommand('ptah schema serve', ['schema', 'serve'], 'internal/cli/internal/schemaserve', ['internal/cli/internal/schemaserve/schemaserve_test.go'], {
-    verified: ['go-annotations'],
+    verified: [...localFiles, 'go-annotations', 'composite-source'],
     conditional: ['live-database'],
-    design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'migration-directory', 'composite-source'],
+    design: ['external-program', 'configured-external', 'oci-artifact', 'migration-directory'],
     limitations: {
-      ...Object.fromEntries(allSourceIds.map((id) => [id, id === 'go-annotations' || id === 'live-database' ? '' : 'A reloadable schema-file source has no defined refresh contract.'])),
+      'external-program': 'The command registers no --schema-cmd; render the program output to a file first.',
+      'configured-external': 'The command reads no project configuration for an external source.',
+      'oci-artifact': 'The page re-reads its source on every request, so a registry artifact would be pulled on that schedule or shown stale. Use ptah schema drift, which pulls once and answers once.',
+      'migration-directory': 'A migration directory is a script rather than a desired schema.',
       'live-database': 'The live database is the read-only comparison target.',
     },
     invocations: { 'live-database': '--root-dir ./models --db-url sqlite://current.db' },
