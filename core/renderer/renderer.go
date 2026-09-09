@@ -1640,9 +1640,9 @@ func englishAlternatives(names []string) string {
 // validateDeclaredConstraintIncludes runs the same refusal over a whole
 // declaration, before any statement is emitted.
 //
-// It is not redundant with the AST check in prepareConstraintNode, and the two
-// things it alone catches were established by deleting this call and seeing
-// which tests reddened rather than by reasoning about the call graph:
+// It is not redundant with the AST check in prepareConstraintNode, and what it
+// alone catches was established by deleting this call and seeing which tests
+// reddened rather than by reasoning about the call graph:
 //
 //   - a payload on a kind that cannot carry one. FromConstraint builds a CHECK,
 //     FOREIGN KEY or EXCLUDE node without copying IncludeColumns, so the payload

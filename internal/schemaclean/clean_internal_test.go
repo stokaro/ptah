@@ -198,10 +198,10 @@ func changeNames(changes []Change) []string {
 	return names
 }
 
-// TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax pins the two
-// things the probe cannot get wrong without failing at runtime: the placeholder
-// syntax, which differs per driver, and the scope argument, which must be the
-// one the writer cleans.
+// TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax pins what the
+// probe cannot get wrong without failing at runtime: the placeholder syntax,
+// which differs per driver, and the scope argument, which must be the one the
+// writer cleans.
 //
 // The names are bound as arguments rather than pasted into the SQL, so a
 // dialect whose placeholders were spelled for a different driver shows up here

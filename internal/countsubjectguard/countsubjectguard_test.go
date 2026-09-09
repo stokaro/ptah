@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -129,6 +130,31 @@ func TestGuardSeesACountInTheSubjectPosition(t *testing.T) {
 			src:  "package p\n\nconst x = \"Two things follow:\"\n",
 			want: 0,
 		},
+		{
+			// The construction every line-at-a-time reader in this tree missed.
+			// Prose wraps at 80 columns, so the count lands at the end of one
+			// comment line and its noun at the start of the next, with the
+			// comment's own marker between them.
+			name: "wrapped onto the next comment line",
+			src: "package p\n\n// The refusal names two\n" +
+				"// things that layout does not have.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// The same wrap in a block comment, where the marker on the
+			// continuation line is a bare asterisk rather than a slash pair.
+			name: "wrapped inside a block comment",
+			src:  "package p\n\n/* The refusal names two\n * things it cannot have.\n */\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// A blank comment line ends the paragraph, and a count that ends
+			// one paragraph is not the subject of the next one's first noun.
+			name: "across a paragraph break",
+			src: "package p\n\n// The refusal names two\n//\n" +
+				"// things that layout does not have are not counted.\nconst x = 1\n",
+			want: 0,
+		},
 	}
 
 	for _, test := range tests {
@@ -138,6 +164,52 @@ func TestGuardSeesACountInTheSubjectPosition(t *testing.T) {
 			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
 
 			c.Assert(countsInSubjectPosition(c, dir, "p.go"), qt.HasLen, test.want)
+		})
+	}
+}
+
+// TestGuardNamesTheLineTheCountIsOn pins the offset arithmetic a wrapped phrase
+// needs.
+//
+// The table above counts findings, and a finding that names the wrong line is
+// counted just the same. It sends the reader to a comment that reads fine,
+// which is how a line number drifts and stays drifted -- so the blanking keeps
+// every newline where it was, and these rows are what says so.
+func TestGuardNamesTheLineTheCountIsOn(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "on one line",
+			src:  "package p\n\n// A note.\n//\n// Two things follow:\nconst x = 1\n",
+			want: `p.go:5: "Two things"`,
+		},
+		{
+			name: "wrapped onto the next comment line",
+			src: "package p\n\n// A note.\n//\n// The refusal names two\n" +
+				"// things that layout does not have.\nconst x = 1\n",
+			want: `p.go:5: "two things"`,
+		},
+		{
+			// A quotation spanning lines inside a block comment. Blanking it
+			// with spaces would swallow its newline and name line 3.
+			name: "after a quotation that spans lines",
+			src: "package p\n\n/* The heading is \"the rule\n" +
+				" * about counting\" and the refusal names two\n" +
+				" * things that layout does not have.\n */\nconst x = 1\n",
+			want: `p.go:4: "two things"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
+
+			c.Assert(countsInSubjectPosition(c, dir, "p.go"), qt.DeepEquals, []string{test.want})
 		})
 	}
 }
@@ -152,23 +224,87 @@ func countsInSubjectPosition(c *qt.C, root, rel string) []string {
 
 	var found []string
 	for _, group := range file.Comments {
-		// A quotation may wrap onto the next comment line, and a citation of a
-		// documentation heading usually does. Blanking per line would leave
-		// such a quote open and read its contents as prose, so the delimiter
-		// parity carries across the group and resets with it -- the same
-		// arithmetic docs/site/scripts/check-style.mjs carries between Markdown
-		// lines, and for the same reason.
-		open := ""
-		for _, comment := range group.List {
-			blanked, next := outsideQuotes(comment.Text, open)
-			open = next
-			for _, match := range countAsSubject.FindAllString(blanked, -1) {
+		for _, para := range paragraphsOf(group, fset.Position(group.Pos()).Line) {
+			for _, at := range countAsSubject.FindAllStringIndex(para.text, -1) {
 				found = append(found, fmt.Sprintf("%s:%d: %q",
-					rel, fset.Position(comment.Pos()).Line, match))
+					rel, para.line+strings.Count(para.text[:at[0]], "\n"),
+					strings.Join(strings.Fields(para.text[at[0]:at[1]]), " ")))
 			}
 		}
 	}
 	return found
+}
+
+// paragraph is one run of comment lines with no blank line in it, and the line
+// that run starts on.
+type paragraph struct {
+	text string
+	line int
+}
+
+// paragraphsOf splits a comment group at its blank lines, so a phrase is
+// matched within a paragraph and never across one. A count that ends a
+// paragraph is not the subject of the next paragraph's first noun, and a group
+// joined whole would read it as one.
+func paragraphsOf(group *ast.CommentGroup, first int) []paragraph {
+	var (
+		out     []paragraph
+		current []string
+		start   int
+	)
+	flush := func() {
+		if len(current) > 0 {
+			out = append(out, paragraph{text: strings.Join(current, "\n"), line: start})
+			current = nil
+		}
+	}
+	for offset, line := range strings.Split(commentProse(group), "\n") {
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		if len(current) == 0 {
+			start = first + offset
+		}
+		current = append(current, line)
+	}
+	flush()
+	return out
+}
+
+// commentMarker matches the punctuation a comment carries at the start of one
+// of its lines: "//", the "/*" that opens a block comment, and the "*" its
+// continuation lines are conventionally written with.
+var commentMarker = regexp.MustCompile(`(?m)^[ \t]*(?:/[/*]+|\*+)`)
+
+// commentProse renders one comment group as the text a phrase is matched
+// across, rather than matching a line at a time.
+//
+// Prose wraps, and a wrapped count puts the comment's own marker between the
+// number and its noun -- master carried "listing two\n// things", which every
+// line-at-a-time reader in this tree reported as clean. So the marker is
+// blanked rather than trimmed and the lines are joined: every offset stays
+// where it was, which is what lets the finding still name the line the phrase
+// ends on.
+//
+// A quotation may wrap the same way, and a citation of a documentation heading
+// usually does. Blanking per line would leave such a quote open and read its
+// contents as prose, so the delimiter parity carries across the group and
+// resets with it -- the same arithmetic docs/site/scripts/check-style.mjs
+// carries between Markdown lines, and for the same reason.
+func commentProse(group *ast.CommentGroup) string {
+	var joined strings.Builder
+	open := ""
+	for index, comment := range group.List {
+		blanked, next := outsideQuotes(comment.Text, open)
+		open = next
+		joined.WriteString(commentMarker.ReplaceAllStringFunc(blanked,
+			func(marker string) string { return strings.Repeat(" ", len(marker)) }))
+		if index < len(group.List)-1 {
+			joined.WriteString("\n")
+		}
+	}
+	return joined.String()
 }
 
 // outsideQuotes blanks the backticked and quoted spans in one comment line,
@@ -180,7 +316,7 @@ func outsideQuotes(line, open string) (blanked, stillOpen string) {
 		char := line[index : index+1]
 		switch {
 		case open != "":
-			out = append(out, ' ')
+			out = append(out, blank(line[index]))
 			if char == open {
 				open = ""
 			}
@@ -192,6 +328,16 @@ func outsideQuotes(line, open string) (blanked, stillOpen string) {
 		}
 	}
 	return string(out), open
+}
+
+// blank is the character a blanked span contributes: a space, except for a
+// newline, which stays. A block comment's quotation can span lines, and a
+// newline replaced by a space moves every finding after it up a line.
+func blank(char byte) byte {
+	if char == '\n' {
+		return '\n'
+	}
+	return ' '
 }
 
 // goFiles lists the repository's Go files, tests included.

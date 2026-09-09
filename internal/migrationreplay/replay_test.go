@@ -23,9 +23,9 @@ import (
 // container runtime and starts nothing. That is not a convenience -- measured on
 // the pinned community binary v1.3.0 on 2026-08-13, `docker://sqlite/latest/dev`
 // answers `unsupported docker image "sqlite"` and exits 1, so provisioning it
-// would be exiting 0 where that binary exits 1. The message therefore proves two
-// things at once: the value reached the provisioning layer, and the layer
-// refused the one form it must.
+// would be exiting 0 where that binary exits 1. The message therefore proves the
+// routing and the refusal at once: the value reached the provisioning layer,
+// and the layer refused the one form it must.
 //
 // The old fixture named `docker://postgres/16/dev`, which this build now starts.
 // Left as it was, this unit test would pull an image and run a container.

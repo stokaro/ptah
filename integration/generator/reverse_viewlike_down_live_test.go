@@ -27,9 +27,9 @@ import (
 // change except a trailing append.
 //
 // Each case seeds the pre-up state through Ptah itself, applies the generated
-// up migration, applies the generated down migration, and then asserts two
-// things: that the down applied at all, and that the catalog it left behind is
-// the pre-up catalog. The table the objects hang off exists before and after
+// up migration, applies the generated down migration, and then asserts that the
+// down applied at all and that the catalog it left behind is the pre-up
+// catalog. The table the objects hang off exists before and after
 // every case, so a DROP TABLE ... CASCADE can never be what removes them.
 func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 	cases := []struct {
