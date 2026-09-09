@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-347 fields are reachable from the desired schema, and each one carries
+349 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 294 | reaches rendered SQL on at least one target |
+| `ddl` | 296 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 4 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -307,12 +307,14 @@ None.
 | `schemamodel.PrimaryKeyPart.Prefix` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Comment` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Dialects` | `ddl` | — |
+| `schemamodel.RLSEnabledTable.Forced` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.StructName` | `ddl` | — |
 | `schemamodel.RLSEnabledTable.Table` | `ddl` | — |
 | `schemamodel.RLSPolicy.Comment` | `ddl` | — |
 | `schemamodel.RLSPolicy.Dialects` | `ddl` | — |
 | `schemamodel.RLSPolicy.Name` | `ddl` | — |
 | `schemamodel.RLSPolicy.PolicyFor` | `ddl` | — |
+| `schemamodel.RLSPolicy.Restrictive` | `ddl` | — |
 | `schemamodel.RLSPolicy.StructName` | `ddl` | — |
 | `schemamodel.RLSPolicy.Table` | `ddl` | — |
 | `schemamodel.RLSPolicy.ToRoles` | `ddl` | — |

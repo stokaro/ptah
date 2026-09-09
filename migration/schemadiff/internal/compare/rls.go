@@ -482,6 +482,15 @@ func RLSPolicyDefinitionsWithExpressions(
 		policyDiff.Changes["to_roles"] = fmt.Sprintf("%s -> %s", dbPolicy.ToRoles, genPolicy.ToRoles)
 	}
 
+	// Compare the AS clause. Permissive and restrictive policies combine
+	// differently -- permissive ones are OR-ed, restrictive ones AND-ed over
+	// the result -- so a comparison that skipped this reports two policies
+	// equal while one grants what the other withholds (stokaro/ptah#3121).
+	if genPolicy.Restrictive != dbPolicy.Restrictive {
+		policyDiff.Changes["as"] = fmt.Sprintf("%s -> %s",
+			rlspolicy.AsClause(dbPolicy.Restrictive), rlspolicy.AsClause(genPolicy.Restrictive))
+	}
+
 	// Compare the two clauses. A resolved entry answers outright, because the
 	// declaration was put through the same server that printed the catalog's
 	// form; without one the textual normalizer decides, as it did before.

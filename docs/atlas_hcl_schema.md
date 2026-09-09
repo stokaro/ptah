@@ -68,8 +68,10 @@ current schema IR:
   it without the clause
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
-- `row_security` blocks inside `table` with `enabled = true` and an optional
-  `comment`
+- `row_security` blocks inside `table` with `enabled = true`, an optional
+  `enforced`, and an optional `comment`. `enforced = true` renders a second
+  statement, `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, which binds the table's
+  owner to its policies; enabling alone leaves the owner exempt
 - PostgreSQL `extension` blocks with `schema`, `if_not_exists`, `version`, and
   `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
@@ -89,8 +91,11 @@ current schema IR:
 - `materialized` blocks with `schema`, `as`, and `comment`
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
-- PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
-  `comment`
+- PostgreSQL `policy` blocks with `on`, `as`, `for`, `to`, `using`, `check`,
+  and `comment`. `as` takes `PERMISSIVE` (the default, left unwritten) or
+  `RESTRICTIVE`; any other value is refused, because permissive is the weaker
+  of the two and folding a misspelling into it would grant access the policy
+  withholds
 - PostgreSQL `sequence` blocks with `type`, `start`, `increment`, `min_value`,
   `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`.
   `owned_by` takes the column reference `table.rooms.column.id` or the string
@@ -625,8 +630,9 @@ table "users" {
   }
 
   row_security {
-    enabled = true
-    comment = "tenant isolation"
+    enabled  = true
+    enforced = true
+    comment  = "tenant isolation"
   }
 }
 
@@ -669,6 +675,7 @@ trigger "users_set_updated_at" {
 
 policy "users_tenant_policy" {
   on    = table.users
+  as    = RESTRICTIVE
   for   = SELECT
   to    = [role.app_user, PUBLIC]
   using = "get_current_tenant() IS NOT NULL"
@@ -689,9 +696,9 @@ permission {
 ```
 
 Ptah intentionally supports the subset it can round-trip through its IR. For
-example, `row_security.enforced`, materialized-view column blocks, trigger
-`execute` blocks, policy `as`, and permission targets other than `table`,
-`schema`, or `sequence` are rejected instead of being accepted and dropped.
+example, materialized-view column blocks, trigger `execute` blocks, and
+permission targets other than `table`, `schema`, or `sequence` are rejected
+instead of being accepted and dropped.
 Function arguments are accepted as Atlas `arg` blocks. Ptah also accepts a raw
 `params` string and rejects a function that mixes the two representations.
 
@@ -705,13 +712,11 @@ OSS.
 The HCL schema frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
-- forced row-level security (`row_security.enforced`)
 - grantor metadata
 - function options outside Ptah's current IR, such as `leakproof`, `parallel`,
   `return_set`, `return_table`, `config_params`, and argument defaults
 - view/materialized-view column metadata
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
-- policy `as`
 - permission targets other than schema, table, and sequence
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types

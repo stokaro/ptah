@@ -1639,6 +1639,10 @@ func FromRLSPolicy(policy schemamodel.RLSPolicy) *ast.CreatePolicyNode {
 		SetWithCheckExpression(policy.WithCheckExpression).
 		SetComment(policy.Comment)
 
+	if policy.Restrictive {
+		policyNode.SetRestrictive()
+	}
+
 	return policyNode
 }
 
@@ -1657,6 +1661,10 @@ func FromRLSPolicy(policy schemamodel.RLSPolicy) *ast.CreatePolicyNode {
 func FromRLSEnabledTable(rlsEnabled schemamodel.RLSEnabledTable) *ast.AlterTableEnableRLSNode {
 	rlsNode := ast.NewAlterTableEnableRLS(rlsEnabled.Table).
 		SetComment(rlsEnabled.Comment)
+
+	if rlsEnabled.Forced {
+		rlsNode.SetForce()
+	}
 
 	return rlsNode
 }

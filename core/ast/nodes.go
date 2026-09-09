@@ -2742,6 +2742,14 @@ type CreatePolicyNode struct {
 	UsingExpression string
 	// WithCheckExpression contains the WITH CHECK clause expression (for INSERT/UPDATE policies)
 	WithCheckExpression string
+	// Restrictive selects AS RESTRICTIVE rather than the AS PERMISSIVE default.
+	//
+	// The two combine differently and cannot substitute for each other: a row
+	// passes when at least one permissive policy admits it AND every
+	// restrictive policy admits it. So a restrictive policy declared as
+	// permissive stops narrowing access and starts widening it, which is why
+	// this is a field rather than a rendering detail (stokaro/ptah#3121).
+	Restrictive bool
 	// Replace indicates whether to drop the policy first if it exists (for conflict resolution)
 	Replace bool
 	// Comment is an optional comment for the policy
@@ -2803,6 +2811,16 @@ func (n *CreatePolicyNode) SetWithCheckExpression(expression string) *CreatePoli
 	return n
 }
 
+// SetRestrictive marks the policy AS RESTRICTIVE.
+//
+// Example:
+//
+//	createPolicy.SetRestrictive()
+func (n *CreatePolicyNode) SetRestrictive() *CreatePolicyNode {
+	n.Restrictive = true
+	return n
+}
+
 // SetReplace marks the policy to be replaced (drop first if exists, then create).
 //
 // This is useful for handling policy conflicts during migrations.
@@ -2837,6 +2855,12 @@ func (n *CreatePolicyNode) Accept(visitor Visitor) error {
 type AlterTableEnableRLSNode struct {
 	// Table is the name of the table to enable RLS on
 	Table string
+	// Force additionally applies the table's policies to its owner, which
+	// ENABLE alone does not: a table owner reads and writes straight past
+	// every policy until FORCE ROW LEVEL SECURITY is set. It renders as a
+	// second statement rather than a variant of the first, because the two
+	// flags are independent in pg_class (stokaro/ptah#3121).
+	Force bool
 	// Comment is an optional comment for the operation
 	Comment string
 }
@@ -2851,6 +2875,17 @@ func NewAlterTableEnableRLS(table string) *AlterTableEnableRLSNode {
 	return &AlterTableEnableRLSNode{
 		Table: table,
 	}
+}
+
+// SetForce marks the table FORCE ROW LEVEL SECURITY, so its policies apply to
+// the table's owner too.
+//
+// Example:
+//
+//	enableRLS.SetForce()
+func (n *AlterTableEnableRLSNode) SetForce() *AlterTableEnableRLSNode {
+	n.Force = true
+	return n
 }
 
 // SetComment sets a comment for the ALTER TABLE ENABLE RLS operation.

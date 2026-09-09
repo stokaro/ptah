@@ -1103,6 +1103,14 @@
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
+            "force": {
+              "description": "Apply the table's policies to its owner too.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "table": {
               "description": "Target table.",
               "type": "string"
@@ -1127,6 +1135,10 @@
         "attributes": {
           "additionalProperties": false,
           "properties": {
+            "as": {
+              "description": "PERMISSIVE (the default) or RESTRICTIVE.",
+              "type": "string"
+            },
             "comment": {
               "description": "Policy comment.",
               "type": "string"

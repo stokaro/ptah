@@ -348,6 +348,10 @@ func (p *parser) parsePolicy(block *hclsyntax.Block) error {
 	if table == "" {
 		return p.blockError(block, "policy %q requires on", name)
 	}
+	restrictive, err := p.policyRestrictive(block, name)
+	if err != nil {
+		return err
+	}
 	p.db.RLSPolicies = append(p.db.RLSPolicies, schemamodel.RLSPolicy{
 		Name:                name,
 		Table:               table,
@@ -356,8 +360,32 @@ func (p *parser) parsePolicy(block *hclsyntax.Block) error {
 		UsingExpression:     p.optionalString(block.Body.Attributes["using"]),
 		WithCheckExpression: p.optionalString(block.Body.Attributes["check"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
+		Restrictive:         restrictive,
 	})
 	return nil
+}
+
+// policyRestrictive reads a policy's `as`, which selects how the policy
+// combines with the table's others rather than how it is spelled.
+//
+// An unrecognized value is refused rather than folded into the permissive
+// default: the default is the weaker of the two, so guessing it turns a
+// misspelled RESTRICTIVE into a policy that grants what its author wrote it to
+// withhold.
+func (p *parser) policyRestrictive(block *hclsyntax.Block, name string) (bool, error) {
+	attr := block.Body.Attributes["as"]
+	if attr == nil {
+		return false, nil
+	}
+	switch strings.ToUpper(strings.TrimSpace(p.optionalString(attr))) {
+	case "PERMISSIVE":
+		return false, nil
+	case "RESTRICTIVE":
+		return true, nil
+	default:
+		return false, p.blockError(block,
+			"policy %q as must be PERMISSIVE or RESTRICTIVE", name)
+	}
 }
 
 func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.RLSEnabledTable, error) {
@@ -374,10 +402,15 @@ func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Blo
 	if !enabled {
 		return schemamodel.RLSEnabledTable{}, p.blockError(block, "row_security requires enabled = true")
 	}
+	forced, err := p.boolAttr(block, "enforced", "row_security", false)
+	if err != nil {
+		return schemamodel.RLSEnabledTable{}, err
+	}
 	return schemamodel.RLSEnabledTable{
 		StructName: table.StructName,
 		Table:      table.QualifiedName(),
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+		Forced:     forced,
 	}, nil
 }
 
@@ -701,6 +734,7 @@ func (p *parser) rejectUnsupportedPolicyAttrs(block *hclsyntax.Block) error {
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"on":      true,
+		"as":      true,
 		"for":     true,
 		"to":      true,
 		"using":   true,
@@ -714,8 +748,9 @@ func (p *parser) rejectUnsupportedRowSecurityAttrs(block *hclsyntax.Block) error
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"enabled": true,
-		"comment": true,
+		"enabled":  true,
+		"enforced": true,
+		"comment":  true,
 	}, "row_security")
 }
 

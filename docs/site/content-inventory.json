@@ -1093,8 +1093,8 @@
         "/databases/support-matrix/",
         "/direct/inspect/"
       ],
-      "visibleWords": 5866,
-      "sourceBytes": 42077
+      "visibleWords": 5976,
+      "sourceBytes": 42759
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4020,8 +4020,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 4298,
-      "sourceBytes": 33935
+      "visibleWords": 4445,
+      "sourceBytes": 34815
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",

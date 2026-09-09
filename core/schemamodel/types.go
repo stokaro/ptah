@@ -1517,6 +1517,16 @@ type RLSPolicy struct {
 	WithCheckExpression string // WITH CHECK clause expression (optional)
 	Comment             string // Optional comment for documentation
 
+	// Restrictive declares the policy AS RESTRICTIVE rather than the
+	// AS PERMISSIVE default.
+	//
+	// The distinction is not a spelling: permissive policies are OR-ed with
+	// each other and restrictive ones are AND-ed over the result, so a row
+	// passes when some permissive policy admits it and every restrictive
+	// policy admits it. A restrictive policy declared permissive therefore
+	// grants the access it was written to withhold (stokaro/ptah#3121).
+	Restrictive bool `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
@@ -1541,6 +1551,13 @@ type RLSEnabledTable struct {
 	StructName string // Name of the Go struct this RLS enablement is associated with
 	Table      string // Table name to enable RLS on (e.g., "users")
 	Comment    string // Optional comment for documentation
+
+	// Forced additionally subjects the table's owner to its policies, which
+	// enabling alone does not do: PostgreSQL exempts the owner until the
+	// table is also FORCE ROW LEVEL SECURITY. The two are separate flags on
+	// the relation, so this is separate state rather than a stronger spelling
+	// of enablement (stokaro/ptah#3121).
+	Forced bool `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
