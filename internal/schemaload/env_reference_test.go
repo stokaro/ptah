@@ -10,10 +10,10 @@ import (
 	"ptah.run/internal/schemaload"
 )
 
-// An env:// --schema-file used to be handed to filepath.Abs, so it failed on
-// its empty extension: the message named neither env:// nor the attribute, and
-// a valid attribute and a misspelled one produced byte-identical output. These
-// tests hold each half of that split.
+// An env:// --schema-file handed to filepath.Abs fails on its empty extension:
+// the message names neither env:// nor the attribute, and a valid attribute and
+// a misspelled one produce byte-identical output. These tests hold each half of
+// that split.
 
 func TestLoad_EnvReferenceWithSupportedAttributeNamesEnvScheme(t *testing.T) {
 	c := qt.New(t)

@@ -185,10 +185,10 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (messag
 // reportRetiredFields answers for fields the source stopped describing.
 //
 // Retiring a number is a change to the contract a consumer already holds, and
-// it is the only compatibility-relevant event in this exporter that used to
-// pass without a word: a renamed column exited 0 with one number retired and
-// another allocated, where a removed type, a changed type and a reused name
-// were each already refused by default (stokaro/ptah#905).
+// it is the compatibility-relevant event in this exporter most likely to pass
+// without a word: a renamed column exits 0 with one number retired and another
+// allocated, where a removed type, a changed type and a reused name are each
+// refused by default (stokaro/ptah#905).
 func (b *builder) reportRetiredFields(owner string, retired []string) error {
 	if len(retired) == 0 {
 		return nil

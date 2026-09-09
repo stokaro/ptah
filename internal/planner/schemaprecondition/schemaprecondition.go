@@ -4,10 +4,10 @@
 // It exists so that the two planners which emit such a node -- the PostgreSQL
 // family's and SQL Server's -- construct it the same way. Both derive the
 // schema NAME from the qualified names of the objects they are creating, and
-// both used to stop there, so everything else the declaration said about the
-// schema had nowhere to go: a plan created a schema and the comment the author
-// wrote for it was dropped, on every run, with the next comparison seeing a
-// schema whose comment the declaration has and the database does not
+// stopping there leaves everything else the declaration says about the schema
+// with nowhere to go: the plan creates a schema and drops the comment the
+// author wrote for it, on every run, with the next comparison seeing a schema
+// whose comment the declaration has and the database does not
 // (stokaro/ptah#2618).
 package schemaprecondition
 

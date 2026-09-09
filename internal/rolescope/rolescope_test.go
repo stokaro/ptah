@@ -226,12 +226,12 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 // TestReportUndescribedOffersTheOptOutOnlyWhereItWorks pins the half of the
 // note that names a remedy.
 //
-// The sentence used to be unconditional, which was true while PostgreSQL was
-// the only reader filling RolesOutOfScope. ClickHouse fills it now
-// (stokaro/ptah#1025) and consults no such variable, so an operator inspecting
-// ClickHouse was told to set a PostgreSQL variable that does nothing. A remedy
-// that does not work costs more than no remedy: the reader spends the attempt
-// before learning it was never offered.
+// An unconditional sentence holds only while PostgreSQL is the one reader
+// filling RolesOutOfScope. ClickHouse fills it too (stokaro/ptah#1025) and
+// consults no such variable, so an operator inspecting ClickHouse would be told
+// to set a PostgreSQL variable that does nothing. A remedy that does not work
+// costs more than no remedy: the reader spends the attempt before learning it
+// was never offered.
 func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 	tests := []struct {
 		name       string

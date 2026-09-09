@@ -58,11 +58,10 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 //
 // SQLite folds ASCII, so a declaration writing the table as `Notes` and a
 // server reporting `notes` name one object, and only a folding rule joins them.
-// The planner used to reconcile the two by looking the trigger up; the
-// comparison does it now, and the entry carries the trigger it resolved to
-// (stokaro/ptah#2315). Driving the comparison rather than hand-building the diff
-// is the point: a hand-built one bypasses the resolution the planner no longer
-// performs.
+// The comparison reconciles the two and the entry carries the trigger it
+// resolved to, rather than the planner looking it up (stokaro/ptah#2315).
+// Driving the comparison rather than hand-building the diff is the point: a
+// hand-built one bypasses the resolution the planner does not perform.
 func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
 	c := qt.New(t)
 
@@ -103,10 +102,10 @@ func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
 // capability above, measured where it now happens.
 //
 // A declaration writes `Active_Notes` and a server reports `active_notes`. The
-// planner used to reconcile the two by looking the name up; the comparison does
-// it now, and the change carries the view it resolved to (stokaro/ptah#2315).
-// Driving the comparison rather than hand-building the diff is the point: a
-// hand-built one bypasses the resolution the planner no longer performs.
+// comparison reconciles the two and the change carries the view it resolved to,
+// rather than the planner looking the name up (stokaro/ptah#2315). Driving the
+// comparison rather than hand-building the diff is the point: a hand-built one
+// bypasses the resolution the planner does not perform.
 func TestCompare_AModifiedViewResolvesACaseDifference(t *testing.T) {
 	c := qt.New(t)
 

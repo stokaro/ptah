@@ -134,11 +134,11 @@ func TestValidate_AcceptsADiffItCanPlan(t *testing.T) {
 // TestValidate_ReadsTheDiffAndNothingElse is the property the conversion is
 // about.
 //
-// The refusals above used to be derived by indexing the desired schema, which
-// is why the planner had to be handed one. Nothing here takes a schema any
-// more, and the way to say so in a test is to show that a diff whose entries
-// name policies NO schema could hold is accepted: the entries carry their own
-// declarations, so there is nothing left to look up (stokaro/ptah#2315).
+// Deriving the refusals above by indexing the desired schema is what makes a
+// planner have to be handed one. Nothing here takes a schema, and the way to
+// say so in a test is to show that a diff whose entries name policies NO schema
+// could hold is accepted: the entries carry their own declarations, so there is
+// nothing to look up (stokaro/ptah#2315).
 func TestValidate_ReadsTheDiffAndNothingElse(t *testing.T) {
 	c := qt.New(t)
 

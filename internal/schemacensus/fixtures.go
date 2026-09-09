@@ -858,10 +858,10 @@ func indexPartialFixture() schemamodel.Database {
 
 // indexNullsNotDistinctFixture carries the NULLS [NOT] DISTINCT clause on its
 // own, and on a UNIQUE index, which is the only index PostgreSQL accepts it
-// on. It used to ride along on the partial-index fixture, where it hid a
-// second field: once the renderer began refusing the clause on targets that
-// cannot spell it (stokaro/ptah#2820), the refusal took the whole statement
-// with it and the partial predicate stopped being observed anywhere.
+// on. Riding along on the partial-index fixture hides a second field: where the
+// renderer refuses the clause on a target that cannot spell it
+// (stokaro/ptah#2820), the refusal takes the whole statement with it and the
+// partial predicate stops being observed anywhere.
 func indexNullsNotDistinctFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{

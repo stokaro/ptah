@@ -13,8 +13,8 @@ import (
 // The fixtures below are the object kinds a PostgreSQL SQL schema file could
 // not express before issue #932. Each one is loaded after a CREATE TABLE
 // anchor and must both load without error and reach the rendered SQL: an
-// exit-code assertion on its own passes for a statement that parses and is
-// then dropped, which is exactly how five of these used to behave.
+// exit-code assertion on its own passes for a statement that parses and is then
+// dropped, which is what five of these do under a frontend that refuses them.
 func loadRenderedPostgresSQL(c *qt.C, body string) string {
 	dir := c.TempDir()
 	path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+body+"\n")

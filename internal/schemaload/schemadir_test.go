@@ -11,9 +11,10 @@ import (
 )
 
 // TestLoad_SchemaDirectory is the regression test for stokaro/ptah#940 item B on
-// the NATIVE surface. `ptah schema render --schema-file ./dir` used to fail with
+// the NATIVE surface. With the extension switch running before the loader has a
+// say, `ptah schema render --schema-file ./dir` fails with
 // `unsupported schema file extension ""` — a message about a file, for something
-// that is not one — because the extension switch ran before the loader had a say.
+// that is not one.
 func TestLoad_SchemaDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
