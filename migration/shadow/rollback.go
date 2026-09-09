@@ -33,6 +33,16 @@ type RollbackVerifyOptions struct {
 	ProviderOptions []migrator.FSProviderOption
 	// ConnectTimeout bounds the shadow database connection attempt.
 	ConnectTimeout time.Duration
+	// SkipChecks waives the pre-migration checks the migration bodies carry,
+	// for the whole verification rather than for the rollback step alone.
+	//
+	// The operator asked for this rollback with its checks waived. The shadow
+	// exercise exists only to rehearse that rollback, so a check left enabled
+	// here blocks the operation the flag was supposed to unblock -- which is
+	// what it did: `migrate down --skip-checks` reached the target with the
+	// checks waived and the verification replay with them on, so the flag and
+	// --dev-url could not be used together at all (stokaro/ptah#3114).
+	SkipChecks bool
 }
 
 // VerifyRollback replays a rollback plan on a disposable shadow
@@ -96,6 +106,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
+	mig = mig.WithSkipChecks(opts.SkipChecks)
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. On a shadow database reused

@@ -441,6 +441,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		dirFormat:        dirFormat,
 		atlasEnv:         atlasEnv,
 		connectTimeout:   connectTimeout,
+		skipChecks:       resolvedOpts.skipChecks,
 	}, emit); err != nil {
 		return err
 	}
@@ -518,6 +519,7 @@ type shadowVerification struct {
 	dirFormat        migrationfile.DirFormat
 	atlasEnv         string
 	connectTimeout   time.Duration
+	skipChecks       bool
 }
 
 // verifyRollbackOnShadow replays the rollback plan on a disposable shadow
@@ -551,6 +553,7 @@ func verifyRollbackOnShadow(
 			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: v.atlasEnv}),
 		},
 		ConnectTimeout: v.connectTimeout,
+		SkipChecks:     v.skipChecks,
 	})
 	if err != nil {
 		return err
