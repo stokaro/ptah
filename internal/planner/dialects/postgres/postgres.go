@@ -439,12 +439,11 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 //
 // It reads the diff rather than the desired state, so a run that changes nothing
 // emits nothing and an inspect/apply round trip stays the clean no-op it has to
-// be. And it reads EVERY added-object list rather than the tables alone, which
-// is the defect it replaces: the preconditions used to be derived from
-// diff.TablesAdded inside addNewTables, so they were emitted after the types,
-// sequences and functions phases and covered none of them. Measured on
-// PostgreSQL 17.10, applying a `schema inspect` document of a multi-schema
-// database to an empty one:
+// be. And it reads EVERY added-object list rather than the tables alone.
+// Deriving the preconditions from diff.TablesAdded inside addNewTables emits
+// them after the types, sequences and functions phases and covers none of
+// those. Measured on PostgreSQL 17.10, applying a `schema inspect` document of
+// a multi-schema database to an empty one:
 //
 //	CREATE SEQUENCE "s_misc"."m_seq" ...
 //	ERROR: schema "s_misc" does not exist (SQLSTATE 3F000)
@@ -662,19 +661,19 @@ func (p *Planner) addNewTableColumns(
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	// The TABLE still has to be declared. The column travels with the change
-	// now, so the field lookup that used to fail here cannot -- but the guard
-	// it provided is load-bearing on its own: a diff naming `app.users` against
-	// a schema that declares `reporting.users` must write no DDL, because the
-	// statement would apply cleanly to a relation nobody declared. Measured on
+	// The TABLE still has to be declared. The column travels with the change,
+	// so a field lookup here cannot fail -- but the guard is load-bearing on
+	// its own: a diff naming `app.users` against a schema that declares
+	// `reporting.users` must write no DDL, because the statement would apply
+	// cleanly to a relation nobody declared. Measured on
 	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
 	if findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics) == nil {
 		return result
 	}
 
-	// The column itself is no longer looked up: it used to be found by the
-	// table's Go STRUCT name and a scan of every field in the schema, which is
-	// a parser artifact reaching into the planner (stokaro/ptah#2315).
+	// The column itself is not looked up. Finding it by the table's Go STRUCT
+	// name and a scan of every field in the schema is a parser artifact
+	// reaching into the planner (stokaro/ptah#2315).
 	for _, column := range tableDiff.ColumnsAdded {
 		columnNode := modelast.FromFieldWithoutForeignKeys(column, vocabulary.Enums, "postgres")
 
@@ -745,11 +744,11 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 // modifyExistingTableColumns renders each modified column from the operand the
 // comparison carried for it.
 //
-// It used to resolve the column instead: struct name for the table, an
-// embedded-field fold over the whole declaration, then a linear scan. A
-// resolution that failed emitted `ERROR: Could not find field definition ...`
-// as a COMMENT and moved on -- a column left as it was, in a migration that
-// applied cleanly (stokaro/ptah#2315).
+// Resolving the column instead -- struct name for the table, an embedded-field
+// fold over the whole declaration, then a linear scan -- fails by emitting
+// `ERROR: Could not find field definition ...` as a COMMENT and moving on: a
+// column left as it was, in a migration that applies cleanly
+// (stokaro/ptah#2315).
 //
 // The vocabulary is the diff's own, for the same reason a created column's is:
 // a column may name an enum this diff does not change, so the type list cannot
@@ -1436,12 +1435,11 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 // # The drop is emitted only where the recreate is
 //
 // This step and addNewUserTypes are two halves of one statement pair, and they
-// used to disagree about what they cover: the drop was emitted for every
-// modified entry unconditionally, while the recreate was emitted only where the
-// target definition could be resolved out of the schema. A modification whose
-// definition did not resolve therefore produced a DROP with nothing to put the
-// type back, which is not a failed migration -- it is a successful one that
-// leaves the database short of a type.
+// must not disagree about what they cover. A drop emitted for every modified
+// entry unconditionally, beside a recreate emitted only where the target
+// definition resolves out of the schema, leaves a modification whose definition
+// does not resolve with a DROP and nothing to put the type back -- not a failed
+// migration but a successful one that leaves the database short of a type.
 //
 // Resolving both halves through the same lookup is what removes the disagreement
 // in the cases it can. Where the definition still does not resolve, the pair is
@@ -1640,8 +1638,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// resolvers below and the statements that accompany what they resolve cannot
 	// disagree about which table a reference belongs to.
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	// The identity check the resolver used to carry. Nothing is resolved: an
-	// addition carries its own declaration (stokaro/ptah#2315).
+	// The identity check alone. Nothing is resolved: an addition carries its
+	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1649,10 +1647,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	); err != nil {
 		return nil, err
 	}
-	// Row-level security entries are validated before any node is emitted, for
-	// the reason they always were: an entry the plan could not render used to be
-	// skipped, so the plan came back successful with an access-control operation
-	// missing from it (stokaro/ptah#1311). Validating the diff as it arrived,
+	// Row-level security entries are validated before any node is emitted: an
+	// entry the plan cannot render, skipped instead, makes the plan come back
+	// successful with an access-control operation missing from it
+	// (stokaro/ptah#1311). Validating the diff as it arrived,
 	// ahead of the skip policy below, means a malformed reference is refused
 	// even when the policy would have removed it -- the diff is either coherent
 	// or it is not.
@@ -2946,15 +2944,14 @@ func (p *Planner) addNewRLSPolicies(
 // modifyExistingRLSPolicies re-renders each modified policy from the
 // declaration the change carries.
 //
-// It used to resolve the name against the schema the plan was targeting, and
+// Resolving the name against the schema the plan targets cannot work, because
 // the two sides of a modification do not spell the owning table the same way:
 // the comparator normalizes `orders` and `public.orders` to one table and then
 // reports the DESIRED side's spelling, while a rollback plans against the
 // INTROSPECTED schema, whose policy carries the database's spelling. A
-// raw-string lookup found nothing on the down direction and the generated
-// rollback was `-- No rollback operations needed` (stokaro/ptah#1311). The
-// operand travels with the change now, so there is no spelling left to
-// reconcile here.
+// raw-string lookup then finds nothing on the down direction and the generated
+// rollback is `-- No rollback operations needed` (stokaro/ptah#1311). The
+// operand travels with the change, so there is no spelling to reconcile here.
 func (p *Planner) modifyExistingRLSPolicies(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
@@ -3171,11 +3168,11 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 // any other. A name arriving here therefore has no body, and a diff that names a
 // constraint it does not describe is a caller error.
 //
-// It used to resolve such a name against the declaration handed to the planner,
-// in three precedence steps, and emit nothing when all three missed. That was a
-// second input shape -- a diff of names, planned against a schema that describes
-// them -- and withdrawing it is what lets a planner stop taking a declaration at
-// all (stokaro/ptah#2315).
+// Resolving such a name against a declaration handed to the planner, in three
+// precedence steps, emits nothing when all three miss. That is a second input
+// shape -- a diff of names, planned against a schema that describes them -- and
+// withdrawing it is what lets a planner take no declaration at all
+// (stokaro/ptah#2315).
 func (p *Planner) addNamedConstraintsByKind(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,

@@ -41,11 +41,10 @@ func triggerFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
 }
 
 // TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines pins both arms of the
-// gate stokaro/ptah#916 item 3 added. The SQLite planner used to be registered
-// with a factory that threw the options away, so a set declining views or
-// triggers still got statements creating them; now the set it was built with
-// decides, and the shipped preset -- which allows both -- plans exactly as
-// before.
+// gate stokaro/ptah#916 item 3 added. A factory that throws the options away
+// leaves a set declining views or triggers with statements creating them
+// anyway; the set the planner was built with decides instead, and the shipped
+// preset allows both.
 func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 	viewDiff, viewSchema := viewFixture916()
 	triggerDiff, triggerSchema := triggerFixture916()

@@ -78,13 +78,13 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // refusal above, measured where it now happens.
 //
 // A declaration writes the table as `users` and a server reports it as
-// `public.users`. The planner used to reconcile the two by looking the trigger
-// up; the comparison does it now, and the entry carries the trigger it resolved
-// to (stokaro/ptah#2315). Driving the comparison rather than hand-building the
+// `public.users`. The comparison reconciles the two and the entry carries the
+// trigger it resolved to, rather than the planner looking it up
+// (stokaro/ptah#2315). Driving the comparison rather than hand-building the
 // diff is the point: a hand-built one bypasses the resolution, which is exactly
-// what the planner no longer performs.
+// what the planner does not perform.
 //
-// The refusal half moved too, and its home is
+// The refusal half lives in
 // TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects in
 // migration/schemadiff: a trigger on `public.items` and one on
 // `reporting.items` come back as one addition and one removal, never as a
@@ -129,10 +129,10 @@ func TestCompare_ATriggerResolvesTheDiffSpelling(t *testing.T) {
 // capability above, measured where it now happens.
 //
 // A declaration writes `active_users` and a server reports `public.active_users`.
-// The planner used to reconcile the two by looking the name up; the comparison
-// does it now, and the change carries the view it resolved to. Driving the
-// comparison rather than hand-building the diff is the point: a hand-built one
-// bypasses the resolution, which is exactly what the planner no longer performs.
+// The comparison reconciles the two and the change carries the view it resolved
+// to, rather than the planner looking the name up. Driving the comparison
+// rather than hand-building the diff is the point: a hand-built one bypasses
+// the resolution, which is exactly what the planner does not perform.
 func TestCompare_AModifiedViewResolvesTheDiffSpelling(t *testing.T) {
 	c := qt.New(t)
 

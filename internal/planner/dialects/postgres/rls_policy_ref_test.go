@@ -195,12 +195,12 @@ func TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration(t *testing.T)
 // TestCompare_AnRLSPolicyResolvesTheDefaultSchemaSpelling is the pair to the
 // refusal above, measured where it now happens.
 //
-// `orders` and `public.orders` are one table on PostgreSQL. The planner used to
-// reconcile the two spellings by looking the policy up; the comparison does it
-// now, and the entry carries the declaration it resolved to
+// `orders` and `public.orders` are one table on PostgreSQL. The comparison
+// reconciles the two spellings and the entry carries the declaration it
+// resolved to, rather than the planner looking the policy up
 // (stokaro/ptah#2315). Driving the comparison rather than hand-building the
 // diff is the point: a hand-built one bypasses the resolution, which is exactly
-// what the planner no longer performs.
+// what the planner does not perform.
 //
 // The declared spelling is what reaches the DDL either way -- only the matching
 // is normalized -- and that is the half this still asserts through the planner.

@@ -216,17 +216,16 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 // without the row-level security capability (currently Spanner) receives no
 // PostgreSQL-only RLS DDL, and is TOLD so by name.
 //
-// This test used to assert `nodes, qt.HasLen, 0` — the planner skipped the RLS
-// phases outright when the capability was absent, and the plan came back with
-// no statement and no diagnostic about the tables it had dropped. Meanwhile
-// `schema render` reached the renderer's RLS gate, which returned an error,
-// and exited 2 rendering nothing at all. Two commands, one desired schema, one
+// Skipping the RLS phases outright when the capability is absent brings the plan
+// back with no statement and no diagnostic about the tables it dropped, while
+// `schema render` reaches the renderer's RLS gate, which returns an error, and
+// exits 2 rendering nothing at all: two commands, one desired schema, one
 // target, two different answers (stokaro/ptah#929 items 1 and 4).
 //
-// The planner now emits the node and the renderer answers, so the assertion is
-// on the rendered plan rather than on an empty slice: the objects are still not
-// carried, and now the plan names each one. The compare command still reports
-// the category, because it reads the diff rather than the planner's output.
+// The planner emits the node and the renderer answers, so the assertion is on
+// the rendered plan rather than on an empty slice: the objects are not carried,
+// and the plan names each one. The compare command reports the category too,
+// because it reads the diff rather than the planner's output.
 func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	c := qt.New(t)
 
