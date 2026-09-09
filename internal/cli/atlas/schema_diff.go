@@ -56,9 +56,11 @@ check.`
 	if !policy.IsStrictCE() {
 		long += `
 
-Hosted report output is not implemented. --export is registered and refused:
-it selects an exporter declared by an atlas.hcl ` + "`exporter`" + ` block,
-which Ptah does not evaluate.
+--export renders the diff through the exporter the selected atlas.hcl env
+names, so a project can shape the report without a hosted service. Without a
+project config, or with an env that declares no exporter, it is refused rather
+than falling back to the ordinary output: a run that asked for the exporter and
+silently got something else would read as the exporter having run.
 
 -w/--web writes an ERD of the compared schemas as one self-contained HTML file
 and opens it. The diagram draws the end state plus the tables that leave it,
