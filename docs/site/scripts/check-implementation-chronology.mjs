@@ -137,8 +137,12 @@ function datingText(source) {
   // A code span may wrap onto the next line, and in prose written to 80 columns
   // most of them do. It may not cross a blank line, which is what keeps an
   // unpaired backtick from blanking the rest of the page.
+  //
+  // The newlines inside a span are kept. Blanking them too would shorten the
+  // text by a line for every wrapped span above a finding, and every line
+  // number this gate reports after the first one would name the wrong line.
   return outsideFences(source).replace(/`+[^`]*?`+/g, (span) =>
-    span.includes('\n\n') ? span : ' '.repeat(span.length),
+    span.includes('\n\n') ? span : span.replace(/[^\n]/g, ' '),
   );
 }
 
@@ -231,6 +235,22 @@ function selftest() {
     const got = findingsIn(source).map((finding) => finding.phrase.toLowerCase());
     if (JSON.stringify(got) !== JSON.stringify(want)) {
       failures.push(`${name}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+  }
+
+  // A finding names a line, and a reader goes to it. Blanking a wrapped code
+  // span without keeping its newlines shortens the text and moves every line
+  // after it, so the rule reports a real occurrence at a line that does not
+  // hold one -- which is worse than not reporting it, because the reader
+  // concludes the gate is wrong.
+  const lineCases = [
+    { name: 'a finding after a wrapped code span keeps its line', source: 'A `span that\nwraps` here.\n\nIt held until #3116.\n', want: 4 },
+    { name: 'a finding after a fenced block keeps its line', source: '```text\na\nb\n```\n\nIt held until #3116.\n', want: 6 },
+  ];
+  for (const { name, source, want } of lineCases) {
+    const got = findingsIn(source).map((finding) => finding.line);
+    if (JSON.stringify(got) !== JSON.stringify([want])) {
+      failures.push(`${name}: got ${JSON.stringify(got)}, want [${want}]`);
     }
   }
 
