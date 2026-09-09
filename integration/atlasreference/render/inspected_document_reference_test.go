@@ -350,8 +350,8 @@ var inspectedReferenceDocuments = []struct {
 		// What `ptah-compat schema inspect --exclude '*[type=role]'` renders:
 		// the role blocks are gone and every grant to them is still here,
 		// because a grant is a child of the object granted on rather than of the
-		// grantee. This is the shape the `role` traversal used to be written in
-		// unconditionally, and the one the pinned binary answered with
+		// grantee. This is the shape an unconditional `role` traversal writes,
+		// and the one the pinned binary answers with
 		// `There is no variable named "role"`.
 		name: "a table whose roles were excluded",
 		db: func(schema string) *schemamodel.Database {
@@ -377,8 +377,8 @@ var inspectedReferenceDocuments = []struct {
 		// What `ptah-compat schema inspect` renders for a database carrying a
 		// VIEW, with no selection and no hand-editing: PostgreSQL reports the
 		// owner's implicit privileges on a view exactly as it does on a table,
-		// so the grant arrives in Grant.OnTable and the target used to be
-		// written `for = table.v` against a document declaring `view "v"`.
+		// so the grant arrives in Grant.OnTable and a target written
+		// `for = table.v` would name a document declaring `view "v"`.
 		//
 		// This is the reachable instance the other three miss. They are all
 		// documents a filter left behind; this one is the DEFAULT invocation on

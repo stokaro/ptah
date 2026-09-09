@@ -13,13 +13,13 @@ import (
 //
 // # Absent, not skipped and not refused
 //
-// A target that cannot host an object a schema declares used to leave Ptah two
-// choices, and both are dishonest. Skipping the object with a named comment
+// Without a scope, a target that cannot host an object a schema declares leaves
+// Ptah two choices, and both are dishonest. Skipping the object with a named comment
 // keeps a multi-dialect schema working but never converges: the comparator
 // keeps the object in its added list, `schema apply` exits 0 having created
 // nothing, and the next run plans the same creation forever. Refusing the
 // object converges but makes one schema across postgres, mysql and mariadb
-// impossible. Measured on MariaDB 12.3.2 before this existed, one schema
+// impossible. Measured on MariaDB 12.3.2 without it, one schema
 // declaring a plpgsql function, an extension, a sequence, a domain and an RLS
 // policy applied cleanly (exit 0) and then reported four permanently
 // unreconcilable categories on every later comparison, while a declared role
@@ -31,8 +31,8 @@ import (
 //
 // # An empty scope belongs to every dialect
 //
-// Objects declared before the attribute existed carry no scope, and they must
-// keep reaching every target. The projection can therefore only narrow a
+// An object that declares no scope carries none, and it must reach every
+// target. The projection can therefore only narrow a
 // schema, never widen one: with no scope anywhere, ScopeToDialect returns a
 // database equal to its input.
 //
@@ -42,7 +42,7 @@ import (
 // record and verify. A `Dialects` field without `json:",omitempty"` would
 // encode as `null` on every object of every schema and change the fingerprint
 // of every plan anyone has already saved. The tag is what keeps an unscoped
-// schema encoding exactly as it did before this field existed.
+// schema encoding as if the field were not there.
 func ScopeToDialect(db *Database, dialect string) *Database {
 	if db == nil {
 		return nil

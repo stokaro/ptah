@@ -339,10 +339,10 @@ func requireReference(t *testing.T) string {
 // referenceOutcome is what the pinned binary did with one generated directory.
 // A refusal is an OBSERVATION to compare against, not a harness failure.
 //
-// It used to be one. referenceSum asserted the reference's exit was nil, so any shape
-// the reference declined aborted the run instead of being recorded — and the shape
-// it declines is exactly the one #991 is about. A differential harness that can
-// only represent agreement certifies agreement.
+// Asserting the reference's exit is nil makes it one: any shape the reference
+// declines aborts the run instead of being recorded — and the shape it declines
+// is exactly the one #991 is about. A differential harness that can only
+// represent agreement certifies agreement.
 type referenceOutcome struct {
 	sum     string
 	refused bool

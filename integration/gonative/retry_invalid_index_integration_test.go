@@ -17,13 +17,13 @@ import (
 // A failed CREATE INDEX CONCURRENTLY leaves an invalid index occupying the
 // name, and `migrations up --allow-dirty` re-runs the body over the dirty row
 // the failure left. The generated statement carries IF NOT EXISTS, so the
-// leftover is skipped rather than rebuilt, nothing errors, and the run used to
+// leftover is skipped rather than rebuilt, nothing errors, and the run must not
 // clear the dirty state over an object PostgreSQL will not use. These tests pin
 // what the up path does with that residue, on both halves of the issue -- a
 // unique index whose constraint is then unenforced, and a plain index that is
 // simply never built -- on the same residue reached without a dirty row at all,
 // and on the control where the index is usable and the run has to finish the
-// migration as it always did.
+// migration.
 const (
 	retryInvalidIndexTable   = "ptah_issue1101_retry_members"
 	retryPartitionedTable    = "ptah_issue1101_retry_events"

@@ -241,16 +241,16 @@ policy:
 // verification's memory proportional to the corpus rather than to the corpus
 // times its dimension.
 //
-// The read used to answer with `make([]float32, dimension)` per row: a
-// zero-filled slice carrying nothing the width does not, because pgvector
-// refuses a NaN or an infinity on write and the layer that reads it asks about
-// length. Over a million rows at 1536 dimensions that is six gigabytes of
-// zeroes, and `ptah inference verify` ran the process out of memory on a corpus
-// it could otherwise measure in a third of a second (stokaro/ptah#2068).
+// Answering with `make([]float32, dimension)` per row gives a zero-filled slice
+// carrying nothing the width does not, because pgvector refuses a NaN or an
+// infinity on write and the layer that reads it asks about length. Over a
+// million rows at 1536 dimensions that is six gigabytes of zeroes, and
+// `ptah inference verify` runs the process out of memory on a corpus it could
+// otherwise measure in a third of a second (stokaro/ptah#2068).
 //
-// A live test because the placeholder was built where the server's answer was
-// scanned, and every assertion about it that did not go through a real read
-// would be an assertion about a fixture.
+// A live test because such a placeholder is built where the server's answer is
+// scanned, and every assertion about it that does not go through a real read is
+// an assertion about a fixture.
 func TestVerificationCorpus_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -279,7 +279,7 @@ func TestVerificationCorpus_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
 
 	c.Assert(stored, qt.HasLen, 1)
 	// The server's own answer to how wide the stored vector is, which is all
-	// the read reports: the values themselves are not fetched, and the field
-	// that used to carry them is gone (stokaro/ptah#2622).
+	// the read reports: the values themselves are not fetched, and no field
+	// carries them (stokaro/ptah#2622).
 	c.Assert(stored[0].Dimension, qt.Equals, 4)
 }

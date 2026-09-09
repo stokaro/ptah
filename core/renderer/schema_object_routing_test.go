@@ -276,9 +276,9 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 			},
 		},
 		{
-			// ClickHouse used to answer "named" for both of these. It renders
-			// them now (stokaro/ptah#1025), and naming the cells is what makes
-			// a regression say which object moved rather than shifting a count.
+			// ClickHouse renders both of these (stokaro/ptah#1025) rather than
+			// answering "named", and naming the cells is what makes a
+			// regression say which object moved rather than shifting a count.
 			name:   "clickhouse emits roles and grants",
 			cells:  dialectCells(cells, platform.ClickHouse),
 			answer: "ddl",
@@ -396,22 +396,20 @@ func kindCells(cells []routedObjectCell, kind string) []routedObjectCell {
 	})
 }
 
-// TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName pins the answer to
-// the one cell where naming the skip and telling the truth pulled apart.
+// TestRender_SQLServerGeneratesASequence pins the one cell where naming the
+// skip and telling the truth pull apart.
 //
-// SQL Server has had CREATE SEQUENCE since 2012. The renderer's refusal used to
-// read "CREATE SEQUENCE ... is not supported", so routing the node there would
-// have replaced a silent omission with a false claim about the engine -- and
-// that is exactly why the converter withheld it, which is how the omission
-// survived. Naming Ptah's generator instead of the engine was the first half
-// of the answer; the second is that the generator now has the path, so the
-// declared sequence becomes a statement the server executes
+// SQL Server has had CREATE SEQUENCE since 2012, so a refusal reading
+// "CREATE SEQUENCE ... is not supported" replaces a silent omission with a
+// false claim about the engine. Naming Ptah's generator rather than the engine
+// is one half of the answer; the other is that the generator has the path, so
+// the declared sequence becomes a statement the server executes
 // (stokaro/ptah#1626).
 //
-// The old skip sentence must be gone, not merely joined: a target that both
-// emits the statement and reports it skipped is telling the reader two
-// different things about one object.
-func TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName(t *testing.T) {
+// No skip sentence may survive beside it: a target that both emits the
+// statement and reports it skipped is telling the reader two different things
+// about one object.
+func TestRender_SQLServerGeneratesASequence(t *testing.T) {
 	c := qt.New(t)
 
 	database := routedObjectSchema()

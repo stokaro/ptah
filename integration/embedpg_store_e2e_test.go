@@ -417,10 +417,10 @@ func registerLiveGeneration(
 // assertAClaimWritesTheLeaseAndNothingElse is stokaro/ptah#2636 at the
 // statement.
 //
-// A claim used to write every column of the run, so a checkpoint committed
-// between the claimer's read and its write was erased. The statement now names
-// the lease columns alone and derives the token from the stored value, so there
-// is no snapshot for it to write back and no window in which to hold one.
+// A claim that writes every column of the run erases a checkpoint committed
+// between the claimer's read and its write. The statement names the lease
+// columns alone and derives the token from the stored value, so there is no
+// snapshot for it to write back and no window in which to hold one.
 //
 // The run is created mid-backfill, with a cursor and non-zero counters, because
 // a claim that zeroed them would pass against a run that had none.

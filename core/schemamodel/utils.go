@@ -1458,9 +1458,8 @@ type rlsPolicyIdentity struct {
 // The table has to be part of the key. A PostgreSQL policy name is scoped to
 // its table: `CREATE POLICY tenant_isolation` succeeds once on each of two
 // tables in one schema and is refused only when repeated on the same table.
-// The single-source path used to key on the policy name alone, which silently
-// dropped the second of two identically named policies before the comparator
-// ever saw it (stokaro/ptah#1276).
+// Keying on the policy name alone silently drops the second of two identically
+// named policies before the comparator ever sees it (stokaro/ptah#1276).
 //
 // The table component is the declared table the policy names rather than the
 // string it was written with, which is [rlsTableResolver]'s subject.
@@ -1673,10 +1672,9 @@ func deduplicateGrants(grants []Grant) []Grant {
 // makes identity depend on the delimiters being absent from every component,
 // and nothing here forbids them: Grant.Canonicalize trims and upper-cases, it
 // does not reject a role, table, schema or sequence name containing the
-// separators. The key used to be
-// `role|privs|t:table|s:schema|q:sequence|o:bool`, under which a grant on the
-// table `a|s:b` with no schema and a grant on the table `a` in the schema
-// `b|s:` produced the same string, and the second one was silently dropped.
+// separators. A key spelled `role|privs|t:table|s:schema|q:sequence|o:bool`
+// gives a grant on the table `a|s:b` with no schema and a grant on the table
+// `a` in the schema `b|s:` one string, and drops the second silently.
 //
 // This is the shape stokaro/ptah#1345 names as evidence -- #1283 lost distinct
 // grants exactly this way -- so the answer is the one that removes the question

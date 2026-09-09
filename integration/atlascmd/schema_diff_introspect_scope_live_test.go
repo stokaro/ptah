@@ -365,11 +365,11 @@ func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 // schema; movement emits ALTER EXTENSION SET SCHEMA; removal is independent of
 // placement.
 //
-// The movement row used to assert a refusal, and this comment used to say
-// "until the shared planner supports ALTER EXTENSION SET SCHEMA". It does now
-// (stokaro/ptah#1718). The assertion that the move is neither a CREATE nor a
-// DROP is the part worth keeping: those two would lose whatever the extension
-// owns, and they are what a planner reaches for when it cannot move an object.
+// The shared planner supports ALTER EXTENSION SET SCHEMA (stokaro/ptah#1718),
+// so the movement row asserts the move rather than a refusal. That it is
+// neither a CREATE nor a DROP is the part with teeth: those two lose whatever
+// the extension owns, and they are what a planner reaches for when it cannot
+// move an object.
 func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)

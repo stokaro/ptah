@@ -94,8 +94,8 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	unchanged := compareLiveDomains(c, ctx, conn, declared(originalCheck), schemaName)
 	c.Assert(unchanged.DomainsModified, qt.HasLen, 0)
 
-	// 2. A changed CHECK is a difference. It used to be neither reported nor
-	//    planned, which is the whole of the issue.
+	// 2. A changed CHECK is a difference. Neither reporting nor planning it is
+	//    the whole of the issue.
 	changed := compareLiveDomains(c, ctx, conn, declared(replacedCheck), schemaName)
 	c.Assert(changed.DomainsModified, qt.HasLen, 1)
 	c.Assert(changed.DomainsModified[0].Changes["check"], qt.Not(qt.Equals), "")

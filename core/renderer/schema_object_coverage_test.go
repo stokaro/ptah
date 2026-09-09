@@ -31,13 +31,12 @@ func enumSchema(enumName string) *schemamodel.Database {
 // TestRender_EnumIdentityIsTheDeclarationNotTheNamePrefix pins that a declared
 // enum is modeled as an enum whatever it is called.
 //
-// The inline-enum rewrite used to be guarded by
-// strings.HasPrefix(field.Type, "enum_"), an undocumented convention that
-// appears nowhere in `ptah schema annotations`. On the four dialects that model
-// enums on the column, an enum named "status_kind" was therefore left as the
-// bare type name -- and because those dialects also skip standalone CREATE TYPE,
-// its values disappeared and the DDL named a type the server never heard of
-// (stokaro/ptah#931 item 1).
+// Guarding the inline-enum rewrite with strings.HasPrefix(field.Type, "enum_")
+// rests on an undocumented convention that appears nowhere in
+// `ptah schema annotations`. On the four dialects that model enums on the
+// column, an enum named "status_kind" is then left as the bare type name -- and
+// because those dialects also skip standalone CREATE TYPE, its values disappear
+// and the DDL names a type the server never heard of (stokaro/ptah#931 item 1).
 //
 // Each row renders both spellings and asserts they agree once the name itself is
 // substituted out, which is stronger than asserting a fixed string: it cannot
@@ -431,10 +430,10 @@ func emitsExecutableCreateSequence(statements []string) bool {
 // TestRender_MySQLReportsTheSequenceItCannotGenerate is the other half of item
 // 8: the flag being false must not mean the declared object vanishes.
 //
-// MariaDB used to be here too and has moved to the test below. It hosts
-// sequences now, and the key it decides against is the same one -- which is why
-// the negative case moves to the engine that still answers `CREATE SEQUENCE`
-// with a syntax error rather than being deleted (stokaro/ptah#1759).
+// MariaDB belongs in the test below rather than here: it hosts sequences, and
+// the key it decides against is the same one -- which is why the negative case
+// sits on the engine that answers `CREATE SEQUENCE` with a syntax error rather
+// than being deleted (stokaro/ptah#1759).
 func TestRender_MySQLReportsTheSequenceItCannotGenerate(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL} {
 		t.Run(dialect, func(t *testing.T) {

@@ -147,13 +147,13 @@ func boundaryCases() []boundaryCase {
 			// FIXED (#1264): the database has two schemas and the document now
 			// describes both, which is this row's stated target and what the
 			// pinned Atlas community binary v1.3.0 renders for the same URL.
-			// `extra` and `extra.b` used to be absent because the reader was
-			// never asked about them, and nothing downstream could tell that
-			// from "the database has no schema `extra`".
+			// A reader never asked about `extra` and `extra.b` leaves them
+			// absent, and nothing downstream can tell that from "the database
+			// has no schema `extra`".
 			wantDescribedSchemas: []string{"extra", "public"},
-			// FIXED (#1276), at the reader's own scope: the reader used to
-			// report NO schemas at all while the renderer synthesized a schema
-			// block from the tables it was given. It now reports the schemas it
+			// FIXED (#1276), at the reader's own scope: a reader reporting NO
+			// schemas at all leaves the renderer synthesizing a schema block
+			// from the tables it was given. This one reports the schemas it
 			// read. Called with no allow-list, as here, that list is the
 			// connected schema -- see the header for why widening the DEFAULT
 			// is a separate decision from widening what inspection asks for.
