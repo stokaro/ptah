@@ -745,11 +745,26 @@ func ignoredNameReporter(out io.Writer) func(atlashcl.IgnoredName) {
 	return func(ignored atlashcl.IgnoredName) {
 		fmt.Fprintf(
 			out,
-			"warning: schema file %s %q at %s:%d is ignored for Atlas compatibility and has no effect\n",
+			"warning: schema file %s %q%s at %s:%d is ignored for Atlas compatibility and has no effect\n",
 			ignored.Kind,
 			ignored.Name,
+			ignoredScopeClause(ignored.Scope),
 			ignored.Filename,
 			ignored.Line,
 		)
 	}
+}
+
+// ignoredScopeClause names the construct that contained a dropped name, and
+// nothing for one at the top level, which is contained by no construct.
+//
+// A name and a line locate the text but do not say what the text is part of,
+// and a reader who has just been told a reference inside the construct cannot
+// be resolved needs to know that the construct itself contributes nothing
+// either way (stokaro/ptah#3113).
+func ignoredScopeClause(scope string) string {
+	if scope == "" || scope == atlashcl.TopLevelScope {
+		return ""
+	}
+	return " in " + scope
 }
