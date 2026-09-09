@@ -17,10 +17,9 @@ import (
 // such constraint as one key: it would pair a drop on one table with an add on
 // another and emit neither correctly.
 //
-// It asked a second question until stokaro/ptah#2315: the diff carried a bare
-// name list beside the records, and Normalize synthesized a record for a name
-// that had none. There are no bare names now -- a constraint change IS its
-// record -- so that half is gone and this is what is left.
+// Filling the identity is the whole of what Normalize does. A constraint change
+// IS its record, so there is no bare name list beside the records for it to
+// synthesize a second answer from.
 func TestNormalize_FillsAnIdentityNoProducerResolved(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{

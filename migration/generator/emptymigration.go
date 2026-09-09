@@ -116,8 +116,8 @@ func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
 // firstFreeAtlasVersion. The bump is also why this one can run out of versions:
 // a directory whose newest migration is at [migrationversion.AtlasMax] has
 // nothing above it, and `migrate import --dir-format flyway` puts a repeatable
-// migration exactly there. Before stokaro/ptah#938 that computed
-// math.MinInt64 and wrote it.
+// migration exactly there. Adding one there computes math.MinInt64 and writes
+// it (stokaro/ptah#938).
 //
 // The bump asks [migrationversion.Advance] rather than adding one, so it steps
 // to the next real second instead of the next integer. Beside a
@@ -150,13 +150,13 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 // Two measurements settle that. The pinned community binary v1.3.0 stamps the
 // current UTC second and nothing else: into a directory holding
 // `29991231235959_future.sql` it writes today's version, sorting BELOW the
-// migration already there. And `migrate diff` in this binary has done the same
-// since stokaro/ptah#1218 (see atlasmigrate.nextMigrationVersionFS), as does
-// `migrate new` for the five external layouts (atlasmigrate.WriteSkeletonMigration).
-// Bumping here made `migrate new` the one verb in the binary stamping a
-// different shape: on that directory it wrote `29991231235960`, a version that
-// is not a time anyone can parse back, while `migrate diff` a second later
-// wrote the ordinary UTC stamp (stokaro/ptah#938).
+// migration already there. And `migrate diff` in this binary does the same
+// (see atlasmigrate.nextMigrationVersionFS), as does `migrate new` for the five
+// external layouts (atlasmigrate.WriteSkeletonMigration). Bumping here would
+// make `migrate new` the one verb in the binary stamping a different shape: on
+// that directory it writes `29991231235960`, a version that is not a time
+// anyone can parse back, while `migrate diff` a second later writes the
+// ordinary UTC stamp (stokaro/ptah#938).
 //
 // The collision step asks [migrationversion.Writable] rather than testing the
 // bounds itself, so two migrations created inside the same second at :59 land

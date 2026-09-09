@@ -102,7 +102,7 @@ func stripTypeSQLComments(query string) string {
 type typeFilter func(catalogType) bool
 
 // everyType is what a statement carrying no ownership clause selects: all of
-// them. That is the read as it stood before stokaro/ptah#1294.
+// them. It is the control for the ownership-scoped read.
 func everyType(catalogType) bool { return true }
 
 // onlyUserDeclared is what the exclusion selects.

@@ -173,11 +173,10 @@ table "users" {
 // believes is managed, and the same product already warns about an ignored
 // atlas.hcl block through dbcli.ReportIgnoredAtlasConstructs.
 //
-// The third name was `procedure` when this test was written, and the example
-// was chosen because a dropped procedure is a stored routine that silently
-// stops being managed. That one is no longer dropped: a procedure is a modeled
-// top-level block since stokaro/ptah#2209, so the row moved to `wibble`, which
-// nothing models and nothing will.
+// The third name is `wibble`, which nothing models and nothing will. A modeled
+// block cannot stand in: a procedure is a modeled top-level block
+// (stokaro/ptah#2209), so it is not dropped and says nothing about the names
+// that are.
 //
 // The load still succeeds and the modeled objects still arrive, which is the
 // half a reporting change could break by turning a warning into a refusal.

@@ -326,10 +326,10 @@ func TestCompatMigrateApply_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T) 
 //
 // That test pinned a compensator, not a behavior worth keeping: the exemption
 // scan recursed because the registrar recursed, so refusing was the only way to
-// stop an unhashed nested migration running unverified. Since #976 the
-// registrar selects exactly the set atlas.sum covers, so a nested file is not a
-// migration on either tool — the directory has nothing to execute and the
-// community binary's exit 0 is now reachable without giving anything up.
+// stop an unhashed nested migration running unverified. The registrar selects
+// exactly the set atlas.sum covers, so a nested file is not a migration on
+// either tool — the directory has nothing to execute and the community binary's
+// exit 0 is reachable without giving anything up.
 //
 // The post-condition is strictly stronger than the old one. Refusing only
 // proved the file did not run in THIS invocation; asserting the table is absent

@@ -88,13 +88,12 @@ materialized "user_stats" {
 	c.Assert(err, qt.ErrorMatches, `.*unsupported materialized attribute "populate".*`)
 }
 
-// TestMaterializedViewRetiredAttributeGoAnnotationParity keeps the parity
-// control this file has carried since #684, on the answer that is now correct.
+// TestMaterializedViewRetiredAttributeGoAnnotationParity keeps this file's
+// parity control on the answer that is correct.
 //
-// The two frontends used to agree that the attribute was accepted; they agree
-// now that it is refused, and with the same reason. A parity test that was
-// deleted along with the behaviour would have let one frontend keep accepting
-// it.
+// The two frontends agree that the attribute is refused, and with the same
+// reason. A parity test deleted along with the behavior it pinned would let one
+// frontend keep accepting it.
 func TestMaterializedViewRetiredAttributeGoAnnotationParity(t *testing.T) {
 	c := qt.New(t)
 

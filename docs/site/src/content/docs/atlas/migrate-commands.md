@@ -1300,10 +1300,10 @@ not be able to drop a diagnostic. That grammar boundary is why
 `DROP INDEX public.idx;` counts one schema change,
 matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
 scoped out whole — no schema change and no `PG106`, which is also what the
-community binary reports. Ptah raised `PG106` for the `app` form before
-[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296); nothing
-about the reviewed schema became quieter, since the `public` form still raises
-it.
+community binary reports. Raising `PG106` for the `app` form
+([`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296)) says
+nothing extra about the reviewed schema: the `public` form raises it either
+way.
 
 Two `DROP INDEX` forms are still outside the grammar. Both are refused by the
 parser rather than half-recorded, so each counts no schema change and keeps its
@@ -1534,10 +1534,10 @@ When both spellings are given, the `?format=` query wins, which is what Atlas
 does. Values are matched verbatim on every CE-comparable path that resolves a
 layout — the six above plus `diff` and `import`: `--dir-format ATLAS` and
 `--dir-format " atlas "` are refused rather than normalized, and an empty value
-selects the Atlas layout. `migrate import` resolved its own source format until
-[#1235](https://github.com/stokaro/ptah/issues/1235) cell 9.8 was closed as a
-class; it accepted `FLYWAY` and `" flyway "` and read `?format=` with an empty
-value as no selection, all three of which Atlas refuses.
+selects the Atlas layout. A source-format resolver of its own on `migrate
+import` would accept `FLYWAY` and `" flyway "` and read `?format=` with an empty
+value as no selection, all three of which Atlas refuses
+([#1235](https://github.com/stokaro/ptah/issues/1235) cell 9.8).
 
 A rejected value is refused with the measured CE wording — `unknown dir format
 "bogus"` — on all nine CE-comparable paths, `apply` included through its

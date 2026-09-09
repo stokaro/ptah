@@ -130,10 +130,10 @@ func uncoveredDiffCategories(fixtures []categoryFixture) []string {
 		// Every exported field but the semantics snapshot, which is a pointer
 		// to the rules the diff was produced under rather than a difference.
 		//
-		// This walked SLICE fields alone until stokaro/ptah#2315, so a category
-		// spelled as a struct or a map was skipped without being exempt --
-		// which is a gate reporting on a set it chose not to look at. Widening
-		// it named exactly the three carries below and nothing else.
+		// The walk covers every field kind, not slices alone. A category
+		// spelled as a struct or a map that a slice-only walk skips is not
+		// exempt, and a gate reporting on a set it chose not to look at reports
+		// nothing. The full walk names exactly the three carries below.
 		if !field.IsExported() || field.Type.Kind() == reflect.Pointer {
 			continue
 		}

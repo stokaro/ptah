@@ -78,10 +78,10 @@ func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing
 // TestConstraintsWithSemantics_UnresolvedTablesAreNotOneTable covers the older
 // half of the class.
 //
-// tableMemberKey has keyed constraints, columns and indexes through the same
-// normalization since stokaro/ptah#1232, so the collapse predates #1283 on this
-// path. The row is here because a fix proven on grants says nothing about
-// constraints, which is how #1290 arrived.
+// tableMemberKey keys constraints, columns and indexes through the same
+// normalization (stokaro/ptah#1232), so this path collapses them the same way.
+// The row is here because a fix proven on grants says nothing about
+// constraints (stokaro/ptah#1290).
 func TestConstraintsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	c := qt.New(t)
 

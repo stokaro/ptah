@@ -2776,8 +2776,8 @@ func findMaterializedView(
 // enablement declarations against pg_class.relrowsecurity. It is the only
 // source that covers an existing table whose row-level security was turned off
 // in the database, and a table that declares enablement without declaring a
-// policy. Until stokaro/ptah#1284 nothing read it, so a database with RLS off
-// and a schema demanding it on produced no statement at all.
+// policy. Nothing else covers those: a planner that does not read it produces
+// no statement at all for a database with RLS off and a schema demanding it on.
 //
 // New tables carrying a policy are the second source. A desired schema may
 // declare a policy without a separate enablement annotation, and CREATE POLICY

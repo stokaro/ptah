@@ -1493,9 +1493,9 @@ func ClickHouse24() Capabilities {
 		DomainTypes:         false,
 		CompositeTypes:      false,
 		RangeTypes:          false,
-		// Five keys below were false until stokaro/ptah#916 measured them.
-		// ClickHouse 24.10.4.191 and 26.7.3.19 answer identically on every one,
-		// so the corrections belong to the dialect rather than to a line:
+		// Five keys below are measured rather than assumed. ClickHouse
+		// 24.10.4.191 and 26.7.3.19 answer identically on every one, so each
+		// belongs to the dialect rather than to a line:
 		// ALTER TABLE DROP CONSTRAINT is accepted, its IF EXISTS guard is
 		// honored (the unguarded form on an absent constraint is refused), a
 		// CHECK constraint refuses the violating INSERT and accepts the control
@@ -1507,8 +1507,9 @@ func ClickHouse24() Capabilities {
 		// them ask the shape the KEY names rather than any statement the server
 		// accepts: see the Functions and RowLevelTTL comments further down.
 		//
-		// Every one understated the server, so nothing was emitting DDL
-		// ClickHouse refuses; the cost was capability rather than correctness.
+		// A false key here costs capability rather than correctness: it
+		// withholds DDL instead of emitting DDL ClickHouse refuses. That is why
+		// the measurement decides these keys and caution does not.
 		DropConstraintGeneric:    true,
 		DropConstraintIfExists:   true,
 		DropIndexIfExists:        true,
@@ -2740,8 +2741,8 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		//
 		// So the banner is claimed only for a dialect outside that family,
 		// where it is a genuine contradiction rather than a less specific
-		// spelling of the same server: "PostgreSQL 16.3 (Debian)" on
-		// --dialect mysql used to read as MySQL 16.3 and answer MySQL84.
+		// spelling of the same server: without it, "PostgreSQL 16.3 (Debian)"
+		// on --dialect mysql reads as MySQL 16.3 and answers MySQL84.
 		// A version a person typed is refused before it gets this far by
 		// internal/servertarget, which asks BannerPlatform directly and so
 		// still refuses a PostgreSQL banner paired with --dialect cockroachdb.
@@ -2754,8 +2755,8 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// product's default either way. Answering from the banner rather than
 		// falling through to parseVersion is what keeps the marketing year out
 		// of a PostgreSQL ladder — "Microsoft SQL Server 2025 … - 17.0.4065.4"
-		// parses as major 2025, and on --dialect postgres that used to select
-		// Postgres17 and report itself saturated past release line 18.
+		// parses as major 2025, and on --dialect postgres that would otherwise
+		// select Postgres17 and report itself saturated past release line 18.
 		//
 		// Recognized is true for the same reason it is on the YugabyteDB and
 		// Spanner arms: the string named a server, even though nothing in it was
@@ -2770,10 +2771,11 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 	case platform.Oracle:
 		return resolvedAs(oracleResolution(version), platform.Oracle)
 	case platform.ClickHouse:
-		// ClickHouse DOES have a ladder, of exactly one step. It was in this arm
-		// until stokaro/ptah#916 measured the two declared lines furthest apart
-		// and found one key on which they differ: CHECK GRANT is a statement on
-		// 26.7.3.19 and a syntax error on 24.10.4.191.
+		// ClickHouse DOES have a ladder, of exactly one step. The two declared
+		// lines furthest apart differ on one key: CHECK GRANT is a statement on
+		// 26.7.3.19 and a syntax error on 24.10.4.191. That one measured
+		// difference is what keeps ClickHouse out of the unladdered arm at the
+		// bottom of this function.
 		//
 		// The banner is the version here -- ClickHouse answers `SELECT
 		// version()` with 24.10.4.191 and nothing else -- so unlike SQL Server

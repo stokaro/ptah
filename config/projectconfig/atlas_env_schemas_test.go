@@ -13,16 +13,16 @@ import (
 // TestParseAtlasEnvSchemasSelectsTheSchemaUniverse pins the decode half of
 // `env { schemas }`.
 //
-// The attribute reached [projectconfig.Config] through the unknown-name
-// tolerance until stokaro/ptah#934: it had no parser arm, so it was recorded as
-// ignored, warned about, and dropped. The pinned Atlas community binary v1.3.0
-// decodes it — measured by planting a value the field cannot hold, which a name
-// the binary ignores cannot refuse:
+// The attribute needs a parser arm of its own. Reaching [projectconfig.Config]
+// through the unknown-name tolerance instead records it as ignored, warns about
+// it, and drops it. The pinned Atlas community binary v1.3.0 decodes it —
+// measured by planting a value the field cannot hold, which a name the binary
+// ignores cannot refuse:
 //
 //	env { schemas = "one" }  ->  schemahcl: field is of type slice but attr
 //	                             "schemas" is type: string, exit 1
 //
-// so tolerating it was the wrong classification and the value has to select
+// so tolerating it is the wrong classification and the value has to select
 // something.
 func TestParseAtlasEnvSchemasSelectsTheSchemaUniverse(t *testing.T) {
 	tests := []struct {

@@ -114,7 +114,7 @@ const txtarCheckRefusal = "pre-migration check checks.sql#1 for migration 202608
 // TestMigrateApplySkipChecksEnvEnforcesChecks separates "the variable is set"
 // from "the variable parses as true". An absent variable and the false
 // spellings leave checks enforcing; a value that is not a boolean -- including
-// an exported empty one, since stokaro/ptah#1334 -- is refused outright rather
+// an exported empty one -- is refused outright rather
 // than read as false.
 //
 // Every row also asserts the column count, so each one is a no-mutation guard:
@@ -295,8 +295,8 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 }
 
 // The bypass still earns its keep in a dry run, but only where the check is
-// really evaluated. Since #1005 a dry run evaluates a migration's assertions
-// only when that migration is FIRST in the run — the one position whose
+// really evaluated. A dry run evaluates a migration's assertions only when
+// that migration is FIRST in the run — the one position whose
 // observed state is the state a real apply would give it. So the fixture here
 // applies migration 1 for real first, which makes the checked migration 2 first
 // in the run and its assertion a genuine, accurate failure: the operator has

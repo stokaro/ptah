@@ -57,16 +57,14 @@ func assertReachedTable(c *qt.C, database *schemamodel.Database, err error, name
 	c.Assert(database.Tables[0].Name, qt.Equals, name)
 }
 
-// TestLoad_SchemaFileSpellingsReachTheSameDestination is what the refusal table
-// here became when stokaro/ptah#1622 answered the decision the test below was
-// written to make loud.
+// TestLoad_SchemaFileSpellingsReachTheSameDestination pins one destination,
+// four spellings, one answer.
 //
-// The three rows used to assert that each of these spellings was REFUSED as
-// `outside allowed root`. That refusal was a spelling filter rather than a
-// boundary: the same file named absolutely was always accepted, which the test
-// below records and the pinned community binary does too. With the relative-only
-// rule gone, all three reach the file, and the property worth pinning is that
-// they reach the SAME file -- one destination, four spellings, one answer.
+// Refusing these spellings as `outside allowed root` would be a spelling filter
+// rather than a boundary: the same file named absolutely is accepted, which the
+// test below records and the pinned community binary does too. So all three
+// reach the file, and the property worth pinning is that they reach the SAME
+// file.
 //
 // The symlink row still earns its place. It writes no ".." anywhere, so a rule
 // that read the text rather than resolving it would treat it differently from

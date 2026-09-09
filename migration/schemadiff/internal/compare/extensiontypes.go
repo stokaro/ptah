@@ -10,11 +10,11 @@ import (
 //
 // A column declared `vector(384)` is a declaration that the vector extension is
 // needed, the same way a foreign key is a declaration that another table is.
-// Before stokaro/ptah#2389 nothing read it that way, so a schema holding such a
-// column produced a plan that created the column and dropped the extension its
-// type comes from -- one transaction contradicting itself, and on the orderings
-// where the drop went first, an extension removed out from under an operator
-// who never asked.
+// A comparator that does not read it that way plans a schema holding such a
+// column into a create of the column and a drop of the extension its type comes
+// from -- one transaction contradicting itself, and on the orderings where the
+// drop goes first, an extension removed out from under an operator who never
+// asked.
 func extensionsDeclaredTypesNeed(desired *schemamodel.Database) map[string]bool {
 	needed := make(map[string]bool)
 	if desired == nil {

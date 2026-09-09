@@ -152,9 +152,8 @@ func TestRenderInsert_Errors(t *testing.T) {
 		{
 			name: "unsupported dialect",
 			stmt: insertUsers(),
-			// A dialect the renderer has never been taught. ClickHouse stood
-			// here until stokaro/ptah#941 taught it, which is why the example
-			// is now a name outside platform's set entirely: an example the
+			// A dialect the renderer has never been taught. The name sits
+			// outside platform's set entirely, deliberately: an example the
 			// builder supports asserts nothing.
 			dialect:     "db2",
 			wantErrLike: `renderer: INSERT rendering is not supported for dialect "db2"`,
@@ -525,9 +524,8 @@ func TestRenderDelete_Errors(t *testing.T) {
 		{
 			name: "unsupported dialect",
 			stmt: deleteUser(),
-			// A dialect the renderer has never been taught. ClickHouse stood
-			// here until stokaro/ptah#941 taught it, which is why the example
-			// is now a name outside platform's set entirely: an example the
+			// A dialect the renderer has never been taught. The name sits
+			// outside platform's set entirely, deliberately: an example the
 			// builder supports asserts nothing.
 			dialect:     "db2",
 			wantErrLike: `renderer: DELETE rendering is not supported for dialect "db2"`,

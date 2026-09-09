@@ -12,11 +12,11 @@ import (
 )
 
 // A dry run intercepts writes, never reads, and a pre-migration check is a
-// read. Before #1005 that meant every checked migration's guard was evaluated
-// for real against a database the dry run had refused to change, so migration
-// N's precondition was asked about state that only exists once migrations
-// 1..N-1 apply — state the preview had, by construction, declined to produce.
-// `migrate apply --dry-run` therefore failed with "no such table: users" on a
+// read. Evaluating every checked migration's guard for real, against a database
+// the dry run has refused to change, asks migration N's precondition about
+// state that only exists once migrations 1..N-1 apply — state the preview has,
+// by construction, declined to produce. `migrate apply --dry-run` then fails
+// with "no such table: users" on a
 // directory whose real apply succeeds.
 //
 // The rule that replaced it: a dry run evaluates a migration's assertions only

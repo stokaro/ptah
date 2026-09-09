@@ -192,10 +192,9 @@ cannot make the strict surface more permissive than Atlas CE.
 
 ### The sum file has to agree with itself, too
 
-Verification asks two questions, not one, and the second was missing until
-[#1231](https://github.com/stokaro/ptah/issues/1231): the entries must match the
-directory, **and** the directory-hash line on top must be the hash of the entry
-lines below it, in the order they are written. Both hash schemes bind that
+Verification asks two questions, not one: the entries must match the directory,
+**and** the directory-hash line on top must be the hash of the entry lines below
+it, in the order they are written ([#1231](https://github.com/stokaro/ptah/issues/1231)). Both hash schemes bind that
 order, so moving a whole entry line — name and hash together — leaves a file
 that no longer hashes to the line it still carries.
 
@@ -375,11 +374,11 @@ directory that has drifted is the point of linting it. That exemption covers a
 both `lint` implementations exit 1.
 
 **`migrate new` and `migrate diff` are gated before they write.** Both create a
-migration file and rewrite `atlas.sum`, so an ungated run turned drift into
-apparent cleanliness: the tampering survived and the checksum that would have
-reported it was replaced. Since
-[#1086](https://github.com/stokaro/ptah/issues/1086) the refusal is a preflight
-— it happens before the migration file is created, before `atlas.sum` is
+migration file and rewrite `atlas.sum`, so an ungated run turns drift into
+apparent cleanliness: the tampering survives and the checksum that would have
+reported it is replaced. The refusal is a preflight
+([#1086](https://github.com/stokaro/ptah/issues/1086)) — it happens before the
+migration file is created, before `atlas.sum` is
 rewritten, and on `diff` before the dev database is connected to and before
 `--to` and `--dev-url` are required at all, which is the order Atlas uses. A
 `--dir` that does not exist yet is not a checksum error on either tool: both
@@ -391,11 +390,10 @@ converted or written; a source that carries no `atlas.sum` at all is imported,
 because a directory another tool wrote has never been hashed and importing it is
 what the verb is for. That is the one place the rule differs from `apply`,
 `status` and `set`, which refuse an unhashed directory outright, and it matches
-Atlas on both halves. Until
-[#1095](https://github.com/stokaro/ptah/issues/1095) the source was not checked
-at all: a directory `migrate apply` refused was converted anyway, and the
-destination was hashed over whatever the conversion produced — so a tampered
-source came out as a directory `migrate validate` calls clean. Nothing is
+Atlas on both halves. An unchecked source converts a directory `migrate apply`
+refuses, and the destination is then hashed over whatever the conversion
+produced — so a tampered source comes out as a directory `migrate validate`
+calls clean ([#1095](https://github.com/stokaro/ptah/issues/1095)). Nothing is
 written when the check fails; the destination directory is not created.
 
 **Directories read through `?format=` are gated too.** A goose, flyway,
@@ -448,12 +446,11 @@ and never reads. A migration nested inside one is covered as usual.
 :::
 
 For every layout, "not covered by `atlas.sum`" also means "not executed": the
-set `migrate apply` runs is the set the checksum it verified covers. Flyway was
-the exception until [#982](https://github.com/stokaro/ptah/issues/982) — its
-importer selected a wider set than Atlas hashes, so a superseded baseline or a
-lowercase-prefixed file could run SQL no checksum protected. The importer and
-the hasher now share one selection rule, so that class of gap cannot reopen
-without a failing test.
+set `migrate apply` runs is the set the checksum it verified covers. The Flyway
+importer and the Flyway hasher share one selection rule ([#982](https://github.com/stokaro/ptah/issues/982)). An
+importer selecting a wider set than Atlas hashes lets a superseded baseline or a
+lowercase-prefixed file run SQL no checksum protects, so that class of gap
+cannot open without a failing test.
 
 :::note[Flyway baselines: Ptah refuses where Atlas decides for you]
 A Flyway `B` file is a squash — it restates the schema the migrations it

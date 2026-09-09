@@ -15,13 +15,13 @@ name: Capability Matrix Request
 # capability-matrix.yml in the pull request's own contour, so the probe checks
 # are checks OF THE PULL REQUEST: visible in its list and able to block a merge.
 #
-# It dispatched the workflow instead until stokaro/ptah#2297 showed what that
-# costs. The dispatch's check runs did attach to the head commit -- 38 names
-# there -- but a pull request's status rollup ignores a dispatch suite: `gh pr
-# checks` listed 32 and none of the six `probe postgres-*`. Where a name existed
-# on both sides the rollup reported the pull request's own SKIPPED `tier 2
-# report` while two newer FAILURES sat on the same commit unseen, so #2297 was
-# merged with `probe postgres-18` failing.
+# A workflow dispatch does not buy that, which is why this labels instead. A
+# dispatch's check runs do attach to the head commit -- 38 names, measured --
+# but a pull request's status rollup ignores a dispatch suite: `gh pr checks`
+# listed 32 and none of the six `probe postgres-*`. Where a name exists on both
+# sides the rollup reports the pull request's own SKIPPED `tier 2 report` while
+# newer FAILURES sit on the same commit unseen, and the pull request merges with
+# `probe postgres-18` failing.
 #
 # WHY THE GUARDS ARE WHAT THEY ARE
 #

@@ -765,11 +765,11 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.ContinuousAggregates: "the key names a TimescaleDB object for the same reason; this " +
 			"server has no such statement and no MySQL-family code path emits one",
 	}
-	// Both dialects are asked now. MariaDB used to be declared undecided here,
-	// on the ground that the engine has SEQUENCE while Ptah's generator did
-	// not -- so the server's answer was to a different question. Ptah renders,
-	// reads and plans a MariaDB sequence since stokaro/ptah#1759, so the two
-	// answers agree and the experiment decides the key on both engines.
+	// Both dialects are asked. Declaring MariaDB undecided here would rest on
+	// the engine having SEQUENCE while Ptah's generator does not, which makes
+	// the server's answer an answer to a different question. Ptah renders,
+	// reads and plans a MariaDB sequence, so the two answers agree and the
+	// experiment decides the key on both engines.
 	experiments = append(experiments, all(capability.Sequences, nil,
 		"CREATE SEQUENCE sq",
 		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",

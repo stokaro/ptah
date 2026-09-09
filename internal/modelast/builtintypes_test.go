@@ -66,8 +66,8 @@ func declareShadowingEnum(database *schemamodel.Database) {
 // name-keyed rewrite gets wrong: a column whose type is a BUILT-IN keeps it,
 // even when a declaration in the same document answers to the same bare name.
 //
-// Every row is a column that was catalog-correct before stokaro/ptah#1138 and
-// silently retyped by it. Measured on PostgreSQL 17.10 for the first row, both
+// Every row is a column the rewrite retypes silently without the guard, while
+// the catalog answers it correctly. Measured on PostgreSQL 17.10 for the first row, both
 // plans replayed into fresh databases at exit 0 and the catalog read with
 // format_type and pg_type.typtype:
 //

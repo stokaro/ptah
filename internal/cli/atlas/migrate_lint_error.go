@@ -92,8 +92,8 @@ func atlasMigrateLintDirCaptureError(path, allowedRoot string, captureErr error)
 // Which of the two IS relative depends on how the directory was opened. Opened
 // through an explicit root, the os.PathError carries the path relative to that
 // root while the caller holds the absolute one. Opened as a CLI path, it is the
-// other way round since stokaro/ptah#1622 removed the working-directory root
-// that used to keep the error's own path relative. Neither caller knows which
+// other way round: there is no working-directory root to keep the error's own
+// path relative. Neither caller knows which
 // case it is in, so the choice is made here from the paths themselves.
 func atlasMigrateLintDisplayPath(typed, observed string) string {
 	if !filepath.IsAbs(observed) {

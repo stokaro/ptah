@@ -18,9 +18,9 @@ import (
 )
 
 // This file is the CLASS test for --verify-sum, and it exists to answer one
-// question a reader will reasonably ask after stokaro/ptah#1450: given that
-// every verb which executes migration SQL now verifies a hashed directory
-// automatically, what is the flag still for?
+// question a reader will reasonably ask: given that every verb which executes
+// migration SQL verifies a hashed directory automatically, what is the flag
+// for?
 //
 // It is for the case the always-on gate deliberately does not cover. That gate
 // asks "does this directory match the sum it carries", and a directory carrying
@@ -29,10 +29,9 @@ import (
 // `ptah migrations hash`. --verify-sum asks the different question: "is this
 // directory covered by a sum at all".
 //
-// `ptah migrations validate` asks that question too, and since
-// stokaro/ptah#1499 it asks it of an `oci://` reference as well as of a local
-// path — it used to answer `stat oci://…: no such file or directory`. That does
-// NOT make the flag redundant, and the reason is timing rather than coverage:
+// `ptah migrations validate` asks that question too, of an `oci://` reference
+// as well as of a local path. That does NOT make the flag redundant, and the
+// reason is timing rather than coverage:
 // validate resolves the reference in one process and the executing verb
 // resolves it again in another, so a movable tag can select different bytes
 // between the two calls. The flag verifies the artifact the same invocation is

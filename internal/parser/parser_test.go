@@ -789,8 +789,7 @@ func TestParser_NamedDialectRefusesAnotherDialectsEscaping_FailurePath(t *testin
 // a doubled quote stays inside the literal. The same statement parses under
 // every named dialect;
 // TestParser_NamedDialectUsesThatDialectsLexerRules_HappyPath carries two of
-// them. Naming the dialect is the answer, and before stokaro/ptah#2752 naming
-// it did not help.
+// them. Naming the dialect is the answer.
 func TestParser_NoDialectCannotReadADoubledQuoteLiteral(t *testing.T) {
 	c := qt.New(t)
 

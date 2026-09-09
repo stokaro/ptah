@@ -57,8 +57,9 @@ func TestIdentifierFixtureBytes(t *testing.T) {
 //
 // Every dialect here quotes identifiers, so none of these names is refused or
 // folded: whatever comes out names a relation, and if the bytes differ it names
-// the WRONG one. Before stokaro/ptah#1352 was fixed, all three dialects widened
-// each byte of the name as its own code point.
+// the WRONG one. A renderer that widens each byte of the name as its own code
+// point names a different relation, and all three can get that wrong
+// independently.
 //
 // One row per dialect. The only thing that varies between them is the quoting
 // syntax, which each row carries as a func rather than as a branch in the body.

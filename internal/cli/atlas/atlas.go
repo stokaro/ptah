@@ -677,12 +677,10 @@ func atlasMigrateDownVerb() atlasVerb {
 			// --skip-checks bypasses the pre-migration checks the down bodies
 			// being rolled back carry.
 			//
-			// The waiver this replaces said Ptah had no generated checks to
-			// skip. That stopped being true when stokaro/ptah#1715 taught
-			// `-- +ptah check` the down direction: a down body's checks run
-			// before its statements and abort the rollback, so there is a real
-			// thing to bypass, and refusing the flag left an operator with a
-			// blocking check no flag could get past.
+			// A down body's checks run before its statements and abort the
+			// rollback (stokaro/ptah#1715), so there is a real thing to
+			// bypass: refusing the flag leaves an operator with a blocking
+			// check no flag can get past.
 			atlasargs.NativeBool("skip-checks", "", "Skip the pre-migration checks in the down migrations being rolled back", "skip-checks"),
 			// --plan derives the rollback from the schema difference instead of
 			// running the down bodies, which is what makes a migration with no

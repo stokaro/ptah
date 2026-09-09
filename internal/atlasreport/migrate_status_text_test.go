@@ -146,9 +146,9 @@ func TestWriteMigrateStatusText_MirrorsTheAtlasReport(t *testing.T) {
 }
 
 // TestWriteMigrateStatusFormat_PopulatesPartialFields covers the same four
-// fields from the template side, because they were declared on the report and
-// never written before #1102 — `{{ .Total }}` read 0 on a wedged database and
-// the failing statement was unreachable from a template.
+// fields from the template side, because a field declared on the report and
+// never written is invisible there — `{{ .Total }}` reads 0 on a wedged
+// database and the failing statement is unreachable from a template.
 //
 // Reverted, this renders "0|0||" instead.
 func TestWriteMigrateStatusFormat_PopulatesPartialFields(t *testing.T) {

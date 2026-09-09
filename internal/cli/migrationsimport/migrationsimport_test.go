@@ -102,9 +102,9 @@ func writeSourceWithADroppedMigration(t *testing.T) string {
 
 // The command refuses the import and names every file it did not convert.
 //
-// Before stokaro/ptah#2231 it printed "Wrote 2 migration file(s)", wrote
-// ptah.sum over those two, and exited 0 -- so the truncated directory validated
-// clean and nothing said the other SQL had been left behind.
+// An import that printed "Wrote 2 migration file(s)", wrote ptah.sum over those
+// two and exited 0 would leave the truncated directory validating clean, with
+// nothing saying the other SQL had been left behind.
 func TestImportCommand_RefusesAPartialImportAndNamesWhatItDeclined(t *testing.T) {
 	c := qt.New(t)
 	source := writeSourceWithADroppedMigration(t)

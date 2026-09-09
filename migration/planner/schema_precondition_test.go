@@ -120,8 +120,8 @@ func TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment(t *test
 // control that keeps the lookup from becoming a gate.
 //
 // A schema reached only through an object's qualifier -- one the document never
-// declares -- has been created since stokaro/ptah#1276, and it has to keep
-// being created: the statement exists because the object needs the schema to
+// declares -- is created, and it has to be: the statement exists because the
+// object needs the schema to
 // be there, and withholding it over a missing comment would fail the migration
 // on `schema "extra" does not exist`.
 func TestGenerateSchemaDiffSQLStatements_AnUndeclaredSchemaIsStillCreated(t *testing.T) {

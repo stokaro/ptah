@@ -20,8 +20,8 @@ import (
 // stokaro/ptah#1074 against a live PostgreSQL dev database.
 //
 // A rename retires one name and introduces another. The retirement is reachable
-// from the statement text and has been reported since #1120; the introduction is
-// not, because the retired column's type, nullability and default live in an
+// from the statement text and is reported; the introduction is not, because
+// the retired column's type, nullability and default live in an
 // earlier migration file. Reaching it needs the dev database: the linter reads
 // the schema state the version starts from mid-replay, while the retired column
 // still exists.

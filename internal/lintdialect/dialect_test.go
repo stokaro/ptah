@@ -167,10 +167,9 @@ func TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet(t *testing.T) {
 // TestValid_HappyPath_AcceptsEveryAcceptedSpelling is the exhaustive alias
 // coverage: one subtest per spelling platform.NormalizeDialect knows.
 //
-// Before stokaro/ptah#270 this package accepted only the nine canonical names,
-// so every one of the fifteen aliases below was refused as an "unsupported lint
-// dialect" while `ptah sql lint`, `--dev-url` inference and the renderer all
-// took it.
+// A package accepting only the nine canonical names refuses every one of the
+// fifteen aliases below as an "unsupported lint dialect" while `ptah sql lint`,
+// `--dev-url` inference and the renderer all take it.
 func TestValid_HappyPath_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 

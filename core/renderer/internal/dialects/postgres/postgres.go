@@ -1186,9 +1186,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// An index comment is a separate statement: CREATE INDEX has no COMMENT
 	// clause in PostgreSQL's grammar, unlike MySQL's index definition. Emitting
 	// it here is what keeps the comment attached to the index the statement
-	// above just created -- before #1242 the value was carried all the way from
-	// the annotation or the HCL document to this node and then dropped, and the
-	// index arrived with no comment at exit 0.
+	// above just created. Without it the value is carried all the way from the
+	// annotation or the HCL document to this node and then dropped, and the
+	// index arrives with no comment at exit 0.
 	if node.Comment != "" {
 		r.w.WriteLinef(
 			"COMMENT ON INDEX %s IS %s;",

@@ -301,7 +301,7 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 // resolveTestDesiredSchema classifies the desired-schema source, resolves it,
 // and restricts it to the selected schemas when a selection is present.
 //
-// A directory keeps the historical Go-annotation path and is left to the runner
+// A directory keeps the Go-annotation path and is left to the runner
 // so its error wording does not change. A .sql or .hcl file goes through the
 // shared loader every other schema-consuming verb already uses -- `schema diff
 // --to file://schema.sql` and `--to file://schema.hcl` both work. A database URL
@@ -310,8 +310,8 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 //
 // Classification deliberately does not govern the file and directory branches:
 // it calls a plain directory a local schema file and would hand it to the
-// schema-file loader, which since stokaro/ptah#940 reads a directory of .sql or
-// .hcl files as one schema. A directory of Go annotations holds neither, so that
+// schema-file loader, which reads a directory of .sql or .hcl files as one
+// schema. A directory of Go annotations holds neither, so that
 // loader would refuse it; a Go-annotation directory must keep reaching
 // goschema.ParseDir.
 //

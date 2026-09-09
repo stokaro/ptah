@@ -76,8 +76,8 @@ func TestMigrateApplyTxtarFailingChecksAbortBeforeBody(t *testing.T) {
 // TestMigrateApplyTxtarRetryAfterFixingDataSucceeds is the recovery half of the
 // gate on the surface that needs it most: `ptah-compat migrate apply` registers
 // no --skip-checks (Atlas has none either), so a check failure that left a dirty
-// row would force every later apply through --allow-dirty. Since #966 that flag
-// does recover, but a failed check must still leave no dirty row behind, or the
+// row would force every later apply through --allow-dirty. That flag does
+// recover, but a failed check must still leave no dirty row behind, or the
 // drop-in workflow needs a flag Atlas users never had to pass.
 func TestMigrateApplyTxtarRetryAfterFixingDataSucceeds(t *testing.T) {
 	c := qt.New(t)

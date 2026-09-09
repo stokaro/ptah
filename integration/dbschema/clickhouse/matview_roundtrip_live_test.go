@@ -411,9 +411,9 @@ func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
 //	Code: 57. DB::Exception: Table <db>.user_stats already exists.
 //	(TABLE_ALREADY_EXISTS)
 //
-// The plain view standing beside it is the control: it has matched bare names
-// against a uniquely-named database view since #1276, so a run where only the
-// materialized half moves is the whole finding.
+// The plain view standing beside it is the control: it matches bare names
+// against a uniquely-named database view, so a run where only the materialized
+// half moves is the whole finding.
 //
 // The second apply is the point of the test: a plan produced from a settled
 // database must be empty, and an empty plan is the only one that can be executed

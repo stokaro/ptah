@@ -43,9 +43,7 @@ type atlasCompatEnvSchemasCase struct {
 // TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E establishes the
 // behavioral half of `env { schemas }`, which no SQLite fixture can reach.
 //
-// The attribute had no parser arm before stokaro/ptah#934: it fell to the
-// unknown-name tolerance, was warned about, and selected nothing. The decode
-// half was already provable anywhere — the pinned Atlas community binary v1.3.0
+// The decode half is provable anywhere — the pinned Atlas community binary v1.3.0
 // refuses `schemas = "one"` with `field is of type slice but attr "schemas" is
 // type: string` at exit 1, and a binary that refuses on a field's TYPE has
 // decoded that field. What the decode proof cannot say is what the decoded
@@ -67,9 +65,9 @@ type atlasCompatEnvSchemasCase struct {
 //	env { schemas = ["one","two"] }  --schema one      -> schema "one"
 //	env { schemas = ["nosuchschema"] } --schema one    -> schema "one"
 //
-// Ptah described all three schemas on the first, second, third and sixth of
-// those before this change; the flag rows already agreed, because --schema
-// reached the reader and the attribute did not.
+// The rows carrying no flag are the ones that measure the attribute: --schema
+// reaches the reader on its own, so a run that carries it agrees whether or not
+// the attribute is read at all.
 //
 // The `public` schema is what makes the rows discriminating. A fixture with
 // only `one` and `two` would pass an implementation that restricted to

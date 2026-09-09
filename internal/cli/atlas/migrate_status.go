@@ -175,7 +175,7 @@ func runAtlasMigrateStatus(
 	// directory resolved from atlas.hcl as well as one named by --dir, which is
 	// why it sits here rather than beside the flag parsing.
 	//
-	// Both branches are reachable since #1002: a foreign layout is gated over
+	// Both branches are reachable: a foreign layout is gated over
 	// the file set atlas.sum covers for THAT layout, before it is converted.
 	//
 	// Returned bare on purpose — cmdutil.Fail would prepend `error: ` and move

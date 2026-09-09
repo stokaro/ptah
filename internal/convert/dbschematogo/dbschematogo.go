@@ -475,9 +475,9 @@ func convertContinuousAggregates(
 // convertSynonyms carries the SQL Server synonyms a read found into the IR.
 //
 // Without it `ptah schema inspect` described none of them, in any format, even
-// though the reader finds every one and the HCL surface has had a `synonym`
-// block since stokaro/ptah#1031. The loss was between the read and the
-// document, so nothing that renders from a hand-built schema could see it
+// though the reader finds every one and the HCL surface has a `synonym` block
+// (stokaro/ptah#1031). The loss sits between the read and the document, so
+// nothing that renders from a hand-built schema can see it
 // (stokaro/ptah#2001).
 //
 // The target is rebuilt from the PARSED parts rather than copied. `Target` is

@@ -5,13 +5,13 @@ package integration_test
 // Live PostgreSQL coverage for what a write does to a row that already holds
 // one.
 //
-// embedrun.ResolveWrite has always held these rules -- a write never crosses
-// generations, a stale answer does not win, a tombstone survives a late update
-// -- and until stokaro/ptah#2391 nothing called it. The write path rendered an
-// unconditional UPDATE with no generation and no version predicate, so every
-// one of them was in force only in that function's own unit tests.
+// embedrun.ResolveWrite holds these rules -- a write never crosses generations,
+// a stale answer does not win, a tombstone survives a late update -- and they
+// are in force only where the write path calls it. A rule exercised by its own
+// unit tests and called from nowhere else is not in effect, which is why these
+// drive the write path rather than the function.
 //
-// These are live because the resolution now happens against what the target
+// These are live because the resolution happens against what the target
 // holds, read and locked inside the committing transaction. A fake cannot
 // measure that.
 

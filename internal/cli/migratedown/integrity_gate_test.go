@@ -178,8 +178,8 @@ func TestMigrateDown_TamperedHashedDirRefusesBeforeConfirmation(t *testing.T) {
 //
 // A directory nobody ever hashed carries no recorded intent to compare against,
 // so refusing it would remove a capability rather than protect one. This is the
-// same boundary `migrations up` has held since stokaro/ptah#955, and it is what
-// keeps the fix from being a behavior change for every operator who does not
+// same boundary `migrations up` holds, and it is what keeps the gate from
+// being a behavior change for every operator who does not
 // use ptah.sum at all.
 func TestMigrateDown_UnhashedDirStaysUngated(t *testing.T) {
 	c := qt.New(t)

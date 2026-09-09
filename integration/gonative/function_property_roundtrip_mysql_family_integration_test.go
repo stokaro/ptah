@@ -475,9 +475,8 @@ func TestFunctionCaseOnlySpelling_MySQLFamily_Integration(t *testing.T) {
 //
 // The procedure is created directly rather than through Ptah because what is
 // under test is the FUNCTION's signature, not the procedure. Ptah models
-// procedures since stokaro/ptah#1722, and the reader returns this one -- so the
-// collision the parameter map has to survive is reachable now instead of being
-// prevented by a filter.
+// procedures, and the reader returns this one, so the collision the parameter
+// map has to survive is reachable rather than prevented by a filter.
 func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 	for _, target := range mysqlFamilyTargets {
 		t.Run(target.name, func(t *testing.T) {

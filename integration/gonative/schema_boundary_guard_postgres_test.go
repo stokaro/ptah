@@ -249,9 +249,10 @@ func boundaryCases() []boundaryCase {
 			// document that carries the reference and not the block is
 			// unreadable: measured on the pinned Atlas community binary v1.3.0
 			// against this exact document, exit 1 with `There is no variable
-			// named "schema"` before #1234 and exit 0 after it. What a document
-			// declares is now collected from what it referenced, so the
-			// declaration cannot go missing again. #1264 reaches the same value
+			// named "schema"` when the block is missing, and exit 0 when it is
+			// there. What a document declares is collected from what it
+			// references, so the declaration cannot go missing. #1264 reaches
+			// the same value
 			// from the other direction -- inspection asks for the schemas the
 			// URL covers -- so the two agree rather than compete.
 			wantDescribedSchemas: []string{"public"},

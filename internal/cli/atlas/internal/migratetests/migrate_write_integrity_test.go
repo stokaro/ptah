@@ -275,8 +275,8 @@ func TestCompatMigrateWrite_AcceptedDirectoriesStillWrite(t *testing.T) {
 			},
 		},
 		{
-			// Nested SQL is not a migration on either tool since #976: the
-			// covered set is top-level only, so the directory has nothing to
+			// Nested SQL is not a migration on either tool: the covered set is
+			// top-level only, so the directory has nothing to
 			// verify and the community binary exits 0.
 			name: "sql only below the top level",
 			build: func(c *qt.C, root string) string {

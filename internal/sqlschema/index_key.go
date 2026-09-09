@@ -15,10 +15,10 @@ import (
 //	                            [ ASC | DESC ] [ NULLS { FIRST | LAST } ]
 //
 // and Ptah's own PostgreSQL renderer writes every one of those suffixes. The
-// SQL frontend keeps each element as one opaque string, and until #1242 this
-// converter classified anything that was not a bare identifier as an
-// EXPRESSION, so a file Ptah had just written came back with the suffix glued
-// to the key. Measured on live PostgreSQL 17.10, a database holding
+// SQL frontend keeps each element as one opaque string, so a converter that
+// classifies anything not a bare identifier as an EXPRESSION reads a file Ptah
+// has just written back with the suffix glued to the key. Measured on live
+// PostgreSQL 17.10, a database holding
 //
 //	CREATE INDEX i ON t USING gist (tsv tsvector_ops (siglen = 64))
 //

@@ -41,9 +41,8 @@ import (
 // a member of the covered set. The read that follows fails with "is a
 // directory" and the oracle refuses the whole directory, writing no atlas.sum
 // at all. This returns the directory's name for exactly that reason: skipping
-// it, as Ptah did before stokaro/ptah#991, hashed the remainder and wrote a sum
-// Atlas CE then declines to read — the caller's read is what refuses, and it
-// must be given the chance to fail.
+// it hashes the remainder and writes a sum Atlas CE then declines to read — the
+// caller's read is what refuses, and it must be given the chance to fail.
 //
 // Flyway is the sole format Atlas CE recurses into. Every other format sees
 // only the top level, so a migration one directory down is not covered by the
@@ -52,8 +51,8 @@ import (
 // a Flyway tree instead of globbing it, so there a directory is a walk node it
 // descends into and never attempts to read. Both tools hash V1__init.sql beside
 // a directory named weird.sql without complaint, and produce byte-identical
-// sums. Expressing the #991 fix as "reject any .sql directory", or applying it
-// to treeNames, would refuse three measured-identical Flyway shapes and a
+// sums. Expressing this as "reject any .sql directory", or applying it to
+// treeNames, would refuse three measured-identical Flyway shapes and a
 // golang-migrate directory holding weird.sql.
 //
 // The .sql suffix match is case-sensitive: Atlas CE covers no file named

@@ -16,24 +16,19 @@ import (
 // integrity gate run over what atlas.sum covers for THAT layout, and only then
 // convert.
 //
-// `migrate status` and `migrate set` came first (stokaro/ptah#1002), and
-// `migrate lint` joined them (stokaro/ptah#1013 section 1). It is deliberately
-// verb-neutral for the reason #974 recorded about the integrity gate: a rule
+// `migrate status`, `migrate set` and `migrate lint` all read through it. It is
+// deliberately verb-neutral for the reason #974 recorded about the integrity
+// gate: a rule
 // that lives inside one verb is a rule the next verb reading the same
 // directories quietly does not have.
 //
-// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and the
-// reason has changed twice, so it is worth stating the current one. It used to
-// be the missing atlas.sum gate: those two wrote a migration file and a fresh
-// sum over a directory nothing had verified, so honoring a `?format=` there
-// would have traded one divergence for a worse one. That gate landed in
-// stokaro/ptah#1086, and with it `migrate new` grew its own converted path --
-// it honors `?format=goose` today, exit 0, files in that layout, matching the
+// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and
+// neither of them refuses a layout. `migrate new` has its own converted path:
+// it honors `?format=goose`, exit 0, files in that layout, matching the
 // community binary.
 //
-// `migrate diff` is out for a reason that no longer has anything to do with
-// refusing a layout. It honors `?format=goose` too since stokaro/ptah#1013 --
-// exit 0, files in that layout, atlas.sum over that layout's covered set. What
+// `migrate diff` honors `?format=goose` too -- exit 0, files in that layout,
+// atlas.sum over that layout's covered set. What
 // keeps it out of THIS file is that the verbs here READ a directory, and
 // reading one is a conversion in memory; `migrate diff` also WRITES one, so it
 // resolves the same value through [resolveWritingVerbDirFormat] and then

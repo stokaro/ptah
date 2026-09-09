@@ -236,8 +236,8 @@ func TestPrepareApply_MigrationDirSourceRequiresDevURL(t *testing.T) {
 }
 
 // TestPlanApply_EmptyLocalDirectoryRefuses pins the one directory that is not a
-// desired state. A directory of schema files is one since stokaro/ptah#940 item
-// B; an empty directory holds no schema, and the community binary refuses it
+// desired state. A directory of schema files is one; an empty directory holds
+// no schema, and the community binary refuses it
 // with the same sentence.
 func TestPlanApply_EmptyLocalDirectoryRefuses(t *testing.T) {
 	c := qt.New(t)
@@ -278,9 +278,9 @@ func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
 
 // TestPreparePlanFile_MigrationDirStaysLocalOnly pins that `schema plan`
 // keeps the pre-resolver local-file loading: a migration directory --to is not
-// replayed there. Since stokaro/ptah#940 item B the loader also refuses to read
-// a migration directory as a schema directory, so atlas.sum keeps meaning
-// exactly one thing on both spellings.
+// replayed there. The loader also refuses to read a migration directory as a
+// schema directory, so atlas.sum keeps meaning exactly one thing on both
+// spellings.
 func TestPreparePlanFile_MigrationDirStaysLocalOnly(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasMigrationDir(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")

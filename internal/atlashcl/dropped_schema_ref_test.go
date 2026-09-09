@@ -12,17 +12,17 @@ import (
 // may name a schema the file declares.
 //
 // `wibble "p" { schema = schema.main }` is the ordinary spelling of every
-// Atlas object Ptah does not model, and until stokaro/ptah#927 item 5 the whole
-// file was refused over it: the dropped body was evaluated in a scope with no
-// `schema` root at all, so the reference failed with `unknown variable
-// "schema"` and the load exited 1. The pinned Atlas community binary v1.3.0
+// Atlas object Ptah does not model. Evaluating a dropped body in a scope with
+// no `schema` root at all refuses the whole file over it: the reference fails
+// with `unknown variable "schema"` and the load exits 1. The pinned Atlas
+// community binary v1.3.0
 // loads each file below at exit 0 and reports `Schemas are synced, no changes to
 // be made.`
 //
-// The vehicle used to be `procedure`, which Ptah now models: a procedure is its
-// own top-level block, because writing one as a `function` made applying a
-// database's own description drop every procedure it had (stokaro/ptah#2209).
-// `wibble` replaces it rather than some other real construct because what these
+// The vehicle is not `procedure`, which Ptah models: a procedure is its own
+// top-level block, because writing one as a `function` drops every procedure a
+// database's own description carries (stokaro/ptah#2209). `wibble` stands in
+// rather than some other real construct because what these
 // rows measure is the dropped BODY -- the binary treats a top-level block whose
 // name it does not model the same way whatever that name is, and `wibble` is
 // the name the reference run already uses to prove exactly that

@@ -324,11 +324,11 @@ func sqliteCheckpointColumnCount(c *qt.C, dbPath, table, column string) int {
 // nested future-dated migration was replayed INTO the checkpoint body while
 // still sorting AFTER it, and a fresh database ran the checkpoint and then
 // replayed that migration on top — stokaro/ptah#954's double-apply, produced by
-// our own writer. The remedy then was to raise the version bound above the
-// nested file.
+// our own writer. Raising the version bound above the nested file is one
+// remedy for that shape.
 //
-// Since stokaro/ptah#976 the nested file is not a migration at all: atlas.sum
-// covers only the top level, so it is neither replayed nor executed nor
+// The nested file is not a migration at all: atlas.sum covers only the top
+// level, so it is neither replayed nor executed nor
 // counted. The post-condition below is therefore strictly stronger than the one
 // it replaces, and each clause rules out a different way of "fixing" this by
 // loosening it:

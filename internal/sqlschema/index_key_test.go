@@ -29,11 +29,11 @@ func parseOneIndex(c *qt.C, sql string) schemamodel.Index {
 // TestToIndex_KeySuffixes pins the index key suffixes the SQL surface has to
 // read back out of DDL that Ptah's own PostgreSQL renderer wrote.
 //
-// Before #1242 a key list element was one opaque string, and every element that
-// was not a bare identifier became an EXPRESSION -- suffix and all. Measured on
-// live PostgreSQL 17.10, that turned `schema diff --from <db> --to file://<the
-// SQL inspect just wrote for that db>` into a DROP plus a CREATE that psql
-// refuses with `syntax error`, so applying the plan left the table with no
+// Treating a key list element as one opaque string makes every element that is
+// not a bare identifier an EXPRESSION -- suffix and all. Measured on live
+// PostgreSQL 17.10, that turns `schema diff --from <db> --to file://<the SQL
+// inspect just wrote for that db>` into a DROP plus a CREATE that psql refuses
+// with `syntax error`, so applying the plan leaves the table with no
 // index at all.
 func TestToIndex_KeySuffixes(t *testing.T) {
 	t.Parallel()

@@ -146,8 +146,8 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			want:  `unsupported Atlas include selector "[type=column]"`,
 		},
 		{
-			// Parsed after the pull until stokaro/ptah#1496, so an
-			// unparseable duration was reported as a registry dial failure.
+			// Parsed before the pull: parsing it afterwards reports an
+			// unparseable duration as a registry dial failure.
 			name:  "unparseable --connect-timeout",
 			extra: []string{"--dev-url", "sqlite://:memory:", "--connect-timeout", "nonsense"},
 			want:  `invalid --connect-timeout value "nonsense"`,

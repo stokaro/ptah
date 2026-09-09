@@ -30,20 +30,20 @@ import (
 // So one binary stamped two shapes, and the shape only `migrate new` produced
 // -- newest+1 -- is also not a time: `...235960` has sixty seconds in it and
 // cannot be parsed back. The pinned community binary stamps the clock for both
-// verbs, and so does this binary's `migrate diff` since stokaro/ptah#1218.
+// verbs, and so does this binary's `migrate diff` (stokaro/ptah#1218).
 //
-// The arithmetic behind that bump had a second failure with a worse ending. A
-// directory whose newest version is math.MaxInt64 -- which
+// The newest+1 arithmetic has a second failure with a worse ending. A directory
+// whose newest version is math.MaxInt64 -- which
 // `migrate import --dir-format flyway` produces, stamping a Flyway `R__`
-// repeatable there so it sorts last -- made newest+1 wrap to math.MinInt64, and
-// the verb wrote `-9223372036854775808_addposts.sql`, hashed it into atlas.sum
-// and exited 0. The same binary's discovery then refused that name and dropped
-// it with no diagnostic: `migrate validate` exited 0, `migrate apply` reported
+// repeatable there so it sorts last -- makes newest+1 wrap to math.MinInt64,
+// and the verb writes `-9223372036854775808_addposts.sql`, hashes it into
+// atlas.sum and exits 0. Discovery then refuses that name and drops it with no
+// diagnostic: `migrate validate` exits 0, `migrate apply` reports
 // "2 pending migrations" over three files, and the table the migration created
-// never appeared.
+// never appears.
 //
-// The cheaper wrong implementation for every row below is the rule that was
-// there before, not the deletion of the new one: put
+// The cheaper wrong implementation for every row below is the newest+1 rule,
+// not the deletion of this one: put
 // `if latest := latestAtlasVersionIn(names); latest >= version { version = latest + 1 }`
 // back at the top of firstFreeAtlasVersion and rows 1 and 2 fail.
 

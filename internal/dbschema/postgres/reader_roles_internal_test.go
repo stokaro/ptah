@@ -1171,11 +1171,11 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 	// The capability scoping the description took away, put back on the same
 	// surface (AGENTS.md, "Compatibility never removes a capability").
 	// Measured on PostgreSQL 17.10 across two clusters: a database holding one
-	// table and one ungranted cluster role is described with 4 CREATE ROLE
-	// before stokaro/ptah#1267 and 0 after, and `ptah-compat schema apply
+	// table and one ungranted cluster role is described with 0 CREATE ROLE
+	// under the scoping and 4 without it, and `ptah-compat schema apply
 	// --dry-run` against an empty database in a second cluster plans those
-	// roles before and not after. With this variable set, both numbers come
-	// back.
+	// roles without the scoping and not under it. With this variable set, both
+	// numbers come back.
 	//
 	// Reserved names do not come back, and that is the point of asserting
 	// against manageableClusterRoleNames rather than against fullCluster: the

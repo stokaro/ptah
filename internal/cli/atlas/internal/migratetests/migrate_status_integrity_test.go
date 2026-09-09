@@ -143,10 +143,8 @@ func assertIntegrityTargetUntouched(c *qt.C, dbPath string) {
 // Without the gate every state here exits 0 and reports normally; the removed
 // state additionally reports the database up to date for a directory whose
 // migration is gone. With it, every state exits 1 with output byte-identical to
-// the pinned community binary v1.3.0. (The normal report was
-// `=== MIGRATION STATUS ===` when #974 landed and is the mirrored Atlas block
-// since #1102; the gate is indifferent to which, because it refuses before the
-// report is reached.)
+// the pinned community binary v1.3.0. (The gate is indifferent to which shape
+// the normal report takes, because it refuses before the report is reached.)
 func TestCompatMigrateStatus_DriftedDirRefuses(t *testing.T) {
 	for _, drift := range statusIntegrityDrifts() {
 		t.Run(drift.name, func(t *testing.T) {

@@ -315,6 +315,10 @@ today has no earlier Ptah to compare against, and Ptah is pre-GA, so the earlier
 behavior is not a surface anyone can still meet. Narrating it spends the
 reader's attention on something that cannot happen to them.
 
+Section 6.7 is the one part of this section that also governs code comments. A
+comment is read by whoever changes the code next, and the same narration costs
+them the same attention.
+
 ### 6.1 The rule
 
 Write the current behavior as a direct statement. Do not narrate the change that
@@ -407,6 +411,42 @@ exists only as a compatibility surface, say what it does, open a product issue
 to remove or rename it, and cite that issue in the same paragraph. An unowned
 claim that a gap is tracked is itself a `check:style` failure (section 1).
 Remove the explanation after the behavior changes, not before.
+
+### 6.7 A statement is not dated to an issue
+
+Never date a statement to a Ptah issue. The clause carries nothing a reader can
+act on: the behavior it describes is what the page or the code in front of them
+already says, and `git log -L` answers when it changed. Pre-GA there is no
+second reason to keep it, because Ptah owes no compatibility with its own
+previous behavior, so the narration documents an upgrade path nobody walks.
+
+The shapes, in every spelling this tree writes a reference in:
+
+```text
+X was Y until stokaro/ptah#1048 gave it a parser arm
+the reader has honored this key since #942
+Before #1242 this field did not exist
+the exception until [#982](https://github.com/stokaro/ptah/issues/982)
+```
+
+What survives the rewrite is the part that is still true:
+
+- **the rule** — "every name is described, so the question is asked of the
+  record that is missing a host";
+- **the ablation** — "without this call the write path renders an unconditional
+  UPDATE and every write wins". It says what a `before #N` clause said and stays
+  true after the next change, which is why it is the usual replacement;
+- **the measurement** — keep the numbers, drop the calendar: "0 CREATE ROLE
+  under the scoping and 4 without it", not "4 before #1267 and 0 after";
+- **a citation** — an issue that still owns something, written plainly.
+  `(stokaro/ptah#2209)` is a pointer; `since stokaro/ptah#2209` is a date.
+
+Unlike the rest of section 6, this one is enforced:
+`check-implementation-chronology.mjs` over Markdown and
+`internal/chronologyguard` over Go comments, on `until`, `before`, `since` and
+`as of` standing in front of a reference. `after` is left to the reader, because
+"after stokaro/ptah#2725 removes the converter" is a forward reference to work
+with an owner and no pattern separates it from the backward reading.
 
 ## 7. Ptah terminology
 
@@ -1025,8 +1065,9 @@ below it — needs a reader. The clearest case is anthropomorphism: the site say
 "does not mean Ptah thinks it is missing", which *denies* the anthropomorphism,
 and a rule that flagged it would be worse than no rule.
 
-**Section 6 (timeless documentation) is enforced by nobody, deliberately, and
-that is the decision most worth writing down.** Two separate measurements say so.
+**Section 6 (timeless documentation) is enforced only where a shape has no
+other reading, and that is the decision most worth writing down.** Two separate
+measurements say where the line falls.
 
 The broad words carry a present-tense reading more often than not. Counted in
 prose across the governed files, with the site subset beside it:
@@ -1052,6 +1093,15 @@ the tree, on the prose stream `check-terminology.mjs` builds, so a code span or
 a fenced block is not a finding. Its self-test carries the clean-fixture shapes
 this section named: an Atlas subject, a runtime state, `legacy-tested`, and the
 purpose sense of `used to`.
+
+Section 6.7 is the fourth rule, and the measurement behind it is different in
+kind. The shape is not a word but a preposition standing in front of an issue
+reference, which nothing else in this tree's English does, so the deny-list
+objection above does not apply to it. Run against the tree before the sweep, the
+two gates reported 148 occurrences in Go comments and 18 in Markdown; every one
+was rewritten, and none needed its date to say what it was saying. The
+counts are separate because the corpora are: a Markdown reader cannot see a Go
+comment, which is why `internal/chronologyguard` exists beside the gate.
 
 Four paths are exempt, each because the past is its subject rather than an
 intrusion: `docs/adr/**` is a design record, `docs/conformance.md` is a dated

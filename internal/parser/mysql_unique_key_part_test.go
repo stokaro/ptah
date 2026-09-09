@@ -26,16 +26,16 @@ func uniqueKeyTable(declaration string) string {
 // TestParse_MySQLUniqueKeyPartAttributesBecomeAUniqueIndex covers
 // stokaro/ptah#2770.
 //
-// A UNIQUE key was read as a schemamodel constraint, which carries column
-// NAMES and nothing else. The prefix length and the DESC direction were parsed
-// into ColumnParts and then dropped by that conversion, so `UNIQUE KEY uq
-// (a(7))` reached the renderer as `CONSTRAINT uq UNIQUE (a)` -- a weaker
-// guarantee than the author declared, with nothing reported.
+// Reading a UNIQUE key as a schemamodel constraint carries column NAMES and
+// nothing else. The prefix length and the DESC direction parse into ColumnParts
+// and are then dropped by that conversion, so `UNIQUE KEY uq (a(7))` reaches
+// the renderer as `CONSTRAINT uq UNIQUE (a)` -- a weaker guarantee than the
+// author declared, with nothing reported.
 //
-// The repair is the promotion stokaro/ptah#2793 established: a UNIQUE key the
+// The repair is the promotion stokaro/ptah#2793 establishes: a UNIQUE key the
 // constraint model cannot hold is read as the unique INDEX both servers
-// actually build, which ast.IndexNode already expresses -- Prefix and Desc have
-// travelled on ast.IndexPart since stokaro/ptah#2713. So the predicate widens
+// actually build, which ast.IndexNode already expresses -- Prefix and Desc
+// travel on ast.IndexPart. So the predicate widens
 // from "carries an expression" to "carries an expression, a prefix, or a
 // direction", and no field is added to the model.
 //

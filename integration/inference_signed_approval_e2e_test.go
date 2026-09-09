@@ -110,15 +110,14 @@ func assertARefusedCutoverWritesAPlanToSign(
 	c.Assert(string(body), qt.Contains, planDigestFrom(c, output))
 	// And the verification line names a MEASUREMENT rather than the generation.
 	//
-	// It held spec.Identity().Digest, so the approver was shown the same
-	// sixty-four characters twice under two labels and the plan digest did not
-	// move when the report changed -- an approval that bound to no measurement
-	// at all (stokaro/ptah#2643). Asserting the two lines differ is the whole
-	// defect: they were byte-identical in every plan the audit produced.
+	// Holding spec.Identity().Digest there shows the approver the same
+	// sixty-four characters twice under two labels, and the plan digest does not
+	// move when the report changes -- an approval bound to no measurement at all
+	// (stokaro/ptah#2643). Asserting the two lines differ is the whole defect.
 	//
-	// The label is `verification report` since stokaro/ptah#2739, because it now
-	// sits beside `verification passed` and a digest called `verification` read
-	// as the verdict.
+	// The label is `verification report` rather than `verification`, because it
+	// sits beside `verification passed` and a digest called `verification` reads
+	// as the verdict (stokaro/ptah#2739).
 	c.Assert(planFieldFrom(c, string(body), "verification report"), qt.Not(qt.Equals),
 		planFieldFrom(c, string(body), "generation"))
 	c.Assert(planFieldFrom(c, string(body), "verification report"), qt.Not(qt.Equals), "")

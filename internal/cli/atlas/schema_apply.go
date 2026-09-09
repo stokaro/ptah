@@ -1322,11 +1322,11 @@ const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
 //	file://schema.hcl                 applies                 applies
 //	file://schema.sql                 --dev-url cannot be…    --dev-url cannot be…
 //
-// The middle row is the one this function got wrong until stokaro/ptah#1334 was
-// re-measured: an HCL desired state is already a schema definition and needs
-// nothing replayed, and refusing it broke `schema apply` for the most common
-// Atlas source there is. The fixture behind the original rule used a SQL file,
-// and one file cannot separate a rule about FILES from a rule about SQL.
+// The middle row is the one a rule about FILES gets wrong: an HCL desired state
+// is already a schema definition and needs nothing replayed, so refusing it
+// breaks `schema apply` for the most common Atlas source there is. A fixture
+// using only a SQL file cannot separate a rule about FILES from a rule about
+// SQL, which is why the table above carries both.
 //
 // `schema inspect` and `schema diff` refuse BOTH formats on both binaries, so
 // they are not this rule and are deliberately left alone

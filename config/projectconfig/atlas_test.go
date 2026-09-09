@@ -1950,8 +1950,8 @@ func TestParseAtlasProjectConfigLintLogRejectsEmpty(t *testing.T) {
 // VALUE on a known key, and an expression that cannot be evaluated produce
 // three different errors.
 //
-// They were one message until stokaro/ptah#1014, and collapsing them again is
-// the specific regression this test exists to catch. The distinction is
+// Collapsing them into one message is the specific regression this test exists
+// to catch. The distinction is
 // load-bearing: Atlas CE tolerates an unknown name while still failing on the
 // other two, so an accept-and-ignore change has to relax exactly one branch.
 // While the three share a message, no test can tell whether a refusal came from

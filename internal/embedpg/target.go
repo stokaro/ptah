@@ -99,8 +99,8 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 	// What the target already holds for these keys, read inside the same
 	// transaction and locked, so the decision below is made against what is
 	// there rather than against what this worker believes. embedrun.ResolveWrite
-	// is the decision; before stokaro/ptah#2391 nothing called it and every
-	// write won unconditionally.
+	// is the decision. Without this call the write path renders an
+	// unconditional UPDATE and every write wins.
 	existing, err := t.existingWrites(ctx, transaction, writes)
 	if err != nil {
 		return err

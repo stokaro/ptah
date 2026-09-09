@@ -277,18 +277,17 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// The integrity gate runs before the database connection, before the
 	// confirmation prompt, and before any rollback SQL is read: a run that is
 	// going to refuse must not first ask the operator to type YES, and must not
-	// hold a connection while it decides. `migrations up` has verified here
-	// since stokaro/ptah#955; `down` did not, so a rewritten `_init.down.sql`
-	// under a stale ptah.sum executed at exit 0 while `up` on the same
-	// directory exited 2.
+	// hold a connection while it decides. `migrations up` verifies here too.
+	// Without the gate on `down`, a rewritten `_init.down.sql` under a stale
+	// ptah.sum executes at exit 0 while `up` on the same directory exits 2.
 	//
 	// --verify-sum adds the half the always-on gate deliberately does not
 	// cover: a directory carrying NO sum passes the gate, because there is no
-	// recorded intent to compare it against, and until stokaro/ptah#928 item 4
-	// `down` had no spelling that could demand one. It also qualifies what a
+	// recorded intent to compare it against, and this flag is the spelling that
+	// demands one. It also qualifies what a
 	// verification through a movable OCI tag actually established, which is the
 	// same sentence `up` prints — shared, not copied, so the destructive verb
-	// cannot end up saying less than the constructive one again.
+	// cannot say less than the constructive one.
 	//
 	// integrityPolicy was resolved at the command boundary, above, so the
 	// escape hatch is decided once for the whole invocation rather than read

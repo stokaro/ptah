@@ -272,18 +272,17 @@ func dmlMatrixRows() []dmlMatrixRow {
 // answer with the generic unsupported-dialect refusal -- a dialect the query
 // builder has never been taught.
 //
-// It is EMPTY as of stokaro/ptah#941: SQL Server and ClickHouse were the last
-// two names in it, and every dialect renderer.SupportedDialects() reports now
-// renders all four verbs. The list and the test stay, because the guard is
-// about the next dialect rather than about those two: a name added to
+// It is EMPTY: every dialect renderer.SupportedDialects() reports renders all
+// four verbs. The list and the test stay, because the guard is about the next
+// dialect rather than about the names it once held: a name added to
 // selectPlaceholderStyle without a row written for it lands here.
 //
 // The list is compared against OBSERVED behavior rather than against
 // dmlMatrixRows, so shrinking it without also teaching the renderer is red too.
 //
-// The helper that built an all-four-refusals row went with the last entry: a
-// row nothing constructs is dead weight, and whoever adds an untaught dialect
-// writes its cells when they write its row. The census is what tells them a row
+// There is no helper for an all-four-refusals row: a row nothing constructs is
+// dead weight, and whoever adds an untaught dialect writes its cells when they
+// write its row. The census is what tells them a row
 // is needed.
 func dmlGenericRefusalQuarantine() []string {
 	return nil

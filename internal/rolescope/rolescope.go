@@ -15,18 +15,18 @@ import (
 	"ptah.run/internal/envbool"
 )
 
-// DescribeAllEnvVar restores the pre-scoping read: every role Ptah manages on
-// the server is described, not only the roles the inspected schemas refer to.
+// DescribeAllEnvVar selects the unscoped read: every role Ptah manages on the
+// server is described, not only the roles the inspected schemas refer to.
 //
-// It exists because scoping the description removed a capability, and
-// AGENTS.md ("Compatibility never removes a capability. Constitute it, do not
-// discard it.") does not allow that to be the end of the story. Measured on
+// It exists because scoping the description on its own would remove a
+// capability, and AGENTS.md ("Compatibility never removes a capability.
+// Constitute it, do not discard it.") does not allow that. Measured on
 // PostgreSQL 17.10 across two separate clusters: a database holding one table
-// and one ungranted cluster role is inspected with 4 CREATE ROLE statements
-// before stokaro/ptah#1267 and 0 after, and `ptah-compat schema apply
+// and one ungranted cluster role is inspected with 0 CREATE ROLE statements
+// under the scoping and 4 with this variable set, and `ptah-compat schema apply
 // --dry-run` against an empty database in a second cluster plans those roles
-// before and does not plan them after. Copying one cluster's roles into
-// another is something a user could do before, so it stays reachable here.
+// only with it. Copying one cluster's roles into another is a thing a user
+// does, so it stays reachable here.
 //
 // It is an environment variable and not a flag for the reason
 // [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar] gives:

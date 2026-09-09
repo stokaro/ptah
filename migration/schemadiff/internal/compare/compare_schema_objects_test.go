@@ -428,9 +428,8 @@ func TestMaterializedViews_IgnoresCatalogQualifierWhenTheAliasIsTheSchemaName(t 
 // carries none. Matching only on the qualified form reported the unchanged
 // object as both added and removed, which the planner answers with a CREATE
 // before the removal -- refused by the server, because the name is still taken.
-// The plain view beside it has matched a bare name against a uniquely-named
-// database view since #1276 and reported nothing; the materialized view now does
-// the same.
+// The plain view beside it matches a bare name against a uniquely-named
+// database view and reports nothing; the materialized view does the same.
 func TestMaterializedViews_MatchesUnqualifiedNameToTheOnlyDatabaseSchema(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

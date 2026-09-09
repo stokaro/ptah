@@ -87,9 +87,9 @@ type ociSourceVerb struct {
 // ociSchemaSourceVerbs enumerates the commands that resolve an oci:// SCHEMA
 // artifact through --schema-file.
 //
-// Six of these registered no --plain-http before stokaro/ptah#928 item 1. The
-// issue named four; `schema export` and `schema inspect` were found by this
-// walk, which is the reason the walk exists rather than a list.
+// This is a walk rather than a list because a list misses verbs. Written by
+// hand, the same census named four of the six that needed --plain-http;
+// `schema export` and `schema inspect` came out of the walk.
 func ociSchemaSourceVerbs() []ociSourceVerb {
 	return []ociSourceVerb{
 		{
@@ -625,13 +625,12 @@ func appendOCIReferenceRow(census, match []string) []string {
 // TestOCISourceVerbs_MatchTheCommandReference is the same census, read from the
 // documentation instead of from the command tree.
 //
-// The reference page said `migrations validate` "takes a local --dir only, so
-// an artifact must be pulled before it can be validated on its own". That was
-// accurate until stokaro/ptah#1499 wired the verb to the puller, and it survived
-// the commit that did: the walk above gates what the binary does, and nothing
-// gated what the page says about it, so every row stayed green while the command
-// reference told a reader the workflow did not exist and sent them to do a pull
-// the verb no longer needs.
+// The walk above gates what the binary does, and by itself nothing gates what
+// the page says about it. A reference describing `migrations validate` as
+// taking "a local --dir only, so an artifact must be pulled before it can be
+// validated on its own", once the verb is wired to the puller, leaves every row
+// above green while telling a reader to do a pull the verb does not need. This
+// census is what closes that gap.
 //
 // The comparison is set equality in both directions and it pairs each command
 // with its flag, so neither a verb that starts resolving the scheme nor one that
@@ -657,15 +656,15 @@ type verifySumVerb struct {
 // verifySumVerbs enumerates the commands that offer the stricter integrity
 // contract.
 //
-// The always-on gate stokaro/ptah#1450 installed refuses a hashed directory
-// that does not match its sum, on every verb that executes the directory's SQL.
+// The always-on gate refuses a hashed directory that does not match its sum,
+// on every verb that executes the directory's SQL.
 // --verify-sum is the DIFFERENT question: it refuses a directory that carries
 // no sum at all. Measured against an unhashed artifact published to a registry:
 // `up` without the flag exits 0, `up --verify-sum` exits 2 `ptah.sum not
 // found`.
 //
-// `migrations validate` asks the same question, and since stokaro/ptah#1499 it
-// asks it of an oci:// reference too. The flag survives that because the two
+// `migrations validate` asks the same question, of an oci:// reference too.
+// The flag survives that because the two
 // are not interchangeable: validate resolves the reference in its own process,
 // so a movable tag can select different bytes before the executing verb
 // resolves it again. --verify-sum verifies the artifact the same invocation is
@@ -765,11 +764,11 @@ func TestVerifySum_EveryHelpCarriesTheQualifier(t *testing.T) {
 // TestPlainHTTP_EveryRegistrationSharesOneHelpString pins the other half of the
 // registrar.
 //
-// Before stokaro/ptah#928 the twelve registrations carried five different help
-// strings — "Use plain HTTP for OCI registry access", "…for an explicitly
-// trusted local registry", "…local OCI registry", "Allow an unencrypted HTTP
-// connection to a local OCI registry" — so an operator reading two commands'
-// help could not tell whether they meant the same thing. They do.
+// Twelve registrations carrying five different help strings — "Use plain HTTP
+// for OCI registry access", "…for an explicitly trusted local registry",
+// "…local OCI registry", "Allow an unencrypted HTTP connection to a local OCI
+// registry" — leave an operator reading two commands' help unable to tell
+// whether they mean the same thing. They do.
 func TestPlainHTTP_EveryRegistrationSharesOneHelpString(t *testing.T) {
 	c := qt.New(t)
 

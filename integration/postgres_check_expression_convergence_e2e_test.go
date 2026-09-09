@@ -25,7 +25,7 @@ import (
 //
 // The last three are the ones no textual normalizer folds: a cast the parser
 // inserts, a BETWEEN it expands into two comparisons, and a cast inside a
-// disjunction. Before stokaro/ptah#2044 each of them planned a DROP and an ADD
+// disjunction. Unless the comparison folds them, each plans a DROP and an ADD
 // on every run, at severity destructive.
 var checkShapes = []struct {
 	name     string

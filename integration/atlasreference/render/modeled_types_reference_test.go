@@ -177,7 +177,7 @@ func TestReferenceAcceptsWrappedTypeExpressions(t *testing.T) {
 		},
 		// The array rows below are the accepted half of the measurement
 		// isArrayColumnType rests on. The refusal test pins the quoted and bare
-		// alternatives that Ptah emitted before stokaro/ptah#1138.
+		// alternatives, which are the spellings Ptah must not emit.
 		{
 			name:    "postgres wraps a sized array whose element name is modeled",
 			dialect: platform.Postgres,

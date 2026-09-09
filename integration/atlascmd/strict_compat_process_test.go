@@ -1427,17 +1427,15 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	dbschema.CloseAndWarn(conn)
 
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
-	// See the inspect test above: the reader models a procedure now, so the
-	// inspected-schema check refuses it by kind before the live-object
-	// inventory is consulted (stokaro/ptah#1722).
 	// Two refusals, one object, and the difference is which surface reaches it
 	// first. `schema apply` reads the target through the ordinary schema
-	// reader, which models a procedure since stokaro/ptah#1722, so the
-	// inspected-schema check refuses it by kind. The `--from`/`--to` loaders
-	// consult the supplemental live-object inventory first, and that one names
-	// the object. Both are strict refusals at exit 1; a single expectation here
-	// would have to be a substring match, which is what let this test pass on a
-	// message that had stopped being true.
+	// reader, which models a procedure (stokaro/ptah#1722), so the
+	// inspected-schema check refuses it by kind before the live-object
+	// inventory is consulted. The `--from`/`--to` loaders consult the
+	// supplemental live-object inventory first, and that one names the object.
+	// Both are strict refusals at exit 1; a single expectation here would have
+	// to be a substring match, which is what lets such a test pass on a message
+	// that has stopped being true.
 	wantPolicyError := "Atlas Community Edition strict compatibility does not support inspected schema procedures"
 	wantLoaderPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
 

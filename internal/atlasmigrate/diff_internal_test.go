@@ -1593,10 +1593,10 @@ func assertDiffDirectoryLockReleased(c *qt.C, dir string) {
 // stokaro/ptah#1086 added.
 //
 // `migrate diff` re-checks the directory's integrity file once the migration
-// directory lock is held, and until #1086 that recheck was a private verifier
-// with rules of its own: it accepted a directory carrying no atlas.sum at all,
-// and reported a stale one in wording no other verb uses. The compatibility
-// surface now supplies the same predicate its preflight refused with, so a
+// directory lock is held. A private verifier there would have rules of its
+// own: accepting a directory carrying no atlas.sum at all, and reporting a
+// stale one in wording no other verb uses. The compatibility surface supplies
+// the same predicate its preflight refused with, so a
 // directory edited between the two is refused with the community binary's bytes
 // instead of a second verifier's.
 //

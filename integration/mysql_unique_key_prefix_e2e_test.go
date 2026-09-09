@@ -111,9 +111,9 @@ const uniqueKeyPrefixSchema = `CREATE TABLE accounts (
 // still passes and `uq_accounts_name` comes back `COLLATION A` on both engines,
 // which is the ascending index the constraint form renders.
 //
-// The declaration is refused at the reader instead -- `UNIQUE uq_accounts_email
-// (email)`, before stokaro/ptah#2776 -- and then nothing below runs: the apply
-// fails first, with the parse error, on both engines.
+// A reader that refuses `UNIQUE uq_accounts_email (email)` measures none of
+// them: the apply fails first, with the parse error, on both engines, and
+// nothing below it runs.
 func TestAUniqueKeyPrefixRejectsTheDuplicateItsConstraintFormWouldAccept(t *testing.T) {
 	for _, test := range inlineIndexEngines {
 		t.Run(test.name, func(t *testing.T) {

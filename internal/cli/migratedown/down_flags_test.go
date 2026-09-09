@@ -16,10 +16,10 @@ import (
 	"ptah.run/internal/cli/migrateup"
 )
 
-// `migrate down --to-tag` and `--skip-checks` were recorded waivers until
-// stokaro/ptah#1621. Each waiver named a hosted dependency the flag does not
-// have: tags resolve against the local tag namespace, and down bodies have
-// carried real pre-migration checks since stokaro/ptah#1715.
+// `migrate down --to-tag` and `--skip-checks` are implemented rather than
+// waived. Neither has the hosted dependency a waiver would name: tags resolve
+// against the local tag namespace, and down bodies carry real pre-migration
+// checks.
 
 const (
 	parentUpSQL   = "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n"
