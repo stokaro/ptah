@@ -482,10 +482,10 @@ func GenerateSchemaDiffASTWithOptions(
 // outside the migrator's per-migration transaction.
 //
 // The rule lives in [txrequire], which also answers the authored-file question
-// migration/lint and the migrator ask. There used to be two implementations
-// and they disagreed: this one counted `ALTER TYPE ... ADD VALUE` and lint's
-// counted concurrent indexes only, so the enum file lint did not call a mix
-// was exactly the file that failed at apply (stokaro/ptah#996).
+// migration/lint and the migrator ask. Two implementations disagree: one
+// counting `ALTER TYPE ... ADD VALUE` and lint's counting concurrent indexes
+// only makes the enum file lint does not call a mix exactly the file that fails
+// at apply (stokaro/ptah#996).
 func NodeRequiresNoTransaction(dialect string, node ast.Node) bool {
 	return txrequire.NodeRequiresAutocommit(dialect, node)
 }

@@ -1366,15 +1366,14 @@ type SchemaDiff struct {
 	// ConstraintsAdded is the table-qualified definition of every constraint
 	// this diff creates.
 	//
-	// It used to be a name list beside a parallel record list, and the two were
-	// explicitly NOT index-aligned: each sorted independently, so a consumer
-	// had to correlate by name and a name with no record meant a planner had to
-	// go looking in the declaration. The record is the change now
-	// (stokaro/ptah#2315).
+	// A name list beside a parallel record list is explicitly NOT index-aligned:
+	// each sorts independently, so a consumer has to correlate by name, and a
+	// name with no record sends a planner looking in the declaration. The record
+	// is the change (stokaro/ptah#2315).
 	//
-	// `constraints_added` carries the records now. It was an array of names,
-	// with the same records under `constraints_added_with_tables` beside it;
-	// one field means one key, and the identity a consumer reads is on it.
+	// `constraints_added` carries the records, rather than an array of names
+	// with the same records under `constraints_added_with_tables` beside it: one
+	// field means one key, and the identity a consumer reads is on it.
 	ConstraintsAdded ConstraintAdditions `json:"constraints_added"`
 
 	// ConstraintsRemoved is the table-qualified identity of every constraint
@@ -1382,10 +1381,10 @@ type SchemaDiff struct {
 	//
 	// A drop needs more than a name here, unlike a table's: MySQL spells
 	// `ALTER TABLE <host> DROP FOREIGN KEY <name>` and needs the host and the
-	// kind. It used to be a name list beside a parallel record list, not
-	// index-aligned with it (stokaro/ptah#2315).
+	// kind, so a name list beside a parallel record list -- not index-aligned
+	// with it -- does not answer (stokaro/ptah#2315).
 	//
-	// `constraints_removed` carries the records now, for the reason
+	// `constraints_removed` carries the records, for the reason
 	// `constraints_added` does.
 	ConstraintsRemoved ConstraintRemovals `json:"constraints_removed"`
 
@@ -2975,14 +2974,14 @@ func (c IndexChange) String() string {
 // IndexChanges is a set of index additions, carrying each one's declaration
 // and not only its name.
 //
-// An index addition used to be an [IndexRef]: a name and a table, with the
-// definition left in the declaration for a planner to look up. That made the
+// An index addition spelled as an [IndexRef] -- a name and a table, with the
+// definition left in the declaration for a planner to look up -- makes the
 // planner need the whole document to render one CREATE INDEX, which is the
-// shape stokaro/ptah#2315 exists to retire -- and it is the reason the resolver
-// wanted a schema-wide vocabulary at all.
+// shape stokaro/ptah#2315 exists to retire, and the reason a resolver wants a
+// schema-wide vocabulary at all.
 //
-// The JSON is unchanged: `indexes_added` has always been an array of
-// references, and [IndexChanges.Refs] is what it marshals as.
+// The JSON is the same either way: `indexes_added` is an array of references,
+// and [IndexChanges.Refs] is what it marshals as.
 type IndexChanges []IndexChange
 
 // MarshalJSON renders the references, which is what this key has always been.

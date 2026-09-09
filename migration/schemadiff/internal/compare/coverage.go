@@ -17,10 +17,10 @@ import (
 //   - the DESIRED state's limits gate REMOVALS. An object the database has and
 //     a description does not name is a removal only when that description
 //     claimed to describe such objects. `ptah-compat schema inspect` omits the
-//     block types the pinned Atlas community binary v1.3.0 refuses to read;
-//     applying that document back to the database it came from used to plan
-//     `DROP EXTENSION`, because a presentation decision had become deletion
-//     intent.
+//     block types the pinned Atlas community binary v1.3.0 refuses to read, so
+//     applying that document back to the database it came from plans
+//     `DROP EXTENSION` unless the limits are read -- a presentation decision
+//     become deletion intent.
 //   - the CURRENT state's limits gate ADDITIONS. An object a description names
 //     and a read did not report is a creation only when that read looked. A
 //     role reader scoped to the inspected schema, or a table read scoped to one
@@ -51,7 +51,7 @@ import (
 // diagnostic, and it travels as one.
 //
 // The zero Coverage plans everything, so a comparison between two descriptions
-// that declared no limits behaves exactly as it did before this type existed.
+// that declared no limits behaves as if this type were not there.
 type Coverage struct {
 	// Desired is what the desired-state description does not describe.
 	Desired coverage.Set

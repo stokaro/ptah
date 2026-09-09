@@ -19,9 +19,9 @@ import (
 //
 // Removing a value from a PostgreSQL enum is not an ALTER: the type is renamed
 // aside, recreated without the value, and every column naming it is converted
-// across. Which columns those are is a question about the whole declaration, and
-// the planner used to answer it by scanning every declared field. The comparison
-// answers it now, at the moment it decides the value is going.
+// across. Which columns those are is a question about the whole declaration,
+// and the comparison answers it at the moment it decides the value is going,
+// rather than the planner scanning every declared field.
 //
 // Every other test of this path builds the diff by hand and supplies the answer,
 // so emptying the comparison's list reddens none of them -- measured. This is

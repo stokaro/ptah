@@ -218,7 +218,7 @@ func TestDomains_LeavesUndeclaredAttributesAlone(t *testing.T) {
 }
 
 // TestDomains_ComparesDefaultThroughTheServersOwnSpelling covers the other
-// attribute the comparison used to decline. A declared `'x'` is stored as
+// attribute a raw comparison has to decline. A declared `'x'` is stored as
 // `'x'::text`, so it needs the same round trip the CHECK does.
 func TestDomains_ComparesDefaultThroughTheServersOwnSpelling(t *testing.T) {
 	tests := []struct {

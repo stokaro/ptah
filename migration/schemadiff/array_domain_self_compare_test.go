@@ -20,15 +20,15 @@ import (
 // assertion meaningful: any column the two sides read out of different fields
 // shows up as a change from a database to itself.
 //
-// The columns and their catalog values are copied from PostgreSQL 17. The
-// comparator used to read ColumnType/UDTName while the converter read the
-// server's own format_type, and the run reported seven ALTER COLUMN ... TYPE
-// statements retyping each column to the type it already had, e.g.
+// The columns and their catalog values are copied from PostgreSQL 17. A
+// comparator reading ColumnType/UDTName while the converter reads the server's
+// own format_type reports seven ALTER COLUMN ... TYPE statements retyping each
+// column to the type it already has, e.g.
 //
 //	arrays.a_bit    type: _bit    -> bit(8)[]
 //	scalars.c_tags  type: text    -> tags
 //
-// The scalar rows are here so the test would notice a fix that simply stopped
+// The scalar rows are here so the test notices an answer that simply stops
 // comparing types: an ordinary varchar and an ordinary user-defined column go
 // down the untouched path and must still match.
 func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselves(t *testing.T) {

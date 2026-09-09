@@ -72,12 +72,12 @@ func nonCanonicalSpellings(c *qt.C) []string {
 // role, a grant, row-level security with a policy, a view, a materialized
 // view, a function, and a trigger, over a table they can all attach to.
 //
-// It used to carry only the last four. The role, grant, RLS and sequence were
-// left out on purpose, because the renderer answered for those four kinds with
-// an ERROR rather than a skip comment, and an error aborts the whole render —
-// so one of them refusing first decided the render before the kinds under test
-// were reached. Removing that second answer shape is what lets one fixture
-// cover every gate at once (stokaro/ptah#929).
+// All eight fit in one fixture only because the renderer answers every kind
+// with a skip comment. Answering four of them with an ERROR instead aborts the
+// whole render, so one of those refusing first decides the render before the
+// kinds under test are reached, and the role, grant, RLS and sequence have to
+// be left out. Removing that second answer shape is what lets one fixture cover
+// every gate at once (stokaro/ptah#929).
 //
 // Every grant carries exactly ONE privilege, deliberately. The offline
 // converter emits one grant node per declared grant with all of its privileges
@@ -228,8 +228,8 @@ func (gate objectKindGate) skipComment(dialect string) string {
 
 // answer classifies what one SQL text says about one object: it carries the
 // DDL, it carries the named skip comment, it carries both, or it says nothing
-// at all. "silent" is the answer #929 reported on the plan path and "refused"
-// is what the render path used to turn into a whole-schema error.
+// at all. "silent" is the answer #929 reported on the plan path, and "refused"
+// is the one a render path turns into a whole-schema error.
 func (gate objectKindGate) answer(sql, dialect string) string {
 	emitted := strings.Contains(sql, gate.ddl)
 	named := strings.Contains(sql, gate.skipComment(dialect))
@@ -329,13 +329,13 @@ func TestEverySpelling_RendersAndPlansLikeItsCanonicalName(t *testing.T) {
 // stokaro/ptah#929 item 5, and the check that item 5 did not reopen items 1
 // through 4.
 //
-// `schema render` and `schema apply` used to answer differently about the same
-// file for the whole PostgreSQL family: apply planned the sequences, functions,
-// views and triggers that render dropped in silence at exit 0. Items 1 and 4
-// closed that by making the converter emit for the family. This test holds that
-// line while capability refusals arrive: for every family member and every gated
-// object kind, the two paths must carry the SAME answer — either both the DDL,
-// or both the identical skip comment naming the object.
+// `schema render` and `schema apply` can answer differently about the same file
+// for the whole PostgreSQL family: apply planning the sequences, functions,
+// views and triggers that render drops in silence at exit 0. Items 1 and 4
+// closed that by making the converter emit for the family, and this test holds
+// the line while capability refusals arrive: for every family member and every
+// gated object kind, the two paths must carry the SAME answer — either both the
+// DDL, or both the identical skip comment naming the object.
 //
 // It iterates the canonical names only, deliberately. Its expectation is read
 // from that dialect's own preset, so running it against an alias would compare
