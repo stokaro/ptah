@@ -44,9 +44,9 @@ func TestParseFileName(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// Regression for issue #245: the unescaped dot in fileNameRe used
-			// to make any description ending in "up"/"down" parse as a
-			// migration (cleanup.sql ran as UP with description "Clea").
+			// Regression for issue #245: an unescaped dot in fileNameRe makes
+			// any description ending in "up"/"down" parse as a migration
+			// (cleanup.sql runs as UP with description "Clea").
 			name:        "description ending in up is not a direction",
 			filename:    "0000000001_cleanup.sql",
 			expected:    nil,

@@ -105,10 +105,9 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			want: make([]changeProjection, 0),
 		},
 		{
-			// GRANT used to sit here, as a statement the parser refused. It
-			// parses now (issue #932) and counts as the one change it is, so
-			// the "outside the grammar" case needs a statement that is still
-			// outside it.
+			// GRANT cannot serve here: it parses (issue #932) and counts as
+			// the one change it is, so the "outside the grammar" case needs a
+			// statement that is outside it.
 			name: "statement outside the DDL grammar is zero changes",
 			sql:  "CLUSTER users USING idx_users_id;",
 			want: make([]changeProjection, 0),

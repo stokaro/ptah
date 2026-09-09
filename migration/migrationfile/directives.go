@@ -22,8 +22,8 @@ import (
 // because it does not govern them: it is read after the fact by a file the
 // database has already been shown. The migrator reports such a line rather than
 // dropping it, and the `-- atlas:txmode` family answers to the same rule, so a
-// reader does not have to know which spelling a file used to know where its
-// directives take effect.
+// reader does not have to know which spelling a file chose in order to know
+// where its directives take effect.
 //
 // The scan is lexer-driven with the same SQL-standard string handling the
 // dialect-blind sqlutil.SplitStatements uses, so a `-- +ptah` sequence inside a

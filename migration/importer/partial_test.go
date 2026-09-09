@@ -112,9 +112,9 @@ func TestFlywayDetect_RecognizesALayoutWithNothingAtTheTopLevel(t *testing.T) {
 
 // A directory whose migrations all sit one level down is named for what it is.
 //
-// It used to report "could not detect the source migration tool; pass --from",
-// and --from then failed with "no golang-migrate migration files found" --
-// two messages, neither naming the depth that was the actual cause.
+// Reporting "could not detect the source migration tool; pass --from", with
+// --from then failing on "no golang-migrate migration files found", is two
+// messages, neither naming the depth that is the actual cause.
 func TestDetectParser_NamesTheDepthRatherThanAskingForFrom(t *testing.T) {
 	c := qt.New(t)
 

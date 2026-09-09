@@ -418,13 +418,12 @@ func (b baselineColumns) exact(tableRef, columnName string) (BaselineColumn, boo
 // asked for, sorted ascending.
 //
 // The list is assembled from the rules rather than from a check written here.
-// It used to be "the versions carrying a column rename", which was true because
-// exactly one rule needed the state -- and would have gone quietly wrong for the
-// second one, whose files nobody would have read and whose findings would
-// therefore never have fired (stokaro/ptah#1632). Now a rule declares
-// [InputBaselineSchema] and names the files it wants through
-// [Rule.BaselineSubject], and both this list and the rule's own check go through
-// that one predicate.
+// "The versions carrying a column rename" is true only while exactly one rule
+// needs the state, and goes quietly wrong for the second: its files are never
+// read, its findings can never fire, and nothing says so (stokaro/ptah#1632). A
+// rule declares [InputBaselineSchema] and names the files it wants through
+// [Rule.BaselineSubject], and both this list and the rule's own check go
+// through that one predicate.
 //
 // A file no enabled rule asks about is not listed, so a directory with nothing
 // to resolve costs no round trip.

@@ -320,8 +320,8 @@ type memberChangeSite struct {
 }
 
 // memberChangeSites finds every clause in a file that assigns a member list.
-// A clause whose new type is not ENUM or SET is not a site: what such a
-// column used to be is DS103's question, not this file's.
+// A clause whose new type is not ENUM or SET is not a site: what such a column
+// was before the clause is DS103's question, not this file's.
 func memberChangeSites(file *File) []memberChangeSite {
 	var sites []memberChangeSite
 	for index := range file.Statements {

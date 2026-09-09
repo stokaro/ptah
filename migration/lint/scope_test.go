@@ -528,13 +528,13 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 // schema change, and that the schema it counts in is the one the statement
 // names (stokaro/ptah#1296).
 //
-// Ptah's SQL parser used to refuse every DROP INDEX with `unsupported DROP
-// target: INDEX at position 5`, so the statement contributed no change in ANY
-// schema. stokaro/ptah#1249 read the resulting `0 changes / 1 finding` as the
-// reviewed-schema filter reaching the diagnostic but not the change; it was not
-// that. The `public` row is what separates the two explanations: it is the
-// reviewed schema, its `DROP TABLE` control counts one change, and the
-// `DROP INDEX` beside it counted zero.
+// A SQL parser refusing every DROP INDEX with `unsupported DROP target: INDEX
+// at position 5` leaves the statement contributing no change in ANY schema.
+// stokaro/ptah#1249 read the resulting `0 changes / 1 finding` as the
+// reviewed-schema filter reaching the diagnostic but not the change; it is not
+// that. The `public` row separates the two explanations: it is the reviewed
+// schema, its `DROP TABLE` control counts one change, and a refused
+// `DROP INDEX` beside it counts zero.
 //
 // Measured with `ptah-compat migrate lint --latest 1` against a dev URL carrying
 // `?search_path=public`, PostgreSQL 17.10, oracle = pinned community binary
@@ -549,10 +549,9 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 // there because the qualifier lives on the index name: `app.idx` is a reference
 // the scope can read, so the statement is scoped out whole and takes PG106 with
 // it, by the same rule that removes an out-of-scope ALTER TABLE's finding
-// (stokaro/ptah#1249). Ptah reported PG106 for `app` before this change, which
-// was the permitted stricter direction; it now matches the community binary and
-// nothing about the reviewed schema got quieter -- the `public` row still
-// reports it.
+// (stokaro/ptah#1249). Reporting PG106 for `app` is the permitted stricter
+// direction; matching the community binary makes nothing about the reviewed
+// schema quieter, because the `public` row reports it either way.
 func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
 	const publicBase = "CREATE TABLE public.t (id int);\nCREATE INDEX idx ON public.t (id);\n"
 	const appBase = "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n"
