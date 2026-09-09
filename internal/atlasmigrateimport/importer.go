@@ -9,8 +9,9 @@
 // Liquibase formatted-SQL names require an import-only adapter that splits each
 // changeset into a numbered Atlas migration; direct foreign-format apply keeps
 // its existing per-file behavior. Because Atlas single-file migrations are
-// up-only, conversion keeps each migration's up SQL and drops its down/rollback
-// section.
+// up-only, conversion keeps each migration's up SQL and cannot carry its
+// down/rollback section; [Result.DroppedRollbacks] names the source files whose
+// rollback was left behind, so the loss is reported rather than silent.
 package atlasmigrateimport
 
 import (
@@ -60,6 +61,16 @@ type Options struct {
 type Result struct {
 	Files   []string
 	SumFile string
+	// DroppedRollbacks names the source files whose rollback body the
+	// conversion could not carry, in directory order.
+	//
+	// An Atlas single-file migration is up-only, so a source layout's undo file
+	// or down section has nowhere to go. Dropping it is the conversion's
+	// documented shape; dropping it in silence was not, and every import of
+	// every layout did exactly that -- exit 0, nothing on either stream, and an
+	// operator with no way to learn their undo scripts stayed behind
+	// (stokaro/ptah#3116).
+	DroppedRollbacks []string
 }
 
 type localDirURL struct {
@@ -293,7 +304,120 @@ func (c *CapturedImport) Write() (*Result, error) {
 	if len(sum.Entries) != len(entries) {
 		return nil, fmt.Errorf("atlas.sum contains %d entries, want %d", len(sum.Entries), len(entries))
 	}
-	return &Result{Files: files, SumFile: sumFile}, nil
+	// The SOURCE snapshot, not loaded.FS(): that one holds the converted Atlas
+	// entries, which by construction carry no rollback at all.
+	dropped, err := droppedRollbackFiles(c.Source, c.Format)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Files: files, SumFile: sumFile, DroppedRollbacks: dropped}, nil
+}
+
+// droppedRollbackFiles names the source files carrying a rollback the Atlas
+// single-file conversion leaves behind.
+//
+// It asks each layout's own recognizer rather than a second table of markers:
+// the goose pragma parser, the dbmate directive parser, the Flyway sum-file
+// classifier and the golang-migrate name pattern all already answer "what is
+// this line, or this file". Only the accumulation is new.
+func droppedRollbackFiles(fsys fs.FS, format Format) ([]string, error) {
+	files, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return nil, fmt.Errorf("read source migration directory: %w", err)
+	}
+	dropped := make([]string, 0)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		carries, err := fileCarriesDroppedRollback(fsys, file.Name(), format)
+		if err != nil {
+			return nil, err
+		}
+		if carries {
+			dropped = append(dropped, file.Name())
+		}
+	}
+	if len(dropped) == 0 {
+		return nil, nil
+	}
+	slices.Sort(dropped)
+	return dropped, nil
+}
+
+// fileCarriesDroppedRollback answers the question for one source file.
+func fileCarriesDroppedRollback(fsys fs.FS, name string, format Format) (bool, error) {
+	switch format {
+	case FormatGolangMigrate:
+		match := golangMigrateFileRe.FindStringSubmatch(name)
+		return match != nil && match[3] == "down", nil
+	case FormatFlyway:
+		parsed, ok := parseFlywaySumFile(name)
+		return ok && parsed.kind == flywaySumUndo, nil
+	case FormatGoose, FormatDBMate, FormatLiquibase:
+		if !numberedSQLFileRe.MatchString(name) {
+			return false, nil
+		}
+		data, err := readRawImportSQLFile(fsys, name)
+		if err != nil {
+			return false, err
+		}
+		return sourceBodyCarriesRollback(string(data), format), nil
+	default:
+		return false, nil
+	}
+}
+
+// sourceBodyCarriesRollback reports whether a file body holds rollback SQL, as
+// its own layout marks one.
+//
+// Blank sections do not count. A goose file whose `-- +goose Down` section is
+// empty loses nothing on conversion, and reporting it would teach an operator to
+// ignore the report.
+func sourceBodyCarriesRollback(body string, format Format) bool {
+	inRollback := false
+	for line := range strings.SplitSeq(body, "\n") {
+		switch format {
+		case FormatGoose:
+			if pragma, ok := goosePragmaOf(line); ok {
+				switch pragma {
+				case goosePragmaDown:
+					inRollback = true
+				case goosePragmaUp:
+					inRollback = false
+				}
+				continue
+			}
+		case FormatDBMate:
+			if directive, ok := dbmateDirective(line); ok {
+				inRollback = directive == "down"
+				continue
+			}
+		case FormatLiquibase:
+			// Liquibase writes the rollback inline, one directive per line,
+			// which is why this layout needs no section state.
+			if rollback, ok := liquibaseRollbackSQL(line); ok && rollback != "" {
+				return true
+			}
+			continue
+		default:
+			return false
+		}
+		if inRollback && strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// liquibaseRollbackSQL returns the SQL a `--rollback` line carries.
+func liquibaseRollbackSQL(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	const prefix = "--rollback"
+	if !strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+		return "", false
+	}
+	return strings.TrimSpace(trimmed[len(prefix):]), true
 }
 
 // loadCapturedForImport adds the one format adapter that belongs only to the

@@ -405,7 +405,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Ptah documentation.** [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Partial. Ptah imports local `file://` directories into an Atlas single-file directory and writes `atlas.sum`; Flyway repeatable migrations become one-time versioned files rather than Atlas `R`-suffixed ones. Every source layout's rollback bodies are dropped without a diagnostic; [`stokaro/ptah#3116`](https://github.com/stokaro/ptah/issues/3116) owns it.
+**Implementation status.** Partial. Ptah imports local `file://` directories into an Atlas single-file directory and writes `atlas.sum`; Flyway repeatable migrations become one-time versioned files rather than Atlas `R`-suffixed ones. An Atlas single-file migration holds no rollback, so a source layout's undo file or down section cannot come across; the import names each source file it left one in, on stderr, where it dropped them without a word until [`stokaro/ptah#3116`](https://github.com/stokaro/ptah/issues/3116). Carrying the rollback across would mean writing a txtar file with a `down.sql` section, which is not what the community binary's import produces, so the repeatable-migration mapping above is what keeps this section short of complete.
 
 **Conformance status.** Partially measured.
 
