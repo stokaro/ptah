@@ -872,8 +872,8 @@ func validateForeignKeyColumns(kind string, columns []string) error {
 // unnamedColumnError refuses a column whose name is the empty string.
 //
 // A column reaches a renderer with no name when the declaration lost one -- an
-// empty YAML mapping key is the reachable spelling -- and every target used to
-// write it out as an empty delimited identifier at exit 0. Measured 2026-08-30
+// empty YAML mapping key is the reachable spelling -- and a target that does
+// not refuse it writes an empty delimited identifier at exit 0. Measured 2026-08-30
 // against the DDL that was produced: PostgreSQL 18 answers `zero-length
 // delimited identifier`, MySQL 8.4 and MariaDB 11.8.9 answer `Incorrect column
 // name` naming the empty one, and SQLite 3.53.1 is the one engine that stores
@@ -943,7 +943,7 @@ func foreignKeysUnsupportedError(dialect string) error {
 // satisfying errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]). A constraint, an
 // index, a row-level security enablement or policy, a trigger and a hypertable
 // each reach a target through the table they name, in StructName or in the
-// table field; a declaration carrying neither used to be dropped or rendered
+// table field; a declaration carrying neither is otherwise dropped or rendered
 // against an empty identifier (stokaro/ptah#2612).
 //
 // An index that names no column and no expression, a UNIQUE or PRIMARY KEY
@@ -1387,7 +1387,7 @@ func validateDeclaredIndexIncludes(
 // disagree on two dialects rather than being one list read twice.
 //
 // CockroachDB spells the payload STORING and takes INCLUDE as a synonym for it,
-// which the refusal that used to stand here denied. Measured on v26.3.1, one
+// which a refusal here would deny. Measured on v26.3.1, one
 // CREATE INDEX per row:
 //
 //	CREATE INDEX i1 ON a (email) INCLUDE (name)               CREATE INDEX

@@ -118,8 +118,8 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	}
 	// The comment is gated where the schema is not. Spanner takes the
 	// `CREATE SCHEMA` and refuses the statement after it, so emitting both
-	// unconditionally meant a migration that used to create the schema and move
-	// on now fails on the line below (stokaro/ptah#2651).
+	// unconditionally makes a migration that creates the schema fail on the
+	// line below (stokaro/ptah#2651).
 	//
 	// Skipped rather than refused, and SAID rather than dropped: the schema is
 	// what the author asked for and the comment is metadata the target cannot
@@ -869,9 +869,9 @@ func (r *Renderer) appendColumnForeignKeyLines(
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering foreign key constraint: %w", err)
 		}
-		// An empty line here used to be appended anyway, which put a blank
-		// entry between two commas inside the column list of a target that
-		// cannot host foreign keys.
+		// Appending an empty line here anyway puts a blank entry between two
+		// commas inside the column list of a target that cannot host foreign
+		// keys.
 		if line == "" {
 			refused = append(refused, foreignKeyIdentity(constraint))
 			continue
@@ -1831,15 +1831,15 @@ const (
 // -- ENGINE, AUTO_INCREMENT, CHARSET and COLLATE -- have no counterpart here,
 // and anything else in the map is a platform override this renderer has no
 // clause for: PostgreSQL's own table-level storage parameters are not
-// modeled, and the `KEY=value` spelling that used to be written after the
-// column list is a syntax error on every server of the family
+// modeled, and the `KEY=value` spelling written after the column list is a
+// syntax error on every server of the family
 // (stokaro/ptah#2969). SQLite, SQL Server and Oracle leave the same options
 // out without a word; this target says so, the way it names a foreign key it
 // cannot host, so a render never loses a declaration in silence. The one
 // option that carries a value the author would miss, AUTO_INCREMENT, gets the
 // line that says where the value goes on this family. The order is sorted
-// because the options are a map, and a walk in map order produced a
-// different render on every run (stokaro/ptah#2968).
+// because the options are a map, and a walk in map order produces a different
+// render on every run (stokaro/ptah#2968).
 func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]string) {
 	for _, key := range slices.Sorted(maps.Keys(options)) {
 		r.writeObjectSkippedLine(tableOptionKind, key+"="+options[key])
@@ -1869,10 +1869,11 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	// `column "s" cannot be cast automatically to type ...` (SQLSTATE 42804).
 	//
 	// Whether the target is an enum comes from the schema declaration carried on
-	// the node, not from the type name: this used to test
-	// strings.HasPrefix(type, "enum_"), so an enum named "status_kind" got no
-	// cast and its migration died at execution while an otherwise identical one
-	// named "enum_status" applied cleanly (stokaro/ptah#931 item 1).
+	// the node, not from the type name. Testing
+	// strings.HasPrefix(type, "enum_") instead leaves an enum named
+	// "status_kind" with no cast and its migration dying at execution, while an
+	// otherwise identical one named "enum_status" applies cleanly
+	// (stokaro/ptah#931 item 1).
 	targetType := column.Type
 	if columnType != column.Type {
 		// Type was transformed (e.g., enum handling), use the processed type

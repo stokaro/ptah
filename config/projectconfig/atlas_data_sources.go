@@ -673,11 +673,11 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 // without executing a data source. Recognized cloud sources stay lazy because
 // this compatibility layer does not implement their runtime contracts yet.
 func validateAtlasDataSourceDeclarationShape(block *hclsyntax.Block) error {
-	// Every recognized source now has a runtime contract, so a declaration is
-	// checked the same way whether or not anything references it. `remote_schema`
-	// used to stay lazy here because resolving it was refused outright, which
-	// meant a misspelled attribute was learned about on the day the block
-	// started being used (stokaro/ptah#1210).
+	// Every recognized source has a runtime contract, so a declaration is
+	// checked the same way whether or not anything references it. Leaving one
+	// lazy here -- which a source whose resolution is refused outright invites
+	// -- means a misspelled attribute is learned about on the day the block
+	// starts being used (stokaro/ptah#1210).
 	return validateAtlasDataSourceShape(block)
 }
 

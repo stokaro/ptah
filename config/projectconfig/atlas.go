@@ -1236,10 +1236,11 @@ func (p atlasParser) parseMigrationAttr(
 	return nil
 }
 
-// parseMigrationBlocks handles the nested blocks of env.migration, which used
-// to be refused wholesale. The pinned community binary v1.3.0 accepts every one
-// of them -- see the `migration` entry in [atlasEnvBodyStructure] for the
-// measurement -- so the whole set is tolerated and only `repo` is decoded.
+// parseMigrationBlocks handles the nested blocks of env.migration. The pinned
+// community binary v1.3.0 accepts every one of them -- see the `migration`
+// entry in [atlasEnvBodyStructure] for the measurement -- so the whole set is
+// tolerated and only `repo` is decoded, rather than the block being refused
+// wholesale.
 func (p atlasParser) parseMigrationBlocks(block *hclsyntax.Block) error {
 	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
@@ -2851,20 +2852,20 @@ func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
 // answers cty.String to Type(), so it walks straight through a
 // `value.Type() != cty.String` gate and panics in AsString(). A bare `null`
 // literal carries cty.DynamicPseudoType instead and the same gate refuses it.
-// The two spellings of one value therefore took two different paths: a bare
+// Without this the two spellings of one value take two different paths: a bare
 // `null` a location-aware refusal at exit 1, a typed null an internal error at
-// exit 2. `want` is the same phrase the type gate would have used, so the
-// message does not depend on which spelling arrived.
+// exit 2. `want` is the same phrase the type gate uses, so the message does not
+// depend on which spelling arrived.
 //
 // Refusing is what the eight decoded names measured for this all already do for
 // a bare `null` -- `dev`, `env.migration.dir`, `env.migration.tx_mode`,
 // `env.migration.repo.name`, `env.schema.repo.name`, `env.schema.mode.tables`,
 // `env.exclude` and `lint.latest` are each exit 1 with "must be a <type>" -- so
-// on every string-valued and number-valued name this replaces an exit-2 crash
-// with the exit 1 the bare spelling already produced. The BOOL-valued names
-// move from 0 to 1, because a typed null never crashed there: cty.Value.True()
-// answers false for one, so `mode { tables = var.b }` and
-// `lint { destructive { error = var.b } }` used to read a null as "off" and
+// on every string-valued and number-valued name this gives the exit 1 the bare
+// spelling already produces. The BOOL-valued names need it for the quieter
+// reason: a typed null does not crash there, because cty.Value.True() answers
+// false for one, so `mode { tables = var.b }` and
+// `lint { destructive { error = var.b } }` would read a null as "off" and
 // disable table inspection, or destructive-change linting, in silence.
 //
 // Names Ptah only TOLERATES are unaffected: they are answered by
@@ -3029,7 +3030,7 @@ func (p atlasParser) configBoolAttr(name string, attr *hclsyntax.Attribute) (Con
 func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
 	// A null is refused rather than reaching cty.Value.True(), which does not
 	// panic on one -- it answers false. That is the quiet half of the same
-	// defect: `mode { tables = var.b }` with a null bool used to disable table
+	// defect: `mode { tables = var.b }` with a null bool would disable table
 	// inspection instead of saying anything.
 	value, err := p.decodedAttrValue(name, attr, "a bool")
 	if err != nil {
@@ -3539,8 +3540,9 @@ func unsupported(name string, rng hcl.Range) error {
 	return fmt.Errorf("unsupported atlas.hcl construct %q at %s:%d", name, rng.Filename, rng.Start.Line)
 }
 
-// The three failures below all used to be reported as "unsupported atlas.hcl
-// construct", which made them indistinguishable to a reader and to a test.
+// The three failures below must not share one message. Reported alike as
+// "unsupported atlas.hcl construct" they are indistinguishable to a reader and
+// to a test.
 //
 // They are not the same thing, and the difference is load-bearing for the work
 // in stokaro/ptah#1014. Atlas CE tolerates an unknown NAME while still failing
@@ -3551,8 +3553,7 @@ func unsupported(name string, rng hcl.Range) error {
 // meant to stay, and a relaxation would silently convert real agreements with
 // CE into coincidental ones.
 //
-// Exit codes are unchanged: all three still fail. Only the message tells them
-// apart.
+// Exit codes do not separate them: all three fail. Only the message does.
 
 // evaluationFailed reports an expression that could not be evaluated -- an
 // undefined reference, a failing function call. The HCL diagnostic is carried
@@ -3681,11 +3682,11 @@ func emptyValue(name string, attr *hclsyntax.Attribute) error {
 // atlasProjectFunctions is the schema evaluator's function set with the three
 // names this file binds itself overlaid on top.
 //
-// The set used to be eight names written out here, which meant `atlas.hcl`
-// refused expressions a schema file evaluates -- `join(",", var.schemas)` among
-// them, in the block most likely to assemble a list of schemas
-// (stokaro/ptah#1810). Sharing it rather than lengthening it is what keeps the
-// two from drifting again.
+// Writing the set out here as a short list of names makes `atlas.hcl` refuse
+// expressions a schema file evaluates -- `join(",", var.schemas)` among them,
+// in the block most likely to assemble a list of schemas (stokaro/ptah#1810).
+// Sharing the set rather than lengthening a copy is what keeps the two from
+// drifting.
 //
 // The overlay direction is load-bearing: `file` and `fileset` here read the
 // PROJECT filesystem, and a shared entry of either name would read some other

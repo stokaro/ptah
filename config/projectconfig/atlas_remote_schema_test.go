@@ -100,12 +100,12 @@ func TestParseAtlas_RemoteSchemaNeedsAName(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "name")
 }
 
-// TestParseAtlas_UnreferencedRemoteSchemaShapeIsChecked pins the change from
-// lazy to checked.
+// TestParseAtlas_UnreferencedRemoteSchemaShapeIsChecked pins that the shape is
+// checked whether or not anything references it.
 //
-// The declaration used to be accepted whatever it said, because resolving it
-// was refused anyway — so a project could carry a `remote_schema` block with a
-// misspelled attribute and learn nothing until the day it started using it.
+// Accepting the declaration whatever it says — which a source whose resolution
+// is refused anyway invites — lets a project carry a `remote_schema` block with
+// a misspelled attribute and learn nothing until the day it starts using it.
 func TestParseAtlas_UnreferencedRemoteSchemaShapeIsChecked(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlasregistry.NamespaceEnvVar, "ghcr.io/acme")

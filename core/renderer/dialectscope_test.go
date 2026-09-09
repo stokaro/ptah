@@ -38,9 +38,9 @@ func scopedSchema() *schemamodel.Database {
 // holds the render half of the scope.
 //
 // Absent is stronger than skipped, and the difference is the whole point. The
-// MySQL-family renderer used to answer a plpgsql function with a named comment,
-// which reads well and converges never: the comparator kept asking for the
-// function, so `schema apply` planned the same comment forever. Here the object
+// MySQL-family renderer answering a plpgsql function with a named comment reads
+// well and converges never: the comparator keeps asking for the function, so
+// `schema apply` plans the same comment forever. Here the object
 // is not part of this target's schema at all, so there is nothing to comment
 // on.
 func TestGetOrderedCreateStatements_AScopedObjectIsAbsentFromTargetsItDoesNotName(t *testing.T) {
@@ -105,11 +105,10 @@ func TestGetOrderedCreateStatements_AnUnscopedSchemaRendersAsItAlwaysDid(t *test
 // TestGetOrderedCreateStatements_AnUnscopedRoleReachesTheMySQLFamily pins that
 // scoping still decides which targets a declaration reaches.
 //
-// This used to assert a refusal, because the MySQL family could not read a role
-// back and so refused every one. It reads one back now (stokaro/ptah#1762), so
-// what the unscoped role proves is the scoping rule rather than the refusal: a
-// declaration naming no dialects reaches this target, and the statement it
-// produces is that target's.
+// The MySQL family reads a role back (stokaro/ptah#1762), so what the unscoped
+// role proves here is the scoping rule rather than a refusal: a declaration
+// naming no dialects reaches this target, and the statement it produces is that
+// target's.
 func TestGetOrderedCreateStatements_AnUnscopedRoleReachesTheMySQLFamily(t *testing.T) {
 	c := qt.New(t)
 

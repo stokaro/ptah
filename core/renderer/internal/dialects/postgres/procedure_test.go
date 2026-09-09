@@ -75,11 +75,11 @@ func TestPostgreSQLRenderer_Procedure(t *testing.T) {
 }
 
 // TestPostgreSQLRenderer_Procedure_DropsWithoutAnEmptySignature pins the drop
-// that used to remove nothing.
+// that names the routine rather than a zero-argument overload.
 //
 // `DROP FUNCTION f()` names the ZERO-ARGUMENT overload specifically, so a drop
-// of a routine that takes arguments matched nothing -- and with IF EXISTS in
-// front of it, reported success having removed nothing at all. The bare name is
+// of a routine that takes arguments matches nothing -- and with IF EXISTS in
+// front of it, reports success having removed nothing at all. The bare name is
 // ambiguous only when the server holds two of them, which is a louder failure
 // than the silent one.
 func TestPostgreSQLRenderer_Procedure_DropsWithoutAnEmptySignature(t *testing.T) {

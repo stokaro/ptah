@@ -37,10 +37,10 @@ type unresolvedIdentityCase struct {
 // did not resolve keeps its spelling for identity while staying conservative for
 // conflicts.
 //
-// Both keys used to return one shared constant for anything unresolved, so every
-// unresolved name compared equal to every other. A map keyed by identity kept
-// exactly one of them: two grants declared on two tables that do not exist yet
-// became one grant, and the other was silently dropped from the plan
+// One shared constant for anything unresolved makes every unresolved name
+// compare equal to every other, and a map keyed by identity then keeps exactly
+// one of them: two grants declared on two tables that do not exist yet become
+// one grant, and the other is silently dropped from the plan
 // (stokaro/ptah#1290).
 //
 // The split is the fix. Identity distinguishes them, because they are different

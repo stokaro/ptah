@@ -30,11 +30,11 @@ func main() {
 	// usageExitCode from inside Parse.
 	flags.Parse(os.Args[1:])
 
-	// Leftover positionals used to be dropped on the floor, which turned
-	// `ptah-ls version` into an unannounced launch of the stdio language
-	// server: exit 0 with zero bytes written when stdin was already at EOF,
-	// and a process that never returns when it was not. Every positional is
-	// now either the version query or a usage error.
+	// A leftover positional dropped on the floor turns `ptah-ls version` into
+	// an unannounced launch of the stdio language server: exit 0 with zero
+	// bytes written when stdin is already at EOF, and a process that never
+	// returns when it is not. Every positional here is either the version query
+	// or a usage error.
 	args := flags.Args()
 	versionRequested := *showVersion
 	if len(args) == 1 && args[0] == versionCommand {

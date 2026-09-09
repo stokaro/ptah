@@ -2,7 +2,7 @@ package oracle
 
 // White-box testing required: bareReferenceInExpression is unexported and, since
 // core/renderer.prepareColumnNode began refusing an unnamed column, no public
-// path reaches it with the input that used to hang. The guarantee under test is
+// path reaches it with the input that hangs. The guarantee under test is
 // that the scan terminates for every input rather than for the inputs a caller
 // currently sends, and that is not observable through the exported API once the
 // caller validates -- a black-box test would be asserting the caller's refusal

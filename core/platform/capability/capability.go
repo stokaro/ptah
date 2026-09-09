@@ -1532,12 +1532,11 @@ func ClickHouse24() Capabilities {
 		Triggers:                       false,
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: true,
-		// RowLevelSecurity is on because all three halves the key requires now
+		// RowLevelSecurity is on because all three halves the key requires
 		// exist: the renderer emits CREATE/ALTER/DROP ROW POLICY, this reader
 		// takes system.row_policies back into DBSchema.RLSPolicies, and the
-		// planner plans them. The key used to be false with no reason recorded
-		// at all -- unlike Functions above it, whose false is measured and
-		// explained -- for an engine that has had row policies for years
+		// planner plans them. A false here would need the measurement Functions
+		// above it carries, for an engine that has had row policies for years
 		// (stokaro/ptah#1736).
 		//
 		// What it does not claim is a PostgreSQL policy running here unchanged.
@@ -2523,7 +2522,7 @@ const (
 // VersionResolution reports how a server version string was mapped onto a
 // capability preset.
 //
-// Saturated names the case the resolver used to answer wrongly: the version
+// Saturated names the case a resolver answers wrongly without it: the version
 // parsed, it selected the newest preset in its dialect's ladder, and it is
 // itself newer than the newest line that ladder was measured against — so the
 // preset is a stand-in and any capability the newer server gained or lost is

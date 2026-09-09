@@ -78,14 +78,13 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 // TestPostgreSQLRenderer_RoleManagementCapability pin what a refused
 // row-level-security or role-management object renders as.
 //
-// These used to assert an error with nothing rendered. That answer is
-// unavailable to the migration planner, which cannot put an error in a plan, so
-// the planner compensated by dropping roles, grants and policies from the plan
-// before they could reach a visitor — and dropped them without saying so
-// (stokaro/ptah#929 items 1 and 4).
+// An error with nothing rendered is unavailable to the migration planner, which
+// cannot put an error in a plan: the planner then compensates by dropping
+// roles, grants and policies from the plan before they reach a visitor, and
+// drops them without saying so (stokaro/ptah#929 items 1 and 4).
 //
-// The rendered output changed here: no error, one named skip comment per
-// object, same as the sequence, view, function and trigger gates beside them.
+// So there is no error here: one named skip comment per object, the same as the
+// sequence, view, function and trigger gates beside them.
 func TestPostgreSQLRenderer_RowLevelSecurityCapability(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -321,7 +320,7 @@ func TestPostgreSQLRenderer_ForeignKeyRefusalIsNamedOnEveryRoute(t *testing.T) {
 			// constraint it cannot accept.
 			c.Assert(sql, qt.Not(qt.Contains), "FOREIGN KEY")
 			// And nothing may be left where the refused key would have gone.
-			// The column route used to append an empty line here, producing
+			// A column route that appends an empty line here produces
 			// `"user_id" BIGINT,` followed by a bare comma.
 			c.Assert(sql, qt.Not(qt.Contains), ",\n\n")
 			c.Assert(sql, qt.Not(qt.Contains), ",\n)")

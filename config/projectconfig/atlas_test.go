@@ -2007,17 +2007,17 @@ func TestAtlasParserDistinguishesFailureClasses(t *testing.T) {
 // TestAtlasHCLSchemaPathNamesTheRuleItBreaks pins the fourth failure class:
 // a supported key given a value that breaks a rule of this parser.
 //
-// `path` and `paths` are supported keys, and both refusals used to be reported
-// as `unsupported atlas.hcl construct "path"` -- naming the key, which is the
-// one thing here that is not the problem, and collapsing two unrelated rules
-// onto one string so that neither a reader nor a test could tell an absolute
-// path from a scheme ptah does not fetch. The reasons already existed:
-// atlasLocalFileURL produced them and then replaced them, four lines away from
-// atlasLocalFSPath, which returns the same reasons intact -- see the file()
-// rows in TestParseAtlasProjectConfigRejectsUnsupportedConstructs.
+// `path` and `paths` are supported keys, so reporting either refusal as
+// `unsupported atlas.hcl construct "path"` names the key, which is the one
+// thing here that is not the problem, and collapses two unrelated rules onto
+// one string so that neither a reader nor a test can tell an absolute path from
+// a scheme ptah does not fetch. The reasons exist already: atlasLocalFSPath
+// returns them intact, and atlasLocalFileURL four lines away must not produce
+// them and then replace them -- see the file() rows in
+// TestParseAtlasProjectConfigRejectsUnsupportedConstructs.
 //
-// This is stokaro/ptah#935 item 4b. Exit codes do not move: every fixture that
-// failed before still fails, only the message changed.
+// This is stokaro/ptah#935 item 4b. Exit codes do not move; only the message
+// does.
 func TestAtlasHCLSchemaPathNamesTheRuleItBreaks(t *testing.T) {
 	const envBody = `
 env "local" {

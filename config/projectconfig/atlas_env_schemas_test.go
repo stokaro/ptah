@@ -172,8 +172,8 @@ func TestParseAtlasEnvSchemasRefusesValuesTheFieldCannotHold(t *testing.T) {
 
 // TestParseAtlasEnvSchemasOptOut covers PTAH_ATLAS_IGNORE_ENV_SCHEMAS.
 //
-// The opt-out exists because acting on the attribute removes a description Ptah
-// used to emit, and it governs the SELECTION only. The refusal row is the one
+// The opt-out exists because acting on the attribute narrows the description
+// Ptah emits, and it governs the SELECTION only. The refusal row is the one
 // that matters most: a Ptah environment variable may not reopen an exit 0 where
 // the pinned binary exits 1, so the type check has to run before the variable is
 // consulted and return before it.
@@ -254,10 +254,10 @@ func TestParseAtlasEnvSchemasOptOut(t *testing.T) {
 // value is read, which the rows above cannot see.
 //
 // Every row in [TestParseAtlasEnvSchemasOptOut] spells `schemas` in the
-// selected environment, so all of them reach the parser arm that used to do the
-// resolving. A malformed value was therefore refused on a config that names the
-// attribute and honored as its default on one that does not — the same broken
-// environment, two answers, chosen by the file under parse. Resolving when the
+// selected environment, so all of them reach the parser arm. Resolving there
+// would refuse a malformed value on a config that names the attribute and
+// honor its default on one that does not — the same broken environment, two
+// answers, chosen by the file under parse. Resolving when the
 // parser is built is what makes the answer the environment's alone.
 func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
 	tests := []struct {

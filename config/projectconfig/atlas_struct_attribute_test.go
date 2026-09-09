@@ -15,8 +15,8 @@ import (
 // null.
 //
 // Ptah's structure validator classifies attributes and blocks separately, so the
-// attribute spelling used to fall through to the unknown-name tolerance and exit
-// 0 where the binary exits 1: a compatibility rule (a) violation, and the reason
+// attribute spelling can fall through to the unknown-name tolerance and exit 0
+// where the binary exits 1: a compatibility rule (a) violation, and the reason
 // these tests exist. Measured with `schema inspect --env local`, every exit code
 // read directly from an unpiped invocation.
 //

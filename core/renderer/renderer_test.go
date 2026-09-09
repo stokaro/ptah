@@ -400,10 +400,10 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 				sql = legacyRenderedSQL(sql)
 				c.Assert(sql, qt.IsNotNil)
 
-				// Both answers name the type. The MySQL-family diagnostic used
-				// to name none -- "MYSQL does not support CREATE TYPE - enums
-				// are handled inline in column definitions" -- which said
-				// nothing about WHICH type when a schema declared several
+				// Both answers name the type. A MySQL-family diagnostic naming
+				// none -- "MYSQL does not support CREATE TYPE - enums are
+				// handled inline in column definitions" -- says nothing about
+				// WHICH type when a schema declares several
 				// (stokaro/ptah#929 item 5).
 				c.Assert(sql, qt.Contains, "CREATE TYPE test_type")
 				if dialect == "postgresql" {

@@ -522,8 +522,8 @@ env "local" {
 // Both blocks below select shared.hcl, but the env selects one path out of each
 // block and shared.hcl is not among them: no source carries a scope for it, so
 // the two blocks have nothing to disagree about and the project is determined.
-// The refusal used to be decided over every URL a referenced block could mint,
-// which rejected this file.
+// Deciding the refusal over every URL a referenced block could mint would
+// reject this file.
 //
 // This arm is Ptah's own spelling rather than a parity row: a data source's
 // `url` is a list of file:// URLs here, so it can be indexed, while the pinned

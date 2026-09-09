@@ -13,15 +13,15 @@ import (
 // defined on the MySQL wrapper are observable through Output().
 //
 // The wrapper holds an inner mysqllike renderer and delegates Output(), Reset()
-// and Render() to it. It used to declare `var w bufwriter.Writer`, hand &w to
-// the inner renderer and then store `w` -- a COPY -- on itself, so all five
-// visitors below wrote into a buffer nothing ever read. `ptah schema render
-// --root-dir ext --dialect mysql` printed "-- Statement 1/2" followed by a blank
-// line where the extension comment belonged (stokaro/ptah#931 item 5).
+// and Render() to it. Declaring `var w bufwriter.Writer`, handing &w to the
+// inner renderer and then storing `w` -- a COPY -- on itself makes all five
+// visitors below write into a buffer nothing ever reads: `ptah schema render
+// --root-dir ext --dialect mysql` prints "-- Statement 1/2" followed by a blank
+// line where the extension comment belongs (stokaro/ptah#931 item 5).
 //
 // Each row asserts the rendered text, not merely that it is non-empty: a
 // length check passes on garbage, and the orphaned-buffer defect is exactly the
-// kind that a length check would have kept reporting green.
+// kind a length check keeps reporting green.
 func TestMySQLRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
 	tests := []struct {
 		name   string

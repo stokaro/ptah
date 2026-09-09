@@ -456,9 +456,9 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.ObjectExistenceGuards), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.TransactionalDDL), qt.IsFalse)
-	// Unknown dialects get the conservative nil set. This used to be spelled
-	// with "oracle", which stopped being an unknown dialect when Ptah gained
-	// one; "db2" is named by nothing in NormalizeDialect.
+	// Unknown dialects get the conservative nil set. The name has to be one
+	// NormalizeDialect knows nothing about, which "oracle" is not; "db2" is
+	// named by nothing there.
 	c.Assert(capability.ForDialect("db2"), qt.IsNil)
 }
 
@@ -1081,16 +1081,15 @@ func TestBannerPlatform(t *testing.T) {
 // release line was selected — there is none — but which PRODUCT the resolution
 // claims.
 //
-// ClickHouse used to be here beside it and moved to
-// TestResolveServerVersion_ClickHouseLadder when it gained a ladder: a row
-// asserting VersionSpecific is false cannot describe a dialect whose declared
-// lines are measured, and the cross-dialect claim those rows carried is kept
-// there rather than dropped. Before these tokens existed both banners named
-// nothing, and the shared parser spent the first number it found on the
-// DECLARED dialect's ladder: a SQL Server @@VERSION opens with its marketing
-// year, so ResolveServerVersion("postgres", <banner>) answered Postgres17 and
-// reported itself saturated past release line 18, for a PostgreSQL 2025 that
-// does not exist.
+// ClickHouse belongs in TestResolveServerVersion_ClickHouseLadder rather than
+// beside it: a row asserting VersionSpecific is false cannot describe a dialect
+// whose declared lines are measured, and the cross-dialect claim those rows
+// carry lives there. Without these tokens both banners name nothing, and the
+// shared parser spends the first number it finds on the DECLARED dialect's
+// ladder: a SQL Server @@VERSION opens with its marketing year, so
+// ResolveServerVersion("postgres", <banner>) answers Postgres17 and reports
+// itself saturated past release line 18, for a PostgreSQL 2025 that does not
+// exist.
 //
 // The two "on another dialect" rows are the ones with teeth. The two rows on
 // each product's own dialect are the control: adding a token must not change
