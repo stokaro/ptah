@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5284,
-      "sourceBytes": 45113
+      "visibleWords": 5330,
+      "sourceBytes": 45391
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",

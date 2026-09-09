@@ -33,11 +33,7 @@ var metadataFiles = map[string]struct{}{
 // would reopen it.
 func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 	snapshot, err := fsnapshot.CaptureMatching(fsys, func(name string, _ fs.DirEntry) bool {
-		if strings.EqualFold(path.Ext(name), ".sql") {
-			return true
-		}
-		_, ok := canonicalMetadataName(path.Base(name))
-		return ok
+		return Covers(name)
 	})
 	if err != nil {
 		return fsnapshot.Snapshot{}, err
@@ -46,6 +42,29 @@ func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 		return fsnapshot.Snapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// Covers reports whether a file name is part of what [Capture] reads.
+//
+// It is exported because the publication path builds the snapshot it expects to
+// find after writing, from the names it is about to write, and the two sides of
+// that comparison have to agree by construction. They did not: a Flyway
+// `<migration>.sql.conf` sidecar was composed into the batch and so reached the
+// expected snapshot, while the capture that verifies the directory afterwards
+// selects `.sql` files and the canonical metadata names only. The file existed
+// on one side and not the other, so every Flyway publication of a migration
+// that has to run outside a transaction ended with `migration directory changed
+// during migrate diff planning`, having written nothing (stokaro/ptah#3115).
+//
+// Widening this to cover the sidecar was the other way to make the two sides
+// agree, and it is not the one taken: the capture also feeds the integrity sum,
+// so a Flyway directory Flyway itself wrote would start hashing differently.
+func Covers(name string) bool {
+	if strings.EqualFold(path.Ext(name), ".sql") {
+		return true
+	}
+	_, ok := canonicalMetadataName(path.Base(name))
+	return ok
 }
 
 // CaptureDirectory captures dir, treating a missing directory as an empty

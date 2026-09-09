@@ -172,9 +172,12 @@ type BidirectionalPlan struct {
 type DiffResult struct {
 	Synced bool
 	SQL    string
-	// MigrationPaths lists every migration file written by this diff run, in
-	// apply order. A plan that mixes transactional statements with concurrent
-	// index builds is split into two files (see BuildMigrationFileContents).
+	// MigrationPaths lists every file written by this diff run, in apply order.
+	// A plan that mixes transactional statements with concurrent index builds is
+	// split into two files (see BuildMigrationFileContents), and a foreign layout
+	// that carries its transaction mode beside the migration rather than inside
+	// it contributes that file too -- Flyway's `<migration>.sql.conf` is the one
+	// such sidecar today.
 	MigrationPaths []string
 	SumPath        string
 }

@@ -96,7 +96,7 @@ sections carry the detail.
 | [Migration down and rollback](#migration-down-and-rollback) | Documented |
 | [Migration diff generation](#migration-diff-generation) | Partial |
 | [Migration linting](#migration-linting) | Partial |
-| [Migration directory integrity, hash, and validation](#migration-directory-integrity-hash-and-validation) | Partial |
+| [Migration directory integrity, hash, and validation](#migration-directory-integrity-hash-and-validation) | Documented |
 | [Migration import](#migration-import) | Partial |
 | [Manual migrations and troubleshooting](#manual-migrations-and-troubleshooting) | Documented |
 | [Drift detection](#drift-detection) | Native |
@@ -395,7 +395,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Ptah documentation.** [Integrity and safety](../../versioned/integrity-and-safety/), [Atlas migrate commands](../migrate-commands/), [Exit codes](../../reference/exit-codes/)
 
-**Implementation status.** Partial. Ptah supports `ptah.sum`, Atlas-compatible `atlas.sum`, hash, validate and `migrate validate --dev-url` SQL replay. `ptah-compat migrate hash` and `validate` register Atlas `--dir-format` with default `atlas`; external migration-tool formats are read directly, and `migrate new` plus `migrate diff` write them. A Flyway no-transaction migration fails `migrate diff` with a directory-changed error; [`stokaro/ptah#3115`](https://github.com/stokaro/ptah/issues/3115) owns it.
+**Implementation status.** Partial. Ptah supports `ptah.sum`, Atlas-compatible `atlas.sum`, hash, validate and `migrate validate --dev-url` SQL replay. `ptah-compat migrate hash` and `validate` register Atlas `--dir-format` with default `atlas`; external migration-tool formats are read directly, and `migrate new` plus `migrate diff` write them. A Flyway migration that has to run outside a transaction publishes its `<migration>.sql.conf` sidecar beside the migration; the integrity snapshot counted that sidecar on one side of its own comparison until [`stokaro/ptah#3115`](https://github.com/stokaro/ptah/issues/3115), so such a run reported the directory as changed and wrote nothing. `atlas.sum` covers the migration files, as it does for a Flyway directory Flyway itself wrote.
 
 **Conformance status.** Measured for selected directory fixtures, Atlas-default hash output, and live SQLite dev-database replay.
 
