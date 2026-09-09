@@ -322,8 +322,8 @@ func crossKindReplacements(removed, added []string, semantics identifier.Semanti
 // appendMaterializedViewReplacementDrop writes the drop half of a replacement
 // only where the create half will be a real statement. A target whose
 // capability set declines materialized views renders both halves as
-// diagnostics, and naming the same object twice would say the plan does two
-// things to it.
+// diagnostics, and naming the same object twice would say the plan both drops
+// and creates it.
 func appendMaterializedViewReplacementDrop(
 	result []ast.Node,
 	name string,

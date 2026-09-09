@@ -4890,8 +4890,8 @@
       "inboundLinks": [
         "/schema/export/"
       ],
-      "visibleWords": 4286,
-      "sourceBytes": 35486
+      "visibleWords": 4287,
+      "sourceBytes": 35497
     },
     {
       "path": "docs/site/src/content/docs/schema/security.mdx",

@@ -306,8 +306,8 @@ the `api_type` is a wire-incompatible change and is handled by the policy below.
 ## What the projection loses
 
 Protobuf describes a message on the wire, not a table in a database. Four
-things do not survive the crossing, and three of them announce themselves as
-export warnings:
+schema guarantees do not survive the crossing, and three of them announce
+themselves as export warnings:
 
 - **`NOT NULL` disappears.** Editions have no `required`; every singular field
   has explicit presence and may be absent. The generated `.proto` carries no

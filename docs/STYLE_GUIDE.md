@@ -288,6 +288,13 @@ Write:
   repository. Both skip quoted and backticked text, which is what lets this
   page and `AGENTS.md` name the phrase in order to ban it.
 
+  Both read a paragraph rather than a line, because prose wraps and a wrapped
+  count puts a line break -- and, in a Go comment, the comment's own marker --
+  between the number and its noun. Read a line at a time, six such sentences in
+  Go and one in Markdown were clean for as long as the rule existed. The
+  paragraph is also where the match stops: a count that ends one paragraph is
+  not the subject of the next one's first noun.
+
 ### 5.4 What plain does not mean
 
 Plain English is not telegraphic English. Keep the article, keep the subject,
@@ -1068,12 +1075,13 @@ one.
 Sections 5, 6, and 11 are mostly a reading responsibility. Which parts are not
 is measured rather than assumed.
 
-**Section 5 (plain English).** One rule is enforced: the filler-adjective list.
-Before it was added, `check:style` reported 15 findings across 9 governed files,
-one of them on a site page; this change rewrote all 15, so the rule lands with
-the tree clean. Everything else in section 5 — word choice, sentence shape,
-idioms, rhetorical questions, anthropomorphism, prose that repeats the block
-below it — needs a reader. The clearest case is anthropomorphism: the site says
+**Section 5 (plain English).** The filler-adjective list is enforced, and so is
+the count standing where the noun belongs (5.3). Before the filler rule was
+added, `check:style` reported 15 findings across 9 governed files, one of them
+on a site page; that change rewrote all 15, so the rule landed with the tree
+clean. Everything else in section 5 — word choice, sentence shape, idioms,
+rhetorical questions, anthropomorphism, prose that repeats the block below it —
+needs a reader. The clearest case is anthropomorphism: the site says
 "does not mean Ptah thinks it is missing", which *denies* the anthropomorphism,
 and a rule that flagged it would be worse than no rule.
 

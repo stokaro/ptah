@@ -641,24 +641,42 @@ const countAsSubject =
 // name the phrase in order to ban it. AGENTS.md wraps one such span across a
 // line break, so nothing short of carrying the parity between lines covers it,
 // and an exemption list would have been the alternative.
+//
+// The match runs over a paragraph rather than a line, because prose wraps and a
+// wrapped count puts a line break between the number and its noun. It stops at
+// the paragraph, though: a count that ends one paragraph is not the subject of
+// the next one's first noun. internal/countsubjectguard reads Go comments the
+// same way, and for the same reason.
 function countAsSubjectViolations(lines) {
   const findings = [];
   let inSpan = false;
+  let paragraph = [];
+  let first = 0;
+  const flush = () => {
+    if (paragraph.length === 0) return;
+    const text = paragraph.join('\n');
+    for (const match of text.matchAll(countAsSubject)) {
+      findings.push({
+        line: first + text.slice(0, match.index).split('\n').length - 1,
+        message:
+          `"${match[0].replace(/\s+/g, ' ')}": the count is not the subject;` +
+          ' name the noun, or drop the lead-in',
+      });
+    }
+    paragraph = [];
+  };
   for (const [index, line] of lines.entries()) {
     if (line.trim() === '') {
       inSpan = false;
+      flush();
       continue;
     }
     const span = outsideCodeSpans(line, inSpan);
     inSpan = span.inSpan;
-    for (const match of span.outside.matchAll(countAsSubject)) {
-      findings.push({
-        line: index + 1,
-        message:
-          `"${match[0]}": the count is not the subject; name the noun, or drop the lead-in`,
-      });
-    }
+    if (paragraph.length === 0) first = index + 1;
+    paragraph.push(span.outside);
   }
+  flush();
   return findings;
 }
 
@@ -891,6 +909,12 @@ function selftest() {
     'Two things follow:',
     '',
     'Three things weigh against it.',
+    '',
+    // The same construction wrapped, which is how prose at 80 columns writes
+    // it: the count ends one line and its noun starts the next. Read a line at
+    // a time, the file is clean.
+    'The refusal names two',
+    'things that layout does not have.',
   ].join('\n');
 
   const expected = [
@@ -918,6 +942,7 @@ function selftest() {
     { line: 82, needle: 'British spelling "colour"' },
     { line: 84, needle: 'the count is not the subject' },
     { line: 86, needle: 'the count is not the subject' },
+    { line: 88, needle: 'the count is not the subject' },
   ];
 
   const findings = analyze(violating);
@@ -953,6 +978,13 @@ function selftest() {
     // states it, measured as AGENTS.md line 451.
     'In running prose, name the noun: `Three things',
     'weigh against it` is the repair.',
+    '',
+    // A count that ends a paragraph, and a noun that opens the next one. The
+    // paragraph rule that lets a wrapped phrase be seen would report this pair
+    // as one sentence if it did not stop at the blank line.
+    'The refusal names two',
+    '',
+    'things that layout does not have are counted elsewhere.',
     '',
     '```sql',
     'SELECT * FROM orders WHERE status = \'cancelled\';',

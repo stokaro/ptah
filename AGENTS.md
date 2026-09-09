@@ -460,7 +460,8 @@ section. `internal/countsubjectguard` holds Go comments to this, reading the
 comments rather than the source so a string literal carrying the phrase is left
 alone; `docs/site/scripts/check-style.mjs` holds Markdown. Both skip quoted and
 backticked text, which is what lets this file name the phrase in order to ban
-it.
+it, and both read a paragraph rather than a line, so wrapping the count onto the
+line above its noun hides it from neither.
 
 ### Say what holds now, not when it changed
 
