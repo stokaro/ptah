@@ -17,6 +17,7 @@
   "/concepts/desired-schema-and-sources/",
   "/concepts/dialects-and-capabilities/",
   "/concepts/migration-directory/",
+  "/databases/capability-status/",
   "/databases/clickhouse/",
   "/databases/distributed/",
   "/databases/mysql/",

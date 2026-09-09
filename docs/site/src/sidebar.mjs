@@ -201,6 +201,7 @@ export const sidebar = [
       { slug: 'databases/support-matrix' },
       { slug: 'databases/support-policy' },
       { slug: 'databases/support-evidence' },
+      { slug: 'databases/capability-status' },
       { slug: 'databases/postgresql' },
       { slug: 'databases/mysql' },
       { slug: 'databases/sqlite' },

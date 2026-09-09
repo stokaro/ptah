@@ -6,15 +6,15 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 133,
+    "pages": 134,
     "authored": 131,
-    "generated": 2,
+    "generated": 3,
     "byType": {
       "concept": 16,
       "how-to": 56,
       "landing": 13,
       "reference": 33,
-      "status": 8,
+      "status": 9,
       "troubleshooting": 4,
       "tutorial": 3
     }
@@ -831,6 +831,47 @@
       ],
       "visibleWords": 1612,
       "sourceBytes": 11479
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/capability-status.md",
+      "route": "/databases/capability-status/",
+      "title": "Database capability status",
+      "description": "What the capability matrix last measured for every declared database release line.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "database-engineer",
+        "evaluator"
+      ],
+      "readerQuestion": "Did the last capability run pass for the release line I depend on?",
+      "goal": "Read the verdict the capability matrix last measured for a release line.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        ".github/workflows/capability-matrix.yml"
+      ],
+      "owns": [],
+      "generated": true,
+      "generator": "internal/cmd/capmatrix",
+      "editSource": "internal/capabilityprobe/cells.go",
+      "lastVerified": "2026-09-09",
+      "evidence": [
+        "https://github.com/stokaro/ptah/actions/runs/34390826860"
+      ],
+      "searchAliases": [
+        "database capability status",
+        "which database versions pass"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/databases/support-matrix/",
+        "/databases/support-evidence/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 295,
+      "sourceBytes": 3322
     },
     {
       "path": "docs/site/src/content/docs/databases/clickhouse.md",
