@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -528,6 +529,21 @@ type atlasSumContribution struct {
 // metadata. Native Ptah migrations and ordinary Atlas migrations use their
 // numeric version. Atlas repeatable migrations use Atlas's opaque token, such
 // as "R" or "2R".
+// AtlasCheckFiles returns the Atlas txtar check sections this migration
+// carries, in archive order, as a copy the caller may keep.
+//
+// The Atlas-shaped apply report needs them: it models Atlas's per-file check
+// result and could fill in nothing, because the sections live on the migration
+// and the report only ever saw the migration (stokaro/ptah#3118). Checks written
+// as `-- +ptah check` directives are reachable already, through the exported
+// [ParseChecks] over the up body.
+func (m *Migration) AtlasCheckFiles() []migrationfile.AtlasTxtarCheckFile {
+	if len(m.atlasCheckFiles) == 0 {
+		return nil
+	}
+	return slices.Clone(m.atlasCheckFiles)
+}
+
 func (m *Migration) RevisionVersion() string {
 	if m.hasAtlasRevisionVersion {
 		return m.atlasRevisionVersion

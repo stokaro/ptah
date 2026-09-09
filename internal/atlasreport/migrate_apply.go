@@ -228,6 +228,7 @@ func atlasMigrateApplyAppliedFiles(
 		}
 		if migration := migrations[version]; migration != nil {
 			appliedFile.Applied = atlasMigrateApplySplitStatements(migration.UpSQL, dialect)
+			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, applyErr)
 			if failedVersionSet && version == failedVersion {
 				execErr := atlasMigrateApplyExecutionError(applyErr)
 				if execErr == nil {
@@ -526,4 +527,93 @@ func atlasTemplateJSONMerge(objects ...string) (string, error) {
 		return "", fmt.Errorf("json_merge: %w", err)
 	}
 	return string(data), nil
+}
+
+// atlasMigrateApplyChecks reports the pre-migration checks a migration carries,
+// in the order the migrator evaluates them, with the one that refused marked.
+//
+// Atlas's apply report models this per file, and Ptah's modelled it and left it
+// nil: the field was never assigned anywhere, so a pipeline reading the report
+// to learn which assertion refused a migration got an empty list and a prose
+// sentence in the file-level Error (stokaro/ptah#3118).
+//
+// The list is what the migration declares rather than a log of what executed,
+// because nothing records the latter. That is the same list for a run that
+// applied -- every declared check passed -- and for one a check refused, where
+// the refusal names the assertion and this marks it. A check after the refused
+// one never ran, and saying so would need execution data this does not have.
+func atlasMigrateApplyChecks(
+	migration *migrator.Migration,
+	dialect string,
+	applyErr error,
+) []*atlasMigrateApplyFileChecks {
+	groups := make([]*atlasMigrateApplyFileChecks, 0, len(migration.AtlasCheckFiles())+1)
+	for _, file := range migration.AtlasCheckFiles() {
+		groups = append(groups, &atlasMigrateApplyFileChecks{
+			Name:  file.Name,
+			Stmts: atlasMigrateApplyCheckStatements(atlasMigrateApplySplitStatements(file.SQL, dialect)),
+		})
+	}
+	if directives, err := migrator.ParseChecks(migration.UpSQL, dialect); err == nil && len(directives) > 0 {
+		asserts := make([]string, 0, len(directives))
+		for _, directive := range directives {
+			asserts = append(asserts, directive.Assert)
+		}
+		groups = append(groups, &atlasMigrateApplyFileChecks{
+			Stmts: atlasMigrateApplyCheckStatements(asserts),
+		})
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	markAtlasMigrateApplyCheckFailure(groups, migration.Version, applyErr)
+	return groups
+}
+
+// atlasMigrateApplyCheckStatements wraps assertion SQL in the report's per-check
+// shape, where a nil Error is a check that did not refuse.
+func atlasMigrateApplyCheckStatements(statements []string) []*atlasMigrateApplyCheck {
+	checks := make([]*atlasMigrateApplyCheck, 0, len(statements))
+	for _, statement := range statements {
+		checks = append(checks, &atlasMigrateApplyCheck{Stmt: statement})
+	}
+	return checks
+}
+
+// markAtlasMigrateApplyCheckFailure attaches a refusal to the check it names.
+//
+// A failed assertion identifies its group by name and its statement by text, so
+// the mark lands on the exact entry. A group refusal -- an Atlas oneof file
+// where nothing passed -- names only the file, so it marks the group.
+func markAtlasMigrateApplyCheckFailure(
+	groups []*atlasMigrateApplyFileChecks,
+	version int64,
+	applyErr error,
+) {
+	var checkErr *migrator.CheckFailedError
+	if errors.As(applyErr, &checkErr) && checkErr.Version == version {
+		for _, group := range groups {
+			if group.Name != checkErr.Name {
+				continue
+			}
+			group.Error = &atlasMigrateApplyStatementError{Stmt: checkErr.Assert, Text: checkErr.Error()}
+			for _, check := range group.Stmts {
+				if check.Stmt == checkErr.Assert {
+					text := checkErr.Error()
+					check.Error = &text
+				}
+			}
+			return
+		}
+		return
+	}
+	var groupErr *migrator.CheckGroupFailedError
+	if errors.As(applyErr, &groupErr) && groupErr.Version == version {
+		for _, group := range groups {
+			if group.Name == groupErr.Name {
+				group.Error = &atlasMigrateApplyStatementError{Text: groupErr.Error()}
+				return
+			}
+		}
+	}
 }

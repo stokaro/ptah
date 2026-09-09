@@ -447,7 +447,7 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 
 **Ptah documentation.** [CI](../../testing/ci/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and Atlas txtar `checks.sql` / `checks/*.sql` sections, including file-level `atlas:assert oneof`. They are enforced as pre-migration gates rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope, and the apply report's `.Checks` field is always empty; [`stokaro/ptah#3118`](https://github.com/stokaro/ptah/issues/3118) owns that field.
+**Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and Atlas txtar `checks.sql` / `checks/*.sql` sections, including file-level `atlas:assert oneof`. They are enforced as pre-migration gates rather than executed as plain SQL. The apply report's `.Checks` field carries them: each applied file lists the assertions its migration declares, and a refusal marks the assertion that made it, where the field was always empty until [`stokaro/ptah#3118`](https://github.com/stokaro/ptah/issues/3118). The Atlas Cloud approval-policy half stays out of scope, which is what keeps this section short of complete.
 
 **Conformance status.** Measured against Atlas: a failing txtar assertion aborts the apply before any body statement on both binaries, and no revision row is recorded. Ptah also covers Atlas's documented named check files and one-of grouping.
 
