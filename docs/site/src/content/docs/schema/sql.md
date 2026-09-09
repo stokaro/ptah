@@ -124,6 +124,31 @@ is the same for every source and lives on
 [Work with a desired schema](../work-with-a-source/). For SQL the flag is
 `--schema-file`. What follows is specific to this source.
 
+## Split a schema across files
+
+A SQL schema file can pull in other SQL files with an `atlas:import` comment,
+one per line:
+
+```sql
+-- schema/main.sql
+-- atlas:import ./tables/orders.sql
+-- atlas:import ./tables/users.sql
+```
+
+Point `--schema-file` at the entry point and the declarations merge in the order
+the file lists them. The entry point may declare objects of its own as well, and
+an imported file may import in turn.
+
+This is the layout `ptah-compat schema inspect` writes when its output goes
+through `split`, so an export of a live database reads back as the schema it was
+taken from.
+
+Each path is relative to the file that writes it and must stay inside the entry
+point's own directory. An absolute path, a path that climbs out with `..`, a
+file that does not exist, one that is not `.sql`, and a cycle are each refused
+by name. An entry point that imports nothing is read exactly as any other SQL
+file.
+
 ## Diff two SQL files locally
 
 `ptah schema diff` compares local SQL files directly. With `old.sql`

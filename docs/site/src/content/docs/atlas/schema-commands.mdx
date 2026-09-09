@@ -232,9 +232,9 @@ accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
 `base64url`, `mermaid`, `split`, and `write`. Split-write exports are
 supported for HCL and SQL output with the documented Atlas split strategies:
 per object (the default: one file per object under per-type directories, with
-a `main.sql` `atlas:import` entry point for SQL), `"schema"` (one file per
-schema), and `"type"` (one file per object type), plus an optional
-file-extension argument:
+a `main.sql` `atlas:import` entry point for SQL, which reads back as the whole
+export), `"schema"` (one file per schema), and `"type"` (one file per object
+type), plus an optional file-extension argument:
 
 ```bash
 ptah-compat schema inspect \
