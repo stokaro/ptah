@@ -1,13 +1,16 @@
 package atlashcl
 
 import (
+	"maps"
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+	"github.com/zclconf/go-cty/cty/convert"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/matviewrefresh"
@@ -150,10 +153,15 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	if body == "" {
 		return p.blockError(block, "%s %q requires as", blockType, name)
 	}
+	settings, err := p.routineSettings(block, blockType)
+	if err != nil {
+		return err
+	}
 	function := schemamodel.Function{
 		Name:       tableref.Canonical(schema, name),
 		Kind:       kind,
 		Parameters: parameters,
+		Settings:   settings,
 		// Read only for a function. rejectUnsupportedRoutineAttrs refuses the
 		// attribute on a procedure, but the tolerant parser reports an unknown
 		// attribute instead of removing it, so the body still carries it and a
@@ -168,6 +176,43 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	function.Canonicalize()
 	p.db.Functions = append(p.db.Functions, function)
 	return nil
+}
+
+// routineSettings reads a routine's `set` into the `name=value` spelling the
+// model holds, which is the one pg_proc.proconfig reports.
+//
+// The attribute was accepted and never read, so a routine pinning its
+// search_path rendered without the SET clause and resolved unqualified names
+// through whatever the caller had set. On a SECURITY DEFINER routine that is
+// the whole hazard the clause exists to close, and the document reported exit 0
+// (stokaro/ptah#3121).
+//
+// The order is sorted so one declaration renders one way. A map has none of its
+// own, and PostgreSQL applies every SET before the body regardless, so sorting
+// costs nothing a caller can observe apart from a stable diff.
+func (p *parser) routineSettings(block *hclsyntax.Block, blockType string) ([]string, error) {
+	attr := block.Body.Attributes["set"]
+	if attr == nil {
+		return nil, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.IsNull() || !value.Type().IsObjectType() {
+		return nil, p.blockError(block, "%s set must be an object of name = value pairs", blockType)
+	}
+	pairs := value.AsValueMap()
+	settings := make([]string, 0, len(pairs))
+	for _, name := range slices.Sorted(maps.Keys(pairs)) {
+		item := pairs[name]
+		if item.IsNull() {
+			return nil, p.blockError(block, "%s set %q has no value", blockType, name)
+		}
+		converted, err := convert.Convert(item, cty.String)
+		if err != nil {
+			return nil, p.blockError(block, "%s set %q is not a value SET takes", blockType, name)
+		}
+		settings = append(settings, name+"="+converted.AsString())
+	}
+	return settings, nil
 }
 
 // routineReturns reads the declared return type, which only a function has.

@@ -79,9 +79,13 @@ current schema IR:
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
   `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
-  `security`, `volatility`, `as`, and `comment`; the Ptah `params` parity
+  `security`, `volatility`, `set`, `as`, and `comment`; the Ptah `params` parity
   extension preserves parameter declarations that cannot be decomposed into
-  Atlas-style `arg` blocks without changing their text
+  Atlas-style `arg` blocks without changing their text. `set` is an object of
+  `name = value` pairs and renders as the routine's `SET` clauses, read back
+  from `pg_proc.proconfig`; pin `search_path` here on a `SECURITY DEFINER`
+  routine, which otherwise resolves unqualified names through whatever the
+  caller had set
 - `procedure` blocks, taking every attribute `function` takes except `return`,
   which a procedure does not have and which is refused inside one. This is a
   Ptah block: the Atlas community CLI has no procedure block, and a routine
@@ -714,7 +718,10 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 
 - grantor metadata
 - function options outside Ptah's current IR, such as `leakproof`, `parallel`,
-  `return_set`, `return_table`, `config_params`, and argument defaults
+  `return_set`, `return_table`, and argument defaults. Routine configuration
+  settings are not in this list: the IR carries them and this frontend reads
+  them from `set`. The attribute name `config_params` is refused, like any other
+  name the block does not define
 - view/materialized-view column metadata
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
 - permission targets other than schema, table, and sequence
