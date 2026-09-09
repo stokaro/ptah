@@ -587,12 +587,12 @@ func TestParseAtlasProjectConfigAcceptsAtlasCEDecodedLeafValues(t *testing.T) {
   url = "sqlite://s.db"
   diff {
     skip {
-      drop_column = true
+      add_column = true
     }
   }
 }
 `,
-			ignored: "drop_column",
+			ignored: "add_column",
 		},
 		{
 			name: "diff skip bool given null",
@@ -600,12 +600,12 @@ func TestParseAtlasProjectConfigAcceptsAtlasCEDecodedLeafValues(t *testing.T) {
   url = "sqlite://s.db"
   diff {
     skip {
-      drop_column = null
+      add_column = null
     }
   }
 }
 `,
-			ignored: "drop_column",
+			ignored: "add_column",
 		},
 		{
 			name: "diff skip nonsense name given an object",
@@ -743,13 +743,19 @@ env "local" {
   url = "sqlite://s.db"
   diff {
     skip {
-      drop_column = var.flag
+      add_column = var.flag
     }
   }
 }
 `,
-			ignored: "drop_column",
+			ignored: "add_column",
 		},
+		// `diff { skip { drop_column } }` and `drop_index` were rows here too,
+		// for the same reason and with the same resolution: both are DECODED
+		// now, so the rows above ask about `add_column`, a name Ptah's diff
+		// policy models no change kind for and therefore still reports
+		// (stokaro/ptah#3111).
+		//
 		// `migration { baseline }` used to be two rows here, tolerated and
 		// reported as having no effect. It is DECODED now -- stokaro/ptah#934
 		// item 5a wired it into `migrate apply` -- so it no longer reaches the

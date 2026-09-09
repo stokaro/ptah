@@ -139,6 +139,8 @@ env "local" {
 | `format.migrate.lint` | Default `migrate lint --format`. |
 | `format.migrate.status` | Default `migrate status --format`. |
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
+| `diff.skip.drop_column` | Suppresses column drops in supported local diff/apply plans. |
+| `diff.skip.drop_index` | Suppresses standalone index drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
 
@@ -1009,7 +1011,7 @@ Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
 
 | Scope | Name | Required value |
 | --- | --- | --- |
-| `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
+| `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `add_index`, `modify_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
 | `lint` and `env.lint` | `review` | a string |
 | `env` | `include` | a list of strings |
 | `env.migration` | `exclude` | a list of strings |
