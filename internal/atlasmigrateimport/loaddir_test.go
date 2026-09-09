@@ -297,16 +297,16 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 
 // TestLoadDir_RejectsMissingUpDirective covers dbmate only.
 //
-// It used to carry two goose rows — a file with no directives, and one whose
-// only marker was the malformed "--+goose Up". stokaro/ptah#981 is those
-// refusals being wrong: Atlas recognizes neither line as a directive, so both
+// Two goose rows do not belong here — a file with no directives, and one whose
+// only marker is the malformed "--+goose Up". Refusing those is wrong
+// (stokaro/ptah#981): Atlas recognizes neither line as a directive, so both
 // files simply have none, and it executes each one's bytes verbatim and records
 // the revision. Measured on both fixtures. A file with no directives has no
 // rollback section that could leak onto the apply path, so the caution that
 // justifies refusing a BROKEN directive set does not reach them.
 //
-// Goose parsing — the directive-free path and the out-of-order refusals that
-// replaced this over-refusal — is pinned in goosedirectives_test.go.
+// Goose parsing — the directive-free path and the out-of-order refusals — is
+// pinned in goosedirectives_test.go.
 func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 	tests := []struct {
 		name    string

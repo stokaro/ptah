@@ -127,9 +127,9 @@ func openConversation(
 // begin records the request, before the model is asked.
 //
 // Records are written as the run happens rather than gathered and written at
-// the end. A process killed mid-run used to leave nothing at all behind for the
-// turn it was in; now it leaves the question and every tool that had answered,
-// which is what an append-only file is for.
+// the end. Gathering them leaves nothing behind for the turn a process was
+// killed in; writing as it goes leaves the question and every tool that
+// answered, which is what an append-only file is for.
 func (c *conversation) begin(request string) {
 	c.fail(c.recorder.Append(assistsession.Record{
 		Kind: assistsession.KindRequest,

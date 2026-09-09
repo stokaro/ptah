@@ -47,14 +47,14 @@ func TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing(t *testing.T) {
 	}
 }
 
-// TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion inverts what this
-// test pinned, deliberately.
+// TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion pins that a
+// selection cannot rescue the declaration.
 //
-// `--exclude` used to rescue an unsupported declaration, and that followed from
-// the refusal being a per-target capability judgment: an object nobody compares
-// raises no capability question. The refusal is now about the DOCUMENT -- the
-// attribute is not schema state on any target -- and it fires while the file is
-// parsed, before a selection exists to rescue anything.
+// `--exclude` rescues an unsupported declaration wherever the refusal is a
+// per-target capability judgment: an object nobody compares raises no
+// capability question. This refusal is about the DOCUMENT -- the attribute is
+// not schema state on any target -- and it fires while the file is parsed,
+// before a selection exists to rescue anything.
 func TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

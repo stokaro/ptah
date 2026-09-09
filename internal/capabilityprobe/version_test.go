@@ -108,17 +108,17 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 // TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion runs the
 // shared code on the SQL Server banner instead of describing what it would do.
 //
-// It used to execute the misread directly: capability.ResolveServerVersion on
-// the postgres dialect SATURATED for this banner, which is possible only if the
-// shared parser took the marketing year 2025 out of it. That route is closed —
-// capability.BannerPlatform claims "sql server", so the resolver answers from
-// the product and parses no number at all. The misread still exists inside the
+// The misread is not reachable from here: capability.BannerPlatform claims
+// "sql server", so the resolver answers from the product and parses no number
+// at all. It would show as capability.ResolveServerVersion SATURATING on the
+// postgres dialect for this banner, which is possible only if the shared parser
+// took the marketing year 2025 out of it. The misread does exist inside the
 // parser; capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners
 // executes it white-box, which is the only place that can, since parseVersion
 // is unexported.
 //
-// What remains here is the reason this package keeps its own per-dialect
-// extractor: the shared resolver now yields SQL Server's default preset and NO
+// What this leaves is the reason this package keeps its own per-dialect
+// extractor: the shared resolver yields SQL Server's default preset and NO
 // version, so a matrix cell that must be labeled 17.0.4065.4 can get that
 // number only from ParseVersion.
 //

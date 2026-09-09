@@ -36,9 +36,9 @@ var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaD
 //
 // The two ways a key can be answered are counted SEPARATELY and only then
 // added. Seeding one counter from the declared-undecidable map and adding the
-// experiments to it — which is what this test used to do — makes the two
-// indistinguishable, so moving a key out of experiments and into undecided
-// keeps the total at one and coverage drops with nothing going red. Telling
+// experiments to it makes the two indistinguishable, so moving a key out of
+// experiments and into undecided keeps the total at one and coverage drops with
+// nothing going red. Telling
 // them apart is what lets
 // TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {

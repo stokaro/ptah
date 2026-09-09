@@ -572,8 +572,8 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			// #1074 S1: a version that expresses no schema change prints no
 			// schema-change line at all. Measured against the pinned community
 			// binary v1.3.0: a version whose only statement is an INSERT ends at
-			// the version-summary line, where Ptah used to add
-			// "-- 0 schema changes". The scope filter made this reachable on
+			// the version-summary line, with no "-- 0 schema changes" after
+			// it. The scope filter made this reachable on
 			// versions that do carry DDL, because DDL against a schema the dev
 			// URL does not cover counts nothing.
 			name: "a version expressing no schema change prints no change line",
@@ -658,7 +658,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			// Analyzer groups print in analyzer order, not in the order their first
 			// diagnostic appears. The add is on line 1 and the drop on line 2, so a
 			// renderer ordering groups by first appearance prints them the other way
-			// round -- which is what it used to do. Verbatim from the pinned binary.
+			// round. Verbatim from the pinned binary.
 			name: "analyzer groups print in measured order",
 			files: map[string]string{
 				"1.sql": "CREATE TABLE users (id int, nick int);\n",

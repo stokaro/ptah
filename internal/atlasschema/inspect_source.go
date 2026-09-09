@@ -264,10 +264,10 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 // caller can supply that last one, because the two surfaces owe different
 // sentences for the same value; see [InspectSourceOptions.DevURLDiagnostic].
 //
-// A `docker://` value used to be refused here outright. It is now provisioned
-// instead, by [devdocker.Resolve] further down, and the verdicts that remain
-// for one are read from the URL text by [refuseInspectDevURLForm] and by
-// [devdocker.Parse] itself, in the pinned binary's own words.
+// A `docker://` value is not refused here outright: it is provisioned instead,
+// by [devdocker.Resolve] further down, and the verdicts that remain for one are
+// read from the URL text by [refuseInspectDevURLForm] and by [devdocker.Parse]
+// itself, in the pinned binary's own words.
 //
 // The value arrives as the operator wrote it and is normalized here for these
 // two verdicts only. What must NOT be normalized is the value handed to the

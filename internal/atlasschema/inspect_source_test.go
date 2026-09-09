@@ -283,12 +283,11 @@ CREATE TABLE sessions (
 // TestInspectSource_FileExportThenDevInspectionRoundTrip exports a live
 // inspection to a single HCL file and re-inspects that file through the dev
 // database: the reloaded output must reproduce the live output.
-// TestInspectSource_WriteRootMayLeaveTheWorkingDirectory pins what
-// stokaro/ptah#1622 changed here. A `write` root that climbs out of the working
-// directory used to be refused while the identical destination spelled
-// absolutely was accepted -- and the absolute form is how this package's own
-// happy-path tests use the API, so the rule filtered a spelling of something
-// callers already do.
+// TestInspectSource_WriteRootMayLeaveTheWorkingDirectory pins the rule
+// stokaro/ptah#1622 settles. Refusing a `write` root that climbs out of the
+// working directory, while accepting the identical destination spelled
+// absolutely, filters a spelling rather than a destination -- and the absolute
+// form is how this package's own happy-path tests use the API.
 func TestInspectSource_WriteRootMayLeaveTheWorkingDirectory(t *testing.T) {
 	c := qt.New(t)
 	dbPath := seedInspectSQLiteDB(c)
@@ -345,9 +344,9 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 
-	// Inspection used to refuse every docker:// dev URL here. It now provisions
-	// one (stokaro/ptah#844), so the row asserts that the value reached the
-	// provisioning layer instead.
+	// Inspection provisions a docker:// dev URL rather than refusing it
+	// (stokaro/ptah#844), so the row asserts that the value reached the
+	// provisioning layer.
 	//
 	// `docker://sqlite` is a docker URL this build will not start, so nothing is
 	// provisioned and the assertion needs no container runtime. That is the

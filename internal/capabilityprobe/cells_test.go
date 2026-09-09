@@ -112,9 +112,8 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 // assertMeasuredCell checks what only applies to a cell that names a preset.
 //
 // The conditional lives here rather than in the loop body above, which is why
-// this is a helper at all -- it used to be a helper returning a slice of
-// closures, which is the same thing with a checker handed through an extra
-// indirection nothing needed.
+// this is a helper at all. A helper returning a slice of closures is the same
+// thing with a checker handed through an extra indirection nothing needs.
 func assertMeasuredCell(c *qt.C, cell capabilityprobe.Cell, named map[string]capability.Capabilities) {
 	c.Helper()
 	if !cell.Measured() {
@@ -246,10 +245,10 @@ func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
 // repository starts: docker-compose.yaml for local runs and `make db-start`,
 // the integration workflow for CI.
 //
-// Reading them is the point. The list this test used to carry was written by
-// hand, and when the MySQL service moved from 9.7 to 26.7 the list kept naming
-// 9.7 — so the guard that exists to catch an undeclared line went on passing
-// while the only MySQL this repository starts fell off the matrix entirely.
+// Reading them is the point. A hand-written list here keeps naming 9.7 after
+// the MySQL service moves to 26.7 — so the guard that exists to catch an
+// undeclared line goes on passing while the only MySQL this repository starts
+// falls off the matrix entirely.
 var pinnedImageFiles = []string{
 	"../../docker-compose.yaml",
 	"../../.github/workflows/go-integration-tests.yml",
@@ -503,8 +502,8 @@ func assertThePinnedListHasDatabasesInIt(c *qt.C, pinned []string) {
 //
 // The three answers -- not a database, unclassified, or a database that needs a
 // cell -- are branches, and they live here so the loop body does not carry
-// them. This used to return a slice of closures per branch, which handed the
-// checker through an indirection that bought nothing.
+// them. Returning a slice of closures per branch hands the checker through an
+// indirection that buys nothing.
 func assertPinnedImageIsClassified(c *qt.C, ref string) {
 	c.Helper()
 	repository, tag := splitImageRef(ref)

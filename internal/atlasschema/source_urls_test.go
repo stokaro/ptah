@@ -254,8 +254,8 @@ func TestPlanApply_EmptyLocalDirectoryRefuses(t *testing.T) {
 }
 
 // TestPlanApply_LocalDirectoryOfSQLFiles is the regression test for
-// stokaro/ptah#940 item B on the apply planner: a directory of .sql files used
-// to fail with `schema file is a directory` and now plans both tables.
+// stokaro/ptah#940 item B on the apply planner: a directory of .sql files plans
+// both tables rather than failing with `schema file is a directory`.
 func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

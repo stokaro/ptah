@@ -170,7 +170,7 @@ func atlasChecksumMismatchStdout(line int, file, reason string) string {
 // TestCompatMigrateApply_ConvertedDirUnhashedRefuses replaces the former
 // TestCompatMigrateApply_ConvertedDirStaysUngated_KnownDivergence. That test
 // pinned the gap this one closes: a converted directory that was never hashed
-// used to apply, while Atlas CE refuses it before creating the database.
+// applying, while Atlas CE refuses it before creating the database.
 func TestCompatMigrateApply_ConvertedDirUnhashedRefuses(t *testing.T) {
 	for _, fixture := range convertedApplyFixtures() {
 		t.Run(fixture.format, func(t *testing.T) {
