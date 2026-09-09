@@ -318,9 +318,9 @@ func (s *keySample) add(key string) {
 //
 // One pass because the layers share a question -- which source key does this
 // stored row belong to -- and answering it more than once would let the answers
-// disagree. It used to be three passes over two materialized slices plus a map
-// joining them, which is what made a verification's memory proportional to the
-// corpus (stokaro/ptah#2621).
+// disagree. Three passes over two materialized slices plus a map joining them
+// is what makes a verification's memory proportional to the corpus
+// (stokaro/ptah#2621).
 func walkCorpus(report *Report, expectation Expectation, corpus Corpus) error {
 	walk := corpusWalk{expectation: expectation}
 	for pair, err := range corpus {

@@ -2,10 +2,10 @@
 //
 // Ptah emits HTML from four places -- the exported schema document, the live
 // schema dashboard, the migration safety report and the database test report --
-// and each of them used to carry a stylesheet of its own. They agreed about
-// nothing: three spellings of "safe", three of "destructive", three type
-// scales, and dark mode on one of them. This package is the declaration those
-// four now read, so a color has one value and changing it changes every page.
+// and a stylesheet of its own in each of them agrees about nothing: three
+// spellings of "safe", three of "destructive", three type scales, and dark mode
+// on one of them. This package is the declaration all four read, so a color has
+// one value and changing it changes every page.
 //
 // A caller composes Tokens and Base with whatever is genuinely its own, the
 // way the dashboard already composes the document's stylesheet. Nothing here

@@ -95,13 +95,13 @@ func typeRawSQLSurvives(field schemamodel.Field, declaredType string) bool {
 // declaredEnum returns the enum the schema declares under the name fieldType,
 // or nil when fieldType names something else.
 //
-// This is the ONLY test for "is this column an enum". Ptah used to additionally
-// require the type name to start with "enum_", an undocumented convention that
-// appears nowhere in `ptah schema annotations`. An enum called "status_kind" was
-// therefore left as the bare type name in CREATE TABLE while the same dialects
-// skip standalone CREATE TYPE emission, so the values disappeared entirely and
-// the DDL named a type the server had never heard of (stokaro/ptah#931 item 1).
-// A declaration is what makes a type an enum; how it is spelled is not.
+// This is the ONLY test for "is this column an enum". Additionally requiring
+// the type name to start with "enum_" rests on an undocumented convention that
+// appears nowhere in `ptah schema annotations`: an enum called "status_kind" is
+// then left as the bare type name in CREATE TABLE while the same dialects skip
+// standalone CREATE TYPE emission, so the values disappear entirely and the DDL
+// names a type the server has never heard of (stokaro/ptah#931 item 1). A
+// declaration is what makes a type an enum; how it is spelled is not.
 func declaredEnum(fieldType string, enums []schemamodel.Enum) *schemamodel.Enum {
 	for i := range enums {
 		if enums[i].Name == fieldType {
@@ -124,8 +124,8 @@ func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPl
 	// a dialect models an enum either on the column or as its own type, never
 	// both and never neither. Deriving both sides from one predicate is what
 	// stops a spelling from suppressing the CREATE TYPE and the inline rewrite
-	// at the same time, which is how `--dialect sqlite3` used to drop the enum
-	// entirely and render the column as the bare type name `enum_status`.
+	// at the same time, which is how `--dialect sqlite3` drops the enum
+	// entirely and renders the column as the bare type name `enum_status`.
 	if schemaprep.EmitsStandaloneEnumDefinitions(targetPlatform) {
 		// A standalone enum type is created in a schema, and a column declared
 		// against it has to name the same one. The declared type is matched by

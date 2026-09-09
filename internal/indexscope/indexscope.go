@@ -31,9 +31,8 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 // ValidateDiff refuses an index reference a plan could not act on: an empty
 // name or table, or a pair two dialect-folded spellings collapse onto.
 //
-// It no longer resolves anything. An addition carries its own definition
-// (stokaro/ptah#2315), so what is left here is the identity check that used to
-// travel with the lookup.
+// It resolves nothing. An addition carries its own definition
+// (stokaro/ptah#2315), so what is left here is the identity check alone.
 func ValidateDiff(dialect string, diff *difftypes.SchemaDiff) error {
 	return ValidateDiffWithSemantics(dialect, identifier.ForDialect(dialect), diff)
 }

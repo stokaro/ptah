@@ -131,10 +131,10 @@ var rebaseNow = func() time.Time { return time.Now().UTC() }
 //
 // The Atlas layout gets the UTC yyyyMMddHHmmss second, which is the shape
 // `migrate new`, `migrate diff` and `migrate checkpoint` already stamp into
-// those directories. Rebase used to take the Unix epoch there instead, so
-// moving a migration to the end of a directory whose versions were all below
-// the epoch wrote a ten-digit `1786268355_init.sql` next to fourteen-digit
-// neighbors -- one directory, two version shapes (stokaro/ptah#938).
+// those directories. Taking the Unix epoch there instead makes a migration
+// moved to the end of a directory whose versions are all below the epoch a
+// ten-digit `1786268355_init.sql` next to fourteen-digit neighbors -- one
+// directory, two version shapes (stokaro/ptah#938).
 //
 // The paired ptah layout keeps the epoch. Its names render the version with
 // %010d, so a fourteen-digit stamp is above [migrationversion.PtahMax] and is

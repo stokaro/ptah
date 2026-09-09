@@ -240,15 +240,15 @@ type Store interface {
 	// abandoned runs are refused atomically rather than claimed and checked
 	// afterwards.
 	//
-	// It writes the LEASE ALONE -- owner, expiry, token -- and not the run.
-	// Claiming used to be a read-modify-write of the whole row, so a worker
-	// that committed a checkpoint between the claimer's read and its write was
-	// still unfenced, its transaction landed, and the claim then overwrote the
-	// cursor and every progress counter with the snapshot it had read. A live
-	// backfill reproduced it: twenty vectors committed, four checkpoints in the
-	// event trail, and a run row saying three batches and fifteen rows. On
-	// resume the rows behind the rewound cursor were read and paid for again,
-	// and nothing reported the rewind (stokaro/ptah#2636).
+	// It writes the LEASE ALONE -- owner, expiry, token -- and not the run. A
+	// claim spelled as a read-modify-write of the whole row leaves a worker
+	// that commits a checkpoint between the claimer's read and its write
+	// unfenced: its transaction lands, and the claim then overwrites the cursor
+	// and every progress counter with the snapshot it read. Reproduced on a
+	// live backfill: twenty vectors committed, four checkpoints in the event
+	// trail, and a run row saying three batches and fifteen rows. On resume the
+	// rows behind the rewound cursor are read and paid for again, and nothing
+	// reports the rewind (stokaro/ptah#2636).
 	//
 	// The token is assigned by the STORE rather than computed by the caller,
 	// for the second half of the same race: two claimers reading one token both

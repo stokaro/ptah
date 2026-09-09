@@ -355,8 +355,8 @@ func (tr *TestRunner) runSingleTest(
 //
 // Split out from the run so the three outcomes can be checked without a live
 // server: which one a given error lands in is the whole point, and the
-// precondition case has to be read before the general error case or a skip
-// reverts to the failure it used to be.
+// precondition case has to be read before the general error case, or a skip
+// lands in the failure arm.
 func applyScenarioOutcome(result *TestResult, err error) {
 	switch {
 	case errors.Is(err, ErrPreconditionUnavailable):
