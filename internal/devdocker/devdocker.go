@@ -355,8 +355,8 @@ func unsupportedImageError(host string) error {
 //
 // # The bytes are read as written
 //
-// This function normalizes NOTHING. It used to trim surrounding whitespace, and
-// that made it accept a value the pinned binary cannot parse at all. Measured on
+// This function normalizes NOTHING. Trimming surrounding whitespace makes it
+// accept a value the pinned binary cannot parse at all. Measured on
 // the pinned community binary v1.3.0, exit statuses read from unpiped
 // `schema inspect -u file://schema.sql --dev-url <value>` invocations:
 //
@@ -371,9 +371,9 @@ func unsupportedImageError(host string) error {
 // space makes the whole value a relative path whose first segment is `docker:`,
 // so there is no scheme and no docker URL; a TRAILING one is an ordinary
 // character in the last path segment and names a database that ends in a space.
-// Trimming got both wrong in the same breath, and the first of them in the one
-// direction compatibility policy (a) forbids: `ptah-compat schema inspect` exited
-// 0, having started a container, where the pinned binary exits 1.
+// Trimming gets both wrong in the same breath, and the first of them in the one
+// direction compatibility policy (a) forbids: `ptah-compat schema inspect`
+// exiting 0, having started a container, where the pinned binary exits 1.
 //
 // A surface that wants to be lenient about whitespace normalizes ONCE at its own
 // boundary and says so -- `ptah schema inspect` does exactly that, deliberately,

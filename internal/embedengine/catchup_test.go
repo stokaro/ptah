@@ -150,11 +150,11 @@ func livingRows(keys ...string) *fakeRereader {
 // caughtUp runs a catch-up over a harness whose run has a boundary and a
 // finished backfill.
 //
-// The phase is set here rather than left at the harness default, and that is
-// the fixture repair stokaro/ptah#2737 needed: newHarness creates the run at
-// `backfilling`, so every test in this file used to catch up over a run whose
-// snapshot walk had not finished. That is the state the engine had no business
-// serving, and twenty-odd tests documented it as ordinary.
+// The phase is set here rather than left at the harness default, which is what
+// stokaro/ptah#2737 repaired: newHarness creates the run at `backfilling`, so a
+// test that leaves it there catches up over a run whose snapshot walk has not
+// finished. That is a state the engine has no business serving, and a file full
+// of such tests documents it as ordinary.
 func caughtUp(
 	c *qt.C, h *harness, changes *fakeChanges, source *fakeRereader,
 ) (embedrun.Run, embedrun.Progress, error) {

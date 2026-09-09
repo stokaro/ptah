@@ -143,11 +143,11 @@ func decideEvidence(decision *Decision, plan Plan, policy Policy) {
 		decision.refusef("the source is mutable and the run declared no consistency mode")
 	}
 	// A mode that IS declared and has not reached its condition is a different
-	// fact, and it used to arrive here as the one above: the plan blanked the
-	// mode when the guarantee was incomplete, so a run with
-	// `consistency.mode: outbox` and one uncaught-up change was told to
-	// configure a mode it had configured. `verify` got the same state right on
-	// the same run, so the two surfaces disagreed (stokaro/ptah#2646).
+	// fact, and a plan that blanks the mode when the guarantee is incomplete
+	// delivers it as the one above: a run with `consistency.mode: outbox` and
+	// one uncaught-up change is told to configure a mode it has configured,
+	// while `verify` reads the same state correctly on the same run
+	// (stokaro/ptah#2646).
 	//
 	// The reasons are the guarantee's own, carried rather than restated: the
 	// barrier knows whether the backfill is short of its snapshot or the
@@ -168,12 +168,12 @@ func decideDrift(decision *Decision, plan Plan, observed Observed) {
 			observed.ActivePointer, plan.Previous)
 	}
 	// Both halves, because the sentence claims both. An index that was never
-	// built fails the evidence check above, and this one fired beside it --
-	// two refusals, one saying the index is absent and one saying it used to
-	// be ready and something removed it. The second sent an operator looking
-	// for a DROP INDEX, a failed concurrent build or a retirement that never
-	// happened (stokaro/ptah#2649 finding 8). Drift is a change since the
-	// plan; there is no drift from a state the plan never recorded.
+	// built fails the evidence check above, and firing this one beside it gives
+	// two refusals: one saying the index is absent and one saying it was ready
+	// and something removed it. The second sends an operator looking for a DROP
+	// INDEX, a failed concurrent build or a retirement that never happened
+	// (stokaro/ptah#2649 finding 8). Drift is a change since the plan; there is
+	// no drift from a state the plan never recorded.
 	if plan.Evidence.IndexReady && !observed.IndexReady {
 		decision.refusef("the index was ready when the plan was built and is not ready now")
 	}

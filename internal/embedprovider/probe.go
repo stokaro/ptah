@@ -160,11 +160,10 @@ func Probe(ctx context.Context, subject ProbeSubject) ProbeReport {
 // The credential case comes first because it is the one where NOTHING WAS
 // SENT. Embed resolves the credential before it builds the request, so an unset
 // variable, a missing file or a world-readable one returns before a byte
-// leaves the process -- and this function used to fall through to two
-// unconditional passes, reporting "the endpoint at HOST answered" for a port
-// with nothing listening on it and "the credential was accepted" for a
-// credential Ptah itself refused. Both statements were false, and the second
-// was contradicted by the line printed directly beneath it
+// leaves the process. Falling through to two unconditional passes here reports
+// "the endpoint at HOST answered" for a port with nothing listening on it and
+// "the credential was accepted" for a credential Ptah itself refused: both
+// false, and the second contradicted by the line printed directly beneath it
 // (stokaro/ptah#2641).
 //
 // A check that could not be made is not a check that passed, so reachability
@@ -215,9 +214,9 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 	})
 	report.Unmeasured = append(report.Unmeasured,
 		"the shape, dimension, batch and cancellation checks, because there is no answer to measure",
-		// The error-shape check used to appear in neither list on a refused
-		// probe: not in Checks, because it never ran, and not here, because
-		// nobody said so. A check that is absent from both reads as a check
+		// Without this the error-shape check appears in neither list on a
+		// refused probe: not in Checks, because it never ran, and not here,
+		// because nobody said so. A check absent from both reads as a check
 		// that does not exist (stokaro/ptah#2641).
 		"the error shape, because a provider that did not answer a good request "+
 			"cannot be asked how it answers a bad one")

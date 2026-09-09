@@ -610,11 +610,11 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 // TestProvisionGeneratesADistinctPasswordPerInstance pins the credential that a
 // remote daemon made load-bearing.
 //
-// The password used to be the constant `ptah-dev`, justified in a comment by the
-// container publishing on loopback only. That premise stopped holding the moment
-// a remote daemon began publishing on every interface of its host: a known
-// superuser password on a reachable ephemeral port lets any peer that finds it
-// read the replayed schema, or write to it and corrupt a lint or diff result.
+// A constant password like `ptah-dev` rests on the container publishing on
+// loopback only. That premise fails the moment a remote daemon publishes on
+// every interface of its host: a known superuser password on a reachable
+// ephemeral port lets any peer that finds it read the replayed schema, or write
+// to it and corrupt a lint or diff result.
 // The binding cannot be tightened -- a daemon can only publish on interfaces it
 // owns, and the one this process must reach is not that host's loopback -- so
 // the credential is what has to change.

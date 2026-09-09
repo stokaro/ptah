@@ -167,16 +167,15 @@ func (s Spec) indexName() string {
 //
 // It takes the facts rather than a specification because retirement has no
 // specification for the generation it is destroying -- it has a registry row,
-// which records the table, the column and the identity and nothing else. The
-// retirement used to build the name from the CURRENT specification with the
-// column swapped in, and Target.Column is an identity field, so the digest in
-// the name belonged to a hybrid that was no generation at all. The
-// `DROP INDEX IF EXISTS` then matched nothing, the index survived, and the verb
-// reported the generation gone at exit 0 (stokaro/ptah#2642).
+// which records the table, the column and the identity and nothing else.
+// Building the name from the CURRENT specification with the column swapped in
+// takes the digest from a hybrid that is no generation at all, because
+// Target.Column is an identity field: the `DROP INDEX IF EXISTS` then matches
+// nothing, the index survives, and the verb reports the generation gone at exit
+// 0 (stokaro/ptah#2642).
 //
 // One function, so a name that is created and a name that is dropped cannot
-// come from two derivations. That is the failure this replaces rather than a
-// risk of repeating it.
+// come from two derivations.
 func IndexName(table, column, identity string) string {
 	return fmt.Sprintf("%s_%s_%s_idx", table, column, embeddigest.Short(identity))
 }

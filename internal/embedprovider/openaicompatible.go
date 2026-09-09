@@ -208,8 +208,8 @@ func (p *openAICompatible) post(ctx context.Context, token string, body []byte) 
 	}
 	switch {
 	case response.StatusCode == http.StatusUnauthorized, response.StatusCode == http.StatusForbidden:
-		// The provider's own explanation, which this branch alone used to drop.
-		// It is the status class where the explanation matters most: 401 and
+		// The provider's own explanation, which this branch is the likeliest to
+		// drop. It is the status class where it matters most: 401 and
 		// 403 are answered for a wrong key, an expired one, a key without the
 		// model, an organization the key does not belong to, and a quota that
 		// was cut off -- and a bare "answered 401" sends an operator to check
