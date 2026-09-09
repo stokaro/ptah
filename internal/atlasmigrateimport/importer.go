@@ -1923,7 +1923,7 @@ func gooseNearMissPragma(line string) (goosePragma, bool) {
 //   - Inside a StatementBegin block only StatementEnd is accepted; a directive of
 //     any other kind there is an error rather than passed-through body text.
 //
-// Each of those rejections is a file ptah-compat used to accept and execute, so
+// Each of those rejections is a file a line filter accepts and executes, so
 // this is where the never-looser half of the parity rule is paid.
 //
 // The up body runs from the FILE START through the first Down, minus the

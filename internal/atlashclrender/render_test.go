@@ -499,10 +499,10 @@ func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testin
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "users.yaml")
 }
 
-// TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy replaces the
-// round trip that used to carry the attribute through render and parse.
+// TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy is the round trip
+// for a document that carries no refresh strategy.
 //
-// Ptah writes no refresh strategy now, and its own parser refuses one, so this
+// Ptah writes none, and its own parser refuses one, so this
 // asserts the pair agrees: what the renderer emits is a document the parser
 // takes. A renderer that still wrote the attribute would fail here on the
 // PARSE, not on the substring -- which is the stronger of the two checks

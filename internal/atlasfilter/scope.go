@@ -248,10 +248,10 @@ var includeChildTypes = map[string]struct{}{
 //
 // A selection that picks nothing and a state that holds nothing produce the
 // same projection, so without this signal the two are indistinguishable and
-// callers report the second. That conflation used to swallow every --include
-// spelling that reaches past a top-level resource: `path.Match` treats "." as
-// an ordinary character (only "/" separates), so `main.users*email`,
-// `main.users?email`, and `main.users[.]email` all matched nothing and were
+// callers report the second. That conflation swallows every --include spelling
+// that reaches past a top-level resource: `path.Match` treats "." as an
+// ordinary character (only "/" separates), so `main.users*email`,
+// `main.users?email`, and `main.users[.]email` all match nothing and would be
 // reported as synced schemas.
 //
 // Emptiness is an outcome, not a shape, so it cannot be decided by inspecting

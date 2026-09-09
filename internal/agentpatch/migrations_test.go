@@ -179,11 +179,11 @@ func emptyMigrationScope(c *qt.C) *agentworkspace.Scope {
 // the rollback invariant a rehash cannot restore.
 //
 // Result documents that a rolled-back apply leaves the artifact holding what it
-// held before, with ResultDigest equal to BaseDigest. The undo used to rehash
-// the directory instead of restoring the checksum file, and Rehash WRITES one
-// for a directory that has none -- so a project's first patch, undone, left an
-// atlas.sum behind and the two digests disagreed in the same response
-// (stokaro/ptah#2066).
+// held before, with ResultDigest equal to BaseDigest. An undo that rehashes the
+// directory instead of restoring the checksum file leaves one behind, because
+// Rehash WRITES one for a directory that has none -- so a project's first
+// patch, undone, keeps an atlas.sum and the two digests disagree in the same
+// response (stokaro/ptah#2066).
 func TestApply_MigrationsRollBackRestoresTheAbsenceOfAChecksumFile(t *testing.T) {
 	c := qt.New(t)
 	scope := emptyMigrationScope(c)

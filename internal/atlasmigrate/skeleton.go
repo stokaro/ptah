@@ -18,11 +18,11 @@ import (
 // and rewrites atlas.sum over that layout's covered set. It returns the created
 // files in creation order.
 //
-// Every step goes through one rooted handle, opened once. `migrate new` used to
-// resolve dir to a string and then reopen it by pathname for the mkdir, for each
-// file, for the covered-set listing and for the checksum commit, so a directory
-// or ancestor replaced after the path was validated could take any of those
-// writes somewhere the gate never looked (stokaro/ptah#1118). Creating a missing
+// Every step goes through one rooted handle, opened once. Resolving dir to a
+// string and reopening it by pathname for the mkdir, for each file, for the
+// covered-set listing and for the checksum commit lets a directory or ancestor
+// replaced after the path was validated take any of those writes somewhere the
+// gate never looked (stokaro/ptah#1118). Creating a missing
 // directory goes through the same boundary, so it is materialized inside the
 // opened root rather than wherever the pathname happens to point.
 //

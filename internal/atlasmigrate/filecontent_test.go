@@ -142,8 +142,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 // TestBuildMigrationFileContents_LeadsWithTheEnumValueAddition covers
 // stokaro/ptah#1714 on the compat path.
 //
-// This plan used to produce NO files: an enum value addition beside a table
-// change was answered "cannot be split automatically". Both statements are
+// A plan of this shape can produce NO files: an enum value addition beside a
+// table change answered "cannot be split automatically". Both statements are
 // ordinary and the order between them is not ambiguous -- PostgreSQL answers
 // 55P04 to a statement that uses the value before the ADD VALUE has committed,
 // so the enum file has to LEAD.

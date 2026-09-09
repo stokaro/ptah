@@ -268,11 +268,11 @@ func TestExcludeDatabaseReport_TypeSelectorReportsItsWrittenSpelling(t *testing.
 // selector is called empty only by a filter that asked it.
 //
 // A generated child is reached through its parent struct, and the parent leaves
-// the struct map the moment a table selector removes it, so every generated
-// child filter used to return before the child selector was ever tested. That
-// reported `users.users_id_idx` as naming nothing while the object plainly
-// exists. The database side answers because an index carries its own schema and
-// table, and the two sides now agree.
+// the struct map the moment a table selector removes it, so a generated child
+// filter that returns before the child selector is tested reports
+// `users.users_id_idx` as naming nothing while the object plainly exists. The
+// database side answers because an index carries its own schema and table, and
+// the two sides have to agree.
 //
 // Red without the fix on the generated assertion: it reports
 // ["users.users_id_idx"]. The keep decisions are unchanged either way -- the

@@ -39,8 +39,9 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 		summaryRef string
 	}{
 		{
-			// The spelling that used to break: quoted and qualified, which is
-			// what pg_get_viewdef renders and what an author copying it writes.
+			// The spelling that breaks a naive reader: quoted and qualified,
+			// which is what pg_get_viewdef renders and what an author copying
+			// it writes.
 			name:       "a quoted qualified reference",
 			summaryRef: `"analytics"."zbase"`,
 		},

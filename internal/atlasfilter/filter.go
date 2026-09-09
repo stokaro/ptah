@@ -343,10 +343,10 @@ const maxPatternParts = 3
 // first scope and `public.users.name` names one in the second; what has no
 // meaning is a pattern whose schema slot is already filled by the connection.
 //
-// Which scope applies is the caller's answer to give, and it used to not be
-// asked: defaultSchema arrived non-empty on every run, so a realm-scoped one
-// was counted against a schema it was not relative to and the qualified column
-// form was refused everywhere. See [Scope.RealmRelativePatterns].
+// Which scope applies is the caller's answer to give, and it has to be asked: a
+// defaultSchema that arrives non-empty on every run counts a realm-scoped
+// pattern against a schema it is not relative to, and refuses the qualified
+// column form everywhere. See [Scope.RealmRelativePatterns].
 //
 // The refusal is Ptah's own text, and that is a retained divergence rather than
 // a gap. The binary quotes the prefixed pattern -- "public.public.users.name"
@@ -914,13 +914,14 @@ func (s *exclusionState) filterEnums(enums []catalog.Enum) []catalog.Enum {
 }
 
 // filterSequences, filterDomains, filterComposites and filterRanges subtract
-// the four top-level kinds the exclusion used to clone and never ask about.
+// the four top-level kinds an exclusion has to ask about rather than clone.
 //
 // The include projection already selects all four by name
 // ([scopeSelection.projectDatabaseTopLevel] and projectDatabaseSupport), so
-// `--include positive_int` picked the domain while `--exclude positive_int` was
-// a silent no-op that still planned DROP DOMAIN for the object the user wrote
-// the selector to protect -- the same destructive miss this file fixes for
+// `--include positive_int` picks the domain while an unasked
+// `--exclude positive_int` is a silent no-op that still plans DROP DOMAIN for
+// the object the user wrote the selector to protect -- the same destructive
+// miss this file answers for
 // enums and functions. It is also what makes the unmatched-selector report
 // truthful: a selector can only be called empty by a filter that asked it.
 //

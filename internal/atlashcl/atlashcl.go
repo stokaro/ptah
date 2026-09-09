@@ -2192,10 +2192,10 @@ func (p *parser) optionalSQLExpression(attr *hclsyntax.Attribute) string {
 // and reduces it to the SQL it carries. Callers that branch on ok distinguish a
 // SQL expression from a literal value -- a column default, for instance.
 //
-// The match is structural, on the parsed call. It used to be textual, on the
-// attribute's source: a `sql(` prefix and a `)` suffix. That accepted anything
-// those two bytes bracketed, so `default = sql("1") + sql("2")` was read as the
-// SQL text `"1") + sql("2` and planned as `DEFAULT "1") + sql("2"`.
+// The match is structural, on the parsed call, rather than textual on the
+// attribute's source. A `sql(` prefix and a `)` suffix accept anything those
+// two bytes bracket, so `default = sql("1") + sql("2")` reads as the SQL text
+// `"1") + sql("2` and plans as `DEFAULT "1") + sql("2"`.
 func (p *parser) sqlExpression(attr *hclsyntax.Attribute) (string, bool) {
 	return p.sqlRawExprValue(attr.Expr)
 }

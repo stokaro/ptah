@@ -52,7 +52,8 @@ func TestLoadFSDirectiveSectionParsing_HappyPath(t *testing.T) {
 		},
 		{
 			// The up body starts at the FILE START, not at the Up directive.
-			// Ptah used to drop this CREATE silently while still exiting 0.
+			// A parser starting at the Up directive drops this CREATE silently
+			// while exiting 0.
 			name:     "goose keeps SQL written above the Up directive",
 			format:   atlasmigrateimport.FormatGoose,
 			file:     "CREATE TABLE pre (id INTEGER PRIMARY KEY);\n-- +goose Up\n" + widgets,
@@ -112,11 +113,11 @@ func TestLoadFSDirectiveSectionParsing_HappyPath(t *testing.T) {
 			// -- same statement count, same resulting tables -- so the section
 			// is parsed in all three.
 			//
-			// This row used to assert a refusal. That was the near-miss guard
-			// firing outside its own stated scope: it exists for a directive
-			// the community binary FAILS to parse and then silently rolls back
-			// (a lowercase "down"), not for one it parses correctly. Refusing
-			// here rejected a file that runs safely, for no benefit.
+			// A refusal here is the near-miss guard firing outside its own
+			// stated scope: it exists for a directive the community binary
+			// FAILS to parse and then silently rolls back (a lowercase
+			// "down"), not for one it parses correctly. Refusing rejects a file
+			// that runs safely, for no benefit.
 			name:     "goose accepts extra whitespace before the directive name",
 			format:   atlasmigrateimport.FormatGoose,
 			file:     "-- +goose  Up\n" + widgets,
@@ -134,9 +135,9 @@ func TestLoadFSDirectiveSectionParsing_HappyPath(t *testing.T) {
 		},
 		{
 			// An intentionally empty migration is legitimate. The community
-			// binary records it as an applied revision with 0 statements; Ptah
-			// used to drop it from the converted directory and from
-			// atlas_schema_revisions while still exiting 0.
+			// binary records it as an applied revision with 0 statements, so
+			// dropping it from the converted directory and from
+			// atlas_schema_revisions while exiting 0 is the defect.
 			name:     "goose empty up section is an entry, not a skip",
 			format:   atlasmigrateimport.FormatGoose,
 			file:     "-- +goose Up\n",
@@ -197,9 +198,9 @@ func TestLoadFSDirectiveSectionParsing_HappyPath(t *testing.T) {
 // refuse, and the refusals split into two kinds. The distinction is the whole
 // point of the change:
 //
-//   - out-of-order directives, where the community binary ALSO refuses. Ptah used
-//     to accept and execute these, which is the never-looser half of the parity
-//     rule being violated on the same function #981 asked to change.
+//   - out-of-order directives, where the community binary ALSO refuses.
+//     Accepting and executing these violates the never-looser half of the
+//     parity rule, on the same function #981 asked to change.
 //   - near-miss spellings and a dbmate file with no up directive, where the
 //     community binary exits 0. Those are deliberate divergences; see the doc
 //     comments on gooseNearMissPragma and dbmateUpSQL for what it does instead.
