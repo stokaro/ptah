@@ -27,6 +27,47 @@ import (
 var datedToAnIssue = regexp.MustCompile(
 	`(?i)\b(?:until|before|since|as of)\s+\[?(?:stokaro/ptah)?#[0-9]{3,5}\b`)
 
+// narratedPast matches the past-habitual `used to` behind a subject that can
+// only be Ptah -- a comment saying what Ptah did before rather than what it
+// does.
+//
+// The subject list is the whole rule, and it is short on purpose. English
+// writes the purpose sense with the same two words: `the key columns used to
+// decide whether the source row matches` says what the columns are FOR, and
+// nothing but the noun separates it from `the planner used to reconcile`. A
+// pronoun cannot be an instrument that way, and neither can the product's name,
+// so these four have one reading and no more.
+//
+// That leaves the wider shape to review, which is the same split section 16.1
+// of the style guide already records for the broad words: the gate holds what
+// has no second reading, and the sweep that added it went further by hand
+// (stokaro/ptah#3134).
+var narratedPast = regexp.MustCompile(`(?i)\b(?:it|this|that|ptah)[ \t\n]+used[ \t\n]+to[ \t\n]+[a-z]+`)
+
+// TestNoCommentNarratesPtahsOwnPast is the second rule.
+//
+// It reads the comment GROUP rather than the line, because the clause wraps:
+// prose written to a column budget puts `It used` at the end of one comment
+// line and `to be` at the start of the next, and a line-oriented reader sees
+// neither half.
+func TestNoCommentNarratesPtahsOwnPast(t *testing.T) {
+	c := qt.New(t)
+	root := repositoryRoot(c)
+
+	var found []string
+	for _, path := range goFiles(c, root) {
+		found = append(found, narratedPastIn(c, root, path)...)
+	}
+
+	c.Assert(found, qt.HasLen, 0, qt.Commentf(
+		"a comment says what the code does, not what it did."+
+			" The usual rewrite is the ablation -- \"without this the write path"+
+			" renders an unconditional UPDATE\" says what \"it used to render one\""+
+			" was reaching for, and stays true after the next change."+
+			" See section 6.7 of docs/STYLE_GUIDE.md:\n%s",
+		strings.Join(found, "\n")))
+}
+
 // TestNoCommentDatesAStatementToAPtahIssue is the rule this package exists for.
 //
 // It reads every Go file the repository tracks, tests included: a doc comment is
@@ -47,6 +88,80 @@ func TestNoCommentDatesAStatementToAPtahIssue(t *testing.T) {
 			" cite an issue that still owns something as \"(stokaro/ptah#N)\"."+
 			" See section 6.7 of docs/STYLE_GUIDE.md:\n%s",
 		strings.Join(found, "\n")))
+}
+
+// TestGuardSeesPtahsOwnPastNarrated is the self-test for the second rule.
+func TestGuardSeesPtahsOwnPastNarrated(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "a pronoun subject",
+			src:  "package p\n\n// It used to be read from the run log on stderr.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "this",
+			src:  "package p\n\n// This used to render a comment.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "that",
+			src:  "package p\n\n// The verb that used to answer here is gone.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the product by name",
+			src:  "package p\n\n// Ptah used to read credentials from one place.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the clause wraps onto the next comment line",
+			src:  "package p\n\n// The value is kept. It used\n// to be discarded here.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// The purpose sense, which shares the two words. Nothing but the
+			// noun separates it, which is why the subject list is the rule.
+			name: "an instrument, not a subject",
+			src:  "package p\n\n// The key columns used to decide whether the rows match.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "the passive purpose sense",
+			src:  "package p\n\n// This node is used to remove an extension.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			// `refused to read` contains the two words without a boundary in
+			// front of `used`, which is what the \b is for.
+			name: "used inside another word",
+			src:  "package p\n\n// A message quoting the file it refused to read cannot pass.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "backticked",
+			src:  "package p\n\n// Never write `It used to be` in a comment.\nconst x = 1\n",
+			want: 0,
+		},
+		{
+			name: "a string literal is not a comment",
+			src:  "package p\n\nconst x = \"It used to be\"\n",
+			want: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
+
+			c.Assert(narratedPastIn(c, dir, "p.go"), qt.HasLen, test.want)
+		})
+	}
 }
 
 // TestGuardSeesAStatementDatedToAPtahIssue is the self-test.
@@ -165,6 +280,33 @@ func TestGuardSeesAStatementDatedToAPtahIssue(t *testing.T) {
 			c.Assert(datingClausesIn(c, dir, "p.go"), qt.HasLen, test.want)
 		})
 	}
+}
+
+// narratedPastIn names every comment group in one file that says what Ptah did
+// before, as "path:line: phrase".
+func narratedPastIn(c *qt.C, root, rel string) []string {
+	c.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(root, rel), nil, parser.ParseComments)
+	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
+
+	var found []string
+	for _, group := range file.Comments {
+		var joined strings.Builder
+		open := ""
+		for _, comment := range group.List {
+			blanked, next := outsideQuotes(comment.Text, open)
+			open = next
+			joined.WriteString(strings.TrimPrefix(strings.TrimSpace(blanked), "//"))
+			joined.WriteString("\n")
+		}
+		text := joined.String()
+		for _, match := range narratedPast.FindAllString(text, -1) {
+			found = append(found, fmt.Sprintf("%s:%d: %q",
+				rel, fset.Position(group.Pos()).Line, strings.Join(strings.Fields(match), " ")))
+		}
+	}
+	return found
 }
 
 // datingClausesIn names every comment line in one file that dates a statement

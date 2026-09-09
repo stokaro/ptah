@@ -291,12 +291,12 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 // target. MySQL and MariaDB have no CREATE TYPE object at all; an enum lives in
 // the column definition and reaches this renderer that way, never as a node.
 //
-// The diagnostic used to name no object -- "MYSQL does not support CREATE TYPE -
-// enums are handled inline in column definitions" -- which was survivable only
-// while the converter dropped domain, composite and range nodes before this
-// renderer saw one. It does not any more, so a schema declaring three domains
-// produced three identical lines naming none of them, and the sentence was about
-// enums while the node was a domain (stokaro/ptah#929 item 5).
+// A diagnostic naming no object -- "MYSQL does not support CREATE TYPE - enums
+// are handled inline in column definitions" -- is survivable only while the
+// converter drops domain, composite and range nodes before this renderer sees
+// one. It does not, so a schema declaring three domains gets three identical
+// lines naming none of them, with a sentence about enums where the node is a
+// domain (stokaro/ptah#929 item 5).
 func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -652,11 +652,11 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 // VisitDropType names the type this target does not drop, and names the object
 // rather than the engine.
 //
-// The message used to read "MariaDB does not support DROP TYPE - enums are
-// handled inline in column definitions", which was wrong twice over: it blamed
-// the engine for a decision of Ptah's, and it described enums when the node
-// also carries domains, composite types and range types. It says which object
-// it is talking about now, the way the rest of this renderer's diagnostics do
+// A message reading "MariaDB does not support DROP TYPE - enums are handled
+// inline in column definitions" is wrong twice over: it blames the engine for a
+// decision of Ptah's, and it describes enums when the node also carries
+// domains, composite types and range types. This one says which object it is
+// talking about, the way the rest of this renderer's diagnostics do
 // (stokaro/ptah#1708).
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	if node.Comment != "" {
@@ -705,10 +705,10 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 // VisitCreateMaterializedView refuses: MySQL and MariaDB have no materialized
 // view object.
 //
-// This used to render a comment. A comment makes `schema render` exit 0 on a
-// model the planner refuses at `schema apply` time, so the surface a user is
-// told to validate with disagreed with the surface that executes. Refusing here
-// makes them agree, and matches how SQLite already answers the same input.
+// Rendering a comment instead makes `schema render` exit 0 on a model the
+// planner refuses at `schema apply` time, so the surface a user is told to
+// validate with disagrees with the surface that executes. Refusing here makes
+// them agree, and matches how SQLite answers the same input.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return r.materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
@@ -860,10 +860,10 @@ func (r *Renderer) appendColumnMainClauses(parts []string, column *ast.ColumnNod
 func appendMySQLColumnConstraints(parts []string, column *ast.ColumnNode) []string {
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
-		// And UNIQUE beside it when the column carries both. This used to be an
-		// `else`, so a column that was primary AND unique rendered as the
-		// primary key alone -- a schema with different key semantics than the
-		// one that was read, emitted at exit 0 (stokaro/ptah#2787).
+		// And UNIQUE beside it when the column carries both. An `else` here
+		// renders a column that is primary AND unique as the primary key alone
+		// -- a schema with different key semantics than the one that was read,
+		// emitted at exit 0 (stokaro/ptah#2787).
 		//
 		// The two engines answer differently and both answers are reproduced by
 		// writing what the source wrote: measured, MySQL 8.4 builds a secondary
@@ -1251,29 +1251,29 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 //
 // # One statement, not two
 //
-// This renders the CREATE alone. It used to prefix every function with its own
-// `DROP FUNCTION IF EXISTS`, because neither engine offers the replace form
-// Ptah's PostgreSQL renderer relies on for the same node -- `CREATE OR REPLACE
-// FUNCTION f() RETURNS integer DETERMINISTIC RETURN 2` is Error 1064 on MySQL
-// 26.7.0 -- so a modified function needed the pair.
+// This renders the CREATE alone. A modified function needs a drop in front of
+// it, because neither engine offers the replace form Ptah's PostgreSQL renderer
+// relies on for the same node -- `CREATE OR REPLACE FUNCTION f() RETURNS
+// integer DETERMINISTIC RETURN 2` is Error 1064 on MySQL 26.7.0 -- but the pair
+// does not belong in one visitor.
 //
-// Putting the pair in one visitor put two statements in one element of
+// Putting it here puts two statements in one element of
 // [renderer.GetOrderedCreateStatements], and that list is not always split
 // before it is executed. [planner.GenerateSchemaDiffSQLStatements] runs
 // sqlutil.SplitSQLStatements over its output, which is why the planner path
-// worked; the compatibility dev-database path does not. `materializeOnDev`
+// survives it; the compatibility dev-database path does not. `materializeOnDev`
 // passes each element unchanged to ExecuteSQL, and convertMySQLURL does not
 // enable go-sql-driver's multiStatements option, so materializing any desired
-// schema containing a function failed at the second statement. Measured on
+// schema containing a function fails at the second statement. Measured on
 // both engines through dbschema.ConnectToDatabase with the default DSN:
 //
 //	Error 1064 (42000): ... right syntax to use near
 //	'CREATE FUNCTION `p_fn`(a INT) RETURNS int DETERMINISTIC ...' at line 2
 //
-// The drop a replacement still needs is now a separate node the planner emits
-// in front of this one; see planFunctions in the MySQL-family planner. That
-// keeps the invariant every other visitor already holds -- one node renders one
-// statement -- rather than making one caller compensate for one visitor.
+// The drop is a separate node the planner emits in front of this one; see
+// planFunctions in the MySQL-family planner. That keeps the invariant every
+// other visitor holds -- one node renders one statement -- rather than making
+// one caller compensate for one visitor.
 //
 // # The characteristic
 //
@@ -1288,7 +1288,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 // Which characteristic encodes which volatility, and the measured grid of what
 // the server accepts, lives in [mysqlroutine.Characteristic]. It is written
 // there rather than here because the reader has to invert it, and the two
-// halves drifting apart is what made a declared STABLE function plan the same
+// halves drifting apart is what makes a declared STABLE function plan the same
 // destructive replacement on every apply.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure decides against its own key, and every refusal below still
@@ -1312,8 +1312,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// reached.
 	//
 	// It stays a SKIP rather than becoming a refusal, and that was measured
-	// rather than assumed. A refusal breaks a workflow that works today:
-	// applying ONE schema across postgres, mysql and mariadb. Ptah has no way to
+	// rather than assumed. A refusal breaks a workflow that works: applying ONE
+	// schema across postgres, mysql and mariadb. Ptah has no way to
 	// scope a declared object to a dialect -- `//ptah:schema:function` accepts
 	// name, params, returns, language, security, volatility, body and comment,
 	// and internal/annotationmeta grants `platform.<dialect>.<key>` overrides to
@@ -1323,12 +1323,11 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// object is PostgreSQL's", refusing here would leave an operator with a
 	// multi-dialect schema no way to express what they already express by
 	// declaring a plpgsql function and letting non-PostgreSQL targets pass it
-	// by. The only alternative available today is `exclude` in ptah.yaml, which
-	// is an operator-side filter at invocation, not a property of the
-	// declaration.
+	// by. The only alternative is `exclude` in ptah.yaml, which is an
+	// operator-side filter at invocation, not a property of the declaration.
 	//
-	// What the message says is new, and it is the part worth keeping. The skip
-	// used to name only the language. [schemamodel.Function.Canonicalize] defaults
+	// What the message says is the part worth getting right. A skip naming only
+	// the language is not enough: [schemamodel.Function.Canonicalize] defaults
 	// an UNSET language to plpgsql -- PostgreSQL's default, baked into a
 	// dialect-neutral type -- so a function annotated without `language=` lands
 	// here too and is skipped when it should have been generated. Measured on
@@ -1337,8 +1336,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// an afternoon to find, so the comment names it and names the one word that
 	// settles it.
 	//
-	// The message still never blames the engine. `-- CREATE FUNCTION f1 not
-	// supported in MySQL` was false because MySQL hosts functions perfectly well
+	// The message never blames the engine. `-- CREATE FUNCTION f1 not supported
+	// in MySQL` is false, because MySQL hosts functions perfectly well
 	// (stokaro/ptah#929); this is about the declaration, and it says so.
 	// The predicate is mysqlroutine.RunsLanguage rather than a comparison
 	// written here, because the MySQL-family planner has to reach the same
@@ -1487,9 +1486,9 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 // PostgreSQL association between a sequence and the column that consumes it,
 // and there is nothing here for it to mean.
 //
-// The point of the skip comment existing at all is that the sequence used to be
-// dropped by the converter before any renderer ran, so `--dialect mariadb`
-// omitted it with no statement and no diagnostic (stokaro/ptah#931 item 8).
+// The skip comment exists because a sequence dropped by the converter before
+// any renderer runs leaves `--dialect mariadb` omitting it with no statement
+// and no diagnostic (stokaro/ptah#931 item 8).
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if !r.caps.Has(capability.Sequences) {
 		r.sequenceNotSupported("CREATE SEQUENCE", node.Name, node.Comment)

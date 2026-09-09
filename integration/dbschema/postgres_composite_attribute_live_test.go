@@ -24,8 +24,8 @@ import (
 // stokaro/ptah#1717, and the reason it is worth having is the same as the
 // domain half: the path it replaces cannot run at all where it matters.
 //
-// A composite gaining a field used to be reconciled by dropping the type and
-// creating it again, and PostgreSQL refuses to drop a composite a table column
+// Reconciling a composite that gains a field by dropping the type and creating
+// it again cannot run: PostgreSQL refuses to drop a composite a table column
 // uses. ALTER TYPE ADD ATTRIBUTE and DROP ATTRIBUTE it accepts there --
 // measured on 18.4 -- so the difference between the two paths is not style.
 //

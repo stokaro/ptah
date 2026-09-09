@@ -75,9 +75,9 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	})
 
 	// The down crash records the same progress numbers as the up crash above --
-	// applied=1, total=2 -- and used to record the same state, so nothing could
-	// tell the two rows apart. The recorded state now carries the direction, and
-	// the operator can finish the interrupted rollback from where it stopped.
+	// applied=1, total=2 -- so a state that does not carry the direction leaves
+	// nothing to tell the two rows apart. The recorded state carries it, and the
+	// operator can finish the interrupted rollback from where it stopped.
 	t.Run("Ptah down revision", func(t *testing.T) {
 		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-crash.db")

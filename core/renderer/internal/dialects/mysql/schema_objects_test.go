@@ -29,7 +29,7 @@ func TestMySQLRenderer_ViewsAndTriggers(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER `set_updated_at` BEFORE UPDATE ON `users` FOR EACH ROW SET NEW.updated_at = NOW();")
 }
 
-// A materialized view used to render as a comment here, which let
+// Rendering a materialized view as a comment here would let
 // `ptah schema render --dialect mysql` exit 0 on a model the MySQL planner
 // refuses at apply time. Issue #931 item 3: the two surfaces have to agree, and
 // the planner's answer is the one that stands.

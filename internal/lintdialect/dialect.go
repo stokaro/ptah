@@ -50,14 +50,14 @@ func Canonical(dialect string) (string, bool) {
 
 // supported is the engine list [Expected] names, as data.
 //
-// It used to be "whatever NormalizeDialect resolves", which held only while
-// every dialect Ptah knew was also a dialect lint analyzes. Oracle broke that:
-// the moment platform gained the name, `--dialect oracle` became valid here
-// while migration/lint has no Oracle rule and internal/dialectlexer has no
-// Oracle mode -- so the run would have exited 0 having matched no rule and
-// scanned with the hybrid lexer, which is the exact failure the comment on
-// Canonical describes for aliases. A new engine now has to be added here
-// deliberately, when lint can actually analyze it (stokaro/ptah#1875).
+// "Whatever NormalizeDialect resolves" holds only while every dialect Ptah
+// knows is also a dialect lint analyzes, and Oracle breaks that: the moment
+// platform gains the name, `--dialect oracle` becomes valid here while
+// migration/lint has no Oracle rule and internal/dialectlexer has no Oracle
+// mode -- so the run exits 0 having matched no rule and scanned with the hybrid
+// lexer, which is the exact failure the comment on Canonical describes for
+// aliases. A new engine has to be added here deliberately, when lint can
+// actually analyze it (stokaro/ptah#1875).
 var supported = []string{
 	platform.Postgres,
 	platform.MySQL,

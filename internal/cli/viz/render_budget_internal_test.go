@@ -21,10 +21,10 @@ import (
 
 // TestRenderDOTToSVG_TheCallersDeadlineWins is the fix.
 //
-// The budget used to be applied unconditionally, so a caller that had allowed
-// five seconds got fifty milliseconds. Here `dot` takes longer than the budget
-// and less than the caller's deadline, and the render has to succeed: under the
-// unconditional version it fails with a deadline the caller never set.
+// Applying the budget unconditionally gives a caller that allowed five seconds
+// fifty milliseconds. Here `dot` takes longer than the budget and less than the
+// caller's deadline, and the render has to succeed: applied unconditionally it
+// fails with a deadline the caller never set.
 func TestRenderDOTToSVG_TheCallersDeadlineWins(t *testing.T) {
 	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)

@@ -93,7 +93,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	c.Assert(after.ExtensionsAdded.Names(), qt.HasLen, 0)
 	c.Assert(after.ExtensionsRemoved.Names(), qt.HasLen, 0)
 
-	// 4. The schema move, which used to be refused for every target.
+	// 4. The schema move, which is refused for no target.
 	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pg_trgm", Schema: away, Version: "1.6",
 	}}}

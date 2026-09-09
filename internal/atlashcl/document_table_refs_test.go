@@ -56,7 +56,7 @@ table "users" {
 //
 // The first row is the one that made this code exist: it is the pinned Atlas
 // community binary v1.3.0's OWN inspect output for a cross-schema foreign key,
-// and Ptah used to read it as `users(id)` -- the schema silently gone. The
+// and a reader that drops the schema reads it as `users(id)`, silently. The
 // multi-column form of the same key never lost it, because schemamodel.Finalize
 // resolves a Constraint's ForeignTable and nothing resolved a Field's Foreign.
 func TestParseReadsForeignKeySchemaOffTheReferencedBlock(t *testing.T) {

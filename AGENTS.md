@@ -490,11 +490,27 @@ that still owns something -- an open gap, a decision, the measurement's home --
 is cited plainly: `(stokaro/ptah#2209)` is a pointer, `since stokaro/ptah#2209`
 is a date.
 
-`docs/site/scripts/check-implementation-chronology.mjs` holds Markdown to this
-and `internal/chronologyguard` holds Go comments, on `until`, `before`, `since`
-and `as of`. `after` is yours to get right: `after stokaro/ptah#2725 removes the
-converter` is a forward reference to work with an owner, and no pattern
-separates it from the backward reading. Section 6.7 of
+**And never narrate what Ptah did before.** The dated clause is the shape with
+a number on it; the same sentence without one is no fresher:
+
+```text
+It used to be read from the run log on stderr
+This used to render a comment
+Ptah used to read credentials from one place
+```
+
+The rewrite is the same. `used to` has a second, ordinary meaning -- `the rows
+used to derive it`, `the Ping used to verify the connection` -- and nothing but
+the noun separates them, so read the subject before you reach for the phrase: a
+pronoun or the product's name is Ptah's past, a thing is what that thing is for.
+
+`docs/site/scripts/check-implementation-chronology.mjs` holds Markdown to the
+dating clause and `internal/chronologyguard` holds Go comments to both rules --
+`until`, `before`, `since` and `as of` in front of a reference, and `used to`
+behind `it`, `this`, `that` or `Ptah`. What a gate cannot separate is left to
+you: `after stokaro/ptah#2725 removes the converter` is a forward reference to
+work with an owner, and `the columns used to decide whether the rows match` is
+what the columns are for. Section 6.7 of
 [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) is the rule in full
 (stokaro/ptah#3134).
 

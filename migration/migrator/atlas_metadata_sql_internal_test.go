@@ -576,10 +576,10 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
 		},
 		{
-			// Spanner takes the PostgreSQL branch, and this row used to assert
-			// that it took the trailing default -- which named both of the two
-			// types its PostgreSQL interface does not have. Measured against
-			// the Cloud Spanner emulator behind PGAdapter 0.55.2:
+			// Spanner takes the PostgreSQL branch rather than the trailing
+			// default, which names both of the two types its PostgreSQL
+			// interface does not have. Measured against the Cloud Spanner
+			// emulator behind PGAdapter 0.55.2:
 			//
 			//	partial_hashes JSON NULL   ERROR: Type <json> is not supported; use jsonb instead
 			//	executed_at TIMESTAMP      ERROR: Type <timestamp> is not supported

@@ -30,8 +30,8 @@ import (
 //
 // The partition is attached between the cycles rather than created with the
 // parent, because attaching an existing table is what makes PostgreSQL build
-// the copy of the parent's index -- the object the second cycle used to plan a
-// DROP for. See #997.
+// the copy of the parent's index -- the object a second cycle can wrongly plan
+// a DROP for. See #997.
 func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()

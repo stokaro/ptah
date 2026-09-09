@@ -10,11 +10,11 @@ import (
 // one transaction.
 //
 // The classification is [txrequire]'s, which the planner and the migrator's
-// apply-time preflight also use. This rule used to carry its own -- a scan for
-// concurrent indexes and nothing else -- and the two disagreed in exactly the
-// place that mattered: a file adding a value to an existing enum type and then
-// using it got no TX101, and that is the file PostgreSQL refuses at apply with
-// `unsafe use of new value` (stokaro/ptah#996).
+// apply-time preflight also use. A classification of this rule's own -- a scan
+// for concurrent indexes and nothing else -- disagrees with theirs in exactly
+// the place that matters: a file adding a value to an existing enum type and
+// then using it gets no TX101, and that is the file PostgreSQL refuses at apply
+// with `unsafe use of new value` (stokaro/ptah#996).
 //
 // Either direction is checked. The migrator wraps a down file in the same
 // transaction it wraps an up file in, so a rollback that mixes a concurrent

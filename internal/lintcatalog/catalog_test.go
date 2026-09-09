@@ -611,11 +611,11 @@ func TestSurfaceColumnMatchesWhatEachProfileReports(t *testing.T) {
 // TestAtlasCatalogNamesEveryRowThatIsNotCovered pins the non-covered rows by
 // code, so that one cannot appear or disappear without a deliberate edit here.
 //
-// It used to assert that the absent and partial sets were EMPTY and that the
-// covered count sat above a floor. Both were true and neither could see the
-// defect: the catalog agreed with itself while it was nineteen checks behind
-// the page it was built from, and a floor on how many rows are covered rises
-// as happily from a wrong claim as from a right one (stokaro/ptah#2972). The
+// Asserting that the absent and partial sets are EMPTY and that the covered
+// count sits above a floor can be true while missing the defect: the catalog
+// agrees with itself while it is nineteen checks behind the page it was built
+// from, and a floor on how many rows are covered rises as happily from a wrong
+// claim as from a right one (stokaro/ptah#2972). The
 // set that decides completeness is compared against the reviewed reference in
 // [lintcatalog.CompareAtlasReference], which Validate runs; this test pins
 // what the catalog SAYS about each code it holds.

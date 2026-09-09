@@ -1231,12 +1231,11 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	)
 	c.Assert(code, qt.Equals, 1)
 	c.Assert(stdout, qt.Equals, "")
-	// The refusal moved layer with stokaro/ptah#1722. A procedure used to be
-	// invisible to the schema reader, so only the supplemental live-object
-	// inventory could name it; the reader models it now, so the ordinary
+	// The schema reader models a procedure (stokaro/ptah#1722), so the ordinary
 	// inspected-schema check refuses it first -- by kind, exactly as it refuses
-	// a function. The clean assertion below is unchanged, because the cleanup
-	// inventory still enumerates the procedure itself.
+	// a function -- rather than leaving the supplemental live-object inventory
+	// as the only surface that can name it. The clean assertion below is
+	// unaffected: the cleanup inventory enumerates the procedure itself.
 	c.Assert(stderr, qt.Equals,
 		"Error: Atlas Community Edition strict compatibility does not support inspected schema procedures\n")
 	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)

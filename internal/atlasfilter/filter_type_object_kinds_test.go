@@ -10,12 +10,12 @@ import (
 	"ptah.run/internal/atlasfilter"
 )
 
-// typeObjectKindsFixture holds one object of each kind the exclusion used to
-// clone and never filter, in the connection's own schema and in a second one.
+// typeObjectKindsFixture holds one object of each kind an exclusion can clone
+// and never filter, in the connection's own schema and in a second one.
 //
-// A table rides along as the control: it was always filtered, so a regression
-// that reached it would show up here rather than being read as a fault in the
-// four kinds this fixture exists for.
+// A table rides along as the control: it is filtered on every path, so a
+// regression that reached it would show up here rather than being read as a
+// fault in the four kinds this fixture exists for.
 func typeObjectKindsFixture() *catalog.Database {
 	return &catalog.Database{
 		Tables: []catalog.Table{

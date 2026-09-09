@@ -276,9 +276,9 @@ func compatDockerRows() []compatDockerRow {
 		},
 		{
 			// The apply rehearsal. Its two alias checks -- is the dev database
-			// the target, is it the desired state -- used to answer a docker URL
+			// the target, is it the desired state -- answer a docker URL
 			// `unsupported database URL dialect` and refuse it before the
-			// provisioner ever saw it. This row is what keeps them skipped.
+			// provisioner sees it. This row is what keeps them skipped.
 			name: "schema apply rehearsal reaches the provisioner",
 			verb: "schema apply",
 			args: func(fx compatDockerFixture) []string {
@@ -302,8 +302,8 @@ func compatDockerRows() []compatDockerRow {
 		{
 			// Wired by stokaro/ptah#844. Not a parity row: the pinned community
 			// binary answers `unknown flag: --dev-url` here, so there is no
-			// wording to match -- this is Ptah's own flag, which used to refuse
-			// the scheme it accepted.
+			// wording to match -- this is Ptah's own flag, and it must not
+			// refuse a scheme it accepts.
 			name: "migrate test reaches the provisioner",
 			verb: "migrate test",
 			args: func(fx compatDockerFixture) []string {
@@ -334,8 +334,9 @@ func compatDockerRows() []compatDockerRow {
 			checkWhitespace: notADockerURL,
 		},
 		{
-			// The shadow database a checkpoint replays into, which used to
-			// answer `unsupported database dialect: docker` from the connector.
+			// The shadow database a checkpoint replays into, where the
+			// connector answers `unsupported database dialect: docker` unless
+			// the value is provisioned first.
 			name: "migrate checkpoint reaches the provisioner",
 			verb: "migrate checkpoint",
 			args: func(fx compatDockerFixture) []string {

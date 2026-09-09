@@ -1142,12 +1142,11 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			},
 		},
 		{
-			// This row used to assert that an enum the desired schema does
-			// not declare plans NOTHING -- the planner looked it up by name
-			// and silently skipped what it could not find. The change carries
-			// the enum now (stokaro/ptah#2315), so it is planned from the
-			// operand and the desired schema has no say. The silent skip was
-			// the defect, not the behaviour to keep.
+			// An enum the desired schema does not declare is still planned:
+			// the change carries it (stokaro/ptah#2315), so the operand
+			// decides and the desired schema has no say. A planner that looks
+			// the enum up by name silently skips what it cannot find, which is
+			// the defect rather than a behavior to keep.
 			name: "an enum the desired schema does not declare is still planned",
 			diff: &difftypes.SchemaDiff{
 				EnumsAdded: difftypes.EnumChanges{{Name: "missing_enum", Values: []string{"a", "b"}}},
@@ -1195,9 +1194,10 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_UndescribedIndexRejected(t *testing.T) {
 	c := qt.New(t)
 	// An addition the diff does not describe: a name, a table, and nothing to
-	// create. It used to be refused for being absent from the declaration; an
-	// addition carries its own definition now, so the question is asked of the
-	// addition and a declaration is not consulted at all (stokaro/ptah#2315).
+	// create. It is refused for carrying no definition rather than for being
+	// absent from a declaration: an addition carries its own, so the question
+	// is asked of the addition and no declaration is consulted
+	// (stokaro/ptah#2315).
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "missing_index"}, TableName: "users"}},
 	}
@@ -1405,10 +1405,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 // TestPlanner_GenerateMigrationAST_ExtensionChanges covers what replaced a
 // blanket refusal.
 //
-// Any non-empty ExtensionsModified used to end the whole plan with "extension
-// schema moves are not yet supported", which was wrong on the engine the
-// message named. PostgreSQL has both ALTER EXTENSION forms, and the reader
-// already captures what decides between them (stokaro/ptah#1718).
+// Ending the whole plan with "extension schema moves are not yet supported" on
+// any non-empty ExtensionsModified is wrong on the engine the message names.
+// PostgreSQL has both ALTER EXTENSION forms, and the reader captures what
+// decides between them (stokaro/ptah#1718).
 func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 	tests := []struct {
 		name   string

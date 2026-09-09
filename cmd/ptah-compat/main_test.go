@@ -110,7 +110,8 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 			},
 			wantStderr: "Error: if any flags in the group [file to] are set none of the others can be; [file to] were all set\n",
 		},
-		// The verb that used to be the only one answering "Error:".
+		// A verb whose unknown-flag diagnostic comes from its own flag set
+		// rather than from the shared normalizer above.
 		{
 			name:       "migrate set unknown flag",
 			args:       []string{"migrate", "set", "--unknown"},

@@ -15,14 +15,15 @@ import (
 // TestClaim_DoesNotRewindACheckpointCommittedWhileItWasDeciding is
 // stokaro/ptah#2636.
 //
-// Claiming used to read the whole run, raise the token in memory and write
-// every column back. A worker that committed a checkpoint between that read and
-// that write was still unfenced, so its transaction landed — and the claim then
-// passed the `fencing_token <= n` guard and overwrote the cursor and every
-// counter with the snapshot it had read. Measured on a live backfill: twenty
-// vectors committed, four checkpoints in the event trail, and a run row saying
-// three batches and fifteen rows. The resumed run then read the rows behind the
-// rewound cursor and paid the provider for them again, and nothing said so.
+// A claim that reads the whole run, raises the token in memory and writes every
+// column back rewinds anything committed in between. A worker that commits a
+// checkpoint between that read and that write is still unfenced, so its
+// transaction lands — and the claim then passes the `fencing_token <= n` guard
+// and overwrites the cursor and every counter with the snapshot it read.
+// Measured on a live backfill: twenty vectors committed, four checkpoints in
+// the event trail, and a run row saying three batches and fifteen rows. The
+// resumed run reads the rows behind the rewound cursor and pays the provider
+// for them again, and nothing says so.
 //
 // The interleaving is expressed as a store whose read answers with an older
 // snapshot, which is exactly what a claimer holding a pre-commit read has. A

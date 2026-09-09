@@ -1088,8 +1088,8 @@ type SchemaReader interface {
 // bound as native driver parameters, mirroring database/sql's ExecContext.
 // Use placeholders (`?` or the dialect-native form such as `$1`/`$2` for
 // PostgreSQL) instead of interpolating values into the SQL string; this
-// prevents the SQL injection class of bugs that the no-args signature used
-// to invite (see issue #130). Identifiers (table/column names) cannot be
+// prevents the SQL injection class of bugs a no-args signature invites (see
+// issue #130). Identifiers (table/column names) cannot be
 // parameterized — route them through a validated escape helper instead.
 //
 // IsDryRun reports whether the executor is in dry-run mode. In that mode no

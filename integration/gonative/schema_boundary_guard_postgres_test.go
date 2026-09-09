@@ -147,13 +147,13 @@ func boundaryCases() []boundaryCase {
 			// FIXED (#1264): the database has two schemas and the document now
 			// describes both, which is this row's stated target and what the
 			// pinned Atlas community binary v1.3.0 renders for the same URL.
-			// `extra` and `extra.b` used to be absent because the reader was
-			// never asked about them, and nothing downstream could tell that
-			// from "the database has no schema `extra`".
+			// A reader never asked about `extra` and `extra.b` leaves them
+			// absent, and nothing downstream can tell that from "the database
+			// has no schema `extra`".
 			wantDescribedSchemas: []string{"extra", "public"},
-			// FIXED (#1276), at the reader's own scope: the reader used to
-			// report NO schemas at all while the renderer synthesized a schema
-			// block from the tables it was given. It now reports the schemas it
+			// FIXED (#1276), at the reader's own scope: a reader reporting NO
+			// schemas at all leaves the renderer synthesizing a schema block
+			// from the tables it was given. This one reports the schemas it
 			// read. Called with no allow-list, as here, that list is the
 			// connected schema -- see the header for why widening the DEFAULT
 			// is a separate decision from widening what inspection asks for.
@@ -176,10 +176,10 @@ func boundaryCases() []boundaryCase {
 			wantDatabaseOnly: nil,
 
 			// FIXED (#1283): applying a database's own description back to it
-			// plans nothing. The fourteen statements this row used to expect
-			// were one grant revoked under the unqualified spelling and
-			// re-granted under the qualified one; keying the comparison by
-			// table identity collapsed them.
+			// plans nothing. Fourteen statements here would be one grant
+			// revoked under the unqualified spelling and re-granted under the
+			// qualified one; keying the comparison by table identity collapses
+			// them.
 			wantNativePlan: boundaryNoPlan,
 			wantCompatPlan: boundaryNoPlan,
 		},
@@ -240,9 +240,9 @@ func boundaryCases() []boundaryCase {
 			name: "extension_nothing_references",
 			seed: []string{"CREATE EXTENSION pgcrypto"},
 
-			// CORRECT and must stay correct. This row used to read nil, on the
-			// reasoning that a database with no tables declares no schema, and
-			// #1234 showed that reasoning was answering the wrong question.
+			// CORRECT and must stay correct. Reading nil here rests on the
+			// reasoning that a database with no tables declares no schema,
+			// which answers the wrong question (#1234).
 			// EVERY PostgreSQL database carries `GRANT USAGE ON SCHEMA public TO
 			// PUBLIC`, so even a database with no tables inspects to a
 			// `permission` block whose `for = schema.public` is a reference. A
@@ -279,18 +279,19 @@ func boundaryCases() []boundaryCase {
 			// The compatibility surface omits an extension nothing else in the
 			// document names -- a presentation decision, made so the tool this
 			// binary stands in for can read the document at all -- and the
-			// comparator used to read that omission as "the desired state does
-			// not have this extension". The document now says which kinds it
-			// declines to describe, in its own header, and the comparator has
-			// the third state it needed: present, authoritatively absent, and
+			// a comparator reading that omission as "the desired state does not
+			// have this extension" is wrong. The document says which kinds it
+			// declines to describe, in its own header, so the comparator has
+			// the third state it needs: present, authoritatively absent, and
 			// not described.
 			//
 			// Measured on PostgreSQL 17.10 across all four surfaces that
 			// consume a desired-state document -- `schema diff`, `schema
 			// apply --dry-run`, `migrate diff --dry-run` and `migrate diff`
 			// writing its file -- each of which resolves the desired state
-			// separately. Before: `DROP EXTENSION IF EXISTS "pgcrypto"` on all
-			// four. After: synced on all four. The genuine-removal control is
+			// separately. Without the header: `DROP EXTENSION IF EXISTS
+			// "pgcrypto"` on all four. With it: synced on all four. The
+			// genuine-removal control is
 			// TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration below,
 			// which strips the three header lines from this same document and
 			// gets the drops back.

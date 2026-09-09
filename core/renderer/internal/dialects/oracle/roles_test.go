@@ -15,7 +15,7 @@ import (
 //
 // Each rendered row below was executed on 23.26.2.0.0 and answered ok; each
 // refusal carries the server's own error number for the statement it declines
-// to write. The renderer used to emit a comment for all of them
+// to write. Emitting a comment for all of them is the answer this replaces
 // (stokaro/ptah#1920).
 func TestOracleRoleStatements(t *testing.T) {
 	tests := []struct {

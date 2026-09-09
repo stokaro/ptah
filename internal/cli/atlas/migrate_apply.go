@@ -865,11 +865,10 @@ func atlasApplySkipChecksFromEnv() (bool, error) {
 // applySkipChecks is the declaration of the variable, made once, on the verb
 // that owns it. See [ptah.run/internal/envbool].
 //
-// It carries the one change stokaro/ptah#1334 makes to this reader: an
-// explicitly EMPTY value used to read as unset here, which folded a
-// `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
-// enforced" without a word. Absence still selects the default; a present value
-// has to parse.
+// It carries the rule stokaro/ptah#1334 states for this reader: an explicitly
+// EMPTY value is not unset. Reading one as unset folds a `PTAH_SKIP_CHECKS=`
+// left behind by a broken shell expansion into "checks enforced" without a
+// word. Absence selects the default; a present value has to parse.
 // It is [ptah.run/internal/envbool.Gated]: bypassing `-- +ptah check`
 // directives is a Ptah-only capability the pinned community binary has no
 // spelling for, so strict compatibility must refuse an enabled value rather

@@ -159,11 +159,11 @@ env "local" {
 // TestParseAtlas_ReferencedRemoteSchemaNeedsARegistry is where the refusal for
 // `remote_schema` MOVED to.
 //
-// It used to be "unsupported construct": the source had no runtime contract at
-// all. It resolves through Ptah's OCI backend now, so what is left is a
-// configuration question -- which namespace holds the artifact -- and the
-// refusal must name that rather than the construct, and must never fall back to
-// a hosted service (stokaro/ptah#1210).
+// "Unsupported construct" is the wrong refusal here. The source resolves
+// through Ptah's OCI backend, so what is left is a configuration question --
+// which namespace holds the artifact -- and the refusal must name that rather
+// than the construct, and must never fall back to a hosted service
+// (stokaro/ptah#1210).
 func TestParseAtlas_ReferencedRemoteSchemaNeedsARegistry(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlasregistry.NamespaceEnvVar, "")

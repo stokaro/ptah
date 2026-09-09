@@ -15,15 +15,16 @@ import (
 	"ptah.run/internal/atlasreport"
 )
 
-// `schema inspect` has two HCL output modes and only one of them used to carry
-// the document's coverage record. Split/write applied the SAME block
-// suppression, wrote the same objects out of the document, and dropped the
-// three `// ptah:not-described` lines that say so, because every member is
-// rebuilt from a parsed block and a leading comment belongs to no block.
+// `schema inspect` has two HCL output modes and both have to carry the
+// document's coverage record. Split/write applies the SAME block suppression
+// and writes the same objects out of the document, and it drops the three
+// `// ptah:not-described` lines that say so unless they are put back, because
+// every member is rebuilt from a parsed block and a leading comment belongs to
+// no block.
 //
 // Measured on PostgreSQL 17.10 against a database holding an unreferenced
-// `pgcrypto`, a standalone `ticket_seq` and an RLS policy `ticket_read`, on the
-// commit these tests were added to correct:
+// `pgcrypto`, a standalone `ticket_seq` and an RLS policy `ticket_read`,
+// without those lines:
 //
 //	inspect --format '{{ hcl . | split "schema" | write "out" }}'   exit 0
 //	grep -rn ptah:not-described out                                 no match
@@ -33,7 +34,7 @@ import (
 //	pg_class     ticket_seq      1 -> 0
 //	pg_policy    ticket_read     1 -> 0
 //
-// The objects were destroyed by inspecting a database and applying its own
+// The objects are destroyed by inspecting a database and applying its own
 // output back to it -- the round trip stokaro/ptah#1276 exists to prevent, one
 // `--format` away from the path the single-document tests cover.
 

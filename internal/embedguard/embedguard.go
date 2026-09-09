@@ -117,9 +117,9 @@ var Exempt = map[string]string{
 		"that owe an explanation and give none, and the only caller a self-check can have " +
 		"is a test. embedreport's facts_internal_test.go runs it over the real assembly",
 
-	// Surfaced the day the name check learned to ask whether a caller could
-	// reach the declaration (stokaro/ptah#2682). `Check` is a common enough
-	// method name that any `.Check(` in the module used to answer for it.
+	// The name check asks whether a caller can reach the declaration
+	// (stokaro/ptah#2682). Without that, `Check` is a common enough method name
+	// that any `.Check(` in the module answers for it.
 	"Check": "the policy half of the dual-write assessment, and it has no caller for the " +
 		"reason embedcatchup/mode.go states at ModeDualWrite: DualWriteEvidence has no " +
 		"producer in this build -- no verb, no table, no endpoint a writer could report " +

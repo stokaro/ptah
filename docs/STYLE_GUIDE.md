@@ -441,12 +441,23 @@ What survives the rewrite is the part that is still true:
 - **a citation** — an issue that still owns something, written plainly.
   `(stokaro/ptah#2209)` is a pointer; `since stokaro/ptah#2209` is a date.
 
-Unlike the rest of section 6, this one is enforced:
-`check-implementation-chronology.mjs` over Markdown and
-`internal/chronologyguard` over Go comments, on `until`, `before`, `since` and
-`as of` standing in front of a reference. `after` is left to the reader, because
-"after stokaro/ptah#2725 removes the converter" is a forward reference to work
-with an owner and no pattern separates it from the backward reading.
+The dated clause is the shape with a number on it. The same sentence without
+one -- "It used to be read from the run log on stderr", "This used to render a
+comment", "Ptah used to read credentials from one place" -- is stale in the same
+way and is rewritten the same way.
+
+`used to` carries a second, ordinary meaning: "the rows used to derive it", "the
+Ping used to verify the connection", "the columns used to decide whether the
+rows match". Nothing but the noun separates the two, so the subject decides. A
+pronoun or the product's name is Ptah's past; a thing is what that thing is for.
+
+Unlike the rest of section 6, both rules are enforced.
+`check-implementation-chronology.mjs` holds Markdown to the dating clause;
+`internal/chronologyguard` holds Go comments to both -- `until`, `before`,
+`since` and `as of` in front of a reference, and `used to` behind `it`, `this`,
+`that` or `Ptah`. What no pattern can separate is left to the reader: `after
+stokaro/ptah#2725 removes the converter` is a forward reference to work with an
+owner, and a noun in front of `used to` is a purpose.
 
 ## 7. Ptah terminology
 
@@ -1095,13 +1106,23 @@ this section named: an Atlas subject, a runtime state, `legacy-tested`, and the
 purpose sense of `used to`.
 
 Section 6.7 is the fourth rule, and the measurement behind it is different in
-kind. The shape is not a word but a preposition standing in front of an issue
-reference, which nothing else in this tree's English does, so the deny-list
+kind. The dated clause is not a word but a preposition standing in front of an
+issue reference, which nothing else in this tree's English does, so the deny-list
 objection above does not apply to it. Run against the tree before the sweep, the
 two gates reported 148 occurrences in Go comments and 18 in Markdown; every one
 was rewritten, and none needed its date to say what it was saying. The
 counts are separate because the corpora are: a Markdown reader cannot see a Go
 comment, which is why `internal/chronologyguard` exists beside the gate.
+
+The undated half of 6.7 was measured the same way and answers the deny-list
+objection differently: `used to` really does carry both meanings, and the
+subject is what tells them apart. Over Go comments, a sweep read all **574**
+past-habitual occurrences and rewrote **530**; the **44** that stayed are the
+purpose sense, where a noun rather than a pronoun stands in front -- `the rows
+used to derive it`, `the Ping used to verify the connection`. What the gate
+holds is the subset with no second reading, `it`, `this`, `that` and `Ptah`,
+which was **176** of those occurrences. The rest is a reading responsibility,
+and 16.1's own point stands: the sweep went further than the gate can.
 
 Four paths are exempt, each because the past is its subject rather than an
 intrusion: `docs/adr/**` is a design record, `docs/conformance.md` is a dated

@@ -14,11 +14,11 @@ import (
 // TestCompareWithDatabaseInfoNeverDiffsARefreshStrategy is the comparison half
 // of the decision.
 //
-// This file used to assert that a non-manual strategy failed the comparison and
-// that a manual one compared clean. Both were consequences of carrying a field
-// no catalog reports: the READ synthesized "manual" for every materialized view
-// on both PostgreSQL and ClickHouse, so the comparison's other operand was
-// invented. Ptah carries no strategy now, on either side (stokaro/ptah#1625).
+// A non-manual strategy failing the comparison, and a manual one comparing
+// clean, are both consequences of carrying a field no catalog reports: the READ
+// synthesizes "manual" for every materialized view on both PostgreSQL and
+// ClickHouse, so the comparison's other operand is invented. Ptah carries no
+// strategy on either side (stokaro/ptah#1625).
 //
 // What must hold is that an unchanged materialized view compares clean and that
 // no comparison can produce a refresh_strategy entry -- the drift key that

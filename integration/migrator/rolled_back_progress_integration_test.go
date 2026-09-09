@@ -40,10 +40,10 @@ func (i *issue887StatementInterceptor) ExecuteStatement(
 // guard for stokaro/ptah#887 on a server whose DDL commits itself.
 //
 // A tx-mode file body of plain DML that fails part way is rolled back whole,
-// but the failure used to be recorded as `applied = 1`. The revision then
-// claimed a committed prefix that no longer existed, the retry resumed at
-// statement two, and the first statement was never applied by any run while the
-// migration reported itself complete. The assertion that matters is the row
+// and recording the failure as `applied = 1` makes the revision claim a
+// committed prefix that does not exist: the retry resumes at statement two, and
+// the first statement is never applied by any run while the migration reports
+// itself complete. The assertion that matters is the row
 // count after the retry, not the counter: a resume that skips a statement is
 // indistinguishable from a correct one until the data is counted.
 func TestRolledBackProgress_MySQLDataOnlyBodyResumesFromTheTop(t *testing.T) {
@@ -1042,17 +1042,17 @@ func runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T, adminURL string
 }
 
 // runAcceptsCrossDatabaseStatementsTheWitnessCovers is the other half of the
-// boundary rule, and it used to be part of the refusal above.
+// boundary rule the refusal above states.
 //
-// A statement naming a second database was refused outright. It was not the
-// cross-database spelling that made tx-mode file non-atomic -- MySQL commits
-// DDL implicitly either way -- and the pinned community binary applies such a
-// directory, so the refusal rejected working migration sets (stokaro/ptah#2975).
-// What it was standing in for is that the catalog and the engine preflight
-// covered one database, leaving objects in another invisible. Those now cover
-// every database a migration names, so a statement whose objects the witness
-// can follow runs, and each case here asserts that its object changed and that
-// a revision was written.
+// Refusing a statement that names a second database outright rejects working
+// migration sets: the cross-database spelling is not what makes a tx-mode file
+// non-atomic -- MySQL commits DDL implicitly either way -- and the pinned
+// community binary applies such a directory (stokaro/ptah#2975). What such a
+// refusal stands in for is a catalog and an engine preflight covering one
+// database, leaving objects in another invisible. Both cover every database a
+// migration names, so a statement whose objects the witness can follow runs,
+// and each case here asserts that its object changed and that a revision was
+// written.
 func runAcceptsCrossDatabaseStatementsTheWitnessCovers(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 

@@ -73,11 +73,11 @@ func TestParse_MySQLFunctionalKeyPart(t *testing.T) {
 //     key cannot be a functional index", for a PRIMARY KEY. That one is not a
 //     dialect difference and would be missed by reasoning from the rows above.
 //
-// A MySQL `UNIQUE KEY u ((a + 1))` used to sit in this table and no longer
-// does. It was refused because a schemamodel.Constraint has nowhere to keep an
-// expression, not because a server objects -- MySQL builds it, and
-// stokaro/ptah#2793 carries it through as a unique index instead.
-// TestParse_MySQLFunctionalUniqueBecomesAUniqueIndex is where it lives now.
+// A MySQL `UNIQUE KEY u ((a + 1))` does not belong in this table. Refusing it
+// answers a schemamodel.Constraint having nowhere to keep an expression, not a
+// server objecting -- MySQL builds it, and stokaro/ptah#2793 carries it through
+// as a unique index. TestParse_MySQLFunctionalUniqueBecomesAUniqueIndex is
+// where it lives.
 func TestParse_MySQLFunctionalKeyPartIsRefusedWhereTheServerRefusesIt(t *testing.T) {
 	tests := []struct {
 		name        string

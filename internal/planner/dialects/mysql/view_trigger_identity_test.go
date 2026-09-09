@@ -111,8 +111,8 @@ func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 // capability above, measured where it now happens.
 //
 // A declaration writes `active_orders` and MySQL reports every view under its
-// database name. The planner used to reconcile the two by looking the name up;
-// the comparison does it now, and the change carries the view it resolved to
+// database name. The comparison reconciles the two and the change carries the
+// view it resolved to, rather than the planner looking the name up
 // (stokaro/ptah#2315).
 func TestCompare_AModifiedViewResolvesTheDatabaseQualifier(t *testing.T) {
 	c := qt.New(t)

@@ -14,9 +14,10 @@ import (
 // consumer onto this model a refactor rather than a behavior change.
 //
 // Every per-family key in the tree folded through identifier.Semantics, and a
-// model that folded even slightly differently -- unquoting first, trimming
-// differently, defaulting a schema in another place -- would split two objects
-// that used to be one, or merge two that were not. So the normalized component
+// model that folds even slightly differently -- unquoting first, trimming
+// differently, defaulting a schema in another place -- splits two objects those
+// keys hold together, or merges two they keep apart. So the normalized
+// component
 // is asserted to equal the Semantics call it stands in for, over the spellings
 // that make those choices visible.
 func TestBuilder_MatchesTheSemanticsKeysItReplaces(t *testing.T) {

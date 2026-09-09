@@ -148,7 +148,7 @@ func TestInferenceCatchUpKeepsWhatASecondGenerationOwesUntilItIsAbandonedE2E(t *
 	// Bring both runs through one event first. That establishes a floor above
 	// the snapshot boundary, so the later held-floor pass can both prune an
 	// older prefix and retain a newer suffix -- the ordinary case in which the
-	// holder diagnostic used to disappear behind the prune count.
+	// holder diagnostic can disappear behind the prune count.
 	changeTheSource(c, ctx, db, sourceChanges[0])
 	runInference(c, ctx, "catchup",
 		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--batch-rows", "10")

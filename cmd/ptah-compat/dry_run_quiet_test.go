@@ -84,9 +84,9 @@ func TestCompatBinaryMigrateDownRunsWithEOFStdin(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", stdout.String(), stderr.String()))
 	c.Assert(stdout.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
 	// The rollback-succeeded proof is read from stdout, the command's own
-	// report. It used to be read from the run log on stderr, which only ever
-	// appeared there because the forwarded verb reinstalled an INFO logger over
-	// the binary's quiet default (stokaro/ptah#969). This test is about EOF
+	// report, not from the run log on stderr. That log appears there only when
+	// the forwarded verb reinstalls an INFO logger over the binary's quiet
+	// default (stokaro/ptah#969). This test is about EOF
 	// stdin, not about the log, so it must not pin the noise.
 	c.Assert(stdout.String(), qt.Contains, "✅ Migration rollback completed successfully!")
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")

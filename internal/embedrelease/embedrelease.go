@@ -157,12 +157,12 @@ type Cutover struct {
 	// [Verification.MeasurementDigest] answers for that report, which is the
 	// same value the plan cited and the approval covered.
 	//
-	// A measurement rather than an artifact, deliberately. The digest here used
-	// to be that of the report restamped at the cutover's own instant, so it
-	// named a record no verb ever writes -- and on a cutover that re-verifies
-	// after the source moved, the measurement it rested on was recorded nowhere
-	// at all (stokaro/ptah#2643). A measurement digest is reproducible by
-	// anybody holding the report.
+	// A measurement rather than an artifact, deliberately. The digest of the
+	// report restamped at the cutover's own instant names a record no verb ever
+	// writes -- and on a cutover that re-verifies after the source moved, the
+	// measurement it rests on is then recorded nowhere at all
+	// (stokaro/ptah#2643). A measurement digest is reproducible by anybody
+	// holding the report.
 	VerificationDigest string `json:"verification_digest"`
 	// Watermark is how far the source had been accounted for when the pointer
 	// moved, empty under a consistency mode that records no boundary.

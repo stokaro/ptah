@@ -52,8 +52,8 @@ func hclString(value string) string {
 // scheme it cannot resolve, on every verb that takes one.
 //
 // The refusal is at pattern-parse time rather than after matching, and that
-// placement is the point: the unmatched-selection guard is what used to catch
-// this on `schema apply`, and it blames the glob rather than the scheme, warns
+// placement is the point: the unmatched-selection guard is the only thing that
+// catches this otherwise, and it blames the glob rather than the scheme, warns
 // instead of failing on `schema inspect`, and can be switched off entirely
 // (stokaro/ptah#1697).
 func TestSelectorFlagsRefuseAnEnvReference(t *testing.T) {
@@ -96,10 +96,10 @@ func TestSelectorFlagsRefuseAnEnvReference(t *testing.T) {
 // TestApplyExcludeEnvReferenceRefusedEvenWithTheUnmatchedOptIn is the case that
 // made this dangerous rather than merely wrong.
 //
-// PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 switches off the guard that used to be
-// the only thing catching this. With it set, `--exclude env://exclude` applied
-// the schema with NOTHING excluded and exited 0 -- including the very table the
-// env's own exclude list names.
+// PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 switches off the guard that would
+// otherwise be the only thing catching this. With it set, an unrefused
+// `--exclude env://exclude` applies the schema with NOTHING excluded and exits
+// 0 -- including the very table the env's own exclude list names.
 func TestApplyExcludeEnvReferenceRefusedEvenWithTheUnmatchedOptIn(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "1")
@@ -142,10 +142,10 @@ func TestApplyExcludeLiteralStillFiltersAndTheEnvListIsApplied(t *testing.T) {
 
 // TestTestVerbsRefuseAnEnvReferenceSource pins the half that was already
 // right, so it cannot regress into passing the value through as a literal.
-// TestSchemaTestResolvesAnEnvReferenceSource replaces the refusal this test
-// used to assert. `schema test` mapped its source in the flag layer, which is
-// built at registration and holds no environment, so the scheme could only be
-// refused there; the mapper now receives the environment the run selected
+// TestSchemaTestResolvesAnEnvReferenceSource is the resolution rather than a
+// refusal. Mapping the source in the flag layer, which is built at registration
+// and holds no environment, leaves the scheme refusable and nothing else; the
+// mapper receives the environment the run selected instead
 // (stokaro/ptah#1761). Both attributes a desired state can come from are
 // covered: `src` names a schema file, `url` a database.
 func TestSchemaTestResolvesAnEnvReferenceSource(t *testing.T) {

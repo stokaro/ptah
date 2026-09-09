@@ -19,10 +19,10 @@ import (
 
 // These tests replace the migration directory, or one of its ancestors, after
 // the run has captured and verified it and before anything is published. The
-// swap is the exact shape stokaro/ptah#1118 describes: the writer used to carry
-// a string path and resolve it again for staging, publication, the atlas.sum
-// commit and recovery, so a pathname that pointed at one directory when it was
-// validated could point at another by the time it was written.
+// swap is the exact shape stokaro/ptah#1118 describes: a writer that carries a
+// string path and resolves it again for staging, publication, the atlas.sum
+// commit and recovery lets a pathname that pointed at one directory when it was
+// validated point at another by the time it is written.
 //
 // Every row asserts BOTH halves: the artifacts appear inside the directory the
 // run opened, and the replacement directory is left completely untouched. The

@@ -158,8 +158,8 @@ func TestVerify_CountsMatchingIsNotCoverage(t *testing.T) {
 // TestVerify_ARowCountMatchWithStaleVectorsFails is the epic's sentence, tested.
 //
 // Every key is present and every count agrees; one vector was computed from
-// text the source has since changed. That corpus retrieves a document by what
-// it used to say.
+// text the source has since changed. That corpus retrieves a document by text
+// the source no longer holds.
 func TestVerify_ARowCountMatchWithStaleVectorsFails(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -373,18 +373,19 @@ func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 	c.Assert(report.Findings[0].Severity, qt.Equals, embedverify.Advisory)
 }
 
-// TestVerify_ASetWhoseOrdinalsAreWrongBlocks is the restated finding.
+// TestVerify_ASetWhoseOrdinalsAreWrongBlocks is the finding as a chunked corpus
+// leaves it.
 //
-// A key holding several rows used to be a duplicate and nothing else. With a
-// chunked corpus that is the normal shape, so what is left to report is a set
-// whose stored rows are not 0, 1, 2 ... in order -- the shape a half-completed
-// set write leaves behind (ADR 0017 section 3.5).
+// Reading a key that holds several rows as a duplicate and nothing else is
+// wrong there, because several rows per key is the normal shape. What is left
+// to report is a set whose stored rows are not 0, 1, 2 ... in order -- the
+// shape a half-completed set write leaves behind (ADR 0017 section 3.5).
 //
 // Next to its twin rather than appended, because that is the only shape the
 // reader can produce: `verificationQuery` orders by the key columns, so the
 // rows of one key arrive adjacent. Verifying a corpus without holding it means
 // the set is folded by that adjacency instead of by a map, and a fixture that
-// scattered the rows would be asserting against a walk no server hands back
+// scatters the rows asserts against a walk no server hands back
 // (stokaro/ptah#2621).
 func TestVerify_ASetWhoseOrdinalsAreWrongBlocks(t *testing.T) {
 	c := qt.New(t)
@@ -754,13 +755,13 @@ func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
 
 // TestVerify_TheStoredValuesAreAlwaysReportedAsUnread is stokaro/ptah#2622.
 //
-// The report used to say this only when a caller declared it had not read the
-// values, and no caller ever declared otherwise: `VectorValuesRead` was set in
-// this file and nowhere else, and `embedpg.VerificationCorpus` reports each
-// stored vector's width and never its values. The finiteness branch it gated
-// could not fire.
+// Saying it only when a caller declares it has not read the values makes the
+// sentence conditional on nothing: `VectorValuesRead` is set in this file and
+// nowhere else, and `embedpg.VerificationCorpus` reports each stored vector's
+// width and never its values. The finiteness branch such a flag gates cannot
+// fire.
 //
-// It could not have fired even if the values were read. Measured live on
+// It could not fire even if the values were read. Measured live on
 // pgvector 0.8.1: `vector`, `halfvec` and `sparsevec` each refuse a NaN and an
 // infinity on write, so no such value can be in the corpus. What keeps it out
 // is `embedprovider.validateVector`, which has a caller and a test that reddens

@@ -406,10 +406,10 @@ func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 // TestRenderInspectedDeclaresTheSchemaAnEnumOnlyReadReferences pins that the
 // enum's new schema reference always has a block to resolve to.
 //
-// referencedSchemas used to return nothing when the read matched no table,
-// which is right for a document with nothing in it and wrong the moment an enum
-// block starts naming a schema: the reference would dangle, and a dangling
-// `schema.public` is refused by the pinned binary just as a missing one is.
+// referencedSchemas returning nothing when the read matched no table is right
+// for a document with nothing in it and wrong the moment an enum block names a
+// schema: the reference dangles, and a dangling `schema.public` is refused by
+// the pinned binary just as a missing one is.
 func TestRenderInspectedDeclaresTheSchemaAnEnumOnlyReadReferences(t *testing.T) {
 	c := qt.New(t)
 

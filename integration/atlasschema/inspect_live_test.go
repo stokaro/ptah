@@ -72,9 +72,9 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 				`"null":true}]}],"comment":"standard public schema"}]}`,
 		},
 		{
-			// An empty database reports the schema it has, at both scopes. It
-			// used to report `{}`, so anything walking `.schemas` broke on a
-			// database that was merely empty.
+			// An empty database reports the schema it has, at both scopes.
+			// Reporting `{}` there breaks anything walking `.schemas` on a
+			// database that is merely empty.
 			name: "empty database reports its schema at realm scope",
 			want: `{"schemas":[{"name":"public","comment":"standard public schema"}]}`,
 		},

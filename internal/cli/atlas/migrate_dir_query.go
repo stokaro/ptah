@@ -19,9 +19,9 @@ import (
 //
 // It is [atlasmigrate.ResolveApplyDirFormat], which is the same resolution
 // every verb that READS a directory already runs (resolveAtlasMigrateSource in
-// migrate_integrity.go). `migrate diff` used to carry a second rule of its own
-// — `strings.ToLower(strings.TrimSpace(--dir-format)) != "atlas"` — and that
-// rule diverged from the community binary in both directions. Measured against
+// migrate_integrity.go). A second rule of its own on `migrate diff` —
+// `strings.ToLower(strings.TrimSpace(--dir-format)) != "atlas"` — diverges from
+// the community binary in both directions. Measured against
 // the pinned community binary v1.3.0 on 2026-08-07, on a hashed native Atlas
 // directory:
 //
@@ -69,26 +69,25 @@ func atlasDirFormatSpelling(query url.Values) string {
 	return "--dir-format"
 }
 
-// WHERE THE FOREIGN-LAYOUT REFUSAL WENT. A `checkWritingVerbDirQuery` used to
-// stand here and refuse a foreign layout the `--dir` QUERY named, for the one
-// verb that WRITES into the directory: `migrate diff`. It was the strict side —
-// exit 1 where the community binary exits 0 — and it was there because writing
-// a foreign layout is a different problem from reading one. The reading verbs
-// (hash, validate, lint, status, set) convert a layout in memory and report on
-// it, which is what #992, #1002 and #1133 built; `migrate diff` has to write
-// reverse SQL as well as forward SQL, in five different shapes, and planned no
-// reverse at all.
+// WHERE THE FOREIGN-LAYOUT REFUSAL WENT. No `checkWritingVerbDirQuery` stands
+// here refusing a foreign layout the `--dir` QUERY names for `migrate diff`,
+// the one verb that WRITES into the directory. Such a refusal is the strict
+// side — exit 1 where the community binary exits 0 — and it stands only while
+// writing a foreign layout is a different problem from reading one. The reading
+// verbs (hash, validate, lint, status, set) convert a layout in memory and
+// report on it, which is what #992, #1002 and #1133 built; `migrate diff` has
+// to write reverse SQL as well as forward SQL, in five different shapes.
 //
-// stokaro/ptah#1013 closed that. The shared bidirectional generator plan is now
+// stokaro/ptah#1013 closed that. The shared bidirectional generator plan is
 // injected into the writer as
 // [ptah.run/internal/atlasmigrate.DiffOptions.PlanBidirectional], the plan
-// carries both directions, and each layout composes its own files. The refusal
-// is gone because the capability it stood in for arrived, which is the only
-// reason to remove a refusal of this kind.
+// carries both directions, and each layout composes its own files. The
+// capability the refusal stood in for arrived, which is the only reason to
+// remove a refusal of this kind.
 //
-// What did NOT change is the position of the two checks around it:
-// [resolveWritingVerbDirFormat] still refuses an unparsable value ahead of the
-// atlas.sum gate, and a parsable foreign one still reaches the gate first —
+// What that does NOT move is the position of the two checks around it:
+// [resolveWritingVerbDirFormat] refuses an unparsable value ahead of the
+// atlas.sum gate, and a parsable foreign one reaches the gate first —
 // measured on the pinned community binary v1.3.0, an unhashed directory with
 // `--dir-format goose` prints the checksum error there, not a format complaint,
 // while `--dir-format ATLAS` prints `unknown dir format` ahead of the gate.

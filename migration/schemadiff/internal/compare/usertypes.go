@@ -115,13 +115,12 @@ func domainsWithSemantics(
 // churn), NOT NULL, and -- when a server has normalized the declaration --
 // CHECK and DEFAULT.
 //
-// CHECK and DEFAULT used to be create-only, and the reason was sound: PostgreSQL
-// stores a parsed CHECK and prints it back from the parse tree, so the
-// declaration that produced `(VALUE = ANY (ARRAY['x'::text]))` was
-// `VALUE IN ('x')` and the two never compared equal. What that cost was
-// silence. A changed constraint produced no diff and no diagnostic, so
-// `schema apply` reported a synced schema over a database still enforcing the
-// old rule (stokaro/ptah#1717).
+// Leaving CHECK and DEFAULT create-only has a sound reason: PostgreSQL stores a
+// parsed CHECK and prints it back from the parse tree, so the declaration
+// behind `(VALUE = ANY (ARRAY['x'::text]))` is `VALUE IN ('x')` and the two
+// never compare equal. What it costs is silence. A changed constraint then
+// produces no diff and no diagnostic, so `schema apply` reports a synced schema
+// over a database still enforcing the old rule (stokaro/ptah#1717).
 //
 // A resolved expression is the declaration after the same round trip through
 // the same server, so the two sides are the same language and a difference is a
@@ -417,11 +416,11 @@ func dbCompositeFieldList(composite catalog.CompositeType) string {
 // Ranges compares PostgreSQL range types between the target schema and the
 // current database, reporting additions, removals and modifications.
 //
-// "Ranges have no in-place alter, so only add/remove is reported" is what this
-// comment used to say, and it described the defect rather than the design: a
-// changed subtype produced no diff at all and `schema apply` answered "Schema
-// is synced" over a database that still held the old definition
-// (stokaro/ptah#931 item 2). PostgreSQL really has no ALTER TYPE ... AS RANGE,
+// "Ranges have no in-place alter, so only add/remove is reported" describes a
+// defect rather than a design: under it a changed subtype produces no diff at
+// all and `schema apply` answers "Schema is synced" over a database that still
+// holds the old definition (stokaro/ptah#931 item 2). PostgreSQL really has no
+// ALTER TYPE ... AS RANGE,
 // which is a fact about how the planner spells the change -- a non-CASCADE DROP
 // TYPE followed by a CREATE TYPE, the shape domains and composites already use
 // -- and not a reason to skip the comparison. rangeChanges below decides what

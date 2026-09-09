@@ -147,11 +147,11 @@ func layoutIndexProbe() indexProbe {
 // attachmentEndpoint is everything an attachment needs about its destination,
 // resolved once for a registry or an image layout.
 //
-// Attach needs four inputs where Push needed two, and three of them used to be
-// registry-shaped: the repository that resolves the subject, the target the
+// Attach needs four inputs where Push needs two, and three of them are shaped
+// by the destination: the repository that resolves the subject, the target the
 // referrer is written to, and the probe that answers what discovery the policy
-// requires. Resolving them together is what lets a layout be the same
-// operation rather than a second code path (stokaro/ptah#2839).
+// requires. Resolving them together is what lets a layout be the same operation
+// rather than a second code path (stokaro/ptah#2839).
 type attachmentEndpoint struct {
 	target     oras.Target
 	repository referrerRepository

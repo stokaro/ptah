@@ -194,16 +194,16 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 }
 
 func TestSimulateOnDev_FailurePath(t *testing.T) {
-	// The rehearsal used to refuse every docker:// dev URL here. It now
-	// provisions one (stokaro/ptah#844), so the row asserts that the value
-	// reached the provisioning layer.
+	// The rehearsal provisions a docker:// dev URL rather than refusing it
+	// (stokaro/ptah#844), so the row asserts that the value reached the
+	// provisioning layer.
 	//
 	// Reaching it at all is the substance of this row. The two alias checks in
 	// front -- is the dev database the target, is it the desired state -- answer
-	// a docker URL `unsupported database URL dialect`, so before they learned to
-	// skip a URL naming a container that does not exist yet, every docker dev
-	// database on this verb was refused with a sentence about a dialect the
-	// operator never chose.
+	// a docker URL `unsupported database URL dialect`, so unless they skip a URL
+	// naming a container that does not exist yet, every docker dev database on
+	// this verb is refused with a sentence about a dialect the operator never
+	// chose.
 	//
 	// `docker://sqlite/3/dev` starts nothing: measured, the pinned community
 	// binary v1.3.0 answers `unsupported docker image "sqlite"` and exits 1.

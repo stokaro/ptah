@@ -737,10 +737,10 @@ func atlasMigrateTestVerb() atlasVerb {
 // `schema test` run their cases against.
 //
 // A docker:// value is passed through to the native verb, which provisions it.
-// Both test verbs used to refuse the scheme here, at flag-parse time, because
-// nothing downstream could provision one; wiring the native runners to
-// internal/devdocker is what made the refusal a deleted capability rather than
-// an honest diagnostic (stokaro/ptah#844, AGENTS.md compatibility rule (c)).
+// Refusing the scheme here, at flag-parse time, is honest only while nothing
+// downstream can provision one; with the native runners wired to
+// internal/devdocker it is a deleted capability instead (stokaro/ptah#844,
+// AGENTS.md compatibility rule (c)).
 //
 // What is decidable from the URL text alone -- an image no engine table names,
 // a form the pinned community binary rejects -- is still refused, by the

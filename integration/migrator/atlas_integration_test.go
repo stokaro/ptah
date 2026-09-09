@@ -200,9 +200,8 @@ func TestAtlasTxtarChecks_MariaDBShortNumericPrefixRejectsNonSelectIntegration(t
 }
 
 // ClickHouse is measured on RevisionTableFormatAtlas like every other dialect.
-// It used to pass RevisionTableFormatPtah, which is the format ptah-compat never
-// selects, so the row stayed green while the Atlas revision path was completely
-// broken on this dialect (#950).
+// Passing RevisionTableFormatPtah, which ptah-compat never selects, keeps the
+// row green while the Atlas revision path is broken on this dialect (#950).
 func TestAtlasTxtarChecks_ClickHouseIntegration(t *testing.T) {
 	runAtlasTxtarChecksIntegration(t, dbtarget.URL(t, dbtarget.ClickHouse), migrator.RevisionTableFormatAtlas)
 }
@@ -1447,10 +1446,10 @@ func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
 	defer cleanupIssue819(t, conn)
 
 	// The inert guard is derived from the connected server, never written as a
-	// literal. This fixture used to hard-code /*!99999 ...*/ as "a version no
-	// server will reach"; #791 moved the matrix from mysql:9.7 to mysql:26.7,
-	// whose version id is 260700, so the guard opened and the DELETE in the
-	// comment became live SQL that Ptah then correctly refused. A derived guard
+	// literal. Hard-coding /*!99999 ...*/ as "a version no server will reach"
+	// rots: the matrix runs mysql:26.7, whose version id is 260700, so the
+	// guard opens and the DELETE in the comment becomes live SQL that Ptah then
+	// correctly refuses (#791). A derived guard
 	// cannot rot that way, and measureExecutableCommentGuard proves it is inert
 	// on this exact server before the fixture leans on it.
 	inertGuard := strconv.Itoa(inertExecutableCommentGuard(c, ctx, conn))

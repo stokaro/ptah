@@ -14,7 +14,7 @@ import (
 // It is an addition rather than a second stylesheet: the schema sections below
 // the status panel are rendered by internal/schemadoc and styled by its tokens,
 // so this defines no color of its own -- the three severities included, which
-// it used to spell as three hex literals -- and only arranges what the panel
+// it must not spell as three hex literals -- and only arranges what the panel
 // needs.
 //
 // Every var() here has to name a token internal/schemadoc still declares. A

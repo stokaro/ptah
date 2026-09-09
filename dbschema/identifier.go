@@ -149,10 +149,9 @@ func normalizedIdentifierNames(names []string) []string {
 // validateSQLServerIdentifierNames refuses a name SQL Server cannot hold.
 //
 // The limit and the unit come from [capability.Identifiers] rather than from a
-// constant here. This function used to carry its own 128 and its own
-// utf8.RuneCountInString, which was the second copy of a rule the renderer also
-// had: two places deciding whether a multibyte name fits, agreeing only because
-// nobody had yet changed one of them.
+// constant here. Carrying its own 128 and its own utf8.RuneCountInString would
+// be a second copy of a rule the renderer also has: two places deciding whether
+// a multibyte name fits, agreeing only until somebody changes one of them.
 func validateSQLServerIdentifierNames(names []string) error {
 	limit := capability.Identifiers(platform.SQLServer)
 	for _, name := range names {

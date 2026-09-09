@@ -388,10 +388,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// generic "error parsing schema file" wrapper, matching the render command's
 	// long-standing message.
 	//
-	// A directory has no extension to check, and the extension rule used to
-	// refuse it with `unsupported schema file extension ""` — a message about a
-	// file for something that is not one. The loader decides what a directory
-	// of schema files means, so a directory skips this switch and reaches it.
+	// A directory has no extension to check, and the extension rule refuses one
+	// with `unsupported schema file extension ""` — a message about a file for
+	// something that is not one. The loader decides what a directory of schema
+	// files means, so a directory skips this switch and reaches it.
 	if !isSchemaDir(absPath) && !slices.Contains(supportedExtensions, strings.ToLower(filepath.Ext(absPath))) {
 		return nil, fmt.Errorf(
 			"unsupported schema file extension %q: only %s are supported",

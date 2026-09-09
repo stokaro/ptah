@@ -10,10 +10,10 @@ import (
 )
 
 // This file holds the statement grammar for the PostgreSQL schema objects that
-// Ptah's own renderer emits but its SQL frontend used to refuse: sequences,
-// roles, grants, policies, ALTER TABLE ... ENABLE ROW LEVEL SECURITY and
-// materialized views. Refusing them made `ptah schema render` unable to read
-// back the SQL it had just written (issue #932).
+// Ptah's own renderer emits: sequences, roles, grants, policies,
+// ALTER TABLE ... ENABLE ROW LEVEL SECURITY and materialized views. A frontend
+// that refuses them leaves `ptah schema render` unable to read back the SQL it
+// has just written (issue #932).
 
 // parseCreateSequence parses CREATE SEQUENCE [IF NOT EXISTS] name [options].
 func (p *Parser) parseCreateSequence() (*ast.CreateSequenceNode, error) {

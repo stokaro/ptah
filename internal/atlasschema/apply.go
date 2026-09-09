@@ -466,18 +466,18 @@ func applyCurrentState(
 // The two sides of a comparison have to be read at the same scope or silence on
 // one of them is mistaken for absence. `schema inspect` on a URL that pins no
 // schema describes every schema of the realm (stokaro/ptah#1264); applying that
-// description back to the database it came from used to read only the
-// connection's own schema, find no `extra` there, and plan `CREATE SCHEMA
+// description back to the database it came from, while reading only the
+// connection's own schema, finds no `extra` there and plans `CREATE SCHEMA
 // extra` and `CREATE TABLE "extra"."b"` for a schema and a table the database
-// already has. Measured on PostgreSQL 17.10: the plan never converged, and
-// executing it failed at SQLSTATE 42P07.
+// already has. Measured on PostgreSQL 17.10: the plan never converges, and
+// executing it fails at SQLSTATE 42P07.
 //
 // base is what the URL says this run covers, resolved once by
 // [schemascope.ReadNames] so that this verb, `schema diff`, `schema inspect`
-// and `migrate diff` cannot disagree about it. An earlier fix derived the scope
-// here from the DESIRED state instead, to keep a document describing one schema
-// of a multi-schema database from reaching the others. That is the wrong
-// protection at the wrong layer: it makes a whole schema silently unmanaged
+// and `migrate diff` cannot disagree about it. Deriving the scope here from the
+// DESIRED state instead, to keep a document describing one schema of a
+// multi-schema database from reaching the others, is the wrong protection at
+// the wrong layer: it makes a whole schema silently unmanaged
 // rather than authoritatively absent, and it makes this verb disagree with
 // `schema diff` over the same two inputs. The pinned Atlas community binary
 // v1.3.0 plans `DROP SCHEMA "extra" CASCADE` for that document on both verbs,

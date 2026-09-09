@@ -218,7 +218,7 @@ func TestInferenceACompositeKeyJoinsOnEveryComponentE2E(t *testing.T) {
 //
 // A row carrying no generation belongs to no generation, so no generation's
 // verification is where it is reported. It is the row the joined WHERE drops,
-// and the one whose treatment used to depend on an unrelated filter.
+// and the one whose treatment must not depend on an unrelated filter.
 func aStraySidecarRun(
 	c *qt.C, ctx context.Context, dbURL, prefix, specPath string,
 ) string {

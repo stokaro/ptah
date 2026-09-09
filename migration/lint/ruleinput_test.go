@@ -11,11 +11,10 @@ import (
 // TestAnalyzeFS_BaselineVersionsComeFromTheRules is the load-bearing half of
 // the input declaration.
 //
-// The list used to be computed here from a hardcoded "does this file carry a
-// column rename" check, which was correct while exactly one rule needed the
-// starting schema state and would have gone quietly wrong for the second: its
-// files would never be read, so its findings could never fire, and nothing
-// would say so (stokaro/ptah#1632).
+// Computing the list here from a hardcoded "does this file carry a column
+// rename" check is correct while exactly one rule needs the starting schema
+// state, and goes quietly wrong for the second: its files are never read, so
+// its findings can never fire, and nothing says so (stokaro/ptah#1632).
 //
 // Disabling the one rule that declares the input is what separates the two
 // implementations: the rename is still there, so a hardcoded check still asks

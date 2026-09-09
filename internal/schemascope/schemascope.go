@@ -360,12 +360,12 @@ func keepReferencedGeneratedEnums(enums []schemamodel.Enum, fields []schemamodel
 	// with the names the schema actually declares as enums, so a type that names
 	// something else simply never matches.
 	//
-	// This used to admit only types spelled "enum_*". A scoped run therefore
-	// dropped the CREATE TYPE for an enum named e.g. "status_kind" while the
-	// column still named it, and `ptah schema test --schema public` died with
+	// Admitting only types spelled "enum_*" makes a scoped run drop the CREATE
+	// TYPE for an enum named e.g. "status_kind" while the column still names
+	// it, and `ptah schema test --schema public` then dies with
 	// `type "status_kind" does not exist` (SQLSTATE 42704) -- a hard failure,
 	// not the silent under-generation the rest of stokaro/ptah#931 item 1
-	// produced.
+	// produces.
 	referenced := make(map[string]struct{})
 	for _, field := range fields {
 		referenced[field.Type] = struct{}{}

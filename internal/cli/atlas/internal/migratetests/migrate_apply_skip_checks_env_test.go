@@ -218,8 +218,8 @@ func TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing(t *testing.T) {
 // tx-mode all refuses a migration declaring pre-migration checks, because a
 // check on the pool connection cannot see earlier batched migrations'
 // uncommitted work. Bypassing checks removes the reason for the refusal, so the
-// batch runs — this is the branch whose diagnostic used to advertise a
-// --skip-checks flag the compat surface then rejected.
+// batch runs — this is the branch whose diagnostic must not advertise a
+// --skip-checks flag the compat surface then rejects.
 func TestMigrateApplySkipChecksEnvLiftsTxModeAllRefusal(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

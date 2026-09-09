@@ -73,12 +73,12 @@ const DefaultDatabase = "dev"
 // passwordBytes is the entropy of the superuser password set inside each
 // throwaway container.
 //
-// The password is generated per instance, not fixed. It used to be the constant
-// `ptah-dev`, justified by the container publishing on loopback only -- and that
-// premise stopped being true the moment a remote daemon began publishing on
-// every interface of its host, which is a machine other peers can reach. A
-// known superuser password on a reachable ephemeral port lets any of them read
-// the replayed schema, or write to it and quietly corrupt a lint or diff result.
+// The password is generated per instance, not fixed. A constant like `ptah-dev`
+// rests on the container publishing on loopback only, and that premise fails
+// the moment a remote daemon publishes on every interface of its host, which is
+// a machine other peers can reach. A known superuser password on a reachable
+// ephemeral port lets any of them read the replayed schema, or write to it and
+// quietly corrupt a lint or diff result.
 //
 // The fix is the credential rather than the binding, because the binding cannot
 // be tightened: a daemon can only publish on interfaces it owns, and the one
@@ -355,8 +355,8 @@ func unsupportedImageError(host string) error {
 //
 // # The bytes are read as written
 //
-// This function normalizes NOTHING. It used to trim surrounding whitespace, and
-// that made it accept a value the pinned binary cannot parse at all. Measured on
+// This function normalizes NOTHING. Trimming surrounding whitespace makes it
+// accept a value the pinned binary cannot parse at all. Measured on
 // the pinned community binary v1.3.0, exit statuses read from unpiped
 // `schema inspect -u file://schema.sql --dev-url <value>` invocations:
 //
@@ -371,9 +371,9 @@ func unsupportedImageError(host string) error {
 // space makes the whole value a relative path whose first segment is `docker:`,
 // so there is no scheme and no docker URL; a TRAILING one is an ordinary
 // character in the last path segment and names a database that ends in a space.
-// Trimming got both wrong in the same breath, and the first of them in the one
-// direction compatibility policy (a) forbids: `ptah-compat schema inspect` exited
-// 0, having started a container, where the pinned binary exits 1.
+// Trimming gets both wrong in the same breath, and the first of them in the one
+// direction compatibility policy (a) forbids: `ptah-compat schema inspect`
+// exiting 0, having started a container, where the pinned binary exits 1.
 //
 // A surface that wants to be lenient about whitespace normalizes ONCE at its own
 // boundary and says so -- `ptah schema inspect` does exactly that, deliberately,

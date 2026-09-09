@@ -27,10 +27,10 @@ func (t Timeouts) IsZero() bool {
 // significant.
 //
 // It takes that region from [directiveRegion] rather than re-deciding where the
-// header ends. This loop used to stop at the first executable line while
-// [ParseDirectives] scanned the whole file, so two `+ptah` keys written on
-// one misplaced line had different fates -- the timeout was dropped and the
-// transaction mode was honored. One region is what keeps them the same fact.
+// header ends. A loop stopping at the first executable line, while
+// [ParseDirectives] scans the whole file, gives two `+ptah` keys written on one
+// misplaced line different fates -- the timeout dropped and the transaction
+// mode honored. One region is what keeps them the same fact.
 func ParseTimeouts(sql string) (Timeouts, error) {
 	return ParseTimeoutsForDialect(sql, "")
 }

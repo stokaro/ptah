@@ -230,9 +230,8 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 // The rows answer the forms that are wrong in the URL text. A `docker://` value
 // that is NOT wrong is a dev database stokaro/ptah#1468 provisions, so it has to
 // travel on to the pull. Without this test the cheapest way to make those rows
-// green is the check this file used to carry -- refuse every `docker://` -- and
-// that would pass all three while silently removing the feature the branch
-// exists to add.
+// green is a check that refuses every `docker://`, which passes all three while
+// silently removing the feature they sit beside.
 //
 // It also pins the order of the two remote steps, which is a decision and not an
 // accident. The artifact is pulled BEFORE the container is started, so a

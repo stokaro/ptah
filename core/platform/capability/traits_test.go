@@ -244,6 +244,6 @@ func TestTraits_ContradictorySetsResolveToUnspecified(t *testing.T) {
 // The census that keeps referencePolicyNames in step with the policy list lives
 // in traits_internal_test.go rather than here. From outside the package the
 // list can only be retyped by hand, and a hand-typed list is the one place a
-// fourth policy is guaranteed not to appear: the literal that used to stand
-// here stayed green through a fourth policy added to the registry, to the mutex
-// group, to foreignKeyReferencePolicies and to every preset.
+// fourth policy is guaranteed not to appear: a literal standing here stays
+// green through a fourth policy added to the registry, to the mutex group, to
+// foreignKeyReferencePolicies and to every preset.

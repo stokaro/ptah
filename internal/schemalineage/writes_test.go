@@ -374,14 +374,12 @@ func TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels(t *testing.T
 	}
 }
 
-// TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole replaces the test
-// that pinned its failure.
+// TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole pins that the
+// statement arrives whole.
 //
-// The T-SQL splitter used to treat every SET as the start of a statement, so
-// `UPDATE t SET c = 1` arrived as `raw` = `UPDATE t` and `assignment` = `SET c
-// = 1` and neither half was an update. The previous test asserted exactly that
-// failure so the repair would be visible here rather than arriving unnoticed --
-// and it was: it reddened the moment stokaro/ptah#2451 landed.
+// A T-SQL splitter that treats every SET as the start of a statement delivers
+// `UPDATE t SET c = 1` as `raw` = `UPDATE t` and `assignment` = `SET c = 1`,
+// and neither half is an update (stokaro/ptah#2451).
 func TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole(t *testing.T) {
 	c := qt.New(t)
 

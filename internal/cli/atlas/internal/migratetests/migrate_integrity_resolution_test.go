@@ -341,8 +341,8 @@ const (
 //	Error: sql/migrate: read file "weird.sql": read w/weird.sql: is a directory
 //	exit=1, no atlas.sum written
 //
-// Ptah used to skip the entry and write a sum over the remainder — a sum the
-// community binary then refused to read, which is the trap #991 reports.
+// Skipping the entry and writing a sum over the remainder produces a sum the
+// community binary then refuses to read, which is the trap #991 reports.
 //
 // The rows a directory does NOT stop are in
 // TestCompatMigrateHashWalksPastADirectoryItsGlobMisses, and the pair is what

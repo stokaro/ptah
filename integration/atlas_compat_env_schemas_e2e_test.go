@@ -150,9 +150,9 @@ func TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E(t *testing.T) {
 // TestAtlasCompatEnvSchemasOptOutRestoresTheRealmDescriptionE2E is the
 // capability half.
 //
-// Acting on the attribute REMOVES a description Ptah used to emit — the first
-// row here is exactly what every run produced before the change — so AGENTS.md
-// requires the fuller behavior to stay reachable rather than be deleted. The
+// Acting on the attribute NARROWS the description Ptah emits — the first row
+// here is the fuller one — so AGENTS.md requires that behavior to stay
+// reachable rather than be deleted. The
 // second row is the non-vacuity control: without it the opt-out could be doing
 // nothing at all and the first row would still pass if the restriction had
 // never been implemented.

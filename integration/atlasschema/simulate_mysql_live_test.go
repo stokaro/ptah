@@ -85,7 +85,7 @@ table "sim_added" {
 
 	// The plan's own statements, plus one that collides with the baseline the
 	// rehearsal recreates on the dev database. The first statement is the one
-	// that used to land in the target; the last one guarantees the rehearsal
+	// that would land in the target; the last one guarantees the rehearsal
 	// fails after it ran.
 	statements := append(plan.Statements(),
 		"CREATE TABLE `"+liveMySQLDatabaseName(c, targetURL)+"`.`sim_keep` (`id` int NOT NULL)")

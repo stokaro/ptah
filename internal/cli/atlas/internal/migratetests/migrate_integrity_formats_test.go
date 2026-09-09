@@ -645,8 +645,9 @@ func TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable(t *tes
 }
 
 // TestCompatMigrateSourceFormatQuery_HappyPath pins the two query-parsing rules
-// that used to be refusals (stokaro/ptah#990 items 2 and 3, stokaro/ptah#1013
-// section 2). Both were measured on the pinned community binary v1.3.0:
+// that are acceptances rather than refusals (stokaro/ptah#990 items 2 and 3,
+// stokaro/ptah#1013 section 2). Both were measured on the pinned community
+// binary v1.3.0:
 //
 //	$ atlas migrate hash --dir 'file://d?format=flyway&other=1'      exit=0, flyway set
 //	$ atlas migrate hash --dir 'file://d?other=1'                    exit=0, atlas set

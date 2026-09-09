@@ -128,11 +128,11 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 	}
 	defer opened.close()
 
-	// Reached BEFORE the walk, because that is when it is true. It used to be
-	// set afterwards, which made `backfilling` the phase of a backfill that had
-	// FINISHED -- and verification, asking `Phase != PhaseBackfilling`, told a
-	// completed backfill it had not reached the end of its snapshot while
-	// telling a run that had never backfilled that it had (stokaro/ptah#2649).
+	// Reached BEFORE the walk, because that is when it is true. Setting it
+	// afterwards makes `backfilling` the phase of a backfill that has FINISHED
+	// -- and verification, asking `Phase != PhaseBackfilling`, then tells a
+	// completed backfill it has not reached the end of its snapshot while
+	// telling a run that never backfilled that it has (stokaro/ptah#2649).
 	//
 	// Reaching a phase the run has passed is a no-op, so a resumed backfill
 	// asks for this and is told nothing new.

@@ -208,9 +208,9 @@ func latestAtlasVersionIn(names []string) int64 {
 // atlasEmptyMigrationFileName composes the Atlas-layout file name `migrate new`
 // writes, and it carries the caller's name unchanged.
 //
-// It used to rewrite the name first: spaces became hyphens and every character
-// outside [-_0-9A-Za-z] was dropped, so `migrate new "add users table"` wrote
-// `<version>_add-users-table.sql` and `migrate new "add_users.sql"` wrote
+// Rewriting the name first -- spaces to hyphens, every character outside
+// [-_0-9A-Za-z] dropped -- makes `migrate new "add users table"` write
+// `<version>_add-users-table.sql` and `migrate new "add_users.sql"` write
 // `<version>_add_userssql.sql`. The Atlas layout is not ours to rename in: the
 // pinned community binary v1.3.0 composes `<version>_<name>.sql` from the name
 // verbatim, so the same two commands write `<version>_add users table.sql` and
@@ -229,10 +229,9 @@ func latestAtlasVersionIn(names []string) int64 {
 //     surface by checkAtlasMigrationName and here by the rooted writer, which
 //     cannot open a path outside the directory it holds.
 //
-// [atlasCheckpointNameStem] keeps the old rewriting for `migrate checkpoint`.
-// That verb has no measured counterpart on the pinned binary, so there is
-// nothing to move towards; both writers now open the file through a rooted
-// handle.
+// [atlasCheckpointNameStem] keeps that rewriting for `migrate checkpoint`. That
+// verb has no measured counterpart on the pinned binary, so there is nothing to
+// move towards; both writers open the file through a rooted handle.
 func atlasEmptyMigrationFileName(version int64, name string) string {
 	if name == "" {
 		return fmt.Sprintf("%d.sql", version)
@@ -243,8 +242,8 @@ func atlasEmptyMigrationFileName(version int64, name string) string {
 // atlasCheckpointNameStem maps a checkpoint description onto a conservative file
 // name stem: spaces to hyphens, everything outside [-_0-9A-Za-z] dropped.
 //
-// This is what every Atlas-layout name used to go through. `migrate new` no
-// longer does, because that binary was measured writing the name verbatim there.
+// `migrate new` does not go through it, because the pinned binary was measured
+// writing the name verbatim there.
 // `migrate checkpoint` keeps it: the register that prompted the change records
 // no cell for the verb, so there is nothing measured to move towards.
 //

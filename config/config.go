@@ -92,17 +92,16 @@ type CompareOptions struct {
 	// and prints it back from the parse tree, so `VALUE IN ('x','y')` is read
 	// back as `VALUE = ANY (ARRAY['x'::text, 'y'::text])` and `VALUE > 0` as
 	// `(VALUE > 0)`. Comparing a declaration against that is comparing two
-	// different languages, which is why the comparison used to decline: a
-	// string difference did not mean a changed constraint, and acting on one
-	// would have dropped and recreated a domain that had not changed.
+	// different languages, which is why a raw comparison has to decline: a
+	// string difference does not mean a changed constraint, and acting on one
+	// drops and recreates a domain that has not changed.
 	//
 	// A resolved entry is the declaration after the same round trip -- the
 	// server was asked to normalize it -- so the two sides compare as like with
 	// like and a real change is neither invented nor lost (stokaro/ptah#1717).
 	//
 	// A nil map means nobody could ask a server, which is every comparison that
-	// has no connection. CHECK and DEFAULT stay uncompared there, exactly as
-	// before.
+	// has no connection. CHECK and DEFAULT stay uncompared there.
 	DomainExpressions map[string]DomainExpression
 
 	// GeneratedExpressions carries each declared generated column's expression

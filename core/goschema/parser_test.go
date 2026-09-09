@@ -1137,8 +1137,8 @@ type CommodityService struct {
 // (which expands embedded fields via the internal processEmbeddedFields), to
 // pin that on_delete / on_update declared on a //ptah:embedded mode="relation"
 // annotation reach the planner-visible Field — a third copy of the embedded
-// expansion lives in core/goschema/utils.go and used to drop the actions
-// before the fix for #117 landed.
+// expansion lives in core/goschema/utils.go, and a copy that does not carry
+// the actions drops them (#117).
 func TestParseDir_EmbeddedRelationFKActions(t *testing.T) {
 	c := qt.New(t)
 

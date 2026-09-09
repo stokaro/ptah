@@ -588,15 +588,14 @@ func (r *renderer) renderEnums() {
 		// same reason: a catalog blanks the schema exactly where the engine
 		// treats the read's own schema as implicit.
 		//
-		// It used to be the render's default unconditionally, because
-		// schemamodel.Enum carried no schema. That is right for every read of one
-		// schema and wrong for every read of more than one: `schema inspect`
-		// against a URL that pins no schema describes the whole realm, so
-		// `extra.mood` was written as `schema = schema.public` -- an enum
+		// Using the render's default unconditionally is right for every read of
+		// one schema and wrong for every read of more than one: `schema
+		// inspect` against a URL that pins no schema describes the whole realm,
+		// so `extra.mood` comes out as `schema = schema.public` -- an enum
 		// attributed to a schema that does not hold it. Applying that document
-		// created the type in `public` and typed `extra.b.feeling` against it,
-		// so the round trip produced a database whose column type pointed at
-		// the wrong schema (stokaro/ptah#1276).
+		// creates the type in `public` and types `extra.b.feeling` against it,
+		// so the round trip produces a database whose column type points at the
+		// wrong schema (stokaro/ptah#1276).
 		if schema := r.schemaFor(enum.Schema); schema != "" {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
@@ -1122,7 +1121,7 @@ func (r *renderer) renderIndex(index schemamodel.Index) {
 		// and planned CREATE INDEX ... USING brin ("ts") -- the parameter simply
 		// gone. Emitting the plural therefore hands the pinned binary a document
 		// that silently loses the parameter. Ptah's own parser accepts both, so
-		// no document that used to load stops loading. See #1242.
+		// either spelling loads. See #1242.
 		r.rawAttr(2, "page_per_range", pages)
 	}
 	r.renderIndexStorageParams(index)
@@ -1334,8 +1333,8 @@ func (r *renderer) renderIndexPartNullsOrder(order string) {
 // simpleIndexParts reports whether the parts carry nothing the compact
 // `columns = [...]` spelling would lose. Every field the `on` block can express
 // has to be listed: a part carrying only a NULLS ordering is not simple, and
-// omitting that check is how the ordering used to disappear from rendered HCL
-// even after #1271 taught the reader to preserve it.
+// omitting that check is how the ordering disappears from rendered HCL even
+// where the reader preserves it (#1271).
 func simpleIndexParts(parts []schemamodel.IndexPart) bool {
 	for _, part := range parts {
 		if part.Expr != "" || part.Operator != "" || part.Prefix != "" ||
@@ -1456,9 +1455,9 @@ func (r *renderer) columnTypeExpr(field schemamodel.Field) string {
 //	type = status          exit 1  Unknown column.type; There is no type named "status"
 //	type = "status"        exit 1  set field "type": unexpected type string
 //
-// sql() is the interesting failure and the one Ptah used to emit: the type name
-// is real in the database that was inspected but not in the dev database the
-// file gets replayed into, and only the enum block creates it there. That
+// sql() is the interesting failure: the type name is real in the database that
+// was inspected but not in the dev database the file gets replayed into, and
+// only the enum block creates it there. That
 // binary's own inspect writes `type = enum.status` as well.
 //
 // The reference is unqualified while the name is unambiguous, because that

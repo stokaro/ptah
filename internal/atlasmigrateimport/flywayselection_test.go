@@ -278,7 +278,7 @@ func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
 	}, {
 		name: "the baseline squash compares version tokens as strings",
 		// "10" < "2", so B2 squashes V10 — the operand that separates CE's rule
-		// from the numeric comparison the importer used to make.
+		// from a numeric comparison.
 		files: []string{"B2__base.sql", "V10__x.sql", "V3__y.sql"},
 	}, {
 		name: "a baseline runs first even when its version is numerically larger",
@@ -294,7 +294,7 @@ func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
 	}, {
 		name: "a version token needs no separator, digits or description",
 		// V1.sql, Video.sql and V.sql are all ordinary migrations to CE. The
-		// importer used to ignore them while hashing them.
+		// importer must not ignore them while hashing them.
 		files: []string{"V1.sql", "Video.sql", "V2__two.sql"},
 	}, {
 		name:  "a zero version is a version",

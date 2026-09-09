@@ -166,7 +166,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 }
 
 // VisitCreateFunction delegates to the mysqllike renderer, which emits the
-// engine's own CREATE FUNCTION spelling. This wrapper used to override the
+// engine's own CREATE FUNCTION spelling. This wrapper must not override the
 // method with `-- CREATE FUNCTION <name> not supported in MySQL`, a claim about
 // the server that the server contradicts (stokaro/ptah#929).
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {

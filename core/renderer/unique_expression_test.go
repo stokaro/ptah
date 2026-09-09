@@ -98,9 +98,9 @@ func TestUniqueExpression_AColumnWithoutOneStillRenders(t *testing.T) {
 }
 
 // TestUniqueExpression_TheRefusalIsAboutTheExpressionRatherThanTheColumn pins
-// what the old behavior actually produced, so the reason for refusing rather
-// than rendering stays legible: the column's own UNIQUE is a different
-// constraint, and it is the one that used to be emitted.
+// what rendering instead would produce, so the reason for refusing stays
+// legible: the column's own UNIQUE is a different constraint, and it is the one
+// that gets emitted.
 func TestUniqueExpression_TheRefusalIsAboutTheExpressionRatherThanTheColumn(t *testing.T) {
 	c := qt.New(t)
 

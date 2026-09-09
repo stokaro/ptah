@@ -705,13 +705,13 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
 
-// TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh replaces the
-// refusal this test used to pin.
+// TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh asserts the
+// decision rather than a refusal.
 //
-// A declared refresh strategy no longer reaches the planner at all -- it is
+// A declared refresh strategy does not reach the planner at all -- it is
 // refused while the declaration is parsed -- so what is worth asserting here is
-// the decision itself: planning a materialized view emits its CREATE and no
-// REFRESH, on the one target whose renderer can emit one (stokaro/ptah#1625).
+// that planning a materialized view emits its CREATE and no REFRESH, on the one
+// target whose renderer can emit one (stokaro/ptah#1625).
 func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()

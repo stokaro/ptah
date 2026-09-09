@@ -101,11 +101,10 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 	})
 	c.Assert(removed, qt.HasLen, 1)
 
-	// An addition no longer depends on the desired schema at all: the view
-	// travels with the change, so what used to be a name the declaration did
-	// not carry -- and produced nothing -- is now a view that renders in full
-	// (stokaro/ptah#2315). The empty desired schema is what makes that
-	// measurable rather than incidental.
+	// An addition does not depend on the desired schema at all: the view travels
+	// with the change, so a name the declaration does not carry still renders in
+	// full rather than producing nothing (stokaro/ptah#2315). The empty desired
+	// schema is what makes that measurable rather than incidental.
 	fromChangeAlone := planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsAdded: difftypes.MaterializedViewChanges{
 			{Name: "absent_from_desired", Body: "SELECT 1"},

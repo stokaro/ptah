@@ -693,9 +693,9 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 // VisitCreateMaterializedView refuses: SQL Server has no materialized view
 // object (an indexed view is a different construct with different rules).
 //
-// This used to render a comment. A comment makes `schema render` exit 0 on a
-// model the planner refuses at `schema apply` time, so the surface a user is
-// told to validate with disagreed with the surface that executes.
+// Rendering a comment instead makes `schema render` exit 0 on a model the
+// planner refuses at `schema apply` time, so the surface a user is told to
+// validate with disagrees with the surface that executes.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
@@ -984,9 +984,9 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 // Server target.
 //
 // The sentence is about the generator, not about the engine, and that is the
-// whole point of the wording. It used to read "... is not supported", which is
-// a claim about SQL Server, and on this renderer several of those claims are
-// false: SQL Server has had CREATE SEQUENCE since 2012, it has database roles,
+// whole point of the wording. Reading "... is not supported" would be a claim
+// about SQL Server, and on this renderer several of those claims are false:
+// SQL Server has had CREATE SEQUENCE since 2012, it has database roles,
 // it has scalar and table-valued functions, it has alias types (CREATE TYPE
 // <name> FROM <base>), and it has row-level security through security policies.
 // Ptah declines all of them for a reason that has nothing to do with the

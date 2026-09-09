@@ -323,11 +323,11 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 // TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTable
 // extends the issue #199 fix to the NON-FK modify path. A modified table-level
 // UNIQUE / CHECK constraint is reached via the bare ConstraintsAdded loop (FK
-// modifies go through the ConstraintsAdded loop instead), which used
-// to emit the name-only information_schema DO block for the DROP. Because the
-// comparator records the host in ConstraintsRemoved in lockstep, the
-// planner now scopes that DROP to the concrete host table — so a constraint name
-// reused across two tables can no longer be dropped from the wrong one.
+// modifies go through the ConstraintsAdded loop instead), where a name-only
+// information_schema DO block for the DROP can drop a constraint name reused
+// across two tables from the wrong one. The comparator records the host in
+// ConstraintsRemoved in lockstep, so the planner scopes that DROP to the
+// concrete host table.
 func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTable(t *testing.T) {
 	t.Run("UNIQUE constraint name reused on two tables, only one modified, drops only that host", func(t *testing.T) {
 		c := qt.New(t)
@@ -376,16 +376,16 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 	t.Run("a diff that names a modified constraint without describing it is refused", func(t *testing.T) {
 		c := qt.New(t)
 
-		// This shape used to be planned: the name was resolved against the
-		// declaration for the re-ADD, and the DROP fell back to a runtime
-		// information_schema lookup because no host was recorded on either side.
-		// The comparator never produces it -- it records a host for every
+		// Planning this shape means resolving the name against the declaration
+		// for the re-ADD and falling back to a runtime information_schema
+		// lookup for the DROP, because no host is recorded on either side. The
+		// comparator never produces it -- it records a host for every
 		// constraint it names -- and resolving a name through whatever
 		// declaration happened to be passed is the input shape #2315 withdraws.
 		// With one list the shape is a record carrying a name and nothing else.
 		//
-		// A refusal is the answer the previous behavior's own comment asked for:
-		// "the planner must not panic or silently drop the work".
+		// A refusal is what "the planner must not panic or silently drop the
+		// work" asks for.
 		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "legacy_check"}},
 			ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "legacy_check"}},

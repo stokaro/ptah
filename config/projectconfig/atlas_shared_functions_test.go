@@ -9,7 +9,7 @@ import (
 )
 
 // A for_each env is expanded on the verbs that can take a collection and
-// refused on the rest. The refusal used to say "use the corresponding
+// refused on the rest. The refusal must not say "use the corresponding
 // collection-valued API" -- an internal detail an operator cannot act on, and
 // one that reads like a bug rather than a limit of the verb they ran
 // (stokaro/ptah#1696).

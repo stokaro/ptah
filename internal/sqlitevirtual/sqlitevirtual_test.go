@@ -272,9 +272,9 @@ func TestValidateComparison(t *testing.T) {
 		},
 		{
 			// `schema diff` accepts a database URL as its desired side, so a
-			// desired table can itself be virtual. Two identical databases used
-			// to be refused as an ordinary/virtual collision, naming the desired
-			// side ordinary when it was the same FTS5 index.
+			// desired table can itself be virtual. Refusing two identical
+			// databases as an ordinary/virtual collision names the desired side
+			// ordinary when it is the same FTS5 index.
 			name:     "two identical virtual declarations are not a collision",
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),

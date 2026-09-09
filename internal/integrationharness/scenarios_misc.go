@@ -140,16 +140,15 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 // probeMySQLPermissionRefusal checks that a refused catalog read comes back as a
 // permission error rather than as data.
 //
-// The probe used to be the scenario connection reading mysql.user, on the
-// premise that CI provisions it without that privilege. That premise stopped
-// holding the moment the contour granted the privilege so it could exercise
-// role support at all, and the scenario broke -- which is the failure mode of
-// asserting on an ambient fact about how a runner was configured
-// (stokaro/ptah#1762).
+// Probing with the scenario connection reading mysql.user rests on CI
+// provisioning it without that privilege. That premise fails the moment the
+// contour grants the privilege so it can exercise role support at all, which is
+// the failure mode of asserting on an ambient fact about how a runner was
+// configured (stokaro/ptah#1762).
 //
-// It now makes its own restricted account, so what it measures is the server's
-// answer to an unprivileged read and nothing about the credentials the suite
-// happens to run as.
+// This makes its own restricted account instead, so what it measures is the
+// server's answer to an unprivileged read and nothing about the credentials the
+// suite happens to run as.
 // MySQL server error numbers for a statement the account is not permitted to
 // issue.
 //

@@ -234,9 +234,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 // TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition covers
 // stokaro/ptah#1714.
 //
-// This exact diff used to produce NO migration at all: a PostgreSQL enum value
-// addition beside a table change was answered "mixes transactional statements
-// with non-transactional statements that cannot be split automatically", for a
+// This exact diff can produce NO migration at all: a PostgreSQL enum value
+// addition beside a table change answered "mixes transactional statements with
+// non-transactional statements that cannot be split automatically", for a
 // reason about transactionality the user did not choose and cannot see in their
 // schema.
 //

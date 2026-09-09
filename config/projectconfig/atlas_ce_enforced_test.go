@@ -9,14 +9,13 @@ import (
 )
 
 // The three constructs covered here -- lint.condrop, diff.skip.drop_schema and
-// env.schema.repo -- used to be refused outright: parsing any config that
-// mentioned one exited 1 with `unsupported atlas.hcl construct`, even for
-// commands that never consult the block. The pinned community binary accepts
-// all three, so every assertion below prints an `unsupported atlas.hcl
-// construct` error instead of its expected value if the parser arms are
-// reverted.
+// env.schema.repo -- must not be refused outright. A refusal exits 1 with
+// `unsupported atlas.hcl construct` on any config that mentions one, even for
+// commands that never consult the block, and the pinned community binary
+// accepts all three: every assertion below prints that error instead of its
+// expected value if the parser arms are removed.
 //
-// What the community binary was measured to DO with each is recorded next to
+// What the community binary is measured to DO with each is recorded next to
 // the corresponding IR field: DiffSkipConfig.DropSchema and SchemaRepoConfig in
 // config.go, and the condrop case in atlas.go.
 

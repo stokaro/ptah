@@ -213,14 +213,13 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		description     string
 	}{
 		{
-			// This row used to name a column the generated schema did not
-			// define, and asserted that nothing was written. That state is
-			// gone: a column travels WITH its change now, so a diff that names
-			// one carries its definition and there is nothing left to be
-			// missing (stokaro/ptah#2315).
+			// A column the generated schema does not define is not a reachable
+			// state: a column travels WITH its change, so a diff that names one
+			// carries its definition and there is nothing to be missing
+			// (stokaro/ptah#2315).
 			//
-			// What survives is the property the row was really about: a table
-			// diff that changes nothing writes no migration.
+			// What this row asserts is the property underneath: a table diff
+			// that changes nothing writes no migration.
 			name: "table modification that changes nothing should not generate migration",
 			generatedSchema: &schemamodel.Database{
 				Tables: []schemamodel.Table{

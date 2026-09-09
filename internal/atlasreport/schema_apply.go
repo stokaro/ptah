@@ -88,9 +88,9 @@ func renderSchemaApplyTemplate(w io.Writer, name, format string, data SchemaAppl
 }
 
 // newSchemaApplyTemplate registers the helper set every Atlas Go-template
-// surface exposes, plus this verb's own `sql`. `schema apply` used to register
-// `sql` alone, so `{{ json . }}` — which the community binary renders here —
-// failed at parse time. Every helper in the shared set was measured on the
+// surface exposes, plus this verb's own `sql`. Registering `sql` alone leaves
+// `{{ json . }}` — which the community binary renders here — failing at parse
+// time. Every helper in the shared set was measured on the
 // pinned community binary v1.3.0's own `schema apply --format`, so registering
 // them cannot make this binary accept a template that one refuses.
 func newSchemaApplyTemplate(name, format string) (*template.Template, error) {

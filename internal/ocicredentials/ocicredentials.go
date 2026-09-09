@@ -1,12 +1,12 @@
 // Package ocicredentials resolves the registry credentials every OCI verb uses,
 // and owns the store `ptah oci login` writes to.
 //
-// Ptah used to read credentials from exactly one place, Docker's credential
-// configuration, on the stated premise that such a store "already exists on any
-// machine that can pull an image". That premise does not hold for Ptah: pulling
-// a Ptah artifact requires no Docker, so a deploy host or CI runner that only
-// runs `ptah migrations up oci://...` has no reason to have Docker installed,
-// and on such a machine there was no supported way to authenticate at all
+// Reading credentials from Docker's credential configuration alone rests on the
+// premise that such a store "already exists on any machine that can pull an
+// image". That premise does not hold for Ptah: pulling a Ptah artifact requires
+// no Docker, so a deploy host or CI runner that only runs
+// `ptah migrations up oci://...` has no reason to have Docker installed, and on
+// such a machine there is then no supported way to authenticate at all
 // (stokaro/ptah#2241).
 //
 // The Docker store is still read, and still read the same way -- credential

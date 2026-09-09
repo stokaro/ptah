@@ -36,9 +36,9 @@ import (
 // not read.
 //
 // The decomposition is deliberately all-or-nothing per key list. An element it
-// does not fully understand leaves the whole list on the legacy path exactly as
-// before, and a list where nothing carries a suffix is left there too, so
-// nothing that used to convert one way starts converting another.
+// does not fully understand leaves the whole list on the opaque path, and a
+// list where nothing carries a suffix is left there too, so one element's
+// suffix cannot change how the rest of the list converts.
 
 // decomposeIndexKeyList converts raw key list elements into structured parts.
 //

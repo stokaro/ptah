@@ -12,11 +12,11 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// TestMaterializedViewRenderingEmitsNoRefresh is what this file asserts now,
-// and it is the decision itself rather than a consequence of it.
+// TestMaterializedViewRenderingEmitsNoRefresh is what this file asserts, and it
+// is the decision itself rather than a consequence of it.
 //
-// Every test here used to be about a refresh STRATEGY the renderer validated
-// and then ignored. Ptah does not refresh materialized views as part of schema
+// A refresh STRATEGY the renderer validates and then ignores is not the
+// subject. Ptah does not refresh materialized views as part of schema
 // reconciliation: one is populated when it is created, a changed definition is
 // reconciled as DROP and CREATE, and it goes stale only when its source data
 // changes -- which a schema comparison cannot observe (stokaro/ptah#1625).

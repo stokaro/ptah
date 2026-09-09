@@ -151,9 +151,9 @@ type MigrationPlan struct {
 	// collector takes to get there.
 	dir *atlasmigrate.MigrationWriter
 	// plannedContents is what dir held when the plan was built, and nothing
-	// else. It used to carry a filesystem identity beside the contents; identity
-	// now lives in dir, which is a handle rather than a detached fs.FileInfo the
-	// operating system is free to reissue to a replacement.
+	// else. Identity lives in dir, which is a handle, rather than beside the
+	// contents as a detached fs.FileInfo the operating system is free to
+	// reissue to a replacement.
 	plannedContents fsnapshot.Snapshot
 	// authorizedPriorMigrations is the migration-only snapshot whose SQL was
 	// authorized for replay. A zero value with the boolean false means the

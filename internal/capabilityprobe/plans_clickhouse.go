@@ -318,11 +318,11 @@ func clickHousePlan() plan {
 // clickHouseRowPolicy decides RowLevelSecurity by asking the question this
 // engine can answer.
 //
-// The experiment used to run `ALTER TABLE rls ENABLE ROW LEVEL SECURITY`, which
-// is PostgreSQL's table-level switch. ClickHouse has no such statement -- the
-// policy is the whole object and takes effect when it is created -- so the row
-// reported false for an engine that has had row policies for years, and it
-// reported it as a fact about the server rather than about the statement.
+// Running `ALTER TABLE rls ENABLE ROW LEVEL SECURITY` here asks PostgreSQL's
+// table-level switch of an engine that has no such statement -- the policy is
+// the whole object and takes effect when it is created -- so the row reports
+// false for an engine that has had row policies for years, as a fact about the
+// server rather than about the statement.
 //
 // The key names the object rather than a spelling (stokaro/ptah#1736), so the
 // spelling probed here is the one the engine uses.

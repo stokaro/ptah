@@ -11,12 +11,12 @@ import (
 	"ptah.run/internal/matviewrefresh"
 )
 
-// TestParseMaterializedViewRefusesRetiredRefreshStrategy is what this file used
-// to assert the opposite of.
+// TestParseMaterializedViewRefusesRetiredRefreshStrategy is the refusal rather
+// than an acceptance.
 //
-// The attribute was carried into the model, canonicalized, defaulted to
-// "manual" when absent, and then ignored by every renderer -- declarative state
-// nothing could reconcile. Ptah does not refresh materialized views as part of
+// Carried into the model, canonicalized and defaulted to "manual" when absent,
+// the attribute is then ignored by every renderer -- declarative state nothing
+// can reconcile. Ptah does not refresh materialized views as part of
 // schema reconciliation, so the attribute is refused rather than accepted and
 // dropped (stokaro/ptah#1625).
 //

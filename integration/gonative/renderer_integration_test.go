@@ -626,12 +626,12 @@ func TestCreateType_Integration(t *testing.T) {
 				return ast.NewCreateType("status", enumDef).
 					SetComment("Status enumeration")
 			},
-			// The diagnostic names the type. It used to name none --
+			// The diagnostic names the type. Naming none --
 			// "MYSQL does not support CREATE TYPE - enums are handled inline in
-			// column definitions" -- which said nothing about WHICH type when a
-			// schema declared several, and described enums while the node could
-			// equally be a domain, a composite or a range. Those three now reach
-			// this renderer for every dialect (stokaro/ptah#929 item 5).
+			// column definitions" -- says nothing about WHICH type when a
+			// schema declares several, and describes enums while the node can
+			// equally be a domain, a composite or a range. All three reach this
+			// renderer for every dialect (stokaro/ptah#929 item 5).
 			contains:   []string{`MYSQL: CREATE TYPE status is not generated for this target; skipped.`},
 			shouldExec: false,
 		},

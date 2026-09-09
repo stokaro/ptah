@@ -202,8 +202,8 @@ func priorColumn(prior *schemamodel.Database, tableName, columnName string) sche
 // held.
 //
 // A creation carries the columns and the enums CREATE TABLE renders from, and a
-// removal carries none of that -- so the bundle is rebuilt here, from the same
-// schema the planner used to be handed for the down direction.
+// removal carries none of that -- so the bundle is rebuilt here, from the
+// pre-change schema the down direction is given.
 //
 // A name the pre-change schema does not hold yields a creation with no table.
 // That is the honest answer rather than a silent omission: the planner has

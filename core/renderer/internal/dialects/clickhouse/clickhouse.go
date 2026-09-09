@@ -905,8 +905,9 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 //
 // Column-level CHECKs are promoted to table-level constraints. ClickHouse has
 // no column-level CHECK clause but does have `CONSTRAINT <name> CHECK <expr>`,
-// so the constraint is kept rather than dropped -- it used to vanish from the
-// rendered table with no comment (stokaro/ptah#931 item 7).
+// so the constraint is kept rather than dropped: dropping it makes the
+// constraint vanish from the rendered table with no comment
+// (stokaro/ptah#931 item 7).
 func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) {
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, col := range node.Columns {
@@ -980,9 +981,8 @@ func (r *Renderer) refuseUnrepresentableConstraint(c *ast.ConstraintNode) error 
 // checkConstraintLine renders one ClickHouse CHECK constraint.
 //
 // The name is mandatory: measured on ClickHouse, an unnamed `CHECK (expr)` in a
-// column list is rejected with `Code: 62 ... SYNTAX_ERROR`, so the unnamed
-// fallback that used to be emitted here produced DDL the server would not
-// accept.
+// column list is rejected with `Code: 62 ... SYNTAX_ERROR`, so an unnamed
+// fallback here produces DDL the server will not accept.
 func checkConstraintLine(name, expression string) string {
 	return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", name, expression)
 }
@@ -1474,8 +1474,8 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 // as "REFRESH EVERY|AFTER ..." inside the CREATE statement, which makes the
 // schedule engine-native DDL that a reader could observe and a diff could
 // reconcile -- so it is a ClickHouse capability worth modeling on its own
-// terms, not a value of the shared refresh_strategy attribute this renderer
-// used to be handed (stokaro/ptah#1625).
+// terms, not a value of the shared refresh_strategy attribute
+// (stokaro/ptah#1625).
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)

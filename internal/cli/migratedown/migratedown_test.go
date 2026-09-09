@@ -190,9 +190,9 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 
 // TestMigrateDownCommandReadsARelativeTraversalDirectory pins the behavior
 // stokaro/ptah#1622 restored: "../outside" and the identical destination
-// spelled absolutely are the same argument now. The refusal this used to assert
-// was a spelling filter -- the absolute form was always accepted -- and the
-// community Atlas binary reads both.
+// spelled absolutely are the same argument. A refusal here is a spelling filter
+// -- the absolute form is accepted -- and the community Atlas binary reads
+// both.
 //
 // The run still fails, on the directory not existing, which is what proves the
 // path was resolved and looked up rather than rejected out of hand.

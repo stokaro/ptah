@@ -266,10 +266,10 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 // runs before the first body statement, so its position inside the half it was
 // written in never decided anything.
 //
-// Which half it is written in used to decide everything, silently: a check in a
-// down body was parsed by nothing. That is fixed where it belongs, by reading
-// the body the direction is about to run, rather than by warning here
-// (stokaro/ptah#1715).
+// Which half it is written in decides nothing here. A parser that reads only
+// the up body leaves a check in a down body parsed by nothing, and that is
+// answered where it belongs -- by reading the body the direction is about to
+// run -- rather than by warning here (stokaro/ptah#1715).
 func MisplacedDirectives(sql, dialect string) []MisplacedDirective {
 	options := dialectlexer.Options(dialect)
 	var found []MisplacedDirective
@@ -314,13 +314,12 @@ func MisplacedDirectives(sql, dialect string) []MisplacedDirective {
 // misplacedDirectiveValueError reports the first value a misplaced `-- +ptah`
 // line carries that no parser could read.
 //
-// Both halves run on every line, and that is the point. The bare-timeout half
-// used to run only when the merged parser had extracted nothing at all, so
-// whether `-- +ptah no_transaction lock_timeout` was refused depended on a
-// SEPARATE field on the same line being parsable -- while the identical line
-// written in the header was refused by [parseTimeoutDirectiveFields] either
-// way. Position and value are independent facts, and so are the fields of one
-// directive line.
+// Both halves run on every line, and that is the point. Running the bare-timeout
+// half only when the merged parser has extracted nothing at all makes the
+// refusal of `-- +ptah no_transaction lock_timeout` depend on a SEPARATE field
+// on the same line being parsable -- while the identical line written in the
+// header is refused by [parseTimeoutDirectiveFields] either way. Position and
+// value are independent facts, and so are the fields of one directive line.
 func misplacedDirectiveValueError(directives map[string]string, body string) error {
 	if err := validateRecognizedDirectives(directives); err != nil {
 		return err

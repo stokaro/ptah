@@ -122,9 +122,8 @@ func planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 // the comparison found on both sides, differing only in grant_option, so a GRANT
 // emitted without the option re-issues a grant the server already has: the
 // statement succeeds, grant_option stays 0, the plan reports success, and the
-// next comparison asks for the same change again. This planner used to emit
-// exactly that, invisibly, because the ClickHouse renderer reduced every grant
-// node to a comment.
+// next comparison asks for the same change again -- invisibly, wherever the
+// ClickHouse renderer reduces every grant node to a comment.
 func addGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsAdded {
 		result = append(result, grantNode(grant).SetWithOption(grant.WithOption))

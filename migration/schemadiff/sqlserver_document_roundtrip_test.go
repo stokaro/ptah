@@ -53,15 +53,15 @@ func TestCompare_ARoundTripThroughPtahsOwnOutputKeepsThem(t *testing.T) {
 	c.Assert(string(document), qt.Contains, "s_users")
 }
 
-// TestCompare_AnHCLDocumentThatOmitsThemNowDropsThem is the control the
-// blocks cost, and the direction the coverage record used to make impossible.
+// TestCompare_AnHCLDocumentThatOmitsThemDropsThem is the control the blocks
+// cost, and the direction a stale coverage record makes impossible.
 //
 // A format that CAN name an object is a format whose silence about one is
-// intent, so the moment HCL gained the two blocks it had to start planning the
-// removals again. Without this, a fix that kept the loader's old record
-// alongside the new blocks would pass every test above while leaving both kinds
-// permanently undroppable from the format Ptah itself writes.
-func TestCompare_AnHCLDocumentThatOmitsThemNowDropsThem(t *testing.T) {
+// intent, so a format carrying the two blocks has to plan the removals. Without
+// this, a loader keeping a record that says otherwise alongside the blocks
+// passes every test above while leaving both kinds permanently undroppable from
+// the format Ptah itself writes.
+func TestCompare_AnHCLDocumentThatOmitsThemDropsThem(t *testing.T) {
 	c := qt.New(t)
 	live := sqlServerDatabaseWithUnwritableObjects()
 

@@ -423,10 +423,10 @@ func sequenceDiagnosticIn(statements, want string) bool {
 // Creating one of these is refused before any SQL by
 // usertypescope.ValidateDeclared, because a named skip would leave the
 // declaring table naming a type the server has no definition of
-// (stokaro/ptah#1717). Removing one has no declaration to refuse, and it used
-// to produce neither a statement nor a word -- which is how #1628 closed with
-// grants and row-level security fixed and these three still silent
-// (stokaro/ptah#1708).
+// (stokaro/ptah#1717). Removing one has no declaration to refuse, so it
+// produces neither a statement nor a word unless something says so here --
+// which is how #1628 closed with grants and row-level security fixed and these
+// three silent (stokaro/ptah#1708).
 //
 // The domain is asserted separately from the other two because one node
 // carries four kinds: DROP TYPE for a domain sends the reader looking for
@@ -530,16 +530,16 @@ func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBef
 	}
 }
 
-// TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension is what the
-// hold-out became.
+// TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension pins the two
+// answers a hold-out would replace.
 //
-// Both surfaces used to withhold the SQL Server sequence entirely, and the
-// reason given was the renderer's answer: a flat "CREATE SEQUENCE is not
-// supported", which is a false statement about an engine that has had sequences
-// since 2012. Withholding traded that falsehood for a silent omission -- exit 0,
-// no statement, no diagnostic, on a sequence the author declared. Naming Ptah's
-// generator rather than the engine let both surfaces say something true
-// (stokaro/ptah#929 item 5); building the path let them say the useful thing
+// Withholding the SQL Server sequence from both surfaces answers the renderer's
+// flat "CREATE SEQUENCE is not supported", a false statement about an engine
+// that has had sequences since 2012 -- and it trades that falsehood for a
+// silent omission: exit 0, no statement, no diagnostic, on a sequence the
+// author declared. Naming Ptah's generator rather than the engine lets both
+// surfaces say something true (stokaro/ptah#929 item 5); building the path lets
+// them say the useful thing
 // instead (stokaro/ptah#1626).
 //
 // The extension row is the control, and it is why this test still has two
@@ -552,10 +552,10 @@ func TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension(t *testing.
 	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
-	// Exactly one, not at least one. The two halves that used to answer for a
-	// sequence -- the named skip and the real DDL -- are now one switch, and a
-	// planner that forgot to turn the first off would emit the CREATE and the
-	// skip comment for one object. With the capability on, the "skip" is
+	// Exactly one, not at least one. The two halves that can answer for a
+	// sequence -- the named skip and the real DDL -- are one switch, and a
+	// planner that forgets to turn the first off emits the CREATE and the skip
+	// comment for one object. With the capability on, the "skip" is
 	// itself rendered as a bare CREATE SEQUENCE, so the duplicate is two
 	// executable statements rather than a statement plus a comment, and only a
 	// count can see it.

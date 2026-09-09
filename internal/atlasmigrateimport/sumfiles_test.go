@@ -588,7 +588,7 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 
 	t.Run("a non-numeric token is the same rule, not a special case", func(t *testing.T) {
 		// "x" is 0x78, above nearly every path's first byte, so Bx reaches
-		// back over essentially everything. This is what used to be refused.
+		// back over essentially everything. A special case would refuse it.
 		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("V1__a.sql", "sub/Bx__base.sql"),

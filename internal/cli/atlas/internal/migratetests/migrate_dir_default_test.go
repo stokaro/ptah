@@ -272,10 +272,10 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 
 // TestCompatMigrateDirDefaultIsDocumented pins the help line to the runtime.
 //
-// `migrate new` used to print no default at all while refusing to run without a
-// directory, and `migrate hash` / `migrate validate` printed no default while
-// silently using ./migrations — two ways for `--help` and the runtime to
-// disagree. The pinned community binary v1.3.0 prints
+// A `migrate new` that prints no default while refusing to run without a
+// directory, and a `migrate hash` / `migrate validate` that prints no default
+// while silently using ./migrations, are two ways for `--help` and the runtime
+// to disagree. The pinned community binary v1.3.0 prints
 // `(default "file://migrations")` on every migrate verb that registers --dir.
 func TestCompatMigrateDirDefaultIsDocumented(t *testing.T) {
 	verbs := []string{"apply", "new", "diff", "status", "set", "lint", "hash", "validate"}

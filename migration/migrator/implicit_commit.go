@@ -18,12 +18,12 @@ import (
 // that assumes otherwise either repeats committed SQL or skips SQL that never
 // ran.
 //
-// The dialect set lives in internal/ddltx rather than in a switch here. This
-// function used to be the only place the distinction was written down, so a
-// target whose DDL transaction contract had never been decided read as "not
-// MySQL" and inherited the transactional answer without anyone choosing it.
-// ddltx.ClassOf has no catch-all arm and a guard test over every dialect
-// core/platform/capability knows, so the same omission now fails a test.
+// The dialect set lives in internal/ddltx rather than in a switch here. Writing
+// the distinction down only in this function lets a target whose DDL
+// transaction contract nobody decided read as "not MySQL" and inherit the
+// transactional answer without anyone choosing it. ddltx.ClassOf has no
+// catch-all arm and a guard test over every dialect core/platform/capability
+// knows, so that omission fails a test instead.
 func implicitCommitDialect(dialect string) bool {
 	return ddltx.ClassOf(dialect) == ddltx.ImplicitCommit
 }

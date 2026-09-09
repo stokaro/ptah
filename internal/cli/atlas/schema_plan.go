@@ -158,9 +158,8 @@ its SQL. The registry sub-verbs (approve, list, pull, push, rm) and the
 	// The remaining sub-verbs stay unsupported-boundary stubs, and one of them
 	// is a stub for a different reason than the rest: approve, list, pull, push
 	// and rm take --url and arbitrate plan state in a remote registry, which the
-	// local plan-file workflow replaces. `test` used to be here too, deferred
-	// because it consumes `.test.hcl` case files nothing parsed; it is
-	// implemented now (stokaro/ptah#1211).
+	// local plan-file workflow replaces. `test` is not among them: it consumes
+	// `.test.hcl` case files, and those are parsed (stokaro/ptah#1211).
 	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 		{use: "approve", short: "Approve a plan in a remote registry"},
 		{use: "list", short: "List plans in a remote registry"},

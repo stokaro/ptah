@@ -57,8 +57,8 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "missing docker engine", rawURL: "docker:///dev", wantErr: `docker --dev-url is missing database engine`},
-		// "db2" rather than "spanner": Spanner used to land here because a
-		// hand-written scheme list had drifted from NormalizeDialect, not
+		// "db2" rather than "spanner": Spanner lands here only when a
+		// hand-written scheme list has drifted from NormalizeDialect, not
 		// because a Spanner dev database is refused -- internal/devclean and
 		// internal/devlock both put it in the PostgreSQL family, and the
 		// dev-database page documents the URL form.

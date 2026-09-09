@@ -1110,7 +1110,7 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 }
 
 // TestReadRolesIntoRefusesAMalformedOptIn pins the state split stokaro/ptah#1334
-// introduced, and pins it on the run that used to hide it.
+// states, on the run most likely to hide it.
 //
 // The `--schemas empty` row is the discriminating one: the scoped read and the
 // complement partition the same cluster either way, so on a schema nothing uses
@@ -1118,9 +1118,8 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 // A read resolved beside the branch would pass there in silence. Resolving it
 // before the two queries makes the typo answer on every read.
 //
-// The schema is asserted untouched in both rows: a refusal that had already
-// written half a description would be a worse answer than the silence it
-// replaces.
+// The schema is asserted untouched in both rows: a refusal that has already
+// written half a description is a worse answer than silence.
 func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 	tests := []struct {
 		name        string

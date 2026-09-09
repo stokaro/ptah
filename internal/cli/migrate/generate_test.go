@@ -161,27 +161,26 @@ func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *tes
 	// -- and that IS the claim: a malformed SQLite toggle is not validated on a
 	// path that never reaches SQLite.
 	//
-	// The assertion used to read the toggle's absence off a path refusal, with
+	// Reading the toggle's absence off a path refusal instead, with
 	// "--migrations-dir ../outside" short-circuiting the run before the
-	// connection. stokaro/ptah#1622 removed that refusal, and leaning on an
-	// unrelated guard to prove this claim was the weaker spelling anyway: it
-	// passed for any early failure at all.
+	// connection, leans on a guard stokaro/ptah#1622 removed -- and on an
+	// unrelated one at that, which passes for any early failure at all.
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), sqlitevirtual.AllowDropEnvVar)
 }
 
 // TestMigrateGenerateResolvesADockerDevURL covers stokaro/ptah#1701.
 //
-// `--dev-url docker://…` used to be handed straight to the connector, which
-// answered `unsupported database dialect: docker` — naming a dialect the user
-// never wrote, for the native spelling of a workflow ptah-compat migrate diff
+// `--dev-url docker://…` handed straight to the connector answers
+// `unsupported database dialect: docker` — naming a dialect the user never
+// wrote, for the native spelling of a workflow ptah-compat migrate diff
 // provisions for.
 //
 // The assertion is the absence of that sentence rather than a success, because
 // what happens next depends on whether a container runtime is reachable: with
 // one the run provisions and proceeds, without one it fails naming the daemon.
-// Both prove the value reached the provisioner, which is the whole change; only
-// the old behavior can produce the dialect error.
+// Both prove the value reached the provisioner, and only the unprovisioned
+// route can produce the dialect error.
 func TestMigrateGenerateResolvesADockerDevURL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -226,10 +225,10 @@ func errorText(err error) string {
 	return err.Error()
 }
 
-// A nil file set is the no-change case, and the command used to say nothing at
-// all about it: exit 0, zero bytes, no files. A success was indistinguishable
-// from a command that never ran, which matters most for the outcome this verb
-// has most often -- run after every schema edit, most runs have nothing to do
+// A nil file set is the no-change case, and saying nothing at all about it --
+// exit 0, zero bytes, no files -- makes a success indistinguishable from a
+// command that never ran. That matters most for the outcome this verb has most
+// often: run after every schema edit, most runs have nothing to do
 // (stokaro/ptah#2083).
 func TestMigrateGenerateSaysThereWasNothingToGenerate(t *testing.T) {
 	c := qt.New(t)

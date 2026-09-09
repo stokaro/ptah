@@ -69,12 +69,12 @@ func platformCanonicalDialects(c *qt.C) []string {
 
 // canonicalDialects returns the engines lint analyzes.
 //
-// This used to be every engine platform knows, and the two were the same list
-// until Ptah gained a dialect lint has no rules for. The filter is
-// lintdialect.Valid itself rather than a list copied into this file, so the
-// anti-drift property the extraction above exists for still holds: what is
-// asserted is the partition, and TestCanonical_RefusesEveryEngineLintCannot
-// AnalyzeYet names which side each engine is on (stokaro/ptah#1875).
+// Not every engine platform knows: the two lists agree only while there is no
+// dialect lint has no rules for. The filter is lintdialect.Valid itself rather
+// than a list copied into this file, so the anti-drift property the extraction
+// above exists for holds: what is asserted is the partition, and
+// TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet names which side each
+// engine is on (stokaro/ptah#1875).
 func canonicalDialects(c *qt.C) []string {
 	return slices.DeleteFunc(platformCanonicalDialects(c), func(canonical string) bool {
 		return !lintdialect.Valid(canonical)

@@ -163,8 +163,8 @@ func TestRenderCreateAndUpdateInputsAreDistinct(t *testing.T) {
 }
 
 // TestRenderWriteProjectionExcludesServerOwnedColumns covers the whole class of
-// columns whose value the database produces, not just the serial one the
-// exporter used to recognize.
+// columns whose value the database produces, not just the serial one an
+// exporter recognizes first.
 func TestRenderWriteProjectionExcludesServerOwnedColumns(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{

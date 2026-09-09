@@ -19,10 +19,10 @@ var simpleRenderedIdentifierQuoteRE = regexp.MustCompile("[`\"]([a-z_][a-z0-9_]*
 
 // requireGeneratorDatabaseConnection opens the live server for an engine.
 //
-// It names the engine rather than a variable: the callers used to pass
-// spellings like MYSQL_URL, so a checkout configured with the canonical
-// MYSQL_TEST_URL alone skipped every case here while internal/dbtarget
-// recognized the engine as configured -- and a skip reads as a pass.
+// It names the engine rather than a variable: a caller passing a spelling like
+// MYSQL_URL makes a checkout configured with the canonical MYSQL_TEST_URL alone
+// skip every case here while internal/dbtarget recognizes the engine as
+// configured -- and a skip reads as a pass.
 func requireGeneratorDatabaseConnection(
 	t *testing.T,
 	engine dbtarget.Engine,

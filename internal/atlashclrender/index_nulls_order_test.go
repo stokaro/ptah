@@ -57,8 +57,8 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 
 // TestRenderIndexPartNullsOrderKeepsOnBlocks guards the other half of the same
 // loss. simpleIndexParts decides between the compact `columns = [...]` spelling
-// and one `on` block per key; a part carrying only a NULLS ordering used to
-// count as simple, so the ordering disappeared even though renderIndex knew how
+// and one `on` block per key; a part carrying only a NULLS ordering must not
+// count as simple, or the ordering disappears even though renderIndex knows how
 // to write it.
 func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 	c := qt.New(t)

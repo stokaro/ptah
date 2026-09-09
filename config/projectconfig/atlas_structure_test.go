@@ -146,14 +146,14 @@ func ignoredAtlasNames(cfg projectconfig.Config) []string {
 }
 
 // TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts pins the env
-// bodies the pinned community binary v1.3.0 reads and Ptah used to refuse.
+// bodies the pinned community binary v1.3.0 reads and Ptah must not refuse.
 //
 // Every row was measured with `schema inspect --env local` against that binary
 // in a directory holding only the project file, with the exit code read
-// directly from an unpiped invocation: each answered 0 while Ptah answered 1
-// with `unsupported atlas.hcl construct`.
+// directly from an unpiped invocation: each answers 0, and a Ptah answering 1
+// with `unsupported atlas.hcl construct` is what these rows catch.
 //
-// The in-block control that the new tolerance did not swallow the four template
+// The in-block control that the tolerance does not swallow the four template
 // names those blocks really do decode is the `format migrate template name`
 // row of TestParseAtlasProjectConfigRefusesAtlasCEDecodedLeafValues: that
 // binary answers 1 for `format { migrate { apply = 1 } }` and so does Ptah.
@@ -750,21 +750,19 @@ env "local" {
 `,
 			ignored: "add_column",
 		},
-		// `diff { skip { drop_column } }` and `drop_index` were rows here too,
-		// for the same reason and with the same resolution: both are DECODED
-		// now, so the rows above ask about `add_column`, a name Ptah's diff
-		// policy models no change kind for and therefore still reports
+		// `diff { skip { drop_column } }` and `drop_index` are DECODED, which
+		// is why the rows above ask about `add_column` instead: a name Ptah's
+		// diff policy models no change kind for and therefore reports
 		// (stokaro/ptah#3111).
 		//
-		// `migration { baseline }` used to be two rows here, tolerated and
-		// reported as having no effect. It is DECODED now -- stokaro/ptah#934
-		// item 5a wired it into `migrate apply` -- so it no longer reaches the
-		// tolerance path at all and asserting it is reported would assert the
+		// `migration { baseline }` is DECODED too -- stokaro/ptah#934 item 5a
+		// wired it into `migrate apply` -- so it does not reach the tolerance
+		// path at all, and a row asserting it is reported would assert the
 		// symptom that issue names. Its rows live in
 		// TestParseAtlasMigrationBaseline and
 		// TestMigrateApplyHonorsProjectBaseline. The two scope controls below
-		// stay: `baseline` outside `env.migration` is still a name the pinned
-		// binary decodes nowhere.
+		// matter for the same reason: `baseline` outside `env.migration` is a
+		// name the pinned binary decodes nowhere.
 		{
 			name: "migration skip_report beside a decoded baseline",
 			raw: `env "local" {
@@ -1407,24 +1405,24 @@ env "local" {
 }
 
 // TestParseAtlasProjectConfigRefusesTypedNullDecodedValues pins the value shape
-// that used to walk through every type gate in the parser: a null that carries
-// a TYPE.
+// that walks through every type gate in the parser unless this rule stops it: a
+// null that carries a TYPE.
 //
 // `cty.NullVal(cty.String).Type()` IS cty.String, so a null produced by a typed
-// variable satisfied `value.Type() == cty.String` and then panicked in
-// AsString(); the CLI turned that into `internal error: value is null` at exit
-// 2. A bare `null` literal carries cty.DynamicPseudoType and was refused by the
-// same gate at exit 1, so one value had two outcomes depending on how it was
-// spelled. Every row below is exit 2 before this rule, except the two bool rows
-// -- cty.Value.True() does not panic on a null, it answers false, so those two
-// were exit 0 with the setting silently switched off.
+// variable satisfies `value.Type() == cty.String` and then panics in
+// AsString(); the CLI turns that into `internal error: value is null` at exit
+// 2. A bare `null` literal carries cty.DynamicPseudoType and is refused by the
+// same gate at exit 1, so one value has two outcomes depending on how it is
+// spelled. Every row below is exit 2 without this rule, except the two bool
+// rows -- cty.Value.True() does not panic on a null, it answers false, so those
+// two are exit 0 with the setting silently switched off.
 //
 // The list rows are the other half. A null ELEMENT also carries cty.String, and
 // a null LIST answers true to CanIterateElements because that answer comes from
 // the type. The pinned community binary v1.3.0 refuses a null element --
 // `cannot read attribute … as string list: null value is not allowed`, exit 1
 // -- so `env.include`, `env.migration.exclude`, `env.exclude`, `env.schemas`
-// and `env.src` fed a list holding one were a rule (a) hole or a crash.
+// and `env.src` fed a list holding one are a rule (a) hole or a crash.
 func TestParseAtlasProjectConfigRefusesTypedNullDecodedValues(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1840,10 +1838,10 @@ env "local" {
 // same typed null that TestParseAtlasProjectConfigRefusesTypedNullDecodedValues
 // refuses still parses.
 //
-// That case used to be `env.migration.baseline`. That name is DECODED now
-// (stokaro/ptah#934 item 5a), so it no longer reaches the tolerance path and
-// would have tested nothing here; `lint.review` is the string-valued name that
-// took its place, from the same table.
+// `env.migration.baseline` cannot serve here. That name is DECODED
+// (stokaro/ptah#934 item 5a), so it does not reach the tolerance path and would
+// test nothing; `lint.review` is the string-valued name from the same table
+// that does.
 func TestParseAtlasProjectConfigReportsTypedValuesItIgnores(t *testing.T) {
 	tests := []struct {
 		name        string

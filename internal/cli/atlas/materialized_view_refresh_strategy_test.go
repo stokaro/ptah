@@ -39,15 +39,15 @@ func TestSchemaDiffRefusesTheRetiredRefreshStrategy(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "CREATE MATERIALIZED VIEW")
 }
 
-// TestSchemaDiffRefusesTheRetiredRefreshStrategyDespiteExclusion inverts the
-// ordering this file used to pin, deliberately.
+// TestSchemaDiffRefusesTheRetiredRefreshStrategyDespiteExclusion pins that a
+// selection cannot rescue the declaration.
 //
-// `--exclude legacy_stats` used to rescue an unsupported declaration, and that
-// was right while the refusal was a per-target capability judgment: an object
-// nobody compares raises no capability question. It is now a statement about
-// the document -- the attribute is not schema state on any target -- so a
-// selection made after loading cannot make an unmodeled declaration modeled.
-// The refusal fires while the file is parsed, before any selection exists.
+// `--exclude legacy_stats` rescues an unsupported declaration wherever the
+// refusal is a per-target capability judgment: an object nobody compares raises
+// no capability question. This refusal is a statement about the document -- the
+// attribute is not schema state on any target -- so a selection made after
+// loading cannot make an unmodeled declaration modeled. It fires while the file
+// is parsed, before any selection exists.
 func TestSchemaDiffRefusesTheRetiredRefreshStrategyDespiteExclusion(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

@@ -192,8 +192,8 @@ func variableFromAttrs(ctx *hcl.EvalContext, block *hclsyntax.Block) (schemaVari
 	typeAttr, ok := block.Body.Attributes["type"]
 	if !ok {
 		// Measured: the pinned binary refuses a schema-file variable with no
-		// type ("The argument \"type\" is required"). Accepting one is how Ptah
-		// used to exit 0 on a file that binary refuses.
+		// type ("The argument \"type\" is required"). Accepting one exits 0 on
+		// a file that binary refuses.
 		return schemaVariable{}, fmt.Errorf(
 			"parse HCL schema at %s: variable %q requires a type",
 			block.TypeRange.String(), variable.name,

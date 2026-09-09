@@ -354,16 +354,15 @@ func TestCompatMigrateStatus_AntiRegressionHashedCleanDirReportsPending(t *testi
 	c.Assert(stderr, qt.Equals, "")
 }
 
-// TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending replaces the
-// _KnownDivergence pin this used to be.
+// TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending pins agreement
+// where a divergence would otherwise stand.
 //
-// The divergence it recorded — exit 1 here against the community binary's 0 —
-// was the visible end of stokaro/ptah#976: the registrar recursed, so a nested
-// file was pending here and nothing-to-execute there, and the gate refused the
-// whole directory to keep an unhashed migration from running unverified. With
-// the selection narrowed to the set atlas.sum covers there is no such
-// migration, so there is nothing left to diverge about and the pin would have
-// been preserving the bug rather than the boundary.
+// Exit 1 here against the community binary's 0 is the visible end of
+// stokaro/ptah#976: a recursing registrar makes a nested file pending here and
+// nothing-to-execute there, and the gate then refuses the whole directory to
+// keep an unhashed migration from running unverified. With the selection
+// narrowed to the set atlas.sum covers there is no such migration, so pinning
+// the divergence would preserve the bug rather than the boundary.
 //
 // Status is asserted rather than assumed to follow apply: the two verbs share
 // one gate precisely so a read-only verb cannot report on a directory apply

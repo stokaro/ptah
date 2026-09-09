@@ -18,13 +18,13 @@ import (
 // before the dev database is created, so a bad --dir does not leave a file
 // behind.
 //
-// The fixture used to be a directory symlink leaving the working directory,
-// which was refused by pathguard's relative-only confinement. stokaro/ptah#1622
-// removed that rule -- it refused "migrations" and accepted the identical
-// destination spelled absolutely, so it filtered a spelling rather than an
-// escape -- and the symlink is followed now, which the companion test below
-// pins. A regular file named as --dir is still not a directory on any spelling,
-// so the ordering claim keeps a fixture that cannot be respelled away.
+// A directory symlink leaving the working directory cannot serve as the
+// fixture: stokaro/ptah#1622 removed pathguard's relative-only confinement --
+// it refused "migrations" and accepted the identical destination spelled
+// absolutely, so it filtered a spelling rather than an escape -- and the
+// symlink is followed, which the companion test below pins. A regular file
+// named as --dir is not a directory on any spelling, so the ordering claim
+// keeps a fixture that cannot be respelled away.
 func TestRunLint_RejectsAnUnopenableDirectoryBeforeOpeningDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -44,9 +44,8 @@ func TestRunLint_RejectsAnUnopenableDirectoryBeforeOpeningDevDatabase(t *testing
 }
 
 // TestRunLint_ReadsADirectorySymlinkThatLeavesTheWorkingDirectory is the other
-// half of stokaro/ptah#1622: the escape the test above used to assert is a
-// supported spelling now, and the migration behind it is linted rather than
-// refused.
+// half of stokaro/ptah#1622: the escape is a supported spelling, and the
+// migration behind it is linted rather than refused.
 func TestRunLint_ReadsADirectorySymlinkThatLeavesTheWorkingDirectory(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()

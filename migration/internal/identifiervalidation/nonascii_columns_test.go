@@ -72,9 +72,9 @@ func TestValidateTarget_NonASCIIColumnNamesThatMayCollide_FailurePath(t *testing
 	}
 }
 
-// ASCII case is folded by both engines, which the model used to deny by
-// calling MySQL-family column names exact. Measured: a table declaring `A` and
-// `a` answers ERROR 1060 Duplicate column name 'a' on both.
+// ASCII case is folded by both engines, which a model calling MySQL-family
+// column names exact denies. Measured: a table declaring `A` and `a` answers
+// ERROR 1060 Duplicate column name 'a' on both.
 func TestValidateTarget_ASCIICaseColumnNames_FailurePath(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {

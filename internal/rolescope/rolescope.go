@@ -117,12 +117,12 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 // describeAllRemedy returns the sentence naming the opt-out, and the empty
 // string where there is none.
 //
-// The note used to end with it unconditionally, which was true while the
-// PostgreSQL reader was the only one filling RolesOutOfScope. ClickHouse fills
-// it now (stokaro/ptah#1025) and its reader consults no such variable, so an
-// operator inspecting ClickHouse was told to set a PostgreSQL variable that
-// would do nothing — a remedy that does not work is worse than no remedy,
-// because the reader spends the attempt before learning it was never offered.
+// Ending the note with it unconditionally holds only while the PostgreSQL
+// reader is the one filling RolesOutOfScope. ClickHouse fills it too
+// (stokaro/ptah#1025) and its reader consults no such variable, so an operator
+// inspecting ClickHouse would be told to set a PostgreSQL variable that does
+// nothing — a remedy that does not work is worse than no remedy, because the
+// reader spends the attempt before learning it was never offered.
 func describeAllRemedy(dialect string) string {
 	if !platform.IsPostgresFamily(platform.NormalizeDialect(dialect)) {
 		return ""

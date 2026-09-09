@@ -16,10 +16,10 @@ import (
 // TestProbe_MeasuresTheEndpointWithNoDatabase is why the verb exists.
 //
 // Every other verb that touches a provider needs PostgreSQL and a prepared run,
-// so the first thing that measured an endpoint used to be a backfill -- which
-// had already sent source rows to it. This reaches the same endpoint before any
-// of that, and reaches it from a test with no database at all, which is also
-// what a CI job has.
+// so without this verb the first thing that measures an endpoint is a backfill
+// -- which has already sent source rows to it. This reaches the same endpoint
+// before any of that, and reaches it from a test with no database at all, which
+// is also what a CI job has.
 func TestProbe_MeasuresTheEndpointWithNoDatabase(t *testing.T) {
 	c := qt.New(t)
 	endpoint := httptest.NewServer(http.HandlerFunc(probeEndpoint(4)))

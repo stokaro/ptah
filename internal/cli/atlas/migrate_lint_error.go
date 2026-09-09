@@ -124,12 +124,12 @@ func atlasMigrateLintMissingDirectoryPathError(err error) (*os.PathError, bool) 
 // directory the operator named, rather than of something reached from inside
 // it: only the first is the community binary's `stat` diagnostic.
 //
-// Both sides are made absolute before comparing. The two used to be compared as
-// written, which worked while a relative CLI path was opened through a
-// working-directory root and the os.PathError echoed it back relative. With
-// that root gone (stokaro/ptah#1622) the error carries an absolute path, and
-// comparing "nope" to "/tmp/x/nope" as strings answers "different directory"
-// for the same directory.
+// Both sides are made absolute before comparing. Comparing them as written
+// works only while a relative CLI path is opened through a working-directory
+// root and the os.PathError echoes it back relative. Without that root
+// (stokaro/ptah#1622) the error carries an absolute path, and comparing "nope"
+// to "/tmp/x/nope" as strings answers "different directory" for the same
+// directory.
 func atlasMigrateLintPathErrorMatches(path, allowedRoot, errorPath string) bool {
 	return atlasMigrateLintRootedCleanPath(path, allowedRoot) ==
 		atlasMigrateLintRootedCleanPath(errorPath, allowedRoot)

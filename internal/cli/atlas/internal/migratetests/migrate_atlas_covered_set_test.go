@@ -95,7 +95,7 @@ const (
 )
 
 // TestCompatMigrateApply_ExecutesOnlyTheCoveredSet walks the shapes where the
-// covered set and the discovered set used to disagree.
+// covered set and the discovered set can disagree.
 //
 // Row-by-row, each is chosen to separate the fix from a plausible alternative:
 //
@@ -109,14 +109,14 @@ const (
 //     everywhere", which would make the fixture prove nothing.
 //   - "top-level tamper still refuses" pins that narrowing the set did not
 //     narrow the guarantee: inside the covered set the checksum still bites.
-//   - the two uppercase rows are one fix seen twice. A directory holding only
-//     `1_a.SQL` used to be REFUSED as "unrecognized SQL files" while `1_a.sql`
-//     beside `2_c.SQL` was silently accepted — inconsistent rather than strict.
-//     The second row is what pins that we did not start refusing a directory
-//     the community binary applies.
-//   - "duplicate version across depth" used to exit 1 with "duplicate Atlas up
-//     migration for version 1", produced entirely by the nested file the
-//     covered set excludes.
+//   - the two uppercase rows are one rule seen twice. REFUSING a directory
+//     holding only `1_a.SQL` as "unrecognized SQL files" while silently
+//     accepting `1_a.sql` beside `2_c.SQL` is inconsistent rather than strict.
+//     The second row pins that neither is refused, since the community binary
+//     applies both.
+//   - "duplicate version across depth" exits 1 with "duplicate Atlas up
+//     migration for version 1" wherever the nested file the covered set
+//     excludes is counted.
 func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 	tests := []struct {
 		name  string

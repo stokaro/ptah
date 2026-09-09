@@ -247,12 +247,10 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(
 			"  -- 1 diagnostic\n")
 }
 
-// The rename fixture that used to live here as
-// TestCompatCommand_MigrateLintDefaultTextDoesNotFabricateAtlasLinks no longer
-// demonstrates an unmapped rule: #1074 gave renames a measured Atlas identity.
-// After that, every statement rule a SQLite dev database can reach has one, so
-// the fixture moved to the renderer, where a rule with no Atlas identity can be
-// analyzed without a dev-database replay --
+// A rename fixture cannot demonstrate an unmapped rule here: renames have a
+// measured Atlas identity (#1074), and every statement rule a SQLite dev
+// database can reach has one. That fixture belongs at the renderer, where a
+// rule with no Atlas identity can be analyzed without a dev-database replay --
 // TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules in
 // internal/atlasreport. The command-level rendering of a diagnostic with no
 // Atlas copy stays covered here by

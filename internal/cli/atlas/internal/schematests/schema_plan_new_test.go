@@ -153,8 +153,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 	})
 
 	t.Run("name_format_refuses_a_path_separator", func(t *testing.T) {
-		// The control the row above used to provide by accident, and only
-		// nine times in a hundred. A plan name is a file name, so a format
+		// The control the row above provides only by accident, and only nine
+		// times in a hundred. A plan name is a file name, so a format
 		// producing a separator has to be refused rather than written somewhere the
 		// caller did not ask for; asserting it on a literal separator makes the
 		// refusal measured on every run instead of when the hash happens to

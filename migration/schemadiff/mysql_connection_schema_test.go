@@ -18,11 +18,11 @@ import (
 // MySQL and MariaDB are the dialects where those two differ. A schema there is
 // a database, so [identifier.ForDialect] has no static default to return and
 // returns an empty one; the connected database name is the only answer, and
-// only a connection has it. Constraint comparison used to rebuild the offline
-// rules from the dialect string, so it saw the empty default no matter what the
-// connection had resolved. The catalog reports a table with no schema and a
-// desired state written as Atlas HCL carries `schema = schema.<database>`, so
-// the two keys never met and every constraint the database had was reported as
+// only a connection has it. A constraint comparison that rebuilds the offline
+// rules from the dialect string sees the empty default no matter what the
+// connection resolved. The catalog reports a table with no schema and a desired
+// state written as Atlas HCL carries `schema = schema.<database>`, so the two
+// keys never meet and every constraint the database has is reported as
 // removed.
 //
 // Measured on live MySQL 9.7.1: `ptah-compat schema apply` fed the database's

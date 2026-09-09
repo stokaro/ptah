@@ -76,10 +76,9 @@ func runCompatDiff(c *qt.C, query string, dirFormat []string) (wrote bool, err e
 // compat verb that mutates the directory.
 //
 // Only the verbatim value `atlas` selects the native layout on the community
-// binary. `migrate diff` used to lowercase and trim its `--dir-format` first, so
-// three spellings the community binary refuses were coerced into a match and a
-// migration file was written. Measured on the pinned v1.3.0, on the hashed
-// fixture above:
+// binary. Lowercasing and trimming `--dir-format` first coerces three spellings
+// the community binary refuses into a match and writes a migration file.
+// Measured on the pinned v1.3.0, on the hashed fixture above:
 //
 //	--dir-format ATLAS       CE 1, `unknown dir format "ATLAS"`   ptah 0, WROTE
 //	--dir-format Atlas       CE 1                                 ptah 0, WROTE
@@ -169,11 +168,10 @@ func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
 // --dir-format", which is a different and wrong rule: an unrecognized key
 // selects no layout, so the flag still decides and its refusal stands.
 //
-// The REASON those two exit 1 changed with stokaro/ptah#1013, while the exit
-// code did not. `--dir-format golang-migrate` used to be refused as a layout
-// this verb could not write; it is now honored, and the refusal comes from the
-// gate instead — read as golang-migrate this hashed Atlas directory covers no
-// file, so its atlas.sum entry reads as removed. Measured on the pinned
+// The REASON those two exit 1 is the gate rather than the layout
+// (stokaro/ptah#1013): `--dir-format golang-migrate` is honored on this verb,
+// and read as golang-migrate this hashed Atlas directory covers no file, so its
+// atlas.sum entry reads as removed. Measured on the pinned
 // community binary v1.3.0 on 2026-08-08, that binary answers the same two rows
 // with `checksum mismatch` and `L2: …_init.sql was removed`, which is the
 // message below.
@@ -233,10 +231,10 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 // TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead pins what `?format=`
 // does to a NATIVE Atlas directory on this verb, across the whole format axis.
 //
-// It used to pin the opposite — every foreign value refused with one message —
-// and that refusal is what stokaro/ptah#1013 closed. What replaces it is not
-// "all six accepted": the layout decides how the existing directory is READ, so
-// on a directory whose files are Atlas-shaped the answer differs per layout, and
+// The answer is not "every foreign value refused with one message", which is
+// what stokaro/ptah#1013 closed, and it is not "all six accepted" either: the
+// layout decides how the existing directory is READ, so on a directory whose
+// files are Atlas-shaped the answer differs per layout, and
 // each row below was measured on the pinned community binary v1.3.0 on
 // 2026-08-08 against a PostgreSQL dev database, on this fixture's shape.
 //
@@ -253,8 +251,8 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 // SQL: measured, it then plans BOTH tables — the one the existing migration
 // already creates and the new one — so the migration in the directory is
 // silently dropped from the replay. Ptah's dbmate reader refuses that rather
-// than record a migration that can never be re-run, which is older than this
-// change and shared with `migrate apply`, `lint` and `new`. Reproducing it here
+// than record a migration that can never be re-run, which it shares with
+// `migrate apply`, `lint` and `new`. Reproducing it here
 // would be reproducing a defect on the verb that WRITES the file.
 //
 // The `?format=atlas` control is what shows the per-layout answers turn on the

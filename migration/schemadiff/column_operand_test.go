@@ -58,10 +58,9 @@ func TestCompare_AColumnModificationCarriesTheDeclaredColumn(t *testing.T) {
 //
 // An embedded struct's column belongs to the host table but is declared under
 // the embedded struct's name, so a carry taken from `Database.Fields` without
-// folding would attach the modification to a column no table has. The planner
-// used to do the folding itself and reported `ERROR: Could not find field
-// definition` when it could not; the fold lives in the comparison now, and this
-// is where it is asserted.
+// folding would attach the modification to a column no table has. The fold
+// lives in the comparison, and this is where it is asserted; a planner doing it
+// instead reports `ERROR: Could not find field definition` when it cannot.
 func TestCompare_AnEmbeddedColumnsModificationCarriesTheFoldedColumn(t *testing.T) {
 	c := qt.New(t)
 
@@ -101,15 +100,15 @@ func TestCompare_AnEmbeddedColumnsModificationCarriesTheFoldedColumn(t *testing.
 	c.Assert(modified.Desired.Type, qt.Equals, "BIGINT")
 }
 
-// TestCompare_ACollidingTableNameCarriesTheStructurallyIdentifiedColumn is the
-// resolution that used to happen in the planner, asserted where it happens now.
+// TestCompare_ACollidingTableNameCarriesTheStructurallyIdentifiedColumn asserts
+// the resolution where it happens.
 //
 // Two declared tables answer to the string `tenant.data`: one literally named
 // that, and one named `data` in schema `tenant`. They are different tables with
 // different columns, and a modification naming `tenant.data` belongs to exactly
-// one of them. The planner used to decide by re-resolving the diff's table name
-// against the declaration; the comparison decides now, by producing the
-// modification from the table it matched.
+// one of them. The comparison decides, by producing the modification from the
+// table it matched, rather than a planner re-resolving the diff's table name
+// against the declaration.
 func TestCompare_ACollidingTableNameCarriesTheStructurallyIdentifiedColumn(t *testing.T) {
 	c := qt.New(t)
 

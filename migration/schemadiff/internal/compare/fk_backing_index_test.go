@@ -36,14 +36,14 @@ func postsForeignKey() []catalog.Constraint {
 // made" for both when that output is applied to the database it came from.
 //
 // The "auto-named" row is the defect: a bare `CONSTRAINT ... FOREIGN KEY` with
-// no `KEY` clause makes MySQL name the backing index after the constraint, and
-// the database-side filter used to hide it unconditionally, so the declared
-// index had nothing to match and was planned as `CREATE INDEX fk_posts_user`.
-// MySQL answers that statement with Error 1061, Duplicate key name.
+// no `KEY` clause makes MySQL name the backing index after the constraint, so a
+// database-side filter that hides it unconditionally leaves the declared index
+// nothing to match and plans `CREATE INDEX fk_posts_user`. MySQL answers that
+// statement with Error 1061, Duplicate key name.
 //
-// The "distinctly-named" row is the control. It passed before the fix and must
-// keep passing: if it ever goes red the suppression has been widened into
-// ignoring index drift rather than narrowed.
+// The "distinctly-named" row is the control, and it must keep passing: if it
+// ever goes red the suppression has been widened into ignoring index drift
+// rather than narrowed.
 func TestIndexes_ForeignKeyBackingIndexIdempotency(t *testing.T) {
 	tests := []struct {
 		name      string

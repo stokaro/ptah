@@ -59,16 +59,15 @@ func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing
 }
 
 // TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL pins the measured
-// order, which is the reverse of what this test asserted before.
+// order, which is the reverse of the one the cheaper check suggests.
 //
-// It used to require `database URL is required` here, on the reasoning that the
-// cheaper check should answer first. Measured on 2026-08-13, the pinned
-// community binary v1.3.0 answers
+// Requiring `database URL is required` here reads as "the cheaper check answers
+// first". Measured on 2026-08-13, the pinned community binary v1.3.0 answers
 // `atlas migrate status --dir atlas://remote` with no --url by rejecting the
 // DIRECTORY -- `atlas remote directory is not supported by this release` -- so
-// the URL does not outrank it there. Removing this verb's required-flag check
-// (cell 9.14 of stokaro/ptah#1235: the binary has none, and opens an absent
-// --url as the empty string) put Ptah into that order too.
+// the URL does not outrank it there. This verb registers no required-flag check
+// for the same reason (cell 9.14 of stokaro/ptah#1235: the binary has none, and
+// opens an absent --url as the empty string).
 //
 // The directory refusal's own wording is a separate divergence and is not
 // claimed here; what this pins is which of the two answers.

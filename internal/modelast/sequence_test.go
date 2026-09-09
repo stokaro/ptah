@@ -90,10 +90,10 @@ func TestFromGrant_OnSequence(t *testing.T) {
 // declared sequence is handed to the MySQL-family renderer rather than dropped
 // here.
 //
-// It used to be dropped, so `ptah schema render --dialect mariadb` omitted a
-// declared sequence with no statement and no diagnostic while
-// capability.MariaDB1011 advertised Sequences: true (stokaro/ptah#931 item 8).
-// The renderer is what decides the target cannot host one, and it says so.
+// Dropping it here makes `ptah schema render --dialect mariadb` omit a declared
+// sequence with no statement and no diagnostic while capability.MariaDB1011
+// advertises Sequences: true (stokaro/ptah#931 item 8). The renderer is what
+// decides the target cannot host one, and it says so.
 func TestCollectDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T) {
 	c := qt.New(t)
 

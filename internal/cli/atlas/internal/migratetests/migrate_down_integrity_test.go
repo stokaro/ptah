@@ -65,10 +65,8 @@ func TestCompatMigrateDown_NamedInAtlasSumEnumeration(t *testing.T) {
 // enumeration line describes, asserted on ONE directory so the two verbs cannot
 // be compared across different fixtures.
 //
-// It used to assert the opposite. Until this change `down` read the same
-// directory `status` refuses and reported normally at exit 0, and the row was
-// written as a boundary marker whose comment said it would fail the day `down`
-// was gated. That day is this change: `down` executes rollback SQL from the
+// `down` reading the same directory `status` refuses, and reporting normally at
+// exit 0, is the shape this replaces: `down` executes rollback SQL from the
 // directory, so it is a member of the executing class and gates with the rest
 // of it.
 //

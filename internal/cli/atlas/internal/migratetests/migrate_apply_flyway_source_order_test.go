@@ -11,8 +11,8 @@ import (
 )
 
 // These rows cover stokaro/ptah#1098: a converted Flyway directory is ORDERED
-// numerically and made LINEAR textually, and `migrate apply` used to answer both
-// questions with the numeric key.
+// numerically and made LINEAR textually, so `migrate apply` must not answer
+// both questions with the numeric key.
 //
 // Measured on the pinned community binary, which reports
 // `atlas community version v1.3.0`, sqlite, `--dir file://m?format=flyway`,

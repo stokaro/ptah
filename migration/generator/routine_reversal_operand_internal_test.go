@@ -73,8 +73,8 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 		qt.Commentf("the rollback recreates the synonym pointing where the database pointed"))
 }
 
-// TestReverseSchemaDiff_SequenceOperandResolvesAcrossSchemaSpellings is the
-// lookup the retired planner-side control used to pin.
+// TestReverseSchemaDiff_SequenceOperandResolvesAcrossSchemaSpellings pins the
+// lookup, on the side that performs it.
 //
 // The change spells a name the declaration produced and the schema it resolves
 // against comes from a database read, so the two do not have to agree on

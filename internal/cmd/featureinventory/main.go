@@ -106,11 +106,11 @@ func run(opts options) error {
 // is somebody's mistake -- a claim naming nothing, two pages claiming one
 // feature, a marked page that runs nothing, a kind that stopped deriving,
 // coverage that fell -- and rewriting the file around any of them would record
-// the mistake as the new truth. The floor used to be the exception: `--write`
-// read it out of the artifact and wrote a new one back, so a lowered floor and
-// a false claim both survived a regeneration and the gate reported success.
-// featureinventory.ClaimedFloor is a source constant now, and raising it is a
-// reviewed edit rather than a side effect of this command.
+// the mistake as the new truth. The floor is the easiest one to lose: a
+// `--write` that reads it out of the artifact and writes a new one back lets a
+// lowered floor and a false claim both survive a regeneration while the gate
+// reports success. featureinventory.ClaimedFloor is a source constant, so
+// raising it is a reviewed edit rather than a side effect of this command.
 func writeArtifact(doc *featureinventory.Document, problems []featureinventory.Problem) error {
 	for _, problem := range problems {
 		fmt.Fprintln(os.Stderr, "featureinventory: "+problem.String())

@@ -419,17 +419,16 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 }
 
 func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) error {
-	// The capability, not a version comparison. This gate used to parse the
-	// banner against 24.11 with a hand-rolled Sscanf outside
-	// core/platform/capability -- one of the five ad-hoc version gates
-	// stokaro/ptah#916 item 3 names, and the one whose threshold the resolver
-	// now carries as capability.CheckGrantStatement.
+	// The capability, not a version comparison. Parsing the banner against
+	// 24.11 with a hand-rolled Sscanf outside core/platform/capability is one of
+	// the five ad-hoc version gates stokaro/ptah#916 item 3 names, and the
+	// resolver carries this one's threshold as capability.CheckGrantStatement.
 	//
-	// The behavior is unchanged in the direction that matters: a server that
-	// cannot answer is refused. What changes is where the threshold lives, and
-	// that a banner this file could not parse used to produce a parse error
-	// where it now takes the ladder's lower arm and reaches the refusal below,
-	// which is the same decision with the reason the operator can act on.
+	// The direction that matters is the same either way: a server that cannot
+	// answer is refused. What the capability changes is where the threshold
+	// lives, and that a banner this file cannot parse takes the ladder's lower
+	// arm and reaches the refusal below rather than producing a parse error --
+	// the same decision with the reason the operator can act on.
 	caps, version, err := w.realmCapabilities(ctx)
 	if err != nil {
 		return err

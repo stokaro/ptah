@@ -152,10 +152,10 @@ func TestReservedTableElementKeywordsAreNeverColumns_HappyPath(t *testing.T) {
 // TestIndexKeywordColumnNameIsRefusedWithItsReason_FailurePath covers the
 // dialects that reserve the word.
 //
-// Refusing is right there -- MySQL 8 rejects `key TEXT NOT NULL` too, and SQLite
-// 3.51 rejects `index TEXT NOT NULL` -- so what the fix owed was the reason. The
-// reader used to get `expected Operator, got Identifier at position 45` and
-// nothing else (stokaro/ptah#3089).
+// Refusing is right there -- MySQL 8 rejects `key TEXT NOT NULL` too, and
+// SQLite 3.51 rejects `index TEXT NOT NULL` -- so what is owed is the reason.
+// `expected Operator, got Identifier at position 45` and nothing else leaves
+// the reader with none (stokaro/ptah#3089).
 func TestIndexKeywordColumnNameIsRefusedWithItsReason_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string

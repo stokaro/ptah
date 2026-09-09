@@ -100,9 +100,10 @@ func TestGenerateMigration_SQLiteAddColumnPreservesStrictWithoutRowID(t *testing
 	c.Assert(sqliteUserEmailByID(c, conn, "u1"), qt.Equals, "strict@example.test")
 }
 
-// TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo pins
-// what used to be a refusal. The rebuild drops the referenced table, which is
-// a foreign-key violation while enforcement is on, so the migration brackets
+// TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo pins a
+// rebuild where a refusal would also be an answer. The rebuild drops the
+// referenced table, which is a foreign-key violation while enforcement is on,
+// so the migration brackets
 // itself in the pragmas SQLite's own procedure prescribes and the apply path
 // lifts them to the connection. See stokaro/ptah#1561.
 func TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo(t *testing.T) {
@@ -158,7 +159,7 @@ func TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo(t *te
 
 			// Adding a nullable column is a plain ALTER; it is the rollback
 			// that has to rebuild, and the rebuild drops a table "posts"
-			// refers to. That is the direction the refusal used to fire in.
+			// refers to. That is the direction a refusal fires in.
 			downSQL, err := os.ReadFile(files.Files[0].DownFile)
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)

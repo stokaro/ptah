@@ -23,8 +23,8 @@ import (
 //	dotted İ and i             ERROR 1060    distinct
 //	Kelvin sign and K          ERROR 1060    ERROR 1060, one name
 //
-// And the same pairs used to resolve a foreign key's local column against a
-// column declared with the other spelling:
+// And the same pairs resolving a foreign key's local column against a column
+// declared with the other spelling:
 //
 //	I -> dotless ı             ERROR 1072    accepted, reuses the covering key
 //	sigma -> final sigma       ERROR 1072    accepted, reuses the covering key
@@ -37,10 +37,10 @@ import (
 // column when it resolves a foreign key -- so the rule is not one per dialect
 // either.
 //
-// Ptah compared these with strings.EqualFold when deciding whether an existing
-// key covers a foreign key, which is a third rule again, matching neither
-// engine on any row. So a key column that cannot be compared is refused rather
-// than guessed at. Refusing is not the answer this deserves --
+// Comparing these with strings.EqualFold when deciding whether an existing key
+// covers a foreign key is a third rule again, matching neither engine on any
+// row. So a key column that cannot be compared is refused rather than guessed
+// at. Refusing is not the answer this deserves --
 // stokaro/ptah#2771 carries the engine-specific modeling -- but it is the one
 // that neither pairs a key with a column the server keeps distinct nor misses
 // coverage the server has.

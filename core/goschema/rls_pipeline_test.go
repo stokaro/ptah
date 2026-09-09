@@ -180,19 +180,19 @@ type Product struct {
 // MySQL target emits no DDL for the PostgreSQL-only objects and says so for
 // each one, while the objects MySQL does host are rendered as real statements.
 //
-// It used to assert the objects were simply ABSENT from the output, which the
-// converter achieved by deleting the nodes before the renderer saw them: the
-// function, the RLS enablement and the policy vanished at exit 0 with nothing
-// said about any of them. Absence and a named skip are indistinguishable to a
+// Asserting the objects are simply ABSENT would pass on a converter that
+// deletes the nodes before the renderer sees them: the function, the RLS
+// enablement and the policy vanish at exit 0 with nothing said about any of
+// them. Absence and a named skip are indistinguishable to a
 // `Not(Contains)` assertion, so this asserts both halves separately -- no
 // executable statement, and a diagnostic naming each object (stokaro/ptah#929
 // item 5).
 //
-// The function moved out of the skipped set: row-level security really is a
+// The function is not in the skipped set: row-level security really is a
 // PostgreSQL-only surface, but a stored function is not, and MySQL 26.7.0
-// accepts one. It is asserted here as executable DDL so that a regression back
-// to the old `-- CREATE FUNCTION ... not supported in MySQL` comment -- a claim
-// about the server that the server contradicts -- fails this test.
+// accepts one. It is asserted here as executable DDL so that a
+// `-- CREATE FUNCTION ... not supported in MySQL` comment -- a claim about the
+// server that the server contradicts -- fails this test.
 func TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips(t *testing.T) {
 	c := qt.New(t)
 

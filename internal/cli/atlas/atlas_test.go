@@ -4269,11 +4269,10 @@ func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjec
 // what an `atlas://` migration.dir answers when nothing says which registry it
 // stands for.
 //
-// The refusal used to be "only local file:// migration directories are
-// supported", which was true and is not any more: the reference resolves
-// against PTAH_ATLAS_REGISTRY and is pulled on read. What is left to refuse is
-// the missing namespace, and the message has to name it rather than the scheme
-// (stokaro/ptah#1210).
+// "Only local file:// migration directories are supported" is not the refusal:
+// the reference resolves against PTAH_ATLAS_REGISTRY and is pulled on read.
+// What is left to refuse is the missing namespace, and the message has to name
+// it rather than the scheme (stokaro/ptah#1210).
 func TestCompatCommand_MigrateStatusNeedsANamespaceForARegistryProjectDir(t *testing.T) {
 	c := qt.New(t)
 	// Stated rather than inherited: with a namespace configured this run would
@@ -4862,7 +4861,7 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	// The surviving baseline B1 lands in the low band and V2 in the versioned
 	// band, so the baseline executes first whatever its own version. A silent
 	// import reports itself through the destination directory, so the names are
-	// asserted on disk rather than in the progress listing that used to exist.
+	// asserted on disk rather than in a progress listing.
 	_, statErr := os.Stat(filepath.Join(target, "81608_baseline.sql"))
 	c.Assert(statErr, qt.IsNil)
 	_, statErr = os.Stat(filepath.Join(target, "4611686018427510315_add_posts.sql"))

@@ -1166,12 +1166,12 @@ func getDatabaseInfo(
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
 		// The schema is whatever the server resolves this session's search_path
-		// to, which is what a `?search_path=` on the URL selects. It used to be
-		// the constant "public", with a branch on the URL path that assigned
-		// "public" again, so a dev URL naming another schema was not merely
-		// ignored -- the writer treated that schema as a stranger's and DROPPED
-		// it while cleaning the database realm, then replayed with a search_path
-		// resolving to nothing (stokaro/ptah#1198).
+		// to, which is what a `?search_path=` on the URL selects. A constant
+		// "public" here, with a branch on the URL path that assigns "public"
+		// again, does not merely ignore a dev URL naming another schema -- the
+		// writer treats that schema as a stranger's and DROPS it while cleaning
+		// the database realm, then replays with a search_path resolving to
+		// nothing (stokaro/ptah#1198).
 		//
 		// Why a selection that resolves to nothing is refused rather than folded
 		// back to "public" is documented on [schemaselection.Selection.Resolve],

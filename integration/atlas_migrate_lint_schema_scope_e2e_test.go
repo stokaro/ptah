@@ -35,9 +35,9 @@ func withLintE2ESearchPath(c *qt.C, dbURL, schema string) string {
 // The dev database is what a lint run diffs against, so it also decides what is
 // being analyzed. With `?search_path=public`, an object a migration creates and
 // destroys in schema `app` was never in the before-state, so its destruction is
-// not a covered change -- no diagnostic, no schema change, exit 0. Ptah used to
-// report it and exit 1, which is stricter but means the two tools disagreed
-// about what was even under review.
+// not a covered change -- no diagnostic, no schema change, exit 0. Reporting it
+// and exiting 1 is stricter but means the two tools disagree about what is even
+// under review.
 //
 // The rows below are a 2x2 plus its boundary controls, and every axis is
 // separated by a row that moves only that axis:

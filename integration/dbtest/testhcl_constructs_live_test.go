@@ -88,10 +88,10 @@ test "migrate" "skipped" {
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("report: %s", report.Text()))
 
 	// A mapping names each instance by its KEY, and the order is the sorted key
-	// order. The ordinal this used to assert was the defect stokaro/ptah#2933
-	// removed: it moved whenever a key sorting earlier was added, so a pinned
-	// `--run constructs/1` went on passing against a different case and a report
-	// naming an ordinal could not be traced back to the key that failed.
+	// order. Asserting the ordinal instead is the defect stokaro/ptah#2933
+	// removed: an ordinal moves whenever a key sorting earlier is added, so a
+	// pinned `--run constructs/1` goes on passing against a different case, and
+	// a report naming one cannot be traced back to the key that failed.
 	//
 	// Each ran against a database of its own -- the `catch` in both proves the
 	// table was absent when each began.

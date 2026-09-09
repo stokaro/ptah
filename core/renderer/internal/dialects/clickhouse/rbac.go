@@ -30,10 +30,10 @@ import (
 //   - `REVOKE GRANT OPTION FOR priv ON scope FROM r` downgrades a grant in ONE
 //     statement: grant_option goes 1 -> 0 and no is_partial_revoke row appears.
 //
-// These arms used to be `r.notSupported(...)` plus `return nil`. A comment is
-// the honest answer for an object ClickHouse has no concept of; it was the
-// wrong answer here, because ClickHouse does have roles and grants, so the
-// migration reported success while leaving the target's access control
+// These arms are not `r.notSupported(...)` plus `return nil`. A comment is the
+// honest answer for an object ClickHouse has no concept of, and the wrong
+// answer here: ClickHouse does have roles and grants, so a comment makes the
+// migration report success while leaving the target's access control
 // untouched.
 //
 // [clickhouserbac.ValidateDeclared] refuses the declarations this file cannot
@@ -42,9 +42,9 @@ import (
 // handed straight to Render carries no declaration to validate.
 //
 // capability.RoleManagement gates all five, as it does on PostgreSQL and as
-// capability.Views gates the view visitors in clickhouse.go. The key no longer
-// names "PostgreSQL role management" — it names named roles plus GRANT/REVOKE,
-// which is a shape ClickHouse has — so a target whose capability set withholds
+// capability.Views gates the view visitors in clickhouse.go. The key names
+// named roles plus GRANT/REVOKE rather than "PostgreSQL role management",
+// which is a shape ClickHouse has, so a target whose capability set withholds
 // it gets the named refusal every other withheld kind gets, and New()'s
 // ClickHouse24 preset carries it.
 

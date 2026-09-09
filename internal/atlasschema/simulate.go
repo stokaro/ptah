@@ -143,7 +143,7 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 //
 // devURL is the operator's spelling, not a normalized copy: whether a value is
 // a `docker://` URL at all is decided from those bytes, and normalizing first
-// promoted a value the pinned binary cannot parse into a started container.
+// promotes a value the pinned binary cannot parse into a started container.
 // See [devdocker.Parse]. The callers have already answered an empty one.
 //
 // The caller owns both returned values: the connection must be closed, and the

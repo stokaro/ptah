@@ -164,18 +164,16 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 	}
 }
 
-// WHERE THE `migrate diff` FOREIGN-FORMAT REFUSAL WENT. A
-// TestCompatMigrateDirQuery_FailurePathForeignFormat used to stand here and pin
-// the one verb that still refused a `?format=goose` outright. It was the guard
-// on the unknown-key relaxation: once an unrecognized key is dropped, nothing
-// else stops a `?format=goose` from being dropped with it and the directory
-// being read as Atlas, which on a writing verb would gate the wrong covered set
-// and then write.
+// WHERE THE `migrate diff` FOREIGN-FORMAT REFUSAL WENT. No verb refuses a
+// `?format=goose` outright: stokaro/ptah#1013 closed that cell, and
+// `migrate diff` writes the five external layouts.
 //
-// stokaro/ptah#1013 closed that cell — `migrate diff` writes the five external
-// layouts now — so the refusal it pinned no longer exists. The guard it
-// provided did not go with it: TestCompatMigrateDirQuery_RejectsUnknownFormatValue
-// below still fires if the format KEY's value stops being read, and
+// A refusal there was the guard on the unknown-key relaxation: once an
+// unrecognized key is dropped, nothing else stops a `?format=goose` from being
+// dropped with it and the directory being read as Atlas, which on a writing
+// verb gates the wrong covered set and then writes. That guard has not gone
+// with it: TestCompatMigrateDirQuery_RejectsUnknownFormatValue below fires if
+// the format KEY's value stops being read, and
 // TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout in
 // migrate_diff_foreign_layout_test.go fires if the value stops SELECTING the
 // layout, with a control row that stays red when no layout is named.

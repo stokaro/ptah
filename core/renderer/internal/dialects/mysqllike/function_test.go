@@ -197,20 +197,20 @@ func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 // TestVisitCreateFunction_RendersExactlyOneStatement pins the invariant that
 // makes an element of GetOrderedCreateStatements executable as it stands.
 //
-// The visitor used to emit its own `DROP FUNCTION IF EXISTS` in front of every
-// CREATE, which put two statements in one element. The planner splits its
-// output before executing, so that path worked; the compatibility dev-database
+// A visitor that emits its own `DROP FUNCTION IF EXISTS` in front of every
+// CREATE puts two statements in one element. The planner splits its output
+// before executing, so that path survives it; the compatibility dev-database
 // path does not. `materializeOnDev` passes each element unchanged to
 // ExecuteSQL, and convertMySQLURL does not enable go-sql-driver's
 // multiStatements option, so materializing any desired schema containing a
-// function failed. Measured through dbschema.ConnectToDatabase on both engines
+// function fails. Measured through dbschema.ConnectToDatabase on both engines
 // with the default DSN:
 //
 //	Error 1064 (42000): ... near 'CREATE FUNCTION `p_fn`(a INT) RETURNS int
 //	DETERMINISTIC SQL SECURITY INVOKER ...' at line 2
 //
-// The drop a replacement still needs is now a separate node the MySQL-family
-// planner emits; see its own test for that half. Counting semicolons is the
+// The drop a replacement needs is a separate node the MySQL-family planner
+// emits; see its own test for that half. Counting semicolons is the
 // cheapest statement of the rule that a mutant restoring the prefix fails.
 func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
@@ -233,10 +233,10 @@ func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
 // TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead pins the write
 // half of the volatility round trip at the renderer.
 //
-// STABLE and VOLATILE used to render the same characteristic, so a read could
-// not tell them apart and a declared STABLE function reported
-// `volatility: VOLATILE -> STABLE` after a successful apply and planned the
-// same destructive replacement forever. The measurements behind the three
+// Rendering STABLE and VOLATILE as the same characteristic leaves a read unable
+// to tell them apart: a declared STABLE function then reports
+// `volatility: VOLATILE -> STABLE` after a successful apply and plans the same
+// destructive replacement forever. The measurements behind the three
 // clauses are in mysqlroutine.Characteristic; this holds the renderer to them.
 func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T) {
 	tests := []struct {
@@ -268,11 +268,11 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 
 // TestVisitCreateFunction_RefusesValuesItCannotRepresent holds the refusal seam.
 //
-// Both of these used to be silently dropped, and both produced the same
-// permanent drift: an unknown security mode emitted no clause at all, so MySQL
-// applied its DEFINER default and every later comparison reported
-// `security: DEFINER -> INVKOER` -- measured live on both engines. An operator
-// who asked for invoker rights got definer rights AND a diff that never closed.
+// Dropping either silently produces the same permanent drift: an unknown
+// security mode emits no clause at all, so MySQL applies its DEFINER default
+// and every later comparison reports `security: DEFINER -> INVKOER` -- measured
+// live on both engines. An operator who asked for invoker rights gets definer
+// rights AND a diff that never closes.
 //
 // The refusal happens before anything is written, which is load-bearing: the
 // planner emits a DROP in front of this node, and a CREATE refused after that

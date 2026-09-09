@@ -35,8 +35,8 @@ func exitStatusOf(c *qt.C, err error) int {
 // TestAtlasMigrateLintRenameE2E covers issue #1074 part 1 against a live
 // PostgreSQL dev database, which is where the divergence was measured: a rename
 // retires a logical name, and `ptah-compat migrate lint` has to report that as
-// a destructive change to the retired name and exit 1, where it used to print a
-// BC101 warning and exit 0.
+// a destructive change to the retired name and exit 1, rather than printing a
+// BC101 warning and exiting 0.
 //
 // Each want below is the pinned community binary's output on the same fixture,
 // byte for byte apart from the elapsed durations.

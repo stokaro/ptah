@@ -78,9 +78,9 @@ func NewParser(input string, opts ...Option) *Parser {
 // A named dialect gets internal/dialectlexer's answer, which is the one place
 // that says what a dialect's lexer does -- backslash escapes, standard
 // strings, `--` comment rules, bracket identifiers, and MySQL's and MariaDB's
-// executable comments. This parser used to carry a two-field literal of its
-// own, so a document read with `--dialect mysql` was tokenized as though no
-// dialect had been named at all (stokaro/ptah#2752).
+// executable comments. A two-field literal of this parser's own tokenizes a
+// document read with `--dialect mysql` as though no dialect had been named at
+// all (stokaro/ptah#2752).
 //
 // No dialect keeps the permissive tokenizer, and that is a decision rather than
 // an oversight. A classifying read has no dialect by construction, and
@@ -3493,14 +3493,14 @@ func (p *Parser) currentIsUniqueName() bool {
 // and answers the method it asked for, empty where the clause is absent or
 // asks for the default.
 //
-// It used to step over the clause and discard it, which was the least wrong of
-// three answers while nothing could hold the value: refusing would refuse
-// ordinary DDL both engines accept, and a table-body UNIQUE that stays a
-// schemamodel.Constraint has nowhere to put a method. It is carried now for
-// the same reason a prefix length is (stokaro/ptah#2770): the element becomes
-// the unique INDEX the server builds, and an index has somewhere to keep it.
+// Stepping over the clause and discarding it is the least wrong of three
+// answers while nothing can hold the value: refusing would refuse ordinary DDL
+// both engines accept, and a table-body UNIQUE that stays a
+// schemamodel.Constraint has nowhere to put a method. It is carried for the
+// same reason a prefix length is (stokaro/ptah#2770): the element becomes the
+// unique INDEX the server builds, and an index has somewhere to keep it.
 //
-// The discard was observable. Measured 2026-09-03 on InnoDB,
+// A discard is observable. Measured 2026-09-03 on InnoDB,
 // `KEY k USING HASH (a)`:
 //
 //	MySQL 8.4.11    INDEX_TYPE BTREE, and SHOW CREATE TABLE drops the clause
@@ -3515,9 +3515,9 @@ func (p *Parser) currentIsUniqueName() bool {
 // UNIQUE, and a plain KEY or INDEX -- assign the answer unconditionally,
 // including the empty one. The remaining kinds that become an index, SPATIAL
 // and FULLTEXT, take no USING clause and supply their own prefix, which wins.
-// A guard clearing the field between elements was written first and removed:
-// no input reaches a stale read, so nothing could measure it, and an
-// unmeasurable guard is a second answer to a question that already has one.
+// A guard clearing the field between elements is deliberately absent: no input
+// reaches a stale read, so nothing could measure it, and an unmeasurable guard
+// is a second answer to a question that already has one.
 func (p *Parser) readIndexAccessMethod() string {
 	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") {
 		return ""
@@ -3670,10 +3670,10 @@ func (p *Parser) handleTableConstraintExclude(constraint *ast.ConstraintNode) er
 
 // handleTableConstraintTypedIndex reads `SPATIAL|FULLTEXT INDEX|KEY [name] (cols)`.
 //
-// SPATIAL used to assign ast.UniqueConstraint and the fixed name
-// "SPATIAL_INDEX", which lost the access method, replaced whatever the author
-// called the index, and gave every spatial index in a document the same
-// identity. Worse than losing them: a UNIQUE constraint is a promise the
+// Assigning ast.UniqueConstraint and the fixed name "SPATIAL_INDEX" to SPATIAL
+// loses the access method, replaces whatever the author called the index, and
+// gives every spatial index in a document the same identity. Worse than losing
+// them: a UNIQUE constraint is a promise the
 // declaration never made, and planning one against a spatial column either
 // fails or adds a uniqueness guarantee nobody asked for (stokaro/ptah#2711).
 //
@@ -3845,11 +3845,11 @@ func (p *Parser) currentIsIndexKeyword() bool {
 
 // handleTableConstraintIndex reads MySQL's table-level `KEY`/`INDEX (cols)`.
 //
-// It used to assign ast.UniqueConstraint, which is not a representation
-// difference: a plain KEY is an ordinary non-unique index, and modelling it as
-// a uniqueness guarantee makes Ptah converge to a schema stricter than the DDL
-// it was given, report it in sync, and reject duplicate values the author
-// allowed (stokaro/ptah#2713).
+// Assigning ast.UniqueConstraint here is not a representation difference: a
+// plain KEY is an ordinary non-unique index, and modelling it as a uniqueness
+// guarantee makes Ptah converge to a schema stricter than the DDL it was given,
+// report it in sync, and reject duplicate values the author allowed
+// (stokaro/ptah#2713).
 func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 	p.advance()
 	p.skipWhitespace()

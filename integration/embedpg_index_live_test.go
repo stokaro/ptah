@@ -346,10 +346,10 @@ func TestRetireIndex_DropsTheIndexTheGenerationBuiltLive(t *testing.T) {
 	registered := registryRowFor(retiring)
 	c.Assert(embedpg.GenerationIndexName(registered), qt.Equals, indexNameOf(c, retiring))
 
-	// The name the retirement used to build: the operator's CURRENT
-	// specification -- a different generation -- with the retired column
-	// swapped in. Target.Column is an identity field, so the digest belongs to
-	// a hybrid that is no generation, and the DROP matched nothing.
+	// The name a retirement builds from the operator's CURRENT specification --
+	// a different generation -- with the retired column swapped in.
+	// Target.Column is an identity field, so the digest belongs to a hybrid
+	// that is no generation, and the DROP matches nothing.
 	holding := indexedSpec(c, table)
 	holding.Model.Revision = "2"
 	holding.Target.Column = retiring.Target.Column + "_v2"

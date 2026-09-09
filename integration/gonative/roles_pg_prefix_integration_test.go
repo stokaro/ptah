@@ -14,8 +14,8 @@ import (
 	"ptah.run/internal/dbschema/postgres"
 )
 
-// pgPrefixRole is a role name PostgreSQL does NOT reserve and the reader's
-// system-role filter used to swallow.
+// pgPrefixRole is a role name PostgreSQL does NOT reserve and a careless
+// system-role filter swallows.
 //
 // PostgreSQL reserves the prefix `pg_`, with the underscore. SQL LIKE reads a
 // bare `_` as a single-character wildcard, so the pattern `pg_%` matches `pg`

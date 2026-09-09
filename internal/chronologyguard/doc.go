@@ -17,6 +17,12 @@
 // literal and miss nothing in exchange. This package parses the files and looks
 // only at comments, the way countsubjectguard does for its own rule.
 //
+// WHAT IT CATCHES THAT IT SHOULD NOT, once: a pronoun can refer to the user's
+// data rather than to Ptah. `a document ... by what it used to say` is a
+// sentence about a source row, and the rewrite is to name the noun -- `by text
+// the source no longer holds` -- which reads better anyway. One occurrence in
+// the whole tree, which is the rate that makes the subject list worth having.
+//
 // WHAT IT DOES NOT REACH, and why each is right. A plain citation --
 // `(stokaro/ptah#2209)`, or a sentence saying what an issue OWNS -- is a
 // pointer rather than a date, and no preposition precedes it. `after` is

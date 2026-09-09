@@ -14,12 +14,11 @@ import (
 // it answers before a test runs against it.
 //
 // It goes through internal/dbtarget rather than reading a variable, so a run
-// configured with the canonical spelling is exercised rather than skipped. The
-// helper below used to read the environment directly, and the reason it gave
-// was that dbtarget answered only with the address ptah connects with -- which
-// carries a scheme go-sql-driver/mysql reads as part of the username and pgx
-// does not parse at all. DriverDSN answers with the driver's own form, so that
-// reason is gone.
+// configured with the canonical spelling is exercised rather than skipped.
+// Reading the environment directly would rest on dbtarget answering only with
+// the address ptah connects with -- which carries a scheme go-sql-driver/mysql
+// reads as part of the username and pgx does not parse at all. DriverDSN
+// answers with the driver's own form, so there is no such reason.
 func requireReachableEngine(t *testing.T, engine dbtarget.Engine, driverName, databaseName string) string {
 	t.Helper()
 	return probeReachable(t, dbtarget.DriverDSN(t, engine), driverName, databaseName, engine.String())

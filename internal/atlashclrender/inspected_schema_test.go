@@ -661,9 +661,8 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 	c.Assert(parsed.Triggers, qt.HasLen, 1)
 	// Qualified, because an inspected render attributes the view block to the
 	// read's schema the way it has always attributed a table block. A trigger
-	// on an inspected TABLE has always come back `public.t`; the bare `v` this
-	// line used to expect was the view being the odd one out
-	// (stokaro/ptah#1138).
+	// on an inspected TABLE comes back `public.t`; a bare `v` here would make
+	// the view the odd one out (stokaro/ptah#1138).
 	c.Assert(parsed.Triggers[0].Table, qt.Equals, "public.v")
 }
 

@@ -17,12 +17,12 @@ import (
 // pins the ordering claim: an unusable --migrations-dir is found before the
 // database is opened, so a bad argument leaves no file behind.
 //
-// The fixture used to be a directory symlink leaving the working directory.
-// stokaro/ptah#1622 removed the relative-only confinement that refused it --
-// the identical destination spelled absolutely was always accepted, so the rule
-// filtered a spelling -- and the escape is followed now. A regular file named
-// as the directory is not a directory on any spelling, so the ordering claim
-// keeps a fixture that cannot be respelled away.
+// A directory symlink leaving the working directory cannot serve as the
+// fixture: stokaro/ptah#1622 removed the relative-only confinement that refused
+// it -- the identical destination spelled absolutely is accepted, so the rule
+// filtered a spelling -- and the escape is followed. A regular file named as
+// the directory is not a directory on any spelling, so the ordering claim keeps
+// a fixture that cannot be respelled away.
 func TestMigrateRepairCommand_RejectsAnUnopenableDirectoryBeforeDatabaseConnection(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()

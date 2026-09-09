@@ -911,16 +911,14 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 // mode, because the platform picks one and the refusal has to hold under all
 // three.
 //
-// It used to let platformPublicationMode choose, which made it a test of the
-// host: Unix detects hard links and publishes by adding a second name, so the
-// staging entry survives, while Windows publishes by an atomic rename that
-// consumes it. Only the last assertion depended on that, and it was the one
-// that reddened -- the refusal, the preserved foreign bytes and the retained
-// journal are identical in all three modes.
+// Letting platformPublicationMode choose would make it a test of the host: Unix
+// detects hard links and publishes by adding a second name, so the staging
+// entry survives, while Windows publishes by an atomic rename that consumes it.
+// Only the last assertion depends on that -- the refusal, the preserved foreign
+// bytes and the retained journal are identical in all three modes.
 //
-// Pinning one mode instead would have been the smaller change and the worse
-// one: it would have retired the mode Windows actually uses from the test that
-// covers this path.
+// Pinning one mode is the smaller change and the worse one: it retires the mode
+// Windows actually uses from the test that covers this path.
 // retainedStagingEntries reports how many staging entries a published batch
 // leaves behind, from the mode the journal recorded for it.
 //

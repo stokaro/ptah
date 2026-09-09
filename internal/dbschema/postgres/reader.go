@@ -245,15 +245,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 //
 // It asks schemasToRead(), the same list readTables, readIndexes and every
 // other read below iterate, so the schema list and the objects underneath it
-// are one decision rather than two. It used to answer nothing at all unless an
-// allow-list had been passed, which meant an unscoped read described tables in
-// `public` while denying it had read any schema -- and whatever consumed that
-// silence had to guess. stokaro/ptah#1276.
+// are one decision rather than two. Answering nothing at all unless an
+// allow-list was passed leaves an unscoped read describing tables in `public`
+// while denying it read any schema -- and whatever consumes that silence has to
+// guess. stokaro/ptah#1276.
 //
-// Which schemas an unscoped read covers is a separate question, and this
-// change does not move it: it is still the connected schema. What moves is that
-// the read says so. `schema inspect` resolves its own wider scope from the URL
-// and hands the names in explicitly (stokaro/ptah#1264).
+// Which schemas an unscoped read covers is a separate question this does not
+// move: it is the connected schema. What this settles is that the read says so.
+// `schema inspect` resolves its own wider scope from the URL and hands the
+// names in explicitly (stokaro/ptah#1264).
 func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 	names := r.schemasToRead()
 	schemas := make([]catalog.Schema, 0, len(names))
@@ -549,9 +549,9 @@ func (r *Reader) generatedExpressionExpr() string {
 // `Postgres function format(text, text, text) is not supported` comes first,
 // before pg_get_serial_sequence is even reached (stokaro/ptah#942).
 //
-// The second key used to be redundant there, because Spanner declared no
-// sequences at all. It stopped being redundant when the standalone object was
-// earned on that target and the shorthand was not: a serial column is refused
+// The second key is redundant only on a target that declares no sequences at
+// all. It stops being redundant the moment the standalone object is earned on
+// that target and the shorthand is not: a serial column is refused
 // while a CREATE SEQUENCE is rendered, so "has sequences" no longer implies
 // "can be asked which sequence a serial column owns" (stokaro/ptah#1856).
 // columnCommentExpr projects a column's own comment, where the target has the

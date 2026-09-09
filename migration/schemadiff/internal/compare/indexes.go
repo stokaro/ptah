@@ -272,8 +272,8 @@ func constraintBackedIndexIdentities(
 //	Cannot drop index `IDX_children_parent_id_FBF4366D73F2084A`.
 //	It is in use by foreign keys: `children_parent_fk`.
 //
-// so such a document applied exactly once and failed on every run afterwards,
-// with a plan that never changed (stokaro/ptah#2076).
+// so such a document applies exactly once and fails on every run afterwards,
+// with a plan that never changes (stokaro/ptah#2076).
 //
 // A user's own index over the same columns is not swallowed by this: an
 // identity the desired state declares as an index never reaches the ownership
@@ -281,7 +281,7 @@ func constraintBackedIndexIdentities(
 // mysqlForeignKeyBackingIndexes is the index MySQL or MariaDB built for one
 // foreign key, where it built one at all.
 //
-// The name alone used to decide it, and a name is not evidence. Measured on
+// The name alone cannot decide it, because a name is not evidence. Measured on
 // MySQL 8.4.11 and MariaDB 11.8.9, both engines accept this table:
 //
 //	CREATE TABLE children (
@@ -290,9 +290,9 @@ func constraintBackedIndexIdentities(
 //	    CONSTRAINT f FOREIGN KEY (a) REFERENCES parents(id));
 //
 // `cover(a)` backs the constraint and `f(b)` is an ordinary performance index
-// that happens to share the symbol. Claiming it for the foreign key suppressed
-// it from the comparison, so removing it from the desired schema reported
-// `InSync` with no plan and left a live index nothing would ever manage
+// that happens to share the symbol. Claiming it for the foreign key suppresses
+// it from the comparison, so removing it from the desired schema reports
+// `InSync` with no plan and leaves a live index nothing will ever manage
 // (stokaro/ptah#2782).
 //
 // Both signals are required, the way the Spanner arm below already requires
@@ -676,7 +676,7 @@ func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
 //	ERROR:  cannot drop index ex_widget_room because constraint ex_widget_room
 //	        on table widget requires it
 //
-// so the plan could not be applied at all (stokaro/ptah#2013). A CHECK is the
+// so such a plan cannot be applied at all (stokaro/ptah#2013). A CHECK is the
 // other clause constraint and is enforced with no index, so it gets no arm.
 //
 // The name-pattern arm is a guess about a naming convention where the identity
@@ -691,22 +691,22 @@ func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
 // reaching a removal at all means the desired state declared an index under the
 // constraint's name, which is a separate question from this one.
 //
-// The three sets are the whole answer. A fourth branch used to follow them and
-// read the index's NAME -- a name ending in `_key` that begins with the table's
-// name, or a single-column index whose name equals the column -- on every
-// dialect but SQL Server. It compensated for a catalog that reports a backing
-// index without the constraint behind it, which is a shape a fixture can have
-// and a reader does not produce: measured on PostgreSQL 18, a real
+// The three sets are the whole answer. A fourth branch reading the index's NAME
+// -- a name ending in `_key` that begins with the table's name, or a
+// single-column index whose name equals the column -- on every dialect but SQL
+// Server compensates for a catalog that reports a backing index without the
+// constraint behind it, which is a shape a fixture can have and a reader does
+// not produce: measured on PostgreSQL 18, a real
 // `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` is reported as a constraint and
 // its index is caught by owned.unique above.
 //
-// What the branch actually did was hide a user's own index. Same table, same
-// column, same desired schema declaring no index: `ptah schema compare`
-// answered "No schema differences detected" for one named `slug` or
-// `tenants_slug_key`, and planned `DROP INDEX` for the identical object named
-// `tenants_slug`, `uk_tenants_slug` or `idx_tenants_slug`. The removal the
-// author asked for was never planned, and `--dry-run` reported the database in
-// sync (stokaro/ptah#2615).
+// What such a branch does instead is hide a user's own index. Same table, same
+// column, same desired schema declaring no index: `ptah schema compare` answers
+// "No schema differences detected" for one named `slug` or `tenants_slug_key`,
+// and plans `DROP INDEX` for the identical object named `tenants_slug`,
+// `uk_tenants_slug` or `idx_tenants_slug`. The removal the author asked for is
+// never planned, and `--dry-run` reports the database in sync
+// (stokaro/ptah#2615).
 func constraintOwnedDatabaseIndex(
 	index catalog.Index,
 	dialect string,
@@ -1179,7 +1179,7 @@ func generatedIndexWithResolvedExpression(
 // column and expr are separate fields on purpose, and exactly one is ever set.
 // That is the distinction #1246 established: an index on lower(name) and an
 // index on a column literally named "lower(name)" are different indexes, and
-// collapsing them is how the reader used to emit
+// collapsing them is how a reader comes to emit
 // CREATE INDEX ... ("lower(name)"), which psql rejects.
 type postgresIndexKey struct {
 	column     string

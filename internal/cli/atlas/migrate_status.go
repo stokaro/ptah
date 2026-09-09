@@ -273,9 +273,9 @@ func validateAtlasMigrateStatusFormat(format string) error {
 // This verb is the one a deploy pipeline parses with a machine rather than
 // reads, so its field names, sentinel strings and value encodings are the
 // interface, not a wording preference — separate from the deliberate prose
-// divergence settled on `migrate lint` in #1062/#1078. The block Ptah used to
-// print here (`=== MIGRATION STATUS ===`, `Current Version: 0`, `Status:
-// Database is up to date`) shared no line with the community binary, so
+// divergence settled on `migrate lint` in #1062/#1078. A block of Ptah's own
+// here (`=== MIGRATION STATUS ===`, `Current Version: 0`, `Status: Database is
+// up to date`) shares no line with the community binary, so
 // `grep -q 'Migration Status: OK'` as a deploy gate never fired, `-- Current
 // Version:` matched nothing, and `Next Version:` had no counterpart at all —
 // while both binaries exited 0, so nothing caught it.

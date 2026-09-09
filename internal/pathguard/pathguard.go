@@ -11,13 +11,13 @@
 //
 // [ResolveCLIPath] and [OpenCLIDirectory] take no root and impose no enclosing
 // boundary. They resolve and clean a path an operator typed, and that is all
-// they promise. They used to confine a RELATIVE spelling to the process working
-// directory while exempting an absolute one, which filtered a spelling rather
-// than an escape: every one of their call sites reads a value the operator
-// supplied, so the same destination was refused as "../schema.sql" and accepted
-// spelled in full. A rule any caller satisfies by respelling the argument is not
-// a boundary, and it cost a behavior the community Atlas binary has
-// (stokaro/ptah#1622, item 11 of stokaro/ptah#1241).
+// they promise. Confining a RELATIVE spelling to the process working directory
+// while exempting an absolute one filters a spelling rather than an escape:
+// every one of their call sites reads a value the operator supplied, so the
+// same destination is refused as "../schema.sql" and accepted spelled in full.
+// A rule any caller satisfies by respelling the argument is not a boundary, and
+// it costs a behavior the community Atlas binary has (stokaro/ptah#1622, item
+// 11 of stokaro/ptah#1241).
 package pathguard
 
 import (
@@ -116,13 +116,12 @@ func ResolveWithinRoot(path, allowedRoot string) (string, error) {
 
 // ResolveCLIPath resolves a CLI path to an absolute, cleaned pathname, with
 // existing symlinks followed. It imposes no boundary of any kind, and both
-// spellings of one destination now answer identically.
+// spellings of one destination answer identically.
 //
-// The relative-only confinement this used to carry was removed in
-// stokaro/ptah#1622: it refused "../schema.sql" and accepted the same file
-// spelled in full, so it filtered a spelling rather than an escape. Callers
-// wanting containment pass an explicit root to [ResolveWithinRoot], where the
-// root binds every spelling.
+// A relative-only confinement here refuses "../schema.sql" and accepts the same
+// file spelled in full, filtering a spelling rather than an escape
+// (stokaro/ptah#1622). Callers wanting containment pass an explicit root to
+// [ResolveWithinRoot], where the root binds every spelling.
 func ResolveCLIPath(path string) (string, error) {
 	return ResolveWithinRoot(path, "")
 }

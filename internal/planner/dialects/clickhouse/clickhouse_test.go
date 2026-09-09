@@ -231,11 +231,11 @@ func TestGenerateMigrationAST_NilSchemaHappyPath(t *testing.T) {
 }
 
 func TestGenerateMigrationAST_MissingDesiredViewRejected(t *testing.T) {
-	// The addition row that used to sit beside this one is gone, and
-	// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration is what
-	// replaced it: an added view travels with the change, so there is no
-	// lookup left to miss (stokaro/ptah#2315). A modification carries its name
-	// alone, so this is still the answer for one.
+	// There is no addition row beside this one:
+	// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration covers that
+	// half, because an added view travels with the change and leaves no lookup
+	// to miss (stokaro/ptah#2315). A modification carries its name alone, so
+	// this is the answer for one.
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
@@ -441,9 +441,9 @@ func TestGenerateMigrationAST_MaterializedViewRemovalIsGuarded(t *testing.T) {
 }
 
 func TestGenerateMigrationAST_MissingDesiredMaterializedViewRejected(t *testing.T) {
-	// The addition row that used to sit beside this one is gone for the reason
-	// its plain-view twin's is: an added materialized view travels with the
-	// change, so there is no lookup left to miss (stokaro/ptah#2315). See
+	// There is no addition row beside this one, for the reason its plain-view
+	// twin gives: an added materialized view travels with the change and leaves
+	// no lookup to miss (stokaro/ptah#2315). See
 	// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration, which
 	// covers both kinds.
 	tests := []struct {

@@ -540,13 +540,13 @@ func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
 // re-derived from opts.dirFormat here, so "which layout is this run writing"
 // has one answer.
 //
-// A foreign layout used to be refused at this position. It is not any more:
-// stokaro/ptah#1013 taught this verb to write the five external layouts, so the
-// value is now carried into the writer instead. What did NOT move is the
-// position of the value's own validation — an unparsable `--dir-format ATLAS`
-// is still refused ahead of the atlas.sum gate by
-// [resolveWritingVerbDirFormat], and a parsable foreign one still reaches the
-// gate first, which is where the community binary answers it: measured on the
+// A foreign layout is not refused at this position: this verb writes the five
+// external layouts (stokaro/ptah#1013), so the value is carried into the writer
+// instead. What that does NOT move is the position of the value's own
+// validation — an unparsable `--dir-format ATLAS` is refused ahead of the
+// atlas.sum gate by [resolveWritingVerbDirFormat], and a parsable foreign one
+// reaches the gate first, which is where the community binary answers it:
+// measured on the
 // pinned v1.3.0, an unhashed directory with `--dir-format goose` prints the
 // checksum error, not a format complaint.
 func prepareAtlasMigrateDiffSource(

@@ -149,10 +149,10 @@ func lineageFormatIsKnown(format string) bool {
 
 // writeLineage renders the document in the format the operator named.
 //
-// One dispatcher for both the file-backed and the live path. They used to
-// branch on the format separately, which is how a third format reaches one of
-// them and not the other -- the same shape as a fix landing on only the branch
-// an issue happened to name.
+// One dispatcher for both the file-backed and the live path. Branching on the
+// format separately is how a third format reaches one of them and not the other
+// -- the same shape as a fix landing on only the branch an issue happened to
+// name.
 func writeLineage(w io.Writer, format string, document lineageDocument) error {
 	switch format {
 	case "json":

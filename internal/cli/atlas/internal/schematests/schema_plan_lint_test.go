@@ -346,11 +346,11 @@ func TestSchemaPlanLintRequiredInputs_FailurePath(t *testing.T) {
 				"--from", "sqlite://x.db", "--to", "file://x.sql",
 				"--file", "file://x.plan.hcl", "--format", "{{ json . }}",
 			},
-			// The refusal used to be "Ptah does not implement --format for
-			// schema plan yet". `schema plan --format` renders a plan
-			// document now; this verb reports a verdict on one, which is a
-			// payload nothing has settled, and the message says so and points
-			// at the verb that does render (stokaro/ptah#1700).
+			// The refusal is not "Ptah does not implement --format for schema
+			// plan yet": `schema plan --format` renders a plan document. This
+			// verb reports a verdict on one, which is a payload nothing has
+			// settled, and the message says so and points at the verb that does
+			// render (stokaro/ptah#1700).
 			want: "atlas schema plan lint accepts --format, but --format renders a plan document, " +
 				"and this verb reports on a plan instead of producing one",
 		},

@@ -33,11 +33,11 @@ import (
 // arrive between the cycles, which is also what makes the second cycle choose
 // the concurrent build.
 //
-// Linting the generated pair is not a formality. Statement rules used to be
-// confined to up files, so the rollback half -- the half that is a DROP INDEX
-// by construction -- was never read, and a green lint said nothing about it.
-// PG106 and PG103 now read down files, which means Ptah's linter can finally
-// contradict Ptah's generator, and this is the test that would notice: PG106
+// Linting the generated pair is not a formality. Statement rules confined to up
+// files never read the rollback half -- the half that is a DROP INDEX by
+// construction -- so a green lint says nothing about it. PG106 and PG103 read
+// down files, which is what lets Ptah's linter contradict Ptah's generator, and
+// this is the test that would notice: PG106
 // fires on a blocking DROP INDEX in either direction, and PG103 fires on a
 // concurrent index statement in a file that does not carry the
 // no_transaction marker it needs in order to execute at all.

@@ -33,9 +33,8 @@ type grantTarget struct {
 // field the tooling cannot follow. See AGENTS.md, "A Table Row Carries Data,
 // Not A Checker".
 //
-// Stating the whole projected list rather than a length also says more than
-// the closures did: a row that planned one grant used to check only that it
-// planned one.
+// Stating the whole projected list rather than a length also says more: a
+// length check on a row that plans one grant only says that it planned one.
 type grantIdentityCase struct {
 	name             string
 	desired          []schemamodel.Grant

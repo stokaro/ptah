@@ -1014,8 +1014,8 @@ func requireAtlasReference(t *testing.T) string {
 // The steps are the issue's own numbered definition of done. The one worth
 // naming is step 4: `migrate apply` with nothing pending has to be a clean
 // no-op rather than a refusal, because that is the state a user lands in the
-// moment they point Ptah at an existing database, and a refusal there is what
-// used to force `migrate set`.
+// moment they point Ptah at an existing database, and a refusal there forces
+// `migrate set`.
 //
 // The last step is the reverse direction the issue calls desirable rather than
 // required. It is asserted rather than merely recorded: a history Ptah appended

@@ -165,8 +165,9 @@ func writeSidebar(out *strings.Builder, doc document) {
 //
 // A caller that supplies its own rail -- the live dashboard does, with its own
 // title and database address above this -- takes this and not writeSidebar. The
-// two used to be one function, which is how the dashboard came to nest an
-// <aside class="sidebar"> inside its own and print the title twice.
+// two are separate functions because one of them nests an
+// <aside class="sidebar"> inside the dashboard's own and prints the title
+// twice.
 func writeNav(out *strings.Builder, doc document) {
 	out.WriteString(`<nav class="nav">`)
 	if len(doc.Tables) > 0 {

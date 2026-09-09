@@ -139,8 +139,8 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 // makes this list executable statement by statement.
 //
 // A whole-schema render targets a database that does not have these objects
-// yet, so no function needs a drop here. The visitor used to emit
-// `DROP FUNCTION IF EXISTS` in front of every CREATE anyway, which put two
+// yet, so no function needs a drop here. A visitor that emits
+// `DROP FUNCTION IF EXISTS` in front of every CREATE anyway puts two
 // statements in one element -- and an element is what the compatibility
 // dev-database path hands to ExecuteSQL unchanged. go-sql-driver refuses a
 // two-statement string unless multiStatements is on, and convertMySQLURL does
@@ -191,19 +191,17 @@ func TestRender_MySQLFamilyNoLongerBlamesTheEngine(t *testing.T) {
 	}
 }
 
-// TestRender_SQLServerGeneratesTheFunctionItUsedToName records the move and
-// keeps the control the old test provided.
+// TestRender_SQLServerGeneratesAFunction is the positive row, and names where
+// the control a negative one would provide lives instead.
 //
-// SQL Server used to be the negative row here: it hosts functions perfectly
-// well, but its preset declared Functions false because nothing could read one
-// back, and the diagnostic had to name Ptah rather than the engine. The read
-// half exists now (stokaro/ptah#1720), so the row is positive.
+// SQL Server hosts functions and Ptah reads one back (stokaro/ptah#1720), so
+// its preset declares Functions true and this render is real DDL rather than a
+// diagnostic naming Ptah.
 //
-// The control it provided must not leave with it. Without a dialect that still
-// declines, a mutant making every target emit DDL would pass every row above,
-// so ClickHouse -- which declares Functions false and means it -- takes that
-// place.
-func TestRender_SQLServerGeneratesTheFunctionItUsedToName(t *testing.T) {
+// The control still has to exist somewhere. Without a dialect that declines, a
+// mutant making every target emit DDL would pass every row above, so ClickHouse
+// -- which declares Functions false and means it -- takes that place.
+func TestRender_SQLServerGeneratesAFunction(t *testing.T) {
 	t.Run("sqlserver emits the T-SQL create form", func(t *testing.T) {
 		c := qt.New(t)
 

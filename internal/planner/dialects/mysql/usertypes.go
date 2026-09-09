@@ -29,11 +29,11 @@ func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff) []a
 		return result
 	}
 	// The domain travels WITH the change, so this renders what it was handed
-	// (stokaro/ptah#2315). It used to index the desired schema by Name and look
-	// the entry up by QualifiedName, which are the same string only for a
-	// domain that names no schema: a declaration carrying one produced no node
-	// at all, and the plan reported success. Measured on the Oracle preset --
-	// `zip` planned one statement and `app.zip` planned none.
+	// (stokaro/ptah#2315). Indexing the desired schema by Name and looking the
+	// entry up by QualifiedName agrees only for a domain that names no schema:
+	// a declaration carrying one produces no node at all, and the plan reports
+	// success. Measured on the Oracle preset -- `zip` plans one statement and
+	// `app.zip` plans none.
 	for _, domain := range diff.DomainsAdded {
 		result = append(result, modelast.FromDomain(domain))
 	}

@@ -19,7 +19,7 @@
 // started the server with a workspace, and absent when they did not.
 //
 // describe_session belongs to the first group and reports on the second, which
-// is why it used to be counted in the second by mistake.
+// is why it is easy to count in the second by mistake.
 //
 // That split is process-level on purpose. The protocol requires a server's tool
 // list to be stable within a connection: a set that grew after a capability was

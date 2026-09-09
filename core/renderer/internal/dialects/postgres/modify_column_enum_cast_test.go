@@ -20,9 +20,9 @@ import (
 // measured live on PostgreSQL 17.10 with `ptah schema apply --auto-approve`,
 // TRUE_EXIT=2 and the column left as `character varying`.
 //
-// The clause used to be attached only when the type name began with "enum_", so
-// two tables with identical enum values behaved differently on the basis of the
-// type's spelling alone: `enum_status` applied and `status_kind` aborted. The
+// Attaching the clause only when the type name begins with "enum_" makes two
+// tables with identical enum values behave differently on the basis of the
+// type's spelling alone: `enum_status` applies and `status_kind` aborts. The
 // two rows below are that discriminating pair, with the name as the only
 // difference (stokaro/ptah#931 item 1).
 func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {

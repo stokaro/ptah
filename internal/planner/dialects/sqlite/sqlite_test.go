@@ -269,9 +269,10 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	}
 }
 
-// TestPlannerRebuildsATableOtherTablesReferTo pins what used to be a refusal.
-// A rebuild drops the original table, which another table's foreign key makes
-// illegal while enforcement is on, so the plan brackets itself in the pragmas
+// TestPlannerRebuildsATableOtherTablesReferTo pins a rebuild where a refusal
+// would also be an answer. A rebuild drops the original table, which another
+// table's foreign key makes illegal while enforcement is on, so the plan
+// brackets itself in the pragmas
 // SQLite's own ALTER TABLE procedure prescribes -- the same bracket the pinned
 // community binary emits. See stokaro/ptah#1561.
 func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
@@ -379,10 +380,10 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 // stokaro/ptah#1707.
 //
 // Each row is a column shape `ALTER TABLE ... ADD COLUMN` rejects and
-// CREATE TABLE accepts. Every one of them used to be answered
-// "adding column X to table users requires a table rebuild plan" -- by a tool
-// that writes rebuild plans, and that had always taken the same column without
-// comment when the table was already being rebuilt for another reason.
+// CREATE TABLE accepts. Answering any of them
+// "adding column X to table users requires a table rebuild plan" comes from a
+// tool that writes rebuild plans, and that takes the same column without
+// comment when the table is already being rebuilt for another reason.
 //
 // The assertion is that a rebuild is planned, named by the scratch table the
 // rebuild moves through. Reverting the decision restores the refusal and every
@@ -935,12 +936,11 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 // TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare is SQLite's
 // answer to the property the PostgreSQL planner holds by writing nothing.
 //
-// A column travels WITH its change now (stokaro/ptah#2315), so the lookup that
-// used to fail for an undeclared table cannot fail any more. On PostgreSQL the
-// guard that lookup provided had to be restored explicitly; here it did not,
-// because SQLite already refuses -- and refusing is the better answer, since an
-// operator is told which table to declare rather than being handed a plan that
-// quietly does less than they asked.
+// A column travels WITH its change (stokaro/ptah#2315), so no lookup fails for
+// an undeclared table. On PostgreSQL the guard such a lookup provides has to be
+// stated explicitly; here it does not, because SQLite refuses -- and refusing is
+// the better answer, since an operator is told which table to declare rather
+// than being handed a plan that quietly does less than they asked.
 //
 // Measured: adding the PostgreSQL-style guard here changed no test, because
 // this refusal happens first.

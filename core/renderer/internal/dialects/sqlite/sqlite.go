@@ -426,10 +426,10 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 
 // VisitCreateMaterializedView refuses: SQLite has no materialized view object.
 //
-// This used to render a comment. A comment makes `schema render` exit 0 on a
-// model the planner refuses at `schema apply` time, so the surface a user is
-// told to validate with disagreed with the surface that executes. The SQLite
-// planner already answers "materialized views are not supported".
+// Rendering a comment instead makes `schema render` exit 0 on a model the
+// planner refuses at `schema apply` time, so the surface a user is told to
+// validate with disagrees with the surface that executes. The SQLite planner
+// answers "materialized views are not supported".
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
@@ -727,9 +727,9 @@ func mapColumnType(column *ast.ColumnNode) string {
 // renderDefaultLiteral writes a default in the form the column's own affinity
 // takes.
 //
-// Quoting everything is what it used to do, and SQLite hides most of that: a
-// numeric-looking string on an INTEGER-affinity column is converted on the way
-// in, so `DEFAULT '7'` stores 7. `true` is not numeric-looking, so
+// Quoting everything hides most of its own damage, because SQLite converts on
+// the way in: a numeric-looking string on an INTEGER-affinity column becomes a
+// number, so `DEFAULT '7'` stores 7. `true` is not numeric-looking, so
 // `DEFAULT 'true'` stores the TEXT "true" on a column meant to hold 1.
 // Measured by inserting a row into two databases built from one HCL document,
 // one by the pinned Atlas community binary and one through ptah-compat:

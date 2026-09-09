@@ -168,14 +168,13 @@ func TestMaterializedViews_DetectsBodyChange(t *testing.T) {
 	c.Assert(diff.MaterializedViewsModified[0].Changes, qt.HasLen, 1)
 }
 
-// TestMaterializedViews_ReportsNoDriftForAnUnchangedView replaces a test that
-// asserted the opposite.
+// TestMaterializedViews_ReportsNoDriftForAnUnchangedView pins the absence of a
+// refresh_strategy drift entry.
 //
-// It used to pin a refresh_strategy drift entry as a backstop: the read
-// synthesized "manual" for every materialized view, so a declaration of
-// anything else showed up here even though no renderer read the field. With
-// nothing carrying a strategy on either side, an unchanged view is unchanged
-// (stokaro/ptah#1625).
+// A read that synthesizes "manual" for every materialized view makes a
+// declaration of anything else show up here, even though no renderer reads the
+// field. With nothing carrying a strategy on either side, an unchanged view is
+// unchanged (stokaro/ptah#1625).
 func TestMaterializedViews_ReportsNoDriftForAnUnchangedView(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

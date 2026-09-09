@@ -19,19 +19,19 @@ import (
 //
 // Two ways to reach it without touching the clock:
 //
-//   - two diffs inside one second, where the collision step used to add one to
-//     a version numbered :59;
+//   - two diffs inside one second, where a collision step that adds one to a
+//     version numbered :59 produces :60;
 //   - one diff whose plan is split in two files, the concurrent-index half
-//     staged at version+1 (BuildMigrationFileContents), where a base at :59 put
-//     the second file on the sixtieth second.
+//     staged at version+1 (BuildMigrationFileContents), where a base at :59
+//     puts the second file on the sixtieth second.
 //
 // Both produce a fourteen-digit version that is not an instant, which is what
 // the issue names.
 //
-// The cheaper wrong implementation is the loop this branch shipped --
-// `for collidesWithTakenVersions(taken, version, count) { version++ }` --
-// which answers 20260809042360 on rows two and three and never looks at the
-// slots after the base.
+// The cheaper wrong implementation is the loop
+// `for collidesWithTakenVersions(taken, version, count) { version++ }`, which
+// answers 20260809042360 on rows two and three and never looks at the slots
+// after the base.
 func TestFirstFreeMigrationVersionRun(t *testing.T) {
 	tests := []struct {
 		name    string

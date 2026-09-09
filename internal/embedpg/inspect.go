@@ -479,15 +479,15 @@ func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 		storedOrdinalExpression(spec))
 
 	// Whether the row is one the specification asks for, computed by the server
-	// from the same predicate that used to be the only thing in the WHERE.
+	// from the same predicate a narrow WHERE would carry alone.
 	//
-	// The walk reached one row set and split it into both sides, so every
-	// target row it produced was in scope by construction and
-	// `embedverify.reportOutOfScope` could not fire through the shipped reader
-	// (stokaro/ptah#2649 finding 2). A generation carrying vectors for rows the
-	// specification excludes -- which catch-up creates on its own -- passed
-	// every layer, and the reported target-row count was not the number of
-	// vectors in the column.
+	// With that predicate in the WHERE the walk reaches one row set and splits
+	// it into both sides, so every target row it produces is in scope by
+	// construction and `embedverify.reportOutOfScope` cannot fire through the
+	// reader at all (stokaro/ptah#2649 finding 2). A generation carrying vectors
+	// for rows the specification excludes -- which catch-up creates on its own
+	// -- then passes every layer, and the reported target-row count is not the
+	// number of vectors in the column.
 	//
 	// One walk rather than two, and a widened WHERE rather than none: a
 	// verification already holds the corpus in memory (stokaro/ptah#2621), so a
@@ -882,8 +882,8 @@ func sourceVerificationRow(
 // cannot be stored in a pgvector column at all -- it is refused on write, so
 // reading every vector back to check would measure the write path twice.
 //
-// This used to answer with `make([]float32, dimension)`: a zero-filled slice
-// per row, carrying nothing the integer does not, and 6 GB of it over a
+// Answering with `make([]float32, dimension)` gives a zero-filled slice per
+// row, carrying nothing the integer does not, and 6 GB of it over a
 // million-row corpus at 1536 dimensions.
 func storedDimension(dimension sql.NullInt64) int {
 	if !dimension.Valid || dimension.Int64 <= 0 {
@@ -968,19 +968,18 @@ func GenerationIndexExists(
 // index gone and the column there -- a generation that is neither retired nor
 // usable.
 //
-// It takes the registry row and no specification. It used to take the caller's
-// spec with only Target.Column swapped in, and Target.Column is an identity
-// field, so the digest baked into the generated name belonged to a hybrid that
-// was no generation at all: the DROP matched nothing, the index survived, and
-// with --drop-column=false -- the only mode in which dropping the index IS the
-// operation -- the verb reported the generation gone at exit 0
-// (stokaro/ptah#2642).
+// It takes the registry row and no specification. Taking the caller's spec with
+// only Target.Column swapped in bakes a digest from a hybrid that is no
+// generation at all, because Target.Column is an identity field: the DROP then
+// matches nothing, the index survives, and with --drop-column=false -- the only
+// mode in which dropping the index IS the operation -- the verb reports the
+// generation gone at exit 0 (stokaro/ptah#2642).
 //
-// There is no HasIndex gate any more, and its absence is deliberate. Whether
-// the retired generation built an index is a fact about THAT generation, and
-// the registry does not record it; the gate consulted the current
-// specification's index method, which answers about a different generation.
-// `IF EXISTS` is the honest form of the same question, asked of the server.
+// There is no HasIndex gate, and its absence is deliberate. Whether the retired
+// generation built an index is a fact about THAT generation, and the registry
+// does not record it; such a gate would consult the current specification's
+// index method, which answers about a different generation. `IF EXISTS` is the
+// honest form of the same question, asked of the server.
 type contextExecer interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }

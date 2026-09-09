@@ -120,10 +120,10 @@ func assertALiveSourceStillNeedsItsCatchUp(
 
 	c.Assert(err, qt.IsNotNil)
 	// The refusal comes from `backfilled` rather than `backfilling`: a completed
-	// backfill reaches its own phase now, because the phase used to be set to
-	// `backfilling` by the walk that had just ended (stokaro/ptah#2649). What
-	// this test is about is unchanged -- a live source that skipped catch-up
-	// still cannot index -- and the phase named in the refusal is the one the
+	// backfill reaches its own phase, rather than the walk that just ended
+	// leaving it at `backfilling` (stokaro/ptah#2649). What this test is about
+	// is the same -- a live source that skipped catch-up cannot index -- and
+	// the phase named in the refusal is the one the
 	// run is actually at.
 	c.Assert(output+err.Error(), qt.Contains, "backfilled cannot move to indexed")
 }

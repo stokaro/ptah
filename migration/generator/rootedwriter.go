@@ -21,10 +21,11 @@ import (
 // migration, publishing a planned one, and writing a checkpoint or data
 // migration -- expressed against one rooted migration-directory handle each.
 //
-// The shape is the point (stokaro/ptah#1118). Both used to resolve the output
-// directory to a string and then reopen it by pathname for every subsequent
-// step: the mkdir, the version scan, each exclusive create, the atlas.sum
-// commit, the pre-publication snapshot and the publication itself. Measured on
+// The shape is the point (stokaro/ptah#1118). Resolving the output directory to
+// a string and reopening it by pathname for every subsequent step -- the mkdir,
+// the version scan, each exclusive create, the atlas.sum commit, the
+// pre-publication snapshot and the publication itself -- is what it replaces.
+// Measured on
 // master, a `ptah migrations create` racing a symlink swap of its own migration
 // directory published the migration file and a staged atlas.sum into a
 // directory outside AllowedOutputRoot in 4 of 40 runs, and a plan whose
@@ -93,10 +94,10 @@ func notifyMigrationFileNamesChosen(names ...string) {
 // or returns nil for the direct-CLI shape where an explicit absolute output
 // directory is the operator's own choice of destination.
 //
-// Opening it is what makes AllowedOutputRoot mean something after resolution.
-// It used to be a string compared against once by pathguard.ResolveWithinRoot
-// and then dropped, so a directory replaced afterwards escaped a boundary the
-// caller believed was still being enforced.
+// Opening it is what makes AllowedOutputRoot mean something after resolution. A
+// string compared against once by pathguard.ResolveWithinRoot and then dropped
+// lets a directory replaced afterwards escape a boundary the caller believes is
+// still being enforced.
 func openOutputRoot(allowedOutputRoot string) (*pathguard.OpenedDirectory, error) {
 	if allowedOutputRoot == "" {
 		return nil, nil
@@ -336,13 +337,13 @@ func publishMigrationDirSum(
 // checkpoint exclusively, and commit atlas.sum over it -- all through that one
 // handle.
 //
-// It used to run entirely on pathnames, and the split it allowed was measured
-// rather than argued: with the directory renamed aside after the checkpoint file
-// was created, the writer returned nil having left the
-// checkpoint in the retained directory and written atlas.sum into the directory
-// that took over the pathname. The retained directory is then uncovered, so
-// every reader rejects it, and the impostor carries a checksum for a snapshot it
-// never held (stokaro/ptah#1118).
+// Running it entirely on pathnames allows a split that was measured rather than
+// argued: with the directory renamed aside after the checkpoint file is
+// created, the writer returns nil having left the checkpoint in the retained
+// directory and written atlas.sum into the directory that took over the
+// pathname. The retained directory is then uncovered, so every reader rejects
+// it, and the impostor carries a checksum for a snapshot it never held
+// (stokaro/ptah#1118).
 func writeRootedAtlasCheckpoint(
 	outputDir string,
 	version int64,

@@ -393,8 +393,8 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
-	// --format and --directive used to be rows in this table. They are
-	// implemented now, and what they do instead is pinned by
+	// --format and --directive are not rows in this table: both are
+	// implemented, and what they do is pinned by
 	// TestSchemaPlanFormatRendersTheTemplate and
 	// TestSchemaPlanDirectiveIsWrittenIntoThePlanFile (stokaro/ptah#1700).
 	tests := []struct {

@@ -127,10 +127,9 @@ func runImport(cmd *cobra.Command, opts *options) error {
 //
 // It writes to stderr for the same reason the apply path does: the list is a
 // warning about the input rather than part of the output a caller pipes on. A
-// silent skip is the defect this command was fixed for -- the importer cannot
-// tell a README from an author's migration that missed the naming rule by one
-// character, and it used to report both the same way, which was not at all
-// (stokaro/ptah#2231).
+// silent skip is the defect this answers -- the importer cannot tell a README
+// from an author's migration that missed the naming rule by one character, so
+// reporting both the same way means reporting neither (stokaro/ptah#2231).
 func reportDeclined(errOut io.Writer, declined []importer.DeclinedFile) {
 	if len(declined) == 0 {
 		return

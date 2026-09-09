@@ -57,10 +57,9 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 // TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns states the
 // constraint in the DIFF alone.
 //
-// It used to state it in both the diff and the declaration, which made either
-// half of the refusal sufficient and neither of them measured. The declaration
-// is empty here, so this asserts the record-driven half and nothing else
-// (stokaro/ptah#2315).
+// Stating it in both the diff and the declaration makes either half of the
+// refusal sufficient and neither measured. The declaration is empty here, so
+// this asserts the record-driven half and nothing else (stokaro/ptah#2315).
 func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) {
 	c := qt.New(t)
 	planner := mysql.New()
@@ -160,11 +159,10 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 // TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement pins
 // what each of the three role categories becomes.
 //
-// It used to assert a refusal for all three, because nothing read a role back.
-// The read half exists now (stokaro/ptah#1762), so an addition and a removal
-// render, and only a MODIFICATION still refuses -- a MySQL-family role has no
-// attribute to alter, so a change to one is a change to something the object
-// does not have.
+// A refusal for all three answers a target that reads no role back. The read
+// half exists (stokaro/ptah#1762), so an addition and a removal render, and
+// only a MODIFICATION refuses -- a MySQL-family role has no attribute to alter,
+// so a change to one is a change to something the object does not have.
 func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *testing.T) {
 	planner := mysql.New()
 

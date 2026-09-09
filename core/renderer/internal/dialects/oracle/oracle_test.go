@@ -323,15 +323,15 @@ func TestModifyColumn_WritesNullabilityOnlyWhenItChanges(t *testing.T) {
 			contains: "VARCHAR2(200)", absent: "NULL",
 		},
 		{
-			// This row used to expect NOT NULL, on the reasoning that stating
-			// the target is what a freshly planned constraint needs. Measured,
-			// that is the one case it cannot be: the planners populate the
-			// previous value exactly when the comparison recorded a nullability
-			// change, so an operation that does not carry it is an operation
-			// whose nullability did not change -- and restating it there
-			// answers ORA-01442. A declaration that only cleared a default
-			// failed on its first statement for this reason, and the
-			// relaxation queued behind it never ran (stokaro/ptah#1885).
+			// Expecting NOT NULL here reads as "stating the target is what a
+			// freshly planned constraint needs". Measured, this is the one case
+			// it cannot be: the planners populate the previous value exactly
+			// when the comparison recorded a nullability change, so an
+			// operation that does not carry it is an operation whose
+			// nullability did not change -- and restating it there answers
+			// ORA-01442. A declaration that only clears a default then fails on
+			// its first statement, and the relaxation queued behind it never
+			// runs (stokaro/ptah#1885).
 			//
 			// Omitting the clause is safe because MODIFY without one preserves
 			// the constraint, which is the third line of the measurement above.

@@ -269,12 +269,12 @@ const dockerProvisionerVerdict = `unsupported docker image "notanengine"`
 // both verbs, and the two boundaries that make "is this a docker URL" a
 // decision rather than a substring match.
 //
-// Both verbs used to refuse the scheme outright, before anything could
-// provision one; stokaro/ptah#844 wired their native runners to the
-// provisioner, so a docker:// value now travels to it and is answered in its
-// words. Fixing only the spelling an issue happened to name would look complete
-// while the environment twin and the atlas.hcl env still refused: those two
-// routes have tests of their own below.
+// Refusing the scheme outright is honest only while nothing can provision one;
+// with the native runners wired to the provisioner (stokaro/ptah#844) a
+// docker:// value travels to it and is answered in its words. Fixing only the
+// spelling an issue happens to name looks complete while the environment twin
+// and the atlas.hcl env still refuse: those two routes have tests of their own
+// below.
 func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 	tests := []struct {
 		name    string

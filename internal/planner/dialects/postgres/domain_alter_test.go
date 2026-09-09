@@ -25,10 +25,10 @@ var alterDomains = map[string]schemamodel.Domain{
 // TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem is why the
 // comparison in stokaro/ptah#1717 is worth making at all.
 //
-// Every domain modification used to be reconciled by dropping the domain and
-// creating it again, and PostgreSQL refuses a non-CASCADE drop of a domain a
-// column uses. A changed CHECK was therefore not awkward to apply -- it could
-// not be applied to any domain in use, which is every domain worth having.
+// Reconciling a domain modification by dropping the domain and creating it
+// again cannot run: PostgreSQL refuses a non-CASCADE drop of a domain a column
+// uses. A changed CHECK is then not awkward to apply -- it cannot be applied to
+// any domain in use, which is every domain worth having.
 func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 	tests := []struct {
 		name     string

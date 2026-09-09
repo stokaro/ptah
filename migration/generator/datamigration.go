@@ -31,12 +31,12 @@ func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL
 // WriteCheckpointFilesWithOptions, which differ only in the file-name scheme
 // and that label.
 //
-// The whole transaction runs through one binding of outputDir. It used to
-// resolve the pathname afresh for the mkdir, the existence check, each of the
-// two creates and the ptah.sum commit, which is the shape stokaro/ptah#1118
-// describes: with the directory renamed aside after the up half was created,
-// the call returned nil having written the up half into the retained directory
-// and the down half and ptah.sum into the directory that took over the pathname.
+// The whole transaction runs through one binding of outputDir. Resolving the
+// pathname afresh for the mkdir, the existence check, each of the two creates
+// and the ptah.sum commit is the shape stokaro/ptah#1118 describes: with the
+// directory renamed aside after the up half is created, the call returns nil
+// having written the up half into the retained directory and the down half and
+// ptah.sum into the directory that took over the pathname.
 func writeMigrationPair(
 	outputDir string,
 	version int64,

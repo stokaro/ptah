@@ -100,11 +100,11 @@ func newAtlasMigrateIntegrityCommand(
 		defer func() {
 			runErr = errors.Join(runErr, cleanup.Close())
 		}()
-		// The unknown-format adaptation used to be an errors.As block here,
-		// which is why it reached `migrate hash` and `migrate validate` and no
-		// other verb. It now lives on the refusal itself, inside
-		// resolveAtlasMigrateSource, so `migrate new` -- which shares that
-		// resolver but not this wrapper -- gets it too.
+		// The unknown-format adaptation lives on the refusal itself, inside
+		// resolveAtlasMigrateSource, rather than in an errors.As block here.
+		// Here it would reach `migrate hash` and `migrate validate` and no
+		// other verb; there it also reaches `migrate new`, which shares that
+		// resolver but not this wrapper.
 		source, err := resolveAtlasMigrateSource(cmd, verb, args, cleanup)
 		if err != nil {
 			return err
@@ -114,9 +114,9 @@ func newAtlasMigrateIntegrityCommand(
 		// refusal runs here on BOTH branches rather than only on the one that
 		// executes directly.
 		//
-		// It used to run only on the direct branch, leaving the forwarding
-		// branch to the native command's own validator. That answered with the
-		// native wording, which does not say where the value belongs. Refusing
+		// Running it only on the direct branch leaves the forwarding branch to
+		// the native command's own validator, which answers with the native
+		// wording and does not say where the value belongs. Refusing
 		// a trailing positional is a deliberate divergence from the pinned
 		// community binary v1.3.0, which accepts one and silently discards it,
 		// and a divergence is only defensible when the refusal is more useful

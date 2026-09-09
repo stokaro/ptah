@@ -67,13 +67,13 @@ var codeFence = regexp.MustCompile("^(```|~~~)")
 //
 // This is the one implementation of that recognition, and every gate that needs
 // a package set reaches it through `featureinventory --list-ledger` or
-// `--list-boundary`, directly or via scripts/list-public-api-packages.sh. Three
-// grep pipelines used to answer this question separately, which is what
-// AGENTS.md's "recognition that spans two functions belongs to one of them"
-// forbids -- with the quiet failure mode that rule describes: a pattern that
-// drifts by one character produces a SMALLER set, and a smaller set reports
-// FEWER undocumented packages and FEWER incompatible-change findings rather than
-// an error.
+// `--list-boundary`, directly or via scripts/list-public-api-packages.sh. Grep
+// pipelines answering this question separately are what AGENTS.md's
+// "recognition that spans two functions belongs to one of them" forbids -- with
+// the quiet failure mode that rule describes: a pattern that drifts by one
+// character produces a SMALLER set, and a smaller set reports FEWER
+// undocumented packages and FEWER incompatible-change findings rather than an
+// error.
 //
 // The same failure mode is why an unclassified item is an error rather than a
 // skip. Section awareness is what lets one document hold two categories, and it

@@ -28,9 +28,9 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 		want   string
 	}{
 		{
-			// An empty database. The realm's schemas used to be derived from
-			// its tables, so no table meant no schema, and `omitempty` then
-			// removed the key entirely.
+			// An empty database. Deriving the realm's schemas from its tables
+			// makes no table mean no schema, and `omitempty` then removes the
+			// key entirely.
 			name: "empty postgres database still reports its schema",
 			schema: &catalog.Database{
 				Schemas: []catalog.Schema{

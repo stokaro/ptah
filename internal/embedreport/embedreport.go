@@ -274,9 +274,9 @@ func planInputs(
 // `Facts.Undetailed` is the check for that, and it can only be run against a
 // list something produces.
 //
-// The detail on source.table used to be the specification's NAME, which read as
-// `source.table = articles (configured: articles)` whenever the two matched and
-// as nothing at all when the specification carried no name -- a configured fact
+// Taking the detail on source.table from the specification's NAME reads as
+// `source.table = articles (configured: articles)` whenever the two match, and
+// as nothing at all when the specification carries no name -- a configured fact
 // with no source, which is the shape Undetailed exists to report
 // (stokaro/ptah#2474).
 func configuredFacts(loaded embedspec.Loaded) embedplan.Facts {

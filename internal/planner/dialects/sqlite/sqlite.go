@@ -52,8 +52,8 @@ func (p *Planner) capabilities() capability.Capabilities {
 }
 
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
-	// The identity check the resolver used to carry. Nothing is resolved: an
-	// addition carries its own declaration (stokaro/ptah#2315).
+	// The identity check alone. Nothing is resolved: an addition carries its
+	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(
 		DialectName,
 		diff.EffectiveIdentifierSemantics(DialectName),
@@ -107,8 +107,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 // references the rebuilt one, the DROP is a foreign-key violation and the
 // statement fails outright -- measured on SQLite 3.51: `FOREIGN KEY constraint
 // failed`. Disabling enforcement for the duration is what makes the sequence
-// legal, and it is why a rebuild with inbound references used to be refused
-// here instead of planned.
+// legal, and without it a rebuild with inbound references has to be refused
+// rather than planned.
 //
 // The pair wraps the whole plan rather than each rebuild, which is also where
 // the pinned community binary puts it. One rebuild can reference a table a
@@ -449,11 +449,11 @@ func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 // addTables renders each created table from the creation the comparison
 // carried for it.
 //
-// It used to walk the DECLARATION and keep the tables the diff named, which
-// meant rendering from the declaration's fields and enums as well. That is
-// what made the enum vocabulary unsubstitutable here: SQLite is one of the
-// dialects the comparison normalizes enums away for, so the carried
-// vocabulary is empty while the DECLARATION's columns still name the enum.
+// Walking the DECLARATION and keeping the tables the diff names renders from
+// the declaration's fields and enums as well, which makes the enum vocabulary
+// unsubstitutable here: SQLite is one of the dialects the comparison normalizes
+// enums away for, so the carried vocabulary is empty while the DECLARATION's
+// columns still name the enum.
 //
 // Reading the creation settles it, because the creation carries the columns
 // the comparison produced: already `TEXT` with the CHECK the enum folds to.
@@ -574,9 +574,9 @@ func (p *Planner) modifyTables(
 // it, drops the original and renames, then puts its indexes and triggers
 // back.
 //
-// Everything it declares comes off the modification. It used to filter the
-// whole declaration four times -- columns, constraints, indexes, triggers --
-// once per kind, each with its own rule for which of them belong to this
+// Everything it declares comes off the modification, rather than from four
+// filters over the whole declaration -- columns, constraints, indexes, triggers
+// -- one per kind, each with its own rule for which of them belong to this
 // table (stokaro/ptah#2315).
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
@@ -642,8 +642,8 @@ const rebuildTableNameAttempts = 100
 //
 // The obvious name is __ptah_rebuild_<table>, and a schema is allowed to
 // contain a table by that name -- it is an ordinary identifier, and Ptah does
-// not own the namespace. This used to be refused, which asked the operator to
-// rename their own table so that a name Ptah chose was free. The collision is
+// not own the namespace. Refusing that asks the operator to rename their own
+// table so a name Ptah chose is free. The collision is
 // Ptah's to resolve, so the search continues into __ptah_rebuild_<table>_1 and
 // upward until a name nothing declares and nothing is dropping is found
 // (stokaro/ptah#1707).

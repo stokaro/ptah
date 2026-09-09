@@ -617,8 +617,8 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 			"UPDATE cfg SET v = data #>> '{key}';\nDROP TABLE legacy_audit;", []string{"BC103", "DS101"}},
 		{"default dialect xor operator does not hide drop table", "",
 			"UPDATE flags SET mask = mask # 1;\nDROP TABLE audit_log;", []string{"BC103", "DS101"}},
-		// Mirror false positive: the # merge used to bury a same-file CREATE,
-		// so the later DROP of that created table wrongly fired DS101.
+		// Mirror false positive: a # merge that buries a same-file CREATE makes
+		// the later DROP of that created table fire DS101 wrongly.
 		{"default dialect xor does not manufacture same-file drop false positive", "",
 			"UPDATE flags SET mask = mask # 1;\nCREATE TABLE tmp_backfill (id INT);\nDROP TABLE tmp_backfill;", nil},
 		// Block comments do not nest in MySQL/MariaDB, so the default hybrid

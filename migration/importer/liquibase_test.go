@@ -99,17 +99,15 @@ func TestLiquibaseImportEndToEnd(t *testing.T) {
 	c.Assert(string(placeholder), qt.Contains, "No rollback")
 }
 
-// TestLiquibaseDetectsAnXMLChangelog keeps the detection half of what used to be
-// TestLiquibaseRejectsXMLChangelog.
+// TestLiquibaseDetectsAnXMLChangelog is the detection half.
 //
 // A serialized changelog carries no `--liquibase formatted sql` header, so
 // detection has to recognize it by its root element or report an unknown tool.
-// That was true when the reader refused these files and is still true now that
-// it reads them (stokaro/ptah#1629).
+// That holds whether the reader refuses these files or reads them
+// (stokaro/ptah#1629).
 //
-// The rejection half of the original test moved rather than left: this fixture's
-// <createTable> is still refused, now by the name of the construct rather than by
-// the name of the serialization -- see
+// The rejection half is separate: this fixture's <createTable> is refused by the
+// name of the construct rather than by the name of the serialization -- see
 // TestLiquibaseChangelog_RefusesUnconvertibleConstructs.
 func TestLiquibaseDetectsAnXMLChangelog(t *testing.T) {
 	c := qt.New(t)

@@ -93,12 +93,11 @@ func Fetch(ctx context.Context, reference string, opts FetchOptions) (Fetched, e
 
 // pullRelease reads the release at whichever kind of address the reference is.
 //
-// It used to open an image layout itself, because [ociartifact.Client.Pull]
-// could only address a registry. That made this function the second place that
-// had to recognize a layout reference, and the two were not equivalent: a
-// registry pull went through the client's limits and options and a layout pull
-// did not. The client resolves both kinds now, so there is one recognition
-// again (stokaro/ptah#2623).
+// It does not open an image layout itself. Doing so makes this function a
+// second place that has to recognize a layout reference, and the two are not
+// equivalent: a registry pull goes through the client's limits and options and
+// a layout pull does not. The client resolves both kinds, so there is one
+// recognition (stokaro/ptah#2623).
 func pullRelease(
 	ctx context.Context, reference string, opts FetchOptions,
 ) (ociartifact.Artifact, error) {

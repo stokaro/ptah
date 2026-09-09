@@ -13,9 +13,9 @@ import (
 //
 // A retirement holds a registry row and no specification, so it names the index
 // from the table, the column and the identity. That is only right if it is the
-// same name the specification built, and the two derivations used to differ:
-// the retirement passed the CURRENT specification with the column swapped in,
-// and the digest in the name came from a hybrid that was no generation at all
+// same name the specification built, and two derivations can differ: a
+// retirement passing the CURRENT specification with the column swapped in takes
+// the digest in the name from a hybrid that is no generation at all
 // (stokaro/ptah#2642).
 func TestIndexName_IsTheNameASpecificationBuilds(t *testing.T) {
 	c := qt.New(t)
