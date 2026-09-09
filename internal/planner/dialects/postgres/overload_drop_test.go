@@ -44,7 +44,7 @@ func TestRemoveFunctions_ADroppedOverloadNamesItsArguments(t *testing.T) {
 	c := qt.New(t)
 
 	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
-		// The signature travels WITH the removal now; it used to need a
+		// The signature travels WITH the removal, rather than needing a
 		// parallel list beside this one (stokaro/ptah#2315).
 		FunctionsRemoved: difftypes.FunctionChanges{
 			{Function: schemamodel.Function{Name: "f"}, Signature: "a text"},

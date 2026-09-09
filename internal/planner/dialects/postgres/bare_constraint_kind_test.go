@@ -13,23 +13,19 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// TestPlannerRefusesABareNameConstraintAddition is what the bare-name ordering
-// control became, and the change is the point.
+// TestPlannerRefusesABareNameConstraintAddition is the answer to a constraint
+// addition carrying nothing but a NAME.
 //
-// It used to assert that a constraint addition carrying nothing but a NAME was
-// still classified by kind, so that a foreign key was added after the other
-// kinds -- a FOREIGN KEY may reference columns a UNIQUE constraint in the same
-// plan is what makes referenceable. The classification worked by resolving the
-// name against the declaration handed to the planner.
+// Classifying one by kind -- so that a foreign key is added after the other
+// kinds, since a FOREIGN KEY may reference columns a UNIQUE constraint in the
+// same plan is what makes referenceable -- means resolving the name against a
+// declaration handed to the planner. That resolution is withdrawn: a comparison
+// describes every constraint it adds, the ones synthesized from a field's
+// `check=` and `foreign=` included, so a name arriving without a definition is a
+// caller error and is answered as one (stokaro/ptah#2315).
 //
-// That resolution is withdrawn. A comparison describes every constraint it
-// adds, the ones synthesized from a field's `check=` and `foreign=` included, so
-// a name arriving without a definition is a caller error and is answered as one
-// (stokaro/ptah#2315).
-//
-// The ordering property it protected did not go anywhere: it is asserted on
-// records, which carry the kind directly, by
-// TestPlannerOrdersAForeignKeyAfterTheOtherKinds below.
+// The ordering property is asserted on records, which carry the kind directly,
+// by TestPlannerOrdersAForeignKeyAfterTheOtherKinds below.
 func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 	c := qt.New(t)
 
@@ -44,8 +40,8 @@ func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*constraint "aaa_fk_child_parent" is added without a definition.*`)
 }
 
-// TestPlannerOrdersAForeignKeyAfterTheOtherKinds keeps the property the test
-// above used to carry, on the input shape that remains.
+// TestPlannerOrdersAForeignKeyAfterTheOtherKinds holds that ordering on the
+// input shape that remains.
 //
 // The names are chosen so alphabetical order is the WRONG answer -- `aaa_` for
 // the foreign key, `zzz_` for the check -- because an ordering that collapsed to

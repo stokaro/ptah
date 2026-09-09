@@ -195,8 +195,8 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 
 	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
-			// The host and the body a comparison resolves. The record used to
-			// carry neither and the planner recovered both from the declaration;
+			// The host and the body a comparison resolves. A record carrying
+			// neither leaves the planner recovering both from the declaration;
 			// that route is withdrawn (stokaro/ptah#2315).
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 		},

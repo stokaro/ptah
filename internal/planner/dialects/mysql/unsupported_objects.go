@@ -20,28 +20,27 @@ import (
 // this planner's targets cannot host, so each target's renderer turns them into
 // the same named not-supported comment `ptah schema render` already produces.
 //
-// Without this the two surfaces disagreed: `schema render --dialect mysql` on a
-// schema declaring an extension and a standalone sequence emitted
+// Without this the two surfaces disagree: `schema render --dialect mysql` on a
+// schema declaring an extension and a standalone sequence emits
 // `-- Extension pg_trgm not supported in MySQL` and
 // `-- CREATE SEQUENCE order_number_seq not supported in mysql`, while
 // `schema apply --dry-run` against live MySQL 9.7 and live MariaDB 10.11.18
-// planned the CREATE TABLE alone and said nothing about either object
-// (stokaro/ptah#931 items 5 and 8). Render already moved; the plan path is the
-// half that had not.
+// plans the CREATE TABLE alone and says nothing about either object
+// (stokaro/ptah#931 items 5 and 8).
 //
 // The nodes carry identity only. Neither renderer emits DDL for these kinds, so
 // identity is all they read, and the resulting comments are stripped before
 // execution by atlasschema.SplitApplyStatements.
 //
-// Sequences used to be withheld from SQL Server here, by name, because the SQL
-// Server renderer answered a sequence node with a flat "CREATE SEQUENCE is not
-// supported" -- false of an engine that has had sequences since 2012. That
-// message now names Ptah's generator rather than the engine, so the hold-out
-// has nothing left to protect and the target no longer decides whether the
-// object is reported (stokaro/ptah#929 item 5).
+// No kind is withheld from a target by name here. Withholding sequences from
+// SQL Server answers a renderer that meets a sequence node with a flat
+// "CREATE SEQUENCE is not supported" -- false of an engine that has had
+// sequences since 2012. That message names Ptah's generator rather than the
+// engine, so there is nothing for such a hold-out to protect and the target
+// does not decide whether the object is reported (stokaro/ptah#929 item 5).
 //
 // Roles and functions join sequences because the converter that feeds `render`
-// hands both to the renderer for every target now, and a plan that says nothing
+// hands both to the renderer for every target, and a plan that says nothing
 // about an object `render` names is the same disagreement between the two
 // surfaces that #929 is about, pointing the other way.
 func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -201,16 +200,16 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *dif
 // form the PostgreSQL planner leans on -- `CREATE OR REPLACE FUNCTION` is
 // Error 1064 on MySQL 26.7.0 -- so the pair is what a replacement is here.
 //
-// The drop is planned rather than rendered inside the CREATE. It used to be
-// the first line of VisitCreateFunction, which made one node render two
-// statements, and an element of GetOrderedCreateStatements holding two
-// statements is executed as one string by the compatibility dev-database path,
-// where the driver's default DSN refuses it. Emitting the drop as its own node
-// keeps every element a single statement without giving up the replacement.
+// The drop is planned rather than rendered inside the CREATE. As the first line
+// of VisitCreateFunction it makes one node render two statements, and an
+// element of GetOrderedCreateStatements holding two statements is executed as
+// one string by the compatibility dev-database path, where the driver's default
+// DSN refuses it. Emitting the drop as its own node keeps every element a
+// single statement without giving up the replacement.
 //
-// An ADDED function gets no drop. Nothing of that name is there to replace,
-// and the IF EXISTS that made the old unconditional prefix safe was hiding
-// that distinction rather than expressing it.
+// An ADDED function gets no drop. Nothing of that name is there to replace, and
+// an IF EXISTS that makes an unconditional prefix safe hides that distinction
+// rather than expressing it.
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.

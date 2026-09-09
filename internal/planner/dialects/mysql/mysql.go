@@ -339,18 +339,18 @@ func (p *Planner) addNewTableColumns(
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	// The TABLE still has to be declared. The column travels with the change
-	// now, so the field lookup that used to fail here cannot -- but the guard
-	// it provided is load-bearing on its own: a diff naming `app.users` against
-	// a schema that declares `reporting.users` must write no DDL, because the
-	// statement would apply cleanly to a relation nobody declared.
+	// The TABLE still has to be declared. The column travels with the change,
+	// so a field lookup here cannot fail -- but the guard is load-bearing on
+	// its own: a diff naming `app.users` against a schema that declares
+	// `reporting.users` must write no DDL, because the statement would apply
+	// cleanly to a relation nobody declared.
 	if findGeneratedTable(declared, tableDiff.TableName, semantics) == nil {
 		return result
 	}
 
-	// The column itself is no longer looked up: it used to be found by the
-	// table's Go STRUCT name and a scan of every field in the schema
-	// (stokaro/ptah#2315).
+	// The column itself is not looked up. Finding it by the table's Go STRUCT
+	// name and a scan of every field in the schema is the route
+	// stokaro/ptah#2315 withdrew.
 	for _, column := range tableDiff.ColumnsAdded {
 		targetField := &column
 
@@ -1186,8 +1186,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// is a single key -- every such constraint would pair with every other
 	// (stokaro/ptah#1663).
 	constraintscope.Normalize(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
-	// The identity check the resolver used to carry. Nothing is resolved: an
-	// addition carries its own declaration (stokaro/ptah#2315).
+	// The identity check alone. Nothing is resolved: an addition carries its
+	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1819,9 +1819,9 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 // here has no body, and a diff that names a constraint it does not describe is a
 // caller error.
 //
-// It used to resolve such a name against the declaration handed to the planner.
-// That input shape -- a diff of names, planned against a schema that describes
-// them -- is withdrawn, which is what lets a planner stop taking a declaration
+// Resolving such a name against a declaration handed to the planner rests on an
+// input shape -- a diff of names, planned against a schema that describes them
+// -- that is withdrawn, which is what lets a planner take no declaration
 // (stokaro/ptah#2315). The PostgreSQL planner made the same withdrawal first.
 func (p *Planner) addNamedConstraintsByKind(
 	result []ast.Node,
@@ -1906,8 +1906,8 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 		// (capability.CheckConstraintsEnforced absent -- MySQL before 8.0.16)
 		// would be a silent no-op in the live schema while Ptah believes it
 		// applied, so it is reported rather than emitted (issue #226). The
-		// warning used to live on the name-resolving path this replaced; what
-		// the target leaves out is still said out loud (stokaro/ptah#2315).
+		// warning lives here rather than on a name-resolving path, so what the
+		// target leaves out is said out loud either way (stokaro/ptah#2315).
 		if add.Type == "CHECK" && constraintRecordDescribes(add) &&
 			!p.capabilities().Has(capability.CheckConstraintsEnforced) {
 			result = append(result, ast.NewComment(fmt.Sprintf(

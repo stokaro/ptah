@@ -147,9 +147,9 @@ func TestEnumAdditionFollowsItsOperand(t *testing.T) {
 // operand's own name, so the row that matters is the one where those two spell
 // the schema differently: the pair must still be a pair.
 //
-// The lookup this used to pin lives in the reversal now, where the operand for
-// the down direction is resolved out of the pre-change schema
-// (stokaro/ptah#2315). It is pinned there, in migration/generator.
+// The lookup lives in the reversal, where the operand for the down direction is
+// resolved out of the pre-change schema (stokaro/ptah#2315). It is pinned
+// there, in migration/generator.
 func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
 		name string
@@ -220,15 +220,15 @@ func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 	}
 }
 
-// TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare is blocker 1: the
-// third resolution tier used to answer a name across two DIFFERENT schemas.
+// TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare is blocker 1: a
+// third resolution tier answering a name across two DIFFERENT schemas.
 //
-// The statement is rendered against the name the DIFF carries and the definition
-// found under another schema, so the DDL applies cleanly to a relation the
-// desired schema never declared. Measured on PostgreSQL 17.10 against a database
-// holding both `app.users` and `reporting.users`, `ALTER TABLE "app"."users" ADD
-// COLUMN "note" TEXT NOT NULL` exited 0 and information_schema.columns afterwards
-// showed the column on `app.users`. The live row in the companion file asserts
+// The statement is then rendered against the name the DIFF carries and the
+// definition found under another schema, so the DDL applies cleanly to a
+// relation the desired schema never declared. Measured on PostgreSQL 17.10
+// against a database holding both `app.users` and `reporting.users`,
+// `ALTER TABLE "app"."users" ADD COLUMN "note" TEXT NOT NULL` exits 0 and
+// information_schema.columns afterwards shows the column on `app.users`. The live row in the companion file asserts
 // that catalog; these rows assert the plan for every object kind that reaches
 // the same tier.
 func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {

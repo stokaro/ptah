@@ -15,11 +15,11 @@ import (
 // target accepts, and refuses the two shapes it would otherwise attempt and
 // fail at apply time.
 //
-// This replaces a blanket refusal. Any non-empty ExtensionsModified used to end
-// the whole plan with "extension schema moves are not yet supported", which was
-// wrong on the engine the message named: PostgreSQL has both
+// This replaces a blanket refusal. Ending the whole plan with "extension schema
+// moves are not yet supported" on any non-empty ExtensionsModified is wrong on
+// the engine the message names: PostgreSQL has both
 // `ALTER EXTENSION ... UPDATE TO` and `ALTER EXTENSION ... SET SCHEMA`, and the
-// reader already captures everything needed to decide between them
+// reader captures everything needed to decide between them
 // (stokaro/ptah#1718).
 //
 // The two refusals are refusals rather than skips because the engine answers
