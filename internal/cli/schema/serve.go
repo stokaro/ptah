@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	serveRootDirFlag = "root-dir"
-	serveDBURLFlag   = "db-url"
-	serveAddrFlag    = "addr"
-	serveRefreshFlag = "refresh"
-	serveTitleFlag   = "title"
+	serveRootDirFlag    = "root-dir"
+	serveSchemaFileFlag = "schema-file"
+	serveDBURLFlag      = "db-url"
+	serveAddrFlag       = "addr"
+	serveRefreshFlag    = "refresh"
+	serveTitleFlag      = "title"
 
 	// serveShutdownGrace bounds how long a stop waits for a request in flight.
 	// The page is cheap to render, so a request that outlives this is one that
@@ -30,13 +31,14 @@ const (
 )
 
 type schemaServeOptions struct {
-	rootDirs   []string
-	dbURL      string
-	addr       string
-	refresh    time.Duration
-	title      string
-	schemasRaw string
-	configPath string
+	rootDirs    []string
+	schemaFiles []string
+	dbURL       string
+	addr        string
+	refresh     time.Duration
+	title       string
+	schemasRaw  string
+	configPath  string
 }
 
 // NewSchemaServeCommand returns the native `schema serve` command.
@@ -65,15 +67,20 @@ There is no account, no login and no upload. It binds to a local address and
 reads a database you already have credentials for.
 
   ptah schema serve --db-url "$DATABASE_URL" --root-dir ./models
+  ptah schema serve --db-url "$DATABASE_URL" --schema-file schema.sql
   ptah schema serve --db-url "$DATABASE_URL" --root-dir ./models --addr 127.0.0.1:7070 --refresh 15s
 
 --refresh 0 serves a page that does not reload itself.
 
-The declared schema comes from --root-dir. --schema-file is deliberately absent
-here: a schema file may name an oci:// artifact, and what pulling one means for
-a process that re-reads on a timer is a design question rather than an
-oversight. ` + "`schema drift`" + ` takes it and answers once, which is a different
-bargain.`,
+The declared schema comes from --root-dir, --schema-file, or both together.
+Either is read again on every request, so an edit to a schema file shows up on
+the next reload with no restart.
+
+--schema-file takes a local .sql, .yaml, .hcl or .dbml file. An oci:// artifact
+is refused: reading again on every request is the whole contract here, and
+pulling from a registry that often is a schedule nobody asked for, while pulling
+once would show a copy that has stopped matching the reference. ` + "`schema drift`" + `
+takes it and answers once, which is the bargain that fits it.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -82,6 +89,8 @@ bargain.`,
 	}
 	flags := cmd.Flags()
 	flags.StringSliceVar(&opts.rootDirs, serveRootDirFlag, nil, "Directory to scan for Go annotations (repeatable)")
+	flags.StringArrayVar(&opts.schemaFiles, serveSchemaFileFlag, nil,
+		"SQL, YAML, HCL, or DBML desired-schema file (repeatable; combines with --root-dir)")
 	flags.StringVar(&opts.dbURL, serveDBURLFlag, "", "Database URL to compare against")
 	flags.StringVar(&opts.addr, serveAddrFlag, "127.0.0.1:7070", "Address to listen on")
 	flags.DurationVar(&opts.refresh, serveRefreshFlag, 30*time.Second, "How often the page reloads itself; 0 disables")
@@ -107,6 +116,7 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	handler, err := schemaserve.Handler(schemaserve.Options{
 		DatabaseURL: dbURL,
 		RootDirs:    opts.rootDirs,
+		SchemaFiles: opts.schemaFiles,
 		Schemas:     dbcli.ParseSchemas(schemasValue),
 		Title:       opts.title,
 		Refresh:     opts.refresh,

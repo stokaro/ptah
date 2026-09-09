@@ -8,10 +8,11 @@ The schema-document screenshots and downloadable HTML use the canonical static
 fixture at `docs/site/fixtures/source-equivalence/schema.sql`. This keeps the
 source-neutral `schema export` feature from looking dependent on Go annotations.
 
-The schema-serve screenshots use `docs/site/fixtures/schema-ui/`, a necessary
-Go-specific product UI fixture because `schema serve` currently accepts Go
-annotations only. Its matching and drift variants share the same conceptual
-shop schema on purpose.
+The schema-serve screenshots use `docs/site/fixtures/schema-ui/`, a Go-specific
+product UI fixture. `schema serve` reads a schema file too, so the split is
+deliberate coverage rather than a limit: the static fixture above photographs
+the file path, and this one photographs the annotation path. Its matching and
+drift variants share the same conceptual shop schema on purpose.
 
 Generator: `docs/site/scripts/generate-schema-ui-assets.mjs`
 

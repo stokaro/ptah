@@ -3785,8 +3785,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8752,
-      "sourceBytes": 86360
+      "visibleWords": 8758,
+      "sourceBytes": 86430
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4229,8 +4229,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7383,
-      "sourceBytes": 49918
+      "visibleWords": 7412,
+      "sourceBytes": 50113
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -4970,7 +4970,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
-      "sourceMode": "go-only",
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/schema/document/",
         "/direct/compare-and-drift/"
@@ -4988,8 +4988,8 @@
       "inboundLinks": [
         "/reference/native-commands/"
       ],
-      "visibleWords": 1429,
-      "sourceBytes": 12304
+      "visibleWords": 1505,
+      "sourceBytes": 12584
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",

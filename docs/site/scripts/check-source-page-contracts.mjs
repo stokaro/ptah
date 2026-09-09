@@ -14,12 +14,10 @@ const inventoryPath = join(siteRoot, 'content-inventory.json');
 const supportPath = join(repoRoot, 'docs', 'source-support.json');
 const defaultManifest = JSON.parse(readFileSync(supportPath, 'utf8'));
 
-const goOnlyCommands = new Map([
-  ['/schema/serve/', {
-    command: 'ptah schema serve', owner: 'internal/cli/internal/schemaserve',
-    alternatives: ['/schema/document/', '/direct/compare-and-drift/'],
-  }],
-]);
+// Routes whose page documents one command that reads Go annotations and nothing
+// else. Empty is a legitimate state: it says no page makes that claim, and a
+// page that makes it without an entry here is reported rather than skipped.
+const goOnlyCommands = new Map([]);
 
 const goOnlyFrontends = new Map([
   ['/schema/go-annotations/', { owner: 'internal/schemaload', alternatives: ['/schema/work-with-a-source/'] }],
@@ -523,7 +521,7 @@ function selftest() {
     ],
   };
   const sqlFirst = 'Use a static source.\n\n```bash\nptah migrations generate --schema-file schema.sql --db-url sqlite://app.db\n```\n';
-  const sourceNeutralRoutes = new Set(['/schema/document/']);
+  const sourceNeutralRoutes = new Set(['/schema/document/', '/schema/work-with-a-source/']);
   if (pageContractProblems(fixturePage('source-neutral'), sqlFirst, manifest).length !== 0) {
     throw new Error('source-neutral SQL-first page failed');
   }
@@ -540,23 +538,23 @@ function selftest() {
     .some((problem) => problem.includes('instead of overloaded --root-dir'))) {
     throw new Error('schema test overloaded --root-dir passed as the primary neutral selector');
   }
-  const goEarly = 'This command reads Go annotations only. Use the [source-neutral export](../document/).\n\n```bash\nptah schema serve --root-dir ./models\n```\n';
+  const goEarly = 'This source is Go annotations only. Use the [source-neutral overview](../work-with-a-source/).\n\n```bash\nptah schema render --root-dir ./models\n```\n';
   if (pageContractProblems(
-    fixturePage('go-only', { route: '/schema/serve/', sourceOfTruth: ['internal/cli/internal/schemaserve'] }),
+    fixturePage('go-only', { route: '/schema/go-annotations/', sourceOfTruth: ['internal/schemaload'] }),
     goEarly, manifest, { sourceNeutralRoutes },
   ).length !== 0) {
     throw new Error('Go-only page with an early limitation failed');
   }
-  const goBuried = `${'The command renders models. '.repeat(100)}\n\nGo annotations only. Use the [source-neutral export](../document/).`;
+  const goBuried = `${'The command renders models. '.repeat(100)}\n\nGo annotations only. Use the [source-neutral overview](../work-with-a-source/).`;
   if (!pageContractProblems(
-    fixturePage('go-only', { route: '/schema/serve/', sourceOfTruth: ['internal/cli/internal/schemaserve'] }),
+    fixturePage('go-only', { route: '/schema/go-annotations/', sourceOfTruth: ['internal/schemaload'] }),
     goBuried, manifest, { sourceNeutralRoutes },
   ).some((problem) => problem.includes('near the beginning'))) {
     throw new Error('Go-only page with a buried limitation passed');
   }
   const unrelatedAlternative = 'Go annotations only. Use the source-neutral [installation guide](../../start/install/).';
   if (!pageContractProblems(
-    fixturePage('go-only', { route: '/schema/serve/', sourceOfTruth: ['internal/cli/internal/schemaserve'] }),
+    fixturePage('go-only', { route: '/schema/go-annotations/', sourceOfTruth: ['internal/schemaload'] }),
     unrelatedAlternative, manifest, { sourceNeutralRoutes },
   ).some((problem) => problem.includes('canonical source-neutral alternative'))) {
     throw new Error('Go-only page with an unrelated link passed as an alternative');
