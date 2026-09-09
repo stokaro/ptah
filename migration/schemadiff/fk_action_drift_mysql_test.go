@@ -14,10 +14,10 @@ import (
 // TestCompare_FieldLevelForeignKeyActionDrift_MySQL is the MySQL/MariaDB
 // counterpart of the PostgreSQL end-to-end acceptance test for issue #189. The
 // comparator is dialect-agnostic, so it detects the same field-level FK action
-// drift; this test pins that the MySQL planner now renders a real
+// drift; this test pins that the MySQL planner renders a real
 // `ALTER TABLE ... DROP FOREIGN KEY` followed by a re-ADD carrying the new
-// action (previously it emitted only a non-actionable TODO comment, producing a
-// perpetually re-firing, non-functional migration).
+// action, rather than a non-actionable TODO comment, which produces a
+// perpetually re-firing, non-functional migration.
 func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	c := qt.New(t)
 

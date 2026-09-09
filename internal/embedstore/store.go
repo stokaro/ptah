@@ -76,10 +76,10 @@ type Generation struct {
 	// over one source share one set of triggers -- so retirement has to ask
 	// whether the generation it is destroying was the last reader of that
 	// source. The target cannot answer it. A specification whose target table
-	// differs from its source is accepted, and asking the target counted zero
-	// readers for a source another live generation was still being fed from:
-	// retiring one generation took the shared outbox away, and the survivor's
-	// catch-up then failed on a relation that no longer existed
+	// differs from its source is accepted, and asking the target counts zero
+	// readers for a source another live generation is still being fed from:
+	// retiring one generation then takes the shared outbox away, and the
+	// survivor's catch-up fails on a relation that is gone
 	// (stokaro/ptah#2649).
 	//
 	// Empty schema means the specification named none, so search_path is what

@@ -46,7 +46,7 @@ func TestForeignKeyReference_NamesEveryValidatedPolicy(t *testing.T) {
 
 // TestReferencePolicyNames_CarriesOneDistinctModePerPolicy covers the two drifts
 // the census above cannot see, because both leave every policy resolving to
-// something: a name for a key that is no longer a validated policy (the map
+// something: a name for a key that is not a validated policy (the map
 // outgrows the list), and two policies sharing one mode value, which would make
 // [Capabilities.ForeignKeyReference] report a policy the set did not name.
 func TestReferencePolicyNames_CarriesOneDistinctModePerPolicy(t *testing.T) {

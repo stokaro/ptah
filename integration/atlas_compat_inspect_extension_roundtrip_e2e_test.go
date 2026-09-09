@@ -141,7 +141,7 @@ type atlasCompatExtensionRoundTripCase struct {
 //
 // The second of the two pins the answering type against its own arm. An
 // extension supplying a type named like a pg_catalog type has that name
-// filtered out as shadowed, so it can no longer answer for anything, and a
+// filtered out as shadowed, so it cannot answer for anything, and a
 // keyword filter that consults the raw membership instead of the reported
 // member list drops the function name too -- the refuted shape again, one level
 // down.

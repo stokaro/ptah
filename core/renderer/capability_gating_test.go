@@ -274,7 +274,7 @@ func TestUnrefinedDialectsStillHonorAPassedCapabilitySet(t *testing.T) {
 //
 // SQL Server renders the constraint. SQLite still refuses -- it cannot add a
 // constraint without rebuilding the table -- but it refuses for its own reason
-// and no longer for the capability's, which is exactly the distinction the
+// and not for the capability's, which is exactly the distinction the
 // assertion has to make. A control asserting success here would have been
 // wrong about SQLite and would have hidden that.
 func TestUnrefinedDialectsRefuseForTheirOwnReasonsWhenTheSetAllows(t *testing.T) {

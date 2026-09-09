@@ -117,8 +117,8 @@ func TestSchemaExportCommandWritesAPISchemas(t *testing.T) {
 
 func TestSchemaExportCommandTrimsFormatSelector(t *testing.T) {
 	// Regression: a whitespace-padded --to must route to the real format rather
-	// than fall through routing (which previously could run annotation cleanup
-	// without exporting, losing source data).
+	// than fall through routing, which can run annotation cleanup without
+	// exporting, losing source data.
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeModel(c, dir)

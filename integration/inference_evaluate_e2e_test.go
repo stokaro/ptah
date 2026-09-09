@@ -111,8 +111,8 @@ cases:
 		"--baseline", identity, "--baseline-spec", previous,
 		"--max-ndcg-regression", "0", "--max-mrr-regression", "0")
 
-	// The report no longer says the comparison was not measured, which is the
-	// sentence the defect printed for every run.
+	// The report does not say the comparison was not measured, which is the
+	// sentence the defect prints for every run.
 	c.Assert(output, qt.Not(qt.Contains), "no baseline was measured for it")
 	// The generations are equivalent here, so the strictest allowance passes.
 	c.Assert(output, qt.Not(qt.Contains), "regression")

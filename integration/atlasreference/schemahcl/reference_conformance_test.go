@@ -726,9 +726,9 @@ table "t" {
 //
 // The "declared variable" row was removed here rather than adjusted, and this
 // is that argument. `annotation "gql" { ref = var.v }` beside a declared
-// `variable "v"` was a divergence only because the dropped body's scope did not
+// `variable "v"` is a divergence only where the dropped body's scope does not
 // bind `var`; #926 gives it the same evaluation context the rest of the file
-// uses, so the reference resolves. Measured on both, the row is no longer a
+// uses, so the reference resolves. Measured on both, the row is not a
 // divergence in either direction:
 //
 //	reference:      exit 0, table "t" with column "id"

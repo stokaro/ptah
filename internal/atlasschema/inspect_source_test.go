@@ -401,7 +401,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	})
 
 	t.Run("dotted include selector reaches the connection", func(t *testing.T) {
-		// A dotted selector is no longer refused on its shape. Whether
+		// A dotted selector is not refused on its shape. Whether
 		// "public.users.email" names a child resource or a table literally
 		// called that is not decidable from the text, so it is carried to the
 		// projection like any other selector and the unreachable URL is what

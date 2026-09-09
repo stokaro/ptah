@@ -272,8 +272,9 @@ type Post struct {
 		// 2 CREATE TABLE statements plus 1 ALTER TABLE ADD CONSTRAINT for the
 		// posts.user_id field-level foreign key. The FK has no explicit
 		// foreign_key_name, so the planner derives the conventional
-		// fk_posts_user_id name and emits the constraint (previously an
-		// anonymous field-level FK was silently dropped from the migration).
+		// fk_posts_user_id name and emits the constraint. Without that
+		// derivation an anonymous field-level FK is silently dropped from the
+		// migration.
 		c.Assert(astNodes, qt.HasLen, 3)
 
 		// Render to SQL

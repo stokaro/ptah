@@ -4292,9 +4292,9 @@ func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.Const
 //
 // It returns EITHER a constraint or an index, never both, because MySQL spells
 // two different things in the same position: `UNIQUE (a)` is a guarantee about
-// the data and `KEY (a)` is an access path. They were previously both returned
-// as ast.UniqueConstraint, so a plain KEY became a uniqueness promise nobody
-// made (stokaro/ptah#2713, stokaro/ptah#2711).
+// the data and `KEY (a)` is an access path. Returning both as
+// ast.UniqueConstraint makes a plain KEY a uniqueness promise nobody made
+// (stokaro/ptah#2713, stokaro/ptah#2711).
 //
 // The index is built at the end rather than in the keyword handler because the
 // name, the column list and the access method are parsed by the same code for
@@ -4638,9 +4638,10 @@ func (p *Parser) readsRowDeletionPolicy() bool {
 // clause an engine deletes rows on a schedule by.
 //
 // It has to be read, not merely rendered. This parser refuses an option it does
-// not know, so once the renderer emitted the clause, Ptah could no longer read
-// its OWN `db read` output for a table that had one -- and reading that output
-// back is exactly what the policy being modeled is for (stokaro/ptah#2236).
+// not know, so a renderer that emits the clause without this leaves Ptah unable
+// to read its OWN `db read` output for a table that has one -- and reading that
+// output back is exactly what the policy being modeled is for
+// (stokaro/ptah#2236).
 func (p *Parser) handleRowDeletionPolicy(table *ast.CreateTableNode) error {
 	p.advance()
 	p.skipWhitespace()

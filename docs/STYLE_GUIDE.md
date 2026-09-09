@@ -315,9 +315,10 @@ today has no earlier Ptah to compare against, and Ptah is pre-GA, so the earlier
 behavior is not a surface anyone can still meet. Narrating it spends the
 reader's attention on something that cannot happen to them.
 
-Section 6.7 is the one part of this section that also governs code comments. A
-comment is read by whoever changes the code next, and the same narration costs
-them the same attention.
+This section governs code comments too, not only reader-facing pages. A comment
+is read by whoever changes the code next, and the same narration costs them the
+same attention. Only 6.7 is enforced there; the rest is a reading
+responsibility, and 16.1 measures how much of one.
 
 ### 6.1 The rule
 
@@ -1123,6 +1124,18 @@ used to derive it`, `the Ping used to verify the connection`. What the gate
 holds is the subset with no second reading, `it`, `this`, `that` and `Ptah`,
 which was **176** of those occurrences. The rest is a reading responsibility,
 and 16.1's own point stands: the sweep went further than the gate can.
+
+The broad words were then read over Go comments, and the answer is the one the
+table above already gives for Markdown: no gate. A sweep read all **314**
+occurrences of `no longer`, `previously`, `originally` and `in the past` in Go
+comments and rewrote **95**. The **219** that stayed are present-tense -- a row
+the source no longer has, a checksum that no longer describes its directory, a
+deadline in the past, the previously generated `.proto` a stateful exporter
+reads back for its field numbers. Seven occurrences in ten are one of those,
+which is why this family is left to the reader while the dated clause is gated:
+`no longer` names current state at least as often as it narrates a change, and
+no pattern tells the two apart. One word did fall entirely: all four
+`originally` sites were narration, and none survived.
 
 Four paths are exempt, each because the past is its subject rather than an
 intrusion: `docs/adr/**` is a design record, `docs/conformance.md` is a dated

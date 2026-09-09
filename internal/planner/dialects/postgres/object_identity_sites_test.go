@@ -29,7 +29,7 @@ func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 	c := qt.New(t)
 
 	// The desired schema deliberately declares a DIFFERENT sequence, to prove
-	// the plan no longer reads placement out of it.
+	// the plan does not read placement out of it.
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{SequencesAdded: difftypes.SequenceChanges{
 			{Name: "order_id_seq", Schema: "app", AsType: "bigint"},
@@ -53,7 +53,7 @@ func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 // place. The first drops the CREATE TYPE for a new enum, so the columns typed
 // against it fail to apply. The second is worse in kind: it does not fail, it
 // emits a WARNING comment and plans no value removal at all.
-// The ADD path is no longer part of this: an added enum carries its own values
+// The ADD path is not part of this: an added enum carries its own values
 // (stokaro/ptah#2315), so there is no name to resolve. What remains is the
 // MODIFIED path, which still names an enum and still has to find it.
 func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
@@ -122,7 +122,7 @@ func TestEnumAdditionFollowsItsOperand(t *testing.T) {
 	c := qt.New(t)
 
 	// The desired schema deliberately declares the enum in a DIFFERENT schema,
-	// to prove the plan no longer reads placement out of it.
+	// to prove the plan does not read placement out of it.
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{EnumsAdded: difftypes.EnumChanges{
 			{Name: "status", Schema: "app", Values: []string{"draft", "live"}},

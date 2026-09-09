@@ -200,7 +200,7 @@ func TestNodes_AgreesWithWalkAboutWhatIsALeaf(t *testing.T) {
 }
 
 // TestNodes_RecordsWhatAFlagCarries pins the four facts a command reference
-// needs and the two the walk previously threw away.
+// needs and the two a narrower walk throws away.
 //
 // The environment variable is the one worth naming here. It is asked of the
 // COMMAND's own installed binding, not derived from a prefix written down

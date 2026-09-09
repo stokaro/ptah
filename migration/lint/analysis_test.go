@@ -585,9 +585,9 @@ ALTER TABLE accounts DROP COLUMN legacy;
 // Atlas analyzer name silences the native rules that analyzer owns, on the
 // native surface as well as the compatibility one.
 //
-// This fixture previously asserted the opposite for the native column: the
-// three analyzer names were compatibility-scoped, so `-- atlas:nolint
-// concurrent_index` silenced PG101 under `ptah-compat migrate lint` and did
+// Scoping the three analyzer names to the compatibility surface asserts the
+// opposite for the native column: `-- atlas:nolint concurrent_index` then
+// silences PG101 under `ptah-compat migrate lint` and does
 // nothing under `ptah migrations lint`, while `-- atlas:nolint PG101` did the
 // reverse. Each selector worked on exactly one of the two commands and they
 // disagreed about which. Analyzer names name rule families rather than printed
@@ -674,14 +674,12 @@ BEGIN;
 // TestAnalyzeFS_BareAtlasHeaderMarksOnlyCompatibilityFileIgnored checks that
 // the whole-file Atlas header form applies to the compatibility surface only.
 //
-// The native column asserted zero findings before this change, which
-// contradicted the test's own name: the file was not marked Ignored, but the
-// header line was still being read a second time as a statement-local
-// directive for the statement below it, so nothing was reported anyway.
-// A suppression directive separated from a statement by a blank line no
-// longer attaches to it, so the native surface now reports the DROP TABLE the
-// header does not cover. Reverting the change prints an empty findings slice
-// here.
+// A native column asserting zero findings would contradict the test's own name:
+// the file is not marked Ignored, and reading the header line a second time as
+// a statement-local directive for the statement below it reports nothing
+// anyway. A suppression directive separated from a statement by a blank line
+// does not attach to it, so the native surface reports the DROP TABLE the
+// header does not cover. Reverting that prints an empty findings slice here.
 func TestAnalyzeFS_BareAtlasHeaderMarksOnlyCompatibilityFileIgnored(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{

@@ -76,10 +76,10 @@ var ErrNonASCIIIndexName = errors.New(
 // single name.
 //
 // MySQL and MariaDB both answer `ERROR 1061 (42000): Duplicate key name`, so
-// accepting it models a table neither server can create. It was previously
-// silent in a worse way than an error: schemamodel.Finalize deduplicates
-// indexes on {table, name}, so the second declaration was discarded without a
-// word and the schema converged as though it had never been written.
+// accepting it models a table neither server can create. Silence there is worse
+// than an error: schemamodel.Finalize deduplicates indexes on {table, name}, so
+// the second declaration is discarded without a word and the schema converges
+// as though it had never been written.
 var ErrDuplicateIndexName = errors.New("two indexes on one table claim the same name")
 
 // indexNames is the per-table index-name namespace, with the engine's own

@@ -23,12 +23,12 @@ import (
 //
 // `version_strategy: updated_at` carries the driver's rendering of a
 // timestamptz, and RFC 3339 trims trailing zeros from the fractional seconds.
-// The write resolution compared versions as opaque strings by LENGTH first, so
-// an update at 11:00:00.1 rendered shorter than its predecessor at
-// 10:00:00.123456 and was classified as older. The fresh provider answer — a
-// request already made and paid for — was discarded, catch-up exited 0
-// reporting success, the row kept the vector of text it no longer contained,
-// and the watermark moved past the event so nothing reprocessed it.
+// Comparing versions as opaque strings by LENGTH first makes an update at
+// 11:00:00.1 render shorter than its predecessor at 10:00:00.123456 and
+// classify as older. The fresh provider answer — a request already made and
+// paid for — is then discarded, catch-up exits 0 reporting success, the row
+// keeps the vector of text it no longer holds, and the watermark moves past the
+// event so nothing reprocesses it.
 //
 // It runs live because the value under test is what the DRIVER renders. A test
 // that wrote the string itself would be asserting against a rendering nobody

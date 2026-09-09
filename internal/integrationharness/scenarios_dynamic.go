@@ -177,10 +177,10 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc: testDynamicFunctionsModification,
 		},
 		{
-			// Closes the "modify-existing-function" gap that issue #89 was
-			// originally about: changing a function's body, SECURITY qualifier,
-			// or volatility on a same-named function — the case the previous
-			// dynamic_functions_modification scenario didn't exercise.
+			// Closes the "modify-existing-function" gap issue #89 names:
+			// changing a function's body, SECURITY qualifier, or volatility on
+			// a same-named function — the case a create-only scenario does not
+			// exercise.
 			Name:             "dynamic_function_attribute_modification",
 			Description:      "Test PostgreSQL function body/SECURITY/volatility modification round-trips through the live DB (issue #89 / PR #129)",
 			EnhancedTestFunc: testDynamicFunctionAttributeModification,

@@ -25,7 +25,7 @@ import (
 // Both PostgreSQL node types are here because a routine reaches the linter as
 // one of two: a procedure as PostgresRoutineNode, a function as
 // CreateFunctionNode with its body in RoutineBody. Covering one and calling the
-// other unparsed is the mistake this file previously recorded as a fact.
+// other unparsed is the mistake this file exists to prevent.
 func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 	const executes = "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 		"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"

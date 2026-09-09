@@ -342,9 +342,9 @@ func TestBuild_AnEmptySourceIsAMeasurementAndNotAGap(t *testing.T) {
 
 // phasesWhere names the phases of the steps a predicate accepts.
 //
-// The plan carries Mutating and Irreversible per step and no longer carries
-// filters over them: two methods that read a field a renderer already reads
-// were a second way to ask one question, and nothing outside a test asked it
+// The plan carries Mutating and Irreversible per step and carries no filters
+// over them: two methods reading a field a renderer already reads are a second
+// way to ask one question, and nothing outside a test asks it
 // (stokaro/ptah#2474).
 func phasesWhere(plan embedplan.Plan, accepts func(embedplan.Step) bool) []string {
 	phases := make([]string, 0, len(plan.Steps))

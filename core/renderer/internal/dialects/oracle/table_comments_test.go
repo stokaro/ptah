@@ -46,7 +46,7 @@ func TestCreateTable_CommentsAreStatements(t *testing.T) {
 	// every column would put an empty comment on `bio`, and an empty comment is
 	// a comment -- it is not the same as having none.
 	c.Assert(sql, qt.Not(qt.Contains), "COMMENT ON COLUMN customers.bio")
-	// And the comment is no longer decoration. Without this the statements
+	// And the comment is not decoration. Without this the statements
 	// above could be added while the line comment stayed, which is two answers
 	// to one question.
 	c.Assert(sql, qt.Not(qt.Contains), "-- people who buy")

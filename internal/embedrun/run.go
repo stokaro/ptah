@@ -236,9 +236,9 @@ var nextPhases = map[Phase][]Phase{
 	PhaseCutOver:  {PhaseRetired, PhaseRolledBack},
 	// A rolled-back generation is still a generation, and retiring it is the
 	// ordinary end of one that was rolled off and not wanted back. Declared
-	// nil, the run could never be retired: the retirement destroyed its
-	// vectors and the phase transition was refused, so the row stood at
-	// `rolled_back` describing a corpus that no longer existed.
+	// nil, the run could never be retired: a retirement destroys its vectors
+	// and the phase transition is refused, so the row stands at `rolled_back`
+	// describing a corpus that is gone.
 	PhaseRolledBack: {PhaseRetired},
 	PhaseRetired:    nil,
 }
@@ -353,14 +353,13 @@ func (r *Run) Reach(token int64, to Phase) error {
 
 // enter records the phase and what reaching it means for the run.
 //
-// A run at a terminal phase is complete, and the lease goes with it. Nothing
-// wrote [StatusComplete] before this: the constant and its doc comment were the
-// only two lines in the tree that named it, so every run ever built reported
-// `running` for the rest of the registry's life -- including runs whose
-// generation no longer existed, which still carried a live lease naming a
-// worker that had exited (stokaro/ptah#2649 finding 6). It is the shape
-// AGENTS.md names as a rule with no caller, in the column beside the one that
-// finding was filed about.
+// A run at a terminal phase is complete, and the lease goes with it. Where
+// nothing writes [StatusComplete] -- the constant and its doc comment the only
+// two lines in the tree naming it -- every run reports `running` for the rest
+// of the registry's life, including runs whose generation is gone, which still
+// carry a live lease naming a worker that has exited (stokaro/ptah#2649 finding
+// 6). It is the shape AGENTS.md names as a rule with no caller, in the column
+// beside the one that finding was filed about.
 //
 // The lease is released rather than left to expire because a lease is a claim
 // on work, and there is none: a retired generation's vectors are gone, so no

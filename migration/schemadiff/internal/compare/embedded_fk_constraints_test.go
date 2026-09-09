@@ -123,9 +123,9 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		c := qt.New(t)
 
 		// Empty database -> every synthesized FK is "added". This is the path
-		// that previously emitted ALTER TABLE Ownable ADD CONSTRAINT ...; with
-		// the fix the synthesis is keyed on real host tables, so the removal
-		// info (and therefore the eventual ALTER) never references the struct.
+		// that emits ALTER TABLE Ownable ADD CONSTRAINT ... where the synthesis
+		// is keyed on the struct; keyed on real host tables, the removal info
+		// (and therefore the eventual ALTER) never references it.
 		database := &catalog.Database{
 			Tables: []catalog.Table{dbTable("locations"), dbTable("areas")},
 			// No matching DB constraints -> all synthesized FKs are additions,

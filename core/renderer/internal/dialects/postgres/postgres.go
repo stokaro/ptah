@@ -1894,8 +1894,8 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	// to take that away: `ALTER TABLE "users" ALTER COLUMN "id" DROP NOT NULL`
 	// on a key column fails with `column "id" is in a primary key`
 	// (SQLSTATE 42P16), so emitting it makes the whole plan unappliable rather
-	// than merely verbose. ast.ColumnNode.Nullable no longer carries the rule
-	// for the AST, because SQLite does not have it (stokaro/ptah#1235), so the
+	// than merely verbose. ast.ColumnNode.Nullable does not carry the rule for
+	// the AST, because SQLite does not have it (stokaro/ptah#1235), so the
 	// dialects that do have it apply it where the dialect is known. The
 	// CREATE TABLE path above writes PRIMARY KEY and NOT NULL together for the
 	// same reason.

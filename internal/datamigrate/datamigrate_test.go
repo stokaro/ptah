@@ -691,7 +691,7 @@ type ticketData struct{ _ int }
 // TestGenerate_EmptyDesiredExplicitDefaultSchema proves a table declared with the
 // connection's default schema (schema="main" on SQLite) resolves during the
 // empty-desired introspection, which blanks a default-schema table's reported
-// schema — previously a spurious "table not found".
+// schema — otherwise a spurious "table not found".
 func TestGenerate_EmptyDesiredExplicitDefaultSchema(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

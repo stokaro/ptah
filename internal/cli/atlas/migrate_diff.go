@@ -579,7 +579,7 @@ func prepareAtlasMigrateDiffSource(
 	if opts.edit && opts.dryRun {
 		return atlassource.Set{}, fmt.Errorf("atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit")
 	}
-	// A `docker://` value is no longer refused here. It names its own dialect,
+	// A `docker://` value is not refused here. It names its own dialect,
 	// so every check below -- and the isolation check in particular, which asks
 	// whether the dev database and `--to` are the same database -- answers the
 	// same way for it as for the URL it will be provisioned into. The container

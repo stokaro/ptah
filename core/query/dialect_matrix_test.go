@@ -291,8 +291,9 @@ func dmlGenericRefusalQuarantine() []string {
 // TestDMLDialectMatrix pins every (dialect, verb) cell.
 //
 // The count is not written down here, because a written count goes stale the
-// day a dialect lands and reads as coverage it no longer has: this file said 48
-// while Oracle made it 52. The "table covers exactly SupportedDialects" subtest
+// day a dialect lands and reads as coverage the file does not have: 48 written
+// here while Oracle makes it 52. The "table covers exactly SupportedDialects"
+// subtest
 // is what keeps the rows honest, and the cells follow from the rows.
 //
 // Revert the Spanner placeholder entry and the four spanner cells stop at the

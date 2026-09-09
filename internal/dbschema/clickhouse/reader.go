@@ -210,7 +210,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 // not have turns a working read into an error. An Atomic database is unaffected
 // -- the derived name carries the view's own UUID.
 //
-// DropAllTables no longer derives anything: it takes its table inventory after
+// DropAllTables derives nothing: it takes its table inventory after
 // the views are dropped, so the guess above cannot make the reset leave a table
 // behind.
 const materializedViewInnerTablesSubquery = `

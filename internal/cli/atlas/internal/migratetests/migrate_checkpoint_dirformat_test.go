@@ -381,15 +381,13 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 			"Atlas migrations are top-level files named *.sql\n")
 }
 
-// TestCompatCommand_MigrateCheckpointNestedTieCannotCollide re-expresses
-// TestCompatCommand_MigrateCheckpointNestedTieDoesNotCollide.
+// TestCompatCommand_MigrateCheckpointNestedTieCannotCollide asserts the state
+// an equality-boundary test would protect, against the file that CAN collide.
 //
-// The original covered the equality boundary of the recursive bound: a nested
-// migration sitting at exactly the version the shallow resolver returned, where
-// `>=` and `>` differ and nothing else can tell them apart. That boundary no
-// longer exists — the nested file is outside the covered set, so it cannot tie
-// with anything — but the state it protected does, and it is asserted here
-// against the file that CAN collide.
+// The equality boundary of a recursive bound -- a nested migration sitting at
+// exactly the version the shallow resolver returns, where `>=` and `>` differ
+// and nothing else tells them apart -- does not exist here: the nested file is
+// outside the covered set, so it cannot tie with anything.
 //
 // The top-level history is dated 29990101000000, so the checkpoint takes
 // 29990101000001 and the nested file at that same version is not a second

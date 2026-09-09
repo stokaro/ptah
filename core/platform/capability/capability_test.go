@@ -749,7 +749,7 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 		{"mysql 26.7.0 against 8.4.0 (#791)", "mysql", "26.7.0", "8.4.0", true, true},
 		{"mariadb 12.3.0 against 10.11.6 (#108)", "mariadb", "12.3.0-MariaDB", "10.11.6-MariaDB", true, true},
 		// PostgreSQL answers the criterion the other way, and more strongly:
-		// the two lines no longer resolve to the same set at all. A live
+		// the two lines do not resolve to the same set at all. A live
 		// PostgreSQL 18 disagreed with Postgres17 on named_not_null_constraints
 		// and agreed on every other decided row, so 18 has its own preset and
 		// the question of saturating silently cannot arise here
@@ -858,9 +858,9 @@ func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
 	c := qt.New(t)
 
 	unreadable := capability.ResolveServerVersion("postgres", "not-a-version")
-	// SQL Server rather than SQLite: SQLite gained a ladder in
-	// stokaro/ptah#916 and now reports VersionSpecific, so it can no longer
-	// stand for the unladdered half of this collision.
+	// SQL Server rather than SQLite: SQLite has a ladder (stokaro/ptah#916) and
+	// reports VersionSpecific, so it cannot stand for the unladdered half of
+	// this collision.
 	unladdered := capability.ResolveServerVersion(
 		"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5")
 

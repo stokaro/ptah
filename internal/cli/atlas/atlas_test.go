@@ -3313,17 +3313,17 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 // TestCompatCommand_MigrateApplyRejectsNonAtlasFlags keeps the spellings this
 // verb must NOT answer to.
 //
-// Both spellings this test originally carried have since become legitimate and
-// were removed as they landed, each with an Atlas-side source:
+// Two spellings do not belong here, each with an Atlas-side source that makes
+// them legitimate:
 //
 //   - --to-version is registered by Atlas's published CLI reference, so
-//     refusing it broke a Pro pipeline for no parity gain (stokaro/ptah#951).
+//     refusing it breaks a Pro pipeline for no parity gain (stokaro/ptah#951).
 //     Its behavior is pinned in migrate_apply_to_version_test.go.
 //   - --lock-name is registered by the same reference on this verb, and is
 //     pinned in lock_flags_test.go.
 //
-// --skip-checks replaces them rather than leaving this function with no
-// subtest at all: a capability the compat surface deliberately resolves from
+// --skip-checks is what keeps this function from having no subtest at all: a
+// capability the compat surface deliberately resolves from
 // PTAH_SKIP_CHECKS instead of a flag, because no Atlas-side source registers a
 // flag for it on this verb (see ApplyOptions.SkipChecks). It is the remaining
 // member of the class this test exists to guard.

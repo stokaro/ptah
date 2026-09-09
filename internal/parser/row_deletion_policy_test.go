@@ -14,8 +14,8 @@ import (
 // back.
 //
 // The clause has to be READ, not merely rendered. This parser refuses a table
-// option it does not know, so once the renderer emitted it, Ptah could no
-// longer read its own description of a table that had one — and reading that
+// option it does not know, so a renderer that emits it without this leaves Ptah
+// unable to read its own description of a table that has one — and reading that
 // description back is what the policy being modeled is for
 // (stokaro/ptah#2236).
 func TestParse_ARowDeletionPolicyIsReadBack(t *testing.T) {

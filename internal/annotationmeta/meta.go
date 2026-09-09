@@ -31,17 +31,16 @@ type Attribute struct {
 	// surfaces must redact it; planning and destructive writes keep using the
 	// original bytes.
 	Sensitive bool `json:"sensitive,omitempty"`
-	// Retired carries the reason an attribute Ptah still RECOGNIZES is no
-	// longer accepted. Empty for every ordinary attribute.
+	// Retired carries the reason an attribute Ptah still RECOGNIZES is refused.
+	// Empty for every ordinary attribute.
 	//
 	// Recognizing it is the point. Deleting the entry instead would make the
 	// parser answer "unknown annotation attribute", which reads as a typo and
-	// says nothing about why a correctly spelled attribute stopped working --
-	// and worse, it would make a bareword spelling vanish: a directive
-	// carrying `refresh_strategy` with no `=value` is promoted into the
-	// key/value map only while the attribute is UNKNOWN, so an entry that
-	// merely disappeared would be silently dropped rather than refused
-	// (stokaro/ptah#1625).
+	// says nothing about why a correctly spelled attribute is refused -- and
+	// worse, it would make a bareword spelling vanish: a directive carrying
+	// `refresh_strategy` with no `=value` is promoted into the key/value map
+	// only while the attribute is UNKNOWN, so a deleted entry is silently
+	// dropped rather than refused (stokaro/ptah#1625).
 	Retired string `json:"retired,omitempty"`
 }
 

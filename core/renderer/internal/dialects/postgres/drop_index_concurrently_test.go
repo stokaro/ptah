@@ -17,8 +17,8 @@ import (
 // If the renderer change is reverted, every row prints the same string as the
 // "capability withheld" row — the subject rows print
 // `DROP INDEX IF EXISTS "idx_users_email";` where they want
-// `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";` — so the gate rows can
-// no longer be told apart from the enabled rows.
+// `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";` — so the gate rows
+// cannot be told apart from the enabled rows.
 func TestPostgreSQLRenderer_DropIndexConcurrently(t *testing.T) {
 	tests := []struct {
 		name    string

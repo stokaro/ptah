@@ -12,7 +12,7 @@ import (
 //
 // A render answers a declaration by emitting it, by refusing the whole render
 // with an error, or by continuing without it. Only the third answer produces an
-// Omission, and it is the answer nothing could previously observe: a
+// Omission, and it is the answer nothing else observes: a
 // PostgreSQL-family target writes a `skipped` comment beside the statement
 // while SQLite, SQL Server and Oracle drop the same table options without a
 // word, and both spellings exit 0 (stokaro/ptah#2976).

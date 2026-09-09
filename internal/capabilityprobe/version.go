@@ -16,11 +16,11 @@ import (
 //
 //   - SQL Server's @@VERSION opens with the marketing year, so the shared parse
 //     reads "Microsoft SQL Server 2025 (RTM-CU7) ... 17.0.4065.4" as major
-//     2025. capability.ResolveServerVersion no longer routes that banner
-//     through the parse at all — capability.BannerPlatform claims "sql server"
-//     and the resolver answers from the product, which is what stopped the year
+//     2025. capability.ResolveServerVersion does not route that banner through
+//     the parse at all — capability.BannerPlatform claims "sql server" and the
+//     resolver answers from the product, which is what keeps the year from
 //     being read as a PostgreSQL major on a mismatched dialect. The misread is
-//     still there in the parser and still not latent HERE: nothing in the
+//     there in the parser and not latent HERE: nothing in the
 //     capability package produces a version number for a SQL Server banner, so
 //     a matrix cell can only get 17.0.4065.4 from this extractor, and a cell
 //     labeled by the marketing year would be measuring a version that does not

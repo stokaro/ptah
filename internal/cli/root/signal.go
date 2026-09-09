@@ -21,7 +21,7 @@ var interruptSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 // interruptNotice is what an operator reads after the first interrupt. It has a
 // job: the command no longer dies on the spot, and without a word explaining
 // why, a shell that does not return for another second looks hung. It also says
-// how to get the old behavior back, which is the second interrupt.
+// how to get the immediate exit, which is the second interrupt.
 const interruptNotice = "interrupt received, releasing resources; interrupt again to stop immediately"
 
 // interruptExitCode is the status the process exits with after sig interrupted

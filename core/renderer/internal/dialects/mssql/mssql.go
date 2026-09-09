@@ -1102,12 +1102,12 @@ func refuseDeferrable(ref *ast.ForeignKeyRef, name string) error {
 //
 // SQL Server makes a primary key column NOT NULL and will not let it go: an
 // ALTER COLUMN that respells a key column as NULL is refused because the
-// primary key constraint depends on it. ast.ColumnNode.Nullable no longer
-// carries "a key column is NOT NULL" for the AST, because SQLite does not have
-// that rule (stokaro/ptah#1235), so this renderer applies it where the dialect
-// is known -- the same branch renderColumn takes on the CREATE TABLE path.
-// Measured live on PostgreSQL, whose ALTER path had the identical hole and
-// planned an unappliable `DROP NOT NULL`; this dialect is guarded by
+// primary key constraint depends on it. ast.ColumnNode.Nullable does not carry
+// "a key column is NOT NULL" for the AST, because SQLite does not have that
+// rule (stokaro/ptah#1235), so this renderer applies it where the dialect is
+// known -- the same branch renderColumn takes on the CREATE TABLE path.
+// Measured live on PostgreSQL, whose ALTER path has the identical hole and
+// plans an unappliable `DROP NOT NULL` without it; this dialect is guarded by
 // inspection, with no live SQL Server to measure against.
 func renderColumnForAlter(column *ast.ColumnNode) (string, error) {
 	if column == nil {

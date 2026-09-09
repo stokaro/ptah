@@ -50,9 +50,9 @@ func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
 		aliasedRule: "MY133",
 		wantRuns:    true,
 	}, {
-		// A code that became a Ptah rule of its own name no longer expands to
-		// the generic rule it once stood for, on any dialect.
-		name:        "postgres spelling no longer enables the generic rule",
+		// A code that is a Ptah rule of its own name does not expand to the
+		// generic rule it would otherwise stand for, on any dialect.
+		name:        "postgres spelling does not enable the generic rule",
 		policyCode:  "PG301",
 		dialect:     "postgres",
 		aliasedRule: "DS103",

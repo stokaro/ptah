@@ -28,7 +28,7 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 		return result
 	}
 	// The declaration travels WITH the entry (stokaro/ptah#2315), so an
-	// enablement no longer goes unplanned because the schema handed alongside
+	// enablement does not go unplanned because a schema handed alongside
 	// spelled its table differently.
 	for _, table := range diff.RLSEnabledTablesAdded {
 		result = append(result, modelast.FromRLSEnabledTable(table))

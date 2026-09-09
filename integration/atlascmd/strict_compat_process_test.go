@@ -231,8 +231,8 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 		// process rather than at Resolve: each was declared through envbool and
 		// so satisfied internal/cli/internal/envboolguard, while strict mode exited 0
 		// for both an enabled and a malformed value. See stokaro/ptah#1476.
-		// The third, PTAH_DIRECTIVES_ANYWHERE, no longer exists: the pre-v1
-		// fallback it opened was removed, so there is no declaration left to
+		// The third, PTAH_DIRECTIVES_ANYWHERE, does not exist: there is no
+		// pre-v1 fallback for it to open, so there is no declaration to
 		// classify or to probe here.
 		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS=1",
 		"PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1",

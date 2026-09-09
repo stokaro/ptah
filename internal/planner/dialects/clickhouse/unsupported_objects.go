@@ -42,7 +42,7 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.Sch
 }
 
 // planObjectsAfterTables sequences everything the ClickHouse plan emits once the
-// tables exist. Two of its phases are no longer diagnostics: roles and grants are
+// tables exist. Two of its phases are not diagnostics: roles and grants are
 // planned as real statements by rbac.go, which is what stokaro/ptah#1025 asked
 // for.
 //

@@ -295,7 +295,7 @@ var inspectedReferenceDocuments = []struct {
 	db   func(schema string) *schemamodel.Database
 	// wantContains are the spellings this document exists to measure. They are
 	// asserted before the binary runs, so a render that stopped emitting one
-	// fails here rather than passing an reference row that no longer covers it.
+	// fails here rather than passing a reference row that does not cover it.
 	wantContains func(schema string) []string
 	unreadable   func(schema string) []inspectedReferenceMutation
 }{
