@@ -591,6 +591,7 @@ var directives = []Directive{
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "View SELECT body.", valueSQL, true, false),
 			attr("with_check", "Controls WITH CHECK OPTION where supported.", valueBoolean, false, false),
+			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			attr("comment", "View comment.", valueString, false, false),
 			dialectsAttr(),
 		},
@@ -607,6 +608,7 @@ var directives = []Directive{
 				"`every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. "+
 				"Omitted leaves the view maintained by inserts into its source.",
 				valueString, false, false),
+			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			retiredAttr("refresh_strategy",
 				"Retired: refused when the annotation is parsed, on every dialect.",
 				matviewrefresh.Reason),

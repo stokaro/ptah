@@ -551,6 +551,7 @@ Declares a database view.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `body` | Yes | View SELECT body. |
+| `depends_on` | No | Comma-separated objects this view must be created after. |
 | `comment` | No | View comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | View name. |
@@ -564,6 +565,7 @@ Declares a materialized view.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `body` | Yes | Materialized view SELECT body. |
+| `depends_on` | No | Comma-separated objects this view must be created after. |
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |

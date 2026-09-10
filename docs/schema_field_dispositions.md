@@ -44,14 +44,14 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-351 fields are reachable from the desired schema, and each one carries
+353 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
 | `ddl` | 298 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
-| `planning` | 4 | read while a change set is assembled or ordered |
+| `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 15 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
@@ -296,6 +296,7 @@ None.
 | `schemamodel.ManagedData.Table` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
 | `schemamodel.MaterializedView.Body` | `ddl` | — |
 | `schemamodel.MaterializedView.Comment` | `ddl` | — |
+| `schemamodel.MaterializedView.DependsOn` | `planning` | the same ordering edge, on a materialized view |
 | `schemamodel.MaterializedView.Dialects` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
 | `schemamodel.MaterializedView.Refresh` | `ddl` | — |
@@ -412,6 +413,7 @@ None.
 | `schemamodel.View.Attributes` | `ddl` | — |
 | `schemamodel.View.Body` | `ddl` | — |
 | `schemamodel.View.Comment` | `ddl` | — |
+| `schemamodel.View.DependsOn` | `planning` | an ordering edge the author declares because the view's body does not reveal it; the CREATE VIEW it orders does not mention it |
 | `schemamodel.View.Dialects` | `ddl` | — |
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |

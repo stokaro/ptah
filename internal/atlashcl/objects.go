@@ -385,14 +385,53 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	dependsOn := p.objectRefListAttr(block, "depends_on")
 	p.db.Views = append(p.db.Views, schemamodel.View{
 		Name:       tableref.Canonical(schema, name),
 		Body:       body,
 		WithCheck:  block.Body.Attributes["check_option"] != nil,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Attributes: attributes,
+		DependsOn:  dependsOn,
 	})
 	return nil
+}
+
+// objectRefListAttr reads a list of object references into the names they point
+// at, dropping anything that names no object.
+//
+// The values are references rather than strings -- `[view.v, table.t]` -- so
+// each is read the way every other object-naming attribute in this format is
+// read, through the raw expression rather than through evaluation: the
+// reference roots are not bound in this scope and evaluating them would fail on
+// a document the parser is meant to accept.
+func (p *parser) objectRefListAttr(block *hclsyntax.Block, name string) []string {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return nil
+	}
+	list, ok := attr.Expr.(*hclsyntax.TupleConsExpr)
+	if !ok {
+		return nil
+	}
+	refs := make([]string, 0, len(list.Exprs))
+	for _, item := range list.Exprs {
+		if ref := objectRefTargetName(p.rawExpr(&hclsyntax.Attribute{Expr: item})); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
+// objectRefTargetName reads the object a reference names, whatever kind root it
+// carries: `view.v`, `table.t` and `materialized.m` all name their second part.
+func objectRefTargetName(raw string) string {
+	for _, kind := range []string{"view", "materialized", "table", "function", "schema"} {
+		if name := objectRefName(raw, kind); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
@@ -421,9 +460,10 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 		return p.blockError(block, "%w", matviewrefresh.Refuse(tableref.Canonical(schema, name)))
 	}
 	p.db.MaterializedViews = append(p.db.MaterializedViews, schemamodel.MaterializedView{
-		Name:    tableref.Canonical(schema, name),
-		Body:    body,
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Name:      tableref.Canonical(schema, name),
+		Body:      body,
+		Comment:   p.optionalString(block.Body.Attributes["comment"]),
+		DependsOn: p.objectRefListAttr(block, "depends_on"),
 	})
 	return nil
 }
@@ -858,6 +898,7 @@ func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
 		"check_option": true,
 		"comment":      true,
 		"attributes":   true,
+		"depends_on":   true,
 	}, "view")
 }
 
@@ -870,6 +911,7 @@ func (p *parser) rejectUnsupportedMaterializedAttrs(block *hclsyntax.Block) erro
 		"as":               true,
 		"refresh_strategy": true,
 		"comment":          true,
+		"depends_on":       true,
 	}, "materialized")
 }
 
