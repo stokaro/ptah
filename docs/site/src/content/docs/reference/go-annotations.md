@@ -173,6 +173,7 @@ Maps a Go struct to a database table.
 | --- | --- | --- |
 | `checks` | No | Comma-separated table-level check expressions. |
 | `comment` | No | Table comment. |
+| `depends_on` | No | Comma-separated tables this table must be created after. |
 | `custom` | No | Raw custom CREATE TABLE SQL. |
 | `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
 | `name` | No | Table name. |

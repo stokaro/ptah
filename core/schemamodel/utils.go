@@ -235,7 +235,49 @@ func BuildDependencyGraph(r *Database) {
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
 	analyzeConstraintForeignKeys(r)
+	analyzeDeclaredTableDependencies(r)
 	buildFunctionDependencies(r)
+}
+
+// analyzeDeclaredTableDependencies adds the edges tables declare for
+// themselves, beyond the ones a foreign key implies.
+//
+// A foreign key is the only evidence the sort has, and it is not always the
+// whole truth: a table whose default calls a function reading another table, or
+// whose rows are loaded in an order the schema does not express, depends on
+// something no reference states. A declared edge says so directly.
+//
+// A name matching no table in this schema contributes no edge rather than an
+// error: the set is what this render carries, and a table scoped to another
+// dialect is absent from it by design. The qualifier folds off both sides,
+// because the declaration names its dependency the way its author wrote it
+// while the map is keyed on the qualified name (stokaro/ptah#3113).
+func analyzeDeclaredTableDependencies(r *Database) {
+	byBareName := make(map[string][]string, len(r.Tables))
+	for _, table := range r.Tables {
+		qualified := table.QualifiedName()
+		byBareName[bareTableName(qualified)] = append(byBareName[bareTableName(qualified)], qualified)
+	}
+	for _, table := range r.Tables {
+		qualified := table.QualifiedName()
+		for _, declared := range table.DependsOn {
+			wanted := bareTableName(declared)
+			if wanted == "" || wanted == bareTableName(qualified) {
+				continue
+			}
+			r.Dependencies[qualified] = append(r.Dependencies[qualified], byBareName[wanted]...)
+		}
+	}
+}
+
+// bareTableName drops a schema qualifier so two spellings of one table compare
+// equal.
+func bareTableName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if _, bare, qualified := strings.Cut(trimmed, "."); qualified {
+		return bare
+	}
+	return trimmed
 }
 
 // Finalize prepares a programmatically constructed Database for rendering.

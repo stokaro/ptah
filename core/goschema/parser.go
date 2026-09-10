@@ -552,6 +552,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Comment:    kv["comment"],
 		PrimaryKey: splitCSVAttribute(kv["primary_key"]),
 		Checks:     splitCSVAttribute(kv["checks"]),
+		DependsOn:  splitDependsOn(kv["depends_on"]),
 		CustomSQL:  kv["custom"],
 		RowTTL:     rowTTL,
 		Overrides:  parseutils.ParsePlatformSpecific(kv),
