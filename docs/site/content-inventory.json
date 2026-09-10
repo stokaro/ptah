@@ -4064,8 +4064,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 4614,
-      "sourceBytes": 35875
+      "visibleWords": 4636,
+      "sourceBytes": 36037
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",

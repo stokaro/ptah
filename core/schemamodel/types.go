@@ -1298,6 +1298,11 @@ type View struct {
 	// than its body's (stokaro/ptah#2125).
 	Attributes []string `json:",omitempty"`
 
+	// DependsOn names objects this view must be created after, beyond the ones
+	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
+	// declared edge answers that a scan of the body cannot.
+	DependsOn []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
@@ -1322,6 +1327,11 @@ type MaterializedView struct {
 	Name       string // Materialized view name
 	Body       string // SELECT query used as the materialized view body
 	Comment    string // Optional comment for documentation
+
+	// DependsOn names objects this view must be created after, beyond the ones
+	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
+	// declared edge answers that a scan of the body cannot.
+	DependsOn []string `json:",omitempty"`
 
 	// Refresh is the ClickHouse refresh schedule this view declares, nil for
 	// one declaring none -- which is every materialized view on every other

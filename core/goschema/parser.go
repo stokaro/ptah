@@ -1570,6 +1570,7 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		Body:       kv["body"],
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
+		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 	})
 	return nil
@@ -1757,6 +1758,7 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		Comment:    kv["comment"],
+		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 		Refresh:    refresh,
 	})
@@ -2044,6 +2046,19 @@ func targetNames(kv map[string]string) schemamodel.TargetNames {
 //
 // A semicolon rather than a comma, because a value is itself comma-separated:
 // `search_path=pg_catalog, pg_temp` is one setting (stokaro/ptah#2356).
+// splitDependsOn reads a comma-separated `depends_on` into the object names it
+// carries, dropping empty entries so a trailing comma is not an object nobody
+// declared.
+func splitDependsOn(value string) []string {
+	var names []string
+	for name := range strings.SplitSeq(value, ",") {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	return names
+}
+
 func splitRoutineSettings(value string) []string {
 	if strings.TrimSpace(value) == "" {
 		return nil

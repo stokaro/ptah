@@ -22,6 +22,19 @@ type ViewLike struct {
 	Name         string
 	Body         string
 	Materialized bool
+
+	// DependsOn names objects this one must be created after, beyond the ones
+	// its body mentions.
+	//
+	// A body is the only evidence the sort has, and it is not always the whole
+	// truth: a view whose SELECT reaches a table through a function, a
+	// search_path, or a name this dialect's reader does not resolve depends on
+	// something no scan of the text can find. A declared edge says so directly.
+	//
+	// A name here that matches no object in the set contributes no edge rather
+	// than an error: the set is what this render carries, and an object scoped
+	// to another dialect is absent from it by design (stokaro/ptah#3121).
+	DependsOn []string
 }
 
 // UserType is a PostgreSQL user-defined type -- a domain, a composite type or a
@@ -577,6 +590,7 @@ func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 			}
 			dependencies[id] = append(dependencies[id], candidateIDs...)
 		}
+		dependencies[id] = append(dependencies[id], declaredViewLikeEdges(object, idsByName)...)
 	}
 
 	orderedIDs := StableTopologicalSort(ids, dependencies)
@@ -585,6 +599,44 @@ func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 		ordered = append(ordered, byID[id])
 	}
 	return ordered
+}
+
+// declaredViewLikeEdges resolves an object's [ViewLike.DependsOn] against the
+// set being ordered.
+//
+// Matching folds the schema off BOTH sides, because the two spellings come from
+// different places: the set holds whatever the frontend qualified the object
+// with, and a declaration names its dependency the way its author wrote it.
+// A declaration reading `depends_on = [view.v]` has to reach `app.v` in the
+// set, and one reading `app.v` has to reach a set holding `v`.
+//
+// An object naming itself contributes no edge: the sort would report a cycle
+// over a statement that is fine.
+func declaredViewLikeEdges(object ViewLike, idsByName map[string][]string) []string {
+	var edges []string
+	for _, declared := range object.DependsOn {
+		wanted := viewLikeBareName(declared)
+		if wanted == "" || wanted == viewLikeBareName(object.Name) {
+			continue
+		}
+		for candidateName, candidateIDs := range idsByName {
+			if viewLikeBareName(candidateName) != wanted {
+				continue
+			}
+			edges = append(edges, candidateIDs...)
+		}
+	}
+	return edges
+}
+
+// viewLikeBareName drops a schema qualifier, so two spellings of one object
+// compare equal.
+func viewLikeBareName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if _, bare, qualified := strings.Cut(trimmed, "."); qualified {
+		return bare
+	}
+	return trimmed
 }
 
 func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {

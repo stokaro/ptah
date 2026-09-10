@@ -2248,11 +2248,11 @@ func appendOrderedViewLikeStatements(
 	viewsByName := make(map[string]schemamodel.View, len(database.Views))
 	materializedViewsByName := make(map[string]schemamodel.MaterializedView, len(database.MaterializedViews))
 	for _, view := range database.Views {
-		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, DependsOn: view.DependsOn})
 		viewsByName[view.Name] = view
 	}
 	for _, view := range database.MaterializedViews {
-		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true, DependsOn: view.DependsOn})
 		materializedViewsByName[view.Name] = view
 	}
 

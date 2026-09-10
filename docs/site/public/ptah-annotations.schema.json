@@ -946,6 +946,10 @@
               "description": "Materialized view comment.",
               "type": "string"
             },
+            "depends_on": {
+              "description": "Comma-separated objects this view must be created after.",
+              "type": "string"
+            },
             "dialects": {
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
@@ -1650,6 +1654,10 @@
             },
             "comment": {
               "description": "View comment.",
+              "type": "string"
+            },
+            "depends_on": {
+              "description": "Comma-separated objects this view must be created after.",
               "type": "string"
             },
             "dialects": {

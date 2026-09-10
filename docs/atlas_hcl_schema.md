@@ -100,8 +100,15 @@ current schema IR:
   Ptah block: the Atlas community CLI has no procedure block, and a routine
   described as a `function` when it is a procedure is a different object from
   the one in the database
-- PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
-- `materialized` blocks with `schema`, `as`, and `comment`
+- PostgreSQL `view` blocks with `schema`, `as`, `check_option`, `depends_on`,
+  and `comment`. `depends_on` takes object references -- `[view.v, table.t]` --
+  and orders this view after each one. The ordering already reads each body for
+  the objects it names; a declared edge is for a dependency the body does not
+  reveal, such as one reached through a function. A name matching no object in
+  this render contributes no edge rather than an error, because an object scoped
+  to another dialect is absent from that render by design
+- `materialized` blocks with `schema`, `as`, `depends_on`, and `comment`;
+  `depends_on` is the same ordering edge, over the same sort
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `as`, `for`, `to`, `using`, `check`,
