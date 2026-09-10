@@ -17,16 +17,16 @@
 <p align="center"><a href="#install">Install</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Quick start</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Inference migrations</a> · <a href="https://docs.ptah.run/edge/">Documentation</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Database support</a></p>
 
 <p align="center">
-  <a href="https://docs.ptah.run/edge/databases/postgresql/">PostgreSQL</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MySQL</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MariaDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/sqlite/">SQLite</a> ·
-  <a href="https://docs.ptah.run/edge/databases/sqlserver/">SQL Server</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">ClickHouse</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">CockroachDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">YugabyteDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Oracle</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Spanner</a>
+  <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="MySQL"><img src="docs/assets/engines/mysql.svg" alt="MySQL" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="MariaDB"><img src="docs/assets/engines/mariadb.svg" alt="MariaDB" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/sqlite/" title="SQLite"><img src="docs/assets/engines/sqlite.svg" alt="SQLite" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/sqlserver/" title="SQL Server"><img src="docs/assets/engines/sqlserver.svg" alt="SQL Server" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="ClickHouse"><img src="docs/assets/engines/clickhouse.svg" alt="ClickHouse" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="CockroachDB"><img src="docs/assets/engines/cockroachdb.svg" alt="CockroachDB" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="YugabyteDB"><img src="docs/assets/engines/yugabytedb.svg" alt="YugabyteDB" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="Oracle"><img src="docs/assets/engines/oracle.svg" alt="Oracle" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
 </p>
 
 Ptah manages database change across schemas and persistent inference state. For
@@ -145,29 +145,6 @@ loaders, or a live database. Database and feature coverage vary by engine; use
 the [support matrix](https://docs.ptah.run/edge/databases/support-matrix/)
 and `ptah db capabilities --db-url <url>` for the concrete target.
 
-## Database status
-
-Every push to master probes each declared release line and writes the verdict to
-the [capability status page](https://docs.ptah.run/edge/databases/capability-status/).
-These badges are rendered from that same aggregate, so a green badge cannot
-disagree with the table behind it.
-
-| Engine | Last capability run |
-| --- | --- |
-| [PostgreSQL](https://docs.ptah.run/edge/databases/postgresql/) | ![Release lines the last capability run probed and passed for PostgreSQL](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/postgres.json) |
-| [MySQL](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for MySQL](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/mysql.json) |
-| [MariaDB](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for MariaDB](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/mariadb.json) |
-| [SQLite](https://docs.ptah.run/edge/databases/sqlite/) | ![Release lines the last capability run probed and passed for SQLite](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/sqlite.json) |
-| [SQL Server](https://docs.ptah.run/edge/databases/sqlserver/) | ![Release lines the last capability run probed and passed for SQL Server](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/sqlserver.json) |
-| [ClickHouse](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for ClickHouse](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/clickhouse.json) |
-| [CockroachDB](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for CockroachDB](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/cockroachdb.json) |
-| [YugabyteDB](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for YugabyteDB](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/yugabytedb.json) |
-| [Oracle](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for Oracle](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/oracle.json) |
-| [Spanner](https://docs.ptah.run/edge/databases/support-matrix/) | ![Release lines the last capability run probed and passed for Spanner](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/stokaro/ptah/master/docs/badges/spanner.json) |
-
-An engine reading `not probed` has no release line this contour runs. The status
-page says which lines each engine declares, and what the last run measured.
-
 ## Explore the documentation
 
 - [Choose a workflow](https://docs.ptah.run/edge/start/choose-a-workflow/)
@@ -208,6 +185,10 @@ Ptah is an independent clean-room implementation published under the
 with or endorsed by Ariga. The
 [license boundary](https://docs.ptah.run/edge/atlas/license-boundary/)
 records the provenance policy.
+
+The database marks above identify the engines Ptah supports and nothing more.
+Each belongs to its owner, and none of those owners endorses or sponsors Ptah.
+[NOTICE](NOTICE) says where each file came from and under which license.
 
 For questions and bug reports, open an issue in
 [stokaro/ptah](https://github.com/stokaro/ptah/issues).

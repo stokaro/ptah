@@ -2,8 +2,6 @@ package capmatrix_test
 
 import (
 	"bytes"
-	"encoding/json"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -159,101 +157,4 @@ func TestVerdictOf_SeesAChangedVerdict(t *testing.T) {
 	}, provenance())
 
 	c.Assert(capmatrix.VerdictOf(passing.String()), qt.Not(qt.Equals), capmatrix.VerdictOf(missing.String()))
-}
-
-// TestBadgeFor_ReportsWhatWasMeasured covers every shape a badge takes.
-//
-// The engine with no runnable line is the row that matters: "0/0 passing" would
-// read as a measurement of an engine nothing measured, and appending the
-// skipped count to it rendered "not run, 1 not run" before this shape existed.
-func TestBadgeFor_ReportsWhatWasMeasured(t *testing.T) {
-	tests := []struct {
-		name        string
-		dialect     string
-		results     []capmatrix.CellResult
-		wantMessage string
-		wantColor   string
-	}{
-		{
-			name:    "every line agreed",
-			dialect: "postgres",
-			results: []capmatrix.CellResult{
-				passed("postgres-18", "postgres", "18"),
-				passed("postgres-17", "postgres", "17"),
-			},
-			wantMessage: "2/2 passing",
-			wantColor:   "brightgreen",
-		},
-		{
-			// One line short of green. The ratio has to move, and the color
-			// with it: a badge that stays green while a line fails is the
-			// reason a reader stops believing the badge.
-			name:    "one line short",
-			dialect: "postgres",
-			results: []capmatrix.CellResult{
-				passed("postgres-18", "postgres", "18"),
-			},
-			wantMessage: "1/2 passing",
-			wantColor:   "red",
-		},
-		{
-			name:        "nothing reported",
-			dialect:     "postgres",
-			wantMessage: "0/2 passing",
-			wantColor:   "red",
-		},
-		{
-			name:        "an engine the tier cannot run",
-			dialect:     "sqlite",
-			wantMessage: "not probed",
-			wantColor:   "lightgrey",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			badge := capmatrix.BadgeFor(
-				capmatrix.Aggregate{Tier: 2, Matrix: matrix(), Results: test.results}, test.dialect)
-
-			c.Assert(badge.SchemaVersion, qt.Equals, 1)
-			c.Assert(badge.Label, qt.Equals, test.dialect)
-			c.Assert(badge.Message, qt.Equals, test.wantMessage)
-			c.Assert(badge.Color, qt.Equals, test.wantColor)
-		})
-	}
-}
-
-// TestBadgeDialects_NamesEveryDeclaredEngine keeps an engine's badge alive when
-// every one of its cells failed to start.
-//
-// A badge that disappears reads as an engine that was never claimed, which is a
-// stronger statement than the failure it is standing in for.
-func TestBadgeDialects_NamesEveryDeclaredEngine(t *testing.T) {
-	c := qt.New(t)
-
-	dialects := capmatrix.BadgeDialects(capmatrix.Aggregate{Tier: 2, Matrix: matrix()})
-
-	c.Assert(dialects, qt.DeepEquals, []string{"mysql", "postgres", "sqlite"})
-}
-
-// TestMarshalBadge_RendersTheDocumentShieldsReads pins the wire shape.
-//
-// shields.io refuses a document whose schemaVersion it does not know, and the
-// failure is a rendered error image rather than a broken build, so nothing but
-// this test stands between a typo and a badge reading "invalid".
-func TestMarshalBadge_RendersTheDocumentShieldsReads(t *testing.T) {
-	c := qt.New(t)
-
-	encoded, err := capmatrix.MarshalBadge(
-		capmatrix.BadgeFor(capmatrix.Aggregate{Tier: 2, Matrix: matrix()}, "mysql"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(strings.HasSuffix(string(encoded), "\n"), qt.IsTrue)
-
-	var decoded map[string]any
-	c.Assert(json.Unmarshal(encoded, &decoded), qt.IsNil)
-	c.Assert(decoded["schemaVersion"], qt.Equals, float64(1))
-	c.Assert(decoded["label"], qt.Equals, "mysql")
-	c.Assert(decoded["message"], qt.Equals, "0/1 passing")
-	c.Assert(decoded["color"], qt.Equals, "red")
 }

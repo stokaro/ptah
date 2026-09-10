@@ -321,7 +321,6 @@ func newStatusCommand() *cobra.Command {
 		results  string
 		expected string
 		out      string
-		badgeDir string
 		measured string
 		commit   string
 		runID    string
@@ -344,15 +343,14 @@ func newStatusCommand() *cobra.Command {
 			provenance := capmatrix.Provenance{
 				Measured: measured, Commit: commit, RunID: runID, RunURL: runURL,
 			}
-			return writeStatus(aggregate, provenance, out, badgeDir)
+			return writeStatus(aggregate, provenance, out)
 		},
 	}
 	cmd.Flags().IntVar(&tier, "tier", 0, "which tier is being reported")
 	cmd.Flags().StringVar(&results, "results", "", "directory holding the per-cell result JSON files")
 	cmd.Flags().StringVar(&expected, "expected", "",
 		"comma-separated cell ids this run asked for; empty means every runnable cell")
-	cmd.Flags().StringVar(&out, "out", "", "path to write the status markdown to")
-	cmd.Flags().StringVar(&badgeDir, "badge-dir", "", "directory to write one shields.io endpoint document per engine to")
+	cmd.Flags().StringVar(&out, "out", "", "path to write the status page to")
 	cmd.Flags().StringVar(&measured, "measured", "", "RFC 3339 time the run started")
 	cmd.Flags().StringVar(&commit, "commit", "", "commit the matrix probed")
 	cmd.Flags().StringVar(&runID, "run-id", "", "Actions run id that produced the results")
@@ -360,29 +358,15 @@ func newStatusCommand() *cobra.Command {
 	return cmd
 }
 
-// writeStatus renders both artifacts, or neither.
-//
-// The badge documents and the table are one measurement, so a partial write is
-// the shape to avoid: a badge refreshed beside a table that was not is exactly
-// the drift that kept the table off the front page.
-func writeStatus(a capmatrix.Aggregate, p capmatrix.Provenance, out, badgeDir string) error {
+// writeStatus renders the status page, leaving the tracked file alone when the
+// verdict is what it already records.
+func writeStatus(a capmatrix.Aggregate, p capmatrix.Provenance, out string) error {
 	var rendered bytes.Buffer
 	capmatrix.WriteStatus(&rendered, a, p)
 
-	badges := make(map[string][]byte)
-	for _, dialect := range capmatrix.BadgeDialects(a) {
-		encoded, err := capmatrix.MarshalBadge(capmatrix.BadgeFor(a, dialect))
-		if err != nil {
-			return err
-		}
-		badges[filepath.Join(badgeDir, dialect+".json")] = encoded
-	}
-
 	// An unchanged verdict leaves the tracked file alone, stamp and all. The
-	// provenance moves every run, so writing it back would make a pull request
-	// every night for a matrix that said the same thing -- and re-stamping a
-	// verdict with a run that merely re-confirmed it also loses the answer to
-	// "when did this last change".
+	// provenance moves every run, so writing it back would restamp a verdict
+	// nobody disagreed with and lose the answer to "when did this last change".
 	if existing, err := os.ReadFile(out); err == nil {
 		if capmatrix.VerdictOf(string(existing)) == capmatrix.VerdictOf(rendered.String()) {
 			fmt.Fprintf(os.Stderr, "capmatrix status: the verdict is unchanged; %s is left as it is\n", out)
@@ -393,21 +377,11 @@ func writeStatus(a capmatrix.Aggregate, p capmatrix.Provenance, out, badgeDir st
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return fmt.Errorf("create the status directory: %w", err)
 	}
-	if err := os.MkdirAll(badgeDir, 0o755); err != nil {
-		return fmt.Errorf("create the badge directory: %w", err)
-	}
-	// #nosec G306 -- the status file and the badge documents are published
-	// artifacts: a reader opens one in the repository and shields.io fetches
-	// another over HTTP. 0600 would make them unreadable to everything but the
-	// process that wrote them.
+	// #nosec G306 -- the status page is a published document a reader opens in
+	// the repository and the site renders; 0600 would make it unreadable to
+	// everything but the process that wrote it.
 	if err := os.WriteFile(out, rendered.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", out, err)
-	}
-	for path, encoded := range badges {
-		// #nosec G306 -- a badge document is fetched over HTTP; see above.
-		if err := os.WriteFile(path, encoded, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
-		}
 	}
 	return nil
 }

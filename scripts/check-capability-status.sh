@@ -25,7 +25,6 @@
 set -euo pipefail
 
 STATUS_FILE="${1:-docs/site/src/content/docs/databases/capability-status.md}"
-BADGE_DIR="${2:-docs/badges}"
 
 fail() {
 	echo "check-capability-status: $1" >&2
@@ -33,7 +32,6 @@ fail() {
 }
 
 [ -f "$STATUS_FILE" ] || fail "$STATUS_FILE is missing; the matrix run writes it with 'capmatrix status'"
-[ -d "$BADGE_DIR" ] || fail "$BADGE_DIR is missing; the matrix run writes one badge document per engine there"
 
 # The header sits under the site frontmatter rather than on line one, so this
 # looks for it in the opening of the file rather than at a fixed offset.
@@ -80,19 +78,4 @@ claimed_pass="$(sed -n 's/^- \([0-9]*\) passed,.*/\1/p' "$STATUS_FILE" | head -n
 [ "$counted_pass" -eq "$claimed_pass" ] ||
 	fail "the summary claims ${claimed_pass} passed and the table has ${counted_pass} PASS rows"
 
-for engine in $(python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))
-print(" ".join(sorted({c["dialect"] for c in d["cells"] + (d.get("skipped") or [])})))' "$matrix"); do
-	badge="${BADGE_DIR}/${engine}.json"
-	[ -f "$badge" ] || fail "$badge is missing, so the README badge for ${engine} would render an error"
-	python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))
-missing = [k for k in ("schemaVersion", "label", "message", "color") if k not in d]
-if missing:
-    raise SystemExit("badge %s is missing %s" % (sys.argv[1], ", ".join(missing)))
-if d["schemaVersion"] != 1:
-    raise SystemExit("badge %s declares schemaVersion %r, which shields.io does not read" % (sys.argv[1], d["schemaVersion"]))
-' "$badge" || fail "the badge document for ${engine} is not what shields.io reads"
-done
-
-echo "check-capability-status: OK (${rows} runnable cells, ${declared} declared, badges for every engine)"
+echo "check-capability-status: OK (${rows} runnable cells, ${declared} declared)"
