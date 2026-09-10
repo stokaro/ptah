@@ -504,6 +504,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		Checks:        checks,
 		CustomSQL:     customSQL,
 		Overrides:     overrides,
+		DependsOn:     p.objectRefListAttr(block, "depends_on"),
 	}
 
 	fieldsStart := len(p.db.Fields)
@@ -1769,6 +1770,7 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 		"collate":        true,
 		"strict":         true,
 		"without_rowid":  true,
+		"depends_on":     true,
 		"comment":        true,
 		"checks":         true,
 		"custom":         true,

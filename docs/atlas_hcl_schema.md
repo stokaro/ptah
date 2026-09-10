@@ -35,9 +35,15 @@ current schema IR:
 
 - `schema` labels and `comment`, for table namespace references such as
   `schema = schema.main`
-- `table` blocks, including Ptah `checks`, `custom`, `api_name`,
-  `openapi_name`, `graphql_name`, `proto_name`, and nested `platform` parity
-  extensions
+- `table` blocks, including `depends_on`, the Ptah `checks`, `custom`,
+  `api_name`, `openapi_name`, `graphql_name`, `proto_name`, and nested
+  `platform` parity extensions. `depends_on` takes table references --
+  `[table.t]` -- and orders this table after each one. The ordering already
+  reads every foreign key; a declared edge is for a dependency no reference
+  states, such as a default that calls a function reading another table. A name
+  matching no table in this render contributes no edge rather than an error,
+  because a table scoped to another dialect is absent from that render by
+  design
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`,
   `unique_expr`, `default`, `check`, `check_name`, `identity` (including its
   `options`), `comment`, and nested `platform` parity extensions; the Ptah

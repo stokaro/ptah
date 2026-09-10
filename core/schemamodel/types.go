@@ -694,6 +694,11 @@ type Table struct {
 	// a table declaring none. It carries the ast type for the same reason
 	// RowTTL does (stokaro/ptah#2236).
 	RowDeletionPolicy *ast.RowDeletionPolicySpec
+
+	// DependsOn names tables this one must be created after, beyond the ones
+	// its foreign keys imply. See [BuildDependencyGraph] for what a declared
+	// edge answers that a reference cannot.
+	DependsOn []string `json:",omitempty"`
 }
 
 // PrimaryKeyPart represents one column reference inside a table primary key.

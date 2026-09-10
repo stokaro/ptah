@@ -1485,6 +1485,10 @@
               "description": "Raw custom CREATE TABLE SQL.",
               "type": "string"
             },
+            "depends_on": {
+              "description": "Comma-separated tables this table must be created after.",
+              "type": "string"
+            },
             "engine": {
               "description": "MySQL/MariaDB table engine shortcut.",
               "type": "string"

@@ -333,6 +333,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Table.Collate", Disposition: DDL},
 	{Field: "schemamodel.Table.Comment", Disposition: DDL},
 	{Field: "schemamodel.Table.CustomSQL", Disposition: DDL},
+	{Field: "schemamodel.Table.DependsOn", Disposition: Planning, Reason: "an ordering edge the author declares because no foreign key states it; the CREATE TABLE it orders does not mention it"},
 	{Field: "schemamodel.Table.Engine", Disposition: DDL},
 	{Field: "schemamodel.Table.Name", Disposition: DDL},
 	{Field: "schemamodel.Table.Overrides", Disposition: DDL},

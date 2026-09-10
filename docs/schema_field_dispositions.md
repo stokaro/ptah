@@ -44,14 +44,14 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-353 fields are reachable from the desired schema, and each one carries
+354 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
 | `ddl` | 298 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
-| `planning` | 6 | read while a change set is assembled or ordered |
+| `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 15 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
@@ -381,6 +381,7 @@ None.
 | `schemamodel.Table.Collate` | `ddl` | — |
 | `schemamodel.Table.Comment` | `ddl` | — |
 | `schemamodel.Table.CustomSQL` | `ddl` | — |
+| `schemamodel.Table.DependsOn` | `planning` | an ordering edge the author declares because no foreign key states it; the CREATE TABLE it orders does not mention it |
 | `schemamodel.Table.Engine` | `ddl` | — |
 | `schemamodel.Table.Name` | `ddl` | — |
 | `schemamodel.Table.Overrides` | `ddl` | — |

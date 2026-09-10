@@ -409,6 +409,7 @@ var directives = []Directive{
 			attr("comment", "Table comment.", valueString, false, false),
 			attr("primary_key", "Comma-separated primary key columns.", valueList, false, false),
 			attr("checks", "Comma-separated table-level check expressions.", valueList, false, false),
+			attr("depends_on", "Comma-separated tables this table must be created after.", valueList, false, false),
 			attr("custom", "Raw custom CREATE TABLE SQL.", valueSQL, false, false),
 			// CockroachDB row-level TTL. Each attribute is named for the
 			// storage parameter it becomes, so a declaration and the catalog
