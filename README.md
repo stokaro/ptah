@@ -17,16 +17,16 @@
 <p align="center"><a href="#install">Install</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Quick start</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Inference migrations</a> · <a href="https://docs.ptah.run/edge/">Documentation</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Database support</a></p>
 
 <p align="center">
-  <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="MySQL"><img src="docs/assets/engines/mysql.svg" alt="MySQL" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="MariaDB"><img src="docs/assets/engines/mariadb.svg" alt="MariaDB" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/sqlite/" title="SQLite"><img src="docs/assets/engines/sqlite.svg" alt="SQLite" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/sqlserver/" title="SQL Server"><img src="docs/assets/engines/sqlserver.svg" alt="SQL Server" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="ClickHouse"><img src="docs/assets/engines/clickhouse.svg" alt="ClickHouse" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="CockroachDB"><img src="docs/assets/engines/cockroachdb.svg" alt="CockroachDB" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="YugabyteDB"><img src="docs/assets/engines/yugabytedb.svg" alt="YugabyteDB" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="Oracle"><img src="docs/assets/engines/oracle.svg" alt="Oracle" height="32" width="32"></a>
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
+  <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/mysql/" title="MySQL"><img src="docs/assets/engines/mysql.svg" alt="MySQL" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/mysql/" title="MariaDB"><img src="docs/assets/engines/mariadb.svg" alt="MariaDB" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/sqlite/" title="SQLite"><img src="docs/assets/engines/sqlite.svg" alt="SQLite" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/sqlserver/" title="SQL Server"><img src="docs/assets/engines/sqlserver.svg" alt="SQL Server" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/clickhouse/" title="ClickHouse"><img src="docs/assets/engines/clickhouse.svg" alt="ClickHouse" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="CockroachDB"><img src="docs/assets/engines/cockroachdb.svg" alt="CockroachDB" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="YugabyteDB"><img src="docs/assets/engines/yugabytedb.svg" alt="YugabyteDB" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/oracle/" title="Oracle"><img src="docs/assets/engines/oracle.svg" alt="Oracle" height="32" width="32"></a> ·
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
 </p>
 
 Ptah manages database change across schemas and persistent inference state. For
