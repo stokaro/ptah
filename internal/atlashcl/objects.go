@@ -165,6 +165,10 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	if err != nil {
 		return err
 	}
+	returns, err := p.routineReturns(block, kind)
+	if err != nil {
+		return err
+	}
 	function := schemamodel.Function{
 		Name:       tableref.Canonical(schema, name),
 		Kind:       kind,
@@ -176,7 +180,7 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 		// attribute on a procedure, but the tolerant parser reports an unknown
 		// attribute instead of removing it, so the body still carries it and a
 		// blind read would put a return type on a procedure on that surface.
-		Returns:    p.routineReturns(block, kind),
+		Returns:    returns,
 		Language:   p.optionalString(block.Body.Attributes["lang"]),
 		Security:   p.optionalString(block.Body.Attributes["security"]),
 		Volatility: p.optionalString(block.Body.Attributes["volatility"]),
@@ -249,11 +253,92 @@ func (p *parser) routineParallel(block *hclsyntax.Block, blockType string) (stri
 }
 
 // routineReturns reads the declared return type, which only a function has.
-func (p *parser) routineReturns(block *hclsyntax.Block, kind string) string {
+func (p *parser) routineReturns(block *hclsyntax.Block, kind string) (string, error) {
 	if kind == schemamodel.FunctionKindProcedure {
-		return ""
+		return "", nil
 	}
-	return p.typeAttrString(block.Body.Attributes["return"])
+	table, err := p.routineReturnTable(block)
+	if err != nil {
+		return "", err
+	}
+	scalar := p.typeAttrString(block.Body.Attributes["return"])
+	set, err := p.boolAttr(block, "return_set", routineBlockFunction, false)
+	if err != nil {
+		return "", err
+	}
+	if table == "" {
+		if set {
+			if scalar == "" {
+				return "", p.blockError(block, "function return_set requires return")
+			}
+			return "SETOF " + scalar, nil
+		}
+		return scalar, nil
+	}
+	// Each refusal is one the server makes too. Measured on PostgreSQL 17:
+	// `RETURNS integer RETURNS TABLE(...)` and `RETURNS SETOF TABLE(...)` are
+	// both `syntax error at or near "TABLE"`, so a document declaring either
+	// pair describes a routine no server creates.
+	if scalar != "" {
+		return "", p.blockError(block, "function cannot declare both return and return_table")
+	}
+	if set {
+		return "", p.blockError(block, "function cannot declare both return_set and return_table")
+	}
+	return table, nil
+}
+
+// routineReturnTable renders `return_table` as the RETURNS TABLE clause, or the
+// empty string for a routine that declares none.
+//
+// The columns are read in the order they were written rather than out of the
+// evaluated object, because a TABLE clause's order is the shape of the row it
+// returns. An HCL object has no order of its own, so evaluating it first and
+// sorting the result would silently return the author's columns in a different
+// order than they wrote -- which no diagnostic could report, because both
+// spellings are valid (stokaro/ptah#3121).
+func (p *parser) routineReturnTable(block *hclsyntax.Block) (string, error) {
+	attr := block.Body.Attributes["return_table"]
+	if attr == nil {
+		return "", nil
+	}
+	object, ok := attr.Expr.(*hclsyntax.ObjectConsExpr)
+	if !ok {
+		return "", p.blockError(block, "function return_table must be an object of name = type pairs")
+	}
+	if len(object.Items) == 0 {
+		return "", p.blockError(block, "function return_table declares no columns")
+	}
+	columns := make([]string, 0, len(object.Items))
+	for _, item := range object.Items {
+		name, err := p.returnTableColumnName(block, item.KeyExpr)
+		if err != nil {
+			return "", err
+		}
+		columnType := p.typeAttrString(&hclsyntax.Attribute{Expr: item.ValueExpr})
+		if columnType == "" {
+			return "", p.blockError(block, "function return_table column %q declares no type", name)
+		}
+		columns = append(columns, name+" "+columnType)
+	}
+	return "TABLE(" + strings.Join(columns, ", ") + ")", nil
+}
+
+// returnTableColumnName reads one column name out of a `return_table` key.
+//
+// HCL wraps a bare object key in an ObjectConsKeyExpr, which evaluates a
+// traversal as a string rather than resolving it, so `a = integer` and
+// `"a" = integer` are the same column.
+func (p *parser) returnTableColumnName(block *hclsyntax.Block, key hclsyntax.Expression) (string, error) {
+	value, diags := key.Value(nil)
+	if diags.HasErrors() || value.IsNull() || value.Type() != cty.String {
+		return "", p.blockError(block, "function return_table column name must be an identifier or a string")
+	}
+	name := strings.TrimSpace(value.AsString())
+	if name == "" {
+		return "", p.blockError(block, "function return_table declares an empty column name")
+	}
+	return name, nil
 }
 
 func (p *parser) parseRoutineArgs(block *hclsyntax.Block, blockType string) ([]string, error) {
@@ -737,17 +822,19 @@ func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
 // reason the blocks are separate: a procedure returns nothing.
 func (p *parser) rejectUnsupportedRoutineAttrs(block *hclsyntax.Block, blockType string) error {
 	supported := map[string]bool{
-		"schema":     true,
-		"params":     true,
-		"lang":       true,
-		"return":     blockType == routineBlockFunction,
-		"security":   true,
-		"volatility": true,
-		"leakproof":  blockType == routineBlockFunction,
-		"parallel":   blockType == routineBlockFunction,
-		"set":        true,
-		"as":         true,
-		"comment":    true,
+		"schema":       true,
+		"params":       true,
+		"lang":         true,
+		"return":       blockType == routineBlockFunction,
+		"return_set":   blockType == routineBlockFunction,
+		"return_table": blockType == routineBlockFunction,
+		"security":     true,
+		"volatility":   true,
+		"leakproof":    blockType == routineBlockFunction,
+		"parallel":     blockType == routineBlockFunction,
+		"set":          true,
+		"as":           true,
+		"comment":      true,
 	}
 	return p.rejectUnsupportedAttrs(block, supported, blockType)
 }
