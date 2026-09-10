@@ -383,6 +383,43 @@ func canonicalizePostgresArgument(argument string) string {
 	return strings.Join(fields, " ") + modifier
 }
 
+// canonicalizePostgresReturns folds a return clause onto the spelling
+// pg_get_function_result reports.
+//
+// The clause has three shapes and only the innermost part is a type name, so
+// the whole string cannot go through the type canonicalizer: `SETOF int` would
+// not match any alias and `TABLE(a int)` would be read as a type called
+// `table`. The column list inside TABLE is the same `name type` shape the
+// argument canonicalizer already folds.
+//
+// The fold is for comparison only. Both sides go through it, so the keywords
+// settle on one case here without either side's rendered DDL changing.
+func canonicalizePostgresReturns(returns string) string {
+	trimmed := strings.TrimSpace(returns)
+	if trimmed == "" {
+		return trimmed
+	}
+	if rest, found := cutPrefixFold(trimmed, "setof "); found {
+		return "SETOF " + canonicalizePostgresType(rest)
+	}
+	if rest, found := cutPrefixFold(trimmed, "table("); found {
+		if inner, closed := strings.CutSuffix(strings.TrimSpace(rest), ")"); closed {
+			return "TABLE(" + canonicalizePostgresArguments(inner) + ")"
+		}
+	}
+	return canonicalizePostgresType(trimmed)
+}
+
+// cutPrefixFold is strings.CutPrefix with the prefix matched case-insensitively,
+// because a declaration may write the keyword in either case while the catalog
+// prints it upper.
+func cutPrefixFold(value, prefix string) (string, bool) {
+	if len(value) < len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
+		return value, false
+	}
+	return value[len(prefix):], true
+}
+
 // foldArgumentMode reduces each argument's mode to a single spelling.
 //
 // IN is removed outright: it is the default the grammar supplies when no mode
@@ -734,6 +771,16 @@ func FunctionDefinitionsWithDialect(
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {
 		functionDiff.Changes["parameters"] = fmt.Sprintf("%s -> %s", dbFunction.Parameters, genFunction.Parameters)
+	}
+
+	// The same aliases, one field over. A return type is written by the same
+	// declaration and read back from the same catalog as the arguments above,
+	// so `RETURNS int` against a catalog reporting `integer` planned a
+	// CREATE OR REPLACE on every run, applied it, changed nothing, and planned
+	// it again (stokaro/ptah#3155).
+	if platform.IsPostgresFamily(dialect) {
+		genFunction.Returns = canonicalizePostgresReturns(genFunction.Returns)
+		dbFunction.Returns = canonicalizePostgresReturns(dbFunction.Returns)
 	}
 
 	// Compare return type
