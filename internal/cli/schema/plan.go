@@ -153,6 +153,11 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	desired, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
@@ -160,6 +165,7 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
 		Dialect:         conn.Info().Dialect,
 		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

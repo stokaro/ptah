@@ -111,6 +111,10 @@ func run(cmd *cobra.Command, opts options) error {
 	// diagram is reachable from every source a plan or an export is. --dialect
 	// is passed as the SQL parsing hint too, which keeps a `.sql` source and
 	// the security rules read over it on one engine.
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
@@ -118,6 +122,7 @@ func run(cmd *cobra.Command, opts options) error {
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
 		Dialect:         opts.dialect,
 		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

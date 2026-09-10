@@ -153,6 +153,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	loadOpts := schemaload.Options{
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
@@ -161,6 +165,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		Commands:        commands,
 		Dialect:         dialect,
 		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
 	}
 	rootsDisplay := loadOpts.Sources()
 

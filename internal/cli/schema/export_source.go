@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemaload"
@@ -28,10 +29,15 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 	}
 	// Logf stays nil so the resolver narrates nothing: with --out omitted the
 	// openapi-v3 and graphql targets write the schema itself to stdout.
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return nil, err
+	}
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		PlainHTTP:   opts.plainHTTP,
+		Vars:        declaredVars,
 	})
 }
 

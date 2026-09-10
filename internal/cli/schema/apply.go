@@ -279,6 +279,10 @@ func runSchemaApplyWithLockSession(
 
 	var desired *schemamodel.Database
 	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
+		declaredVars, varsErr := dbcli.DeclaredVars(cmd)
+		if varsErr != nil {
+			return cmdutil.Fail(cmd, varsErr)
+		}
 		desired, err = schemaload.LoadContext(cmd.Context(), schemaload.Options{
 			RootDirs:        opts.rootDirs,
 			SchemaFiles:     opts.schemaFiles,
@@ -286,6 +290,7 @@ func runSchemaApplyWithLockSession(
 			EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
 			Dialect:         conn.Info().Dialect,
 			PlainHTTP:       opts.plainHTTP,
+			Vars:            declaredVars,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

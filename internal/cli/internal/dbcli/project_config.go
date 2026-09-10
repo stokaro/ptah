@@ -21,12 +21,17 @@ import (
 const (
 	// EnvFlagName selects an env block from project config.
 	EnvFlagName = "env"
-	// ProjectVarFlagName supplies a value for an atlas.hcl variable block that
-	// declares no default. It is the flag the evaluator's diagnostic names, so
-	// it is registered wherever EnvFlagName is: an atlas.hcl reached through
-	// --env can require a variable on any of those commands, and a command
-	// that can print the advice but cannot honor it is the defect this flag
-	// exists to close.
+	// ProjectVarFlagName supplies a value for a variable block that declares no
+	// default, in an atlas.hcl or in a schema file. It is the flag both
+	// evaluators' diagnostics name, so it is registered wherever EnvFlagName
+	// is: an atlas.hcl reached through --env can require a variable on any of
+	// those commands, and a command that can print the advice but cannot honor
+	// it is the defect this flag exists to close.
+	//
+	// [DeclaredVars] resolves it for both files. A schema file declaring a
+	// variable without a default was unusable through the native commands
+	// while the compatibility surface honored the same flag against the same
+	// file, which put a capability behind the adapter (stokaro/ptah#3113).
 	ProjectVarFlagName = "var"
 	// AllowExternalSchemaFlagName explicitly permits executing the
 	// external_schema program loaded from ptah.yaml or from an atlas.hcl
@@ -107,7 +112,7 @@ func RegisterProjectVarFlag(flags *pflag.FlagSet) {
 	flags.StringArray(
 		ProjectVarFlagName,
 		nil,
-		"Value for an atlas.hcl variable with no default, as name=value (repeatable)",
+		"Value for a variable with no default, in an atlas.hcl or a schema file, as name=value (repeatable)",
 	)
 }
 
@@ -263,12 +268,26 @@ func ReportIgnoredAtlasConstructs(out io.Writer, config projectconfig.Config) er
 	return nil
 }
 
-// projectVars resolves the atlas.hcl variable overrides for a command. The
-// public --var wins when the user passed it; otherwise the hidden adapter-only
-// flag supplies whatever a forwarding command already routed. The two are not
-// concatenated: a repeated --var for one name is how a list(string) variable
-// is built, so merging both sources would turn a scalar override into a
-// two-element list.
+// DeclaredVars resolves the variable overrides a command carries, for whichever
+// file declares the variable.
+//
+// One resolver, because one flag supplies both. `--var` names a value, and the
+// file that needs it may be the atlas.hcl an --env selects or the schema file
+// --schema-file names; a second reader for the second file would agree with
+// this one until the day either moved.
+//
+// The public --var wins when the user passed it; otherwise the hidden
+// adapter-only flag supplies whatever a forwarding command already routed. The
+// two are not concatenated: a repeated --var for one name is how a list(string)
+// variable is built, so merging both sources would turn a scalar override into
+// a two-element list.
+//
+// A command that registers neither flag gets no values and no error, so a
+// caller may ask unconditionally.
+func DeclaredVars(cmd *cobra.Command) ([]string, error) {
+	return projectVars(cmd)
+}
+
 func projectVars(cmd *cobra.Command) ([]string, error) {
 	if flagChanged(cmd, ProjectVarFlagName) {
 		return cmd.Flags().GetStringArray(ProjectVarFlagName)
