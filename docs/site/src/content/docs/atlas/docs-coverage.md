@@ -247,7 +247,7 @@ outside the supported compatibility subset.
 
 **Ptah documentation.** [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs: core tables, columns, indexes, constraints, enums, schemas, selected generated and identity forms, and PostgreSQL include columns. A `view` or `materialized` block takes `column` blocks and `depends_on`, a `trigger` takes an `execute` block naming a declared function, and a `table` takes `depends_on` and `qualifier`. The subset is still a subset: it is stated attribute by attribute in [`docs/atlas_hcl_schema.md`](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md), which carries the accepted set and the Current Limitations beside it.
+**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs: core tables, columns, indexes, constraints, enums, schemas, selected generated and identity forms, and PostgreSQL include columns. A `view` or `materialized` block takes `column` blocks and `depends_on`, a `trigger` takes an `execute` block naming a declared function, and a `table` takes `depends_on` and `qualifier`. The subset is still a subset: it is stated attribute by attribute in [`docs/atlas_hcl_schema.md` in the latest development source](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md), which carries the accepted set and the Current Limitations beside it.
 
 **Conformance status.** Measured for current imported fixtures; not complete Atlas HCL coverage.
 
