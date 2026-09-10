@@ -246,7 +246,7 @@ func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigge
 	// every run for every trigger a live database inspected through HCL.
 	genExecuteFunction := strings.TrimSpace(genTrigger.ExecuteFunction)
 	if genExecuteFunction != "" && dbExecuteFunction != "" {
-		if !strings.EqualFold(genExecuteFunction, dbExecuteFunction) {
+		if !sameExecuteFunction(genExecuteFunction, dbExecuteFunction) {
 			triggerDiff.Changes["function"] = fmt.Sprintf("%s -> %s", dbExecuteFunction, genExecuteFunction)
 		}
 		return triggerDiff
@@ -271,4 +271,37 @@ func normalizeTriggerBody(body string) string {
 	body = strings.TrimSpace(body)
 	body = strings.TrimSuffix(body, ";")
 	return strings.TrimSpace(body)
+}
+
+// sameExecuteFunction reports whether two spellings name one function.
+//
+// The two sides qualify differently. A declaration names the function the way
+// its author wrote it -- `app.touch` in a SQL file, or the qualified name an
+// HCL reference resolves to -- while the catalog reports pg_proc.proname, which
+// carries no schema. Compared as text, a trigger nobody had touched was planned
+// for replacement on every run (stokaro/ptah#3113).
+//
+// The comparison uses the more specific spelling BOTH sides carry. Two
+// qualified names are compared whole, so `app.touch` and `other.touch` stay two
+// functions; a bare name on either side compares against the other's bare part,
+// because that side simply does not say which schema.
+func sameExecuteFunction(declared, observed string) bool {
+	declaredSchema, declaredName := splitExecuteFunction(declared)
+	observedSchema, observedName := splitExecuteFunction(observed)
+	if !strings.EqualFold(declaredName, observedName) {
+		return false
+	}
+	if declaredSchema == "" || observedSchema == "" {
+		return true
+	}
+	return strings.EqualFold(declaredSchema, observedSchema)
+}
+
+// splitExecuteFunction separates a function reference into its schema and name.
+func splitExecuteFunction(reference string) (schema, name string) {
+	trimmed := strings.TrimSpace(reference)
+	if qualifier, bare, qualified := strings.Cut(trimmed, "."); qualified {
+		return qualifier, bare
+	}
+	return "", trimmed
 }

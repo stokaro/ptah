@@ -97,7 +97,11 @@ func TestPostgresLiveTriggerExecuteConverges(t *testing.T) {
 	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	joined := strings.Join(statements, "\n")
-	c.Assert(joined, qt.Contains, `EXECUTE FUNCTION "shared_touch"()`)
+	// Qualified, which is the half a local run against `public` cannot see: an
+	// unqualified name is resolved through search_path, and a schema the
+	// document just created is not on it.
+	c.Assert(joined, qt.Contains,
+		`EXECUTE FUNCTION "`+schemaName+`"."shared_touch"()`)
 	// One function, not one per trigger. A body would have produced two.
 	c.Assert(joined, qt.Not(qt.Contains), "ptah_trigger_")
 	c.Assert(strings.Count(joined, "RETURNS trigger"), qt.Equals, 1)

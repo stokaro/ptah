@@ -1798,3 +1798,48 @@ func (p *parser) sequenceOwnedBy(attr *hclsyntax.Attribute) string {
 	}
 	return p.optionalString(attr)
 }
+
+// resolveTriggerExecuteFunctions rewrites each trigger's ExecuteFunction to the
+// qualified name of the function this document declares.
+//
+// An `execute { function = function.f }` reference carries the function's label
+// and nothing else, while the function block carries its own `schema`. Emitted
+// unqualified, the statement is resolved by the server through search_path,
+// which does not hold a schema the document just created: `CREATE TRIGGER ...
+// EXECUTE FUNCTION "f"()` answers `function f() does not exist` for every
+// function outside the connection's default schema (stokaro/ptah#3113).
+//
+// A reference naming no declared function is left as written. The document may
+// name a function that already exists on the server, which is the arrangement
+// this block exists for, and a reference Ptah cannot resolve is not evidence
+// that the author was wrong.
+//
+// An ambiguous bare name -- the same label declared in two schemas -- is also
+// left as written, because picking one would bind the trigger to a function the
+// author did not name.
+func (p *parser) resolveTriggerExecuteFunctions() {
+	qualifiedByBareName := make(map[string][]string, len(p.db.Functions))
+	for _, function := range p.db.Functions {
+		bare := bareObjectName(function.Name)
+		qualifiedByBareName[bare] = append(qualifiedByBareName[bare], function.Name)
+	}
+	for i, trigger := range p.db.Triggers {
+		declared := strings.TrimSpace(trigger.ExecuteFunction)
+		if declared == "" || strings.Contains(declared, ".") {
+			continue
+		}
+		candidates := qualifiedByBareName[declared]
+		if len(candidates) != 1 {
+			continue
+		}
+		p.db.Triggers[i].ExecuteFunction = candidates[0]
+	}
+}
+
+// bareObjectName drops a schema qualifier from an object's name.
+func bareObjectName(name string) string {
+	if _, bare, qualified := strings.Cut(strings.TrimSpace(name), "."); qualified {
+		return bare
+	}
+	return strings.TrimSpace(name)
+}

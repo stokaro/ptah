@@ -39,13 +39,19 @@ trigger "t_touch" {
 }
 
 // TestParseTriggerExecuteBindsADeclaredFunction_HappyPath pins that an execute
-// block binds the trigger to a function the schema declares.
+// block binds the trigger to a function the schema declares, by its qualified
+// name.
 //
 // A body makes Ptah generate a private function per trigger and drop it with
 // the trigger; an execute block binds one several triggers may share. The model
 // has carried both alternatives all along -- a SQL schema file reaches the
 // second, and the reader reports it -- and this format could reach only the
 // first (stokaro/ptah#3113).
+//
+// The reference names the function's label and not its schema, so it is
+// resolved against the functions the document declares. Emitted unqualified,
+// the statement is resolved by the server through search_path, which does not
+// hold a schema the document just created.
 func TestParseTriggerExecuteBindsADeclaredFunction_HappyPath(t *testing.T) {
 	rows := []struct {
 		name  string
@@ -69,10 +75,10 @@ func TestParseTriggerExecuteBindsADeclaredFunction_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Triggers, qt.HasLen, 1)
-			c.Assert(db.Triggers[0].ExecuteFunction, qt.Equals, "shared_touch")
+			c.Assert(db.Triggers[0].ExecuteFunction, qt.Equals, "public.shared_touch")
 			c.Assert(db.Triggers[0].Body, qt.Equals, "")
 			sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
-			c.Assert(sql, qt.Contains, `EXECUTE FUNCTION "shared_touch"()`)
+			c.Assert(sql, qt.Contains, `EXECUTE FUNCTION "public"."shared_touch"()`)
 			// The private function a body would have produced is not rendered,
 			// which is what makes the two alternatives rather than spellings.
 			c.Assert(sql, qt.Not(qt.Contains), "ptah_trigger_")
