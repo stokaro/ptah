@@ -88,5 +88,8 @@
     "@axe-core/playwright": "^4.13.0",
     "mermaid": "^12.0.0",
     "playwright": "^1.62.1"
+  },
+  "overrides": {
+    "lodash-es": "^4.18.0"
   }
 }
