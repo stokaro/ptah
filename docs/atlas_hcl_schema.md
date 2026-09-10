@@ -804,5 +804,12 @@ back.
 A top-level `variable` block requires a supported `type` and may declare a
 `default` and `description`. `var.name` references are evaluated, and repeatable
 `--var name=value` values override defaults. A required variable with no value
-is refused as `missing value for required variable "name"`. The same evaluation
-path is used by `ptah schema test` when `--schema-file` names an HCL file.
+is refused as `missing value for required variable "name"`.
+
+`--var` supplies values to whichever file declares the variable. One flag names
+a value, and the file that needs it may be the `atlas.hcl` an `--env` selects or
+the schema file `--schema-file` names, so both evaluators read the same
+resolution rather than each carrying its own. Every native command that
+registers `--var` and reads a schema file honors it: `ptah schema render`,
+`plan`, `apply`, `compare`, `validate`, `lineage` and `drift`, plus `ptah viz`,
+`ptah migrate` and `ptah schema test`.

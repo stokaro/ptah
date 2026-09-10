@@ -61,11 +61,16 @@ Authentication comes from the Docker credential store.`,
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return err
+	}
 	db, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Dialect:     opts.dialect,
 		PlainHTTP:   opts.plainHTTP,
+		Vars:        declaredVars,
 	})
 	if err != nil {
 		return err

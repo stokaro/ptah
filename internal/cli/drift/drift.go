@@ -180,6 +180,11 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	}
 	schemas := dbcli.ParseSchemas(schemasValue)
 
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
@@ -191,6 +196,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		IgnoredTables:   ignoredTables,
 		Schemas:         schemas,
 		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())

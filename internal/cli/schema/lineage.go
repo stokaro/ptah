@@ -113,6 +113,10 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	database, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:        opts.rootDirs,
 		SchemaFiles:     opts.schemaFiles,
@@ -120,6 +124,7 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
 		Dialect:         opts.dialect,
 		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

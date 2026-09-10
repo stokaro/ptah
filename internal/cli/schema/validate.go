@@ -112,6 +112,10 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	var problems []schemavalidate.Problem
 	for _, dialect := range dialects {
@@ -125,6 +129,7 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 			EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
 			Dialect:         dialect,
 			PlainHTTP:       opts.plainHTTP,
+			Vars:            declaredVars,
 		})
 		if err != nil {
 			problems = append(problems, schemavalidate.Problem{

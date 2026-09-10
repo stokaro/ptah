@@ -143,12 +143,18 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return err
+	}
+
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     dialect,
 		PlainHTTP:   opts.plainHTTP,
+		Vars:        declaredVars,
 	}
 
 	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dburldisplay.Format(dbURL))

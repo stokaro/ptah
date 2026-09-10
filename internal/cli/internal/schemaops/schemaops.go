@@ -38,6 +38,11 @@ type CompareOptions struct {
 	// EnvSelectorFlag names the flag that selects a project environment on the
 	// running command; empty when it offers none.
 	EnvSelectorFlag string
+	// Vars supplies values for the `variable` blocks a schema file declares,
+	// in the `name=value` spelling `--var` takes. Resolve it with
+	// [ptah.run/internal/cli/internal/dbcli.DeclaredVars], which answers for
+	// both the atlas.hcl and the schema file.
+	Vars []string
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -73,6 +78,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		Commands:        opts.Commands,
 		Dialect:         dialect,
 		PlainHTTP:       opts.PlainHTTP,
+		Vars:            opts.Vars,
 	}
 	desired, err := schemaload.LoadContext(ctx, loadOpts)
 	if err != nil {

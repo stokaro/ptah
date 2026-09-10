@@ -126,6 +126,11 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return err
+	}
+
 	// The render dialect also hints SQL parsing for both schema files and command
 	// output, so the two SQL sources are treated consistently.
 	result, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
@@ -134,6 +139,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		Commands:    commands,
 		Dialect:     opts.dialect,
 		PlainHTTP:   opts.plainHTTP,
+		Vars:        declaredVars,
 		Logf:        func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 	})
 	if err != nil {
