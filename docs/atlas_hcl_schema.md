@@ -35,7 +35,8 @@ current schema IR:
 
 - `schema` labels and `comment`, for table namespace references such as
   `schema = schema.main`
-- `table` blocks, including `depends_on`, the Ptah `checks`, `custom`,
+- `table` blocks, including `qualifier`, `depends_on`, the Ptah `checks`,
+  `custom`,
   `api_name`, `openapi_name`, `graphql_name`, `proto_name`, and nested
   `platform` parity extensions. `depends_on` takes table references --
   `[table.t]` -- and orders this table after each one. The ordering already
@@ -43,7 +44,13 @@ current schema IR:
   states, such as a default that calls a function reading another table. A name
   matching no table in this render contributes no edge rather than an error,
   because a table scoped to another dialect is absent from that render by
-  design
+  design. `qualifier` disambiguates two tables that share a name, and Ptah
+  addresses a table by its schema: `table.app.users` resolves to `app.users`,
+  and the dependency map, the comparator and every renderer key on that
+  qualified name. A qualifier naming the table's own schema therefore says what
+  `schema` already says and is accepted; one naming anything else asks for a
+  second address nothing in the model can express, and is refused rather than
+  dropped
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`,
   `unique_expr`, `default`, `check`, `check_name`, `identity` (including its
   `options`), `comment`, and nested `platform` parity extensions; the Ptah
