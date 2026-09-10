@@ -181,6 +181,10 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// down the file, and before Finalize, which reads schemas off the same
 	// blocks for the positions it covers.
 	p.resolveDocumentTableRefs()
+	// Same reason, for the function a trigger's execute block names: the
+	// reference carries the function's label and not its schema, and the
+	// function block may sit further down the file.
+	p.resolveTriggerExecuteFunctions()
 	// Before Finalize, which folds a repeated declaration into the first one and
 	// is what turned a document the pinned binary refuses into exit 0.
 	if err := p.rejectRedeclarations(); err != nil {
