@@ -153,16 +153,6 @@ const htmlImageTag = /<img\b[^>]*>/gi;
 const htmlAltAttribute = /\balt\s*=/i;
 const htmlEmptyAlt = /\balt\s*=\s*(?:""|''|\{\s*(?:""|'')\s*\})/i;
 
-// decorativeImage matches an image that declares it carries no information.
-//
-// An empty alt is the CORRECT markup for such an image: it is what tells a
-// screen reader to skip it. Demanding a description for one is an accessibility
-// regression rather than a win -- a separator announced nine times in a row is
-// worse than a separator announced never. So the empty alt is accepted exactly
-// when the tag also says the image is presentational, which is a claim the
-// author has to make on purpose.
-const decorativeImage = /\b(?:role\s*=\s*["']presentation["']|aria-hidden\s*=\s*["']true["'])/i;
-
 // docs/STYLE_GUIDE.md section 10: "a cell longer than about two rendered lines
 // means the row needs a section with a heading instead."
 //
@@ -569,11 +559,6 @@ function isAttributeName(line, match) {
 // The rule reads the prose side, so a page may show `![](path)` inside a code
 // sample to teach the syntax without failing its own example.
 //
-// One image is allowed to say nothing: a separator or a spacer shows nothing to
-// describe, and `alt=""` beside `role="presentation"` is how a reader using a
-// screen reader is told to skip it. The declaration is the price of the
-// exemption -- an author who forgets the alt entirely still fails.
-//
 // It lands on a tree carrying one Markdown image across the whole governed
 // corpus, which is the reason to add it now: a rule that arrives before the
 // assets is green on arrival, and one that arrives after them is a backlog
@@ -589,12 +574,10 @@ function imageAltViolations(lines) {
       });
     }
     for (const match of line.matchAll(htmlImageTag)) {
-      if (htmlEmptyAlt.test(match[0]) && !decorativeImage.test(match[0])) {
+      if (htmlEmptyAlt.test(match[0])) {
         findings.push({
           line: index + 1,
-          message:
-            '<img> has empty alt text; say what the image shows,' +
-            ' or mark it role="presentation" when it shows nothing',
+          message: '<img> has empty alt text; say what the image shows',
         });
         continue;
       }
@@ -932,10 +915,6 @@ function selftest() {
     // a time, the file is clean.
     'The refusal names two',
     'things that layout does not have.',
-    '',
-    // An empty alt with nothing declaring the image presentational. The
-    // exemption below has to be earned, or it is a hole rather than a rule.
-    '<img src="../../assets/spacer.svg" alt="" height="32" width="16">',
   ].join('\n');
 
   const expected = [
@@ -964,7 +943,6 @@ function selftest() {
     { line: 84, needle: 'the count is not the subject' },
     { line: 86, needle: 'the count is not the subject' },
     { line: 88, needle: 'the count is not the subject' },
-    { line: 91, needle: 'empty alt text' },
   ];
 
   const findings = analyze(violating);
@@ -1000,13 +978,6 @@ function selftest() {
     // states it, measured as AGENTS.md line 451.
     'In running prose, name the noun: `Three things',
     'weigh against it` is the repair.',
-    '',
-    // A separator shows nothing, so an empty alt is what tells a screen reader
-    // to skip it. Announcing "separator" nine times in a row is the outcome a
-    // rule without this exemption buys.
-    '<img src="../../assets/dot.svg" alt="" role="presentation" height="32" width="16">',
-    '',
-    '<img src="../../assets/dot.svg" alt="" aria-hidden="true" height="32" width="16">',
     '',
     // A count that ends a paragraph, and a noun that opens the next one. The
     // paragraph rule that lets a wrapped phrase be seen would report this pair

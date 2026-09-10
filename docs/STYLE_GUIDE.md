@@ -673,12 +673,6 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   what kind of thing it is. "Entity diagram: `users` has many `orders`, joined
   on `orders.user_id`", not "schema diagram". `check:style` fails an image with
   no alt text; whether the alt text is useful is a reading responsibility.
-- **An image that shows nothing says nothing.** A separator or a spacer carries
-  `alt=""` beside `role="presentation"` or `aria-hidden="true"`, which is what
-  tells a screen reader to skip it; describing one is a regression, since a
-  reader would hear the same word once per separator. The declaration is what
-  buys the exemption -- an empty alt with nothing beside it still fails, and so
-  does a presentational image with no alt attribute at all.
 - An inline `<svg>` names itself through `role="img"` and either `aria-label` or
   an `aria-labelledby` pointing at its own `<title>`. Use `aria-labelledby` when
   the description is a sentence, so it is not duplicated into an attribute.
