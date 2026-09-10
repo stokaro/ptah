@@ -11,7 +11,6 @@
 set -euo pipefail
 
 STATUS_FILE="docs/site/src/content/docs/databases/capability-status.md"
-BADGE_DIR="docs/badges"
 
 failures=0
 cases=0
@@ -25,13 +24,11 @@ expect_refusal() {
 
 	cases=$((cases + 1))
 	dir="$(mktemp -d)"
-	mkdir -p "${dir}/badges"
 	cp "$STATUS_FILE" "${dir}/status.md"
-	cp "$BADGE_DIR"/*.json "${dir}/badges/"
 
 	( cd "$dir" && eval "$mutate" )
 
-	if output="$(scripts/check-capability-status.sh "${dir}/status.md" "${dir}/badges" 2>&1)"; then
+	if output="$(scripts/check-capability-status.sh "${dir}/status.md" 2>&1)"; then
 		echo "  ${name}: the gate passed over a broken file" >&2
 		failures=$((failures + 1))
 	elif ! printf '%s' "$output" | grep -qF "$needle"; then
@@ -68,18 +65,6 @@ expect_refusal "a verdict is flipped and the summary is not" \
 expect_refusal "a skipped line is not named" \
 	"the census is short" \
 	"grep -v 'sqlite-3' status.md >tmp && mv tmp status.md"
-
-# An engine's badge deleted. shields.io renders an error image rather than
-# failing anything, so nothing but this catches it.
-expect_refusal "an engine loses its badge" \
-	"would render an error" \
-	"rm badges/postgres.json"
-
-# A badge whose schemaVersion shields.io does not read. Same failure mode: a
-# rendered error where a reader expects a verdict.
-expect_refusal "a badge declares a schema shields.io does not read" \
-	"not what shields.io reads" \
-	"python3 -c \"import json; p='badges/mysql.json'; d=json.load(open(p)); d['schemaVersion']=2; json.dump(d, open(p,'w'))\""
 
 if [ "$failures" -ne 0 ]; then
 	echo "check-capability-status --selftest: FAILED (${failures} of ${cases})" >&2

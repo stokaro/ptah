@@ -1,0 +1,45 @@
+Ptah
+Copyright (c) the Ptah authors
+Licensed under the MIT License; see LICENSE.
+
+Third-party artwork
+-------------------
+
+docs/assets/engines/ holds the database logos README shows beside the engines
+Ptah supports. Two permissions apply to each file, and they are separate:
+
+  * the SVG file itself, which the icon set below licenses to us; and
+  * the mark the file draws, which belongs to the vendor and is not ours to
+    license.
+
+The files come from:
+
+  devicons/devicon v2.17.0, MIT License
+  https://github.com/devicons/devicon
+    clickhouse.svg, mariadb.svg, mysql.svg, oracle.svg, postgresql.svg,
+    spanner.svg, sqlite.svg, sqlserver.svg, yugabytedb.svg
+
+  simple-icons/simple-icons 16.30.0, CC0 1.0 Universal
+  https://github.com/simple-icons/simple-icons
+    cockroachdb.svg
+
+cockroachdb.svg is the only edited file: simple-icons ships its icons as a
+single monochrome path, so the fill carries the brand's own hex (#6933FF) as
+that project's metadata records it. Nine coloured marks beside one black one
+would read as a distinction Ptah is not making.
+
+Trademarks
+----------
+
+All product names, logos and brands are the property of their respective
+owners. ClickHouse, CockroachDB, MariaDB, Microsoft SQL Server, MySQL, Oracle
+Database, PostgreSQL, Google Cloud Spanner, SQLite and YugabyteDB are marks of
+their respective holders.
+
+Ptah uses these marks to identify the databases it supports, and for no other
+purpose. Their use here does not imply that any of these vendors endorses,
+sponsors or is affiliated with Ptah. Ptah is an independent project with no
+relationship to any of them.
+
+A vendor who would rather their mark did not appear here should open an issue
+at https://github.com/stokaro/ptah/issues and it will be removed.

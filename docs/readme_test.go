@@ -48,12 +48,21 @@ const (
 var centeredBlock = regexp.MustCompile(`(?s)<p align="center">.*?</p>`)
 
 // htmlLink and markdownLink read a link's visible label, which is what a reader
-// scans the engine row for.
+// scans the engine row for. The engine row's label is a mark rather than a
+// word, so the content group is not restricted to text.
 var (
-	htmlLink     = regexp.MustCompile(`<a\s+href="([^"]*)"[^>]*>([^<]*)</a>`)
+	htmlLink     = regexp.MustCompile(`(?s)<a\s+href="([^"]*)"[^>]*>(.*?)</a>`)
 	markdownLink = regexp.MustCompile(`\[([^\]]*)\]\(([^)]*)\)`)
 	backticked   = regexp.MustCompile("`([^`]*)`")
 )
+
+// imageAlt reads the alternative text out of an <img> label.
+//
+// The engine row shows each database's own mark, so the name a reader needs is
+// in the alt attribute -- which is also the only name a screen reader reaches.
+// Requiring it here means a logo added without one fails this test rather than
+// silently removing an engine from what the README says it supports.
+var imageAlt = regexp.MustCompile(`<img\s[^>]*\balt="([^"]*)"`)
 
 // databasesPrefix is the documentation area every engine link points into.
 const databasesPrefix = "https://docs.ptah.run/edge/databases/"
@@ -95,6 +104,15 @@ func readmeEngines(c *qt.C) []string {
 	return sorted(rows[0])
 }
 
+// linkedEngineName is the label a reader takes from one engine link: the alt
+// text when the link carries a mark, and the words otherwise.
+func linkedEngineName(label string) string {
+	if alt := imageAlt.FindStringSubmatch(label); alt != nil {
+		return strings.TrimSpace(alt[1])
+	}
+	return strings.TrimSpace(label)
+}
+
 func engineLabels(block string) []string {
 	var labels []string
 	for _, match := range htmlLink.FindAllStringSubmatch(block, -1) {
@@ -107,7 +125,7 @@ func appendEngineLabel(labels []string, href, label string) []string {
 	if !strings.HasPrefix(href, databasesPrefix) {
 		return labels
 	}
-	return append(labels, strings.TrimSpace(label))
+	return append(labels, linkedEngineName(label))
 }
 
 func appendWhenRow(rows [][]string, labels []string) [][]string {
@@ -224,58 +242,4 @@ func TestReadmeRoutesToTheSupportMatrix(t *testing.T) {
 	c.Assert(string(body), qt.Contains, supportMatrixRoute,
 		qt.Commentf("the README links %s nowhere, so a reader whose engine is not"+
 			" in the row above has no route to the answer", supportMatrixRoute))
-}
-
-// badgeDir holds one shields.io endpoint document per engine, written by the
-// capability matrix on a push to master.
-const badgeDir = "badges"
-
-// badgeEndpoint reads the engine id out of a README badge URL.
-var badgeEndpoint = regexp.MustCompile(`/docs/badges/([a-z0-9]+)\.json`)
-
-// TestReadmeBadgesEveryEngineTheMatrixPublishes holds the status row to the
-// documents behind it.
-//
-// The badge documents are derived: the generator writes one per dialect the
-// declared cells name, so adding a release line for an engine nobody probed
-// before publishes a document nothing points at. A README row that named nine
-// of ten would report a green fleet while one engine's verdict reached no
-// reader, which is the failure this row exists to close rather than repeat.
-//
-// It reads the directory rather than a list written here for the same reason
-// the engine row is held to the support matrix: a second hand-typed list is a
-// claim that was true when it was typed.
-func TestReadmeBadgesEveryEngineTheMatrixPublishes(t *testing.T) {
-	c := qt.New(t)
-
-	c.Assert(readmeBadgeEngines(c), qt.DeepEquals, publishedBadgeEngines(c))
-}
-
-// readmeBadgeEngines returns the engine ids the README's badge URLs name.
-func readmeBadgeEngines(c *qt.C) []string {
-	body, err := os.ReadFile(readmePath)
-	c.Assert(err, qt.IsNil)
-
-	var engines []string
-	for _, match := range badgeEndpoint.FindAllStringSubmatch(string(body), -1) {
-		engines = append(engines, match[1])
-	}
-	// A floor as well as a comparison: a README that stopped naming any badge
-	// would otherwise agree with a directory the generator had emptied, and
-	// two empty lists compare equal.
-	c.Assert(len(engines) >= minimumEngineLinks, qt.IsTrue,
-		qt.Commentf("the README names %d badge documents, which is too few to be the status row", len(engines)))
-	return sorted(engines)
-}
-
-// publishedBadgeEngines returns the engine ids the badge directory carries.
-func publishedBadgeEngines(c *qt.C) []string {
-	entries, err := os.ReadDir(badgeDir)
-	c.Assert(err, qt.IsNil)
-
-	var engines []string
-	for _, entry := range entries {
-		engines = append(engines, strings.TrimSuffix(entry.Name(), ".json"))
-	}
-	return sorted(engines)
 }
