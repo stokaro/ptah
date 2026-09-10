@@ -247,7 +247,7 @@ outside the supported compatibility subset.
 
 **Ptah documentation.** [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs: core tables, columns, indexes, constraints, enums, schemas, selected generated and identity forms, and PostgreSQL include columns. Atlas's own spelling for `view`, `materialized` and `trigger` blocks is refused by name; [`stokaro/ptah#3113`](https://github.com/stokaro/ptah/issues/3113) owns it.
+**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs: core tables, columns, indexes, constraints, enums, schemas, selected generated and identity forms, and PostgreSQL include columns. A `view` or `materialized` block takes `column` blocks and `depends_on`, a `trigger` takes an `execute` block naming a declared function, and a `table` takes `depends_on` and `qualifier`. The subset is still a subset: it is stated attribute by attribute in [`docs/atlas_hcl_schema.md`](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md), which carries the accepted set and the Current Limitations beside it.
 
 **Conformance status.** Measured for current imported fixtures; not complete Atlas HCL coverage.
 
@@ -489,7 +489,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Ptah documentation.** [Capabilities](../../reference/capabilities/), [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial and not product-identical. Ptah models objects Atlas gates behind Pro, and each kind is carried in its minimal form rather than with every attribute the Atlas HCL surface accepts; [`stokaro/ptah#3121`](https://github.com/stokaro/ptah/issues/3121) owns closing that.
+**Implementation status.** Partial and not product-identical. Ptah models objects Atlas gates behind Pro. The kinds are no longer carried in their minimal form: a sequence names its owning column by reference, a row-security declaration binds the table's owner, a policy is permissive or restrictive, a routine carries its configuration settings, its `LEAKPROOF` and `PARALLEL` properties and a set- or table-returning result, and a view names its output columns. What keeps this Partial is that the remaining gap has not been measured attribute by attribute rather than any named attribute being absent.
 
 **Conformance status.** Partially measured.
 
