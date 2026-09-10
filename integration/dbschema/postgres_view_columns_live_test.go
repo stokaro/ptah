@@ -20,6 +20,12 @@ import (
 
 // viewColumnsDocument declares a view whose output columns are named by
 // `column` blocks rather than by aliases in the body.
+//
+// The body names its table with the schema. A view body is the author's SQL and
+// Ptah renders it verbatim, so an unqualified name is resolved by the server
+// through search_path, which does not hold a schema this test just created.
+// That holds for a view with no column blocks too, and is not what this test is
+// about.
 func viewColumnsDocument(schemaName string) []byte {
 	return []byte(`
 schema "` + schemaName + `" {}
@@ -38,7 +44,7 @@ table "t" {
 
 view "v" {
   schema = schema.` + schemaName + `
-  as     = "SELECT id, label FROM t"
+  as     = "SELECT id, label FROM ` + schemaName + `.t"
   column "ident" {
   }
   column "name" {
