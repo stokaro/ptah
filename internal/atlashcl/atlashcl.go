@@ -491,6 +491,9 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	if err := p.checkTableQualifier(block, labels); err != nil {
+		return err
+	}
 
 	table := schemamodel.Table{
 		StructName:    hclTableStructName(labels.schema, labels.name),
@@ -1775,6 +1778,7 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 		"strict":         true,
 		"without_rowid":  true,
 		"depends_on":     true,
+		"qualifier":      true,
 		"comment":        true,
 		"checks":         true,
 		"custom":         true,
@@ -2008,6 +2012,36 @@ func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error 
 		}
 	}
 	return nil
+}
+
+// checkTableQualifier holds a table's `qualifier` to the schema the table is
+// already in.
+//
+// The attribute disambiguates two tables that share a name, and Ptah addresses
+// a table by its schema: `table.app.users` resolves to `app.users`, and the
+// dependency map, the comparator and every renderer key on that qualified name.
+// A qualifier naming the table's own schema therefore says what `schema`
+// already says, and is accepted for the documents that carry it.
+//
+// A qualifier naming anything else asks for a second address, which nothing in
+// the model can express, so it is refused rather than dropped: a table reached
+// under a name Ptah never uses is a table the plan would create twice
+// (stokaro/ptah#3113).
+func (p *parser) checkTableQualifier(block *hclsyntax.Block, labels tableLabels) error {
+	attr := block.Body.Attributes["qualifier"]
+	if attr == nil {
+		return nil
+	}
+	qualifier := strings.TrimSpace(p.optionalString(attr))
+	if qualifier == "" {
+		return p.blockError(block, "table %q qualifier names nothing", labels.name)
+	}
+	if qualifier == strings.TrimSpace(labels.schema) {
+		return nil
+	}
+	return p.blockError(block,
+		"table %q qualifier %q does not name its schema %q; Ptah addresses a table by its schema",
+		labels.name, qualifier, labels.schema)
 }
 
 // markPrimaryFields moves a single-column table-level primary key onto the
