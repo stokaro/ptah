@@ -244,8 +244,12 @@ func TestLoad_IgnoredBlocksStaySilentWithoutAReporter(t *testing.T) {
 	c.Assert(db.Tables, qt.HasLen, 1)
 }
 
-// nestedIgnoredSchema declares a view carrying the `column` block this parser
-// does not model, with a type name the dropped-body scope does not bind.
+// nestedIgnoredSchema declares a view carrying a block this parser does not
+// model, with a type name the dropped-body scope does not bind.
+//
+// The name is nonsense on purpose. A modeled block cannot stand in: `column`
+// was the fixture here and stopped being one the day views learned to name
+// their output columns, which is the drift a nonsense name cannot have.
 const nestedIgnoredSchema = `
 schema "main" {
 }
@@ -260,7 +264,7 @@ table "t" {
 view "v" {
   schema = schema.main
   as     = "SELECT id FROM t"
-  column "c" {
+  zzz_nonsense "c" {
     type = text
   }
 }
@@ -282,7 +286,7 @@ table "t" {
 view "v" {
   schema = schema.main
   as     = "SELECT id FROM t"
-  column "c" {
+  zzz_nonsense "c" {
     type = int
   }
 }
@@ -310,7 +314,7 @@ func TestLoad_ReportsTheConstructAnIgnoredNameSatIn(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Views, qt.HasLen, 1)
 	c.Assert(reported.String(), qt.Matches,
-		`warning: schema file block "column" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
+		`warning: schema file block "zzz_nonsense" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
 }
 
 // TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails pins that the report survives
@@ -341,5 +345,5 @@ func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*unknown variable "text".*`)
 	c.Assert(db, qt.IsNil)
 	c.Assert(reported.String(), qt.Matches,
-		`warning: schema file block "column" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
+		`warning: schema file block "zzz_nonsense" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
 }

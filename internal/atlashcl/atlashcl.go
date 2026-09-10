@@ -2002,7 +2002,17 @@ func (p *parser) rejectUnsupportedBlock(block *hclsyntax.Block, label string) er
 // first is dropped rather than fatal, so stopping there would leave the rest
 // of the subtree unevaluated.
 func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error {
+	return p.rejectNestedBlocksExcept(block, label)
+}
+
+// rejectNestedBlocksExcept applies that gate to every nested block whose type
+// is not named, so a construct that models one nested block keeps the gate on
+// all the others.
+func (p *parser) rejectNestedBlocksExcept(block *hclsyntax.Block, label string, modeled ...string) error {
 	for _, nested := range block.Body.Blocks {
+		if slices.Contains(modeled, nested.Type) {
+			continue
+		}
 		if err := p.rejectUnsupportedBlock(nested, label); err != nil {
 			return err
 		}

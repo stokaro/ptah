@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewcolumns"
 )
 
 func (p *parser) parseExtension(block *hclsyntax.Block) error {
@@ -381,6 +382,10 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if body == "" {
 		return p.blockError(block, "view %q requires as", name)
 	}
+	body, err = p.viewBodyWithDeclaredColumns(block, "view", name, body)
+	if err != nil {
+		return err
+	}
 	attributes, err := p.stringListAttr(block, "attributes")
 	if err != nil {
 		return err
@@ -434,6 +439,59 @@ func objectRefTargetName(raw string) string {
 	return ""
 }
 
+// viewColumnBlock is the block naming one of a view's output columns.
+const viewColumnBlock = "column"
+
+// viewBodyWithDeclaredColumns folds a view's `column` blocks into its body.
+//
+// PostgreSQL accepts `CREATE VIEW v (a, b) AS SELECT x, y` and stores `SELECT x
+// AS a, y AS b`, which is what pg_get_viewdef reports and what a reader hands
+// the comparison. Rendering the alias list would therefore never match the
+// view's own catalog row, and the view would be planned for replacement on
+// every run. Rewriting the declaration into the spelling the catalog keeps
+// costs nothing a caller can observe: the two statements create one view
+// (stokaro/ptah#3172).
+//
+// A `type` inside the block is refused rather than dropped. A view's column
+// types are derived by the server from the body, so a declaration stating one
+// is a claim Ptah can neither render nor check, and accepting it would be the
+// accept-and-ignore the compatibility policy names as the wrong answer.
+func (p *parser) viewBodyWithDeclaredColumns(
+	block *hclsyntax.Block, label, name, body string,
+) (string, error) {
+	names, err := p.viewColumnNames(block, label, name)
+	if err != nil {
+		return "", err
+	}
+	aliased, err := viewcolumns.WithAliases(body, names)
+	if err != nil {
+		return "", p.blockError(block, "%s %q: %s", label, name, err.Error())
+	}
+	return aliased, nil
+}
+
+// viewColumnNames reads a view's `column` blocks in the order they were
+// written, which is the order of the row the view returns.
+func (p *parser) viewColumnNames(block *hclsyntax.Block, label, name string) ([]string, error) {
+	var names []string
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != viewColumnBlock {
+			continue
+		}
+		if len(nested.Labels) != 1 {
+			return nil, p.blockError(nested, "%s %q column requires one name label", label, name)
+		}
+		if err := p.rejectNestedBlocks(nested, label+" column"); err != nil {
+			return nil, err
+		}
+		if err := p.rejectUnsupportedAttrs(nested, map[string]bool{"comment": true}, label+" column"); err != nil {
+			return nil, err
+		}
+		names = append(names, nested.Labels[0])
+	}
+	return names, nil
+}
+
 func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 	schema, name, err := p.objectSchemaAndName(block, "materialized")
 	if err != nil {
@@ -445,6 +503,10 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 	body := p.optionalString(block.Body.Attributes["as"])
 	if body == "" {
 		return p.blockError(block, "materialized %q requires as", name)
+	}
+	body, err = p.viewBodyWithDeclaredColumns(block, "materialized", name, body)
+	if err != nil {
+		return err
 	}
 	// The retired attribute is refused on PRESENCE, before its value is read.
 	// A value expression is not required to be a string here -- a bare
@@ -945,7 +1007,7 @@ func (p *parser) rejectUnsupportedRoutineArgAttrs(block *hclsyntax.Block, blockT
 }
 
 func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "view"); err != nil {
+	if err := p.rejectNestedBlocksExcept(block, "view", viewColumnBlock); err != nil {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
@@ -959,7 +1021,7 @@ func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
 }
 
 func (p *parser) rejectUnsupportedMaterializedAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "materialized"); err != nil {
+	if err := p.rejectNestedBlocksExcept(block, "materialized", viewColumnBlock); err != nil {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
