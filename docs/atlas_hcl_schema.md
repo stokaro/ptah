@@ -114,14 +114,25 @@ current schema IR:
   described as a `function` when it is a procedure is a different object from
   the one in the database
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, `depends_on`,
-  and `comment`. `depends_on` takes object references -- `[view.v, table.t]` --
+  `comment`, and `column` blocks naming the view's output columns. A `column`
+  block takes a name label and an optional `comment`; a `type` inside one is
+  refused, because a view's column types are derived by the server from its body
+  and a declaration stating one is a claim Ptah can neither render nor check.
+  The names are folded into the body rather than rendered as an alias list:
+  PostgreSQL does not keep an alias list, storing `CREATE VIEW v (a, b) AS
+  SELECT x, y` as `SELECT x AS a, y AS b`, so a rendered alias list would never
+  match the view's own catalog row. A body whose select list cannot be read as
+  one item per declared column -- `SELECT *`, or a count that disagrees -- is
+  refused rather than rewritten, because a wrong split names the author's
+  columns wrongly and nothing downstream could report it. `depends_on` takes object references -- `[view.v, table.t]` --
   and orders this view after each one. The ordering already reads each body for
   the objects it names; a declared edge is for a dependency the body does not
   reveal, such as one reached through a function. A name matching no object in
   this render contributes no edge rather than an error, because an object scoped
   to another dialect is absent from that render by design
-- `materialized` blocks with `schema`, `as`, `depends_on`, and `comment`;
-  `depends_on` is the same ordering edge, over the same sort
+- `materialized` blocks with `schema`, `as`, `depends_on`, `comment`, and the
+  same `column` blocks; `depends_on` is the same ordering edge, over the same
+  sort
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `comment`, and one of `as` or an `execute` block. The two
   differ in ownership: `as` gives the trigger a body, and Ptah generates a
@@ -742,9 +753,8 @@ permission {
 ```
 
 Ptah intentionally supports the subset it can round-trip through its IR. For
-example, materialized-view column blocks and permission targets other than
-`table`, `schema`, or `sequence` are rejected instead of being accepted and
-dropped.
+example, a view column's `type` and permission targets other than `table`,
+`schema`, or `sequence` are rejected instead of being accepted and dropped.
 Function arguments are accepted as Atlas `arg` blocks. Ptah also accepts a raw
 `params` string and rejects a function that mixes the two representations.
 
@@ -764,7 +774,7 @@ Atlas features that Ptah cannot represent without losing semantics, including:
   settings are not in this list: the IR carries them and this frontend reads
   them from `set`. The attribute name `config_params` is refused, like any other
   name the block does not define
-- view/materialized-view column metadata
+- view and materialized-view column types, which the server derives
 - trigger `referencing`, `when`, constraint, and deferrable metadata
 - permission targets other than schema, table, and sequence
 - HCL objects outside direct schema definitions, such as realms and other
