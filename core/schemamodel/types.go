@@ -1496,8 +1496,27 @@ func (f *Function) Canonicalize() {
 	// unquoted parameter names too. Mirror that on the Go side so an
 	// annotation written as `returns="VOID"` or `params="x TEXT"` doesn't
 	// false-diff on every run against pg_proc.
-	f.Returns = strings.ToLower(f.Returns)
+	f.Returns = canonicalReturns(f.Returns)
 	f.Parameters = strings.ToLower(f.Parameters)
+}
+
+// canonicalReturns folds a return clause onto the spelling the catalog reports.
+//
+// The type names go to lowercase for the reason above. The two clause keywords
+// do not: measured on PostgreSQL 17, `pg_get_function_result` prints `SETOF
+// integer` and `TABLE(a integer, b text)` -- keyword upper, type lower. A
+// blanket lowercase would make a set-returning function differ from its own
+// catalog row on every comparison, and the plan would replace a routine nobody
+// touched, forever.
+func canonicalReturns(returns string) string {
+	lowered := strings.ToLower(returns)
+	if rest, found := strings.CutPrefix(lowered, "setof "); found {
+		return "SETOF " + rest
+	}
+	if rest, found := strings.CutPrefix(lowered, "table("); found {
+		return "TABLE(" + rest
+	}
+	return lowered
 }
 
 // RLSPolicy represents a PostgreSQL Row-Level Security policy definition parsed from Go struct annotations.
