@@ -14,6 +14,14 @@ import (
 	"github.com/zclconf/go-cty/cty/function/stdlib"
 )
 
+// TopLevelScope is the [IgnoredName.Scope] of a name no construct contains.
+//
+// It is a named constant because a reader of a dropped name is told which
+// construct held it, and the top level is the one case where there is nothing
+// to name: a caller comparing against a literal here and the parser writing one
+// there would stop agreeing the day either moved.
+const TopLevelScope = "top-level"
+
 // IgnoredName is a schema-HCL name that was accepted and dropped under the
 // unknown-name policy.
 //
@@ -29,7 +37,7 @@ type IgnoredName struct {
 	Name string
 	// Kind is "block" or "attribute".
 	Kind string
-	// Scope names the construct that contained it ("top-level", "table",
+	// Scope names the construct that contained it ([TopLevelScope], "table",
 	// "column", ...). The position matters because the same name can be
 	// modeled in one place and unmodeled in another.
 	Scope string
@@ -276,9 +284,11 @@ func schemaBlockNames(blocks []SchemaBlock) []string {
 // parser looser than the binary it is matching -- the dangerous direction, and
 // the one that turns today's coincidental agreement into a real divergence.
 func (p *parser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) error {
-	if err := p.checkDroppedBody(block.Body); err != nil {
-		return err
-	}
+	// Reported before the body is checked, so a file that fails inside a
+	// dropped construct still says which construct was dropped. The reference
+	// error names the identifier and its position and nothing else, which left
+	// a reader with no way to see that the block around it contributes nothing
+	// either way, and that deleting it is the repair (stokaro/ptah#3113).
 	p.noteIgnored(IgnoredName{
 		Name:     block.Type,
 		Kind:     "block",
@@ -286,15 +296,12 @@ func (p *parser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) erro
 		Filename: block.TypeRange.Filename,
 		Line:     block.TypeRange.Start.Line,
 	})
-	return nil
+	return p.checkDroppedBody(block.Body)
 }
 
 // tolerateUnknownAttr accepts an attribute name this parser does not model,
 // with the same name-level rule as tolerateUnknownBlock.
 func (p *parser) tolerateUnknownAttr(scope string, attr *hclsyntax.Attribute) error {
-	if err := p.checkDroppedExpr(attr.Expr); err != nil {
-		return err
-	}
 	p.noteIgnored(IgnoredName{
 		Name:     attr.Name,
 		Kind:     "attribute",
@@ -302,7 +309,7 @@ func (p *parser) tolerateUnknownAttr(scope string, attr *hclsyntax.Attribute) er
 		Filename: attr.NameRange.Filename,
 		Line:     attr.NameRange.Start.Line,
 	})
-	return nil
+	return p.checkDroppedExpr(attr.Expr)
 }
 
 // noteIgnored hands a dropped name to the caller's recorder, if it set one.

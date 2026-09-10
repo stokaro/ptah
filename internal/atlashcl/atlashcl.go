@@ -372,7 +372,7 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		// Reaching them again here would parse a type constraint as a value.
 		return nil
 	default:
-		return p.rejectUnsupportedBlock(block, "top-level")
+		return p.rejectUnsupportedBlock(block, TopLevelScope)
 	}
 }
 

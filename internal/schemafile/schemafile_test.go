@@ -243,3 +243,103 @@ func TestLoad_IgnoredBlocksStaySilentWithoutAReporter(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 }
+
+// nestedIgnoredSchema declares a view carrying the `column` block this parser
+// does not model, with a type name the dropped-body scope does not bind.
+const nestedIgnoredSchema = `
+schema "main" {
+}
+
+table "t" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+}
+
+view "v" {
+  schema = schema.main
+  as     = "SELECT id FROM t"
+  column "c" {
+    type = text
+  }
+}
+`
+
+// nestedIgnoredResolvableSchema is the same document with a type name the
+// dropped-body scope does bind, so the load reaches the end.
+const nestedIgnoredResolvableSchema = `
+schema "main" {
+}
+
+table "t" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+}
+
+view "v" {
+  schema = schema.main
+  as     = "SELECT id FROM t"
+  column "c" {
+    type = int
+  }
+}
+`
+
+// TestLoad_ReportsTheConstructAnIgnoredNameSatIn pins that a dropped name
+// nested in a construct says which construct.
+//
+// A name and a line locate the text; they do not say what the text is part of.
+// A reader told that `column` is ignored has to find it themselves in a file
+// that may declare dozens of blocks under a dozen objects, and the top-level
+// warnings beside it look identical (stokaro/ptah#3113).
+func TestLoad_ReportsTheConstructAnIgnoredNameSatIn(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(nestedIgnoredResolvableSchema), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	db, err := schemafile.Load("file://"+path, schemafile.Options{
+		Dialect:               platform.SQLite,
+		IgnoreUnknownHCLNames: true,
+		ReportIgnored:         &reported,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Views, qt.HasLen, 1)
+	c.Assert(reported.String(), qt.Matches,
+		`warning: schema file block "column" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
+}
+
+// TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails pins that the report survives
+// a failure inside the construct it describes.
+//
+// The dropped body is still evaluated, deliberately: the community binary reads
+// the whole file before deciding what to decode, so an unresolvable reference
+// inside a construct it is about to drop is fatal there too, and skipping the
+// subtree would make this parser accept files that binary refuses. What the
+// reader got for it was `unknown variable "text"` and a position -- an error
+// naming neither the view nor the block, and no hint that the block contributes
+// nothing either way, so the obvious repair looks like fixing the type rather
+// than deleting the block.
+//
+// The refusal itself is unchanged, which is the half this must not break.
+func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(nestedIgnoredSchema), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	db, err := schemafile.Load("file://"+path, schemafile.Options{
+		Dialect:               platform.SQLite,
+		IgnoreUnknownHCLNames: true,
+		ReportIgnored:         &reported,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*unknown variable "text".*`)
+	c.Assert(db, qt.IsNil)
+	c.Assert(reported.String(), qt.Matches,
+		`warning: schema file block "column" in view at .*schema\.hcl:15 is ignored for Atlas compatibility and has no effect\n`)
+}

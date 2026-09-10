@@ -254,6 +254,15 @@ default is kept on Ptah's own commands. Callers that want to say something about
 what was dropped can pass `atlashcl.Options.RecordIgnored`, the schema-HCL
 counterpart of the atlas.hcl parser's `Config.IgnoredConstructs`.
 
+A dropped name is reported before its body is evaluated, so a file that fails
+inside a dropped construct still says which construct was dropped. Without that
+order the reader met only the reference diagnostic from the table above -- an
+identifier and a position, naming neither the construct nor the fact that it
+contributes nothing either way -- and the obvious repair looked like fixing the
+reference rather than deleting the block. A nested name also says what held it,
+as `block "column" in view`; one at the top level is held by nothing and says
+nothing.
+
 ## Ptah Go-annotation parity extensions
 
 Ptah accepts the Atlas-compatible subset above and a small set of explicitly
