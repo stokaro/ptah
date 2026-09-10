@@ -533,7 +533,7 @@ Out of scope is the hosted service, not the capability: Ptah publishes and promo
 
 **Ptah documentation.** [CI](../../testing/ci/), [Conformance](../conformance/)
 
-**Implementation status.** Documented for Ptah-native CI and conformance interpretation. Atlas's official integrations are not cloned one by one. [`stokaro/ptah#3122`](https://github.com/stokaro/ptah/issues/3122) owns a published CI recipe that does not work.
+**Implementation status.** Documented for Ptah-native CI and conformance interpretation. Atlas's official integrations are not cloned one by one.
 
 **Conformance status.** Ptah CI is measured by repository workflows; Atlas integration parity is unmeasured.
 

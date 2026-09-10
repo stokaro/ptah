@@ -277,29 +277,46 @@ the [deployment path](../../operate/deliver/) pins a migration artifact.
 `--format gitlab` is a Code Quality artifact GitLab renders on the merge
 request. The job is [below](#report-findings-on-a-gitlab-merge-request).
 
-### Azure DevOps
+### Any platform with no findings format
 
-Azure has no findings format of its own here. Publish the SARIF as a build
-artifact and let the exit code fail the step:
+Azure DevOps, CircleCI and Bitbucket Pipelines have no findings format of their
+own here, so the report is published as a plain build artifact. Each takes two
+runs: one that writes the file and one that decides the outcome.
+
+One run cannot do both. Above the threshold the report goes to stderr and the
+command exits `1`, so a step that redirects stdout and relies on the exit code
+publishes an empty artifact on exactly the run it exists to report. `--fail-on
+none` puts the report on stdout and exits `0`; a second run at the real
+threshold is what fails the step.
+
+### Azure DevOps
 
 ```yaml
 - script: |
-    ptah migrations lint --dir ./migrations --dialect postgres --format sarif > ptah-lint.sarif
-  displayName: Lint migrations
+    ptah migrations lint --dir ./migrations --dialect postgres \
+      --fail-on none --format sarif > ptah-lint.sarif
+  displayName: Write the lint report
 - task: PublishBuildArtifacts@1
   inputs:
     pathToPublish: ptah-lint.sarif
     artifactName: ptah-lint
+- script: ptah migrations lint --dir ./migrations --dialect postgres
+  displayName: Fail on lint findings
 ```
 
 ### CircleCI
 
 ```yaml
 - run:
-    name: Lint migrations
-    command: ptah migrations lint --dir ./migrations --dialect postgres --format json > ptah-lint.json
+    name: Write the lint report
+    command: >
+      ptah migrations lint --dir ./migrations --dialect postgres
+      --fail-on none --format json > ptah-lint.json
 - store_artifacts:
     path: ptah-lint.json
+- run:
+    name: Fail on lint findings
+    command: ptah migrations lint --dir ./migrations --dialect postgres
 ```
 
 ### Bitbucket Pipelines
@@ -308,10 +325,17 @@ artifact and let the exit code fail the step:
 - step:
     name: Lint migrations
     script:
-      - ptah migrations lint --dir ./migrations --dialect postgres --format json | tee ptah-lint.json
+      - >
+        ptah migrations lint --dir ./migrations --dialect postgres
+        --fail-on none --format json > ptah-lint.json
+      - ptah migrations lint --dir ./migrations --dialect postgres
     artifacts:
       - ptah-lint.json
 ```
+
+The report is redirected rather than piped. A pipeline's exit status is its
+last stage's, so `ptah ... | tee ptah-lint.json` reports `tee` and the step
+passes with findings outstanding.
 
 What none of these get is the sticky comment and the check run. Those are
 rendered by `comment.js` and `check-run.js` in the Action and have no

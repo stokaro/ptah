@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5385,
-      "sourceBytes": 45397
+      "visibleWords": 5374,
+      "sourceBytes": 45283
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -5833,8 +5833,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 1705,
-      "sourceBytes": 15597
+      "visibleWords": 1821,
+      "sourceBytes": 16649
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
