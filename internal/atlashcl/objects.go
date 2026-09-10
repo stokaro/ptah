@@ -485,19 +485,72 @@ func (p *parser) parseTrigger(block *hclsyntax.Block) error {
 		return p.blockError(block, "trigger %q requires on", name)
 	}
 	body := p.optionalString(block.Body.Attributes["as"])
-	if body == "" {
-		return p.blockError(block, "trigger %q requires as", name)
+	executeFunction, err := p.parseTriggerExecute(block, name)
+	if err != nil {
+		return err
+	}
+	if body == "" && executeFunction == "" {
+		return p.blockError(block, "trigger %q requires as or an execute block", name)
+	}
+	if body != "" && executeFunction != "" {
+		return p.blockError(block, "trigger %q cannot declare both as and an execute block", name)
 	}
 	p.db.Triggers = append(p.db.Triggers, schemamodel.Trigger{
-		Name:    name,
-		Table:   table,
-		Timing:  eventSpec.timing,
-		Event:   eventSpec.event,
-		ForEach: firstNonEmpty(p.optionalString(block.Body.Attributes["for"]), p.optionalString(block.Body.Attributes["foreach"])),
-		Body:    body,
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Name:            name,
+		Table:           table,
+		Timing:          eventSpec.timing,
+		Event:           eventSpec.event,
+		ForEach:         firstNonEmpty(p.optionalString(block.Body.Attributes["for"]), p.optionalString(block.Body.Attributes["foreach"])),
+		Body:            body,
+		ExecuteFunction: executeFunction,
+		Comment:         p.optionalString(block.Body.Attributes["comment"]),
 	})
 	return nil
+}
+
+// triggerExecuteBlock is the block naming a function the trigger runs instead
+// of a body Ptah owns.
+const triggerExecuteBlock = "execute"
+
+// parseTriggerExecute reads a trigger's `execute` block, which names an
+// already-declared function rather than giving the trigger a body.
+//
+// The two are alternatives, and the difference is ownership: a body makes Ptah
+// generate a private function per trigger and drop it with the trigger, while
+// an execute block binds the trigger to a function the schema declares
+// separately and several triggers may share. Accepting both on one trigger
+// would describe a routine no server creates (stokaro/ptah#3113).
+func (p *parser) parseTriggerExecute(block *hclsyntax.Block, name string) (string, error) {
+	var executeBlock *hclsyntax.Block
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != triggerExecuteBlock {
+			continue
+		}
+		if executeBlock != nil {
+			return "", p.blockError(nested, "trigger %q contains multiple execute blocks", name)
+		}
+		executeBlock = nested
+	}
+	if executeBlock == nil {
+		return "", nil
+	}
+	if err := p.rejectNestedBlocks(executeBlock, "trigger execute"); err != nil {
+		return "", err
+	}
+	if err := p.rejectUnsupportedAttrs(executeBlock, map[string]bool{"function": true}, "trigger execute"); err != nil {
+		return "", err
+	}
+	attr := executeBlock.Body.Attributes["function"]
+	if attr == nil {
+		return "", p.blockError(executeBlock, "trigger %q execute requires function", name)
+	}
+	if function := objectRefName(p.rawExpr(attr), "function"); function != "" {
+		return function, nil
+	}
+	if function := strings.TrimSpace(p.optionalString(attr)); function != "" {
+		return function, nil
+	}
+	return "", p.blockError(executeBlock, "trigger %q execute function names no function", name)
 }
 
 type triggerEventSpec struct {
@@ -509,6 +562,9 @@ func (p *parser) parseTriggerEvent(block *hclsyntax.Block) (triggerEventSpec, er
 	var timing string
 	var event string
 	for _, nested := range block.Body.Blocks {
+		if nested.Type == triggerExecuteBlock {
+			continue
+		}
 		currentTiming := triggerTimingFromBlock(nested.Type)
 		if currentTiming == "" {
 			if err := p.rejectUnsupportedBlock(nested, "trigger"); err != nil {

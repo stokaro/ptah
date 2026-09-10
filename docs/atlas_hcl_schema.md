@@ -116,7 +116,11 @@ current schema IR:
 - `materialized` blocks with `schema`, `as`, `depends_on`, and `comment`;
   `depends_on` is the same ordering edge, over the same sort
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
-  `for` or `foreach`, `as`, and `comment`
+  `for` or `foreach`, `comment`, and one of `as` or an `execute` block. The two
+  differ in ownership: `as` gives the trigger a body, and Ptah generates a
+  private function per trigger and drops it with the trigger; `execute {
+  function = function.f }` binds the trigger to a function the schema declares
+  separately, which several triggers may share. Declaring both is refused
 - PostgreSQL `policy` blocks with `on`, `as`, `for`, `to`, `using`, `check`,
   and `comment`. `as` takes `PERMISSIVE` (the default, left unwritten) or
   `RESTRICTIVE`; any other value is refused, because permissive is the weaker
@@ -731,9 +735,9 @@ permission {
 ```
 
 Ptah intentionally supports the subset it can round-trip through its IR. For
-example, materialized-view column blocks, trigger `execute` blocks, and
-permission targets other than `table`, `schema`, or `sequence` are rejected
-instead of being accepted and dropped.
+example, materialized-view column blocks and permission targets other than
+`table`, `schema`, or `sequence` are rejected instead of being accepted and
+dropped.
 Function arguments are accepted as Atlas `arg` blocks. Ptah also accepts a raw
 `params` string and rejects a function that mixes the two representations.
 
@@ -754,7 +758,7 @@ Atlas features that Ptah cannot represent without losing semantics, including:
   them from `set`. The attribute name `config_params` is refused, like any other
   name the block does not define
 - view/materialized-view column metadata
-- trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
+- trigger `referencing`, `when`, constraint, and deferrable metadata
 - permission targets other than schema, table, and sequence
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
