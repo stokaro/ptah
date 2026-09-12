@@ -94,11 +94,17 @@ export const ROOT_ASSETS = [
   },
 ];
 
-// GENERATED_ROOT_FILES names what gen-versions.mjs writes into the same
-// directory. This script does not write them, and says so here because the two
-// lists together are the whole Pages root: check-pages-root.mjs compares that
-// union against what an assembly actually produces.
-export const GENERATED_ROOT_FILES = ['versions.json', 'index.html'];
+// GENERATED_ROOT_FILES names what the other producers write into the same
+// directory: gen-versions.mjs writes the version index and the apex stub, and
+// publish-compatibility.mjs writes the operator matrix. This script does not
+// write any of them, and says so here because the two lists together are the
+// whole Pages root: check-pages-root.mjs compares that union against what an
+// assembly actually produces.
+export const GENERATED_ROOT_FILES = [
+  'versions.json',
+  'index.html',
+  'compatibility/operator/index.html',
+];
 
 // advertisedAddress is where a reader is told to find one root asset. It is
 // derived from the asset's own declaration so that the table and the check

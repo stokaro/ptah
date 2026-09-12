@@ -1,0 +1,49 @@
+{
+  "generated": true,
+  "generator": "stokaro/ptah-operator .github/workflows/publish-compatibility.yml",
+  "editSource": "stokaro/ptah-operator support/ptah.json",
+  "source": {
+    "repository": "stokaro/ptah-operator",
+    "path": "support/ptah.json",
+    "commit": "f607a6a3cbc4a69772001ec496f07e929e7479b3",
+    "retrieved": "2026-09-12"
+  },
+  "catalog": {
+    "schemaVersion": 1,
+    "lastVerified": "2026-09-12",
+    "axis": "Operator version to the Ptah build the operator executes, identified by the digest-pinned executorImage and the ptahVersion bound beside it. It is not the Ptah CLI a person used to build the OCI artifact.",
+    "releases": [
+      {
+        "operator": "edge",
+        "stage": "development",
+        "documentation": {
+          "published": true,
+          "source": "master"
+        },
+        "declared": {
+          "range": null,
+          "statement": "No range is claimed. The chart ships no executor default, installation requires both a digest-pinned executorImage and the ptahVersion verified from that image's provenance, and the supported build is exactly the one the lifecycle matrix exercised."
+        },
+        "verified": [
+          {
+            "ptahRelease": null,
+            "ptahCommit": "00fc362c943bfb9d0363d5890bf449a2a9b5e7cf",
+            "ptahDescribe": "v0.3.0-201-g00fc362c9",
+            "evidence": "kubernetes-e2e",
+            "scope": "The complete OCI resolution and verification, observation, planning, approval, apply, failure-recovery and convergence lifecycle against PostgreSQL and MySQL, on every supported Kubernetes minor."
+          }
+        ],
+        "limitations": [
+          "No released Ptah version has been verified against this operator. The verified build is a development commit, so a reader installing a Ptah release is outside what the matrix measured.",
+          "The verified scope is the operator's database support window, PostgreSQL 17.x and MySQL 8.4.x LTS. Other engines Ptah addresses are unverified here, whatever the Ptah build."
+        ]
+      }
+    ],
+    "evidence": {
+      "kubernetes-e2e": {
+        "what": "The full lifecycle suite in test/e2e, run by the kubernetes-e2e job of .github/workflows/ci.yml on every pull request and on the weekly default-branch run.",
+        "pin": "hack/e2e-kind.sh and the workflow both take the commit from this file, so the Ptah the suite builds and the claim published here are one declaration."
+      }
+    }
+  }
+}
