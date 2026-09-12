@@ -23,6 +23,9 @@ import (
 //   - Timestamp variations → "timestamp"
 //   - Decimal variations (DECIMAL, NUMERIC) → "decimal"
 //
+// Every rule reads the type's NAME. A parameter list is not part of the name,
+// so a token inside one names nothing here: VECTOR(512, INT8) is a vector.
+//
 // # Database-Specific Handling
 //
 //   - **MySQL/MariaDB**: TINYINT and TINYINT(1) are treated as BOOLEAN
@@ -41,6 +44,10 @@ import (
 //	Type("TINYINT(1)")    // → "boolean"
 //	Type("BOOL")          // → "boolean"
 //
+//	// A parameter that spells a type is still a parameter
+//	Type("INT8")               // → "integer"
+//	Type("VECTOR(512, INT8)")  // → "vector(512, int8)"
+//
 // # Parameters
 //
 //   - typeName: The database-specific type name to normalize
@@ -51,6 +58,25 @@ import (
 func Type(typeName string) string {
 	// Convert to lowercase for case-insensitive comparison
 	typeName = strings.ToLower(typeName)
+
+	// Every family arm below recognizes a type by a SUBSTRING of it, and a
+	// parameter list is not part of the name a type is recognized by. So the
+	// arms read the base name, with the arguments held back.
+	//
+	// Without that, a token that names a type somewhere else decided the whole
+	// column's type from inside the parentheses. Oracle writes a vector's
+	// element format there, and measured on Oracle Free 23.26.3.0.0 a declared
+	// VECTOR(512, INT8) normalized to "integer" -- the dimension, the spacing
+	// and the storage form made no difference, and VECTOR(512, FLOAT32) came
+	// through whole, because only the INT8 spelling has a token any arm below
+	// matches. That answer is what every later type question is decided on:
+	// the declaration then equals a plain bigint column, and a column that has
+	// to become a vector reports no change at all.
+	//
+	// The array test keeps reading the whole name. The brackets sit after the
+	// argument list, so the base name cannot see them, and an array is not its
+	// element type.
+	base := baseTypeName(typeName)
 
 	switch {
 	// `character varying` is the SQL-standard spelling of the same type, and
@@ -66,9 +92,9 @@ func Type(typeName string) string {
 	// a live scalar `character varying(200)` compare equal to a desired
 	// `varchar(200)[]` -- a column that changed from a scalar to an array,
 	// reported as no change at all.
-	case strings.Contains(typeName, "character varying") && !isArrayType(typeName):
+	case strings.Contains(base, "character varying") && !isArrayType(typeName):
 		return "varchar"
-	case strings.Contains(typeName, "varchar") && !isArrayType(typeName):
+	case strings.Contains(base, "varchar") && !isArrayType(typeName):
 		return "varchar"
 	// PostgreSQL's own names for types the renderer writes differently, folded
 	// onto one spelling so a round trip through Ptah's own output converges.
@@ -109,21 +135,21 @@ func Type(typeName string) string {
 		return "double precision"
 	case isFloatAlias(typeName, "float4"):
 		return "real"
-	case strings.Contains(typeName, "text"):
+	case strings.Contains(base, "text"):
 		return "text"
-	case strings.Contains(typeName, "serial"):
+	case strings.Contains(base, "serial"):
 		// SERIAL types are auto-incrementing integers
 		return "integer"
-	case strings.Contains(typeName, "tinyint"):
+	case strings.Contains(base, "tinyint"):
 		// MySQL/MariaDB stores BOOLEAN as TINYINT or TINYINT(1)
 		return "boolean"
-	case strings.Contains(typeName, "int"):
+	case strings.Contains(base, "int"):
 		return "integer"
-	case strings.Contains(typeName, "bool"):
+	case strings.Contains(base, "bool"):
 		return "boolean"
-	case strings.Contains(typeName, "timestamp"):
+	case strings.Contains(base, "timestamp"):
 		return "timestamp"
-	case strings.Contains(typeName, "decimal") || strings.Contains(typeName, "numeric"):
+	case strings.Contains(base, "decimal") || strings.Contains(base, "numeric"):
 		return "decimal"
 	default:
 		// Return as-is for unrecognized types (enums, custom types, etc.)
