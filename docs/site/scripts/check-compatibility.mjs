@@ -14,8 +14,8 @@
 // content does is visible in review as a diff with no provenance change.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { DATA_PATH, ROOT_PATH } from './publish-compatibility.mjs';
 
@@ -184,4 +184,9 @@ function main() {
   console.log('check-compatibility.mjs: OK (the derived copy carries its provenance and renders)');
 }
 
-main();
+// Only when this file is the program. refresh-compatibility.mjs imports the
+// shape rules from here, and an unguarded call would run this gate -- with that
+// script's arguments -- as a side effect of the import.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main();
+}

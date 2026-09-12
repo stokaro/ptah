@@ -1,0 +1,203 @@
+name: Operator compatibility
+
+# Carries the operator's compatibility data into this repository, and nothing
+# else. No page, no component, no release tag: the two documentation sites build
+# independently and only this one file crosses between them.
+#
+# The schedule is the reconciliation. An event from the operator repository
+# makes the refresh prompt, and a missed event only makes it late -- the next
+# scheduled run finds the same difference, because the run compares the two
+# files rather than replaying a notification.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [operator-compatibility]
+
+permissions:
+  contents: read
+
+# One refresh at a time, and queued rather than cancelled: two runs racing to
+# push the same branch is how a late one overwrites a newer copy.
+concurrency:
+  group: operator-compatibility
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPOSITORY: stokaro/ptah-operator
+  SOURCE_PATH: support/ptah.json
+  AUTOMATION_BRANCH: automation/operator-compatibility
+
+jobs:
+  refresh:
+    name: Refresh the derived compatibility copy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The payload is data and only data. Two scalars are read, both are
+      # validated here, and neither reaches a shell as anything but an
+      # environment variable: a dispatch is an untrusted input whoever holds the
+      # sending credential can shape.
+      - name: Read the requested source revision
+        id: requested
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PAYLOAD_REPOSITORY: ${{ github.event.client_payload.repository }}
+          PAYLOAD_COMMIT: ${{ github.event.client_payload.commit }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "repository_dispatch" ]; then
+            echo "commit=" >>"$GITHUB_OUTPUT"
+            echo "a scheduled or manual run resolves the revision itself"
+            exit 0
+          fi
+          if [ "$PAYLOAD_REPOSITORY" != "$SOURCE_REPOSITORY" ]; then
+            echo "the dispatch names $PAYLOAD_REPOSITORY; only $SOURCE_REPOSITORY is accepted" >&2
+            exit 1
+          fi
+          case "$PAYLOAD_COMMIT" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "the dispatch commit is not an exact 40-character lowercase commit" >&2; exit 1 ;;
+          esac
+          echo "commit=$PAYLOAD_COMMIT" >>"$GITHUB_OUTPUT"
+
+      # Everything below reads the operator repository through the public API
+      # with the token this repository already has. It needs no permission there
+      # and holds no credential for it.
+      - name: Resolve the source revision and how it relates to the recorded one
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED: ${{ steps.requested.outputs.commit }}
+        run: |
+          set -euo pipefail
+          branch="$(gh api "repos/$SOURCE_REPOSITORY" --jq '.default_branch')"
+          head="$(gh api "repos/$SOURCE_REPOSITORY/commits/$branch" --jq '.sha')"
+
+          incoming="$head"
+          if [ -n "$REQUESTED" ]; then
+            # A dispatched commit is honored only when it is on the default
+            # branch. A commit that is not is somebody's branch, and publishing
+            # its catalog would publish a claim the operator has not accepted.
+            relation_to_head="$(gh api "repos/$SOURCE_REPOSITORY/compare/$REQUESTED...$branch" --jq '.status')"
+            case "$relation_to_head" in
+              identical|ahead) incoming="$REQUESTED" ;;
+              *) echo "$REQUESTED is not on $branch (it is $relation_to_head of it)" >&2; exit 1 ;;
+            esac
+          fi
+
+          recorded="$(node -e '
+            const fs = require("node:fs");
+            const path = "docs/site/data/operator-compatibility.json";
+            if (!fs.existsSync(path)) { process.stdout.write(""); process.exit(0); }
+            process.stdout.write(JSON.parse(fs.readFileSync(path, "utf8")).source?.commit ?? "");
+          ')"
+
+          relation=ahead
+          if [ -n "$recorded" ] && [ "$recorded" != "$incoming" ]; then
+            relation="$(gh api "repos/$SOURCE_REPOSITORY/compare/$recorded...$incoming" --jq '.status')"
+          fi
+          if [ "$recorded" = "$incoming" ]; then
+            relation=identical
+          fi
+
+          echo "commit=$incoming" >>"$GITHUB_OUTPUT"
+          echo "relation=$relation" >>"$GITHUB_OUTPUT"
+          echo "resolved $incoming, which is $relation of the recorded ${recorded:-nothing}"
+
+      - name: Fetch the catalog at that revision
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$SOURCE_REPOSITORY/contents/$SOURCE_PATH?ref=$COMMIT" \
+            --header 'Accept: application/vnd.github.raw+json' >"$RUNNER_TEMP/ptah.json"
+          node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$RUNNER_TEMP/ptah.json"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Rewrite the derived copy
+        id: refresh
+        env:
+          COMMIT: ${{ steps.source.outputs.commit }}
+          RELATION: ${{ steps.source.outputs.relation }}
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/refresh-compatibility.mjs --selftest
+          node docs/site/scripts/check-compatibility.mjs --selftest
+          node docs/site/scripts/refresh-compatibility.mjs \
+            --source-commit "$COMMIT" \
+            --relation "$RELATION" \
+            --catalog "$RUNNER_TEMP/ptah.json"
+          if git diff --quiet -- docs/site/data/operator-compatibility.json; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "the derived copy already matches; no pull request is needed"
+          else
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: The rewritten copy still renders
+        if: steps.refresh.outputs.changed == 'true'
+        run: node docs/site/scripts/check-compatibility.mjs
+
+      # A pull request opened with GITHUB_TOKEN receives no checks, and a
+      # documentation change nothing checked is exactly what this must not
+      # produce. The workflow therefore refuses rather than opening one: the
+      # missing credential is a configuration gap, not a reason to publish
+      # unverified data.
+      - name: Require a credential whose pull request runs the checks
+        if: steps.refresh.outputs.changed == 'true'
+        env:
+          AUTOMATION_TOKEN: ${{ secrets.OPERATOR_COMPATIBILITY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$AUTOMATION_TOKEN" ]; then
+            echo "the compatibility copy is out of date and OPERATOR_COMPATIBILITY_TOKEN is not configured." >&2
+            echo "A pull request opened with GITHUB_TOKEN would receive no checks, so none is opened." >&2
+            echo "Configure the token described in docs/site/data/README.md, or refresh the copy by hand." >&2
+            exit 1
+          fi
+
+      - name: Open or update the one automation pull request
+        if: steps.refresh.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.OPERATOR_COMPATIBILITY_TOKEN }}
+          COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git config user.name 'ptah-automation'
+          git config user.email 'ptah-automation@users.noreply.github.com'
+          git checkout -B "$AUTOMATION_BRANCH"
+          git add docs/site/data/operator-compatibility.json
+          git commit -m "docs(compatibility): refresh the operator catalog at ${COMMIT:0:12}
+
+The canonical file is $SOURCE_PATH in $SOURCE_REPOSITORY. This copy is derived
+and carries the commit it was taken from; edit the source, not this file."
+          # One branch, force-pushed: the pull request is a statement of the
+          # current catalog rather than a history of every refresh, and a second
+          # branch would become a second open pull request saying the same thing.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/$AUTOMATION_BRANCH"
+
+          existing="$(gh pr list --head "$AUTOMATION_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "pull request #$existing already carries this branch and now holds ${COMMIT:0:12}"
+            exit 0
+          fi
+          gh pr create \
+            --base master \
+            --head "$AUTOMATION_BRANCH" \
+            --title "docs(compatibility): refresh the operator catalog" \
+            --body "The operator compatibility catalog moved. This refreshes the derived copy this site renders the matrix from, at commit \`$COMMIT\` of \`$SOURCE_REPOSITORY\`.
+
+The canonical file is \`$SOURCE_PATH\` in that repository. This copy is generated: it carries the repository, the path, the exact commit and the date it was taken, and the documentation gate refuses one that was edited here."

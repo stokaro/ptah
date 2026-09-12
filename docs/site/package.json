@@ -76,7 +76,8 @@
     "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest",
     "check:compatibility": "node scripts/check-compatibility.mjs",
     "check:compatibility:selftest": "node scripts/check-compatibility.mjs --selftest",
-    "check:publish-compatibility:selftest": "node scripts/publish-compatibility.mjs --selftest"
+    "check:publish-compatibility:selftest": "node scripts/publish-compatibility.mjs --selftest",
+    "check:refresh-compatibility:selftest": "node scripts/refresh-compatibility.mjs --selftest"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.0",

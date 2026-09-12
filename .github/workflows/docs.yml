@@ -367,6 +367,7 @@ jobs:
           npm run check:compatibility:selftest
           npm run check:compatibility
           npm run check:publish-compatibility:selftest
+          npm run check:refresh-compatibility:selftest
           npm run check:exit-codes:selftest
           npm run check:exit-codes
           npm run check:style:selftest
