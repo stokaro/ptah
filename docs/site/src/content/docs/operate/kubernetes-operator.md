@@ -56,42 +56,30 @@ preview until its database end-to-end matrix is green and a release is
 published. Databases are PostgreSQL and MySQL.
 
 Ptah's version selector on this site does not select an operator version. The
-operator tracks its own releases, and its documentation is the authority on
-what a given operator version supports.
+operator tracks its own releases and publishes its own guide, with a selector
+of its own, and that guide is the authority on what a given operator version
+supports.
 
-## Installation
+## Compatibility
 
-The chart requires the manager, runner and executor images as immutable
-SHA-256 references, and the Ptah executor version supplied explicitly rather
-than inferred from a tag:
+Which Ptah build an operator version runs is the operator's claim, not this
+site's, and it changes when the operator measures something new. It is
+published as a current table at
+[the operator compatibility matrix](https://docs.ptah.run/compatibility/operator/),
+outside this site's per-version archives so that it answers with the present
+catalog rather than with whatever was true when a Ptah release shipped.
 
-```sh
-helm upgrade --install ptah-operator ./charts/ptah-operator \
-  --namespace ptah-system \
-  --create-namespace \
-  --set-string image.digest=sha256:<operator-image-digest> \
-  --set-string execution.runnerImage=ghcr.io/stokaro/ptah-operator@sha256:<operator-image-digest> \
-  --set-string execution.executorImage=ghcr.io/stokaro/ptah@sha256:<ptah-image-digest> \
-  --set-string execution.ptahVersion=<ptah-version>
-```
+The table keeps declared support and verified support apart, and says which
+combinations nobody has measured. An untested pairing is not an incompatible
+one.
 
-Verify both the executor digest and the version it claims against the
-executor's release provenance before installing. The supplied version is
-recorded in plans, approvals, Jobs and applied status, so a digest change means
-verifying and supplying its version again.
+## Its documentation
 
-## Canonical documentation
-
-The operator repository owns the detail, and this page does not restate it:
-
-- [Architecture and state machine](https://github.com/stokaro/ptah-operator/blob/main/docs/architecture.md)
-- [Security model](https://github.com/stokaro/ptah-operator/blob/main/docs/security.md)
-- [Exact-plan approvals](https://github.com/stokaro/ptah-operator/blob/main/docs/approvals.md)
-- [Operations and failure recovery](https://github.com/stokaro/ptah-operator/blob/main/docs/operations.md)
-- [Condition reason contract](https://github.com/stokaro/ptah-operator/blob/main/docs/condition-reasons.md)
-- [Kubernetes support policy](https://github.com/stokaro/ptah-operator/blob/main/docs/kubernetes-support.md)
-- [Database support and privileges](https://github.com/stokaro/ptah-operator/blob/main/docs/database-support.md)
-- [Releases and provenance](https://github.com/stokaro/ptah-operator/blob/main/docs/releases.md)
+The operator's guide is a site of its own, with its own versions:
+[operator.ptah.run](https://operator.ptah.run/). Installation, the chart values,
+the approval model, operations, the security model and the support windows all
+live there, and this page deliberately does not restate any of them -- a second
+copy of an install command is a second thing to get wrong.
 
 ## Next steps
 

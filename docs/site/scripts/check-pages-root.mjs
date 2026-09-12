@@ -68,6 +68,7 @@ const workflowPath = join(repoRoot, '.github', 'workflows', 'docs.yml');
 export const ROOT_PRODUCERS = [
   'docs/site/scripts/gen-versions.mjs',
   'docs/site/scripts/publish-root-assets.mjs',
+  'docs/site/scripts/publish-compatibility.mjs',
 ];
 const UPLOAD_STEP = 'actions/upload-pages-artifact';
 const PUSH_CONDITION = "github.event_name == 'push'";
@@ -434,7 +435,7 @@ function selftest() {
       published: `irm ${InstallURL('install.ps1')} | iex`,
     },
   ];
-  const generated = ['versions.json', 'index.html'];
+  const generated = ['versions.json', 'index.html', 'compatibility/operator/index.html'];
 
   const workflow = [
     'jobs:',
@@ -449,6 +450,9 @@ function selftest() {
     '      - name: Publish the install scripts at the site root',
     "        if: github.event_name == 'push'",
     '        run: node docs/site/scripts/publish-root-assets.mjs "$GITHUB_WORKSPACE/_site"',
+    '      - name: Publish the operator compatibility matrix',
+    "        if: github.event_name == 'push'",
+    '        run: node docs/site/scripts/publish-compatibility.mjs "$GITHUB_WORKSPACE/_site"',
     '      - name: Upload Pages artifact',
     "        if: github.event_name == 'push'",
     '        uses: actions/upload-pages-artifact@v5',
@@ -464,6 +468,7 @@ function selftest() {
     assembled: new Map([
       ['versions.json', '{}\n'],
       ['index.html', '<!doctype html>\n'],
+      ['compatibility/operator/index.html', '<!doctype html>\n'],
       ['install.sh', '#!/bin/sh\n'],
       ['install.ps1', "Write-Output 'ptah'\n"],
     ]),
@@ -644,6 +649,7 @@ function selftest() {
     fetched: new Map([
       ['versions.json', { status: 200, text: '{}\n' }],
       ['index.html', { status: 200, text: '<!doctype html>\n' }],
+      ['compatibility/operator/index.html', { status: 200, text: '<!doctype html>\n' }],
       ['install.sh', { status: 200, text: '#!/bin/sh\n' }],
       ['install.ps1', { status: 200, text: "Write-Output 'ptah'\n" }],
     ]),
@@ -676,7 +682,14 @@ function selftest() {
     siteGone.fetched.set(name, { status: 404, text: '' });
   }
   const siteGoneProblems = analyzeLive(siteGone);
-  assert(siteGoneProblems.length === 4, `every root file must be reported: ${JSON.stringify(siteGoneProblems)}`);
+  // Counted from the fixture rather than written out: a root file added to the
+  // declaration has to appear here too, and a literal would have gone stale
+  // quietly the first time one did.
+  const rootFileCount = generated.length + assets.length;
+  assert(
+    siteGoneProblems.length === rootFileCount,
+    `every root file must be reported: ${JSON.stringify(siteGoneProblems)}`,
+  );
   assert(
     !siteGoneProblems.some((problem) => problem.includes('still answered 200')),
     'a whole-site outage has no control to name',

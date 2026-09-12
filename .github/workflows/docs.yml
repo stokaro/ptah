@@ -364,6 +364,10 @@ jobs:
           npm run check:editorial-shape
           npm run check:support-matrix:selftest
           npm run check:support-matrix
+          npm run check:compatibility:selftest
+          npm run check:compatibility
+          npm run check:publish-compatibility:selftest
+          npm run check:refresh-compatibility:selftest
           npm run check:exit-codes:selftest
           npm run check:exit-codes
           npm run check:style:selftest
@@ -602,6 +606,23 @@ jobs:
             ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: node docs/site/scripts/publish-root-assets.mjs "$GITHUB_WORKSPACE/_site"
 
+      # The operator compatibility matrix, at a permanent address outside the
+      # version directories. Compatibility is current: which operator version
+      # works with which Ptah build changes when the operator measures
+      # something new, and a copy frozen into a CLI release would answer with
+      # whatever was true the day that CLI shipped.
+      #
+      # It renders from the committed derived copy and never reaches for
+      # stokaro/ptah-operator, so an ordinary deploy of already-accepted
+      # documentation cannot fail because a neighbouring repository is
+      # unreachable.
+      - name: Publish the operator compatibility matrix
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+        run: node docs/site/scripts/publish-compatibility.mjs "$GITHUB_WORKSPACE/_site"
+
       # Read back what was assembled rather than what the tree holds. Every
       # step above can be right while the directory about to be uploaded is
       # missing a file the documentation publishes, and that 404 is silent: the
@@ -612,6 +633,13 @@ jobs:
           ( startsWith(github.ref, 'refs/tags/v') ||
             ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: node docs/site/scripts/check-pages-root.mjs --site "$GITHUB_WORKSPACE/_site"
+
+      - name: The assembled Pages root serves the compatibility matrix
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+        run: node docs/site/scripts/check-compatibility.mjs --site "$GITHUB_WORKSPACE/_site"
 
       - name: Record the edge source in the deployment candidate
         id: deployment-metadata
