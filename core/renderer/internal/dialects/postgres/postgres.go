@@ -601,6 +601,19 @@ func (r *Renderer) GetOutput() string {
 	return r.Output()
 }
 
+// unloggedKeyword returns the word that goes between CREATE and TABLE for a
+// table whose writes skip the write-ahead log, and the empty string otherwise.
+//
+// One function serves both write sites -- the column-list form and the AS
+// SELECT form -- because a keyword added to one and forgotten in the other
+// renders a table that is logged on a path nobody looked at.
+func unloggedKeyword(node *ast.CreateTableNode) string {
+	if node.Unlogged {
+		return " UNLOGGED"
+	}
+	return ""
+}
+
 // VisitCreateTable renders CREATE TABLE with PostgreSQL-specific handling
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	// This target writes the identity clauses, UNIQUE, and -- where the server
@@ -653,7 +666,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.writeTableOptionsSkipped(node.Name, node.Options)
 
-	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("CREATE%s TABLE%s %s (", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
 	for i, line := range lines {
 		if i == len(lines)-1 {
 			r.w.WriteLine(line) // Last line without comma
@@ -784,7 +797,7 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard str
 		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
 	}
 
-	r.w.Writef("CREATE TABLE%s %s", guard, r.escapeQualifiedIdentifier(node.Name))
+	r.w.Writef("CREATE%s TABLE%s %s", unloggedKeyword(node), guard, r.escapeQualifiedIdentifier(node.Name))
 	// A raw tail belongs to the table, so it precedes the AS the query hangs
 	// off. No producer builds a node carrying both today, and writing it here
 	// is what keeps that from becoming a silent drop if one does.

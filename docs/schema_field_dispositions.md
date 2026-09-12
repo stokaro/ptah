@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-354 fields are reachable from the desired schema, and each one carries
+355 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 298 | reaches rendered SQL on at least one target |
+| `ddl` | 299 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -395,6 +395,7 @@ None.
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.Strict` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |
+| `schemamodel.Table.Unlogged` | `ddl` | — |
 | `schemamodel.Table.VirtualArguments` | `ddl` | — |
 | `schemamodel.Table.VirtualModule` | `ddl` | — |
 | `schemamodel.Table.WithoutRowID` | `ddl` | — |

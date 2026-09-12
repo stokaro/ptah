@@ -98,6 +98,7 @@ func toDBTables(
 			RLSEnabled:   tableRLSEnabled(table, rlsEnabledTables),
 			Strict:       table.Strict,
 			WithoutRowID: table.WithoutRowID,
+			Unlogged:     table.Unlogged,
 			// Non-empty when the desired state came from a `.sql` file
 			// declaring CREATE VIRTUAL TABLE, which is how `ptah db read`
 			// output is read back. See stokaro/ptah#1028.

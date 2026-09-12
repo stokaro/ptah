@@ -214,8 +214,11 @@ type Table struct {
 	// RLSForced reports pg_class.relforcerowsecurity: the table's policies
 	// apply to its owner as well. It is independent of RLSEnabled, which
 	// leaves the owner exempt (stokaro/ptah#3121).
-	RLSForced    bool `json:"rls_forced,omitempty"`
-	Strict       bool `json:"strict,omitempty"`        // SQLite STRICT table option
+	RLSForced bool `json:"rls_forced,omitempty"`
+	Strict    bool `json:"strict,omitempty"` // SQLite STRICT table option
+	// Unlogged reports pg_class.relpersistence = 'u': the table's writes skip
+	// the write-ahead log. Only PostgreSQL and YugabyteDB set it.
+	Unlogged     bool `json:"unlogged,omitempty"`
 	WithoutRowID bool `json:"without_rowid,omitempty"` // SQLite WITHOUT ROWID table option
 	// ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
 	// that is not simply its primary-key columns.

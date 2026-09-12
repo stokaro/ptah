@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/unloggedtable"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -485,6 +486,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableCollate := table.Collate
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
+	tableUnlogged := table.Unlogged
 
 	platformOverrides, exists := schemaprep.PlatformOverrideGroup(table.Overrides, targetPlatform)
 	if !exists {
@@ -498,6 +500,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableCollate = overrideString(platformOverrides, "collate", tableCollate)
 	tableStrict = overrideBool(platformOverrides, "strict", tableStrict)
 	tableWithoutRowID = overrideBool(platformOverrides, "without_rowid", tableWithoutRowID)
+	tableUnlogged = overrideBool(platformOverrides, "unlogged", tableUnlogged)
 
 	// Apply any other platform-specific options
 	for key, value := range platformOverrides {
@@ -514,6 +517,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	newTable.Collate = tableCollate
 	newTable.Strict = tableStrict
 	newTable.WithoutRowID = tableWithoutRowID
+	newTable.Unlogged = tableUnlogged
 	return newTable
 }
 
@@ -688,6 +692,9 @@ func fromTableWithFieldConverter(
 	}
 	if newTable.Collate != "" {
 		createTable.SetOption("COLLATE", newTable.Collate)
+	}
+	if unloggedtable.Supported(targetPlatform) {
+		createTable.Unlogged = newTable.Unlogged
 	}
 	if isSQLiteTarget(targetPlatform) {
 		if newTable.WithoutRowID {

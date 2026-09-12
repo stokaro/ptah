@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/unloggedtable"
 )
 
 // Reader reads schema from PostgreSQL databases
@@ -299,6 +300,21 @@ func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (catalog
 }
 
 // readTables reads all tables and their columns
+// unloggedExpr renders the projection that reports whether a table's writes
+// skip the write-ahead log.
+//
+// A target that has no unlogged table is not asked for pg_class
+// relpersistence. The column is absent from at least one catalog this reader
+// serves over the same wire protocol, and an absent column fails the whole
+// table read rather than the one projection, so the constant is the safe answer
+// where the true one could only ever be false.
+func (r *Reader) unloggedExpr() string {
+	if !unloggedtable.Supported(r.dialect) {
+		return "false AS unlogged"
+	}
+	return "COALESCE(c.relpersistence = 'u', false) AS unlogged"
+}
+
 func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 	var tables []catalog.Table
 	for _, schemaName := range r.schemasToRead() {
@@ -441,6 +457,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled,
 		       COALESCE(c.relforcerowsecurity, false) AS rls_forced,
+		       ` + r.unloggedExpr() + `,
 		       ` + r.rowTTLOptionsExpr() + `,
 		       ` + r.rowDeletionPolicyExpr() + `
 			FROM information_schema.tables t
@@ -473,6 +490,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			&table.Partitioned,
 			&table.RLSEnabled,
 			&table.RLSForced,
+			&table.Unlogged,
 			&rowTTLOptions,
 			&rowDeletionPolicy,
 		)

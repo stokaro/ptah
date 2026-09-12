@@ -254,6 +254,24 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateTrigger(statementStart)
 	case "INDEX":
 		return p.parseCreateIndex()
+	case "TYPE":
+		return p.parseCreateType()
+	case "DOMAIN":
+		return p.parseCreateDomain()
+	default:
+		return p.parseCreateModifier(target, statementStart)
+	}
+}
+
+// parseCreateModifier handles the words that qualify the object rather than
+// name it: the object's own keyword comes after them.
+//
+// The split is by grammar rather than by size. Every case above reads a target
+// and dispatches on it; every case here reads a word, keeps it, and then looks
+// for the target -- so each of these owns the "and what follows it" step, which
+// is what the cases above never have to do.
+func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Node, error) {
+	switch target {
 	case "FULLTEXT", "SPATIAL":
 		p.advance()
 		p.skipWhitespace()
@@ -269,10 +287,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateUniqueIndexStatement()
 	case "VIRTUAL":
 		return p.parseCreateVirtualTable()
-	case "TYPE":
-		return p.parseCreateType()
-	case "DOMAIN":
-		return p.parseCreateDomain()
+	case "UNLOGGED":
+		return p.parseCreateUnloggedTable()
 	default:
 		return p.parseCreateSchemaObject(target)
 	}
@@ -289,8 +305,30 @@ func (p *Parser) parseCreateUniqueIndexStatement() (ast.Node, error) {
 	return p.parseCreateUniqueIndex()
 }
 
+// parseCreateUnloggedTable reads the TABLE keyword the dispatch left, parses
+// the table, and marks it unlogged.
+//
+// The keyword is a property of the table rather than a different statement, so
+// this returns the same node an ordinary CREATE TABLE does with one field set.
+// A CREATE UNLOGGED of anything else is refused by name: PostgreSQL has no
+// other unlogged object, and accepting the word before, say, VIEW would parse a
+// statement no server takes.
+func (p *Parser) parseCreateUnloggedTable() (ast.Node, error) {
+	p.advance()
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("TABLE") {
+		return nil, fmt.Errorf("expected TABLE after UNLOGGED, found %s at position %d", p.current.Value, p.current.Start)
+	}
+	table, err := p.parseCreateTable()
+	if err != nil {
+		return nil, err
+	}
+	table.Unlogged = true
+	return table, nil
+}
+
 // createTargetList names the CREATE targets the grammar recognizes.
-const createTargetList = "TABLE, VIRTUAL TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
+const createTargetList = "TABLE, UNLOGGED TABLE, VIRTUAL TABLE, VIEW, MATERIALIZED VIEW, FUNCTION, PROCEDURE, PROC, " +
 	"TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION, SEQUENCE, ROLE, POLICY"
 
 // parseCreateSchemaObject parses the CREATE targets for standalone PostgreSQL

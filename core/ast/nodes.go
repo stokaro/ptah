@@ -119,6 +119,18 @@ type CreateTableNode struct {
 	CustomSQL string
 	// Comment is an optional table comment
 	Comment string
+	// Unlogged marks a PostgreSQL table whose writes skip the write-ahead log.
+	//
+	// It is a typed field rather than an entry in Options for the reason
+	// CustomSQL gives: Options is a key=value map a renderer spells as
+	// `KEY=VALUE`, and this is a bare word with no value. It is also not a
+	// trailing option -- the keyword sits between CREATE and TABLE, so a
+	// renderer has to know it before it writes the header rather than after
+	// the closing parenthesis.
+	//
+	// A table nothing declared is logged, which is the server's default, so
+	// false and "unset" mean the same and the field needs no pointer.
+	Unlogged bool
 	// RowTTL stores the CockroachDB row-level TTL storage parameters.
 	//
 	// It is a typed field rather than entries in Options because the parameters
