@@ -854,9 +854,9 @@
       "generated": true,
       "generator": "internal/cmd/capmatrix",
       "editSource": "internal/capabilityprobe/cells.go",
-      "lastVerified": "2026-09-10",
+      "lastVerified": "2026-09-12",
       "evidence": [
-        "https://github.com/stokaro/ptah/actions/runs/34433455054"
+        "https://github.com/stokaro/ptah/actions/runs/34687443936"
       ],
       "searchAliases": [
         "database capability status",
@@ -872,8 +872,8 @@
       "inboundLinks": [
         "/databases/support-evidence/"
       ],
-      "visibleWords": 293,
-      "sourceBytes": 3356
+      "visibleWords": 227,
+      "sourceBytes": 3020
     },
     {
       "path": "docs/site/src/content/docs/databases/clickhouse.md",
