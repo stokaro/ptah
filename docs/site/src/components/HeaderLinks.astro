@@ -1,13 +1,13 @@
 ---
 /**
  * The right-hand links of the header, as text rather than icons: the project
- * site, Install, the Playground and the repository, the way ptah.run's own
- * header reads them.
+ * site, Install, the Playground, the operator's guide and the repository, the
+ * way ptah.run's own header reads them.
  * Replaces Starlight's SocialIcons, so it also renders inside the mobile menu
  * footer (stokaro/ptah#2893).
  */
 import config from 'virtual:starlight/user-config';
-import { PlaygroundOrigin, SiteOrigin } from '../lib/docs-origin.mjs';
+import { OperatorOrigin, PlaygroundOrigin, SiteOrigin } from '../lib/docs-origin.mjs';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
 const social = config.social ?? [];
@@ -26,6 +26,9 @@ const siteHost = new URL(SiteOrigin).host;
     installed. It is a site of its own, so the address comes from the module
     that declares it rather than from a route. */}
 <a class="ptah-nav-link" href={`${PlaygroundOrigin}/`}>Playground</a>
+{/* The operator's guide is a site of its own, and a reader who came here for
+    Kubernetes needs the address rather than a page that describes it. */}
+<a class="ptah-nav-link" href={`${OperatorOrigin}/`}>Operator</a>
 {
   social.map(({ href, label }) => (
     <a class="ptah-nav-link" href={href} rel="me">
