@@ -179,10 +179,9 @@ jobs:
           git config user.email 'ptah-automation@users.noreply.github.com'
           git checkout -B "$AUTOMATION_BRANCH"
           git add docs/site/data/operator-compatibility.json
-          git commit -m "docs(compatibility): refresh the operator catalog at ${COMMIT:0:12}
-
-The canonical file is $SOURCE_PATH in $SOURCE_REPOSITORY. This copy is derived
-and carries the commit it was taken from; edit the source, not this file."
+          git commit \
+            -m "docs(compatibility): refresh the operator catalog at ${COMMIT:0:12}" \
+            -m "The canonical file is $SOURCE_PATH in $SOURCE_REPOSITORY. This copy is derived and carries the commit it was taken from; edit the source, not this file."
           # One branch, force-pushed: the pull request is a statement of the
           # current catalog rather than a history of every refresh, and a second
           # branch would become a second open pull request saying the same thing.
@@ -194,10 +193,16 @@ and carries the commit it was taken from; edit the source, not this file."
             echo "pull request #$existing already carries this branch and now holds ${COMMIT:0:12}"
             exit 0
           fi
+          # Through a file rather than an argument. A body written inline would
+          # have to sit at column zero to keep its paragraph breaks, which ends
+          # the YAML block this step is written in -- and the truncation parses,
+          # so nothing would have said so.
+          {
+            printf '%s\n\n' "The operator compatibility catalog moved. This refreshes the derived copy this site renders the matrix from, at commit $COMMIT of $SOURCE_REPOSITORY."
+            printf '%s\n' "The canonical file is $SOURCE_PATH in that repository. This copy is generated: it carries the repository, the path, the exact commit and the date it was taken, and the documentation gate refuses one that was edited here."
+          } >"$RUNNER_TEMP/pr-body.md"
           gh pr create \
             --base master \
             --head "$AUTOMATION_BRANCH" \
             --title "docs(compatibility): refresh the operator catalog" \
-            --body "The operator compatibility catalog moved. This refreshes the derived copy this site renders the matrix from, at commit \`$COMMIT\` of \`$SOURCE_REPOSITORY\`.
-
-The canonical file is \`$SOURCE_PATH\` in that repository. This copy is generated: it carries the repository, the path, the exact commit and the date it was taken, and the documentation gate refuses one that was edited here."
+            --body-file "$RUNNER_TEMP/pr-body.md"
