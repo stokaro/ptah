@@ -252,6 +252,13 @@ func (ctx *renderContext) renderFile(writeBody func(*sourceWriter)) ([]byte, err
 	return formatted, nil
 }
 
+// hasGlobalObjects reports whether anything needs the struct the global
+// annotations hang off.
+//
+// It decides whether that struct is written at all, so a family emitted by
+// writeGlobalObjects and missing here produces a comment attached to nothing.
+// The parser reads struct doc comments, so such a comment is not refused -- it
+// is silently not read, and the export loses the object with every gate green.
 func (ctx *renderContext) hasGlobalObjects() bool {
 	return len(ctx.db.Schemas) > 0 ||
 		len(ctx.db.Extensions) > 0 ||
@@ -259,7 +266,11 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.Views) > 0 ||
 		len(ctx.db.MaterializedViews) > 0 ||
 		len(ctx.db.Roles) > 0 ||
-		len(ctx.db.Grants) > 0
+		len(ctx.db.Grants) > 0 ||
+		len(ctx.db.CompositeTypes) > 0 ||
+		len(ctx.db.Domains) > 0 ||
+		len(ctx.db.Ranges) > 0 ||
+		len(ctx.db.Sequences) > 0
 }
 
 func (ctx *renderContext) writeEnums(w *sourceWriter) {
@@ -293,6 +304,21 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			attr{name: "name", value: schema.Name, set: true},
 			attr{name: "comment", value: schema.Comment, set: schema.Comment != ""},
 		))
+	}
+	// The user types come before everything that can name one. A column
+	// declared over a domain keeps the domain's name as its type, so the
+	// declaration has to be in the file that carries the column.
+	for _, domain := range sortedDomains(ctx.db.Domains) {
+		w.writeComment(domainAnnotation(domain))
+	}
+	for _, composite := range sortedCompositeTypes(ctx.db.CompositeTypes) {
+		w.writeComment(compositeAnnotation(composite))
+	}
+	for _, rangeType := range sortedRanges(ctx.db.Ranges) {
+		w.writeComment(rangeAnnotation(rangeType))
+	}
+	for _, sequence := range sortedSequences(ctx.db.Sequences) {
+		w.writeComment(sequenceAnnotation(sequence))
 	}
 	for _, extension := range sortedExtensions(ctx.db.Extensions) {
 		w.writeComment(annotation("ptah:schema:extension",
@@ -494,7 +520,28 @@ func constraintAnnotation(constraint schemamodel.Constraint) string {
 	)
 }
 
+// functionAnnotation writes a routine under the directive its kind names.
+//
+// A procedure is the same model with Kind set, and the parser has no attribute
+// for that -- it reads a separate directive. Writing every routine as a
+// function therefore turns a procedure read from a database into a function on
+// the way out, which the grammar gives no way to say otherwise.
+//
+// A procedure returns nothing, so the returns attribute is left to the function
+// arm rather than emitted and ignored.
 func functionAnnotation(function schemamodel.Function) string {
+	if function.IsProcedure() {
+		return annotation("ptah:schema:procedure",
+			attr{name: "name", value: function.Name, set: true},
+			attr{name: "params", value: function.Parameters, set: function.Parameters != ""},
+			attr{name: "language", value: function.Language, set: function.Language != ""},
+			attr{name: "security", value: function.Security, set: function.Security != ""},
+			attr{name: "volatility", value: function.Volatility, set: function.Volatility != ""},
+			attr{name: "body", value: function.Body, set: true},
+			attr{name: "comment", value: function.Comment, set: function.Comment != ""},
+			dialectsAttr(function.Dialects),
+		)
+	}
 	return annotation("ptah:schema:function",
 		attr{name: "name", value: function.Name, set: true},
 		attr{name: "params", value: function.Parameters, set: function.Parameters != ""},
@@ -507,6 +554,93 @@ func functionAnnotation(function schemamodel.Function) string {
 		attr{name: "comment", value: function.Comment, set: function.Comment != ""},
 		dialectsAttr(function.Dialects),
 	)
+}
+
+// domainAnnotation writes a domain.
+//
+// The base type is what makes this family load-bearing for `ptah introspect`:
+// a column declared over a domain keeps type="<domain>", so an export without
+// the domain describes a table whose column type nothing creates.
+func domainAnnotation(domain schemamodel.Domain) string {
+	return annotation("ptah:schema:domain",
+		attr{name: "name", value: domain.Name, set: true},
+		attr{name: "schema", value: domain.Schema, set: domain.Schema != ""},
+		attr{name: "type", value: domain.BaseType, set: true},
+		attr{name: "not_null", value: strconv.FormatBool(domain.NotNull), set: domain.NotNull},
+		attr{name: "default", value: domain.Default, set: domain.Default != ""},
+		attr{name: "default_expr", value: domain.DefaultExpr, set: domain.DefaultExpr != ""},
+		attr{name: "check", value: domain.Check, set: domain.Check != ""},
+		attr{name: "comment", value: domain.Comment, set: domain.Comment != ""},
+		dialectsAttr(domain.Dialects),
+	)
+}
+
+// compositeAnnotation writes a composite type.
+//
+// The field list is one attribute holding `name:type` pairs separated by
+// commas, and its order is significant: the comparator joins the two sides
+// positionally, so emitting the model's own order is what keeps a round trip
+// quiet.
+func compositeAnnotation(composite schemamodel.CompositeType) string {
+	pairs := make([]string, 0, len(composite.Fields))
+	for _, field := range composite.Fields {
+		pairs = append(pairs, field.Name+":"+field.Type)
+	}
+	return annotation("ptah:schema:composite",
+		attr{name: "name", value: composite.Name, set: true},
+		attr{name: "schema", value: composite.Schema, set: composite.Schema != ""},
+		attr{name: "fields", value: strings.Join(pairs, ","), set: len(pairs) > 0},
+		attr{name: "comment", value: composite.Comment, set: composite.Comment != ""},
+		dialectsAttr(composite.Dialects),
+	)
+}
+
+// rangeAnnotation writes a range type.
+func rangeAnnotation(rangeType schemamodel.Range) string {
+	return annotation("ptah:schema:range",
+		attr{name: "name", value: rangeType.Name, set: true},
+		attr{name: "schema", value: rangeType.Schema, set: rangeType.Schema != ""},
+		attr{name: "subtype", value: rangeType.Subtype, set: true},
+		attr{name: "subtype_opclass", value: rangeType.SubtypeOpClass, set: rangeType.SubtypeOpClass != ""},
+		attr{name: "collation", value: rangeType.Collation, set: rangeType.Collation != ""},
+		attr{name: "canonical", value: rangeType.Canonical, set: rangeType.Canonical != ""},
+		attr{name: "subtype_diff", value: rangeType.SubtypeDiff, set: rangeType.SubtypeDiff != ""},
+		attr{name: "comment", value: rangeType.Comment, set: rangeType.Comment != ""},
+		dialectsAttr(rangeType.Dialects),
+	)
+}
+
+// sequenceAnnotation writes a standalone sequence.
+//
+// The numeric options are pointers on the model because "not stated" and
+// "stated as zero" are different sequences, and a CACHE of 0 is a different
+// declaration from no CACHE at all. Rendering the zero value for an unset
+// option would write a sequence the database never had.
+func sequenceAnnotation(sequence schemamodel.Sequence) string {
+	return annotation("ptah:schema:sequence",
+		attr{name: "name", value: sequence.Name, set: true},
+		attr{name: "schema", value: sequence.Schema, set: sequence.Schema != ""},
+		attr{name: "as", value: sequence.AsType, set: sequence.AsType != ""},
+		sequenceNumberAttr("start", sequence.Start),
+		sequenceNumberAttr("increment", sequence.Increment),
+		sequenceNumberAttr("minvalue", sequence.MinValue),
+		sequenceNumberAttr("maxvalue", sequence.MaxValue),
+		sequenceNumberAttr("cache", sequence.Cache),
+		attr{name: "cycle", value: strconv.FormatBool(sequence.Cycle), set: sequence.Cycle},
+		attr{name: "owned_by", value: sequence.OwnedBy, set: sequence.OwnedBy != ""},
+		attr{name: "if_not_exists", value: strconv.FormatBool(sequence.IfNotExists), set: sequence.IfNotExists},
+		attr{name: "comment", value: sequence.Comment, set: sequence.Comment != ""},
+		dialectsAttr(sequence.Dialects),
+	)
+}
+
+// sequenceNumberAttr renders one of the sequence options a declaration may
+// leave out, writing nothing when it was not stated.
+func sequenceNumberAttr(name string, value *int64) attr {
+	if value == nil {
+		return attr{name: name}
+	}
+	return attr{name: name, value: strconv.FormatInt(*value, 10), set: true}
 }
 
 func rlsPolicyAnnotation(policy schemamodel.RLSPolicy) string {
@@ -781,6 +915,42 @@ func sortedSchemas(values []schemamodel.Schema) []schemamodel.Schema {
 func sortedExtensions(values []schemamodel.Extension) []schemamodel.Extension {
 	result := append([]schemamodel.Extension(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+// The user-type sorters key on the schema-qualified name rather than the bare
+// one. Two objects may share a name in different schemas, and a sort that
+// cannot tell them apart leaves their order to the input, which `ptah
+// introspect` promises not to do.
+func sortedDomains(values []schemamodel.Domain) []schemamodel.Domain {
+	result := append([]schemamodel.Domain(nil), values...)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
+	})
+	return result
+}
+
+func sortedCompositeTypes(values []schemamodel.CompositeType) []schemamodel.CompositeType {
+	result := append([]schemamodel.CompositeType(nil), values...)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
+	})
+	return result
+}
+
+func sortedRanges(values []schemamodel.Range) []schemamodel.Range {
+	result := append([]schemamodel.Range(nil), values...)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
+	})
+	return result
+}
+
+func sortedSequences(values []schemamodel.Sequence) []schemamodel.Sequence {
+	result := append([]schemamodel.Sequence(nil), values...)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Schema+"."+result[i].Name < result[j].Schema+"."+result[j].Name
+	})
 	return result
 }
 
