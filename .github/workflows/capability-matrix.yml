@@ -442,6 +442,14 @@ jobs:
           # One flat argument list, printed by the driver, so this step cannot
           # assemble flags, image and container command in the wrong order.
           "${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}" >"${RUNNER_TEMP}/docker-args"
+          # An empty list is a cell whose engine ships inside Ptah, not a
+          # driver that failed: the declaration says so, and `docker run` with
+          # no image would fail for a reason that has nothing to do with the
+          # cell.
+          if [ ! -s "${RUNNER_TEMP}/docker-args" ]; then
+            echo "${CELL_ID} starts no container: its engine is compiled into the probe"
+            exit 0
+          fi
           mapfile -t args <"${RUNNER_TEMP}/docker-args"
           docker run --detach --name capability-probe-server "${args[@]}"
 

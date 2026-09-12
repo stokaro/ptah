@@ -30,6 +30,7 @@ var probedDialects = []string{
 	platform.ClickHouse,
 	platform.Oracle,
 	platform.SQLServer,
+	platform.SQLite,
 }
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
