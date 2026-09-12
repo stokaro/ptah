@@ -21,6 +21,9 @@ expect_refusal() {
 	name="$1"
 	needle="$2"
 	mutate="$3"
+	# The declaration the gate compares against. Empty means the repository's
+	# own, which is what every case but the last one wants.
+	declaration="${4:-}"
 
 	cases=$((cases + 1))
 	dir="$(mktemp -d)"
@@ -28,7 +31,7 @@ expect_refusal() {
 
 	( cd "$dir" && eval "$mutate" )
 
-	if output="$(scripts/check-capability-status.sh "${dir}/status.md" 2>&1)"; then
+	if output="$(CAPMATRIX_MATRIX_JSON="$declaration" scripts/check-capability-status.sh "${dir}/status.md" 2>&1)"; then
 		echo "  ${name}: the gate passed over a broken file" >&2
 		failures=$((failures + 1))
 	elif ! printf '%s' "$output" | grep -qF "$needle"; then
@@ -62,9 +65,30 @@ expect_refusal "a verdict is flipped and the summary is not" \
 # A declared line the tier cannot run, dropped. The identity is
 # declared == runnable + skipped, and this is the half a table of results
 # silently loses.
+#
+# Every declared line runs today, so this case supplies the declaration rather
+# than reading the repository's: a rule with no subject in the tree is still a
+# rule the gate has to hold, and the file is otherwise the committed one.
+skipped_declaration="$(mktemp)"
+trap 'rm -f "$skipped_declaration"' EXIT
+go run ./internal/cmd/capmatrix matrix |
+	python3 -c 'import json,sys
+matrix = json.load(sys.stdin)
+matrix["declared"] += 1
+# The key is present and null when nothing is skipped, so setdefault is no help.
+matrix["skipped"] = list(matrix.get("skipped") or [])
+matrix["skipped"].append({
+    "id": "engine-9",
+    "dialect": "engine",
+    "line": "9",
+    "skip": "the capability probe has no statement table for the engine dialect",
+})
+json.dump(matrix, sys.stdout)' >"$skipped_declaration"
+
 expect_refusal "a skipped line is not named" \
 	"the census is short" \
-	"grep -v 'sqlite-3' status.md >tmp && mv tmp status.md"
+	"true" \
+	"$skipped_declaration"
 
 if [ "$failures" -ne 0 ]; then
 	echo "check-capability-status --selftest: FAILED (${failures} of ${cases})" >&2
