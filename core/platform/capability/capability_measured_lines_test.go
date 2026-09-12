@@ -228,6 +228,7 @@ func measuredLines() map[string]measuredLine {
 					"what decides it is CockroachDB v26.2.5 answering \"not yet implemented\" (cockroachdb/cockroach#27791) and Spanner refusing the statement (stokaro/ptah#1717)",
 				capability.PostgresCatalogFunctions: "the key exists for the Spanner PostgreSQL interface, whose catalog refuses obj_description with `The Postgres Type is not supported: name`; this run did not probe it, and a PostgreSQL server answering the function would not tell this line apart from the preset below",
 				capability.CatalogRowStatistics:     "the key exists for the Spanner PostgreSQL interface, whose catalog carries the pg_class columns beside it and not pg_stat_all_tables; this run did not probe the statistics views, and a PostgreSQL server having them would not tell this line apart from the preset below",
+				capability.CatalogVectorInfo:        "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column no PostgreSQL-family or MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
 				capability.CatalogDependencies:      "the key exists for the Spanner PostgreSQL interface, whose catalog has no pg_depend to join; this run did not create a domain, and a PostgreSQL server having them would not tell this line apart from the preset below",
 				capability.CatalogDefaultPrivileges: "the key names pg_default_acl, which this run never read: the artifact records no ALTER DEFAULT PRIVILEGES, and a server having the relation would not tell this line apart from the preset below",
 				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
@@ -312,6 +313,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RangeTypes:               "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement this server has no spelling of, so neither accepting nor refusing one would decide the key",
 				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
 				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
+				capability.CatalogVectorInfo:        "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column no PostgreSQL-family or MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
 				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
 				capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation no MySQL-family code path consults, so nothing this server answered could decide the key",
 				capability.RoleManagement: "the key names the role and privilege surface no MySQL-family code path consults; " +
@@ -399,6 +401,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RangeTypes:               "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement this server has no spelling of, so neither accepting nor refusing one would decide the key",
 				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
 				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
+				capability.CatalogVectorInfo:        "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column no PostgreSQL-family or MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
 				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
 				capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation no MySQL-family code path consults, so nothing this server answered could decide the key",
 				capability.RoleManagement: "the key names the role and privilege surface no MySQL-family code path consults; " +

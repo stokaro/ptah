@@ -24,6 +24,7 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 	tests := []struct {
 		name       string
 		dataType   string
+		vectorInfo sql.NullString
 		charLength sql.NullInt64
 		precision  sql.NullInt64
 		scale      sql.NullInt64
@@ -45,12 +46,23 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 		// DATA_SCALE 6. Appending the scale again would write TIMESTAMP(6)(6).
 		{name: "timestamp already carries its precision", dataType: "TIMESTAMP(6)", scale: number(6), want: "TIMESTAMP(6)"},
 		{name: "interval already carries its precision", dataType: "INTERVAL DAY(2) TO SECOND(6)", precision: number(2), scale: number(6), want: "INTERVAL DAY(2) TO SECOND(6)"},
+		// VECTOR_INFO carries the completed form, so the column reads back as
+		// the declaration folds: measured on 23.26.3.0.0, a column declared
+		// VECTOR(1536, FLOAT32) reports VECTOR(1536,FLOAT32,DENSE).
+		{name: "vector carries its dimension and format", dataType: "VECTOR", vectorInfo: text("VECTOR(1536,FLOAT32,DENSE)"), want: "VECTOR(1536,FLOAT32,DENSE)"},
+		{name: "vector left unspecified", dataType: "VECTOR", vectorInfo: text("VECTOR(*,*,DENSE)"), want: "VECTOR(*,*,DENSE)"},
+		{name: "sparse vector", dataType: "VECTOR", vectorInfo: text("VECTOR(1000,INT8,SPARSE)"), want: "VECTOR(1000,INT8,SPARSE)"},
+		// A catalog without the column projects NULL, which is every line the
+		// capability turns the projection off for. The bare name is all there
+		// is to report, and inventing a shape would describe a column the
+		// server never answered for.
+		{name: "vector where the catalog cannot describe it", dataType: "VECTOR", want: "VECTOR"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := formatColumnType(test.dataType, test.charLength, test.precision, test.scale)
+			got := formatColumnType(test.dataType, test.vectorInfo, test.charLength, test.precision, test.scale)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
@@ -200,7 +212,7 @@ func TestQueriesExcludeTheRecycleBin(t *testing.T) {
 		want  string
 	}{
 		{name: "tables use the catalog flag", query: tableQuery, want: "t.dropped = 'NO'"},
-		{name: "columns exclude recycled tables", query: columnQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
+		{name: "columns exclude recycled tables", query: columnQueryTail, want: "c.table_name NOT LIKE 'BIN$%'"},
 		{name: "constraints exclude recycled tables", query: constraintQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
 		{name: "referenced keys exclude recycled tables", query: referencedKeyQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
 		{name: "indexes exclude recycled tables", query: indexQuery, want: "i.table_name NOT LIKE 'BIN$%'"},
@@ -270,4 +282,9 @@ func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
 			c.Assert(names, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// text wraps a catalog string that may be absent.
+func text(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
 }

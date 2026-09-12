@@ -237,10 +237,13 @@ func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 // DATA_DEFAULT_VC, which does not exist on 21.3. CHAR_LENGTH rather than
 // DATA_LENGTH is the character count a VARCHAR2 was declared with; DATA_LENGTH
 // is the byte width, and reports 22 for every NUMBER.
-const columnQuery = `
+const columnQueryHead = `
 SELECT c.table_name,
        c.column_name,
        c.data_type,
+       `
+
+const columnQueryTail = `,
        c.char_length,
        c.data_precision,
        c.data_scale,
@@ -260,8 +263,22 @@ WHERE c.owner = :1
   AND c.table_name NOT LIKE 'BIN$%'
 ORDER BY c.table_name, c.column_id`
 
+// vectorInfoExpr renders the projection that describes a vector column.
+//
+// A catalog without the column is not asked for it. ALL_TAB_COLS has no
+// VECTOR_INFO on Oracle 21.3 -- measured, the column is absent -- and an absent
+// column fails the whole column read rather than the one projection, so the
+// constant is the safe answer where the real one could only ever be NULL.
+func (r *Reader) vectorInfoExpr() string {
+	if !r.caps.Has(capability.CatalogVectorInfo) {
+		return "CAST(NULL AS VARCHAR2(4000)) AS vector_info"
+	}
+	return "c.vector_info"
+}
+
 func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, error) {
-	rows, err := r.db.QueryContext(ctx, columnQuery, r.schema)
+	query := columnQueryHead + r.vectorInfoExpr() + columnQueryTail
+	rows, err := r.db.QueryContext(ctx, query, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -281,8 +298,9 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 			virtual    string
 			def        sql.NullString
 			comment    sql.NullString
+			vectorInfo sql.NullString
 		)
-		if err := rows.Scan(&table, &column.Name, &column.DataType, &charLength,
+		if err := rows.Scan(&table, &column.Name, &column.DataType, &vectorInfo, &charLength,
 			&precision, &scale, &nullable, &position, &identity, &virtual, &def,
 			&comment); err != nil {
 			return nil, err
@@ -295,7 +313,7 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 		// and the raw catalog spelling is not one. Filling it with DATA_TYPE
 		// made the comparison read `number` where the composed type says
 		// `NUMBER(10)`, so a live schema did not match itself.
-		column.DataType = formatColumnType(column.DataType, charLength, precision, scale)
+		column.DataType = formatColumnType(column.DataType, vectorInfo, charLength, precision, scale)
 		column.IsNullable = nullableWord(nullable)
 		column.OrdinalPosition = int(position.Int64)
 		column.IsAutoIncrement = identity == "YES"
@@ -728,8 +746,17 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.Materiali
 // the arms that append anything, so both come back whole. A guard was written
 // here first and removed: reverting it changed no answer, which is the
 // definition of dead code.
-func formatColumnType(dataType string, charLength, precision, scale sql.NullInt64) string {
+func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, precision, scale sql.NullInt64) string {
 	switch dataType {
+	case "VECTOR":
+		// The catalog completes what a declaration left out and reports the
+		// whole form here, so the declared side folds to the same spelling in
+		// internal/oracletype. Without this the column reads back as a bare
+		// VECTOR and never equals the declaration that built it.
+		if vectorInfo.Valid && vectorInfo.String != "" {
+			return vectorInfo.String
+		}
+		return dataType
 	case "NUMBER", "FLOAT":
 		if !precision.Valid {
 			return dataType

@@ -479,6 +479,9 @@ func postgresFamilyUndecided() map[capability.Capability]string {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
+		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
+			"relation, and the reader the key gates runs only against Oracle, so neither " +
+			"having nor lacking it here would decide the key",
 		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
 			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
 		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
@@ -700,6 +703,9 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
+			"relation, and the reader the key gates runs only against Oracle, so neither having nor " +
+			"lacking it here would decide the key",
 		capability.SchemaComments: "MySQL and MariaDB carry a comment on the table and on the column and " +
 			"have no COMMENT ON SCHEMA to accept or refuse, so there is no statement to send. Their " +
 			"renderer emits none either (stokaro/ptah#2651)",

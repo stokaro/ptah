@@ -274,6 +274,9 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
+			"relation, and the reader the key gates runs only against Oracle, so neither " +
+			"having nor lacking it here would decide the key",
 		capability.SchemaComments: "ClickHouse comments a database in CREATE DATABASE and has no COMMENT ON SCHEMA to accept or refuse, so there is " +
 			"no statement to send. Its renderer emits none either (stokaro/ptah#2651)",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +

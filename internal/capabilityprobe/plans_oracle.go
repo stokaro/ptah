@@ -22,6 +22,13 @@ import (
 // gvenzl/oracle-xe:21-slim 21.3.0.0.0 while stokaro/ptah#1875 was written.
 func oraclePlan() plan {
 	experiments := []experiment{
+		// ALL_TAB_COLS gains VECTOR_INFO with the VECTOR type. Selecting the
+		// column with no rows asks only whether the catalog has it: 23.26.3.0.0
+		// accepts, and 21.3 answers ORA-00904, which is the same split the
+		// reader's projection turns on.
+		acceptance(capability.CatalogVectorInfo, nil,
+			"SELECT vector_info FROM all_tab_cols WHERE ROWNUM = 0",
+		),
 		acceptance(capability.DropConstraintGeneric,
 			[]string{"CREATE TABLE dcg (n NUMBER(10), CONSTRAINT dcg_ck CHECK (n > 0))"},
 			"ALTER TABLE dcg DROP CONSTRAINT dcg_ck",

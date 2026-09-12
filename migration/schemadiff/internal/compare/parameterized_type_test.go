@@ -25,20 +25,26 @@ import (
 // The FLOAT32 and BINARY rows are the control: those element formats name no
 // type the normalizer folds, so their declarations already survived and the
 // rule cannot be satisfied by dropping the normalization.
+//
+// Each want carries the completed form the Oracle catalog reports, because the
+// declared side folds to it before the comparison: the dimension, the element
+// format and the storage form are all filled in. What this test measures is
+// unchanged by that -- INT8 among the parameters still has to leave a vector,
+// and a row answering "integer" fails whichever spelling the vector takes.
 func TestColumnsWithDialect_ParameterizedTypeKeepsItsParameters(t *testing.T) {
 	tests := []struct {
 		name     string
 		declared string
 		want     string
 	}{
-		{"int8 elements", "VECTOR(512, INT8)", "vector -> vector(512, int8)"},
-		{"int8 elements without a space", "VECTOR(512,INT8)", "vector -> vector(512,int8)"},
-		{"int8 elements, small dimension", "VECTOR(8, INT8)", "vector -> vector(8, int8)"},
-		{"int8 elements, no dimension", "VECTOR(*, INT8)", "vector -> vector(*, int8)"},
-		{"int8 elements stored dense", "VECTOR(512, INT8, DENSE)", "vector -> vector(512, int8, dense)"},
-		{"float32 elements", "VECTOR(512, FLOAT32)", "vector -> vector(512, float32)"},
-		{"float32 elements stored sparse", "VECTOR(512, FLOAT32, SPARSE)", "vector -> vector(512, float32, sparse)"},
-		{"binary elements", "VECTOR(512, BINARY)", "vector -> vector(512, binary)"},
+		{"int8 elements", "VECTOR(512, INT8)", "vector -> vector(512,int8,dense)"},
+		{"int8 elements without a space", "VECTOR(512,INT8)", "vector -> vector(512,int8,dense)"},
+		{"int8 elements, small dimension", "VECTOR(8, INT8)", "vector -> vector(8,int8,dense)"},
+		{"int8 elements, no dimension", "VECTOR(*, INT8)", "vector -> vector(*,int8,dense)"},
+		{"int8 elements stored dense", "VECTOR(512, INT8, DENSE)", "vector -> vector(512,int8,dense)"},
+		{"float32 elements", "VECTOR(512, FLOAT32)", "vector -> vector(512,float32,dense)"},
+		{"float32 elements stored sparse", "VECTOR(512, FLOAT32, SPARSE)", "vector -> vector(512,float32,sparse)"},
+		{"binary elements", "VECTOR(512, BINARY)", "vector -> vector(512,binary,dense)"},
 	}
 
 	for _, tt := range tests {

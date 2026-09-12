@@ -116,9 +116,51 @@ func parameterizedType(base, arguments, declared string) string {
 		return "VARCHAR2" + arguments
 	case "CHAR", "CHARACTER":
 		return "CHAR" + arguments
+	case "VECTOR":
+		return vectorType(arguments, declared)
 	default:
 		return declared
 	}
+}
+
+// vectorType writes a VECTOR declaration the way the catalog reports it back.
+//
+// The server fills in what a declaration leaves out and reports the completed
+// form in ALL_TAB_COLS.VECTOR_INFO: measured on Oracle Free 23.26.3.0.0, a bare
+// VECTOR reads back as VECTOR(*,*,DENSE), VECTOR(1536, FLOAT32) as
+// VECTOR(1536,FLOAT32,DENSE), and VECTOR(1000, INT8, SPARSE) unchanged but for
+// the spaces. A declaration that keeps its own spelling therefore never matches
+// its own column, which is the defect withoutZeroScale below describes for
+// NUMBER: the comparator proposes the same MODIFY on every run.
+//
+// An unspecified dimension and an unspecified format are both `*`, which is
+// also how a declaration may write them, so the two spellings converge here
+// rather than at the comparator.
+//
+// A list longer than the three the type takes is returned as the author wrote
+// it. Oracle answers such a declaration with an error, and completing it here
+// would make Ptah accept what the server refuses.
+func vectorType(arguments, declared string) string {
+	trimmed := strings.TrimSpace(arguments)
+	trimmed = strings.TrimPrefix(trimmed, "(")
+	trimmed = strings.TrimSuffix(trimmed, ")")
+	if strings.TrimSpace(trimmed) == "" {
+		return "VECTOR(*,*,DENSE)"
+	}
+
+	resolved := []string{"*", "*", "DENSE"}
+	stated := strings.Split(trimmed, ",")
+	if len(stated) > len(resolved) {
+		return declared
+	}
+	for i, part := range stated {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		resolved[i] = strings.ToUpper(value)
+	}
+	return "VECTOR(" + strings.Join(resolved, ",") + ")"
 }
 
 // withoutZeroScale drops an explicit scale of zero, which Oracle does not keep.

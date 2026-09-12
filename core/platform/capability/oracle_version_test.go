@@ -87,10 +87,13 @@ func TestOracleResolution(t *testing.T) {
 // between the two measured lines, so a later edit that changes another key has
 // to say so here.
 //
-// domain_types joined the list in stokaro/ptah#1920, and it is the first key
-// here that is not a guard: 23 has a real CREATE DOMAIN and 21 answers
-// ORA-00901, so the difference is the object rather than the spelling of an
-// IF EXISTS.
+// domain_types is the first key here that is not a guard: 23 has a real CREATE
+// DOMAIN and 21 answers ORA-00901, so the difference is the object rather than
+// the spelling of an IF EXISTS.
+//
+// catalog_vector_info is the second, and it is a catalog shape rather than an
+// object: ALL_TAB_COLS.VECTOR_INFO exists on 23.26.3.0.0 and is absent from
+// 21.3, where a reader that projected it would fail the whole column read.
 func TestOraclePresets_DifferOnlyInTheGuardsAndDomains(t *testing.T) {
 	c := qt.New(t)
 
@@ -108,6 +111,7 @@ func TestOraclePresets_DifferOnlyInTheGuardsAndDomains(t *testing.T) {
 		names = append(names, string(key))
 	}
 	c.Assert(names, qt.ContentEquals, []string{
+		string(capability.CatalogVectorInfo),
 		string(capability.DomainTypes),
 		string(capability.DropIndexIfExists),
 		string(capability.ObjectExistenceGuards),

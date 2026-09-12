@@ -102,6 +102,13 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // edit to a test, reviewed as the coverage reduction it is, rather than a
 // silent side effect of editing plans.go.
 //
+// CatalogVectorInfo is in every set but Oracle's, and the reason is the same
+// everywhere: ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column, and the
+// reader it gates runs only against Oracle, so a server that lacks it has
+// answered a different question. Oracle measures it, which is what makes the
+// declaration elsewhere a statement about scope rather than a coverage
+// reduction.
+//
 // Each entry is the set plans.go argues for in a comment at the point of
 // declaration. Postgres argues for none: everything it registers, it measures,
 // including the three catalog keys added for the Spanner PostgreSQL interface
@@ -120,6 +127,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// separate an unknown privilege from an absent grantee
 		// (stokaro/ptah#916).
 		want: []capability.Capability{
+			capability.CatalogVectorInfo,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
 			// Hypertables is the second, and its reason is about the EXTENSION
@@ -144,6 +152,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
@@ -169,6 +178,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
@@ -193,6 +203,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			// question cannot be put to it (stokaro/ptah#1811).
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
+			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
@@ -321,37 +332,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes six fewer: the probe cannot ask whether a privilege exists, neither runtime policy nor the transaction wrapper is a statement it can send, and TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has",
+		name: "postgres owes seven fewer: the probe cannot ask whether a privilege exists, neither runtime policy nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, and the Oracle vector catalog column is not a relation it carries",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 6,
+		want: registered - 7,
 	}, {
-		name: "mysql owes twenty-one fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, the two TimescaleDB keys, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes twenty-two fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, the two TimescaleDB keys, the six catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 21,
+		want: registered - 22,
 	}, {
-		name: "mariadb owes twenty-one fewer: COMMENT ON SCHEMA is not a statement it has, the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes twenty-two fewer: COMMENT ON SCHEMA is not a statement it has, the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 21,
+		want: registered - 22,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the two the probe cannot ask",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the three the probe cannot ask",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 6,
+		want: registered - 7,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -360,7 +371,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 7,
+		want: registered - 8,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
