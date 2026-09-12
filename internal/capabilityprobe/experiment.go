@@ -338,6 +338,12 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 // A refused inspection decides FALSE rather than going undecidable, for the
 // reason storedRowDeletionPolicy gives: a name Ptah could not read back is one
 // no comparison could converge on.
+//
+// The shape is not PostgreSQL's alone, which is why the inspection is a
+// parameter. Measured on SQL Server 17.0.4075.5, 16.0.4275.2 and 15.0.4490.9:
+// the same CREATE TABLE is accepted and the name reaches neither sys.objects,
+// sys.check_constraints, sys.key_constraints nor
+// information_schema.table_constraints.
 func storedNotNullName(setup []string, create, inspect string) experiment {
 	return experiment{
 		decides: []capability.Capability{capability.NamedNotNullConstraints},
@@ -359,7 +365,7 @@ func storedNotNullName(setup []string, create, inspect string) experiment {
 				)}, attempts
 			}
 			return verdicts{capability.NamedNotNullConstraints: annotated(stored == 1,
-				"decided by whether pg_constraint reports the name the CREATE TABLE wrote, because a "+
+				"decided by whether the catalog reports the name the CREATE TABLE wrote, because a "+
 					"server that accepts the clause and discards the name also accepts the statement",
 			)}, attempts
 		},

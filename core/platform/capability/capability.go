@@ -1740,21 +1740,10 @@ func SQLServer2022() Capabilities {
 		IndexIncludeSPGiST:       false,
 		Views:                    true,
 		MaterializedViews:        false,
-		// Functions is off for the reason Sequences is off on MariaDB, and the
-		// key's own doc comment states the rule: it describes Ptah's generator,
-		// not the engine's brochure. SQL Server hosts scalar functions happily
-		// -- CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1 END and
-		// its CREATE OR ALTER form are both ACCEPTED on 2025 (RTM-CU7) -- but
-		// no Ptah code path reads one back. sys.sql_modules.definition returns
-		// the whole original CREATE statement as one string rather than a body
-		// plus attributes, so reconstructing the parameters, return type and
-		// body that a diff compares needs a T-SQL routine-header parser that
-		// does not exist here. Emitting without reading is precisely the
-		// permanent diff stokaro/ptah#929 is about, so the key stays false
-		// until the reader lands.
-		// Functions is on because the read half now exists. It was off because
-		// nothing could recover a function from the catalog, and a key that
-		// promises a create with no read plans the same statement forever.
+		// Functions is on because all three halves the key requires exist: the
+		// renderer emits CREATE FUNCTION, the reader recovers one from the
+		// catalog, and the planner compares it. A key that promises a create
+		// with no read plans the same statement forever.
 		//
 		// The blocker turned out to be narrower than it looked. The header does
 		// not have to be parsed out of sys.sql_modules.definition:
@@ -1816,16 +1805,29 @@ func SQLServer2022() Capabilities {
 		Sequences:                true,
 		SequenceStartCounterOnly: false,
 		// SQL Server carries this as an extended property, not COMMENT ON.
-		SchemaComments:                  false,
-		XMLType:                         true,
-		AdvisoryLocks:                   false,
-		RowLevelTTL:                     false,
-		RowDeletionPolicy:               false,
-		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               false,
-		TransactionalDDL:                false,
-		CatalogPartitions:               true,
-		CatalogRecursiveCTE:             true,
+		SchemaComments:          false,
+		XMLType:                 true,
+		AdvisoryLocks:           false,
+		RowLevelTTL:             false,
+		RowDeletionPolicy:       false,
+		NamedNotNullConstraints: false,
+		MigrationTimeouts:       false,
+		TransactionalDDL:        false,
+		// Both keys name a PostgreSQL catalog, and SQL Server has neither.
+		// Measured on 17.0.4075.5: `SELECT COUNT(*) FROM pg_inherits` answers
+		// `Invalid object name 'pg_inherits'`, and `WITH RECURSIVE m AS
+		// (SELECT relname FROM pg_class) ...` is `Incorrect syntax near 'm'`
+		// -- T-SQL writes a recursive common table expression with no RECURSIVE
+		// keyword, so the word is refused before the catalog is reached. They
+		// read true here while the preset carried the PostgreSQL answer and no
+		// SQL Server statement had been asked.
+		//
+		// Nothing on this target reads either one: the only consumer is
+		// internal/dbschema/postgres, whose cleanup asks pg_inherits for a
+		// partition parent outside the schema and joins pg_depend behind a
+		// recursive query.
+		CatalogPartitions:               false,
+		CatalogRecursiveCTE:             false,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         true,
@@ -2749,24 +2751,7 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 			return resolvedAs(postgresBannerResolution(version), platform.Postgres)
 		}
 	case platform.SQLServer:
-		// SQL Server has no version ladder, so the banner's own name is the
-		// whole answer and the number in it is never spent: the preset is that
-		// product's default either way. Answering from the banner rather than
-		// falling through to parseVersion is what keeps the marketing year out
-		// of a PostgreSQL ladder — "Microsoft SQL Server 2025 … - 17.0.4065.4"
-		// parses as major 2025, and on --dialect postgres that would otherwise
-		// select Postgres17 and report itself saturated past release line 18.
-		//
-		// Recognized is true for the same reason it is on the YugabyteDB and
-		// Spanner arms: the string named a server, even though nothing in it was
-		// read as a number. VersionSpecific stays false because no measured
-		// release line was selected — the same answer the unladdered arm at the
-		// bottom of this function gives.
-		return VersionResolution{
-			Capabilities:    ForDialect(banner),
-			Recognized:      true,
-			ResolvedDialect: banner,
-		}
+		return resolvedAs(sqlServerResolution(version), platform.SQLServer)
 	case platform.Oracle:
 		return resolvedAs(oracleResolution(version), platform.Oracle)
 	case platform.ClickHouse:
@@ -2835,6 +2820,13 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// that column -- would climb no ladder and take Oracle23 for a 21
 		// server, promising it four IF [NOT] EXISTS guards it refuses.
 		return resolvedAs(oracleResolution(version), platform.Oracle)
+	case platform.SQLServer:
+		// And again: SERVERPROPERTY('ProductVersion') answers a bare
+		// "17.0.4075.5" with no product token in it, which is the value
+		// capabilityprobe.ProductVersion reads and the shape an operator types
+		// after --server-version. The banner switch never sees it, so without
+		// this arm the ladder would be reachable only from @@VERSION.
+		return resolvedAs(sqlServerResolution(version), platform.SQLServer)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
@@ -2960,6 +2952,55 @@ func oracleForVersion(v serverVersion) Capabilities {
 		return Oracle23()
 	}
 	return Oracle21()
+}
+
+// sqlServerResolution answers a SQL Server banner.
+//
+// The number to read is not the first one in the string. A banner opens with
+// the marketing year -- `Microsoft SQL Server 2025 (RTM-CU8) (KB5104822) -
+// 17.0.4075.5 (X64)` -- so the shared parse reads major 2025, and on
+// --dialect postgres that number selects Postgres17 and reports itself
+// saturated past release line 18. The product version is what follows the
+// dash, and it is the number the matrix lines are written in.
+//
+// Every declared line resolves to the same preset, and that is a measurement
+// rather than an assumption: the probe's statement table ran against
+// 17.0.4075.5, 16.0.4275.2 and 15.0.4490.9, and the three servers answered
+// every statement identically. The ladder is what lets an observation be
+// credited to the line it was taken on; MySQL 8.4, 9.7 and 26.7 share MySQL84
+// the same way (stokaro/ptah#3190).
+func sqlServerResolution(version string) VersionResolution {
+	v, ok := parseVersion(sqlServerProductVersion(version))
+	if !ok {
+		// A string that named the product and carried no number selects no
+		// release line. Recognized is true for the reason the YugabyteDB and
+		// Spanner arms give: the string named a server, even though nothing in
+		// it was read as a number.
+		return VersionResolution{Capabilities: ForDialect(platform.SQLServer), Recognized: true}
+	}
+	return measuredMinorLineResolution(
+		sqlServerForVersion(v), v, capabilityline.SQLServerMeasured(), capabilityline.SQLServer2025)
+}
+
+// sqlServerProductVersion returns the substring the product version can be read
+// from.
+//
+// The dash is what separates the marketing year from the version:
+// `Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5122772) - 15.0.4490.9`. A
+// string with no dash is returned whole, so a caller that passes the product
+// version on its own is read the same way.
+func sqlServerProductVersion(version string) string {
+	if _, after, found := strings.Cut(version, " - "); found {
+		return after
+	}
+	return version
+}
+
+// sqlServerForVersion picks the arm. The ladder has one, because the three
+// declared lines answered the probe identically; a future line that does not
+// is what would give this function a comparison to make.
+func sqlServerForVersion(_ serverVersion) Capabilities {
+	return SQLServer2022()
 }
 
 func clickHouseResolution(version string) VersionResolution {

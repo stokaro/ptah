@@ -667,9 +667,11 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// ClickHouse 26.3 and 25.8 left this list in stokaro/ptah#916: the matrix
 	// gained a ClickHouse launch recipe, so both lines have a probe job now and
 	// a line CI exercises may not call itself best-effort.
+	// SQL Server 16.0 and 15.0 left this list the way the ClickHouse lines
+	// did: the matrix gained a SQL Server launch recipe and a statement table,
+	// so each line starts its own server on every run of the tiered workflows
+	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
-		"sqlserver-16-0",
-		"sqlserver-15-0",
 		"spanner-0",
 		// Neither Oracle line is here any more. The 23 line left when the
 		// tagged integration contour started its image, and 21 left when the

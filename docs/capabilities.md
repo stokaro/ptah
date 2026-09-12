@@ -224,8 +224,8 @@ set that names no mode at all, which only a hand-built set produces and
 | `catalog_check_constraint_table_name` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_default_privileges` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `catalog_partitions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `catalog_recursive_cte` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `catalog_partitions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_recursive_cte` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_row_statistics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_view_dependencies` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | `check_constraints_enforced` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -508,12 +508,12 @@ to come from a client banner instead, and the MySQL client's is shared with
 MariaDB's (`mysql  Ver 15.1 Distrib 10.11.6-MariaDB`), so it names no server.
 
 SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
-so a resolver that reads the first number out of it reads `2025`; before the
-token existed, `ptah schema render --dialect postgres --server-version '<that
-banner>'` exited `0` and announced that it had planned a PostgreSQL saturated
-past release line `18.x`. SQL Server has no version ladder, so
-`ResolveServerVersion` answers that banner from the product alone and never
-spends the number in it.
+so a resolver that reads the first number out of it reads `2025`; without the
+token, `ptah schema render --dialect postgres --server-version '<that banner>'`
+exits `0` and announces that it planned a PostgreSQL saturated past release line
+`18.x`. The token claims the banner for its own product first, and the number
+`ResolveServerVersion` then spends is the one after the dash — `17.0.4075.5`,
+which is the release line, rather than `2025`, which is the year on the box.
 
 A banner naming **only** PostgreSQL names the family and not the product, so it
 does not displace a declared dialect already in that family. CockroachDB,
@@ -734,6 +734,9 @@ nightly, from the workflow's Run button, or when somebody comments
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | yes |
+| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2025-latest` | no | yes |
+| `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2022-latest` | no | yes |
+| `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2019-latest` | no | yes |
 | `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | yes |
 | `oracle` | 21 | certified | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:latest-v26.3` | yes | yes |
@@ -743,9 +746,6 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3` | no | yes |
-| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlite` | 3 | certified | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
 <!-- END GENERATED VERSION MATRIX -->
 

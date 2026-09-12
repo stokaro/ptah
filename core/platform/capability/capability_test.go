@@ -685,9 +685,34 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"sqlite above the step", "sqlite", "3.53.0", capability.SQLite3(), true, false, ""},
 		{"sqlite at the step", "sqlite", "3.25.0", capability.SQLite3(), true, false, ""},
 		{"sqlite below the step", "sqlite", "3.24.0", capability.SQLite324(), true, false, ""},
+		// SQL Server has a ladder of one arm: the three declared lines answered
+		// the capability probe identically, so the version selects which line
+		// an observation belongs to rather than which set it receives. The
+		// number read is the one after the dash -- the marketing year in front
+		// of it is what the shared parse would take (stokaro/ptah#3190).
 		{
-			"sqlserver has no ladder",
-			"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5", capability.SQLServer2022(), false, false, "",
+			"sqlserver on a measured line below the newest",
+			"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5",
+			capability.SQLServer2022(), true, false, capabilityline.SQLServer2025,
+		},
+		{
+			"sqlserver on its newest measured line",
+			"sqlserver", sqlServer2025Banner,
+			capability.SQLServer2022(), true, false, capabilityline.SQLServer2025,
+		},
+		{
+			"sqlserver on a line the matrix does not declare",
+			"sqlserver", "Microsoft SQL Server 2016 (SP3) (KB5003279) - 13.0.6300.2 (X64)",
+			capability.SQLServer2022(), false, false, capabilityline.SQLServer2025,
+		},
+		{
+			"sqlserver past the newest measured line",
+			"sqlserver", "Microsoft SQL Server 2028 (RTM) - 18.0.1000.1 (X64)",
+			capability.SQLServer2022(), false, true, capabilityline.SQLServer2025,
+		},
+		{
+			"sqlserver with no readable product version",
+			"sqlserver", "Microsoft SQL Server", capability.SQLServer2022(), false, false, "",
 		},
 	}
 	for _, tt := range tests {
@@ -858,18 +883,18 @@ func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
 	c := qt.New(t)
 
 	unreadable := capability.ResolveServerVersion("postgres", "not-a-version")
-	// SQL Server rather than SQLite: SQLite has a ladder (stokaro/ptah#916) and
-	// reports VersionSpecific, so it cannot stand for the unladdered half of
-	// this collision.
-	unladdered := capability.ResolveServerVersion(
-		"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5")
+	// A banner that named its product and carried no number. Every dialect
+	// with a ladder reports VersionSpecific once a version selects an arm, so
+	// the recognized half of this collision has to be a string the ladder
+	// could not read rather than a dialect that has none.
+	numberless := capability.ResolveServerVersion("sqlserver", "Microsoft SQL Server")
 
-	c.Assert(unreadable.VersionSpecific, qt.Equals, unladdered.VersionSpecific)
-	c.Assert(unreadable.Saturated, qt.Equals, unladdered.Saturated)
-	c.Assert(unreadable.NewestMeasured, qt.Equals, unladdered.NewestMeasured)
+	c.Assert(unreadable.VersionSpecific, qt.Equals, numberless.VersionSpecific)
+	c.Assert(unreadable.Saturated, qt.Equals, numberless.Saturated)
+	c.Assert(unreadable.NewestMeasured, qt.Equals, numberless.NewestMeasured)
 
 	c.Assert(unreadable.Recognized, qt.IsFalse)
-	c.Assert(unladdered.Recognized, qt.IsTrue)
+	c.Assert(numberless.Recognized, qt.IsTrue)
 }
 
 // TestResolveServerVersionReportsTheDialectItAnsweredFrom pins the field that
@@ -1074,12 +1099,12 @@ func TestBannerPlatform(t *testing.T) {
 	}
 }
 
-// TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName pins
-// the two products the token table learned to read.
+// TestResolveServerVersionSQLServerBannersAnswerFromTheProductTheyName pins the
+// product the token table learned to read.
 //
-// SQL Server has no version ladder, so the answer that matters is not which
-// release line was selected — there is none — but which PRODUCT the resolution
-// claims.
+// The answer that matters is which PRODUCT the resolution claims. SQL Server
+// has a ladder, of one arm, so the release line follows from the number after
+// the dash once the product is settled.
 //
 // ClickHouse belongs in TestResolveServerVersion_ClickHouseLadder rather than
 // beside it: a row asserting VersionSpecific is false cannot describe a dialect
@@ -1162,7 +1187,7 @@ func TestResolveServerVersion_ClickHouseBannerOverridesTheDeclaredDialect(t *tes
 	c.Assert(resolution.Capabilities, qt.DeepEquals, capability.ClickHouse2411())
 }
 
-func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *testing.T) {
+func TestResolveServerVersionSQLServerBannersAnswerFromTheProductTheyName(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
@@ -1194,14 +1219,14 @@ func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *te
 
 			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
 			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
-			// The banner named a server, so the string was read — the same
-			// reason the YugabyteDB and Spanner arms report Recognized true
-			// without parsing a number. No measured release line was selected,
-			// because neither product has one.
+			// The banner named a server and carried a product version, so the
+			// resolution belongs to the release line that version is on. The
+			// number read is 17.0 and not 2025, which is the whole point of
+			// claiming the banner by product first.
 			c.Assert(resolution.Recognized, qt.IsTrue)
-			c.Assert(resolution.VersionSpecific, qt.IsFalse)
+			c.Assert(resolution.VersionSpecific, qt.IsTrue)
 			c.Assert(resolution.Saturated, qt.IsFalse)
-			c.Assert(resolution.NewestMeasured, qt.Equals, "")
+			c.Assert(resolution.NewestMeasured, qt.Equals, capabilityline.SQLServer2025)
 		})
 	}
 }

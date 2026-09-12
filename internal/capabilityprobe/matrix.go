@@ -371,6 +371,33 @@ var launchers = map[string]launcher{
 		suiteDatabase: "yugabytedb",
 		suiteURLEnv:   "YUGABYTEDB_URL",
 	},
+	platform.SQLServer: {
+		// The three variables go-integration-tests.yml sets on its own SQL
+		// Server service, so a cell probes the server that contour already
+		// runs against. The password carries both cases, a digit and a symbol
+		// because the container validates it and exits rather than starting
+		// with a weaker one.
+		flags: []string{
+			"--publish", "1433:1433",
+			"--env", "ACCEPT_EULA=Y",
+			"--env", "MSSQL_PID=Developer",
+			"--env", "MSSQL_SA_PASSWORD=P@ssw0rd-ptah-2026",
+		},
+		// sa, and master as the database the session starts in. The probe
+		// creates its own throwaway database and enters it, so what this URL
+		// names is where that CREATE DATABASE is issued from.
+		url: "sqlserver://sa:P%40ssw0rd-ptah-2026@127.0.0.1:1433?database=master&encrypt=disable",
+		// Probe only. The integration runner does have a SQL Server target,
+		// and go-integration-tests.yml points it at a NAMED scenario list
+		// rather than at the dialect: the tier here passes --databases alone,
+		// which would run the scenarios that contour leaves out and report a
+		// gap in the suite as a gap in this line's capability model. Widening
+		// the SQL Server scenario set is a decision about the suite and wants
+		// its own measurement.
+		suiteSkip: "go-integration-tests.yml runs the integration suite against SQL Server on a named " +
+			"scenario list rather than on the whole set, and this tier selects by dialect; this cell " +
+			"adds the capability-probe half and does not move the suite (stokaro/ptah#3190)",
+	},
 	platform.Oracle: {
 		// The same three variables the tagged integration contour sets, so a
 		// cell probes the server that contour already runs against.

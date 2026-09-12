@@ -24,6 +24,8 @@ func planFor(dialect string) (plan, bool) {
 		return clickHousePlan(), true
 	case platform.Oracle:
 		return oraclePlan(), true
+	case platform.SQLServer:
+		return sqlServerPlan(), true
 	default:
 		return plan{}, false
 	}

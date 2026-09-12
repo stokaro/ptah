@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-09-10"
+lastVerified: "2026-09-12"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/34433455054"
+  - "https://github.com/stokaro/ptah/actions/runs/34687443936"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-09-10T03:28:00Z
-- Commit: `5b85d6504a136df8d9530afdd4140406fa4b3acd`
-- Run: [34433455054](https://github.com/stokaro/ptah/actions/runs/34433455054)
-- Declared release lines: 31. Runnable cells: 27. Results received: 27.
-- 27 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-09-12T10:03:31Z
+- Commit: `87952688bf7a90c86ceed5194e5aed91f9e7cd85`
+- Run: [34687443936](https://github.com/stokaro/ptah/actions/runs/34687443936)
+- Declared release lines: 31. Runnable cells: 30. Results received: 30.
+- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -57,6 +57,9 @@ over that run's cell results.
 | `clickhouse-26-3` | clickhouse | 26.3 | PASS |
 | `clickhouse-25-8` | clickhouse | 25.8 | PASS |
 | `clickhouse-24-10` | clickhouse | 24.10 | PASS |
+| `sqlserver-17-0` | sqlserver | 17.0 | PASS |
+| `sqlserver-16-0` | sqlserver | 16.0 | PASS |
+| `sqlserver-15-0` | sqlserver | 15.0 | PASS |
 | `oracle-23` | oracle | 23 | PASS |
 | `oracle-21` | oracle | 21 | PASS |
 | `cockroachdb-26-3` | cockroachdb | 26.3 | PASS |
@@ -69,7 +72,4 @@ over that run's cell results.
 
 ## Declared lines this tier cannot run
 
-- `sqlserver-17-0` (sqlserver 17.0) — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing
-- `sqlserver-16-0` (sqlserver 16.0) — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing
-- `sqlserver-15-0` (sqlserver 15.0) — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing
 - `sqlite-3` (sqlite 3) — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing

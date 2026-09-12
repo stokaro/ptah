@@ -144,19 +144,13 @@ func TestFor_HappyPath(t *testing.T) {
 			wantVersion:       "16.0.4025.1",
 			wantPresetName:    "SQLServer2022",
 			wantPresetDialect: "sqlserver",
-			// SQL Server has no version ladder, so the version identifies the
-			// line without selecting the preset. Those are separate answers
-			// and the profile reports both.
-			wantSource: serverprofile.SourceDialectDefault,
-			wantNote: "the sqlserver dialect has no measured version ladder; " +
-				"the version did not refine capabilities",
-			wantLine:  "16.0",
-			wantLabel: "SQL Server 2022",
-			// A DECLARED best-effort level: cells.go covers 16.0 and says
-			// plainly that nothing here runs against it. It is the same level
-			// TestFor_BestEffort reaches by matching no line at all, from the
-			// opposite direction.
-			wantLevel:       capability.BestEffort,
+			// The ladder has one arm, so every SQL Server line receives the
+			// same preset and the version still selects which line the answer
+			// belongs to.
+			wantSource:      serverprofile.SourceVersionLadder,
+			wantLine:        "16.0",
+			wantLabel:       "SQL Server 2022",
+			wantLevel:       capability.Certified,
 			wantIdentifiers: capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
 		},
 		{
@@ -173,13 +167,11 @@ func TestFor_HappyPath(t *testing.T) {
 			wantVersion:       "16.0.4115.5",
 			wantPresetName:    "SQLServer2022",
 			wantPresetDialect: "sqlserver",
-			wantSource:        serverprofile.SourceDialectDefault,
-			wantNote: "the sqlserver dialect has no measured version ladder; " +
-				"the version did not refine capabilities",
-			wantLine:        "16.0",
-			wantLabel:       "SQL Server 2022",
-			wantLevel:       capability.BestEffort,
-			wantIdentifiers: capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
+			wantSource:        serverprofile.SourceVersionLadder,
+			wantLine:          "16.0",
+			wantLabel:         "SQL Server 2022",
+			wantLevel:         capability.Certified,
+			wantIdentifiers:   capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
 		},
 		{
 			// A SQL Server answering a postgres:// URL. The banner outranks the
@@ -197,13 +189,11 @@ func TestFor_HappyPath(t *testing.T) {
 			wantVersion:       "16.0.4115.5",
 			wantPresetName:    "SQLServer2022",
 			wantPresetDialect: "sqlserver",
-			wantSource:        serverprofile.SourceDialectDefault,
-			wantNote: "the sqlserver dialect has no measured version ladder; " +
-				"the version did not refine capabilities",
-			wantLine:        "16.0",
-			wantLabel:       "SQL Server 2022",
-			wantLevel:       capability.BestEffort,
-			wantIdentifiers: capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
+			wantSource:        serverprofile.SourceVersionLadder,
+			wantLine:          "16.0",
+			wantLabel:         "SQL Server 2022",
+			wantLevel:         capability.Certified,
+			wantIdentifiers:   capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
 		},
 	}
 
@@ -274,17 +264,34 @@ func TestFor_BestEffort(t *testing.T) {
 			wantNoteContains: "8.0.42 is not a measured release line",
 		},
 		{
-			// The dialect-default arm needs a dialect that genuinely has no
-			// ladder, or nothing separates it from the row above.
-			name:              "sql server has no version ladder to spend a version on",
+			// The dialect-default arm needs a string that named a product and
+			// carried no version for the ladder to spend, or nothing separates
+			// it from the row above. It is not the unrecognized arm either:
+			// the product IS named, which is why the preset is SQL Server's
+			// rather than the declared dialect's.
+			name:              "a banner naming its product and no version at all",
 			dialect:           "sqlserver",
-			banner:            "Microsoft SQL Server 2099 (RTM) - 99.0.1.1 (X64)",
-			wantVersion:       "99.0.1.1",
+			banner:            "Microsoft SQL Server",
+			wantVersion:       "",
 			wantPresetDialect: "sqlserver",
 			wantSource:        serverprofile.SourceDialectDefault,
 			wantIdentifierMax: 128,
 			wantEnumModeling:  capability.EnumUnsupported,
 			wantNoteContains:  "no measured version ladder",
+		},
+		{
+			// A SQL Server release line the matrix does not declare. It is the
+			// unmeasured-line arm reached from a second dialect, which is what
+			// keeps that arm from being a MySQL-shaped accident.
+			name:              "a sql server line the matrix does not declare",
+			dialect:           "sqlserver",
+			banner:            "Microsoft SQL Server 2016 (SP3) (KB5003279) - 13.0.6300.2 (X64)",
+			wantVersion:       "13.0.6300.2",
+			wantPresetDialect: "sqlserver",
+			wantSource:        serverprofile.SourceUnmeasuredLine,
+			wantIdentifierMax: 128,
+			wantEnumModeling:  capability.EnumUnsupported,
+			wantNoteContains:  "13.0.6300.2 is not a measured release line",
 		},
 		{
 			// The saturated arm is a published value of Preset source and was
