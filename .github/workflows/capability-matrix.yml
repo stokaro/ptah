@@ -136,7 +136,10 @@ jobs:
             echo "Declared release lines: $(jq '.declared' "${RUNNER_TEMP}/matrix.json")."
             echo "Cells this tier runs: ${count}."
             echo
-            jq -r '.skipped[] | "- `\(.id)` is declared and not run: \(.skip)"' "${RUNNER_TEMP}/matrix.json"
+            # `// []` because the key is omitted when every declared line
+            # runs, and `jq` answers an absent one with `Cannot iterate over
+            # null` and exit 5 -- a summary line taking the whole job down.
+            jq -r '(.skipped // [])[] | "- `\(.id)` is declared and not run: \(.skip)"' "${RUNNER_TEMP}/matrix.json"
           } >>"${GITHUB_STEP_SUMMARY}"
 
       # What this pull request asked for, read from its own comments.
