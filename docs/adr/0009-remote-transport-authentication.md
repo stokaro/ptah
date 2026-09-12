@@ -1,6 +1,9 @@
 # ADR 0009: What a remote MCP transport would have to decide before it could exist
 
-- Status: proposed
+- Status: superseded by [ADR 0018](0018-the-session-is-the-unit-of-shared-agent-state.md),
+  which corrects open question 1 with a measurement and evaluates the five Phase 9
+  items this record did not reach. Sections 2 and 3 here remain the description of
+  the transport seam and the costed authentication options.
 - Deciders: Ptah maintainers
 - Issue: [#1492](https://github.com/stokaro/ptah/issues/1492), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Records the authentication and tenancy decision [ADR 0002](0002-read-only-agent-mvp-scope-and-transport.md) deferred

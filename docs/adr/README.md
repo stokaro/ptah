@@ -18,7 +18,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Proposed |
 | [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
 | [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Proposed |
-| [0009](0009-remote-transport-authentication.md) | What a remote MCP transport would have to decide before it could exist | Proposed |
+| [0009](0009-remote-transport-authentication.md) | What a remote MCP transport would have to decide before it could exist | Superseded by 0018 |
 | [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Proposed |
 | [0011](0011-database-code-analysis-starts-from-what-the-tree-already-derives.md) | Database-code analysis starts from what the tree already derives | Proposed |
 | [0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) | The canonical core is removed, and the shipping pipeline migrates in place | Proposed |
@@ -27,6 +27,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md) | A declared fact carries a disposition, and a physical object has one emitter | Proposed |
 | [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every usable live feeder has passed it | Proposed |
 | [0017](0017-a-chunked-corpus-is-a-set-per-source-row.md) | A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement | Proposed |
+| [0018](0018-the-session-is-the-unit-of-shared-agent-state.md) | The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it | Proposed |
 
 ## Writing one
 
