@@ -405,11 +405,12 @@ func TestGenerateCommand_ServerVersionAnnouncesWhatItPlannedInstead(t *testing.T
 			want:    "newer than the newest measured release line",
 		},
 		{
-			// SQLite gained a ladder in stokaro/ptah#916, so the dialect with
-			// none is SQL Server now.
+			// Spanner is the dialect with no ladder: it ships by date, and the
+			// number it announces over the PostgreSQL wire is PGAdapter's
+			// compatibility level rather than a release of its own.
 			name:    "a dialect with no ladder at all",
-			dialect: "sqlserver",
-			version: "16.0.4115.5",
+			dialect: "spanner",
+			version: "14.1",
 			want:    "no measured version ladder",
 		},
 	}

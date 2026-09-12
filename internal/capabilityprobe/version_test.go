@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityline"
 	"ptah.run/internal/capabilityprobe"
 )
 
@@ -105,28 +106,29 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 	}
 }
 
-// TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion runs the
-// shared code on the SQL Server banner instead of describing what it would do.
+// TestParseVersion_TheSharedResolverNamesTheLineAndNotThePatch runs the shared
+// code on the SQL Server banner instead of describing what it would do.
 //
 // The misread is not reachable from here: capability.BannerPlatform claims
-// "sql server", so the resolver answers from the product and parses no number
-// at all. It would show as capability.ResolveServerVersion SATURATING on the
-// postgres dialect for this banner, which is possible only if the shared parser
-// took the marketing year 2025 out of it. The misread does exist inside the
-// parser; capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners
-// executes it white-box, which is the only place that can, since parseVersion
-// is unexported.
+// "sql server", so the resolver reads the product version that follows the dash
+// rather than the marketing year in front of it. It would show as
+// capability.ResolveServerVersion SATURATING on the postgres dialect for this
+// banner, which is possible only if the shared parser took 2025 out of it. The
+// misread does exist inside the parser;
+// capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners executes
+// it white-box, which is the only place that can, since parseVersion is
+// unexported.
 //
 // What this leaves is the reason this package keeps its own per-dialect
-// extractor: the shared resolver yields SQL Server's default preset and NO
-// version, so a matrix cell that must be labeled 17.0.4065.4 can get that
-// number only from ParseVersion.
+// extractor. The resolver answers with a release LINE, two components wide,
+// because that is what a ladder compares; a matrix cell is labeled with the
+// server's own four-component version, and only ParseVersion produces it.
 //
 // YugabyteDB cannot be exercised through an exported surface either, and for
 // the same reason it never could: ResolveServerVersion matches "-yb-" before it
 // parses anything. capability.TestResolveServerVersion_MasksTheYugabyteMisread
 // executes that masking.
-func TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion(t *testing.T) {
+func TestParseVersion_TheSharedResolverNamesTheLineAndNotThePatch(t *testing.T) {
 	c := qt.New(t)
 
 	shared := capability.ResolveServerVersion(platform.Postgres, sqlServer2025Banner)
@@ -134,8 +136,10 @@ func TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion(t *test
 		qt.Commentf("the banner names its product, so the resolver must not plan it as PostgreSQL"))
 	c.Assert(shared.Saturated, qt.IsFalse,
 		qt.Commentf("saturation here would mean the marketing year reached the PostgreSQL ladder"))
-	c.Assert(shared.NewestMeasured, qt.Equals, "",
-		qt.Commentf("SQL Server has no ladder, so the resolver names no measured line and no version"))
+	c.Assert(shared.VersionSpecific, qt.IsTrue,
+		qt.Commentf("17.0 is a declared SQL Server line, so the observation belongs to it"))
+	c.Assert(shared.NewestMeasured, qt.Equals, capabilityline.SQLServer2025,
+		qt.Commentf("the ladder names the newest measured line, which is the product version and not the year"))
 
 	corrected, err := capabilityprobe.ParseVersion(platform.SQLServer, sqlServer2025Banner, "")
 	c.Assert(err, qt.IsNil)

@@ -259,14 +259,18 @@ func TestSQLLint_RecognizedVersionLintsCleanly(t *testing.T) {
 // surviving outcome, and it asserts differently from the two above: this run
 // has findings, so it exits 1 and prints them, and the warning is the only
 // thing that tells the operator their --version refined nothing.
+//
+// Spanner is the dialect with no ladder. It ships by date, and the number it
+// announces over the PostgreSQL wire is PGAdapter's compatibility level rather
+// than a release of its own, so there is nothing for a version to select.
 func TestSQLLint_DialectWithNoLadderSaysTheVersionChangedNothing(t *testing.T) {
 	c := qt.New(t)
 	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
-	_, stderr, err := execute("lint", "--dialect", "sqlserver", "--server-version", "16.0.4115.5", path)
+	_, stderr, err := execute("lint", "--dialect", "spanner", "--server-version", "14.1", path)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stderr, qt.Contains, "warning: the sqlserver dialect has no measured version ladder")
+	c.Assert(stderr, qt.Contains, "warning: the spanner dialect has no measured version ladder")
 }
 
 // TestSQLLint_JSONCarriesTheVersionNote gives the machine the same fact the

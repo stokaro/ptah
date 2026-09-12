@@ -479,25 +479,40 @@ var Cells = []Cell{
 	// is in extended support until 2030-01-08. Extended support is still
 	// vendor support, so 15.0 is certified rather than legacy-tested — the
 	// distinction this file draws is supported-or-not, not which phase.
+	//
+	// All three lines carry one preset, and the resolver still reads the
+	// version: the three servers answered the probe's statement table
+	// identically, so the ladder exists to say which line an observation was
+	// taken on rather than to hand the lines different sets. MySQL 8.4, 9.7 and
+	// 26.7 share MySQL84 the same way.
 	{
 		Dialect: platform.SQLServer, Line: "17.0", Label: "SQL Server 2025",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Support: capability.Certified, Image: "mcr.microsoft.com/mssql/server:2025-latest",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mcr.microsoft.com/mssql/server:2025-latest",
+		Note: "exercised twice: go-integration-tests.yml starts this image for the SQL Server scenarios, " +
+			"and the capability probe has a SQL Server statement table. Measured live on 17.0.4075.5: 55 " +
+			"rows, of which 48 agree, 0 disagree and 7 are undecidable. Two answers are worth the reading -- " +
+			"CONSTRAINT ... NOT NULL is accepted and the name reaches no catalog, which is the PostgreSQL 17 " +
+			"shape on a second engine, and DROP ... IF EXISTS is accepted while CREATE ... IF NOT EXISTS is " +
+			"not T-SQL, so the two halves of object_existence_guards come apart (stokaro/ptah#3190)",
 	},
 	{
 		Dialect: platform.SQLServer, Line: "16.0", Label: "SQL Server 2022",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Support: capability.BestEffort, Image: "mcr.microsoft.com/mssql/server:2022-latest",
-		Note: "in mainstream support until 2028-01-11, but the capability probe has no SQL " +
-			"Server statement table and the integration suite starts only the 2025 image, so nothing runs " +
-			"this line",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mcr.microsoft.com/mssql/server:2022-latest",
+		Note: "in mainstream support until 2028-01-11, and exercised by the capability probe, which starts " +
+			"this image and runs the SQL Server statement table against it. Measured live on 16.0.4275.2: " +
+			"55 rows, 48 agreements, 0 disagreements, and every statement answered as 17.0.4075.5 answered " +
+			"it (stokaro/ptah#3190)",
 	},
 	{
 		Dialect: platform.SQLServer, Line: "15.0", Label: "SQL Server 2019",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Support: capability.BestEffort, Image: "mcr.microsoft.com/mssql/server:2019-latest",
-		Note: "in extended support until 2030-01-08, and exercised by nothing here for the " +
-			"same reason as 16.0",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mcr.microsoft.com/mssql/server:2019-latest",
+		Note: "in extended support until 2030-01-08, and exercised by the capability probe on its own " +
+			"server. Measured live on 15.0.4490.9: 55 rows, 48 agreements, 0 disagreements, and every " +
+			"statement answered as 17.0.4075.5 answered it, which is what lets the oldest supported line " +
+			"carry the same preset as the newest (stokaro/ptah#3190)",
 	},
 
 	// Oracle resolves through a version ladder of one step. Both lines below

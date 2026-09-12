@@ -158,7 +158,7 @@ func (s *session) runAll(ctx context.Context, statements []string) ([]Attempt, b
 // PostgreSQL transaction answers SELECT 1 with an error too, and resumes on the
 // far side of the ROLLBACK.
 func (s *session) tryInTransaction(ctx context.Context, statement string) ([]Attempt, bool) {
-	begin := s.exec(ctx, "BEGIN")
+	begin := s.exec(ctx, beginSQL(s.dialect))
 	if !begin.Accepted {
 		return []Attempt{begin}, false
 	}
@@ -167,6 +167,19 @@ func (s *session) tryInTransaction(ctx context.Context, statement string) ([]Att
 	s.inExplicitTransaction = false
 	rollback := s.exec(ctx, "ROLLBACK")
 	return []Attempt{begin, inside, rollback}, true
+}
+
+// beginSQL opens an explicit transaction block in the dialect's own spelling.
+//
+// `BEGIN` alone is not a transaction on SQL Server. It opens a BEGIN/END
+// statement block, and the bare word answers `Could not find stored procedure
+// 'BEGIN'` -- a refusal the caller would read as a server that declines
+// transactions. ROLLBACK needs no arm: T-SQL takes it as written.
+func beginSQL(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		return "BEGIN TRANSACTION"
+	}
+	return "BEGIN"
 }
 
 // nonsenseControl is the statement the server MUST refuse.
@@ -223,6 +236,20 @@ func namespaceSQL(dialect, namespace string) (enter []string, leave string) {
 				"ALTER SESSION SET CURRENT_SCHEMA = " + namespace,
 			},
 			"DROP USER " + namespace + " CASCADE"
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		// The leave statement changes database before it drops one, because
+		// SQL Server refuses to drop the database the session is sitting in:
+		// measured, `DROP DATABASE ptah_capprobe_...` from inside it answers
+		// `Cannot drop database "..." because it is currently in use.` Both
+		// halves travel in one batch because the caller has one string to
+		// spend, and T-SQL applies USE to the statements that follow it in the
+		// same batch.
+		return []string{
+				"CREATE DATABASE " + namespace,
+				"USE " + namespace,
+			},
+			"USE master; DROP DATABASE " + namespace
 	}
 	return []string{
 			"CREATE DATABASE " + namespace,
@@ -335,6 +362,15 @@ func sentinelLocationSQL(dialect, namespace string) string {
 	if platform.NormalizeDialect(dialect) == platform.Oracle {
 		return fmt.Sprintf(
 			"SELECT COUNT(*) FROM all_tables WHERE table_name = UPPER('%s') AND owner = UPPER('%s')",
+			sentinelTable, namespace)
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		// A SQL Server namespace is a database, and its information_schema
+		// names one in TABLE_CATALOG. TABLE_SCHEMA holds `dbo` for every table
+		// the probe creates, so the shared projection below counts zero and the
+		// run reads as a namespace that was entered and then ignored.
+		return fmt.Sprintf(
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '%s' AND table_catalog = '%s'",
 			sentinelTable, namespace)
 	}
 	return fmt.Sprintf(

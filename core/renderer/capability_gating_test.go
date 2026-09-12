@@ -224,7 +224,7 @@ func TestMySQLFamilyRenderers_DropIndexGuardValidity(t *testing.T) {
 // TestUnrefinedDialectsStillHonorAPassedCapabilitySet pins the half of the
 // capability model that does NOT depend on a dialect having a version ladder.
 //
-// SQLite and SQL Server renderers take no capabilities of their own
+// The SQLite and SQL Server renderers take no capabilities of their own
 // (`sqlite.New()`, `mssql.New()`), which reads like a set handed to
 // NewRendererWithCapabilities is dropped on the floor for them. It is not: the
 // constructor validates the set and wraps every dialect, so the model is
@@ -239,8 +239,8 @@ func TestUnrefinedDialectsStillHonorAPassedCapabilitySet(t *testing.T) {
 		name    string
 		dialect string
 	}{
-		{name: "sqlite has no version ladder", dialect: "sqlite"},
-		{name: "sql server has no version ladder", dialect: "sqlserver"},
+		{name: "the sqlite renderer takes no capabilities of its own", dialect: "sqlite"},
+		{name: "the sql server renderer takes no capabilities of its own", dialect: "sqlserver"},
 		{name: "clickhouse takes capabilities directly", dialect: "clickhouse"},
 	}
 

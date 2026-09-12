@@ -54,9 +54,12 @@ func TestCapabilityNote_TheLiveAndTypedPathsSayTheSameThing(t *testing.T) {
 		},
 		{
 			// A dialect whose version refines nothing, so the version was read
-			// and then discarded.
-			name: "a dialect with no measured ladder", dialect: platform.SQLServer,
-			version: "17.0", wantAny: true,
+			// and then discarded. Spanner is the one left: it ships by date and
+			// the number it announces over the PostgreSQL wire is PGAdapter's
+			// compatibility level, so there is no release line for a ladder to
+			// select.
+			name: "a dialect with no measured ladder", dialect: platform.Spanner,
+			version: "14.1", wantAny: true,
 		},
 		{
 			// The control that keeps this from being a line on every run: a

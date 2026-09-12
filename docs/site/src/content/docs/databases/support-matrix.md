@@ -91,6 +91,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
+| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | yes |
+| `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | yes |
+| `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | yes |
 | `oracle` | 23 | certified | `Oracle23` | yes |
 | `oracle` | 21 | certified | `Oracle21` | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
@@ -100,30 +103,24 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
-| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
-| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
-| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 31. Probed on every pull request: 27.
+Declared release lines: 31. Probed on every pull request: 30.
 
-Support levels across the 31 declared lines: 26 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 31 declared lines: 28 certified, 2 legacy-tested, 1 best-effort.
 
 Lines that are declared and not probed, and why:
 
-- `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
-- `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
-- `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
-- `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
-- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
-- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3`.
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
+- `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
+- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
+- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

@@ -379,9 +379,8 @@ func TestWriteMatrix_BothRenderingsNameTheSupportLevelOfEveryLine(t *testing.T) 
 // rewritten at once — satisfies it. These three rows are the words a reader
 // takes away from the page, one per level in use, and they are wrong for a
 // different reason each: postgres 13 is the end-of-life line kept on purpose,
-// sqlserver 16.0 is a declared line that continuous integration does not
-// exercise, and postgres 17 is the commitment the rest of the matrix is
-// measured against.
+// spanner is a line only an emulator exercises, and postgres 17 is the
+// commitment the rest of the matrix is measured against.
 func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 	tests := []struct {
 		name string
@@ -393,8 +392,8 @@ func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 		name: "an end-of-life line retained as a sentinel",
 		want: "| `postgres` | 13 | legacy-tested |",
 	}, {
-		name: "a line nothing exercises",
-		want: "| `sqlserver` | 16.0 (SQL Server 2022) | best-effort |",
+		name: "a line only an emulator exercises",
+		want: "| `spanner` | 0 | best-effort |",
 	}}
 
 	var wide, compact strings.Builder
