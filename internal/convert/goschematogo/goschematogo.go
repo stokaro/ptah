@@ -526,6 +526,7 @@ func grantAnnotation(grant schemamodel.Grant) string {
 		attr{name: "privilege", value: strings.Join(grant.Privileges, ","), set: len(grant.Privileges) > 0},
 		attr{name: "on_table", value: grant.OnTable, set: grant.OnTable != ""},
 		attr{name: "on_schema", value: grant.OnSchema, set: grant.OnSchema != ""},
+		attr{name: "on_sequence", value: grant.OnSequence, set: grant.OnSequence != ""},
 		attr{name: "with_option", value: strconv.FormatBool(grant.WithOption), set: grant.WithOption},
 		attr{name: "comment", value: grant.Comment, set: grant.Comment != ""},
 	)
@@ -779,13 +780,25 @@ func sortedRoles(values []schemamodel.Role) []schemamodel.Role {
 
 func sortedGrants(values []schemamodel.Grant) []schemamodel.Grant {
 	result := append([]schemamodel.Grant(nil), values...)
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Role != result[j].Role {
-			return result[i].Role < result[j].Role
-		}
-		return result[i].OnTable+result[i].OnSchema < result[j].OnTable+result[j].OnSchema
-	})
+	sort.Slice(result, func(i, j int) bool { return grantSortKey(result[i]) < grantSortKey(result[j]) })
 	return result
+}
+
+// grantSortKey orders a grant by each field that identifies one, so the export
+// order follows what the grants say rather than the order they arrived in.
+// Privileges belong in the key because a live read reports one grant per
+// privilege row, which leaves role and target alone unable to separate them.
+// The separator keeps the fields apart: concatenated, an on_table of "ab" reads
+// the same as an on_table of "a" beside an on_schema of "b".
+func grantSortKey(grant schemamodel.Grant) string {
+	return strings.Join([]string{
+		grant.Role,
+		grant.OnTable,
+		grant.OnSchema,
+		grant.OnSequence,
+		strings.Join(grant.Privileges, ","),
+		strconv.FormatBool(grant.WithOption),
+	}, "\x00")
 }
 
 func sortedImportPaths(values map[string]struct{}) []string {

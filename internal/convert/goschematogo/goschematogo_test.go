@@ -160,6 +160,72 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
 }
 
+// TestRenderGrantsRoundTripThroughParser compares the whole grant the parser
+// read with the whole grant it reads back off the export, so an attribute the
+// parser accepts and the exporter drops fails here whichever attribute it is.
+func TestRenderGrantsRoundTripThroughParser(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{
+			name:       "sequence target",
+			annotation: `//ptah:schema:grant role="app_user" privilege="USAGE,SELECT" on_sequence="app.order_seq" with_option="true" comment="Sequence usage"`,
+		},
+		{
+			name:       "table target",
+			annotation: `//ptah:schema:grant role="app_user" privilege="SELECT" on_table="orders" comment="Read orders"`,
+		},
+		{
+			name:       "schema target",
+			annotation: `//ptah:schema:grant role="app_user" privilege="USAGE" on_schema="app"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			sourceDir := t.TempDir()
+			writeSource(
+				c,
+				filepath.Join(sourceDir, "schema.go"),
+				"package models\n\n"+test.annotation+"\ntype PtahSchemaObjects struct{}\n",
+			)
+			before, err := goschema.ParseDir(sourceDir)
+			c.Assert(err, qt.IsNil)
+			c.Assert(before.Grants, qt.HasLen, 1)
+
+			after := renderAndParseGrants(c, t.TempDir(), before.Grants)
+
+			c.Assert(after, qt.DeepEquals, before.Grants)
+		})
+	}
+}
+
+func TestRenderOrdersGrantsByTarget(t *testing.T) {
+	c := qt.New(t)
+	// The struct name is the one the exporter attaches global annotations to,
+	// so the grants the parser reports back carry it too.
+	first := schemamodel.Grant{
+		StructName: "PtahSchemaObjects",
+		Role:       "app_user",
+		Privileges: []string{"USAGE"},
+		OnSequence: "a_seq",
+	}
+	second := schemamodel.Grant{
+		StructName: "PtahSchemaObjects",
+		Role:       "app_user",
+		Privileges: []string{"SELECT"},
+		OnSequence: "b_seq",
+	}
+
+	forward := renderAndParseGrants(c, t.TempDir(), []schemamodel.Grant{first, second})
+	reverse := renderAndParseGrants(c, t.TempDir(), []schemamodel.Grant{second, first})
+
+	c.Assert(forward, qt.DeepEquals, []schemamodel.Grant{first, second})
+	c.Assert(reverse, qt.DeepEquals, []schemamodel.Grant{first, second})
+}
+
 func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
@@ -279,6 +345,26 @@ func TestWriteDirRejectsUnsafeFileNames(t *testing.T) {
 	}})
 
 	c.Assert(err, qt.ErrorMatches, `unsafe generated file name "\.\./escape\.go"`)
+}
+
+func writeSource(c *qt.C, path, source string) {
+	c.Helper()
+	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+}
+
+// renderAndParseGrants renders grants as annotated Go source in dir and returns
+// what the annotation parser reads back out of it.
+func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []schemamodel.Grant {
+	c.Helper()
+	files, err := goschematogo.Render(
+		&schemamodel.Database{Grants: grants},
+		goschematogo.Options{PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
+	parsed, err := goschema.ParseDir(dir)
+	c.Assert(err, qt.IsNil)
+	return parsed.Grants
 }
 
 func fileNames(files []goschematogo.File) []string {
