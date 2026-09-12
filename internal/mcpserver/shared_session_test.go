@@ -13,7 +13,7 @@ import (
 
 // The three tests below vary one axis each, because the question they answer --
 // what scope does a preview token belong to -- has three candidate answers and
-// a test that changed two things at once could not tell them apart.
+// a test that varied two of the axes at once could not tell them apart.
 //
 // ADR 0009 section 2.2 states the structural fact: every tool handler closes
 // over one *agentapi.Session, so a server serving several connections hands all
