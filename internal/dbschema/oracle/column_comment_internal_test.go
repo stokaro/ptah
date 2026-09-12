@@ -47,13 +47,13 @@ func answeringColumnCatalog(query string, _ []driver.NamedValue) (dbtest.QueryRe
 	}
 	return dbtest.QueryResult{
 		Columns: []string{
-			"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "CHAR_LENGTH",
+			"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "VECTOR_INFO", "CHAR_LENGTH",
 			"DATA_PRECISION", "DATA_SCALE", "NULLABLE", "COLUMN_ID",
 			"IDENTITY_COLUMN", "VIRTUAL_COLUMN", "DATA_DEFAULT", "COMMENTS",
 		},
 		Rows: [][]driver.Value{
-			{"CUSTOMERS", "ID", "NUMBER", nil, int64(10), int64(0), "N", int64(1), "YES", "NO", nil, nil},
-			{"CUSTOMERS", "EMAIL", "VARCHAR2", int64(255), nil, nil, "N", int64(2), "NO", "NO", nil, "login address"},
+			{"CUSTOMERS", "ID", "NUMBER", nil, nil, int64(10), int64(0), "N", int64(1), "YES", "NO", nil, nil},
+			{"CUSTOMERS", "EMAIL", "VARCHAR2", nil, int64(255), nil, nil, "N", int64(2), "NO", "NO", nil, "login address"},
 		},
 	}, nil
 }

@@ -93,7 +93,9 @@ func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 		if columns != 1 {
 			continue
 		}
-		domain.BaseType = formatColumnType(dataType, length, precision, scale)
+		// The domain catalog carries no vector description, so a domain over a
+		// vector reads as a bare VECTOR here.
+		domain.BaseType = formatColumnType(dataType, sql.NullString{}, length, precision, scale)
 		domain.NotNull = strings.EqualFold(strings.TrimSpace(nullable), "N")
 		domain.Default = strings.TrimSpace(def.String)
 		domain.CheckConstraints = declaredDomainChecks(checks[domain.Name], columnName)

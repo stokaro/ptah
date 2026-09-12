@@ -269,6 +269,9 @@ func sqlitePlan() plan {
 	}
 
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
+			"relation, and the reader the key gates runs only against Oracle, so neither " +
+			"having nor lacking it here would decide the key",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
 			"for Spanner, whose PostgreSQL interface stores it; SQLite has no such clause, so a refusal " +
 			"would answer a different question",

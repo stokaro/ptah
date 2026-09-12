@@ -271,6 +271,22 @@ const (
 	// carry the tables and not the statistics views (stokaro/ptah#942).
 	CatalogRowStatistics Capability = "catalog_row_statistics"
 
+	// CatalogVectorInfo marks a catalog that reports a vector column's
+	// dimension, element format and storage form, rather than only the bare
+	// type name.
+	//
+	// The two travel together and the key covers both: a server without the
+	// VECTOR type has no such column to describe, and one that has the type
+	// describes it here. Measured, ALL_TAB_COLS.VECTOR_INFO carries
+	// `VECTOR(1536,FLOAT32,DENSE)` on Oracle Free 23.26.3.0.0 and does not
+	// exist at all on Oracle 21.3, where projecting it fails the whole column
+	// read rather than the one column.
+	//
+	// It is false where a vector type comes from an extension rather than the
+	// server: what the catalog reports for one of those is the extension's
+	// business, and this key answers for the catalog Ptah reads.
+	CatalogVectorInfo Capability = "catalog_vector_info"
+
 	// CatalogDependencies marks that the catalog exposes pg_depend, the
 	// dependency table the user-defined-type read joins to tell a type an
 	// extension owns from one the user declared.
@@ -856,6 +872,9 @@ var registry = map[Capability]spec{
 	CatalogRowStatistics: {
 		doc: "the catalog exposes planner row-count statistics (pg_stat_all_tables)",
 	},
+	CatalogVectorInfo: {
+		doc: "the catalog reports a vector column's dimension, element format and storage form",
+	},
 	CatalogDefaultPrivileges: {
 		doc: "the catalog has pg_default_acl, the relation recording ALTER DEFAULT PRIVILEGES grants",
 	},
@@ -1127,6 +1146,7 @@ func MySQL84() Capabilities {
 		ContinuousAggregates:           false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
+		CatalogVectorInfo:              false,
 		CatalogDependencies:            false,
 		CatalogDefaultPrivileges:       false,
 		// RoleManagement is on because the read half exists. It was off with the
@@ -1256,6 +1276,7 @@ func MariaDB1011() Capabilities {
 		ContinuousAggregates:           false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
+		CatalogVectorInfo:              false,
 		CatalogDependencies:            false,
 		CatalogDefaultPrivileges:       false,
 		// RoleManagement is on because the read half exists. It was off with the
@@ -1360,6 +1381,7 @@ func Postgres16() Capabilities {
 		ContinuousAggregates:               false,
 		PostgresCatalogFunctions:           true,
 		CatalogRowStatistics:               true,
+		CatalogVectorInfo:                  false,
 		CatalogDependencies:                true,
 		CatalogDefaultPrivileges:           true,
 		RoleManagement:                     true,
@@ -1548,6 +1570,7 @@ func ClickHouse24() Capabilities {
 		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
+		CatalogVectorInfo:        false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
@@ -1648,6 +1671,7 @@ func SQLite3() Capabilities {
 		ContinuousAggregates:               false,
 		PostgresCatalogFunctions:           false,
 		CatalogRowStatistics:               false,
+		CatalogVectorInfo:                  false,
 		CatalogDependencies:                false,
 		CatalogDefaultPrivileges:           false,
 		RoleManagement:                     false,
@@ -1789,6 +1813,7 @@ func SQLServer2022() Capabilities {
 		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
+		CatalogVectorInfo:        false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// RoleManagement is on for the same reason Sequences is: the three
@@ -2296,6 +2321,11 @@ func Oracle23() Capabilities {
 		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
+		// ALL_TAB_COLS.VECTOR_INFO reports VECTOR(1536,FLOAT32,DENSE) for a
+		// column declared VECTOR(1536, FLOAT32), and VECTOR(*,*,DENSE) for a
+		// bare VECTOR. Measured on 23.26.3.0.0; the column is absent from
+		// ALL_TAB_COLS on 21.3, which is what Oracle21 turns off.
+		CatalogVectorInfo:        true,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// CREATE ROLE, DROP ROLE, GRANT and REVOKE are all rendered
@@ -2387,7 +2417,11 @@ func Oracle21() Capabilities {
 		// exist either -- so the read is skipped rather than attempted, the
 		// renderer names the declaration as unsupported, and the planner emits
 		// nothing for it (stokaro/ptah#1920).
-		With(DomainTypes, false)
+		With(DomainTypes, false).
+		// ALL_TAB_COLS has no VECTOR_INFO column on this line, and the type
+		// itself answers ORA-00902, so the reader projects a constant rather
+		// than a column the catalog does not carry.
+		With(CatalogVectorInfo, false)
 }
 
 var defaultDialectPresets = map[string]func() Capabilities{

@@ -115,7 +115,9 @@ func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]cata
 			// VARCHAR2(10) and NUMBER for a NUMBER(5,2), so a description
 			// built from it would compare unequal to the declaration that
 			// created it, forever.
-			Type: formatColumnType(strings.TrimSpace(dataType), length, precision, scale),
+			// ALL_TYPE_ATTRS carries no vector description, so an attribute of that
+			// type reads as a bare VECTOR here.
+			Type: formatColumnType(strings.TrimSpace(dataType), sql.NullString{}, length, precision, scale),
 		})
 	}
 	return attributes, rows.Err()
