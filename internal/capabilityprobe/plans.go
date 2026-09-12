@@ -26,6 +26,8 @@ func planFor(dialect string) (plan, bool) {
 		return oraclePlan(), true
 	case platform.SQLServer:
 		return sqlServerPlan(), true
+	case platform.SQLite:
+		return sqlitePlan(), true
 	default:
 		return plan{}, false
 	}

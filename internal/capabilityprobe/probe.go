@@ -350,7 +350,15 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 		return fmt.Errorf("create the throwaway probe namespace: %s", attempts[len(attempts)-1].ServerErr)
 	}
 	defer func() {
-		report.Cleanup = append(s.dropRoles(ctx), s.exec(ctx, leave))
+		cleanup := s.dropRoles(ctx)
+		// A dialect whose namespace is the database the probe connected to has
+		// nothing to leave. Executing an empty statement there would record a
+		// refusal the run did not earn, in the one place a reader looks to see
+		// that the server was left as it was found.
+		if leave != "" {
+			cleanup = append(cleanup, s.exec(ctx, leave))
+		}
+		report.Cleanup = cleanup
 	}()
 
 	confirmations, err := s.confirmNamespace(ctx)

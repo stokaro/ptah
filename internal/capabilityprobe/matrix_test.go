@@ -39,11 +39,50 @@ func TestCIMatrix_AccountsForEveryDeclaredLine(t *testing.T) {
 	}
 }
 
+// containerCells are the runnable cells a job starts a server for.
+func containerCells() []capabilityprobe.CICell {
+	return slices.DeleteFunc(slices.Clone(capabilityprobe.CIMatrix().Cells),
+		func(cell capabilityprobe.CICell) bool { return cell.CompiledIn })
+}
+
+// compiledInCells are the runnable cells whose engine ships inside Ptah.
+func compiledInCells() []capabilityprobe.CICell {
+	return slices.DeleteFunc(slices.Clone(capabilityprobe.CIMatrix().Cells),
+		func(cell capabilityprobe.CICell) bool { return !cell.CompiledIn })
+}
+
+// TestCIMatrix_CompiledInCellsStartNothing pins the shape that makes an empty
+// container argument list a declaration rather than a driver failure.
+//
+// The workflow reads the list and skips its `docker run` when it is empty, so
+// the two have to be a pair: a cell that says its engine ships inside Ptah must
+// carry no image and no arguments, and must still carry the address the probe
+// connects to.
+func TestCIMatrix_CompiledInCellsStartNothing(t *testing.T) {
+	c := qt.New(t)
+	cells := compiledInCells()
+	c.Assert(len(cells) > 0, qt.IsTrue,
+		qt.Commentf("no cell declares a compiled-in engine, so every assertion below would be vacuous"))
+
+	for _, cell := range cells {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(cell.Skip, qt.Equals, "")
+			c.Assert(cell.Image, qt.Equals, "",
+				qt.Commentf("a compiled-in line naming an image would start a container nobody probes"))
+			c.Assert(cell.DockerRun, qt.HasLen, 0)
+			c.Assert(cell.URL, qt.Not(qt.Equals), "")
+			c.Assert(strings.HasPrefix(cell.URL, cell.Dialect+"://"), qt.IsTrue,
+				qt.Commentf("cell %s probes %s, which resolves to a different dialect", cell.ID, cell.URL))
+		})
+	}
+}
+
 // TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds checks the half a
 // workflow cannot check for itself. A cell missing its URL or its container
 // arguments does not fail the YAML; it fails at 03:00 in one job of eighteen.
 func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
-	for _, cell := range capabilityprobe.CIMatrix().Cells {
+	for _, cell := range containerCells() {
 		t.Run(cell.ID, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(cell.Skip, qt.Equals, "")
@@ -114,14 +153,33 @@ func TestMatrix_IDs(t *testing.T) {
 
 // TestCIMatrix_SkippedCellsSayWhy keeps a skipped line from reading as a
 // passing one.
+//
+// Every declared line is runnable today, so the live list is empty and a loop
+// over it would assert nothing -- which is the exact shape this rule exists to
+// refuse in the pipeline. The rule is therefore driven against a constructed
+// matrix, with the live one as the valid base, and the loop below still holds
+// any skipped line that reappears.
 func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {
 	c := qt.New(t)
 
-	skipped := capabilityprobe.CIMatrix().Skipped
-	c.Assert(len(skipped) > 0, qt.IsTrue,
-		qt.Commentf("ClickHouse, SQL Server, SQLite and Spanner have no probe plan or no container today; "+
-			"if that changed, this test needs rewriting rather than deleting"))
-	for _, cell := range skipped {
+	live := capabilityprobe.CIMatrix()
+	silent := capabilityprobe.Matrix{
+		Declared: live.Declared + 1,
+		Cells:    live.Cells,
+		Skipped:  append(slices.Clone(live.Skipped), capabilityprobe.CICell{ID: "engine-9"}),
+	}
+	c.Assert(silent.Validate(), qt.ErrorMatches, `(?s).*cell engine-9 is not runnable and says no reason why.*`)
+
+	// The control, so the assertion above is about the missing reason and not
+	// about the extra cell: the same matrix validates once the cell says why.
+	spoken := silent
+	spoken.Skipped = append(slices.Clone(live.Skipped), capabilityprobe.CICell{
+		ID:   "engine-9",
+		Skip: "the capability probe has no statement table for the engine dialect",
+	})
+	c.Assert(spoken.Validate(), qt.IsNil)
+
+	for _, cell := range live.Skipped {
 		t.Run(cell.ID, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(cell.Runnable, qt.IsFalse)

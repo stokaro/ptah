@@ -165,6 +165,16 @@ type Cell struct {
 	// discarded for belonging to no declared line (stokaro/ptah#942).
 	Versionless bool
 
+	// CompiledIn declares a line whose engine ships inside Ptah, so no
+	// container starts it and none is missing.
+	//
+	// It exists because "no image" and "no image needed" read identically in a
+	// declaration and mean opposite things to a reader of the support matrix.
+	// SQLite is the only such line: the engine is the amalgamation pinned in
+	// go.mod, the probe opens an in-memory database, and a cell that reported
+	// a missing container would be naming a gap nobody can close.
+	CompiledIn bool
+
 	// Note records why a line is shaped the way it is: a missing preset, a
 	// missing server, a version axis that does not exist.
 	Note string
@@ -626,12 +636,22 @@ var Cells = []Cell{
 	// SQLite is not a server line. Its version is whatever the driver pinned
 	// in go.mod compiles in, so the cell matches any 3.x and the "line" is a
 	// dependency bump rather than a release a vendor supports.
+	//
+	// The refinement is the ladder's, not the container's: the resolver reads
+	// the version and picks SQLite324 below the 3.25 rename step and SQLite3
+	// above it, which is what lets an observation be credited to the line it
+	// was taken on.
 	{
 		Dialect: platform.SQLite, Line: "3",
 		Preset: capability.SQLite3, PresetName: "SQLite3",
-		Refinement: NotRefined,
+		Refinement: RefinedByVersion,
 		Support:    capability.Certified,
-		Note:       "no container: the version is the modernc.org/sqlite amalgamation pinned in go.mod",
+		CompiledIn: true,
+		Note: "no container, and none is missing: the engine is the modernc.org/sqlite amalgamation " +
+			"pinned in go.mod, and the capability probe reaches it through an in-memory database. " +
+			"Measured on 3.53.4: ALTER TABLE ... DROP CONSTRAINT removes a CHECK and is refused for a " +
+			"UNIQUE, and a column declared XML accepts any text at all, so neither key can be decided " +
+			"by whether a statement was accepted (stokaro/ptah#3191)",
 	},
 
 	// Spanner is a managed service with no version axis and no open-source

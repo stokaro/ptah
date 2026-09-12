@@ -15,7 +15,7 @@ generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
 lastVerified: "2026-09-12"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/34687443936"
+  - "https://github.com/stokaro/ptah/actions/runs/34692434772"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-09-12T10:03:31Z
-- Commit: `87952688bf7a90c86ceed5194e5aed91f9e7cd85`
-- Run: [34687443936](https://github.com/stokaro/ptah/actions/runs/34687443936)
-- Declared release lines: 31. Runnable cells: 30. Results received: 30.
-- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-09-12T11:59:01Z
+- Commit: `44ab67405e52064b8ae380928526666adf271cc1`
+- Run: [34692434772](https://github.com/stokaro/ptah/actions/runs/34692434772)
+- Declared release lines: 31. Runnable cells: 31. Results received: 31.
+- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -68,8 +68,5 @@ over that run's cell results.
 | `yugabytedb-2026-1` | yugabytedb | 2026.1 | PASS |
 | `yugabytedb-2025-2` | yugabytedb | 2025.2 | PASS |
 | `yugabytedb-2024-2` | yugabytedb | 2024.2 | PASS |
+| `sqlite-3` | sqlite | 3 | PASS |
 | `spanner-0` | spanner | 0 | PASS |
-
-## Declared lines this tier cannot run
-
-- `sqlite-3` (sqlite 3) — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing

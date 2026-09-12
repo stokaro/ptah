@@ -50,6 +50,11 @@ type CICell struct {
 	// Image reproduces the line, empty when no container does.
 	Image string `json:"image,omitempty"`
 
+	// CompiledIn marks a cell whose engine ships inside Ptah, so the job that
+	// runs it starts no container. The pipeline reads it to tell an empty
+	// argument list from a driver that failed to produce one.
+	CompiledIn bool `json:"compiled_in,omitempty"`
+
 	// TagPinsLine reports whether Image's tag names the release LINE, so the
 	// registry resolves it to that line's newest patch, rather than freezing
 	// one patch. ResolveNewestPatch means the matrix driver performs that
@@ -168,13 +173,41 @@ func (c CICell) problems() []error {
 		}
 		return nil
 	}
+	problems := slices.Concat(c.reachProblems(), c.suiteProblems())
+	if c.ResolveNewestPatch && !c.TagPinsLine {
+		problems = append(problems, fmt.Errorf(
+			"cell %s asks to resolve a newest patch but its image selector does not name release line %s", c.ID, c.Line))
+	}
+	if c.Skip != "" {
+		problems = append(problems, fmt.Errorf("cell %s is runnable and carries the skip reason %q", c.ID, c.Skip))
+	}
+	return problems
+}
+
+// reachProblems reports the ways a runnable cell has nothing for a job to probe.
+//
+// The two container clauses are a pair, not a repetition: a cell that starts no
+// container is a declaration the workflow reads, so an empty argument list has
+// to mean "compiled in" and never "the driver produced nothing".
+func (c CICell) reachProblems() []error {
 	var problems []error
 	if c.URL == "" {
 		problems = append(problems, fmt.Errorf("cell %s is runnable with no URL to probe", c.ID))
 	}
-	if len(c.DockerRun) == 0 {
+	if len(c.DockerRun) == 0 && !c.CompiledIn {
 		problems = append(problems, fmt.Errorf("cell %s is runnable with no way to start a server", c.ID))
 	}
+	if c.CompiledIn && len(c.DockerRun) > 0 {
+		problems = append(problems, fmt.Errorf(
+			"cell %s says its engine ships inside Ptah and also carries a container to start", c.ID))
+	}
+	return problems
+}
+
+// suiteProblems reports the ways a runnable cell's tier 3 target is half
+// declared. Having none is a position; having part of one is a mistake.
+func (c CICell) suiteProblems() []error {
+	var problems []error
 	suiteDeclared := c.SuiteDatabase != "" || c.SuiteURLEnv != "" || c.SuiteURL != ""
 	switch {
 	case suiteDeclared && (c.SuiteDatabase == "" || c.SuiteURLEnv == "" || c.SuiteURL == ""):
@@ -188,13 +221,6 @@ func (c CICell) problems() []error {
 	}
 	if (c.SuiteCleanupURLEnv == "") != (c.SuiteCleanupURL == "") {
 		problems = append(problems, fmt.Errorf("cell %s has only half of its integration cleanup connection", c.ID))
-	}
-	if c.ResolveNewestPatch && !c.TagPinsLine {
-		problems = append(problems, fmt.Errorf(
-			"cell %s asks to resolve a newest patch but its image selector does not name release line %s", c.ID, c.Line))
-	}
-	if c.Skip != "" {
-		problems = append(problems, fmt.Errorf("cell %s is runnable and carries the skip reason %q", c.ID, c.Skip))
 	}
 	return problems
 }
@@ -398,6 +424,21 @@ var launchers = map[string]launcher{
 			"scenario list rather than on the whole set, and this tier selects by dialect; this cell " +
 			"adds the capability-probe half and does not move the suite (stokaro/ptah#3190)",
 	},
+	platform.SQLite: {
+		// No flags and no image: the engine is compiled into the probe, so
+		// there is nothing to start. What a launcher still owes this line is
+		// the address, and an in-memory database is the right one -- it is the
+		// throwaway namespace for a dialect that has none, it exists for the
+		// length of one connection, and it takes every object the run created
+		// with it when the connection closes.
+		url: "sqlite://:memory:",
+		// The integration runner has no SQLite target: --databases names
+		// postgres, mysql, mariadb, cockroachdb, yugabytedb and sqlserver, and
+		// adding one is a decision about the suite rather than about the
+		// capability model this cell measures.
+		suiteSkip: "the integration runner has no SQLite target; this cell adds the capability-probe half, " +
+			"and the engine it probes is the one every offline test already runs against (stokaro/ptah#3191)",
+	},
 	platform.Oracle: {
 		// The same three variables the tagged integration contour sets, so a
 		// cell probes the server that contour already runs against.
@@ -466,6 +507,7 @@ func CIMatrix() Matrix {
 func toCICell(cell Cell) CICell {
 	converted := CICell{
 		ID:                 CellID(cell),
+		CompiledIn:         cell.CompiledIn,
 		Dialect:            cell.Dialect,
 		Line:               cell.Line,
 		Label:              cell.Label,
@@ -484,7 +526,11 @@ func toCICell(cell Cell) CICell {
 	}
 	recipe := launchers[cell.Dialect]
 	converted.Runnable = true
-	converted.DockerRun = recipe.dockerRun(cell.Image)
+	// A cell with no image has no container to assemble, and dockerRun would
+	// otherwise produce a one-element list holding the empty image name.
+	if cell.Image != "" {
+		converted.DockerRun = recipe.dockerRun(cell.Image)
+	}
 	converted.URL = recipe.urlFor(cell.Line)
 	converted.SuiteDatabase = recipe.suiteDatabase
 	converted.SuiteURLEnv = recipe.suiteURLEnv
@@ -512,7 +558,7 @@ func toCICell(cell Cell) CICell {
 // both states one fact twice and buries the one that has to change first.
 func skipReasons(cell Cell) []string {
 	var reasons []string
-	if cell.Image == "" {
+	if cell.Image == "" && !cell.CompiledIn {
 		reasons = append(reasons, "no container image is declared for this line")
 	}
 	if _, planned := planFor(cell.Dialect); !planned {

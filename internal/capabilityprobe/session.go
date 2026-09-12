@@ -251,11 +251,35 @@ func namespaceSQL(dialect, namespace string) (enter []string, leave string) {
 			},
 			"USE master; DROP DATABASE " + namespace
 	}
+	if platform.NormalizeDialect(dialect) == platform.SQLite {
+		// SQLite has no namespace inside a database to create and enter: there
+		// is no CREATE DATABASE, and no statement that switches schema. The
+		// throwaway namespace is the database the probe was pointed at, which
+		// is why the matrix addresses this line with its own in-memory
+		// database rather than a file something else might hold.
+		//
+		// An empty leave says there is nothing to drop, and measure skips it.
+		// A statement here would have to be one that does nothing, and a
+		// cleanup row reporting a no-op reads as a cleanup that ran.
+		return nil, ""
+	}
 	return []string{
 			"CREATE DATABASE " + namespace,
 			"USE " + namespace,
 		},
 		"DROP DATABASE " + namespace
+}
+
+// namespaceIsolatesTheRun reports whether entering the throwaway namespace
+// separates what this run creates from whatever else the target holds.
+//
+// It is false for exactly one dialect, and the consequence is the point.
+// SQLite's namespace is the database itself, so every object the run creates
+// lands beside whatever that database already holds -- which is the state
+// namespaceProblem refuses. The run is therefore allowed on an empty database
+// and on no other, and the occupancy count it already takes is what decides.
+func namespaceIsolatesTheRun(dialect string) bool {
+	return platform.NormalizeDialect(dialect) != platform.SQLite
 }
 
 // sentinelKeyType names a 64-bit integer in the dialect's own spelling.
@@ -304,8 +328,17 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 			s.namespace, created.ServerErr)
 	}
 
-	count, asked := s.query(ctx, sentinelLocationSQL(s.dialect, s.namespace))
-	attempts = append(attempts, asked)
+	// A dialect with no namespace to enter has nothing to ask the catalog:
+	// the sentinel landed in the database the probe connected to, and zero
+	// here is the true answer to "did it land in the throwaway namespace".
+	// What follows then decides on occupancy alone, which is the rule that
+	// belongs to such a target.
+	var count int64
+	asked := Attempt{Statement: "no namespace to locate the sentinel in", Accepted: true}
+	if namespaceIsolatesTheRun(s.dialect) {
+		count, asked = s.query(ctx, sentinelLocationSQL(s.dialect, s.namespace))
+		attempts = append(attempts, asked)
+	}
 	dropped := s.exec(ctx, "DROP TABLE "+sentinelTable)
 	attempts = append(attempts, dropped)
 
@@ -345,12 +378,25 @@ const occupancySQL = "SELECT COUNT(*) FROM information_schema.tables " +
 const oracleOccupancySQL = "SELECT COUNT(*) FROM all_tables t " +
 	"JOIN all_users u ON u.username = t.owner WHERE u.oracle_maintained = 'N'"
 
+// sqliteOccupancySQL is occupancySQL for a catalog that is one relation.
+//
+// SQLite has no information_schema and no namespace column to exclude: every
+// object in the database is in sqlite_master, and the ones the engine made for
+// itself carry the reserved sqlite_ prefix. The count is what decides whether
+// a run may proceed at all here, because the database IS the namespace.
+const sqliteOccupancySQL = "SELECT COUNT(*) FROM sqlite_master " +
+	"WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+
 // occupancySQLFor returns the statement that counts what else is on the server.
 func occupancySQLFor(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.Oracle {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Oracle:
 		return oracleOccupancySQL
+	case platform.SQLite:
+		return sqliteOccupancySQL
+	default:
+		return occupancySQL
 	}
-	return occupancySQL
 }
 
 // sentinelLocationSQL asks the catalog where the sentinel table landed.

@@ -1658,16 +1658,27 @@ func SQLite3() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// SQLite has neither schemas in this sense nor comment statements.
-		SchemaComments:                  false,
-		XMLType:                         false,
-		AdvisoryLocks:                   false,
-		RowLevelTTL:                     false,
-		RowDeletionPolicy:               false,
-		NamedNotNullConstraints:         false,
-		MigrationTimeouts:               false,
-		TransactionalDDL:                true,
-		CatalogPartitions:               true,
-		CatalogRecursiveCTE:             true,
+		SchemaComments:          false,
+		XMLType:                 false,
+		AdvisoryLocks:           false,
+		RowLevelTTL:             false,
+		RowDeletionPolicy:       false,
+		NamedNotNullConstraints: false,
+		MigrationTimeouts:       false,
+		TransactionalDDL:        true,
+		// Both keys name a PostgreSQL catalog, and SQLite has neither.
+		// Measured on 3.53.4: `SELECT COUNT(*) FROM pg_inherits` answers `no
+		// such table: pg_inherits`, and the recursive query over pg_class
+		// answers `no such table: pg_class` -- SQLite has WITH RECURSIVE and
+		// nothing to point it at. They read true here while the preset carried
+		// the PostgreSQL answer and no SQLite statement had been asked.
+		//
+		// Nothing on this target reads either one: the only consumer is
+		// internal/dbschema/postgres, whose cleanup asks pg_inherits for a
+		// partition parent outside the schema and joins pg_depend behind a
+		// recursive query (stokaro/ptah#3191).
+		CatalogPartitions:               false,
+		CatalogRecursiveCTE:             false,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
