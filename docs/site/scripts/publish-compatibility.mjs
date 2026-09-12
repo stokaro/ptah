@@ -16,11 +16,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { RootURL } from '../src/lib/docs-origin.mjs';
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = join(scriptDir, '..', '..', '..');
 
 // ROOT_PATH is where the page is served, relative to the Pages root.
 export const ROOT_PATH = 'compatibility/operator/index.html';
+
+// PAGE_URL is that address in full, built from the site's one declaration of
+// its own origin rather than spelled again here.
+export const PAGE_URL = RootURL('compatibility/operator/');
 
 // DATA_PATH is the derived copy this page is rendered from.
 export const DATA_PATH = 'docs/site/data/operator-compatibility.json';
@@ -101,7 +107,7 @@ export function render(derived) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ptah Operator compatibility</title>
     <meta name="description" content="Which Ptah build each Ptah Operator version is declared to work with, and which have actually been verified." />
-    <link rel="canonical" href="https://docs.ptah.run/compatibility/operator/" />
+    <link rel="canonical" href="${escapeHTML(PAGE_URL)}" />
     <style>
       :root { color-scheme: light dark; --line: #8884; }
       body { margin: 0 auto; padding: 2rem 1.25rem 4rem; max-width: 60rem;
