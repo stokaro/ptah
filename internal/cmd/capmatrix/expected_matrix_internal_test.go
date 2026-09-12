@@ -5,6 +5,7 @@ package main
 // caller of the command can observe except as an exit code.
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -60,16 +61,30 @@ func TestExpectedMatrix_TheWholeMatrixIsUnchanged(t *testing.T) {
 // would call a declared line undeclared.
 func TestExpectedMatrix_ADeclaredButUnrunnableCellIsDeclared(t *testing.T) {
 	c := qt.New(t)
-	skipped := capabilityprobe.CIMatrix().Skipped
-	c.Assert(skipped, qt.Not(qt.HasLen), 0,
-		qt.Commentf("the matrix declares no unrunnable line, so this test measures nothing"))
+	// Constructed rather than read from the declaration: every declared line is
+	// runnable, so the live matrix offers no unrunnable cell and a test that
+	// looked for one would measure nothing. The runnable half comes from the
+	// declaration so the narrowing still runs over a real cell.
+	full := capabilityprobe.CIMatrix()
+	unrunnable := capabilityprobe.CICell{
+		ID:      "engine-9",
+		Dialect: "engine",
+		Line:    "9",
+		Skip:    "the capability probe has no statement table for the engine dialect",
+	}
+	declared := capabilityprobe.Matrix{
+		Declared: full.Declared + 1,
+		Cells:    full.Cells,
+		Skipped:  append(slices.Clone(full.Skipped), unrunnable),
+	}
 
-	matrix, err := expectedMatrix("postgres-18," + skipped[0].ID)
+	matrix, err := narrowMatrix(declared, "postgres-18,engine-9")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(matrix.Validate(), qt.IsNil)
 	c.Assert(matrix.Cells, qt.HasLen, 1)
 	c.Assert(matrix.Skipped, qt.HasLen, 1)
+	c.Assert(matrix.Skipped[0].ID, qt.Equals, "engine-9")
 	c.Assert(matrix.Declared, qt.Equals, 2)
 }
 

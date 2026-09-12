@@ -438,7 +438,17 @@ func newReportCommand() *cobra.Command {
 // An empty selection means the whole matrix, which is what every caller before
 // the fan-out became opt-in was doing implicitly.
 func expectedMatrix(expected string) (capabilityprobe.Matrix, error) {
-	matrix := capabilityprobe.CIMatrix()
+	return narrowMatrix(capabilityprobe.CIMatrix(), expected)
+}
+
+// narrowMatrix is expectedMatrix over a matrix the caller supplies.
+//
+// The declaration is the input rather than a package-level read so the
+// narrowing can be driven against shapes the repository does not declare
+// today. A line the tier cannot execute is one of them: every declared line is
+// runnable now, and a test that read the live matrix for an unrunnable cell
+// would measure nothing rather than fail.
+func narrowMatrix(matrix capabilityprobe.Matrix, expected string) (capabilityprobe.Matrix, error) {
 	wanted := make(map[string]bool)
 	for id := range strings.SplitSeq(expected, ",") {
 		if id = strings.TrimSpace(id); id != "" {
