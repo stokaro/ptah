@@ -347,6 +347,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Table.Schema", Disposition: DDL},
 	{Field: "schemamodel.Table.Strict", Disposition: DDL},
 	{Field: "schemamodel.Table.StructName", Disposition: DDL},
+	{Field: "schemamodel.Table.Unlogged", Disposition: DDL},
 	{Field: "schemamodel.Table.VirtualArguments", Disposition: DDL},
 	{Field: "schemamodel.Table.VirtualModule", Disposition: DDL},
 	{Field: "schemamodel.Table.WithoutRowID", Disposition: DDL},

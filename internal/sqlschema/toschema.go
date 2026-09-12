@@ -243,6 +243,10 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		// output has to describe the same table it came from
 		// (stokaro/ptah#2236).
 		RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
+		// Carried for the same reason: `db read` emits CREATE UNLOGGED TABLE,
+		// and a schema file holding that output has to describe the table it
+		// came from rather than a logged one.
+		Unlogged: table.Unlogged,
 	}
 
 	// Extract ENGINE option if present
@@ -1258,6 +1262,9 @@ func MergeTableOverrides(baseTable schemamodel.Table, platformTables map[string]
 		}
 		if platformTable.WithoutRowID != baseTable.WithoutRowID {
 			platformOverrides["without_rowid"] = strconv.FormatBool(platformTable.WithoutRowID)
+		}
+		if platformTable.Unlogged != baseTable.Unlogged {
+			platformOverrides["unlogged"] = strconv.FormatBool(platformTable.Unlogged)
 		}
 
 		// Store platform overrides if any differences were found

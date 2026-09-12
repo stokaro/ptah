@@ -62,6 +62,7 @@ func Fixtures() []Fixture {
 		{Name: "table-partition", Schema: tablePartitionFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
 		{Name: "table-sqlite", Schema: tableSQLiteFixture()},
+		{Name: "table-unlogged", Schema: tableUnloggedFixture()},
 		{Name: "table-virtual", Schema: tableVirtualFixture()},
 		{Name: "table-api", Schema: tableAPIFixture()},
 		{Name: "table-override", Schema: tableOverrideFixture()},
@@ -623,6 +624,10 @@ func tableMySQLFixture() schemamodel.Database {
 
 func tableSQLiteFixture() schemamodel.Database {
 	return oneTable("T", schemamodel.Table{Name: "t", Strict: true, WithoutRowID: true})
+}
+
+func tableUnloggedFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t", Unlogged: true})
 }
 
 func tableVirtualFixture() schemamodel.Database {

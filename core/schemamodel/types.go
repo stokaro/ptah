@@ -649,6 +649,15 @@ type Table struct {
 	Collate       string      // Table default collation (MySQL/MariaDB specific)
 	Strict        bool        // SQLite STRICT table option
 	WithoutRowID  bool        // SQLite WITHOUT ROWID table option
+	// Unlogged marks a PostgreSQL table whose writes skip the write-ahead log.
+	// The table is faster to write and is truncated after a crash, and it is
+	// not replicated, so it suits a cache or a staging table and nothing whose
+	// contents have to survive.
+	//
+	// Only PostgreSQL and YugabyteDB accept the keyword. A renderer for any
+	// other dialect reports the option as skipped rather than dropping it in
+	// silence.
+	Unlogged bool
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of its CREATE VIRTUAL TABLE statement. The SQLite reader sets it,
 	// and so does the native SQL parser -- a `.sql` schema file may declare

@@ -52,10 +52,10 @@ func rlsStrengthFakeServer(
 				Columns: []string{
 					"table_schema", "table_name", "table_type", "table_comment",
 					"estimated_rows", "row_stats_unknown", "partitioned",
-					"rls_enabled", "rls_forced", "row_ttl_options", "row_deletion_policy",
+					"rls_enabled", "rls_forced", "unlogged", "row_ttl_options", "row_deletion_policy",
 				},
 				Rows: [][]driver.Value{
-					{"public", "docs", "BASE TABLE", "", int64(0), false, false, true, forced, "[]", ""},
+					{"public", "docs", "BASE TABLE", "", int64(0), false, false, true, forced, false, "[]", ""},
 				},
 			}, nil
 		case strings.Contains(query, "FROM information_schema.columns"):

@@ -66,6 +66,24 @@ Several of these are features Atlas keeps out of its open-source core; Ptah
 provides them as open, local, no-account capabilities. The sections below
 summarize behavior that affects how you plan changes.
 
+## Unlogged tables
+
+A table declared `unlogged = true` renders `CREATE UNLOGGED TABLE`. Its writes
+skip the write-ahead log, which makes them faster and costs durability: the
+server truncates the table after a crash, and replication does not carry it.
+Use it for a cache or a staging table, not for data that has to survive.
+
+`ptah db read` reports the property back, so a schema file built from a live
+database describes an unlogged table as one.
+
+YugabyteDB accepts the keyword as well. CockroachDB and Spanner reach Ptah over
+the same wire protocol and neither creates an unlogged table, so a declaration
+carrying the flag renders an ordinary table there.
+
+Changing a table between logged and unlogged rewrites it under a lock that
+blocks readers and writers. Ptah does not plan that change, and the `PG307`
+lint rule reports it in a migration that contains one.
+
 ## Materialized view refresh
 
 Ptah does not refresh materialized views, and a declaration cannot ask it to.

@@ -152,6 +152,7 @@ func convertTablesAndFields(
 			PrimaryKeyInclude: primaryKey.include,
 			Strict:            dbTable.Strict,
 			WithoutRowID:      dbTable.WithoutRowID,
+			Unlogged:          dbTable.Unlogged,
 			// A virtual table's module declaration is what recreates it.
 			// Dropping it here is what made `ptah db read` describe an FTS5
 			// index as an ordinary table. See stokaro/ptah#1028.
