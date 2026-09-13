@@ -396,6 +396,7 @@ jobs:
           npm run check:navigation:selftest
           npm run check:search-ranking:selftest
           npm run check:heading-anchors:selftest
+          npm run check:faq-tags:selftest
           npm run build
           # Need the built site, so they run after the build rather than with
           # the other checks.
@@ -406,6 +407,7 @@ jobs:
           npm run check:navigation
           npm run check:search-ranking
           npm run check:heading-anchors
+          npm run check:faq-tags
           npm run check:build-info
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"

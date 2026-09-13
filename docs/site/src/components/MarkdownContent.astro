@@ -1,0 +1,32 @@
+---
+/**
+ * Starlight's content wrapper, with the FAQ tag rail in front of the FAQ's
+ * questions.
+ *
+ * The rail belongs above the content, which on every other page is exactly what
+ * Starlight renders here, so this override adds one element for one route and
+ * is otherwise the upstream component.
+ *
+ * It is an override rather than a component the page imports, because the page
+ * cannot be MDX. Every question declares its anchor as `## Question {#anchor}`,
+ * and MDX reads a brace as the start of an expression: converting the page
+ * turns all eighty anchors into parse errors. The anchors are the page's
+ * interface -- people link to single questions -- so the page stays Markdown
+ * and the component comes to it.
+ */
+import '@astrojs/starlight/style/markdown.css';
+import FaqFilter from './FaqFilter.astro';
+import ContactEmail from './ContactEmail.astro';
+
+const { entry } = Astro.locals.starlightRoute;
+
+// The one route that carries tags. Matched on the entry id rather than on the
+// URL, so a base path or a version prefix cannot change the answer.
+const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
+---
+
+<div class="sl-markdown-content">
+  {isFaq && <FaqFilter />}
+  {isFaq && <ContactEmail />}
+  <slot />
+</div>

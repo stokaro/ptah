@@ -115,6 +115,10 @@ export default defineConfig({
         MobileTableOfContents: './src/components/MobileTableOfContents.astro',
         Footer: './src/components/Footer.astro',
         Head: './src/components/Head.astro',
+        // Upstream's content wrapper, plus the FAQ tag rail. The FAQ cannot be
+        // MDX -- its anchors are `{#id}`, which MDX reads as an expression -- so
+        // the component comes to the page instead of the page importing it.
+        MarkdownContent: './src/components/MarkdownContent.astro',
       },
       // Code blocks: the two themes in src/lib/code-theme.mjs color the tokens,
       // and the frame's shape is set in src/styles/ptah/code.css through Expressive

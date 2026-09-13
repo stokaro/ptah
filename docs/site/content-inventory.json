@@ -1892,7 +1892,7 @@
       "route": "/faq/",
       "title": "FAQ",
       "description": "Short answers to what to use, what not to expect, and which guide to open next.",
-      "sidebarPath": "Getting started",
+      "sidebarPath": "",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -1969,8 +1969,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [],
-      "visibleWords": 4379,
-      "sourceBytes": 33154
+      "visibleWords": 4367,
+      "sourceBytes": 33359
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",

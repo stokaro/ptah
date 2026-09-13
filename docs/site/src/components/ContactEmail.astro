@@ -1,0 +1,39 @@
+---
+/**
+ * Turns the split address on the FAQ into a working mailto link, in the
+ * browser.
+ *
+ * The served HTML carries no address in any joined form: no `ask@stokaro.com`,
+ * no `mailto:`, and no percent-encoded at sign either, because `%40` decodes in
+ * one step and a harvester that reads hrefs already does it. The two halves sit
+ * reversed in data attributes, the at sign is drawn by CSS, and this script is
+ * what joins them.
+ *
+ * What that buys is the bulk of harvesting: a fetch of the page and a regular
+ * expression over the bytes. What it does not buy is anything that runs the
+ * page, which is the accepted trade -- the address has to stay readable,
+ * selectable and clickable for the person it is meant for.
+ *
+ * With scripting off the address still reads correctly, because the halves and
+ * the CSS at sign are in the markup. It is not clickable then, which is the one
+ * cost of keeping it out of the document.
+ */
+---
+
+<script>
+  for (const host of document.querySelectorAll('[data-contact-email]')) {
+    const user = (host.dataset.u ?? '').split('').reverse().join('');
+    const domain = (host.dataset.d ?? '').split('').reverse().join('');
+    if (!user || !domain) continue;
+
+    const link = document.createElement('a');
+    link.className = 'contact-email';
+    link.rel = 'nofollow';
+    link.href = `mailto:${user}@${domain}`;
+    link.setAttribute('aria-label', `${user} at ${domain}`);
+    // The address as one selectable string, so copying it gives the reader what
+    // they see rather than two spans and a CSS glyph.
+    link.textContent = `${user}@${domain}`;
+    host.replaceWith(link);
+  }
+</script>

@@ -74,9 +74,9 @@ export const sidebar = [
       { slug: 'start/quick-start-direct', label: 'Update a schema and detect drift' },
       { slug: 'start/choose-a-workflow' },
       { slug: 'start/adopt-an-existing-database' },
-      { slug: 'faq' },
     ],
   },
+  { slug: 'faq' },
   {
     label: 'Versioned migrations',
     collapsed: true,
