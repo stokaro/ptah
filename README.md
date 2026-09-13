@@ -201,3 +201,7 @@ Each belongs to its owner, and none of those owners endorses or sponsors Ptah.
 
 For questions and bug reports, open an issue in
 [stokaro/ptah](https://github.com/stokaro/ptah/issues).
+[CONTRIBUTING.md](CONTRIBUTING.md) covers what makes a report actionable and
+what a change has to pass, and participation is covered by the
+[Code of Conduct](CODE_OF_CONDUCT.md). Commercial enquiries go to
+`ask@stokaro.com`.

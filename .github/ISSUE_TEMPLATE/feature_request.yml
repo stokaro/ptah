@@ -1,0 +1,57 @@
+name: Feature request
+description: Ptah cannot do something you need, or can only do it awkwardly.
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the task and the outcome you need rather than the flag you have
+        in mind. The need often already has a spelling, and where it does not,
+        the shape it should take depends on which workflow it belongs to.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: What are you trying to do
+      description: The task, and why the outcome matters. Not the option you imagine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: >-
+        The workaround, the manual step, or the other tool you reach for. If
+        nothing works at all, say that.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Ptah
+      options:
+        - Desired schema and sources
+        - Versioned migrations
+        - Direct schema changes
+        - Database support or a dialect
+        - Atlas compatibility
+        - OCI artifacts and delivery
+        - Inference migrations
+        - AI and agents
+        - Go API
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: A shape you have in mind
+      description: >-
+        Optional, and it will not be treated as the design. A sketch of the
+        command or the file is useful even when it turns out to be wrong.
+    validations:
+      required: false

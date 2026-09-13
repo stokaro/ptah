@@ -623,8 +623,10 @@ For deep documentation maintenance use
 
 ### Label every issue you file
 
-There are no issue templates, so a bare `gh issue create` produces an
-unlabeled issue invisible to every planning filter. One type label --
+The issue forms in `.github/ISSUE_TEMPLATE/` apply a type label, but they apply
+it only to an issue opened through the web form: a bare `gh issue create` takes
+no template and produces an unlabeled issue invisible to every planning filter.
+Pass the label yourself. One type label --
 `bug`, `enhancement`, `feature-request`, `documentation`, `question` -- and
 area labels only where clear: `cli`, `migration`, `schema-generation`,
 `postgresql`, `sql`, `rls`, `roles`, `security`, `foreign-key`,

@@ -1,0 +1,36 @@
+name: Documentation
+description: A page is wrong, missing, out of date, or hard to follow.
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Which page
+      description: The URL, or the path under `docs/`.
+      placeholder: "https://docs.ptah.run/edge/versioned/checkpoints/"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong with it
+      options:
+        - It states something that is not true
+        - It is out of date
+        - It is missing something a reader needs
+        - It is accurate but hard to follow
+        - A link, an example, or a command does not work
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: What you found
+      description: >-
+        Quote the sentence where you can. If you measured the real behavior, say
+        what you ran and what you got: a measurement is the fastest way to settle
+        which side is wrong.
+    validations:
+      required: true

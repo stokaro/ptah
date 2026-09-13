@@ -1,0 +1,90 @@
+name: Bug report
+description: Something behaves differently from what the documentation says, or from what it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Ptah is pre-GA and moves quickly,
+        so a surprising behavior is often already recorded, sometimes with the
+        measurement that explains it.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which binary
+      description: >-
+        `ptah` and `ptah-compat` present different command surfaces on purpose,
+        and the same flag can mean different things on each.
+      options:
+        - ptah
+        - ptah-compat
+        - ptah-ls
+        - Go library
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Ptah version
+      description: Output of `ptah version`.
+      placeholder: "ptah 0.4.0 (abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: engine
+    attributes:
+      label: Database engine and server version
+      description: Leave empty if the problem needs no database.
+      placeholder: "PostgreSQL 17.2, MySQL 8.4.3, SQLite 3.45"
+    validations:
+      required: false
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      description: The exact invocation, with its flags. Redact credentials.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Smallest input that reproduces it
+      description: >-
+        The schema, migration, or config file, cut down as far as it still
+        reproduces. A reduced case is usually what turns a report into a fix.
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the error message or the generated SQL verbatim.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: >-
+        Operating system, container image, CI runner, or anything else that you
+        suspect matters.
+    validations:
+      required: false
