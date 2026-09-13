@@ -16,6 +16,7 @@ import { codeThemeDark, codeThemeLight } from './src/lib/code-theme.mjs';
 import { satteri } from '@astrojs/markdown-satteri';
 import { pluginLanguageLabel } from './src/lib/expressive-code-language-label.mjs';
 import markdownAsides from './src/lib/markdown-asides.mjs';
+import markdownHeadingIds from './src/lib/markdown-heading-ids.mjs';
 
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
 // Both from one declaration. They were literals written for a GitHub project
@@ -81,7 +82,7 @@ export default defineConfig({
     // at setup, so an mdast plugin here runs before Starlight's asides plugin
     // and a hast plugin here sees the aside Starlight has already shaped.
     processor: satteri({
-      hastPlugins: [markdownAsides()],
+      hastPlugins: [markdownHeadingIds(), markdownAsides()],
     }),
   },
   integrations: [

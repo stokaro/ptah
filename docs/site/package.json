@@ -31,6 +31,8 @@
     "check:page-health:selftest": "node scripts/check-page-health.mjs --selftest",
     "check:links": "node scripts/check-links.mjs",
     "check:links:selftest": "node scripts/check-links.mjs --selftest",
+    "check:heading-anchors": "node scripts/check-heading-anchors.mjs",
+    "check:heading-anchors:selftest": "node scripts/check-heading-anchors.mjs --selftest",
     "check:redirects": "node scripts/check-redirects.mjs",
     "check:redirects:selftest": "node scripts/check-redirects.mjs --selftest",
     "check:route-retirement": "node scripts/check-route-retirement.mjs",

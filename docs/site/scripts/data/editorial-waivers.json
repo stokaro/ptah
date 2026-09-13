@@ -42,6 +42,12 @@
     "reason": "The engine reference keeps PostgreSQL-family object and release behavior together for target-specific lookup."
   },
   {
+    "route": "/faq/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page is one sequence of independent questions, each with a published anchor that readers link to directly. Splitting it would break those links and make a reader guess which half holds their question, which is the one thing a FAQ exists to avoid."
+  },
+  {
     "route": "/reference/atlas-commands/",
     "check": "page-length",
     "target": "page",
