@@ -1,0 +1,78 @@
+/* The glossary page's entries. Kept apart from faq.css so each file is named
+ * for what it styles.
+ */
+
+/* The glossary page's entries. The definition is text here rather than a
+ * tooltip: this is the page a reader opens to read definitions, so hiding them
+ * behind a control is the one thing it must not do (stokaro/ptah#3225). */
+.glossary-entries {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+	margin: 0;
+}
+
+.glossary-entry {
+	display: grid;
+	grid-template-columns: minmax(9rem, 14rem) 1fr;
+	gap: 0 1.5rem;
+	padding-bottom: 1.25rem;
+	border-bottom: 1px solid var(--sl-color-hairline-light);
+	scroll-margin-top: 5rem;
+}
+
+.glossary-entry__term {
+	font-weight: 600;
+	color: var(--sl-color-white);
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 0.9375rem;
+	overflow-wrap: anywhere;
+}
+
+.glossary-entry__body {
+	margin: 0;
+	/* A grid child defaults to min-content width, so the longest unbreakable
+	 * token in the entry -- a source path like
+	 * core/platform/capability/capability_measured_lines_test.go -- sets the
+	 * column and pushes the row past a phone viewport. */
+	min-width: 0;
+}
+
+.glossary-entry__definition {
+	margin: 0;
+}
+
+.glossary-entry__meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.4rem 1rem;
+	margin: 0.5rem 0 0 !important;
+	font-size: 0.8125rem;
+}
+
+.glossary-entry__source {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	color: var(--sl-color-gray-3);
+}
+
+.glossary-entry__source-label {
+	font-size: 0.75rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+/* The path is the part that cannot fit, so it is the part allowed to break. */
+.glossary-entry__source code {
+	overflow-wrap: anywhere;
+}
+
+@media (max-width: 50rem) {
+	.glossary-entry {
+		grid-template-columns: 1fr;
+		gap: 0.35rem;
+	}
+}
