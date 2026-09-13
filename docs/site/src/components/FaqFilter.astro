@@ -1,0 +1,181 @@
+---
+// The tag rail above the FAQ, and the filtering it drives.
+//
+// The page is one long sequence of questions on purpose: no topical headings,
+// stable anchors, one reading order. That shape is good for linking into and
+// poor for browsing, so the tags carry the browsing without cutting the page
+// into sections.
+//
+// Each question owns its tags in src/faq-tags.mjs, keyed by the anchor the
+// heading declares. Nothing is written twice: the rail, the chips under each
+// question and the filter all read that one map.
+//
+// Without JavaScript the rail still renders and every question stays visible,
+// which is the correct fallback for a page whose job is to be readable.
+import { questionTags, tagLabels } from '../faq-tags.mjs';
+
+const counts = new Map();
+for (const tags of Object.values(questionTags)) {
+  for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+}
+
+// Most-used first, then alphabetical, so the rail opens with the facets that
+// actually carry the page rather than with whatever sorted first.
+const rail = [...counts.entries()]
+  .map(([id, count]) => ({ id, count, label: tagLabels[id] ?? id }))
+  .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+
+const total = Object.keys(questionTags).length;
+---
+
+<ptah-faq-filter
+  class="faq-filter"
+  data-tags={JSON.stringify(questionTags)}
+  data-labels={JSON.stringify(tagLabels)}
+>
+  <div class="faq-filter__head">
+    <span class="faq-filter__title">Filter by topic</span>
+    <span class="faq-filter__count" data-faq-count>{total} questions</span>
+    <button class="faq-filter__reset" type="button" data-faq-reset hidden>Show all</button>
+  </div>
+  <div class="faq-filter__rail" role="group" aria-label="Filter questions by topic. Selecting more than one shows questions in any of them.">
+    {rail.map((tag) => (
+      <button class="faq-filter__tag" type="button" data-faq-tag={tag.id} aria-pressed="false">
+        {tag.label}<span class="faq-filter__n">{tag.count}</span>
+      </button>
+    ))}
+  </div>
+  <p class="faq-filter__empty" data-faq-empty hidden>No question carries that combination.</p>
+</ptah-faq-filter>
+
+<script>
+  // A question is its heading plus everything up to the next heading. The
+  // markup is flat, so the group is gathered by walking forward rather than by
+  // asking for a container that does not exist.
+  class PtahFaqFilter extends HTMLElement {
+    connectedCallback() {
+      const tagsByAnchor = JSON.parse(this.dataset.tags || '{}');
+      const labels = JSON.parse(this.dataset.labels || '{}');
+      const content = this.closest('.sl-markdown-content') ?? this.parentElement;
+      if (!content) return;
+
+      const questions = [];
+      for (const heading of content.querySelectorAll('h2[id]')) {
+        const tags = tagsByAnchor[heading.id];
+        if (!tags) continue;
+        const nodes = [heading];
+        for (
+          let node = heading.nextElementSibling;
+          node && node.tagName !== 'H2';
+          node = node.nextElementSibling
+        ) {
+          nodes.push(node);
+        }
+        questions.push({ anchor: heading.id, tags, nodes });
+        heading.after(this.#chips(tags, labels));
+      }
+      if (questions.length === 0) return;
+
+      const active = new Set();
+      const buttons = [...this.querySelectorAll('[data-faq-tag]')];
+      const countEl = this.querySelector('[data-faq-count]');
+      const resetEl = this.querySelector('[data-faq-reset]');
+      const emptyEl = this.querySelector('[data-faq-empty]');
+
+      // The contents rail lists the same questions, so it has to follow the
+      // filter. A rail still offering a question the page has hidden sends the
+      // reader to blank space.
+      const tocLinks = new Map();
+      for (const link of document.querySelectorAll('starlight-toc a[href^="#"]')) {
+        tocLinks.set(decodeURIComponent(link.getAttribute('href').slice(1)), link);
+      }
+
+      const render = () => {
+        // Any selected tag matches, so picking a second facet widens the result
+        // rather than narrowing it to their overlap.
+        const shown = questions.filter(
+          (question) => active.size === 0 || question.tags.some((tag) => active.has(tag)),
+        );
+        const visible = new Set(shown.map((question) => question.anchor));
+        for (const question of questions) {
+          const hide = !visible.has(question.anchor);
+          for (const node of question.nodes) node.hidden = hide;
+          const entry = tocLinks.get(question.anchor);
+          if (entry) {
+            // Hide the row, not the link: the rail nests its links in list
+            // items, and hiding the anchor alone leaves an empty bullet.
+            (entry.closest('li') ?? entry).hidden = hide;
+          }
+        }
+        for (const button of buttons) {
+          button.setAttribute('aria-pressed', String(active.has(button.dataset.tag)));
+        }
+        for (const chip of this.#chipsInPage(content)) {
+          chip.dataset.on = String(active.has(chip.dataset.faqChip));
+        }
+        countEl.textContent =
+          active.size === 0
+            ? `${questions.length} questions`
+            : `${shown.length} of ${questions.length} questions`;
+        resetEl.hidden = active.size === 0;
+        emptyEl.hidden = shown.length > 0;
+      };
+
+      const toggle = (tag) => {
+        if (active.has(tag)) active.delete(tag);
+        else active.add(tag);
+        render();
+      };
+
+      for (const button of buttons) {
+        button.addEventListener('click', () => toggle(button.dataset.tag));
+      }
+      resetEl.addEventListener('click', () => {
+        active.clear();
+        render();
+      });
+      content.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-faq-chip]');
+        if (chip) toggle(chip.dataset.faqChip);
+      });
+
+      // A shared link names one question, and a filter that hid it would make
+      // the link look broken. Clearing on arrival is the only behaviour that
+      // keeps every anchor reachable.
+      const revealHash = () => {
+        const id = decodeURIComponent(location.hash.replace(/^#/, ''));
+        if (!id || !tagsByAnchor[id]) return;
+        active.clear();
+        render();
+        document.getElementById(id)?.scrollIntoView({ block: 'start' });
+      };
+      window.addEventListener('hashchange', revealHash);
+
+      render();
+      revealHash();
+    }
+
+    #chips(tags, labels) {
+      const list = document.createElement('p');
+      list.className = 'faq-chips';
+      for (const tag of tags) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'faq-chip';
+        chip.dataset.faqChip = tag;
+        chip.dataset.on = 'false';
+        chip.textContent = labels[tag] ?? tag;
+        list.append(chip);
+      }
+      return list;
+    }
+
+    #chipsInPage(content) {
+      return content.querySelectorAll('[data-faq-chip]');
+    }
+  }
+
+  if (!customElements.get('ptah-faq-filter')) {
+    customElements.define('ptah-faq-filter', PtahFaqFilter);
+  }
+</script>

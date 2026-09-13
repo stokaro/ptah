@@ -30,10 +30,7 @@ searchAliases:
   - "report a bug"
 overlaps: []
 disposition: keep
-tableOfContents: false
 ---
-
-Italicized guide names become internal links at integration time.
 
 ## My application is not written in Go. Is Ptah for me? {#not-a-go-project}
 
@@ -510,9 +507,11 @@ against a pinned artifact from your pipeline or a Job of your own. See
 
 ## I want to contribute. Where do I start? {#how-to-contribute}
 
-Start with `CONTRIBUTING.md` in `github.com/stokaro/ptah`, which covers what
-makes a report actionable and what a change has to pass. `AGENTS.md` beside it
-is the authority on the working rules the CI gates enforce. Open an issue before
+Start with
+[CONTRIBUTING.md](https://github.com/stokaro/ptah/blob/master/CONTRIBUTING.md),
+which covers what makes a report actionable and what a change has to pass.
+[AGENTS.md](https://github.com/stokaro/ptah/blob/master/AGENTS.md) beside it is
+the authority on the working rules the CI gates enforce. Open an issue before
 a change that alters behavior, so the design is settled before the diff exists.
 
 ## I found a bug. What makes the report actionable? {#reporting-a-bug}
@@ -549,5 +548,7 @@ which tests Ptah without Ptah importing it. See [License boundary](../atlas/lice
 
 ## Is commercial support available? {#commercial-support}
 
-Commercial enquiries go to ask (at) stokaro.com. Keep bug reports and feature
-requests on the issue tracker instead, where they stay public and get labeled.
+Commercial enquiries go to <a class="contact-email" href="mailto:ask%40stokaro.com" rel="nofollow" aria-label="ask at stokaro.com"><span>ask</span><span class="contact-email__at" aria-hidden="true"></span><span>stokaro.com</span></a>. Keep
+bug reports and feature requests on the
+[issue tracker](https://github.com/stokaro/ptah/issues) instead, where they stay
+public and get labeled.

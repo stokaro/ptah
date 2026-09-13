@@ -48,8 +48,24 @@ export function navigationModel(groups, pages) {
   const problems = [];
 
   for (const group of groups) {
+    // A top-level entry is either a disclosure group or one page. A page
+    // belonging to no section -- the FAQ spans every group below it -- has
+    // nowhere to sit inside the tree, and giving it a group of its own would
+    // be a disclosure control that reveals a single row.
+    //
+    // The rules below are about a group's children, so an entry with none
+    // skips them. What still has to hold is that it names a real page, which
+    // the sidebar-coverage half of this gate checks for every entry.
+    const directSlug = typeof group === 'string' ? group : !group.items && group.slug;
+    if (directSlug) {
+      if (!pagesByRoute.has(routeForSlug(directSlug))) {
+        problems.push(`${directSlug}: top-level page does not exist`);
+      }
+      continue;
+    }
+
     if (!group.items || group.items.length === 0) {
-      problems.push(`${group.label}: top-level entry is not a non-empty disclosure group`);
+      problems.push(`${group.label}: top-level entry is not a page or a non-empty disclosure group`);
       continue;
     }
     if ('link' in group || 'slug' in group) {

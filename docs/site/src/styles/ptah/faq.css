@@ -1,0 +1,144 @@
+/* The FAQ tag rail, and the chips under each question.
+ *
+ * These live here rather than scoped inside FaqFilter.astro because the chips
+ * are created after the markdown renders, one set per question heading, and
+ * Astro's scoping only reaches elements its template emitted.
+ *
+ * Everything below is built from the tokens the rest of the site uses, so the
+ * rail follows both themes without declaring a colour of its own.
+ */
+
+.faq-filter {
+	display: block;
+	margin-block: 1.5rem 2rem;
+	padding-bottom: 1.25rem;
+	border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+.faq-filter__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+}
+
+.faq-filter__title {
+	font-size: 0.8125rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+.faq-filter__count {
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 0.75rem;
+	color: var(--sl-color-gray-3);
+	font-variant-numeric: tabular-nums;
+	margin-inline-start: auto;
+}
+
+.faq-filter__reset {
+	font: inherit;
+	font-size: 0.8125rem;
+	background: none;
+	border: 0;
+	padding: 0;
+	color: var(--sl-color-text-accent);
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.faq-filter__rail {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+
+.faq-filter__tag {
+	font: inherit;
+	font-size: 0.8125rem;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	padding: 0.25rem 0.6rem;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+	cursor: pointer;
+}
+
+.faq-filter__tag:hover {
+	color: var(--sl-color-text);
+	border-color: var(--sl-color-gray-3);
+}
+
+.faq-filter__tag[aria-pressed='true'] {
+	color: var(--sl-color-text-invert);
+	background: var(--sl-color-bg-accent);
+	border-color: transparent;
+	font-weight: 500;
+}
+
+.faq-filter__n {
+	font-variant-numeric: tabular-nums;
+	font-size: 0.6875rem;
+	opacity: 0.7;
+}
+
+.faq-filter__empty {
+	margin: 1.5rem 0 0;
+	color: var(--sl-color-gray-3);
+}
+
+/* The chips under a question say why it matched and double as a way into the
+ * same filter, so a reader who arrives on one question can widen from it. */
+.faq-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	margin-block: 0.5rem 0 !important;
+}
+
+.faq-chip {
+	font: inherit;
+	font-size: 0.75rem;
+	background: none;
+	border: 0;
+	border-bottom: 1px dotted var(--sl-color-hairline);
+	padding: 0 0 1px;
+	color: var(--sl-color-gray-3);
+	cursor: pointer;
+}
+
+.faq-chip::before {
+	content: '#';
+	opacity: 0.55;
+}
+
+.faq-chip:hover {
+	color: var(--sl-color-text-accent);
+	border-bottom-color: var(--sl-color-text-accent);
+}
+
+.faq-chip[data-on='true'] {
+	color: var(--sl-color-text-accent);
+	font-weight: 500;
+}
+
+.faq-filter__tag:focus-visible,
+.faq-filter__reset:focus-visible,
+.faq-chip:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+
+/* The at sign is drawn, not written: it is the one character that turns two
+ * harmless halves into an address a plaintext scan can match. See
+ * ContactEmail.astro for what this does and does not protect. */
+.contact-email__at::before {
+	content: '@';
+}
