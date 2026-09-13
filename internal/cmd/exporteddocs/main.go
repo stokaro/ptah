@@ -13,7 +13,7 @@
 // A method that implements an interface repeats what the interface already
 // documents. Measured on the ledger when this was written, 148 of the 158
 // undocumented exported declarations were exactly that -- `Accept`, `Error`,
-// `Unwrap`, `VisitCreateTable`, `UnmarshalYAML` -- and a rule demanding a
+// `Unwrap`, `VisitNode`, `UnmarshalYAML` -- and a rule demanding a
 // comment on each would have produced 148 restatements and taught everyone to
 // write them without reading. What is left is what `go doc <package>` shows at
 // the top: the functions and types a consumer meets first, of which ten had

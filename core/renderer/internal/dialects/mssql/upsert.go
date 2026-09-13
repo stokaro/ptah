@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/ast"
 )
 
-func (r *Renderer) VisitUpsert(node *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(node *ast.UpsertNode) error {
 	if err := validateUpsert(node); err != nil {
 		return err
 	}

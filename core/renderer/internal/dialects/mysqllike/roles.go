@@ -30,14 +30,14 @@ import (
 // same reasoning the SQL Server renderer records for its DATABASE ROLE
 // (stokaro/ptah#1762).
 
-// VisitCreateRole renders CREATE ROLE, and refuses a declaration carrying an
+// renderCreateRole renders CREATE ROLE, and refuses a declaration carrying an
 // attribute a MySQL-family role does not have.
 //
 // The refusal stays an error rather than becoming a named skip. A comment where
 // a principal was asked for leaves the grants that name it dangling, and the
 // server then refuses those instead -- moving the failure from one message to a
 // worse one.
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		return unsupportedRoleError(r.dialect, "CREATE ROLE", node.Name)
 	}
@@ -58,11 +58,11 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	return nil
 }
 
-// VisitDropRole renders DROP ROLE.
+// renderDropRole renders DROP ROLE.
 //
 // IF EXISTS is accepted on an absent role, so the guarded form needs no
 // existence test.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		return unsupportedRoleError(r.dialect, "DROP ROLE", node.Name)
 	}
@@ -74,21 +74,21 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
-// VisitAlterRole refuses, because there is nothing to alter.
+// renderAlterRole refuses, because there is nothing to alter.
 //
 // A MySQL-family role has no attributes: the CREATE takes a name and nothing
 // else, so every change an ALTER could express is a change to something this
 // object does not have. Reporting it as skipped would be the quieter answer and
 // the wrong one -- the author asked for a change that will never happen.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		return unsupportedRoleError(r.dialect, "ALTER ROLE", node.Name)
 	}
 	return roleAttributeError(r.dialect, node.Name, "an altered attribute")
 }
 
-// VisitGrantPrivilege renders GRANT.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+// renderGrantPrivilege renders GRANT.
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("grant", node.Role)
 		return nil
@@ -102,26 +102,26 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokePrivilege renders REVOKE.
+// renderRevokePrivilege renders REVOKE.
 // ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
 // pg_default_acl, the privileges an object gets when a named role creates one.
 // No other engine here has a catalog for that, and the nearest thing on each --
 // granting on the schema, or on every object in it -- applies to what exists
 // rather than to what is created next. So the declaration is named and skipped
 // rather than approximated with a statement that means something else.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	r.notGenerated("default privilege", node.Grantee)
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.VisitDefaultPrivilege] carries.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// [Renderer.renderDefaultPrivilege] carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	r.notGenerated("default privilege", node.Grantee)
 	return nil
 }
 
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("revoke", node.Role)
 		return nil

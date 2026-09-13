@@ -1,114 +1,35 @@
 package ast
 
-// Visitor defines the interface for visiting AST nodes using the visitor pattern.
+// Visitor renders one AST node.
 //
-// The visitor pattern allows for dialect-specific rendering of SQL statements
-// without modifying the AST node structures. Each visitor method corresponds
-// to a specific node type and is responsible for generating the appropriate
-// SQL representation for that node.
+// A dialect implements this by dispatching on the node's concrete type and
+// calling its own handler for that type. The interface carries one method
+// because a node kind is not a method: adding a kind would otherwise change the
+// contract every renderer and every embedder implements, and the forwarding
+// that costs is what a type switch inside one implementation does for free.
 //
-// Implementations of this interface should handle the rendering logic for
-// their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
+// What the single method gives up is the compiler's answer to "did this
+// renderer decide about that kind". [ptah.run/internal/astrouteguard] asks it
+// instead, over every concrete node type against every renderer, and a kind no
+// renderer routes fails the build there.
+//
+// An implementation must not answer an unrecognized node with a nil error. A
+// node that produces no output and no error is indistinguishable from one a
+// renderer deliberately skips, and that is the failure the routing gate and
+// this sentence exist to prevent.
 type Visitor interface {
-	// VisitCreateTable renders a CREATE TABLE statement
-	VisitCreateTable(*CreateTableNode) error
-	// VisitCreateSchema renders a CREATE SCHEMA statement
-	VisitCreateSchema(*CreateSchemaNode) error
-	// VisitCreateDatabase renders a CREATE DATABASE statement
-	VisitCreateDatabase(*CreateDatabaseNode) error
-	// VisitAlterTable renders an ALTER TABLE statement
-	VisitAlterTable(*AlterTableNode) error
-	// VisitColumn renders a column definition (typically called from other visitors)
-	VisitColumn(*ColumnNode) error
-	// VisitConstraint renders a constraint definition (typically called from other visitors)
-	VisitConstraint(*ConstraintNode) error
-	// VisitIndex renders a CREATE INDEX statement
-	VisitIndex(*IndexNode) error
-	// VisitDropIndex renders a DROP INDEX statement
-	VisitDropIndex(*DropIndexNode) error
-	// VisitEnum renders an enum type definition (PostgreSQL-specific, legacy)
-	VisitEnum(*EnumNode) error
-	// VisitCreateType renders a CREATE TYPE statement with various type definitions
-	VisitCreateType(*CreateTypeNode) error
-	// VisitAlterType renders an ALTER TYPE statement with various operations
-	VisitAlterType(*AlterTypeNode) error
-	// VisitComment renders a SQL comment
-	VisitComment(*CommentNode) error
-	// VisitDropTable renders a DROP TABLE statement
-	VisitDropTable(*DropTableNode) error
-	// VisitDropType renders a DROP TYPE statement (PostgreSQL-specific)
-	VisitDropType(*DropTypeNode) error
-	// VisitExtension renders a CREATE EXTENSION statement (PostgreSQL-specific)
-	VisitExtension(*ExtensionNode) error
-	// VisitDropExtension renders a DROP EXTENSION statement (PostgreSQL-specific)
-	VisitDropExtension(*DropExtensionNode) error
-	// VisitCreateFunction renders a CREATE FUNCTION statement (PostgreSQL-specific)
-	VisitCreateFunction(*CreateFunctionNode) error
-	// VisitDropFunction renders a DROP FUNCTION statement (PostgreSQL-specific)
-	VisitDropFunction(*DropFunctionNode) error
-	// VisitCreateSequence renders a CREATE SEQUENCE statement (PostgreSQL-specific)
-	VisitCreateSequence(*CreateSequenceNode) error
-	// VisitAlterSequence renders an ALTER SEQUENCE statement (PostgreSQL-specific)
-	VisitAlterSequence(*AlterSequenceNode) error
-	// VisitDropSequence renders a DROP SEQUENCE statement (PostgreSQL-specific)
-	VisitDropSequence(*DropSequenceNode) error
-	// VisitCreateView renders a CREATE VIEW statement
-	VisitCreateView(*CreateViewNode) error
-	// VisitDropView renders a DROP VIEW statement
-	VisitDropView(*DropViewNode) error
-	// VisitCreateSynonym renders a CREATE SYNONYM statement
-	VisitCreateSynonym(*CreateSynonymNode) error
-	// VisitCreateHypertable renders the TimescaleDB create_hypertable call
-	VisitCreateHypertable(*CreateHypertableNode) error
-	// VisitCreateContinuousAggregate renders a TimescaleDB continuous aggregate
-	VisitCreateContinuousAggregate(*CreateContinuousAggregateNode) error
-	// VisitDropContinuousAggregate removes a TimescaleDB continuous aggregate
-	VisitDropContinuousAggregate(*DropContinuousAggregateNode) error
-	// VisitDropSynonym renders a DROP SYNONYM statement
-	VisitDropSynonym(*DropSynonymNode) error
-	// VisitExtendedProperty renders one SQL Server extended-property statement
-	VisitExtendedProperty(*ExtendedPropertyNode) error
-	// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
-	VisitCreateMaterializedView(*CreateMaterializedViewNode) error
-	// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
-	VisitDropMaterializedView(*DropMaterializedViewNode) error
-	// VisitAlterMaterializedViewRefresh renders an in-place change to a
-	// materialized view's refresh schedule
-	VisitAlterMaterializedViewRefresh(*AlterMaterializedViewRefreshNode) error
-	// VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement
-	VisitRefreshMaterializedView(*RefreshMaterializedViewNode) error
-	// VisitCreateTrigger renders a CREATE TRIGGER statement
-	VisitCreateTrigger(*CreateTriggerNode) error
-	// VisitDropTrigger renders a DROP TRIGGER statement
-	VisitDropTrigger(*DropTriggerNode) error
-	// VisitCreatePolicy renders a CREATE POLICY statement for RLS (PostgreSQL-specific)
-	VisitCreatePolicy(*CreatePolicyNode) error
-	// VisitDropPolicy renders a DROP POLICY statement for RLS (PostgreSQL-specific)
-	VisitDropPolicy(*DropPolicyNode) error
-	// VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement (PostgreSQL-specific)
-	VisitAlterTableEnableRLS(*AlterTableEnableRLSNode) error
-	// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement (PostgreSQL-specific)
-	VisitAlterTableDisableRLS(*AlterTableDisableRLSNode) error
-	// VisitCreateRole renders a CREATE ROLE statement (PostgreSQL-specific)
-	VisitCreateRole(*CreateRoleNode) error
-	// VisitDropRole renders a DROP ROLE statement (PostgreSQL-specific)
-	VisitDropRole(*DropRoleNode) error
-	// VisitAlterRole renders an ALTER ROLE statement (PostgreSQL-specific)
-	VisitAlterRole(*AlterRoleNode) error
-	// VisitGrantPrivilege renders a GRANT statement (PostgreSQL-specific)
-	VisitGrantPrivilege(*GrantPrivilegeNode) error
-	// VisitRevokePrivilege renders a REVOKE statement (PostgreSQL-specific)
-	VisitRevokePrivilege(*RevokePrivilegeNode) error
-	// VisitDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement (PostgreSQL-specific)
-	VisitDefaultPrivilege(*DefaultPrivilegeNode) error
-	// VisitRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE statement (PostgreSQL-specific)
-	VisitRevokeDefaultPrivilege(*RevokeDefaultPrivilegeNode) error
-	// VisitRawSQL renders a literal SQL fragment verbatim. Use sparingly —
-	// reach for structured nodes first.
-	VisitRawSQL(*RawSQLNode) error
-	// VisitUpsert renders a dialect-independent upsert statement.
-	VisitUpsert(*UpsertNode) error
+	// VisitNode renders node, or reports why it cannot.
+	VisitNode(node Node) error
 }
+
+// VisitorFunc adapts a function to [Visitor].
+//
+// It is what a caller that only wants to look at nodes writes instead of a type
+// with one method.
+type VisitorFunc func(node Node) error
+
+// VisitNode calls f.
+func (f VisitorFunc) VisitNode(node Node) error { return f(node) }
 
 // DefaultValue represents different types of default values for table columns.
 //

@@ -255,7 +255,7 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 	return dropSQL + " " + escapeIdentifier(op.ConstraintName)
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for MySQL/MariaDB
 	var parts []string
 	parts = append(parts, "DROP INDEX")
@@ -287,7 +287,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
-// VisitCreateType names the user-defined type Ptah does not generate for this
+// renderCreateType names the user-defined type Ptah does not generate for this
 // target. MySQL and MariaDB have no CREATE TYPE object at all; an enum lives in
 // the column definition and reaches this renderer that way, never as a node.
 //
@@ -297,7 +297,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 // one. It does not, so a schema declaring three domains gets three identical
 // lines naming none of them, with a sentence about enums where the node is a
 // domain (stokaro/ptah#929 item 5).
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -305,8 +305,8 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	return nil
 }
 
-// VisitCreateSchema renders a CREATE SCHEMA statement.
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+// renderCreateSchema renders a CREATE SCHEMA statement.
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -323,8 +323,8 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	return nil
 }
 
-// VisitCreateDatabase renders a CREATE DATABASE statement.
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+// renderCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -333,7 +333,7 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	// MySQL/MariaDB doesn't support ALTER TYPE operations
 	// Type changes are handled through ALTER TABLE MODIFY COLUMN
 	r.w.WriteLinef("-- %s does not support ALTER TYPE - type changes are handled through ALTER TABLE MODIFY COLUMN", r.dialectUpper)
@@ -371,12 +371,12 @@ func (r *Renderer) GetOutput() string {
 	return r.Output()
 }
 
-func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return fmt.Errorf("%w: %s: upsert rendering is not implemented", ptaherr.ErrUnsupportedFeature, r.dialect)
 }
 
-// VisitCreateTable renders MariaDB-specific CREATE TABLE statements
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+// renderCreateTable renders MariaDB-specific CREATE TABLE statements
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// AUTO_INCREMENT carries no generation mode, start or step on the column,
 	// so a declared value reaches the output nowhere. The table-level
 	// AUTO_INCREMENT option is a different declaration and is rendered.
@@ -505,27 +505,32 @@ func writeCustomSQL(w *bufwriter.Writer, node *ast.CreateTableNode) {
 	}
 }
 
-// VisitAlterTable renders MariaDB-specific ALTER TABLE statements
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+// renderAlterTable renders MariaDB-specific ALTER TABLE statements
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	return r.visitAlterTableWithEnums(node, nil)
 }
 
-// VisitColumn is called when visiting individual columns (used by other visitors)
-func (r *Renderer) VisitColumn(node *ast.ColumnNode) error {
+// renderColumnNode answers a column reached as a node of its own, which writes
+// nothing: a column reaches the output through the table or the ALTER that
+// carries it. The name carries the Node suffix because renderColumn is the
+// helper that builds the column's text for those two callers.
+func (r *Renderer) renderColumnNode(node *ast.ColumnNode) error {
 	// This is typically called from within other visitors
 	// The actual rendering is done by RenderColumn
 	return nil
 }
 
-// VisitConstraint is called when visiting individual constraints (used by other visitors)
-func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
+// renderConstraintNode answers a constraint reached as a node of its own, which
+// writes nothing, for the reason [Renderer.renderColumnNode] carries.
+// renderConstraint is the helper that builds the constraint's text.
+func (r *Renderer) renderConstraintNode(node *ast.ConstraintNode) error {
 	// This is typically called from within other visitors
 	// The actual rendering is done by RenderConstraint
 	return nil
 }
 
-// VisitIndex renders a CREATE INDEX statement for MySQL
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+// renderIndex renders a CREATE INDEX statement for MySQL
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// The MySQL family has an index COMMENT clause and this renderer writes
 	// none, so the declaration reaches the output nowhere at all.
 	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
@@ -609,22 +614,22 @@ func mysqlIndexPrefixType(indexType string) string {
 	return mysqlindex.KindOf(indexType).Prefix()
 }
 
-// VisitEnum renders enum handling for MariaDB (inline ENUM types like MySQL)
-func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
+// renderEnum renders enum handling for MariaDB (inline ENUM types like MySQL)
+func (r *Renderer) renderEnum(node *ast.EnumNode) error {
 	// MariaDB doesn't have separate enum types like PostgreSQL
 	// Enums are defined inline in column definitions like MySQL
 	// So this method doesn't render anything for MariaDB
 	return nil
 }
 
-// VisitComment renders a comment
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+// renderComment renders a comment
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s --", node.Text)
 	return nil
 }
 
-// VisitDropTable renders MariaDB-specific DROP TABLE statements
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+// renderDropTable renders MariaDB-specific DROP TABLE statements
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	// Build DROP TABLE statement with MariaDB-specific features
 	var parts []string
 	parts = append(parts, "DROP TABLE")
@@ -649,7 +654,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-// VisitDropType names the type this target does not drop, and names the object
+// renderDropType names the type this target does not drop, and names the object
 // rather than the engine.
 //
 // A message reading "MariaDB does not support DROP TYPE - enums are handled
@@ -658,7 +663,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 // domains, composite types and range types. This one says which object it is
 // talking about, the way the rest of this renderer's diagnostics do
 // (stokaro/ptah#1708).
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -670,8 +675,8 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	return nil
 }
 
-// VisitCreateView renders a CREATE VIEW statement for MySQL/MariaDB.
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+// renderCreateView renders a CREATE VIEW statement for MySQL/MariaDB.
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -688,8 +693,8 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-// VisitDropView renders a DROP VIEW statement for MySQL/MariaDB.
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+// renderDropView renders a DROP VIEW statement for MySQL/MariaDB.
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -702,32 +707,32 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-// VisitCreateMaterializedView refuses: MySQL and MariaDB have no materialized
+// renderCreateMaterializedView refuses: MySQL and MariaDB have no materialized
 // view object.
 //
 // Rendering a comment instead makes `schema render` exit 0 on a model the
 // planner refuses at `schema apply` time, so the surface a user is told to
 // validate with disagrees with the surface that executes. Refusing here makes
 // them agree, and matches how SQLite answers the same input.
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return r.materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
-// VisitDropMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+// renderDropMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	return r.materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
-// VisitRefreshMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+// renderRefreshMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	return r.materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
-// VisitAlterMaterializedViewRefresh refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+// renderAlterMaterializedViewRefresh refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	return r.materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
 }
 
@@ -736,14 +741,14 @@ func (r *Renderer) materializedViewsUnsupported(statement, name string) error {
 		ptaherr.ErrUnsupportedFeature, r.dialect, statement, name)
 }
 
-// VisitCreateTrigger renders a CREATE TRIGGER statement for MySQL/MariaDB.
+// renderCreateTrigger renders a CREATE TRIGGER statement for MySQL/MariaDB.
 //
 // MySQL and MariaDB have row-level triggers only. A FOR EACH STATEMENT trigger
 // is refused rather than rendered as FOR EACH ROW: silently changing the level
 // makes the trigger fire once per affected row instead of once per statement,
 // which is a different program. SQLite already refuses the same input, and this
 // matches it.
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	forEach := strings.ToUpper(strings.TrimSpace(node.ForEach))
 	if forEach == "" {
 		forEach = "ROW"
@@ -777,8 +782,8 @@ func terminateStatement(body string) string {
 	return trimmed + ";"
 }
 
-// VisitDropTrigger renders a DROP TRIGGER statement for MySQL/MariaDB.
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+// renderDropTrigger renders a DROP TRIGGER statement for MySQL/MariaDB.
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1223,8 +1228,8 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 	return nil
 }
 
-// VisitExtension renders CREATE EXTENSION statements for MySQL-like databases (no-op)
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+// renderExtension renders CREATE EXTENSION statements for MySQL-like databases (no-op)
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	// MySQL-like databases don't support extensions like PostgreSQL
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -1235,8 +1240,8 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 	return nil
 }
 
-// VisitDropExtension renders DROP EXTENSION statements for MySQL-like databases (no-op)
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+// renderDropExtension renders DROP EXTENSION statements for MySQL-like databases (no-op)
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	// MySQL-like databases don't support extensions like PostgreSQL
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -1247,7 +1252,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-// VisitCreateFunction renders a CREATE FUNCTION statement for MySQL/MariaDB.
+// renderCreateFunction renders a CREATE FUNCTION statement for MySQL/MariaDB.
 //
 // # One statement, not two
 //
@@ -1290,7 +1295,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 // there rather than here because the reader has to invert it, and the two
 // halves drifting apart is what makes a declared STABLE function plan the same
 // destructive replacement on every apply.
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure decides against its own key, and every refusal below still
 	// applies to it: the language it runs, the security clause, the
 	// characteristic. Only the header and the return type differ
@@ -1407,8 +1412,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	return nil
 }
 
-// VisitCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+// renderCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	// MySQL-like databases don't support Row-Level Security policies
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -1419,8 +1424,8 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL-like databases (no-op)
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+// renderAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL-like databases (no-op)
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	// MySQL-like databases don't support Row-Level Security
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -1431,7 +1436,7 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitDropFunction renders a DROP FUNCTION statement for MySQL/MariaDB.
+// renderDropFunction renders a DROP FUNCTION statement for MySQL/MariaDB.
 //
 // A target whose capability set declines Functions still only gets the named
 // skip, and it gets it on this half too: its CREATE counterpart answers the
@@ -1441,7 +1446,7 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 // CASCADE is dropped rather than rendered. Neither engine has it on DROP
 // FUNCTION, and a routine has no dependent objects to cascade to in their
 // model, so silently omitting it changes nothing the operator asked for.
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	if node.IsProcedure() {
 		if !r.caps.Has(capability.Procedures) {
 			r.notGenerated("DROP PROCEDURE", node.Name)
@@ -1468,7 +1473,7 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
-// VisitCreateSequence renders CREATE SEQUENCE where the target has one, and
+// renderCreateSequence renders CREATE SEQUENCE where the target has one, and
 // names the omission where it does not.
 //
 // The two engines this renderer serves differ here, which is why the decision is
@@ -1489,7 +1494,7 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 // The skip comment exists because a sequence dropped by the converter before
 // any renderer runs leaves `--dialect mariadb` omitting it with no statement
 // and no diagnostic (stokaro/ptah#931 item 8).
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if !r.caps.Has(capability.Sequences) {
 		r.sequenceNotSupported("CREATE SEQUENCE", node.Name, node.Comment)
 		return nil
@@ -1515,11 +1520,11 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	return nil
 }
 
-// VisitAlterSequence renders ALTER SEQUENCE where the target has one.
+// renderAlterSequence renders ALTER SEQUENCE where the target has one.
 //
 // MariaDB takes the same option clauses the CREATE takes, so the difference
 // between the two statements is the verb and the guard, not the options.
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	if !r.caps.Has(capability.Sequences) {
 		r.sequenceNotSupported("ALTER SEQUENCE", node.Name, node.Comment)
 		return nil
@@ -1539,8 +1544,8 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	return nil
 }
 
-// VisitDropSequence renders DROP SEQUENCE where the target has one.
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+// renderDropSequence renders DROP SEQUENCE where the target has one.
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	if !r.caps.Has(capability.Sequences) {
 		r.sequenceNotSupported("DROP SEQUENCE", node.Name, node.Comment)
 		return nil
@@ -1625,16 +1630,16 @@ func mariaDBSequenceOptions(
 	return parts
 }
 
-// VisitDropPolicy names the policy drop Ptah does not generate for this target,
-// matching VisitCreatePolicy above rather than aborting the DOWN half alone.
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+// renderDropPolicy names the policy drop Ptah does not generate for this target,
+// matching renderCreatePolicy above rather than aborting the DOWN half alone.
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	r.notGenerated("DROP POLICY", node.Name)
 	return nil
 }
 
-// VisitAlterTableDisableRLS names the row-level security change Ptah does not
-// generate for this target, matching VisitAlterTableEnableRLS above.
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+// renderAlterTableDisableRLS names the row-level security change Ptah does not
+// generate for this target, matching renderAlterTableEnableRLS above.
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	r.notGenerated("DISABLE ROW LEVEL SECURITY on", node.Table)
 	return nil
 }
@@ -1658,10 +1663,10 @@ func (r *Renderer) notGenerated(kind, name string) {
 	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: kind, Name: name})
 }
 
-// VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific
+// renderRawSQL renders a literal SQL fragment verbatim. Dialect-specific
 // routine nodes use this path to preserve executable routine bodies while
 // keeping parser metadata available to callers.
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	sql := strings.TrimSpace(node.SQL)
 	if !strings.HasSuffix(sql, ";") {
 		sql += ";"
@@ -1670,37 +1675,37 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return nil
 }
 
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
 // TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	r.w.WriteLinef("-- Continuous aggregate %s not supported in %s", node.Name, r.dialect)
 	return nil
 }
 
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	r.w.WriteLinef("-- Continuous aggregate %s not supported in %s", node.Name, r.dialect)
 	return nil
 }
 
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	r.w.WriteLinef("-- Hypertable %s not supported in %s", node.Table, r.dialect)
 	return nil
 }
 
-// VisitCreateSynonym names the synonym as unsupported. Neither MySQL nor
+// renderCreateSynonym names the synonym as unsupported. Neither MySQL nor
 // MariaDB has a synonym object; the nearest construct is a view, which is a
 // different thing with different resolution rules.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- Synonym %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
 		return nil
@@ -1709,19 +1714,19 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
-// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// renderExtendedProperty refuses: an extended property is a SQL Server object,
 // and this engine has no catalog to attach one to.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	r.w.WriteLinef("-- EXTENDED PROPERTY %s not supported in %s", node.Name, r.dialect)
 	return nil
 }
 
-// VisitDropSynonym names the drop as unsupported, for the same reason.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+// renderDropSynonym names the drop as unsupported, for the same reason.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- DROP SYNONYM %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
 		return nil

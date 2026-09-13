@@ -16,7 +16,7 @@ import (
 // `renderColumn` serves both `CREATE TABLE` and `ALTER TABLE ... ADD`, so a
 // guard placed there covers a column arriving through either. A test for one
 // says nothing about the other: the guard could as easily have been written
-// into VisitCreateTable, where the added column would keep reaching the server
+// into the CREATE TABLE handler, where the added column would keep reaching the server
 // as a statement it refuses.
 func TestAddColumnRefusesPrimaryKeyBesideUnique(t *testing.T) {
 	c := qt.New(t)

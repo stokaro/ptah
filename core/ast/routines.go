@@ -277,12 +277,11 @@ func (n *MySQLRoutineNode) SetCharacteristics(characteristics []string) *MySQLRo
 	return n
 }
 
-// Accept renders MySQL routines through the raw SQL visitor contract while
-// keeping the structured routine metadata available to parser consumers.
-func (n *MySQLRoutineNode) Accept(visitor Visitor) error {
-	raw := RawSQLNode{SQL: n.SQL}
-	return visitor.VisitRawSQL(&raw)
-}
+// Accept hands the visitor this node.
+//
+// A routine is a complete statement, so a renderer reads the SQL out of this
+// node rather than being handed a substitute carrying only the text.
+func (n *MySQLRoutineNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // NewPostgresDoBlock creates a PostgreSQL DO block node.
 func NewPostgresDoBlock(sql string) *PostgresDoBlockNode {
@@ -298,19 +297,17 @@ func NewPostgresRoutine(sql, dialect string, kind RoutineKind) *PostgresRoutineN
 	}
 }
 
-// Accept renders PostgreSQL DO blocks through the raw SQL visitor contract
-// while keeping routine-body metadata available to parser consumers.
-func (n *PostgresDoBlockNode) Accept(visitor Visitor) error {
-	raw := RawSQLNode{SQL: n.SQL}
-	return visitor.VisitRawSQL(&raw)
-}
+// Accept hands the visitor this node.
+//
+// A routine is a complete statement, so a renderer reads the SQL out of this
+// node rather than being handed a substitute carrying only the text.
+func (n *PostgresDoBlockNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// Accept renders PostgreSQL routines through the raw SQL visitor contract while
-// keeping routine-body metadata available to parser consumers.
-func (n *PostgresRoutineNode) Accept(visitor Visitor) error {
-	raw := RawSQLNode{SQL: n.SQL}
-	return visitor.VisitRawSQL(&raw)
-}
+// Accept hands the visitor this node.
+//
+// A routine is a complete statement, so a renderer reads the SQL out of this
+// node rather than being handed a substitute carrying only the text.
+func (n *PostgresRoutineNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // NewSQLServerRoutine creates a SQL Server routine node.
 func NewSQLServerRoutine(sql, dialect string, kind RoutineKind) *SQLServerRoutineNode {
@@ -321,9 +318,8 @@ func NewSQLServerRoutine(sql, dialect string, kind RoutineKind) *SQLServerRoutin
 	}
 }
 
-// Accept renders SQL Server routines through the raw SQL visitor contract while
-// keeping routine-body metadata available to parser consumers.
-func (n *SQLServerRoutineNode) Accept(visitor Visitor) error {
-	raw := RawSQLNode{SQL: n.SQL}
-	return visitor.VisitRawSQL(&raw)
-}
+// Accept hands the visitor this node.
+//
+// A routine is a complete statement, so a renderer reads the SQL out of this
+// node rather than being handed a substitute carrying only the text.
+func (n *SQLServerRoutineNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }

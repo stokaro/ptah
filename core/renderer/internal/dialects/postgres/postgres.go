@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
+	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
@@ -44,11 +45,11 @@ func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
 	r.sink = sink
 }
 
-func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return unsupportedFeaturef("upsert rendering is not implemented for %s", r.dialect)
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for PostgreSQL
 	var parts []string
 	parts = append(parts, "DROP INDEX")
@@ -102,8 +103,8 @@ func (r *Renderer) qualifiedIndexTarget(table, name string) string {
 	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(name)
 }
 
-// VisitCreateSchema renders a CREATE SCHEMA statement.
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+// renderCreateSchema renders a CREATE SCHEMA statement.
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	// Only the MySQL family has a schema-level character set and collation, so
 	// a declared one reaches the output nowhere here.
 	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
@@ -132,8 +133,8 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	return nil
 }
 
-// VisitCreateDatabase renders a CREATE DATABASE statement.
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+// renderCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	if node.IfNotExists {
 		return fmt.Errorf("create database if not exists is not supported in PostgreSQL")
 	}
@@ -158,7 +159,7 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 	}
 }
 
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -244,7 +245,7 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	// Process each operation
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
@@ -396,6 +397,264 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 		return "", err
 	}
 	return r.Output(), nil
+}
+
+// VisitNode renders node.
+//
+// The switch is the renderer's whole decision table, and every concrete node
+// kind appears in it as a named case. A visitor interface with one method
+// cannot ask which kinds a renderer answers, so
+// [ptah.run/internal/astrouteguard] asks: it reads these cases and fails the
+// build when a kind is missing from them. A bare default arm would answer that
+// question with silence, so the default arm here names the concrete type and
+// never returns nil -- a node that produces no output and no error cannot be
+// told apart from one this target skips on purpose.
+//
+// The table says which handler owns a kind, never what a target does with it.
+// One Renderer serves PostgreSQL, CockroachDB, YugabyteDB and the Spanner
+// PostgreSQL interface, and where they differ the handler reads the capability
+// set, writes the skip comment and records the omission. Lifting that decision
+// into the switch would give one kind four answers and leave the table unable
+// to state any of them.
+//
+// The last case is the fragments. An alter operation, a type definition and a
+// type operation have no object of their own: the ALTER or CREATE that carries
+// one names the table or the type, and that statement's handler renders the
+// fragment inside it, so a fragment arriving alone is a caller error. A nil
+// node and a non-nil interface holding a nil pointer are the same mistake and
+// get the same error ahead of the switch, because a handler reached with either
+// dereferences it.
+//
+//nolint:gocyclo // One arm per node kind is the point: astrouteguard reads the arms out of this function body, so moving them into helpers would hide what the gate measures.
+func (r *Renderer) VisitNode(node ast.Node) error {
+	if nodedispatch.IsAbsent(node) {
+		return fmt.Errorf("%w: %s: cannot render a nil AST node",
+			ptaherr.ErrInvalidSchemaDiff, r.dialect)
+	}
+
+	switch n := node.(type) {
+	// Schemas, tables and what a table is made of.
+	case *ast.CreateSchemaNode:
+		return r.renderCreateSchema(n)
+	case *ast.CreateDatabaseNode:
+		return r.renderCreateDatabase(n)
+	case *ast.CreateTableNode:
+		return r.renderCreateTable(n)
+	case *ast.AlterTableNode:
+		return r.renderAlterTable(n)
+	case *ast.DropTableNode:
+		return r.renderDropTable(n)
+	case *ast.ColumnNode:
+		return r.renderColumnNode(n)
+	case *ast.ConstraintNode:
+		return r.renderConstraintNode(n)
+	case *ast.IndexNode:
+		return r.renderIndex(n)
+	case *ast.DropIndexNode:
+		return r.renderDropIndex(n)
+	case *ast.CommentNode:
+		return r.renderComment(n)
+
+	// User-defined types.
+	case *ast.EnumNode:
+		return r.renderEnum(n)
+	case *ast.CreateTypeNode:
+		return r.renderCreateType(n)
+	case *ast.AlterTypeNode:
+		return r.renderAlterType(n)
+	case *ast.DropTypeNode:
+		return r.renderDropType(n)
+
+	// Views and materialized views.
+	case *ast.CreateViewNode:
+		return r.renderCreateView(n)
+	case *ast.DropViewNode:
+		return r.renderDropView(n)
+	case *ast.CreateMaterializedViewNode:
+		return r.renderCreateMaterializedView(n)
+	case *ast.DropMaterializedViewNode:
+		return r.renderDropMaterializedView(n)
+	case *ast.RefreshMaterializedViewNode:
+		return r.renderRefreshMaterializedView(n)
+	case *ast.AlterMaterializedViewRefreshNode:
+		return r.renderAlterMaterializedViewRefresh(n)
+
+	// Functions and triggers.
+	case *ast.CreateFunctionNode:
+		return r.renderCreateFunction(n)
+	case *ast.DropFunctionNode:
+		return r.renderDropFunction(n)
+	case *ast.CreateTriggerNode:
+		return r.renderCreateTrigger(n)
+	case *ast.DropTriggerNode:
+		return r.renderDropTrigger(n)
+
+	// Sequences.
+	case *ast.CreateSequenceNode:
+		return r.renderCreateSequence(n)
+	case *ast.AlterSequenceNode:
+		return r.renderAlterSequence(n)
+	case *ast.DropSequenceNode:
+		return r.renderDropSequence(n)
+
+	// Extensions.
+	case *ast.ExtensionNode:
+		return r.renderExtension(n)
+	case *ast.DropExtensionNode:
+		return r.renderDropExtension(n)
+
+	// Roles, privileges and row-level security.
+	case *ast.CreateRoleNode:
+		return r.renderCreateRole(n)
+	case *ast.AlterRoleNode:
+		return r.renderAlterRole(n)
+	case *ast.DropRoleNode:
+		return r.renderDropRole(n)
+	case *ast.GrantPrivilegeNode:
+		return r.renderGrantPrivilege(n)
+	case *ast.RevokePrivilegeNode:
+		return r.renderRevokePrivilege(n)
+	case *ast.DefaultPrivilegeNode:
+		return r.renderDefaultPrivilege(n)
+	case *ast.RevokeDefaultPrivilegeNode:
+		return r.renderRevokeDefaultPrivilege(n)
+	case *ast.CreatePolicyNode:
+		return r.renderCreatePolicy(n)
+	case *ast.DropPolicyNode:
+		return r.renderDropPolicy(n)
+	case *ast.AlterTableEnableRLSNode:
+		return r.renderAlterTableEnableRLS(n)
+	case *ast.AlterTableDisableRLSNode:
+		return r.renderAlterTableDisableRLS(n)
+
+	// TimescaleDB objects, which only a PostgreSQL target carrying the
+	// extension can host.
+	case *ast.CreateHypertableNode:
+		return r.renderCreateHypertable(n)
+	case *ast.CreateContinuousAggregateNode:
+		return r.renderCreateContinuousAggregate(n)
+	case *ast.DropContinuousAggregateNode:
+		return r.renderDropContinuousAggregate(n)
+
+	// Objects another engine owns. Each handler writes the skip comment and
+	// records the omission rather than failing, so the declaration is reported
+	// instead of dropped.
+	case *ast.CreateSynonymNode:
+		return r.renderCreateSynonym(n)
+	case *ast.DropSynonymNode:
+		return r.renderDropSynonym(n)
+	case *ast.ExtendedPropertyNode:
+		return r.renderExtendedProperty(n)
+
+	// Statements carried as text. A routine node holds the whole executable
+	// statement beside the metadata the SQL parser recovered from it, and the
+	// renderer has no structured spelling for a routine body, so the text is
+	// what it emits.
+	case *ast.RawSQLNode:
+		return r.renderRawSQL(n)
+	case *ast.MySQLRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.OpaqueRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.PostgresDoBlockNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.PostgresRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+	case *ast.SQLServerRoutineNode:
+		return r.renderRoutineSQL(n.SQL)
+
+	// Data manipulation, which this renderer does not generate.
+	case *ast.UpsertNode:
+		return r.renderUpsert(n)
+
+	// A list of statements.
+	case *ast.StatementList:
+		return r.renderStatementList(n)
+
+	// The fragments. An alter operation, a type definition and a type
+	// operation have no table or type name of their own: the ALTER or CREATE
+	// that carries one names the object, and that statement's handler renders
+	// the fragment inside it.
+	case *ast.AddColumnOperation,
+		*ast.AddConstraintOperation,
+		*ast.AddEnumValueOperation,
+		*ast.AddIndexOperation,
+		*ast.AddSkippingIndexOperation,
+		*ast.AlterGeneratedColumnExpressionOperation,
+		*ast.CompositeAttributeOperation,
+		*ast.CompositeTypeDef,
+		*ast.DomainConstraintOperation,
+		*ast.DomainDefaultOperation,
+		*ast.DomainNotNullOperation,
+		*ast.DomainTypeDef,
+		*ast.DropColumnOperation,
+		*ast.DropConstraintOperation,
+		*ast.DropRowDeletionPolicyOperation,
+		*ast.EnumTypeDef,
+		*ast.ModifyColumnOperation,
+		*ast.ModifyTTLOperation,
+		*ast.RangeTypeDef,
+		*ast.RenameColumnOperation,
+		*ast.RenameConstraintOperation,
+		*ast.RenameEnumValueOperation,
+		*ast.RenameTableOperation,
+		*ast.RenameTypeOperation,
+		*ast.ResetRowTTLOperation,
+		*ast.SetCommentOperation,
+		*ast.SetRowDeletionPolicyOperation,
+		*ast.SetRowTTLOperation:
+		return r.nodeNeedsParent(node)
+
+	default:
+		return r.unknownNode(node)
+	}
+}
+
+// renderRoutineSQL emits a routine statement the SQL parser produced.
+//
+// The parser keeps a routine's name, parameters and body as fields on the node,
+// and it keeps the statement it read alongside them. A caller that wants the
+// structure reads the node; a caller that wants DDL gets the statement back
+// unchanged, which is the only spelling that survives every routine language a
+// PostgreSQL server accepts.
+func (r *Renderer) renderRoutineSQL(sql string) error {
+	return r.renderRawSQL(&ast.RawSQLNode{SQL: sql})
+}
+
+// renderStatementList renders every statement in the list, in order.
+//
+// The first failure stops the walk, so a list whose last statement is
+// unrenderable leaves a prefix in the buffer; every entry point returns the
+// error and no output, which is what keeps that prefix from reaching a caller.
+// The renderer core prepares and splits a top-level list before it reaches a
+// dialect, so what arrives here is a list another node holds.
+func (r *Renderer) renderStatementList(list *ast.StatementList) error {
+	for index, statement := range list.Statements {
+		if err := r.VisitNode(statement); err != nil {
+			return fmt.Errorf("rendering statement %d of %d: %w", index+1, len(list.Statements), err)
+		}
+	}
+	return nil
+}
+
+// nodeNeedsParent refuses a node that is part of a statement rather than one.
+//
+// Rendering nothing would be the wrong answer twice over: the caller asked for
+// DDL and would receive an empty string, and the renderer would be unable to
+// tell that outcome apart from an object it skipped on purpose.
+func (r *Renderer) nodeNeedsParent(node ast.Node) error {
+	return fmt.Errorf("%w: %s: %T is rendered by the statement that carries it, not on its own",
+		ptaherr.ErrInvalidSchemaDiff, r.dialect, node)
+}
+
+// unknownNode refuses a node kind this renderer has no arm for.
+//
+// It names the concrete type, because a reader has to know which kind went
+// unanswered, and [ptah.run/internal/astrouteguard] is what keeps this arm
+// unreachable for a kind that exists.
+func (r *Renderer) unknownNode(node ast.Node) error {
+	return fmt.Errorf("%w: %s: no rendering rule for %T",
+		ptaherr.ErrInvalidSchemaDiff, r.dialect, node)
 }
 
 // escapeValue properly escapes a string value for use in SQL
@@ -614,8 +873,8 @@ func unloggedKeyword(node *ast.CreateTableNode) string {
 	return ""
 }
 
-// VisitCreateTable renders CREATE TABLE with PostgreSQL-specific handling
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+// renderCreateTable renders CREATE TABLE with PostgreSQL-specific handling
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// This target writes the identity clauses, UNIQUE, and -- where the server
 	// persists one -- the name on a NOT NULL, refusing the name rather than
 	// dropping it where it does not. What it has no clause for is the MySQL
@@ -911,8 +1170,8 @@ func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
 	}
 }
 
-// VisitAlterTable renders PostgreSQL-specific ALTER TABLE statements
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+// renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	r.w.WriteLine("-- ALTER statements: --")
 
 	for _, operation := range node.Operations {
@@ -1090,19 +1349,19 @@ func (r *Renderer) commentLiteral(comment string) string {
 	return r.escapeValue(comment)
 }
 
-func (r *Renderer) VisitColumn(node *ast.ColumnNode) error {
+func (r *Renderer) renderColumnNode(node *ast.ColumnNode) error {
 	// This is typically called from within other visitors
 	// The actual rendering is done by RenderColumn
 	return nil
 }
 
-func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
+func (r *Renderer) renderConstraintNode(node *ast.ConstraintNode) error {
 	// This is typically called from within other visitors
 	// The actual rendering is done by RenderConstraint
 	return nil
 }
 
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// The storage parameters are rendered below as WITH (key='value'), and the
 	// operator class and the partial condition have clauses here too. The
 	// FULLTEXT parser does not: it names a MySQL plugin and this family has no
@@ -1273,7 +1532,7 @@ func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
 	return r.escapeIdentifier(part.Name)
 }
 
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	// An altered extension is a different statement about the same object, and
 	// both spellings were measured on PostgreSQL 18 rather than read:
 	// `ALTER EXTENSION pg_trgm UPDATE TO '1.6'` moves 1.5 to 1.6 and answers
@@ -1331,8 +1590,8 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 	return nil
 }
 
-// VisitEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
-func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
+// renderEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
+func (r *Renderer) renderEnum(node *ast.EnumNode) error {
 	if r.refuses(capability.EnumCustomType, "enum type", node.Name) {
 		return nil
 	}
@@ -1346,13 +1605,13 @@ func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
 	return nil
 }
 
-// VisitComment renders a comment
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+// renderComment renders a comment
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s --", node.Text)
 	return nil
 }
 
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	// Build DROP TABLE statement with PostgreSQL-specific features
 	var parts []string
 	parts = append(parts, "DROP TABLE")
@@ -1378,8 +1637,8 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-// VisitDropType renders PostgreSQL-specific DROP TYPE statements
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+// renderDropType renders PostgreSQL-specific DROP TYPE statements
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	// Build DROP TYPE / DROP DOMAIN statement (PostgreSQL-specific)
 	var parts []string
 	if node.Domain {
@@ -1984,7 +2243,7 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 	r.w.WriteLinef("$$;")
 }
 
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	var parts []string
 
 	parts = append(parts, "DROP EXTENSION")
@@ -2021,7 +2280,7 @@ func renderRoutineSetting(setting string) string {
 	return fmt.Sprintf("SET %s = %s", name, value)
 }
 
-// VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
+// renderCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 // routineAttributes assembles the clauses that follow a routine's signature,
 // in the order PostgreSQL prints them back.
 //
@@ -2068,7 +2327,7 @@ func routineSettingClauses(node *ast.CreateFunctionNode) []string {
 	return clauses
 }
 
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure decides against its own key. The two kinds are one catalog
 	// object and one node, and they are still two different claims: SQL Server
 	// hosts functions and no Ptah path reads a procedure back there
@@ -2132,8 +2391,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	return nil
 }
 
-// VisitCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+// renderCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
 		return nil
 	}
@@ -2185,8 +2444,8 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+// renderAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
 		return nil
 	}
@@ -2209,8 +2468,8 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitDropFunction renders a DROP FUNCTION statement
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+// renderDropFunction renders a DROP FUNCTION statement
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	if node.IsProcedure() {
 		if r.refuses(capability.Procedures, "procedure", node.Name) {
 			return nil
@@ -2353,8 +2612,8 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 	return true
 }
 
-// VisitCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+// renderCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -2461,9 +2720,9 @@ func (r *Renderer) writeSequenceClausesSkipped(name string, clauses []string) {
 		r.dialectUpper, commentFragment(name), commentFragment(strings.Join(clauses, ", ")))
 }
 
-// VisitAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
+// renderAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
 // the set options are emitted; a node with no set options renders nothing.
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -2514,8 +2773,8 @@ func (r *Renderer) renderStartCounterAlter(node *ast.AlterSequenceNode) error {
 	return nil
 }
 
-// VisitDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+// renderDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -2544,8 +2803,8 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 	return nil
 }
 
-// VisitCreateView renders a CREATE VIEW statement.
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+// renderCreateView renders a CREATE VIEW statement.
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
 	}
@@ -2567,8 +2826,8 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-// VisitDropView renders a DROP VIEW statement.
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+// renderDropView renders a DROP VIEW statement.
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
 	}
@@ -2589,8 +2848,8 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+// renderCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
@@ -2609,8 +2868,8 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 	return nil
 }
 
-// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+// renderDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
@@ -2631,12 +2890,12 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 	return nil
 }
 
-// VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
-// VisitAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
+// renderRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
+// renderAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
 // property, and PostgreSQL has no statement that carries one. Refreshing a
 // PostgreSQL materialized view is an operation someone runs, which is
-// VisitRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+// renderRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	return fmt.Errorf(
 		"%w: postgres: materialized view %q cannot carry a refresh schedule; "+
 			"a scheduled refresh is a ClickHouse feature",
@@ -2645,7 +2904,7 @@ func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterialized
 	)
 }
 
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
@@ -2663,9 +2922,9 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	return nil
 }
 
-// VisitCreateTrigger renders PostgreSQL trigger creation plus its linked
+// renderCreateTrigger renders PostgreSQL trigger creation plus its linked
 // trigger function.
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	// The linked trigger function below is part of the trigger rather than a
 	// function the schema declared, so one key answers for the pair and one
 	// comment names the object the author actually wrote.
@@ -2724,9 +2983,9 @@ func renderPostgreSQLTriggerFunctionBody(body string) string {
 	return "BEGIN\n" + body + "\nEND;"
 }
 
-// VisitDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
+// renderDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
 // trigger function when its deterministic name is known.
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if r.refuses(capability.Triggers, "trigger", node.Name) {
 		return nil
 	}
@@ -2803,8 +3062,8 @@ func isIdentifierPart(character byte) bool {
 		character == '_'
 }
 
-// VisitDropPolicy renders a DROP POLICY statement
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+// renderDropPolicy renders a DROP POLICY statement
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
 		return nil
 	}
@@ -2829,8 +3088,8 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+// renderAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
 		return nil
 	}
@@ -2846,8 +3105,8 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	return nil
 }
 
-// VisitCreateRole renders a CREATE ROLE statement for PostgreSQL
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+// renderCreateRole renders a CREATE ROLE statement for PostgreSQL
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if r.refuses(capability.RoleManagement, "role", node.Name) {
 		return nil
 	}
@@ -2921,8 +3180,8 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	return nil
 }
 
-// VisitDropRole renders a DROP ROLE statement for PostgreSQL
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+// renderDropRole renders a DROP ROLE statement for PostgreSQL
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	if r.refuses(capability.RoleManagement, "role", node.Name) {
 		return nil
 	}
@@ -2947,8 +3206,8 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
-// VisitGrantPrivilege renders a GRANT statement for PostgreSQL.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+// renderGrantPrivilege renders a GRANT statement for PostgreSQL.
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("GRANT requires at least one privilege")
@@ -2976,8 +3235,8 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokePrivilege renders a REVOKE statement for PostgreSQL.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+// renderRevokePrivilege renders a REVOKE statement for PostgreSQL.
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("REVOKE requires at least one privilege")
@@ -3005,7 +3264,7 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return nil
 }
 
-// VisitDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement
+// renderDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement
 // for PostgreSQL.
 //
 // One statement per grantability. The catalog records WITH GRANT OPTION per
@@ -3016,7 +3275,7 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 // IN SCHEMA is always emitted. The clause-less form sets the cluster-wide
 // default, which internal/devclean refuses during replay, and the node has no
 // spelling for it.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	if len(node.Privileges) == 0 {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires at least one privilege")
 	}
@@ -3055,9 +3314,9 @@ func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE
+// renderRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE
 // statement for PostgreSQL.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires at least one privilege")
@@ -3106,14 +3365,14 @@ func splitByGrantOption(privileges []ast.DefaultPrivilege) (plain, grantable []s
 	return plain, grantable
 }
 
-// VisitRawSQL renders a literal SQL fragment verbatim and appends a trailing
+// renderRawSQL renders a literal SQL fragment verbatim and appends a trailing
 // semicolon if the fragment doesn't already end with one. The caller owns
 // correctness of the embedded SQL. The trailing `;` is essential — downstream
 // SplitSQLStatements (used by the migrator to apply each statement separately
 // for MySQL compatibility) tokenizes on semicolons, and a dollar-quoted body
 // that ends with `$tag$\n` would otherwise merge with the following statement
 // into one chunk that Postgres rejects with `syntax error at or near "DO"`.
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	sql := node.SQL
 	if !strings.HasSuffix(strings.TrimRight(sql, "\r\n\t "), ";") {
 		sql += ";"
@@ -3122,8 +3381,8 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return nil
 }
 
-// VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+// renderAlterRole renders an ALTER ROLE statement for PostgreSQL
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	if r.refuses(capability.RoleManagement, "role", node.Name) {
 		return nil
 	}
@@ -3325,7 +3584,7 @@ func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
 	}
 }
 
-// VisitCreateContinuousAggregate renders the statement that creates a
+// renderCreateContinuousAggregate renders the statement that creates a
 // TimescaleDB continuous aggregate.
 //
 // It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
@@ -3338,7 +3597,7 @@ func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
 // whole history the hypertable holds, which on a real table is a table scan and
 // a rewrite -- work an operator schedules rather than something a schema
 // migration does as a side effect. The first refresh is theirs to run.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
 		return nil
 	}
@@ -3373,12 +3632,12 @@ func continuousAggregateBody(body string) string {
 	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(body), ";"))
 }
 
-// VisitDropContinuousAggregate renders the statement that removes one.
+// renderDropContinuousAggregate renders the statement that removes one.
 //
 // DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's own
 // instruction rather than a preference: `cannot drop continuous aggregate using
 // DROP VIEW. HINT: Use DROP MATERIALIZED VIEW to drop a continuous aggregate.`
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
 		return nil
 	}
@@ -3405,7 +3664,7 @@ func (r *Renderer) continuousAggregateName(schema, name string) string {
 	return schema + "." + name
 }
 
-// VisitCreateHypertable renders the TimescaleDB call that turns an ordinary
+// renderCreateHypertable renders the TimescaleDB call that turns an ordinary
 // table into a hypertable.
 //
 // It is a function call rather than DDL, because TimescaleDB has no CREATE
@@ -3425,7 +3684,7 @@ func (r *Renderer) continuousAggregateName(schema, name string) string {
 // without the extension has no such function, and a plan that called it would
 // fail on `function create_hypertable(unknown, unknown) does not exist` at
 // apply time instead of saying so in the plan (stokaro/ptah#1026).
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	if r.refuses(capability.Hypertables, "hypertable", node.Table) {
 		return nil
 	}
@@ -3459,7 +3718,7 @@ func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
 	return nil
 }
 
-// VisitCreateSynonym names the synonym as skipped.
+// renderCreateSynonym names the synonym as skipped.
 //
 // There is no capability key behind this refusal, and that is the difference
 // between a synonym and a sequence here. A capability varies: some servers on
@@ -3468,24 +3727,24 @@ func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
 // CockroachDB, YugabyteDB or the Spanner interface this renderer also backs --
 // so a key would have exactly one value forever and would invite a preset to
 // turn it on.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.writeObjectSkipped("synonym", node.Name)
 	return nil
 }
 
-// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// renderExtendedProperty refuses: an extended property is a SQL Server object,
 // and the PostgreSQL family has no catalog to attach one to.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	r.writeObjectSkipped("extended property", node.Name)
 	return nil
 }
 
-// VisitDropSynonym names the synonym as skipped, for the same reason.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+// renderDropSynonym names the synonym as skipped, for the same reason.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	r.writeObjectSkipped("synonym", node.Name)
 	return nil
 }

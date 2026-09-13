@@ -48,7 +48,7 @@ import (
 // it gets the named refusal every other withheld kind gets, and New()'s
 // ClickHouse24 preset carries it.
 
-// VisitCreateRole renders CREATE ROLE for ClickHouse.
+// renderCreateRole renders CREATE ROLE for ClickHouse.
 //
 // The IF NOT EXISTS guard is unconditional. [ast.CreateRoleNode] carries no
 // IfNotExists field, so the choice is between always and never, and never fails
@@ -67,7 +67,7 @@ import (
 // this boundary from a node that declared inherit="false". The distinction
 // survives one layer up, where [clickhouserbac.ValidateDeclared] reads
 // [schemamodel.Role] and the annotation parser has already defaulted it to true.
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("CREATE ROLE", node.Name)
 		return nil
@@ -88,14 +88,14 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	return nil
 }
 
-// VisitDropRole renders DROP ROLE for ClickHouse.
+// renderDropRole renders DROP ROLE for ClickHouse.
 //
 // The IF EXISTS guard is unconditional for the same reason the create guard is,
 // read from the other end: node.IfExists distinguishes a drop that tolerates an
 // absent role from one that fails on it, and the failing form only aborts a run
 // at a statement whose goal — this role not existing — the server has already
 // met.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("DROP ROLE", node.Name)
 		return nil
@@ -109,7 +109,7 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
-// VisitAlterRole refuses, and refuses with an error rather than a comment.
+// renderAlterRole refuses, and refuses with an error rather than a comment.
 //
 // There is no representable alteration. system.roles is (name, id, storage), so
 // nothing an [ast.AlterRoleNode] operation describes — PASSWORD, LOGIN,
@@ -122,7 +122,7 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 // the run reports success, and the role on the target still carries whatever it
 // carried before. The fail-closed shape is
 // mysqllike.ValidateDeclaredRoles' — name the role, name the reason, refuse.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	// The capability gate comes first because the two answers mean different
 	// things. Without RoleManagement the target does not do roles at all, and
 	// the named refusal every other withheld kind gets is the right one. With
@@ -139,13 +139,13 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	)
 }
 
-// VisitGrantPrivilege renders GRANT for ClickHouse.
+// renderGrantPrivilege renders GRANT for ClickHouse.
 //
 // The statement is `GRANT priv[, priv...] ON <scope> TO <role> [WITH GRANT
 // OPTION]`. Privileges keep the order they were declared in, because the server
 // records one row per privilege and the order carries no meaning it could
 // change.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("GRANT", node.Role)
 		return nil
@@ -163,13 +163,13 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokePrivilege renders REVOKE for ClickHouse.
+// renderRevokePrivilege renders REVOKE for ClickHouse.
 //
 // `REVOKE GRANT OPTION FOR ...` is one statement, not a revoke followed by a
 // re-grant: measured on both lines it takes grant_option from 1 to 0 and leaves
 // no is_partial_revoke row behind, so the downgrade converges. Splitting it
 // would leave the target with no grant at all if the second statement failed.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("REVOKE", node.Role)
 		return nil
@@ -345,7 +345,7 @@ func refuseRoleAttributes(node *ast.CreateRoleNode) error {
 	)
 }
 
-// VisitDefaultPrivilege names and skips a default-privilege declaration.
+// renderDefaultPrivilege names and skips a default-privilege declaration.
 //
 // ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
 // pg_default_acl, the privileges an object gets when a named role creates one.
@@ -354,14 +354,14 @@ func refuseRoleAttributes(node *ast.CreateRoleNode) error {
 // neighbours: the nearest ClickHouse statement, a grant on the database, applies
 // to what exists rather than to what is created next, so it would mean something
 // the author did not write.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.VisitDefaultPrivilege] carries.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// renderDefaultPrivilege carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }

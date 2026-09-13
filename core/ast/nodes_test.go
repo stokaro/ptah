@@ -673,7 +673,10 @@ func TestCreateFunctionNode_Accept(t *testing.T) {
 	c.Assert(visitor.VisitedNodes[0], qt.Equals, "CreateFunction:test_function")
 }
 
-func TestOpaqueRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+// TestOpaqueRoutineNode_AcceptHandsTheVisitorTheRoutine pins that the routine
+// reaches the visitor with the dialect and the kind that selected the opaque
+// path still on it, and that the constructor trimmed the statement.
+func TestOpaqueRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewOpaqueRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
@@ -683,10 +686,12 @@ func TestOpaqueRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(routine.SQL, qt.Equals, "CREATE PROCEDURE p() SELECT 1;")
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"OpaqueRoutine:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(routine.Dialect, qt.Equals, "mysql")
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 }
 
-func TestOpaqueRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
+func TestOpaqueRoutineNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewOpaqueRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
@@ -694,8 +699,8 @@ func TestOpaqueRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
 
 	err := routine.Accept(visitor)
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(err, qt.ErrorMatches, "mock error")
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"OpaqueRoutine:CREATE PROCEDURE p() SELECT 1;"})
 }
 
 func TestNewCreatePolicy(t *testing.T) {

@@ -31,13 +31,13 @@ var optionValues = map[string]string{
 	"TTL":          "created_at + INTERVAL 1 DAY",
 }
 
-// TestVisitCreateTable_RendersEveryTableOptionItKeeps binds the list to the
+// TestRenderCreateTable_RendersEveryTableOptionItKeeps binds the list to the
 // engine spec that reads it.
 //
 // A key the list names is claimed to be carried, so the render has to show it.
 // Dropping an arm from resolveTableEngineSpec while leaving its key here would
 // otherwise produce a target that loses an option and reports nothing.
-func TestVisitCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
+func TestRenderCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
 	for _, key := range tableEngineOptionKeys {
 		t.Run(key, func(t *testing.T) {
 			c := qt.New(t)
@@ -62,11 +62,11 @@ func TestVisitCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
 	}
 }
 
-// TestVisitCreateTable_ReportsAnOptionOutsideTheEngineSpec is the other half.
+// TestRenderCreateTable_ReportsAnOptionOutsideTheEngineSpec is the other half.
 //
 // Every assertion above is satisfied by a renderer that reports nothing at all,
 // so one key the list does not name has to arrive as a record.
-func TestVisitCreateTable_ReportsAnOptionOutsideTheEngineSpec(t *testing.T) {
+func TestRenderCreateTable_ReportsAnOptionOutsideTheEngineSpec(t *testing.T) {
 	c := qt.New(t)
 
 	renderer := New()

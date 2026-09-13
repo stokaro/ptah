@@ -17,7 +17,7 @@ func newRenderer(dialect string) *mysqllike.Renderer {
 	return mysqllike.NewWithCapabilities(dialect, &bufwriter.Writer{}, capability.ForDialect(dialect))
 }
 
-// TestVisitDropFunction_QualifiedNameIsTwoIdentifiers pins the quoting of a
+// TestVisitNode_DropFunctionQualifiedNameIsTwoIdentifiers pins the quoting of a
 // schema-qualified function name.
 //
 // A function read back from the catalog carries its database as a schema, and
@@ -36,9 +36,9 @@ func newRenderer(dialect string) *mysqllike.Renderer {
 // left two stray routines in information_schema.ROUTINES across an apply, and
 // the two-identifier form dropped them and converged.
 //
-// VisitDropView already quotes this way; this holds the function path to the
-// same rule rather than fixing the instance.
-func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
+// The DROP VIEW path already quotes this way; this holds the function path to
+// the same rule rather than fixing the instance.
+func TestVisitNode_DropFunctionQualifiedNameIsTwoIdentifiers(t *testing.T) {
 	tests := []struct {
 		name string
 		node *ast.DropFunctionNode
@@ -62,14 +62,14 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 				c := qt.New(t)
 				r := newRenderer(dialect)
 
-				c.Assert(r.VisitDropFunction(test.node), qt.IsNil)
+				c.Assert(r.VisitNode(test.node), qt.IsNil)
 				c.Check(r.Output(), qt.Contains, test.want)
 			})
 		}
 	}
 }
 
-// TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun pins which
+// TestVisitNode_CreateFunctionLanguageDecidesWhetherTheBodyCanRun pins which
 // declarations this target generates DDL for, and which it names and skips.
 //
 // MySQL and MariaDB run exactly one routine language, SQL. A function declared
@@ -92,7 +92,7 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 // about -- and it would make capability.Functions vacuous again. A body this
 // target can run still becomes real DDL, which is what the live round trip in
 // integration/gonative asserts.
-func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
+func TestVisitNode_CreateFunctionLanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 	tests := []struct {
 		name     string
 		language string
@@ -126,7 +126,7 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 				c := qt.New(t)
 				r := newRenderer(dialect)
 
-				err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+				err := r.VisitNode(&ast.CreateFunctionNode{
 					Name: "fn", Returns: "int", Volatility: "IMMUTABLE",
 					Language: test.language, Body: "RETURN 1",
 				})
@@ -140,7 +140,7 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 	}
 }
 
-// TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault pins the part of the
+// TestVisitNode_CreateFunctionSkipNamesTheCanonicalizeDefault pins the part of the
 // skip message that is new.
 //
 // [schemamodel.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
@@ -151,13 +151,13 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 // from a deliberate plpgsql declaration -- both arrive as the same value -- so
 // it cannot choose for the operator, but it can say which two readings exist
 // and which word settles it.
-func TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault(t *testing.T) {
+func TestVisitNode_CreateFunctionSkipNamesTheCanonicalizeDefault(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			r := newRenderer(dialect)
 
-			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+			err := r.VisitNode(&ast.CreateFunctionNode{
 				Name: "fn", Returns: "int", Volatility: "IMMUTABLE",
 				Language: "plpgsql", Body: "RETURN 1",
 			})
@@ -175,15 +175,15 @@ func TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault(t *testing.T) {
 	}
 }
 
-// TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers holds the create half to
+// TestVisitNode_CreateFunctionQualifiedNameIsTwoIdentifiers holds the create half to
 // the same rule as the drop half above.
-func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
+func TestVisitNode_CreateFunctionQualifiedNameIsTwoIdentifiers(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			r := newRenderer(dialect)
 
-			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+			err := r.VisitNode(&ast.CreateFunctionNode{
 				Name: "ptah_test.f_c", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1",
 			})
 
@@ -194,7 +194,7 @@ func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 	}
 }
 
-// TestVisitCreateFunction_RendersExactlyOneStatement pins the invariant that
+// TestVisitNode_CreateFunctionRendersExactlyOneStatement pins the invariant that
 // makes an element of GetOrderedCreateStatements executable as it stands.
 //
 // A visitor that emits its own `DROP FUNCTION IF EXISTS` in front of every
@@ -212,13 +212,13 @@ func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 // The drop a replacement needs is a separate node the MySQL-family planner
 // emits; see its own test for that half. Counting semicolons is the
 // cheapest statement of the rule that a mutant restoring the prefix fails.
-func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
+func TestVisitNode_CreateFunctionRendersExactlyOneStatement(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			r := newRenderer(dialect)
 
-			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+			err := r.VisitNode(&ast.CreateFunctionNode{
 				Name: "fn", Parameters: "a INT", Returns: "int",
 				Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
@@ -230,7 +230,7 @@ func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
 	}
 }
 
-// TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead pins the write
+// TestVisitNode_CreateFunctionVolatilityIsDistinguishableAfterARead pins the write
 // half of the volatility round trip at the renderer.
 //
 // Rendering STABLE and VOLATILE as the same characteristic leaves a read unable
@@ -238,7 +238,7 @@ func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
 // `volatility: VOLATILE -> STABLE` after a successful apply and plans the same
 // destructive replacement forever. The measurements behind the three
 // clauses are in mysqlroutine.Characteristic; this holds the renderer to them.
-func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T) {
+func TestVisitNode_CreateFunctionVolatilityIsDistinguishableAfterARead(t *testing.T) {
 	tests := []struct {
 		name       string
 		volatility string
@@ -255,7 +255,7 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 				c := qt.New(t)
 				r := newRenderer(dialect)
 
-				err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+				err := r.VisitNode(&ast.CreateFunctionNode{
 					Name: "fn", Returns: "int", Volatility: test.volatility, Body: "RETURN 1",
 				})
 
@@ -266,7 +266,7 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 	}
 }
 
-// TestVisitCreateFunction_RefusesValuesItCannotRepresent holds the refusal seam.
+// TestVisitNode_CreateFunctionRefusesValuesItCannotRepresent holds the refusal seam.
 //
 // Dropping either silently produces the same permanent drift: an unknown
 // security mode emits no clause at all, so MySQL applies its DEFINER default
@@ -277,7 +277,7 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 // The refusal happens before anything is written, which is load-bearing: the
 // planner emits a DROP in front of this node, and a CREATE refused after that
 // drop was rendered would leave a migration whose only effect is deletion.
-func TestVisitCreateFunction_RefusesValuesItCannotRepresent(t *testing.T) {
+func TestVisitNode_CreateFunctionRefusesValuesItCannotRepresent(t *testing.T) {
 	tests := []struct {
 		name string
 		node *ast.CreateFunctionNode
@@ -327,7 +327,7 @@ func TestVisitCreateFunction_RefusesValuesItCannotRepresent(t *testing.T) {
 				c := qt.New(t)
 				r := newRenderer(dialect)
 
-				err := r.VisitCreateFunction(test.node)
+				err := r.VisitNode(test.node)
 
 				c.Assert(err, qt.IsNotNil)
 				c.Check(err.Error(), qt.Contains, test.want)

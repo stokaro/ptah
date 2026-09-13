@@ -57,7 +57,7 @@ import (
 // Anything it lets through is still the engine's to judge.
 var rlsPredicateInvocation = regexp.MustCompile(`^\s*(?:\[[^\]]+\]|[A-Za-z_][\w$]*)\s*\.\s*(?:\[[^\]]+\]|[A-Za-z_][\w$]*)\s*\(`)
 
-// VisitCreatePolicy renders a T-SQL CREATE SECURITY POLICY.
+// renderCreatePolicy renders a T-SQL CREATE SECURITY POLICY.
 //
 // A declaration whose USING expression is not a two-part function invocation is
 // refused by name rather than rendered into something the engine would reject
@@ -65,7 +65,7 @@ var rlsPredicateInvocation = regexp.MustCompile(`^\s*(?:\[[^\]]+\]|[A-Za-z_][\w$
 // SQL Server has no role list on a predicate -- role scoping lives inside the
 // predicate function's own body -- so honoring `TO app_user` would mean
 // dropping it, and a dropped TO clause is a policy that applies to everyone.
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	if r.refuses(capability.RowLevelSecurity, "RLS policies", node.Name) {
 		return nil
 	}
@@ -120,11 +120,11 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	return nil
 }
 
-// VisitDropPolicy renders a T-SQL DROP SECURITY POLICY.
+// renderDropPolicy renders a T-SQL DROP SECURITY POLICY.
 //
 // `DROP SECURITY POLICY IF EXISTS` on an absent policy is accepted, so the
 // guard needs no existence test of its own.
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	if r.refuses(capability.RowLevelSecurity, "DROP POLICY", node.Name) {
 		return nil
 	}
@@ -139,7 +139,7 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableEnableRLS names the table-level switch T-SQL does not have.
+// renderAlterTableEnableRLS names the table-level switch T-SQL does not have.
 //
 // PostgreSQL needs two statements -- ENABLE ROW LEVEL SECURITY on the table and
 // then CREATE POLICY -- because the switch and the policy are separate objects.
@@ -151,7 +151,7 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 // notSupported family exists: the author wrote a statement, and a plan that
 // shows neither the statement nor a word about it reads as though the
 // declaration was never made.
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	if r.refuses(capability.RowLevelSecurity, "row-level security", node.Table) {
 		return nil
 	}
@@ -160,13 +160,13 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitAlterTableDisableRLS names the same absent switch from the other side.
+// renderAlterTableDisableRLS names the same absent switch from the other side.
 //
 // Disabling row-level security on SQL Server means turning the policy off --
 // `ALTER SECURITY POLICY <name> WITH (STATE = OFF)`, which is accepted -- or
 // dropping it. Neither is addressed by a table name alone, which is all this
 // node carries, so there is nothing to render and the reason is stated.
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	if r.refuses(capability.RowLevelSecurity, "row-level security", node.Table) {
 		return nil
 	}

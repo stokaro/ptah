@@ -9,44 +9,40 @@ import (
 	"ptah.run/core/renderer/internal/dialects/mariadb"
 )
 
-// TestMariaDBRenderer_WrapperVisitorsReachTheSharedBuffer is the MariaDB half of
+// TestMariaDBRenderer_WrapperHandlersReachTheSharedBuffer is the MariaDB half of
 // the MySQL test of the same name; see that file for why an orphaned buffer made
-// all five visitors render nothing (stokaro/ptah#931 item 5).
-func TestMariaDBRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
+// every handler render nothing (stokaro/ptah#931 item 5).
+func TestMariaDBRenderer_WrapperHandlersReachTheSharedBuffer(t *testing.T) {
 	tests := []struct {
-		name   string
-		render func(*mariadb.Renderer) error
-		want   string
+		name string
+		node ast.Node
+		want string
 	}{
 		{
-			name:   "VisitExtension",
-			render: func(r *mariadb.Renderer) error { return r.VisitExtension(&ast.ExtensionNode{Name: "pg_trgm"}) },
-			want:   "-- Extension pg_trgm not supported in MariaDB",
+			name: "ExtensionNode",
+			node: &ast.ExtensionNode{Name: "pg_trgm"},
+			want: "-- Extension pg_trgm not supported in MariaDB",
 		},
 		{
-			name:   "VisitDropExtension",
-			render: func(r *mariadb.Renderer) error { return r.VisitDropExtension(&ast.DropExtensionNode{Name: "pg_trgm"}) },
-			want:   "-- DROP EXTENSION pg_trgm not supported in MariaDB",
+			name: "DropExtensionNode",
+			node: &ast.DropExtensionNode{Name: "pg_trgm"},
+			want: "-- DROP EXTENSION pg_trgm not supported in MariaDB",
 		},
 		{
-			name: "VisitCreateFunction",
-			render: func(r *mariadb.Renderer) error {
-				return r.VisitCreateFunction(&ast.CreateFunctionNode{
-					Name: "touch", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1",
-				})
+			name: "CreateFunctionNode",
+			node: &ast.CreateFunctionNode{
+				Name: "touch", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1",
 			},
 			want: "CREATE FUNCTION `touch`() RETURNS int DETERMINISTIC RETURN 1;",
 		},
 		{
-			name:   "VisitCreatePolicy",
-			render: func(r *mariadb.Renderer) error { return r.VisitCreatePolicy(&ast.CreatePolicyNode{Name: "p1"}) },
-			want:   "-- CREATE POLICY p1 not supported in MariaDB",
+			name: "CreatePolicyNode",
+			node: &ast.CreatePolicyNode{Name: "p1"},
+			want: "-- CREATE POLICY p1 not supported in MariaDB",
 		},
 		{
-			name: "VisitAlterTableEnableRLS",
-			render: func(r *mariadb.Renderer) error {
-				return r.VisitAlterTableEnableRLS(&ast.AlterTableEnableRLSNode{Table: "users"})
-			},
+			name: "AlterTableEnableRLSNode",
+			node: &ast.AlterTableEnableRLSNode{Table: "users"},
 			want: "-- ALTER TABLE users ENABLE ROW LEVEL SECURITY not supported in MariaDB",
 		},
 	}
@@ -57,7 +53,7 @@ func TestMariaDBRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
 			renderer := mariadb.New()
 			renderer.Reset()
 
-			err := test.render(renderer)
+			err := test.node.Accept(renderer)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(renderer.Output(), qt.Not(qt.Equals), "")

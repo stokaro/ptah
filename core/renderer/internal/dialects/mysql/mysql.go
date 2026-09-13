@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 	"ptah.run/core/renderer/internal/dialects/mysqllike"
 	"ptah.run/internal/renderdiag"
 )
@@ -15,10 +16,11 @@ type Renderer struct {
 	r *mysqllike.Renderer
 
 	// w is the SAME buffer the embedded mysqllike renderer writes into, held by
-	// pointer on purpose. Output, Reset and Render all delegate to r, so a
-	// visitor defined on this wrapper is only observable if it appends to r's
-	// buffer. Storing a bufwriter.Writer by value here silently orphaned every
-	// such visitor: they wrote into a copy nothing ever read.
+	// pointer on purpose. Output and Reset delegate to r, so a handler defined
+	// on this wrapper is only observable if it appends to r's buffer. Storing a
+	// bufwriter.Writer by value here gives the wrapper a copy: its own handlers
+	// then write into a buffer nothing reads, and the render exits 0 with the
+	// refusal lines missing.
 	w *bufwriter.Writer
 }
 
@@ -43,32 +45,6 @@ func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
 	r.r.ReportOmissionsTo(sink)
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
-	return r.r.VisitDropIndex(node)
-}
-
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
-	return r.r.VisitCreateType(node)
-}
-
-// VisitCreateSchema delegates to the mysqllike renderer
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
-	return r.r.VisitCreateSchema(node)
-}
-
-// VisitCreateDatabase delegates to the mysqllike renderer
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
-	return r.r.VisitCreateDatabase(node)
-}
-
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
-	return r.r.VisitAlterType(node)
-}
-
-func (r *Renderer) VisitUpsert(node *ast.UpsertNode) error {
-	return r.r.VisitUpsert(node)
-}
-
 func (r *Renderer) Dialect() string {
 	return r.r.Dialect()
 }
@@ -81,9 +57,18 @@ func (r *Renderer) Output() string {
 	return r.r.Output()
 }
 
-// Render renders an AST node to SQL and returns the result
+// Render renders an AST node to SQL and returns the result.
+//
+// The node is accepted onto this renderer, so it reaches VisitNode below.
+// Handing it to the shared renderer instead would route around the four
+// refusals this wrapper writes itself, and the refusal a caller reads would
+// then depend on which entry point produced it.
 func (r *Renderer) Render(node ast.Node) (string, error) {
-	return r.r.Render(node)
+	r.Reset()
+	if err := node.Accept(r); err != nil {
+		return "", err
+	}
+	return r.Output(), nil
 }
 
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
@@ -96,53 +81,42 @@ func (r *Renderer) GetOutput() string {
 	return r.r.GetOutput()
 }
 
-// VisitCreateTable renders MySQL-specific CREATE TABLE statements
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
-	return r.r.VisitCreateTable(node)
+// VisitNode renders node.
+//
+// The switch names the node kinds this wrapper writes itself. Every other kind
+// reaches the shared MySQL-family renderer, whose own switch decides about the
+// rest; [ptah.run/internal/astrouteguard] follows that forward rather than
+// counting it as an answer.
+//
+// CreateFunctionNode is deliberately not named here. The engine has CREATE
+// FUNCTION, so a `-- CREATE FUNCTION <name> not supported in MySQL` line would
+// be a claim about the server that the server contradicts (stokaro/ptah#929).
+//
+// A nil node and a non-nil interface holding a nil pointer both go to the
+// shared renderer, which refuses a node that is not there. Without the check a
+// typed nil of one of the four kinds below would reach a handler and be
+// dereferenced, so the two spellings of "no node" would get one answer and one
+// panic.
+func (r *Renderer) VisitNode(node ast.Node) error {
+	if nodedispatch.IsAbsent(node) {
+		return r.r.VisitNode(node)
+	}
+	switch n := node.(type) {
+	case *ast.ExtensionNode:
+		return r.renderExtension(n)
+	case *ast.DropExtensionNode:
+		return r.renderDropExtension(n)
+	case *ast.CreatePolicyNode:
+		return r.renderCreatePolicy(n)
+	case *ast.AlterTableEnableRLSNode:
+		return r.renderAlterTableEnableRLS(n)
+	default:
+		return r.r.VisitNode(node)
+	}
 }
 
-// VisitAlterTable renders MySQL-specific ALTER TABLE statements
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
-	return r.r.VisitAlterTable(node)
-}
-
-// VisitColumn is called when visiting individual columns (used by other visitors)
-func (r *Renderer) VisitColumn(node *ast.ColumnNode) error {
-	return r.r.VisitColumn(node)
-}
-
-// VisitConstraint is called when visiting individual constraints (used by other visitors)
-func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
-	return r.r.VisitConstraint(node)
-}
-
-// VisitIndex renders a CREATE INDEX statement for MySQL
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
-	return r.r.VisitIndex(node)
-}
-
-// VisitEnum renders enum handling for MySQL (inline ENUM types like MySQL)
-func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
-	return r.r.VisitEnum(node)
-}
-
-// VisitComment renders a comment
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
-	return r.r.VisitComment(node)
-}
-
-// VisitDropTable renders MySQL-specific DROP TABLE statements
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
-	return r.r.VisitDropTable(node)
-}
-
-// VisitDropType renders DROP TYPE statements for MySQL
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
-	return r.r.VisitDropType(node)
-}
-
-// VisitExtension renders CREATE EXTENSION statements for MySQL (no-op)
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+// renderExtension renders CREATE EXTENSION statements for MySQL (no-op)
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	// MySQL doesn't support extensions like PostgreSQL
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -153,8 +127,8 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 	return nil
 }
 
-// VisitDropExtension renders DROP EXTENSION statements for MySQL (no-op)
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+// renderDropExtension renders DROP EXTENSION statements for MySQL (no-op)
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	// MySQL doesn't support extensions like PostgreSQL
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -165,16 +139,12 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-// VisitCreateFunction delegates to the mysqllike renderer, which emits the
-// engine's own CREATE FUNCTION spelling. This wrapper must not override the
-// method with `-- CREATE FUNCTION <name> not supported in MySQL`, a claim about
-// the server that the server contradicts (stokaro/ptah#929).
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	return r.r.VisitCreateFunction(node)
-}
-
-// VisitCreatePolicy renders CREATE POLICY statements for MySQL (no-op)
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+// renderCreatePolicy renders CREATE POLICY statements for MySQL (no-op).
+//
+// DropPolicyNode is not answered here. It reaches the shared renderer, which
+// writes a differently worded line and records a renderdiag omission, so the UP
+// and DOWN halves of one policy are reported in two shapes.
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	// MySQL doesn't support Row-Level Security policies
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -185,8 +155,12 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL (no-op)
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+// renderAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL
+// (no-op).
+//
+// AlterTableDisableRLSNode is not answered here, for the reason
+// renderCreatePolicy gives about the policy pair.
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	// MySQL doesn't support Row-Level Security
 	// Add a comment to indicate this feature is not supported
 	if node.Comment != "" {
@@ -195,146 +169,4 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in MySQL", node.Table)
 	}
 	return nil
-}
-
-// VisitDropFunction delegates to the mysqllike renderer
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	return r.r.VisitDropFunction(node)
-}
-
-// VisitCreateSequence delegates to the mysqllike renderer (no-op)
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
-	return r.r.VisitCreateSequence(node)
-}
-
-// VisitAlterSequence delegates to the mysqllike renderer (no-op)
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
-	return r.r.VisitAlterSequence(node)
-}
-
-// VisitDropSequence delegates to the mysqllike renderer (no-op)
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
-	return r.r.VisitDropSequence(node)
-}
-
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
-	return r.r.VisitCreateView(node)
-}
-
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
-	return r.r.VisitDropView(node)
-}
-
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
-// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	return r.r.VisitCreateContinuousAggregate(node)
-}
-
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	return r.r.VisitDropContinuousAggregate(node)
-}
-
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
-// TimescaleDB is an extension of PostgreSQL.
-//
-// There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
-// would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
-	return r.r.VisitCreateHypertable(node)
-}
-
-// VisitCreateSynonym forwards to the shared renderer, which names the synonym
-// as unsupported.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
-	return r.r.VisitCreateSynonym(node)
-}
-
-// VisitExtendedProperty forwards to the shared renderer.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
-	return r.r.VisitExtendedProperty(node)
-}
-
-// VisitDropSynonym forwards to the shared renderer.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
-	return r.r.VisitDropSynonym(node)
-}
-
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	return r.r.VisitCreateMaterializedView(node)
-}
-
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	return r.r.VisitDropMaterializedView(node)
-}
-
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
-	return r.r.VisitAlterMaterializedViewRefresh(node)
-}
-
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	return r.r.VisitRefreshMaterializedView(node)
-}
-
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
-	return r.r.VisitCreateTrigger(node)
-}
-
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
-	return r.r.VisitDropTrigger(node)
-}
-
-// VisitDropPolicy delegates to the mysqllike renderer
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	return r.r.VisitDropPolicy(node)
-}
-
-// VisitAlterTableDisableRLS delegates to the mysqllike renderer
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	return r.r.VisitAlterTableDisableRLS(node)
-}
-
-// VisitCreateRole delegates to the mysqllike renderer
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	return r.r.VisitCreateRole(node)
-}
-
-// VisitDropRole delegates to the mysqllike renderer
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	return r.r.VisitDropRole(node)
-}
-
-// VisitAlterRole delegates to the mysqllike renderer
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	return r.r.VisitAlterRole(node)
-}
-
-// VisitGrantPrivilege delegates to the mysqllike renderer
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	return r.r.VisitGrantPrivilege(node)
-}
-
-// VisitRevokePrivilege delegates to the mysqllike renderer
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	return r.r.VisitRevokePrivilege(node)
-}
-
-// VisitDefaultPrivilege delegates to the shared MySQL-family renderer.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
-	return r.r.VisitDefaultPrivilege(node)
-}
-
-// VisitRevokeDefaultPrivilege delegates to the shared MySQL-family renderer.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
-	return r.r.VisitRevokeDefaultPrivilege(node)
-}
-
-// VisitRawSQL delegates to the mysqllike renderer
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
-	return r.r.VisitRawSQL(node)
 }

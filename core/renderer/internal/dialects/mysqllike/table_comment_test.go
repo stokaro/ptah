@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/mysqllike"
 )
 
-// TestVisitCreateTable_CarriesTheTableComment pins where a table's comment goes.
+// TestVisitNode_CreateTableCarriesTheTableComment pins where a table's comment goes.
 //
 // It went above the statement, as an SQL line comment the server never reads:
 //
@@ -28,7 +28,7 @@ import (
 // The reader carries it correctly and --dry-run against the source answered
 // `Schema is synced` throughout, so only a second database could tell
 // (stokaro/ptah#2129).
-func TestVisitCreateTable_CarriesTheTableComment(t *testing.T) {
+func TestVisitNode_CreateTableCarriesTheTableComment(t *testing.T) {
 	tests := []struct {
 		name    string
 		comment string
@@ -81,7 +81,7 @@ func TestVisitCreateTable_CarriesTheTableComment(t *testing.T) {
 				Columns: []*ast.ColumnNode{ast.NewColumn("id", "BIGINT")},
 			}
 
-			c.Assert(renderer.VisitCreateTable(table), qt.IsNil)
+			c.Assert(renderer.VisitNode(table), qt.IsNil)
 
 			c.Assert(renderer.GetOutput(), qt.Contains, test.want)
 		})

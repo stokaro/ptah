@@ -13,7 +13,7 @@ import (
 
 // A table's comment is a table option on MySQL and MariaDB, so changing one is
 // an ALTER TABLE rather than a statement of its own -- stokaro/ptah#2168.
-func TestVisitAlterTable_SetTableComment(t *testing.T) {
+func TestVisitNode_AlterTableSetsTheTableComment(t *testing.T) {
 	tests := []struct {
 		name    string
 		comment string
@@ -53,7 +53,7 @@ func TestVisitAlterTable_SetTableComment(t *testing.T) {
 				Operations: []ast.AlterOperation{&ast.SetCommentOperation{Comment: tt.comment}},
 			}
 
-			c.Assert(renderer.VisitAlterTable(alter), qt.IsNil)
+			c.Assert(renderer.VisitNode(alter), qt.IsNil)
 
 			c.Assert(renderer.GetOutput(), qt.Contains, tt.want)
 		})
@@ -67,7 +67,7 @@ func TestVisitAlterTable_SetTableComment(t *testing.T) {
 // restates the whole definition, and that definition already carries the
 // comment. An operation that reached here would be a planner bug, and rendering
 // something plausible would hide it behind valid-looking SQL.
-func TestVisitAlterTable_SetColumnCommentIsRefused(t *testing.T) {
+func TestVisitNode_AlterTableSetColumnCommentIsRefused(t *testing.T) {
 	c := qt.New(t)
 	writer := &bufwriter.Writer{}
 	renderer := mysqllike.NewWithCapabilities("mysql", writer, capability.ForDialect("mysql"))
@@ -78,7 +78,7 @@ func TestVisitAlterTable_SetColumnCommentIsRefused(t *testing.T) {
 		},
 	}
 
-	err := renderer.VisitAlterTable(alter)
+	err := renderer.VisitNode(alter)
 
 	c.Assert(err, qt.ErrorMatches, `.*MODIFY COLUMN.*"email".*"users".*`)
 	c.Assert(renderer.GetOutput(), qt.Not(qt.Contains), "COMMENT")

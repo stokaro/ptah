@@ -8,17 +8,20 @@ import (
 	"ptah.run/core/ast"
 )
 
+// TestAddColumnOperation_Accept pins that the visitor receives the operation.
+// The column it carries stays reachable through the operation and is not
+// visited on its own.
 func TestAddColumnOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
 	column := &ast.ColumnNode{Name: "new_column"}
 	op := &ast.AddColumnOperation{Column: column}
 
-	err := op.Accept(visitor)
+	call := singleCall(c, op)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Column:new_column"})
+	c.Assert(call.node, qt.Equals, any(op))
+	c.Assert(call.node, qt.Not(qt.Equals), any(column))
+	c.Assert(op.Column, qt.Equals, column)
 }
 
 func TestAddColumnOperation_AcceptError(t *testing.T) {
@@ -43,7 +46,7 @@ func TestDropColumnOperation_Accept(t *testing.T) {
 	err := op.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.HasLen, 0) // DropColumnOperation returns nil without visiting
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DropColumnOperation:old_column"})
 }
 
 func TestDropColumnOperation_AcceptError(t *testing.T) {
@@ -54,21 +57,24 @@ func TestDropColumnOperation_AcceptError(t *testing.T) {
 
 	err := op.Accept(visitor)
 
-	c.Assert(err, qt.IsNil) // DropColumnOperation always returns nil
-	c.Assert(visitor.VisitedNodes, qt.HasLen, 0)
+	c.Assert(err, qt.ErrorMatches, "mock error")
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DropColumnOperation:old_column"})
 }
 
+// TestModifyColumnOperation_Accept pins that the visitor receives the
+// operation, so a renderer learns the column is being altered rather than
+// added.
 func TestModifyColumnOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
 	column := &ast.ColumnNode{Name: "modified_column"}
 	op := &ast.ModifyColumnOperation{Column: column}
 
-	err := op.Accept(visitor)
+	call := singleCall(c, op)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Column:modified_column"})
+	c.Assert(call.node, qt.Equals, any(op))
+	c.Assert(call.node, qt.Not(qt.Equals), any(column))
+	c.Assert(op.Column, qt.Equals, column)
 }
 
 func TestModifyColumnOperation_AcceptError(t *testing.T) {
@@ -141,7 +147,6 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 func TestAddConstraintOperation_ForeignKey(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
 	fkRef := &ast.ForeignKeyRef{
 		Table:  "users",
 		Column: "id",
@@ -150,10 +155,10 @@ func TestAddConstraintOperation_ForeignKey(t *testing.T) {
 	constraint := ast.NewForeignKeyConstraint("fk_posts_user", []string{"user_id"}, fkRef)
 	op := &ast.AddConstraintOperation{Constraint: constraint}
 
-	err := op.Accept(visitor)
+	call := singleCall(c, op)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Constraint:fk_posts_user"})
+	c.Assert(call.node, qt.Equals, any(op))
+	c.Assert(call.node, qt.Not(qt.Equals), any(constraint))
 
 	// Verify the constraint properties are preserved
 	c.Assert(op.Constraint.Name, qt.Equals, "fk_posts_user")
@@ -174,9 +179,7 @@ func TestDropConstraintOperation_Accept(t *testing.T) {
 	err := op.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	// DropConstraintOperation doesn't call any visitor methods directly
-	// It's handled by the parent AlterTableNode's visitor
-	c.Assert(visitor.VisitedNodes, qt.HasLen, 0)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DropConstraintOperation:test_constraint"})
 
 	// Verify the operation properties are preserved
 	c.Assert(op.ConstraintName, qt.Equals, "test_constraint")
@@ -187,7 +190,6 @@ func TestDropConstraintOperation_Accept(t *testing.T) {
 func TestAddColumnOperation_ComplexColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
 	column := ast.NewColumn("user_id", "INTEGER").
 		SetNotNull().
 		SetForeignKey("users", "id", "fk_user").
@@ -195,10 +197,9 @@ func TestAddColumnOperation_ComplexColumn(t *testing.T) {
 
 	op := &ast.AddColumnOperation{Column: column}
 
-	err := op.Accept(visitor)
+	call := singleCall(c, op)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Column:user_id"})
+	c.Assert(call.node, qt.Equals, any(op))
 
 	// Verify the column properties are preserved
 	c.Assert(op.Column.Name, qt.Equals, "user_id")
@@ -212,7 +213,6 @@ func TestAddColumnOperation_ComplexColumn(t *testing.T) {
 func TestModifyColumnOperation_ComplexColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
 	column := ast.NewColumn("status", "VARCHAR(20)").
 		SetNotNull().
 		SetDefault("'active'").
@@ -221,10 +221,9 @@ func TestModifyColumnOperation_ComplexColumn(t *testing.T) {
 
 	op := &ast.ModifyColumnOperation{Column: column}
 
-	err := op.Accept(visitor)
+	call := singleCall(c, op)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Column:status"})
+	c.Assert(call.node, qt.Equals, any(op))
 
 	// Verify the column properties are preserved
 	c.Assert(op.Column.Name, qt.Equals, "status")
@@ -239,24 +238,29 @@ func TestModifyColumnOperation_ComplexColumn(t *testing.T) {
 // Test DropColumnOperation with different column names
 func TestDropColumnOperation_VariousNames(t *testing.T) {
 	tests := []struct {
-		name       string
-		columnName string
+		name        string
+		columnName  string
+		wantVisited string
 	}{
 		{
-			name:       "SimpleColumn",
-			columnName: "id",
+			name:        "SimpleColumn",
+			columnName:  "id",
+			wantVisited: "DropColumnOperation:id",
 		},
 		{
-			name:       "UnderscoreColumn",
-			columnName: "user_id",
+			name:        "UnderscoreColumn",
+			columnName:  "user_id",
+			wantVisited: "DropColumnOperation:user_id",
 		},
 		{
-			name:       "LongColumn",
-			columnName: "very_long_column_name_with_many_underscores",
+			name:        "LongColumn",
+			columnName:  "very_long_column_name_with_many_underscores",
+			wantVisited: "DropColumnOperation:very_long_column_name_with_many_underscores",
 		},
 		{
-			name:       "EmptyColumn",
-			columnName: "",
+			name:        "EmptyColumn",
+			columnName:  "",
+			wantVisited: "DropColumnOperation:",
 		},
 	}
 
@@ -270,25 +274,23 @@ func TestDropColumnOperation_VariousNames(t *testing.T) {
 			err := op.Accept(visitor)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(visitor.VisitedNodes, qt.HasLen, 0)
+			c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{tt.wantVisited})
 			c.Assert(op.ColumnName, qt.Equals, tt.columnName)
 		})
 	}
 }
 
-// Test operations with nil columns (edge case)
+// TestAlterOperations_NilColumn pins that Accept reads nothing off the
+// operation it hands over. An operation carrying no column reaches the visitor
+// intact, and what a missing column means is the visitor's answer to give.
 func TestAlterOperations_NilColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &MockVisitor{}
-
-	// Test AddColumnOperation with nil column - this will panic
 	addOp := &ast.AddColumnOperation{Column: nil}
-	c.Assert(func() { _ = addOp.Accept(visitor) }, qt.PanicMatches, ".*")
-
-	// Test ModifyColumnOperation with nil column - this will panic
 	modifyOp := &ast.ModifyColumnOperation{Column: nil}
-	c.Assert(func() { _ = modifyOp.Accept(visitor) }, qt.PanicMatches, ".*")
+
+	c.Assert(singleCall(c, addOp).node, qt.Equals, any(addOp))
+	c.Assert(singleCall(c, modifyOp).node, qt.Equals, any(modifyOp))
 }
 
 // Test that operations can be used in AlterTableNode

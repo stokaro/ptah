@@ -6,397 +6,138 @@ package ast_test
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
 )
 
-// MockVisitor implements the Visitor interface for testing
+// MockVisitor implements the Visitor interface for testing.
+//
+// It descends into a statement list itself. Accept hands a visitor the node it
+// was called on and nothing else, so walking is the visitor's decision -- and a
+// recorder that did not walk would see one list where the suite expects the
+// statements inside it.
 type MockVisitor struct {
 	VisitedNodes []string
 	ReturnError  bool
 }
 
-func (m *MockVisitor) VisitCreateTable(node *ast.CreateTableNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateTable:"+node.Name)
+// VisitNode records the node and answers.
+func (m *MockVisitor) VisitNode(node ast.Node) error {
+	if list, ok := node.(*ast.StatementList); ok {
+		return m.visitList(list)
+	}
+	m.VisitedNodes = append(m.VisitedNodes, mockNodeLabel(node))
 	if m.ReturnError {
 		return errors.New("mock error")
 	}
 	return nil
 }
 
-func (m *MockVisitor) VisitCreateSchema(node *ast.CreateSchemaNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateSchema:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
+// visitList walks the statements in order and stops at the first refusal.
+func (m *MockVisitor) visitList(list *ast.StatementList) error {
+	for _, statement := range list.Statements {
+		if err := statement.Accept(m); err != nil {
+			return fmt.Errorf("error visiting statement: %w", err)
+		}
 	}
 	return nil
 }
 
-func (m *MockVisitor) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateDatabase:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
+// mockNodeLabel is `Kind:Name`, the form the suite asserts on.
+//
+// The kind comes from the concrete type with the Node suffix removed, so a node
+// kind added to the AST records itself without an edit here. The name is read
+// per kind, because a name is a different field on each, and a kind whose name
+// nothing asserts on records an empty one.
+func mockNodeLabel(node ast.Node) string {
+	return mockNodeKind(node) + ":" + mockNodeName(node)
 }
 
-func (m *MockVisitor) VisitAlterTable(node *ast.AlterTableNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterTable:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
+func mockNodeKind(node ast.Node) string {
+	name := fmt.Sprintf("%T", node)
+	if index := strings.LastIndex(name, "."); index >= 0 {
+		name = name[index+1:]
 	}
-	return nil
+	return strings.TrimSuffix(name, "Node")
 }
 
-func (m *MockVisitor) VisitColumn(node *ast.ColumnNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Column:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
+func mockNodeName(node ast.Node) string {
+	switch n := node.(type) {
+	case *ast.CreateTableNode:
+		return n.Name
+	case *ast.AlterTableNode:
+		return n.Name
+	case *ast.ColumnNode:
+		return n.Name
+	case *ast.ConstraintNode:
+		return n.Name
+	case *ast.IndexNode:
+		return n.Name
+	case *ast.DropIndexNode:
+		return n.Name
+	case *ast.EnumNode:
+		return n.Name
+	case *ast.CreateTypeNode:
+		return n.Name
+	case *ast.AlterTypeNode:
+		return n.Name
+	case *ast.CreateSchemaNode:
+		return n.Name
+	case *ast.CreateDatabaseNode:
+		return n.Name
+	case *ast.CreateFunctionNode:
+		return n.Name
+	case *ast.CreatePolicyNode:
+		return n.Name
+	case *ast.CreateSynonymNode:
+		return n.Name
+	case *ast.DropSynonymNode:
+		return n.Name
+	case *ast.DropTableNode:
+		return n.Name
+	case *ast.DropTypeNode:
+		return n.Name
+	case *ast.CreateRoleNode:
+		return n.Name
+	case *ast.AlterRoleNode:
+		return n.Name
+	case *ast.DropRoleNode:
+		return n.Name
+	case *ast.CommentNode:
+		return n.Text
+	case *ast.UpsertNode:
+		return n.Table
+	case *ast.AlterTableEnableRLSNode:
+		return n.Table
+	// A grant names a role rather than an object: the role is what tells two
+	// grants on one table apart.
+	case *ast.GrantPrivilegeNode:
+		return n.Role
+	case *ast.RevokePrivilegeNode:
+		return n.Role
+	// An ALTER TABLE operation names what it acts on, which is a column or a
+	// constraint that has no node of its own.
+	case *ast.DropColumnOperation:
+		return n.ColumnName
+	case *ast.DropConstraintOperation:
+		return n.ConstraintName
+	// A routine carries its statement instead of a name, and the statement is
+	// what a renderer emits.
+	case *ast.RawSQLNode:
+		return n.SQL
+	case *ast.MySQLRoutineNode:
+		return n.SQL
+	case *ast.OpaqueRoutineNode:
+		return n.SQL
+	case *ast.PostgresDoBlockNode:
+		return n.SQL
+	case *ast.PostgresRoutineNode:
+		return n.SQL
+	case *ast.SQLServerRoutineNode:
+		return n.SQL
+	default:
+		return ""
 	}
-	return nil
-}
-
-func (m *MockVisitor) VisitConstraint(node *ast.ConstraintNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Constraint:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitIndex(node *ast.IndexNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Index:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropIndex(node *ast.DropIndexNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropIndex:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitEnum(node *ast.EnumNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Enum:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitComment(node *ast.CommentNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Comment:"+node.Text)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropTable(node *ast.DropTableNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropTable:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateType(node *ast.CreateTypeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateType:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterType(node *ast.AlterTypeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterType:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropType(node *ast.DropTypeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropType:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitExtension(node *ast.ExtensionNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Extension:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropExtension(node *ast.DropExtensionNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropExtension:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateFunction:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateSequence(node *ast.CreateSequenceNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateSequence:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterSequence(node *ast.AlterSequenceNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterSequence:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropSequence(node *ast.DropSequenceNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropSequence:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreatePolicy:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterTableEnableRLS:"+node.Table)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropFunction(node *ast.DropFunctionNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropFunction:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateView(node *ast.CreateViewNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateView:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropView(node *ast.DropViewNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropView:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateSynonym:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateHypertable:"+node.Table)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateContinuousAggregate:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropContinuousAggregate:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropSynonym(node *ast.DropSynonymNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropSynonym:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
-	m.VisitedNodes = append(m.VisitedNodes,
-		"ExtendedProperty:"+string(node.Operation)+":"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateMaterializedView:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropMaterializedView:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterMaterializedViewRefresh:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "RefreshMaterializedView:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateTrigger:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropTrigger(node *ast.DropTriggerNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropTrigger:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropPolicy:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterTableDisableRLS:"+node.Table)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitCreateRole(node *ast.CreateRoleNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "CreateRole:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDropRole(node *ast.DropRoleNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DropRole:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitAlterRole(node *ast.AlterRoleNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "AlterRole:"+node.Name)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "GrantPrivilege:"+node.Role)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "DefaultPrivilege:"+node.Grantee)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "RevokeDefaultPrivilege:"+node.Grantee)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "RevokePrivilege:"+node.Role)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitRawSQL(node *ast.RawSQLNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "RawSQL:"+node.SQL)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
-}
-
-func (m *MockVisitor) VisitUpsert(node *ast.UpsertNode) error {
-	m.VisitedNodes = append(m.VisitedNodes, "Upsert:"+node.Table)
-	if m.ReturnError {
-		return errors.New("mock error")
-	}
-	return nil
 }
