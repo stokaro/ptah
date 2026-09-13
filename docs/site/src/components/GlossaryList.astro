@@ -1,0 +1,67 @@
+---
+/**
+ * The glossary page's own entries, rendered from src/glossary.ts.
+ *
+ * The definition is text here, not a tooltip. An inline ⓘ is the right control
+ * in a dense table on another page, where there is no room for a sentence. On
+ * the page whose whole job is to define the terms it is an obstacle: the reader
+ * came for the definition, and a control between them and it is the one thing
+ * this page must not have (stokaro/ptah#3225).
+ *
+ * Rendering the map rather than transcribing it also settles what a hand-written
+ * table cannot: a definition here cannot drift from the one the tooltips use, a
+ * term added to the map cannot be forgotten on this page, and the `source` each
+ * entry carries -- the file that pins the fact -- becomes visible, which is the
+ * property those entries were written for.
+ *
+ * The tooltip is still exercised on this page, in the scrolling-table section
+ * below the list. That section is the affordance's hardest case and the corpus
+ * check-glossary.mjs measures.
+ */
+import { glossary, glossaryGroups } from '../glossary.ts';
+import type { GlossaryGroup } from '../glossary.ts';
+
+const entries = Object.entries(glossary);
+const groupIds = Object.keys(glossaryGroups) as GlossaryGroup[];
+
+// Terms read in alphabetical order inside a group: a reader arrives with a word,
+// not with a position in a taxonomy.
+const sections = groupIds.map((id) => ({
+  id,
+  label: glossaryGroups[id],
+  terms: entries
+    .filter(([, entry]) => entry.group === id)
+    .sort(([left], [right]) => left.localeCompare(right)),
+}));
+
+// The page sits at /reference/glossary/, so a slug from the docs root is two
+// levels up. Astro resolves the rest, and check-links verifies every one.
+const learnMoreHref = (slug: string) => `../../${slug}/`;
+---
+
+{
+  sections.map((section) => (
+    <section class="glossary-group">
+      <h2 id={section.id}>{section.label}</h2>
+      <dl class="glossary-entries">
+        {section.terms.map(([term, entry]) => (
+          <div class="glossary-entry" id={`term-${term}`}>
+            <dt class="glossary-entry__term">{term}</dt>
+            <dd class="glossary-entry__body">
+              <p class="glossary-entry__definition">{entry.definition}</p>
+              <p class="glossary-entry__meta">
+                <a href={learnMoreHref(entry.learnMore)}>Where it is used</a>
+                {entry.source && (
+                  <span class="glossary-entry__source">
+                    <span class="glossary-entry__source-label">pinned by</span>
+                    <code>{entry.source}</code>
+                  </span>
+                )}
+              </p>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  ))
+}

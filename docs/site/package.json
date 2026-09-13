@@ -76,6 +76,8 @@
     "check:pages-root:selftest": "node scripts/check-pages-root.mjs --selftest",
     "check:pages-root:live": "node scripts/check-pages-root.mjs --live",
     "check:glossary:selftest": "node scripts/check-glossary.mjs --selftest",
+    "check:glossary-coverage": "node scripts/check-glossary-coverage.mjs",
+    "check:glossary-coverage:selftest": "node scripts/check-glossary-coverage.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest",
     "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest",
     "check:compatibility": "node scripts/check-compatibility.mjs",

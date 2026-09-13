@@ -4090,7 +4090,7 @@
       "path": "docs/site/src/content/docs/reference/glossary.mdx",
       "route": "/reference/glossary/",
       "title": "Glossary",
-      "description": "Terms whose meaning a table can only show as a glyph, defined where they are used.",
+      "description": "Ptah's product, workflow, database-support, and compatibility terms, with the file that pins each one.",
       "sidebarPath": "Reference > Rules and diagnostics",
       "sidebarLabel": null,
       "type": "reference",
@@ -4116,8 +4116,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 481,
-      "sourceBytes": 4874
+      "visibleWords": 286,
+      "sourceBytes": 2593
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
