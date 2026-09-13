@@ -1,0 +1,13 @@
+# A blank issue stays available: not every report fits a form, and a form that
+# turns somebody away costs more than an unstructured issue costs to triage.
+blank_issues_enabled: true
+contact_links:
+  - name: Question about using Ptah
+    url: https://docs.ptah.run/
+    about: The documentation covers the workflows, the dialect capabilities, and the troubleshooting paths. Open a question issue if it does not answer yours.
+  - name: Ptah Operator (Kubernetes)
+    url: https://github.com/stokaro/ptah-operator/issues
+    about: The operator is a separate project with its own issues and releases. An operator report filed here has to be moved before anyone can act on it.
+  - name: Commercial enquiries
+    url: mailto:ask@stokaro.com
+    about: Commercial questions. Bug reports and feature requests belong on this tracker, where they stay public and get labeled.
