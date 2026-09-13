@@ -19,7 +19,6 @@ import (
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/schemaprep"
-	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/timescale"
@@ -396,42 +395,26 @@ func CompareReportingUndecidedAdditions(
 	return diff, undecided
 }
 
+// normalizeInlineEnumsForCompare puts both sides into the spelling a target
+// without an enum type actually has.
+//
+// The rule is [schemaprep.ResolveInlineEnums], and it is shared with the
+// conversion that produces the current side of a document-to-document
+// comparison: a second copy here would disagree with that one the first time
+// either learned something.
 func normalizeInlineEnumsForCompare(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*schemamodel.Database, *catalog.Database) {
-	if desired == nil || database == nil || opts == nil || !isInlineEnumDialect(opts.Dialect) {
+	if desired == nil || database == nil || opts == nil || !schemaprep.InlineEnumDialect(opts.Dialect) {
 		return desired, database
-	}
-
-	normalizedGenerated := *desired
-	normalizedGenerated.Enums = nil
-	normalizedGenerated.Fields = append([]schemamodel.Field(nil), desired.Fields...)
-	for i := range normalizedGenerated.Fields {
-		field := &normalizedGenerated.Fields[i]
-		resolveDeclaredEnumValues(field, desired.Enums)
-		if len(field.Enum) > 0 {
-			switch platform.NormalizeDialect(opts.Dialect) {
-			case platform.MySQL, platform.MariaDB:
-				field.Type = mysqlInlineEnumType(field.Enum)
-			case platform.SQLite:
-				field.Type = "TEXT"
-				field.Check = sqliteInlineEnumCheck(*field)
-			case platform.SQLServer:
-				field.Type = "NVARCHAR(255)"
-				field.Check = sqlServerInlineEnumCheck(*field)
-			case platform.Oracle:
-				field.Type = "VARCHAR2(255)"
-				field.Check = oracleInlineEnumCheck(*field)
-			}
-		}
 	}
 
 	normalizedDatabase := *database
 	normalizedDatabase.Enums = nil
 
-	return &normalizedGenerated, &normalizedDatabase
+	return schemaprep.ResolveInlineEnums(desired, opts.Dialect), &normalizedDatabase
 }
 
 func normalizeGeneratedColumnsForCompare(
@@ -468,96 +451,6 @@ func defaultGeneratedColumnKind(dialect string) string {
 	default:
 		return ""
 	}
-}
-
-// resolveDeclaredEnumValues fills in the values for the other spelling of an
-// enum column.
-//
-// A column can name its values two ways: inline on the field, or by naming an
-// enum declared elsewhere. The renderer reads the second -- handleEnumTypes
-// finds the enum by the column's type -- and this normalization read only the
-// first, so a schema written with `//ptah:schema:enum` plus `type="status_kind"`
-// rendered as the target's inline model and compared as the enum's own name.
-// Nothing converged: measured on SQLite, the plan rebuilt the table into one
-// whose only difference from the original was none, on every apply.
-//
-// Filling the values here rather than teaching every arm about the second
-// spelling keeps the arms about what a dialect writes, which is what they are
-// for.
-func resolveDeclaredEnumValues(field *schemamodel.Field, enums []schemamodel.Enum) {
-	if len(field.Enum) > 0 {
-		return
-	}
-	for _, enum := range enums {
-		if enum.Name == field.Type {
-			field.Enum = enum.Values
-			return
-		}
-	}
-}
-
-func isInlineEnumDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
-		return true
-	default:
-		return false
-	}
-}
-
-func sqliteInlineEnumCheck(field schemamodel.Field) string {
-	return enumCheck(field)
-}
-
-func sqlServerInlineEnumCheck(field schemamodel.Field) string {
-	quoted := make([]string, 0, len(field.Enum))
-	for _, value := range field.Enum {
-		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
-	}
-	enumCheck := "[" + strings.ReplaceAll(field.Name, "]", "]]") + "] IN (" + strings.Join(quoted, ", ") + ")"
-	if field.Check != "" {
-		return "(" + field.Check + ") AND " + enumCheck
-	}
-	return enumCheck
-}
-
-// oracleInlineEnumCheck spells the column the way the Oracle renderer spells the
-// declaration beside it.
-//
-// Oracle refuses a CHECK whose spelling disagrees with the column it constrains,
-// so the two have to be decided by one rule: sqlident.Ident is what the
-// renderer's escapeIdentifier calls, and it is what modelast.applyInlineEnumModel
-// already uses for the same expression on the rendering side.
-func oracleInlineEnumCheck(field schemamodel.Field) string {
-	quoted := make([]string, 0, len(field.Enum))
-	for _, value := range field.Enum {
-		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
-	}
-	enumCheck := sqlident.Ident(platform.Oracle, field.Name) + " IN (" + strings.Join(quoted, ", ") + ")"
-	if field.Check != "" {
-		return "(" + field.Check + ") AND " + enumCheck
-	}
-	return enumCheck
-}
-
-func enumCheck(field schemamodel.Field) string {
-	quoted := make([]string, 0, len(field.Enum))
-	for _, value := range field.Enum {
-		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
-	}
-	enumCheck := field.Name + " IN (" + strings.Join(quoted, ", ") + ")"
-	if field.Check != "" {
-		return "(" + field.Check + ") AND " + enumCheck
-	}
-	return enumCheck
-}
-
-func mysqlInlineEnumType(values []string) string {
-	quoted := make([]string, 0, len(values))
-	for _, value := range values {
-		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
-	}
-	return "enum(" + strings.Join(quoted, ",") + ")"
 }
 
 // rowTTLTables projects a declaration's tables into the pairs

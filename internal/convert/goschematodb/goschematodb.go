@@ -8,6 +8,7 @@ package goschematodb
 import (
 	"maps"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -32,6 +33,12 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		return &catalog.Database{}
 	}
 
+	// A target with no enum type carries the column as its inline model, so a
+	// description of that target has to say so. The rule is shared with the
+	// comparison's own normalization of the desired side; applying it on one
+	// side only makes an enum column a type change against itself.
+	db = schemaprep.ResolveInlineEnums(db, dialect)
+
 	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
 		tableByStruct[table.StructName] = table
@@ -55,6 +62,13 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
 		Roles:       toDBRoles(db.Roles),
 		Grants:      toDBGrants(db.Grants),
+		// The four families below are compared, so a document declaring one and
+		// converting to a description without it reports the object as added
+		// against itself.
+		Synonyms:             toDBSynonyms(db.Synonyms),
+		ExtendedProperties:   toDBExtendedProperties(db.ExtendedProperties),
+		ContinuousAggregates: toDBContinuousAggregates(db.ContinuousAggregates),
+		Hypertables:          toDBHypertables(db.Hypertables),
 		// A file-to-file comparison uses this side as the current state, and a
 		// document that declared its own limits declares them here too
 		// (stokaro/ptah#1276).
@@ -102,8 +116,10 @@ func toDBTables(
 			// Non-empty when the desired state came from a `.sql` file
 			// declaring CREATE VIRTUAL TABLE, which is how `ptah db read`
 			// output is read back. See stokaro/ptah#1028.
-			VirtualModule:    table.VirtualModule,
-			VirtualArguments: table.VirtualArguments,
+			VirtualModule:     table.VirtualModule,
+			VirtualArguments:  table.VirtualArguments,
+			RowTTL:            table.RowTTL.Clone(),
+			RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
 		})
 	}
 	return out
@@ -145,6 +161,7 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		Charset:               field.Charset,
 		Collate:               field.Collate,
 		GeneratedKind:         field.GeneratedKind,
+		Comment:               field.Comment,
 	}
 	if field.DefaultSet {
 		column.ColumnDefault = new(field.Default)
@@ -185,7 +202,11 @@ func applyTablePrimaryKeys(schema *catalog.Database, tables []schemamodel.Table)
 func toDBEnums(enums []schemamodel.Enum) []catalog.Enum {
 	out := make([]catalog.Enum, 0, len(enums))
 	for _, enum := range enums {
-		out = append(out, catalog.Enum{Name: enum.Name, Values: append([]string(nil), enum.Values...)})
+		out = append(out, catalog.Enum{
+			Name:   enum.Name,
+			Schema: enum.Schema,
+			Values: append([]string(nil), enum.Values...),
+		})
 	}
 	return out
 }
@@ -211,7 +232,7 @@ func toDBIndexes(
 			TableName:      tableName,
 			Schema:         schema,
 			Columns:        append([]string(nil), index.Fields...),
-			Parts:          toDBIndexParts(index.Parts, index.Operator),
+			Parts:          toDBIndexParts(index.Parts, index.Fields, index.Operator),
 			IsUnique:       index.Unique,
 			Condition:      index.Condition,
 			NullsDistinct:  index.NullsDistinct,
@@ -240,9 +261,24 @@ func indexAccessMethod(indexType, dialect string) string {
 // operator class the way the renderer applies it: a part without its own class
 // inherits the index's, so the DB shape -- which has no index-level slot --
 // records the resolved value per part.
-func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catalog.IndexPart {
+//
+// An index that names its keys as plain columns has no structured parts, and an
+// index-level operator class on one has nowhere else to go: the DB shape carries
+// a class per key and nothing above them. So the columns become parts where
+// there is a class to put on them, which is what a reader reports for the same
+// index. Leaving the parts empty drops the class, and the comparison then reads
+// a declared `gin_trgm_ops` against nothing and rebuilds the index every run.
+//
+// A plain index still converts with no parts. Synthesizing them everywhere would
+// put a key list into every description that has none, which is a claim about
+// what a reader found rather than about what was declared.
+func toDBIndexParts(
+	parts []schemamodel.IndexPart,
+	columns []string,
+	indexOperator string,
+) []catalog.IndexPart {
 	if len(parts) == 0 {
-		return nil
+		return columnIndexParts(columns, indexOperator)
 	}
 	converted := make([]catalog.IndexPart, len(parts))
 	for position, part := range parts {
@@ -257,6 +293,18 @@ func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catal
 			Desc:       part.Desc,
 			NullsOrder: part.NullsOrder,
 		}
+	}
+	return converted
+}
+
+// columnIndexParts carries an index-level operator class onto plain columns.
+func columnIndexParts(columns []string, indexOperator string) []catalog.IndexPart {
+	if indexOperator == "" || len(columns) == 0 {
+		return nil
+	}
+	converted := make([]catalog.IndexPart, len(columns))
+	for position, column := range columns {
+		converted[position] = catalog.IndexPart{Name: column, Operator: indexOperator}
 	}
 	return converted
 }
@@ -297,15 +345,25 @@ func toDBConstraints(
 			continue
 		}
 		appendConstraint(catalog.Constraint{
-			Name:        tablePrimaryKeyName(table),
-			TableName:   table.Name,
-			Schema:      table.Schema,
-			Type:        "PRIMARY KEY",
-			ColumnNames: append([]string(nil), table.PrimaryKey...),
-			ColumnName:  first(table.PrimaryKey),
+			Name:           tablePrimaryKeyName(table),
+			TableName:      table.Name,
+			Schema:         table.Schema,
+			Type:           "PRIMARY KEY",
+			ColumnNames:    append([]string(nil), table.PrimaryKey...),
+			ColumnName:     first(table.PrimaryKey),
+			IncludeColumns: append([]string(nil), table.PrimaryKeyInclude...),
 		})
 	}
-	for _, constraint := range constraints {
+	// A table's `checks` list is not a Constraint in the model, and the desired
+	// side of every comparison synthesizes one per entry. Converting without the
+	// same synthesis leaves the description short a CHECK the document declares,
+	// which reports as a constraint added on every run.
+	declared := constraints
+	for _, table := range tablesList {
+		declared = append(declared, schemaprep.TableCheckConstraints(table, constraints)...)
+	}
+
+	for _, constraint := range declared {
 		tableName, schema := indexTable(constraint.StructName, constraint.Table, tables)
 		dbConstraint := catalog.Constraint{
 			Name:           constraint.Name,
@@ -322,6 +380,8 @@ func toDBConstraints(
 				constraint.ExcludeElements,
 			),
 			WhereCondition: optionalStringPtr(constraint.WhereCondition),
+			Deferrable:     constraint.Deferrable,
+			Initially:      constraint.Initially,
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
@@ -384,6 +444,8 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field) []ca
 			ForeignColumns: append([]string(nil), fkRef.ReferencedColumns()...),
 			DeleteRule:     optionalStringPtr(field.OnDelete),
 			UpdateRule:     optionalStringPtr(field.OnUpdate),
+			Deferrable:     field.Deferrable,
+			Initially:      field.Initially,
 		})
 	}
 	return out
@@ -492,9 +554,13 @@ func toDBRanges(ranges []schemamodel.Range) []catalog.Range {
 	out := make([]catalog.Range, 0, len(ranges))
 	for _, rangeType := range ranges {
 		out = append(out, catalog.Range{
-			Name:    rangeType.Name,
-			Schema:  rangeType.Schema,
-			Subtype: rangeType.Subtype,
+			Name:           rangeType.Name,
+			Schema:         rangeType.Schema,
+			Subtype:        rangeType.Subtype,
+			SubtypeOpClass: rangeType.SubtypeOpClass,
+			Collation:      rangeType.Collation,
+			Canonical:      rangeType.Canonical,
+			SubtypeDiff:    rangeType.SubtypeDiff,
 		})
 	}
 	return out
@@ -516,6 +582,9 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 			Settings:   function.Settings,
 			Body:       function.Body,
 			Comment:    function.Comment,
+			Kind:       function.Kind,
+			Leakproof:  function.Leakproof,
+			Parallel:   function.Parallel,
 		})
 	}
 	return out
@@ -535,6 +604,7 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			Body:        view.Body,
 			CheckOption: checkOption,
 			Comment:     view.Comment,
+			Attributes:  append([]string(nil), view.Attributes...),
 		})
 	}
 	return out
@@ -584,6 +654,7 @@ func toDBRLSPolicies(policies []schemamodel.RLSPolicy) []catalog.RLSPolicy {
 			UsingExpression:     policy.UsingExpression,
 			WithCheckExpression: policy.WithCheckExpression,
 			Comment:             policy.Comment,
+			Restrictive:         policy.Restrictive,
 		})
 	}
 	return out
@@ -639,6 +710,106 @@ func toDBGrants(grants []schemamodel.Grant) []catalog.Grant {
 				GrantedBy:  grant.GrantedBy,
 			})
 		}
+	}
+	return out
+}
+
+// toDBSynonyms converts declared synonyms.
+//
+// A declaration spells the target as one to four unquoted dot-separated parts,
+// which is what [catalog.Synonym.DeclaredTarget] rebuilds from the parsed parts
+// a reader fills. The parts are filled here from the right, so a two-part
+// `dbo.gauge` names a schema and an object rather than a server and a database,
+// and Target carries the declared spelling because there is no catalog row to
+// quote.
+func toDBSynonyms(synonyms []schemamodel.Synonym) []catalog.Synonym {
+	out := make([]catalog.Synonym, 0, len(synonyms))
+	for _, synonym := range synonyms {
+		converted := catalog.Synonym{
+			Name:    synonym.Name,
+			Schema:  synonym.Schema,
+			Target:  synonym.Target,
+			Comment: synonym.Comment,
+		}
+		parts := strings.Split(synonym.Target, ".")
+		slots := []*string{
+			&converted.TargetObject,
+			&converted.TargetSchema,
+			&converted.TargetDatabase,
+			&converted.TargetServer,
+		}
+		for offset, slot := range slots {
+			index := len(parts) - 1 - offset
+			if index < 0 {
+				break
+			}
+			*slot = parts[index]
+		}
+		out = append(out, converted)
+	}
+	return out
+}
+
+// toDBExtendedProperties converts declared SQL Server extended properties.
+//
+// ValueType stays empty on purpose. It is the sql_variant base type
+// SQL_VARIANT_PROPERTY reports for a stored value, so it is a fact about a row
+// the server holds rather than about a declaration, and the comparator reads
+// neither it nor ValueNotRepresentable. Filling it with the type the renderer
+// happens to emit would put an unmeasured value into a description.
+func toDBExtendedProperties(properties []schemamodel.ExtendedProperty) []catalog.ExtendedProperty {
+	out := make([]catalog.ExtendedProperty, 0, len(properties))
+	for _, property := range properties {
+		out = append(out, catalog.ExtendedProperty{
+			Name:   property.Name,
+			Schema: property.Schema,
+			Table:  property.Table,
+			Column: property.Column,
+			Value:  property.Value,
+		})
+	}
+	return out
+}
+
+// toDBContinuousAggregates converts declared TimescaleDB continuous aggregates.
+//
+// The hypertable the aggregate reads is not part of a declaration -- it is
+// derived from the body by the server -- so the two hypertable fields stay
+// empty, and the comparator that reads them treats an empty desired value as
+// nothing to compare.
+func toDBContinuousAggregates(
+	aggregates []schemamodel.ContinuousAggregate,
+) []catalog.ContinuousAggregate {
+	out := make([]catalog.ContinuousAggregate, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		converted := catalog.ContinuousAggregate{
+			Name:       aggregate.Name,
+			Schema:     aggregate.Schema,
+			Definition: aggregate.Body,
+		}
+		if aggregate.MaterializedOnly != nil {
+			converted.MaterializedOnly = *aggregate.MaterializedOnly
+		}
+		out = append(out, converted)
+	}
+	return out
+}
+
+// toDBHypertables converts declared TimescaleDB hypertables.
+//
+// A declaration names the table and the partitioning column; the dimension
+// count and the column's type are facts about the created object rather than
+// about the declaration, so a reader fills them and this does not.
+func toDBHypertables(hypertables []schemamodel.Hypertable) []catalog.Hypertable {
+	out := make([]catalog.Hypertable, 0, len(hypertables))
+	for _, hypertable := range hypertables {
+		name, schema := splitTableIdentity(hypertable.Table)
+		out = append(out, catalog.Hypertable{
+			Name:             name,
+			Schema:           schema,
+			PrimaryDimension: hypertable.Column,
+			ChunkInterval:    hypertable.ChunkInterval,
+		})
 	}
 	return out
 }
