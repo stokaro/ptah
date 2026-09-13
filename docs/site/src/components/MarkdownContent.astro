@@ -16,6 +16,7 @@
  */
 import '@astrojs/starlight/style/markdown.css';
 import FaqFilter from './FaqFilter.astro';
+import ContactEmail from './ContactEmail.astro';
 
 const { entry } = Astro.locals.starlightRoute;
 
@@ -26,5 +27,6 @@ const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
 
 <div class="sl-markdown-content">
   {isFaq && <FaqFilter />}
+  {isFaq && <ContactEmail />}
   <slot />
 </div>

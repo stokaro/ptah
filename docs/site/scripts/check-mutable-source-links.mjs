@@ -19,6 +19,30 @@ const htmlMutableLink = new RegExp(
 );
 const latestLabel = /latest development source/i;
 
+// Repository-root files that govern the project rather than describe a release.
+// The rule exists because a source file on master can disagree with the
+// documentation version a reader is on, so an unlabelled link sends them to
+// code that is not what they are reading about. These files have no per-version
+// meaning: contribution rules, conduct and licence apply to master, which is
+// where a reader would act on them, and a link to a tag would be the wrong
+// target rather than the safe one.
+//
+// Kept as exact paths. A prefix would let `CONTRIBUTING.md` open the whole root,
+// and the hazard the rule guards is one directory below it.
+const governanceFiles = new Set([
+  'AGENTS.md',
+  'CODE_OF_CONDUCT.md',
+  'CONTRIBUTING.md',
+  'LICENSE',
+  'NOTICE',
+  'SECURITY.md',
+]);
+
+function isGovernanceFile(url) {
+  const match = url.match(/\/(?:blob|edit)\/master\/([^\s)>'"#?]+)$/);
+  return match ? governanceFiles.has(match[1]) : false;
+}
+
 function filesBelow(root) {
   const files = [];
   for (const name of readdirSync(root)) {
@@ -53,6 +77,7 @@ export function mutableSourceProblems(entries) {
     const labeled = labeledMutableSourceIndexes(source);
     for (const match of source.matchAll(mutableSource)) {
       if (labeled.has(`${match.index}:${match[0]}`)) continue;
+      if (isGovernanceFile(match[0])) continue;
       const line = source.slice(0, match.index).split('\n').length;
       problems.push({
         path,
@@ -99,6 +124,21 @@ function selftest() {
     source: 'Latest development source: [open source](https://github.com/stokaro/ptah/blob/master/example.go).',
   }]);
   assert(nearbyLabel.length === 1, 'nearby prose waived an unlabeled master link');
+
+  const governance = mutableSourceProblems([{
+    path: 'governance.md',
+    source: 'Read [CONTRIBUTING.md](https://github.com/stokaro/ptah/blob/master/CONTRIBUTING.md).',
+  }]);
+  assert(governance.length === 0, 'a repository-root governance file needed a label');
+
+  const governanceLookalike = mutableSourceProblems([{
+    path: 'lookalike.md',
+    source: 'Read [rules](https://github.com/stokaro/ptah/blob/master/docs/CONTRIBUTING.md).',
+  }]);
+  assert(
+    governanceLookalike.length === 1,
+    'a file named like a governance file outside the root was exempted',
+  );
 
   for (const url of [
     'https://github.com/stokaro/ptah/blob/master/example.go',

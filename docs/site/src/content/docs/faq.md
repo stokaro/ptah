@@ -548,7 +548,7 @@ which tests Ptah without Ptah importing it. See [License boundary](../atlas/lice
 
 ## Is commercial support available? {#commercial-support}
 
-Commercial enquiries go to <a class="contact-email" href="mailto:ask%40stokaro.com" rel="nofollow" aria-label="ask at stokaro.com"><span>ask</span><span class="contact-email__at" aria-hidden="true"></span><span>stokaro.com</span></a>. Keep
+Commercial enquiries go to <span class="contact-email" data-contact-email data-u="ksa" data-d="moc.orakots"><span>ask</span><span class="contact-email__at" aria-hidden="true"></span><span>stokaro.com</span></span>. Keep
 bug reports and feature requests on the
 [issue tracker](https://github.com/stokaro/ptah/issues) instead, where they stay
 public and get labeled.

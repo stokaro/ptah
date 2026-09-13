@@ -108,7 +108,7 @@ const total = Object.keys(questionTags).length;
           }
         }
         for (const button of buttons) {
-          button.setAttribute('aria-pressed', String(active.has(button.dataset.tag)));
+          button.setAttribute('aria-pressed', String(active.has(button.dataset.faqTag)));
         }
         for (const chip of this.#chipsInPage(content)) {
           chip.dataset.on = String(active.has(chip.dataset.faqChip));
@@ -128,7 +128,7 @@ const total = Object.keys(questionTags).length;
       };
 
       for (const button of buttons) {
-        button.addEventListener('click', () => toggle(button.dataset.tag));
+        button.addEventListener('click', () => toggle(button.dataset.faqTag));
       }
       resetEl.addEventListener('click', () => {
         active.clear();
