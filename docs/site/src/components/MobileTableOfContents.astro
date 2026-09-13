@@ -16,7 +16,13 @@
  */
 import { tableOfContentsHtml } from '../lib/page-furniture.mjs';
 
-const { toc } = Astro.locals.starlightRoute;
+const { entry, toc } = Astro.locals.starlightRoute;
+
+// The FAQ's headings are its question groups, not the sections of one
+// argument, and the rail beside it says so at wider widths. The strip is the
+// same list, so it uses the same word.
+const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
+const contentsLabel = isFaq ? 'Groups' : Astro.locals.t('tableOfContents.onThisPage');
 ---
 
 {
@@ -26,7 +32,7 @@ const { toc } = Astro.locals.starlightRoute;
         <details id="starlight__mobile-toc">
           <summary id="starlight__on-this-page--mobile" class="ptah-toc-strip">
             <span class="ptah-toc-strip-text">
-              <span class="ptah-toc-strip-label">{Astro.locals.t('tableOfContents.onThisPage')}</span>
+              <span class="ptah-toc-strip-label">{contentsLabel}</span>
               <span class="display-current"></span>
             </span>
             <span class="ptah-toc-strip-caret" aria-hidden="true">▾</span>

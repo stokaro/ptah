@@ -77,7 +77,9 @@
 	white-space: nowrap;
 }
 
-.faq-symptoms {
+/* The tags: a row of facets, not a list to read. The long tail sits behind one
+ * control so the questions stay on the first screen at any width. */
+.faq-tags {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -85,7 +87,7 @@
 	margin-top: 12px;
 }
 
-.faq-symptoms__label {
+.faq-tags__label {
 	font: 500 11px var(--__sl-font-mono, monospace);
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -93,8 +95,11 @@
 	margin-right: 4px;
 }
 
-.faq-symptom {
-	font: 13px var(--__sl-font-mono, monospace);
+.faq-tag {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	font: 13px var(--__sl-font, inherit);
 	line-height: 1.4;
 	padding: 4px 9px;
 	border: 1px solid var(--sl-color-hairline-light);
@@ -104,15 +109,50 @@
 	cursor: pointer;
 }
 
-.faq-symptom:hover {
+.faq-tag__n {
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	color: var(--sl-color-gray-3);
+}
+
+.faq-tag:hover {
 	color: var(--sl-color-text);
 	border-color: var(--sl-color-gray-3);
 }
 
-.faq-symptom[aria-pressed='true'] {
+.faq-tag[aria-pressed='true'] {
 	color: var(--sl-color-text-invert);
 	background: var(--sl-color-bg-accent);
 	border-color: transparent;
+}
+
+.faq-tag[aria-pressed='true'] .faq-tag__n {
+	color: inherit;
+	opacity: 0.75;
+}
+
+/* `inline-flex` beats the browser's `[hidden] { display: none }`, so the tail
+ * the rail keeps folded has to say it again. */
+.faq-tag[hidden] {
+	display: none;
+}
+
+.faq-tags__more {
+	font: 12px var(--__sl-font-mono, monospace);
+	padding: 4px 2px;
+	border: 0;
+	background: none;
+	color: var(--sl-color-text-accent);
+	cursor: pointer;
+}
+
+.faq-tags__more::before {
+	content: '+ ';
+}
+
+.faq-tags__more[aria-expanded='true']::before {
+	content: '− ';
 }
 
 .faq-filter__empty {
@@ -121,7 +161,9 @@
 }
 
 .faq-filter__field input:focus-visible,
-.faq-symptom:focus-visible,
+.faq-tag:focus-visible,
+.faq-chip:focus-visible,
+.faq-tags__more:focus-visible,
 .faq-filter__clear:focus-visible {
 	outline: 2px solid var(--sl-color-accent);
 	outline-offset: 2px;
@@ -144,6 +186,13 @@
 	line-height: 1.4;
 }
 
+/* Starlight reserves the icon's room as padding on the heading, in em of the
+ * heading, and pulls the link back over it by the same em measured on the link
+ * -- which inherits the prose size. A group heading is half the size of the
+ * prose around it, so the link is pulled further than the room reserved for it
+ * and the icon lands on the last word. Sizing the link with the heading makes
+ * both ems the same measure again. */
+.sl-markdown-content.ptah-faq .sl-heading-wrapper.level-h2 > .sl-anchor-link,
 .sl-markdown-content.ptah-faq h2 {
 	font-family: var(--__sl-font-mono, monospace);
 	font-size: 0.8125rem;
@@ -219,10 +268,48 @@
 	text-decoration: underline;
 }
 
+/* The tags a question carries, under its answer: what it is filed under, and
+ * the way to the rest of that file. Quiet enough to skim past eighty times. */
+.sl-markdown-content.ptah-faq .faq-chips {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 0.625rem;
+}
+
+/* Prose spacing puts a top margin on every element after the first, which
+ * inside a row of chips lands on the second chip and drops it a line. */
+.sl-markdown-content.ptah-faq .faq-chips > .faq-chip {
+	margin: 0;
+}
+
+.sl-markdown-content.ptah-faq .faq-chip {
+	font: 12px var(--__sl-font-mono, monospace);
+	line-height: 1.4;
+	padding: 2px 7px;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-3);
+	cursor: pointer;
+}
+
+.sl-markdown-content.ptah-faq .faq-chip:hover {
+	color: var(--sl-color-text);
+	border-color: var(--sl-color-gray-3);
+}
+
+.sl-markdown-content.ptah-faq .faq-chip[aria-pressed='true'] {
+	color: var(--sl-color-text-accent);
+	border-color: currentColor;
+}
+
 /* A display of its own beats the browser's `[hidden] { display: none }`, so a
- * filtered-away heading wrapper or link row has to say it again. */
+ * filtered-away heading wrapper, link row or chip row has to say it again. */
 .sl-markdown-content.ptah-faq .sl-heading-wrapper[hidden],
-.sl-markdown-content.ptah-faq ul[hidden] {
+.sl-markdown-content.ptah-faq ul[hidden],
+.sl-markdown-content.ptah-faq .faq-chips[hidden] {
 	display: none;
 }
 
