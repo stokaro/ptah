@@ -277,6 +277,14 @@ func reverseSchemaDiffWithSchemaForDialect(
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
 		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 
+		// A default privilege reverses like a grant: both directions are
+		// statements the server accepts, and each entry carries its whole
+		// identity, so the swap needs nothing from the schema beside it.
+		DefaultPrivilegesAdded:         diff.DefaultPrivilegesRemoved,
+		DefaultPrivilegesRemoved:       diff.DefaultPrivilegesAdded,
+		DefaultPrivilegeOptionsAdded:   diff.DefaultPrivilegeOptionsRevoked,
+		DefaultPrivilegeOptionsRevoked: diff.DefaultPrivilegeOptionsAdded,
+
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete
 		// change on a field-level FK, issue #189). Swapping the two slices makes

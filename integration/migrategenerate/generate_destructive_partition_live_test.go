@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/migrate"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migrate"
 )
 
 // TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck pins

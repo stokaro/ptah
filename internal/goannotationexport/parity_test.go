@@ -3,6 +3,7 @@ package goannotationexport_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -71,6 +72,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	// frontend produced the grant (stokaro/ptah#1234). Nothing is lost: the
 	// round trip below reads `app.order_seq` back off the sequence block.
 	c.Assert(hclText, qt.Contains, `for = sequence.order_seq`)
+	c.Assert(hclText, qt.Contains, "default_privilege {")
 	c.Assert(hclText, qt.Contains, "data {")
 	c.Assert(hclText, qt.Contains, `checks = ["id > 0"]`)
 	c.Assert(hclText, qt.Contains, `custom = "WITHOUT OIDS"`)
@@ -94,6 +96,18 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(after.Functions[0].Returns, qt.Equals, before.Functions[0].Returns)
 	c.Assert(after.Grants, qt.HasLen, 3)
 	c.Assert(grantsByTarget(after.Grants)["||app.order_seq"].OnSequence, qt.Equals, "app.order_seq")
+	c.Assert(after.DefaultPrivileges, qt.DeepEquals, withoutDefaultPrivilegeProvenance(before.DefaultPrivileges))
+	// Grantability is per privilege, so this is the part a single WITH GRANT
+	// OPTION flag beside the list would lose: the annotation names INSERT alone
+	// in `grantable`, and SELECT has to come back plain.
+	c.Assert(
+		defaultPrivilegesByTarget(after.DefaultPrivileges)["app_owner|app|TABLES|app_user"].Privileges,
+		qt.DeepEquals,
+		[]schemamodel.PrivilegeGrant{
+			{Privilege: "SELECT"},
+			{Privilege: "INSERT", WithOption: true},
+		},
+	)
 
 	tables := tablesByQualifiedName(after.Tables)
 	c.Assert(tables["app.users"].Checks, qt.DeepEquals, []string{"id > 0"})
@@ -185,6 +199,32 @@ func withoutRangeProvenance(values []schemamodel.Range) []schemamodel.Range {
 	result := append([]schemamodel.Range(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
+	}
+	return result
+}
+
+func withoutDefaultPrivilegeProvenance(values []schemamodel.DefaultPrivilege) []schemamodel.DefaultPrivilege {
+	result := append([]schemamodel.DefaultPrivilege(nil), values...)
+	for i := range result {
+		result[i].StructName = ""
+	}
+	return result
+}
+
+// defaultPrivilegesByTarget keys each declaration by its identity: grantor,
+// schema, object type, grantee. A shorter key would let two declarations that
+// differ only in object type overwrite each other, and the surviving one would
+// be asserted on behalf of both.
+func defaultPrivilegesByTarget(
+	values []schemamodel.DefaultPrivilege,
+) map[string]schemamodel.DefaultPrivilege {
+	result := make(map[string]schemamodel.DefaultPrivilege, len(values))
+	for _, value := range values {
+		key := strings.Join(
+			[]string{value.Grantor, value.Schema, value.ObjectType, value.Grantee},
+			"|",
+		)
+		result[key] = value
 	}
 	return result
 }

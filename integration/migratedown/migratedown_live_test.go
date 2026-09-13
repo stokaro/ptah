@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/migratedown"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 )

@@ -3,9 +3,9 @@
 //
 // Every entry point returns a
 // [ptah.run/core/schemamodel.Database] holding the tables, fields,
-// indexes, constraints, enums, extensions, roles, grants, and RLS declarations
-// the annotations declare. They differ in what they read and in how far the
-// result is taken:
+// indexes, constraints, enums, extensions, roles, grants, default privileges,
+// and RLS declarations the annotations declare. They differ in what they read
+// and in how far the result is taken:
 //
 //   - ParseFile and ParseSource read one file, resolve its table-scoped names,
 //     and build its dependency graph. Embedded fields are not expanded and

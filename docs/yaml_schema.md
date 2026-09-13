@@ -110,6 +110,15 @@ grants:
     privileges: [SELECT, INSERT, UPDATE, DELETE]
     on_table: users
 
+default_privileges:
+  owner_tables_to_app_user:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT, INSERT]
+    grantable: [INSERT]
+
 tables:
   tenants:
     columns:
@@ -316,12 +325,57 @@ and `EXCLUDE`.
 Top-level constraints also require `table`. `condition` is supported for
 `EXCLUDE` constraints.
 
+## Default Privileges
+
+Each entry under `default_privileges` declares what a grantee receives on
+objects a named role creates later in a named schema. The map key names the
+entry in error messages and nothing else: a default privilege has no name, and
+`for_role`, `schema`, `object_type` and `grantee` together identify it.
+
+```yaml
+default_privileges:
+  owner_tables_to_app_user:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT, INSERT]
+    grantable: [INSERT]
+```
+
+| Key | Meaning |
+|---|---|
+| `for_role` | Role whose newly created objects the privileges apply to. Required. |
+| `schema` | Schema the default applies in. Required. |
+| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`. Required. |
+| `grantee` | Role receiving the privileges. `PUBLIC` names every role. Required. |
+| `privileges` | Privileges granted. Scalar comma-separated values and sequences are accepted. Required. |
+| `grantable` | The subset of `privileges` carrying `WITH GRANT OPTION`. |
+| `comment` | Default privilege comment. |
+| `dialects` | Target dialects this entry belongs to. Written with no dialect in it, it is refused rather than read as every dialect. |
+
+`for_role` is part of the identity rather than a decoration. PostgreSQL refuses
+`ALTER DEFAULT PRIVILEGES` from a role that is not a member of the named
+grantor, so two entries differing only in `for_role` declare two objects.
+
+`grantable` is a subset of `privileges` rather than one boolean over the whole
+entry, because PostgreSQL records grantability per privilege. The entry above
+renders two statements, `SELECT` plainly and `INSERT` with the grant option,
+and reading the database back reports the two rows those statements produced.
+A `grantable` name that is not in `privileges` is refused while the document is
+parsed: granting it would grant a privilege nobody asked for, and keeping it as
+a flag on nothing would put a contradiction in the schema.
+
+The cluster-wide form, written without `IN SCHEMA`, has no spelling here.
+`schema` is required, and a default privilege with no schema is a different
+object Ptah does not model.
+
 ## Schema Objects
 
 YAML input supports these schema objects. Extensions, functions, RLS, roles,
-and grants are PostgreSQL-specific. Materialized views also render on
-ClickHouse; views and triggers are also rendered for MySQL/MariaDB with
-dialect-specific trigger bodies.
+grants, and default privileges are PostgreSQL-specific. Materialized views also
+render on ClickHouse; views and triggers are also rendered for MySQL/MariaDB
+with dialect-specific trigger bodies.
 
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
@@ -337,6 +391,8 @@ dialect-specific trigger bodies.
   `create_role`, `inherit`, `replication`, `comment`
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
   `with_option`, `comment`
+- `default_privileges`: `for_role`, `schema`, `object_type`, `grantee`,
+  `privileges`, `grantable`, `comment`, `dialects`
 
 `matviews` accepts no refresh strategy. Ptah does not refresh materialized
 views: one is populated when it is created, a changed body is reconciled as a
@@ -371,3 +427,6 @@ The parser is intentionally strict:
 - Top-level indexes and constraints must name their target table.
 - Constraint types and required semantic fields are validated before SQL
   generation.
+- A `default_privileges` entry must name its grantor, schema, object type,
+  grantee and privileges, and every `grantable` name must be one of the
+  privileges it grants.

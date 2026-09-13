@@ -338,6 +338,7 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"policy":               (*parser).parsePolicy,
 	"role":                 (*parser).parseRole,
 	"permission":           (*parser).parsePermission,
+	"default_privilege":    (*parser).parseDefaultPrivilege,
 	"data":                 (*parser).parseManagedData,
 }
 

@@ -106,5 +106,8 @@ type UserSecurity struct{}
 //ptah:schema:grant role="app_user" privilege="USAGE,SELECT" on_sequence="app.order_seq" comment="Sequence access"
 type Grants struct{}
 
+//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_user" privileges="SELECT,INSERT" grantable="INSERT" comment="Future table access"
+type DefaultPrivileges struct{}
+
 //ptah:schema:data table="users" schema="app" key="id,email" file="users.yaml"
 type UserData struct{}

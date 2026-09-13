@@ -216,6 +216,14 @@ func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	mismatches = append(mismatches, grantMismatches(diff.GrantsRemoved, "extra_grant", "extra grant")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantOptionsAdded, "missing_grant_option", "missing grant option")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantOptionsRevoked, "extra_grant_option", "extra grant option")...)
+	mismatches = append(mismatches, defaultPrivilegeMismatches(
+		diff.DefaultPrivilegesAdded, "missing_default_privilege", "missing default privilege")...)
+	mismatches = append(mismatches, defaultPrivilegeMismatches(
+		diff.DefaultPrivilegesRemoved, "extra_default_privilege", "extra default privilege")...)
+	mismatches = append(mismatches, defaultPrivilegeMismatches(
+		diff.DefaultPrivilegeOptionsAdded, "missing_default_privilege_option", "missing default privilege grant option")...)
+	mismatches = append(mismatches, defaultPrivilegeMismatches(
+		diff.DefaultPrivilegeOptionsRevoked, "extra_default_privilege_option", "extra default privilege grant option")...)
 	return mismatches
 }
 
@@ -309,6 +317,42 @@ func grantMismatches(refs []difftypes.GrantRef, kind, label string) []Mismatch {
 		mismatches = append(mismatches, Mismatch{Kind: kind, Object: object, Message: label + " " + object})
 	}
 	return mismatches
+}
+
+// defaultPrivilegeMismatches names each drifted default privilege by its whole
+// identity and the privilege inside it. Anything shorter reads as two identical
+// rows where two different objects drifted, because a grantor and a grantee
+// are both part of what makes one.
+func defaultPrivilegeMismatches(refs []difftypes.DefaultPrivilegeRef, kind, label string) []Mismatch {
+	var mismatches []Mismatch
+	for _, ref := range sortedDefaultPrivilegeRefs(refs) {
+		object := ref.String()
+		mismatches = append(mismatches, Mismatch{Kind: kind, Object: object, Message: label + " " + object})
+	}
+	return mismatches
+}
+
+func sortedDefaultPrivilegeRefs(refs []difftypes.DefaultPrivilegeRef) []difftypes.DefaultPrivilegeRef {
+	sorted := append([]difftypes.DefaultPrivilegeRef(nil), refs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return compareDefaultPrivilegeRefs(sorted[i], sorted[j]) < 0
+	})
+	return sorted
+}
+
+func compareDefaultPrivilegeRefs(left, right difftypes.DefaultPrivilegeRef) int {
+	for _, values := range [][2]string{
+		{left.Schema, right.Schema},
+		{left.Grantor, right.Grantor},
+		{left.ObjectType, right.ObjectType},
+		{left.Grantee, right.Grantee},
+		{left.Privilege, right.Privilege},
+	} {
+		if compared := strings.Compare(values[0], values[1]); compared != 0 {
+			return compared
+		}
+	}
+	return 0
 }
 
 func qualifiedObject(namespace, name string) string {

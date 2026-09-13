@@ -509,6 +509,16 @@ func applyReadScope(requested, base []string, desired *schemamodel.Database) []s
 // declarations that carry one. A document may name a schema by declaring a
 // block for it or by qualifying an object with it, and both have to count: an
 // inspected document does the first, a hand-written one often only the second.
+//
+// A default privilege's schema is its home the same way a table's is: `IN
+// SCHEMA app` is where the object lives, and it can be the document's only
+// mention of `app`. Leave it out and the current side never reads that schema,
+// so a default privilege the database already has reads as absent and every run
+// plans it again.
+//
+// Grants are not walked here. A grant is written against a target object, which
+// a document usually declares in its own right, so the schema is already on
+// this list by the time the grant is read.
 func desiredSchemaNames(desired *schemamodel.Database) []string {
 	if desired == nil {
 		return nil
@@ -536,6 +546,9 @@ func desiredSchemaNames(desired *schemamodel.Database) []string {
 	}
 	for _, rangeType := range desired.Ranges {
 		add(rangeType.Schema)
+	}
+	for _, privilege := range desired.DefaultPrivileges {
+		add(privilege.Schema)
 	}
 	slices.Sort(names)
 	return slices.Compact(names)

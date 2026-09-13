@@ -202,6 +202,57 @@ func TestRenderGrantsRoundTripThroughParser(t *testing.T) {
 	}
 }
 
+// TestRenderDefaultPrivilegesRoundTripThroughParser compares the whole
+// declaration the parser read with the one it reads back off the export.
+//
+// The database rendered here declares nothing but default privileges, which is
+// what drives the holder struct: an exporter that wrote the directive comments
+// without a struct after them would produce a file that reparses as file-scope
+// comments, and this family is struct-scoped, so the reparse would report
+// nothing while every other check stayed green.
+func TestRenderDefaultPrivilegesRoundTripThroughParser(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{
+			name:       "plain privileges",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="SEQUENCES" grantee="app_reader" privileges="USAGE,SELECT"`,
+		},
+		{
+			name:       "one privilege of two is grantable",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT,INSERT" grantable="INSERT" comment="Future tables"`,
+		},
+		{
+			name:       "every privilege is grantable",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="FUNCTIONS" grantee="PUBLIC" privileges="EXECUTE" grantable="EXECUTE"`,
+		},
+		{
+			name:       "scoped to one dialect",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TYPES" grantee="app_reader" privileges="USAGE" dialects="postgres"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			sourceDir := t.TempDir()
+			writeSource(
+				c,
+				filepath.Join(sourceDir, "schema.go"),
+				"package models\n\n"+test.annotation+"\ntype PtahSchemaObjects struct{}\n",
+			)
+			before, err := goschema.ParseDir(sourceDir)
+			c.Assert(err, qt.IsNil)
+			c.Assert(before.DefaultPrivileges, qt.HasLen, 1)
+
+			after := renderAndParseDefaultPrivileges(c, t.TempDir(), before.DefaultPrivileges)
+
+			c.Assert(after, qt.DeepEquals, before.DefaultPrivileges)
+		})
+	}
+}
+
 func TestRenderOrdersGrantsByTarget(t *testing.T) {
 	c := qt.New(t)
 	// The struct name is the one the exporter attaches global annotations to,
@@ -224,6 +275,58 @@ func TestRenderOrdersGrantsByTarget(t *testing.T) {
 
 	c.Assert(forward, qt.DeepEquals, []schemamodel.Grant{first, second})
 	c.Assert(reverse, qt.DeepEquals, []schemamodel.Grant{first, second})
+}
+
+// TestRenderOrdersDefaultPrivilegesDeterministically feeds the same
+// declarations in both orders and asserts one output.
+//
+// Two elements are the minimum that can measure an order: over one declaration
+// every comparator agrees. The first two share an identity and differ only in
+// their privileges, which is the pair a key built from the identity alone
+// cannot separate -- and sort.Slice is not stable, so the export would stop
+// being byte-identical over the same input. The third has an identity of its
+// own, so the test also fails when nothing sorts at all.
+//
+// The rendered source is compared rather than a reparse: two declarations
+// sharing an identity are folded into one by the parser's finalize pass, so a
+// round trip could not see this pair.
+func TestRenderOrdersDefaultPrivilegesDeterministically(t *testing.T) {
+	c := qt.New(t)
+	sameIdentityInsert := schemamodel.DefaultPrivilege{
+		Grantor:    "app_owner",
+		Schema:     "app",
+		ObjectType: "TABLES",
+		Grantee:    "app_reader",
+		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "INSERT"}},
+	}
+	sameIdentitySelect := schemamodel.DefaultPrivilege{
+		Grantor:    "app_owner",
+		Schema:     "app",
+		ObjectType: "TABLES",
+		Grantee:    "app_reader",
+		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+	}
+	otherIdentity := schemamodel.DefaultPrivilege{
+		Grantor:    "app_owner",
+		Schema:     "app",
+		ObjectType: "SEQUENCES",
+		Grantee:    "app_reader",
+		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+	}
+
+	forward := renderDefaultPrivilegeSource(c, []schemamodel.DefaultPrivilege{
+		sameIdentityInsert, sameIdentitySelect, otherIdentity,
+	})
+	reverse := renderDefaultPrivilegeSource(c, []schemamodel.DefaultPrivilege{
+		otherIdentity, sameIdentitySelect, sameIdentityInsert,
+	})
+
+	c.Assert(forward, qt.Equals, reverse)
+	c.Assert(defaultPrivilegeAnnotationLines(forward), qt.DeepEquals, []string{
+		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="SEQUENCES" grantee="app_reader" privileges="USAGE"`,
+		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="INSERT"`,
+		`//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT"`,
+	})
 }
 
 func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
@@ -365,6 +468,47 @@ func renderAndParseGrants(c *qt.C, dir string, grants []schemamodel.Grant) []sch
 	parsed, err := goschema.ParseDir(dir)
 	c.Assert(err, qt.IsNil)
 	return parsed.Grants
+}
+
+func renderAndParseDefaultPrivileges(
+	c *qt.C,
+	dir string,
+	privileges []schemamodel.DefaultPrivilege,
+) []schemamodel.DefaultPrivilege {
+	c.Helper()
+	files, err := goschematogo.Render(
+		&schemamodel.Database{DefaultPrivileges: privileges},
+		goschematogo.Options{PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
+	parsed, err := goschema.ParseDir(dir)
+	c.Assert(err, qt.IsNil)
+	return parsed.DefaultPrivileges
+}
+
+func renderDefaultPrivilegeSource(c *qt.C, privileges []schemamodel.DefaultPrivilege) string {
+	c.Helper()
+	files, err := goschematogo.Render(
+		&schemamodel.Database{DefaultPrivileges: privileges},
+		goschematogo.Options{PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	var source strings.Builder
+	for _, file := range files {
+		source.Write(file.Data)
+	}
+	return source.String()
+}
+
+func defaultPrivilegeAnnotationLines(source string) []string {
+	var lines []string
+	for line := range strings.SplitSeq(source, "\n") {
+		if strings.HasPrefix(line, "//ptah:schema:defaultprivilege ") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func fileNames(files []goschematogo.File) []string {

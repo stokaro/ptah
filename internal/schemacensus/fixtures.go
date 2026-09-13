@@ -106,6 +106,11 @@ func Fixtures() []Fixture {
 		{Name: "grant-table", Schema: grantTableFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
+		{Name: "default-privilege-tables", Schema: defaultPrivilegeTablesFixture()},
+		{Name: "default-privilege-sequences", Schema: defaultPrivilegeSequencesFixture()},
+		{Name: "default-privilege-functions", Schema: defaultPrivilegeFunctionsFixture()},
+		{Name: "default-privilege-types", Schema: defaultPrivilegeTypesFixture()},
+		{Name: "default-privilege-grantable", Schema: defaultPrivilegeGrantableFixture()},
 		{Name: "rls", Schema: rlsFixture()},
 		{Name: "rls-strength", Schema: rlsStrengthFixture()},
 		{Name: "embedded-json", Schema: embeddedJSONFixture()},
@@ -1147,6 +1152,102 @@ func grantSequenceFixture() schemamodel.Database {
 	db.Sequences = []schemamodel.Sequence{{StructName: "S", Name: "order_seq"}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"USAGE"}, OnSequence: "order_seq",
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeBase is what the default-privilege fixtures vary one
+// attribute of: a table in a declared schema, and the two roles the statement
+// names.
+//
+// The schema and both roles are declared because the statement names all three.
+// Without them the fixture asks for a default privilege in a schema no render
+// creates, between roles no render creates, and a target refusing the
+// declaration for that reason answers every ablation the same way.
+//
+// The slices are literals in a fixed order and nothing here is walked out of a
+// map: two renders of one fixture have to produce the same bytes, and a corpus
+// built from map iteration flakes rather than fails.
+func defaultPrivilegeBase() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t", Schema: "app"})
+	db.Schemas = []schemamodel.Schema{{Name: "app"}}
+	db.Roles = []schemamodel.Role{
+		{StructName: "OWNER", Name: "app_owner", Login: true},
+		{StructName: "READER", Name: "app_reader", Login: true},
+	}
+	return db
+}
+
+// defaultPrivilegeTablesFixture is the TABLES arm, and the one default-privilege
+// fixture carrying a comment.
+//
+// One object type per fixture rather than four declarations in one, for the
+// reason [Fixture] gives: a target that refuses one keyword answers every
+// ablation inside that fixture with the same refusal, and the other three
+// object types would then be unmeasured while reading as unobservable.
+func defaultPrivilegeTablesFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPTables", Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
+		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+		Comment:  "new tables in app are readable",
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeSequencesFixture is the SEQUENCES arm.
+func defaultPrivilegeSequencesFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPSequences", Grantor: "app_owner", Schema: "app", ObjectType: "SEQUENCES",
+		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeFunctionsFixture is the FUNCTIONS arm, carrying the privilege
+// only a routine takes.
+func defaultPrivilegeFunctionsFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPFunctions", Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS",
+		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "EXECUTE"}},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeTypesFixture is the TYPES arm.
+func defaultPrivilegeTypesFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPTypes", Grantor: "app_owner", Schema: "app", ObjectType: "TYPES",
+		Grantee: "app_reader", Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeGrantableFixture carries a grantable privilege beside a plain
+// one on one declaration.
+//
+// Grantability is per privilege, and the pair is what makes that observable: a
+// declaration whose privileges all carry the grant option renders the same bytes
+// under a renderer that attached WITH GRANT OPTION to the whole statement, so
+// ablating PrivilegeGrant.WithOption would report the field read either way.
+// With the pair, the two spellings produce different statements.
+func defaultPrivilegeGrantableFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPGrantable", Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
+		Grantee: "app_reader",
+		Privileges: []schemamodel.PrivilegeGrant{
+			{Privilege: "SELECT"},
+			{Privilege: "INSERT", WithOption: true},
+		},
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

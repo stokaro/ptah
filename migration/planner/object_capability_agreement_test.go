@@ -69,21 +69,22 @@ func nonCanonicalSpellings(c *qt.C) []string {
 
 // objectKindFixture is one desired schema carrying EVERY object kind the
 // PostgreSQL-family renderer can refuse on capability grounds: a sequence, a
-// role, a grant, row-level security with a policy, a view, a materialized
-// view, a function, and a trigger, over a table they can all attach to.
+// role, a grant, a default privilege, row-level security with a policy, a view,
+// a materialized view, a function, and a trigger, over a table they can all
+// attach to.
 //
-// All eight fit in one fixture only because the renderer answers every kind
-// with a skip comment. Answering four of them with an ERROR instead aborts the
-// whole render, so one of those refusing first decides the render before the
-// kinds under test are reached, and the role, grant, RLS and sequence have to
-// be left out. Removing that second answer shape is what lets one fixture cover
-// every gate at once (stokaro/ptah#929).
+// They fit in one fixture only because the renderer answers every kind with a
+// skip comment. Answering four of them with an ERROR instead aborts the whole
+// render, so one of those refusing first decides the render before the kinds
+// under test are reached, and the role, grant, RLS and sequence have to be left
+// out. Removing that second answer shape is what lets one fixture cover every
+// gate at once (stokaro/ptah#929).
 //
-// Every grant carries exactly ONE privilege, deliberately. The offline
-// converter emits one grant node per declared grant with all of its privileges
-// on it, while the planner emits one node per (grant, privilege) pair, so a
-// two-privilege grant would make the two paths differ in node COUNT for a
-// reason that has nothing to do with dialect gating.
+// Every grant and every default privilege carries exactly ONE privilege,
+// deliberately. The offline converter emits one node per declaration with all
+// of its privileges on it, while the planner emits one node per (declaration,
+// privilege) pair, so a two-privilege declaration would make the two paths
+// differ in node COUNT for a reason that has nothing to do with dialect gating.
 func objectKindFixture() schemamodel.Database {
 	return schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
@@ -106,6 +107,14 @@ func objectKindFixture() schemamodel.Database {
 			Role:       "app_user",
 			Privileges: []string{"SELECT"},
 			OnTable:    "users",
+		}},
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+			StructName: "DefaultPrivilegeMarker",
+			Grantor:    "app_user",
+			Schema:     "public",
+			ObjectType: "TABLES",
+			Grantee:    "app_user",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "SecurityMarker",
@@ -215,6 +224,16 @@ var objectKindGates = []objectKindGate{
 	{"sequence", capability.Sequences, "sequence", "order_number_seq", `CREATE SEQUENCE "order_number_seq"`},
 	{"role", capability.RoleManagement, "role", "app_user", `CREATE ROLE "app_user"`},
 	{"grant", capability.RoleManagement, "grant", "on users to app_user", `GRANT SELECT ON TABLE "users" TO "app_user"`},
+	// The object phrase is the renderer's own identity string for a default
+	// privilege: the four components that identify it, and none of the payload.
+	// The render path emits one node per declaration and the plan path one per
+	// privilege, so a name carrying the privilege would make the two surfaces
+	// disagree about an object neither of them rendered.
+	{
+		"default privilege", capability.RoleManagement, "default privilege",
+		"on TABLES in schema public for role app_user to app_user",
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_user" IN SCHEMA "public" GRANT SELECT ON TABLES TO "app_user"`,
+	},
 	{"row-level security", capability.RowLevelSecurity, "row-level security", "on users", "ENABLE ROW LEVEL SECURITY"},
 	{"policy", capability.RowLevelSecurity, "policy", "users_self on users", `POLICY "users_self"`},
 }

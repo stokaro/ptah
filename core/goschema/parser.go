@@ -620,6 +620,7 @@ type schemaParseState struct {
 	continuousAggregates  []schemamodel.ContinuousAggregate
 	roles                 []schemamodel.Role
 	grants                []schemamodel.Grant
+	defaultPrivileges     []schemamodel.DefaultPrivilege
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
 }
@@ -740,6 +741,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:rls:enable":          (*schemaParseState).parseRLSEnableComment,
 	"ptah:schema:role":                (*schemaParseState).parseRoleComment,
 	"ptah:schema:grant":               (*schemaParseState).parseGrantComment,
+	"ptah:schema:defaultprivilege":    (*schemaParseState).parseDefaultPrivilegeComment,
 	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
 }
 
@@ -918,6 +920,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		ContinuousAggregates: state.continuousAggregates,
 		Roles:                state.roles,
 		Grants:               state.grants,
+		DefaultPrivileges:    state.defaultPrivileges,
 		ManagedData:          state.managedData,
 		Dependencies:         make(map[string][]string),
 	}
@@ -1981,6 +1984,132 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	grant.Canonicalize()
 	s.grants = append(s.grants, grant)
 	return nil
+}
+
+// defaultPrivilegeObjectTypes is the closed set ALTER DEFAULT PRIVILEGES names,
+// and the set the catalog reader folds pg_default_acl's defaclobjtype into.
+//
+// SCHEMAS is absent deliberately: this family is schema-scoped, and a default
+// privilege on schemas is the cluster-wide form the model has no spelling for.
+var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
+
+// parseDefaultPrivilegeComment reads one //ptah:schema:defaultprivilege
+// directive into the schema model.
+//
+// The object type and the grantable subset are checked here rather than at
+// render time. Without the object-type check a misspelled keyword reaches the
+// renderer and the author learns about it from the server's syntax error;
+// without the subset check the model holds a contradiction -- a privilege
+// marked grantable that is not granted at all -- which renders nothing and
+// compares as a difference the planner can never resolve.
+func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:defaultprivilege", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+	objectType, err := defaultPrivilegeObjectType(kv["object_type"], ctx)
+	if err != nil {
+		return err
+	}
+	privileges, err := defaultPrivilegeGrants(kv, ctx)
+	if err != nil {
+		return err
+	}
+	privilege := schemamodel.DefaultPrivilege{
+		StructName: structName,
+		Grantor:    kv["for_role"],
+		Schema:     kv["schema"],
+		ObjectType: objectType,
+		Grantee:    kv["grantee"],
+		Privileges: privileges,
+		Comment:    kv["comment"],
+		Dialects:   scope,
+	}
+	privilege.Canonicalize()
+	s.defaultPrivileges = append(s.defaultPrivileges, privilege)
+	return nil
+}
+
+func defaultPrivilegeObjectType(raw string, ctx annotationErrorContext) (string, error) {
+	objectType := strings.ToUpper(strings.TrimSpace(raw))
+	if slices.Contains(defaultPrivilegeObjectTypes, objectType) {
+		return objectType, nil
+	}
+	slog.Error("unsupported default privilege object type",
+		"directive", ctx.directive,
+		"value", raw,
+		"location", ctx.location,
+	)
+	return "", &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: "object_type",
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message: fmt.Sprintf(
+			"invalid %q value %q on %s at %s: must be one of %s",
+			"object_type", raw, ctx.directive, ctx.location,
+			strings.Join(defaultPrivilegeObjectTypes, ", "),
+		),
+	}
+}
+
+// defaultPrivilegeGrants folds the two attribute lists into one list of pairs.
+//
+// Two parallel lists are what the author writes and what the catalog cannot
+// hold: pg_default_acl explodes to one row per privilege, each with its own
+// is_grantable. Folding at the parse boundary means nothing downstream has to
+// keep the lists in step.
+func defaultPrivilegeGrants(
+	kv map[string]string,
+	ctx annotationErrorContext,
+) ([]schemamodel.PrivilegeGrant, error) {
+	privileges := splitCommaList(kv["privileges"])
+	grantable := make(map[string]bool, len(privileges))
+	for _, name := range splitCommaList(kv["grantable"]) {
+		grantable[strings.ToUpper(name)] = true
+	}
+	granted := make(map[string]bool, len(privileges))
+	grants := make([]schemamodel.PrivilegeGrant, 0, len(privileges))
+	for _, name := range privileges {
+		normalized := strings.ToUpper(name)
+		granted[normalized] = true
+		grants = append(grants, schemamodel.PrivilegeGrant{
+			Privilege:  name,
+			WithOption: grantable[normalized],
+		})
+	}
+	for _, name := range slices.Sorted(maps.Keys(grantable)) {
+		if granted[name] {
+			continue
+		}
+		slog.Error("grantable privilege is not granted",
+			"directive", ctx.directive,
+			"privilege", name,
+			"location", ctx.location,
+		)
+		return nil, &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "grantable",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf(
+				"invalid %q value %q on %s at %s: %q is not in %q",
+				"grantable", kv["grantable"], ctx.directive, ctx.location,
+				name, kv["privileges"],
+			),
+		}
+	}
+	return grants, nil
 }
 
 func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structName string) error {

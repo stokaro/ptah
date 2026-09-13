@@ -55,6 +55,7 @@ type Database struct {
 	ContinuousAggregates       []ContinuousAggregate          // TimescaleDB continuous aggregates
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
+	DefaultPrivileges          []DefaultPrivilege             `json:",omitempty"` // PostgreSQL default privileges
 	ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
@@ -1729,6 +1730,86 @@ func (g *Grant) Canonicalize() {
 	g.OnTable = strings.TrimSpace(g.OnTable)
 	g.OnSchema = strings.TrimSpace(g.OnSchema)
 	g.OnSequence = strings.TrimSpace(g.OnSequence)
+}
+
+// DefaultPrivilege is a PostgreSQL default privilege: the privileges an object
+// gets when a named role creates one in a named schema.
+//
+// It is an object rather than an attribute of a grant, and its identity is
+// (Grantor, Schema, ObjectType, Grantee) -- the key pg_default_acl uses, plus
+// the grantee the ACL explodes to. Two declarations differing only in Grantor
+// are two objects: PostgreSQL enforces the grantor, refusing the statement from
+// a non-member of that role with `permission denied to change default
+// privileges`, measured on 17.
+//
+// Schema is required. The clause-less form sets a cluster-wide default, which
+// internal/devclean refuses during replay, so this type has no spelling for it
+// and the reader that fills it drops those rows.
+//
+// Example:
+//
+//	//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT"
+//	type AccessControl struct{}
+type DefaultPrivilege struct {
+	StructName string // Name of the Go struct this declaration is associated with
+	Grantor    string // Role whose newly created objects the privileges apply to
+	Schema     string // Schema the default applies in
+	ObjectType string // TABLES, SEQUENCES, FUNCTIONS or TYPES
+	Grantee    string // Role receiving the privileges; PUBLIC names every role
+	// Privileges are the privileges granted, each carrying its own grant
+	// option.
+	//
+	// One list of pairs rather than a privilege list beside a grantable list:
+	// the catalog records grantability per privilege -- one identity granted
+	// SELECT plainly and INSERT WITH GRANT OPTION reads back as two rows with
+	// different is_grantable, measured on PostgreSQL 17 -- and two parallel
+	// lists can disagree about which privileges they cover.
+	Privileges []PrivilegeGrant
+	Comment    string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
+}
+
+// PrivilegeGrant is one privilege and the grant option it carries.
+type PrivilegeGrant struct {
+	Privilege  string // Privilege name, e.g. SELECT, INSERT, USAGE
+	WithOption bool   // Whether this privilege alone carries WITH GRANT OPTION
+}
+
+// Canonicalize normalizes the identity and the privilege list used by renderers
+// and comparators.
+//
+// Privileges are upper-cased and deduplicated by name. Where one name appears
+// twice with different grant options the grantable spelling wins, because
+// PostgreSQL merges two such statements that way: granting SELECT and then
+// SELECT WITH GRANT OPTION leaves one grantable row, measured on 17.
+func (d *DefaultPrivilege) Canonicalize() {
+	position := make(map[string]int, len(d.Privileges))
+	privileges := make([]PrivilegeGrant, 0, len(d.Privileges))
+	for _, privilege := range d.Privileges {
+		trimmed := strings.TrimSpace(privilege.Privilege)
+		if trimmed == "" {
+			continue
+		}
+		normalized := strings.ToUpper(trimmed)
+		index, seen := position[normalized]
+		if !seen {
+			position[normalized] = len(privileges)
+			privileges = append(privileges, PrivilegeGrant{
+				Privilege:  normalized,
+				WithOption: privilege.WithOption,
+			})
+			continue
+		}
+		privileges[index].WithOption = privileges[index].WithOption || privilege.WithOption
+	}
+	d.Privileges = privileges
+	d.Grantor = strings.TrimSpace(d.Grantor)
+	d.Schema = strings.TrimSpace(d.Schema)
+	d.Grantee = strings.TrimSpace(d.Grantee)
+	d.ObjectType = strings.ToUpper(strings.TrimSpace(d.ObjectType))
 }
 
 // ManagedData declares a set of reference/seed rows that Ptah manages as

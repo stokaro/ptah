@@ -126,6 +126,11 @@ func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catal
 				!grant.WithOption
 		},
 	)
+	// Default privileges get no carve-out here, and must not be given one by
+	// analogy with the two above: a stock PostgreSQL database has no
+	// pg_default_acl rows at all, measured on PostgreSQL 17, so every row that
+	// reaches this function is a statement an author issued. Dropping one would
+	// hide authored content from the strict refusal.
 	return &inspected
 }
 
@@ -147,6 +152,13 @@ func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) sch
 		slices.Clone(database.Grants),
 		isPostgresPublicUsageBaseline,
 	)
+	// Default privileges get no carve-out here, and must not be given one by
+	// analogy with the two above. A stock PostgreSQL database has no
+	// pg_default_acl rows at all, measured on PostgreSQL 17, and the reader's
+	// inner join to pg_namespace drops the cluster-wide rows that carry an
+	// owner's implicit rights. Every default privilege that reaches this
+	// function is therefore a statement an author issued, and dropping one
+	// would hide authored content from the strict refusal.
 	return inspected
 }
 
@@ -585,6 +597,7 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
+		{name: "default privileges", present: len(database.DefaultPrivileges) > 0},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		// These attributes are Ptah HCL extensions. The default compatibility
 		// profile keeps them so an Atlas Pro migration path does not discard a
@@ -604,6 +617,11 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
+		// A default privilege is not one of the named objects a cleanup plan
+		// lists, so without this entry strict `schema clean` would destroy an
+		// object the desired-schema list above claims strict mode does not
+		// model.
+		{name: "default privileges", present: len(database.DefaultPrivileges) > 0},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		{name: "table partitioning", present: hasTablePartitioning(database)},
 	}

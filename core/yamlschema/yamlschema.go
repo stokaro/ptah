@@ -28,14 +28,20 @@
 //
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
-// rls_enabled_tables (also accepted as rls_enabled), roles, grants, views,
-// matviews, and triggers. A table carries its columns in declaration order,
-// along with its primary key, checks, engine, comment, and per-platform
-// overrides. A column carries the type, its nullability, key and uniqueness
-// flags, defaults, generated and identity expressions, a foreign key with its
-// referential actions, character set and collation, and its own per-platform
-// overrides. Tables and columns can also declare shared and per-target API
-// names; columns additionally carry API-only type and exposure metadata.
+// rls_enabled_tables (also accepted as rls_enabled), roles, grants,
+// default_privileges, views, matviews, and triggers. A table carries its
+// columns in declaration order, along with its primary key, checks, engine,
+// comment, and per-platform overrides. A column carries the type, its
+// nullability, key and uniqueness flags, defaults, generated and identity
+// expressions, a foreign key with its referential actions, character set and
+// collation, and its own per-platform overrides. Tables and columns can also
+// declare shared and per-target API names; columns additionally carry API-only
+// type and exposure metadata.
+//
+// A default_privileges key is a label rather than a default name, because a
+// default privilege has no name. The role whose new objects it covers, the
+// schema, the object type and the grantee identify it, and the entry states
+// all four.
 //
 // # Strictness
 //
@@ -54,12 +60,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 )
 
@@ -111,20 +119,21 @@ func Parse(data []byte) (*schemamodel.Database, error) {
 }
 
 type document struct {
-	Tables            map[string]tableSpec      `yaml:"tables"`
-	Indexes           map[string]indexSpec      `yaml:"indexes"`
-	Constraints       map[string]constraintSpec `yaml:"constraints"`
-	Enums             map[string]enumSpec       `yaml:"enums"`
-	Extensions        map[string]extensionSpec  `yaml:"extensions"`
-	Functions         map[string]functionSpec   `yaml:"functions"`
-	RLSPolicies       map[string]rlsPolicySpec  `yaml:"rls_policies"`
-	RLSEnabledTables  map[string]rlsEnableSpec  `yaml:"rls_enabled_tables"`
-	RLSEnabled        map[string]rlsEnableSpec  `yaml:"rls_enabled"`
-	Roles             map[string]roleSpec       `yaml:"roles"`
-	Grants            map[string]grantSpec      `yaml:"grants"`
-	Views             map[string]viewSpec       `yaml:"views"`
-	MaterializedViews map[string]matViewSpec    `yaml:"matviews"`
-	Triggers          map[string]triggerSpec    `yaml:"triggers"`
+	Tables            map[string]tableSpec            `yaml:"tables"`
+	Indexes           map[string]indexSpec            `yaml:"indexes"`
+	Constraints       map[string]constraintSpec       `yaml:"constraints"`
+	Enums             map[string]enumSpec             `yaml:"enums"`
+	Extensions        map[string]extensionSpec        `yaml:"extensions"`
+	Functions         map[string]functionSpec         `yaml:"functions"`
+	RLSPolicies       map[string]rlsPolicySpec        `yaml:"rls_policies"`
+	RLSEnabledTables  map[string]rlsEnableSpec        `yaml:"rls_enabled_tables"`
+	RLSEnabled        map[string]rlsEnableSpec        `yaml:"rls_enabled"`
+	Roles             map[string]roleSpec             `yaml:"roles"`
+	Grants            map[string]grantSpec            `yaml:"grants"`
+	DefaultPrivileges map[string]defaultPrivilegeSpec `yaml:"default_privileges"`
+	Views             map[string]viewSpec             `yaml:"views"`
+	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
+	Triggers          map[string]triggerSpec          `yaml:"triggers"`
 }
 
 type tableSpec struct {
@@ -339,6 +348,42 @@ type grantSpec struct {
 	Comment    stringScalar `yaml:"comment"`
 }
 
+// defaultPrivilegeSpec is one entry under `default_privileges`: the privileges
+// a grantee receives on objects a named role creates in a named schema.
+//
+// The keys are the attribute names //ptah:schema:defaultprivilege accepts, so
+// one declaration reads the same in both authoring formats.
+//
+// `for_role` belongs to the object's identity rather than to its payload.
+// PostgreSQL refuses ALTER DEFAULT PRIVILEGES from a non-member of that role,
+// and two entries differing only in it are two objects, so an entry without it
+// cannot name what it declares.
+//
+// `grantable` names the subset of `privileges` that carries WITH GRANT OPTION.
+// The `with_option` bool the grant sibling carries cannot say what the catalog
+// records: pg_default_acl explodes to one row per privilege, each with its own
+// is_grantable, so one identity granted SELECT plainly and INSERT WITH GRANT
+// OPTION reads back as two rows that disagree.
+//
+// There is no `struct_name` key. Nothing resolves a default privilege against a
+// host struct -- the four names below are its whole identity -- so the key
+// would take a value and decide nothing with it.
+type defaultPrivilegeSpec struct {
+	ForRole    stringScalar `yaml:"for_role"`
+	Schema     stringScalar `yaml:"schema"`
+	ObjectType stringScalar `yaml:"object_type"`
+	Grantee    stringScalar `yaml:"grantee"`
+	Privileges stringList   `yaml:"privileges"`
+	Grantable  stringList   `yaml:"grantable"`
+	Comment    stringScalar `yaml:"comment"`
+	// Dialects is a yaml.Node so that a key nobody wrote and a key written with
+	// nothing in it stay two answers. A stringList folds them into one: the
+	// decoder reports an empty list for both, and the empty scope that
+	// [dialectscope.Parse] refuses would be read as every dialect instead --
+	// silently widening the declaration whose author wrote the key to narrow it.
+	Dialects yaml.Node `yaml:"dialects"`
+}
+
 type platformSpec map[string]map[string]stringScalar
 
 func (d document) toDatabase() (*schemamodel.Database, error) {
@@ -372,6 +417,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	d.addRLS(db)
 	d.addRoles(db)
 	d.addGrants(db)
+	if err := d.addDefaultPrivileges(db); err != nil {
+		return nil, err
+	}
 
 	schemamodel.Finalize(db)
 	return db, nil
@@ -865,6 +913,147 @@ func (d document) addGrants(db *schemamodel.Database) {
 		grant.Canonicalize()
 		db.Grants = append(db.Grants, grant)
 	}
+}
+
+// addDefaultPrivileges reads the `default_privileges` entries into the model.
+//
+// The keys are walked through [sortedKeys] rather than by ranging over the map,
+// for the reason every other top-level collection is: a range takes Go's
+// randomized map order, so the same document would produce models whose
+// default privileges are in a different order on each run. That contradicts
+// what [Parse] promises, and it surfaces as a comparison that flakes rather
+// than as a test that fails.
+func (d document) addDefaultPrivileges(db *schemamodel.Database) error {
+	for _, key := range sortedKeys(d.DefaultPrivileges) {
+		privilege, err := buildDefaultPrivilege(key, d.DefaultPrivileges[key])
+		if err != nil {
+			return err
+		}
+		db.DefaultPrivileges = append(db.DefaultPrivileges, privilege)
+	}
+	return nil
+}
+
+// defaultPrivilegeObjectTypes is the set of object classes an entry may name.
+//
+// SCHEMAS is absent deliberately: this family is schema-scoped, and a default
+// privilege on schemas is the cluster-wide form the model has no spelling for.
+var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
+
+// buildDefaultPrivilege turns one entry into a model object, refusing an entry
+// that does not say what it declares.
+//
+// key names the entry in every refusal. It is a label rather than a default
+// name, because the four identity components have no name to fall back to.
+//
+// The object type is checked here and not left to the renderer. A misspelled
+// keyword otherwise reaches the server as a syntax error in a statement the
+// author did not write, and the comparison never converges either: the reader
+// reports one of the four keywords back, so nothing the server refused can
+// match what the document declared.
+func buildDefaultPrivilege(key string, spec defaultPrivilegeSpec) (schemamodel.DefaultPrivilege, error) {
+	required := []struct {
+		attribute string
+		value     string
+	}{
+		{attribute: "for_role", value: string(spec.ForRole)},
+		{attribute: "schema", value: string(spec.Schema)},
+		{attribute: "object_type", value: string(spec.ObjectType)},
+		{attribute: "grantee", value: string(spec.Grantee)},
+	}
+	for _, attribute := range required {
+		if strings.TrimSpace(attribute.value) == "" {
+			return schemamodel.DefaultPrivilege{}, fmt.Errorf("default privilege %q requires %s", key, attribute.attribute)
+		}
+	}
+
+	objectType := strings.ToUpper(strings.TrimSpace(string(spec.ObjectType)))
+	if !slices.Contains(defaultPrivilegeObjectTypes, objectType) {
+		return schemamodel.DefaultPrivilege{}, fmt.Errorf(
+			"default privilege %q has unsupported object_type %q, expected one of %s",
+			key, string(spec.ObjectType), strings.Join(defaultPrivilegeObjectTypes, ", "),
+		)
+	}
+
+	privileges, err := defaultPrivilegeGrants(key, spec)
+	if err != nil {
+		return schemamodel.DefaultPrivilege{}, err
+	}
+	scope, err := defaultPrivilegeScope(key, spec.Dialects)
+	if err != nil {
+		return schemamodel.DefaultPrivilege{}, err
+	}
+
+	privilege := schemamodel.DefaultPrivilege{
+		Grantor:    string(spec.ForRole),
+		Schema:     string(spec.Schema),
+		ObjectType: objectType,
+		Grantee:    string(spec.Grantee),
+		Privileges: privileges,
+		Comment:    string(spec.Comment),
+		Dialects:   scope,
+	}
+	privilege.Canonicalize()
+	return privilege, nil
+}
+
+// defaultPrivilegeGrants folds `privileges` and `grantable` into the one list
+// of pairs the model holds, keeping the order the entry wrote.
+//
+// A `grantable` name outside `privileges` is refused rather than granted on its
+// own. Granting it would render a privilege the author did not ask for; keeping
+// it as a flag on nothing would put a contradiction in the model, and a
+// contradiction renders no statement and compares as a difference no plan can
+// resolve.
+func defaultPrivilegeGrants(key string, spec defaultPrivilegeSpec) ([]schemamodel.PrivilegeGrant, error) {
+	privileges := cleanStrings(spec.Privileges)
+	if len(privileges) == 0 {
+		return nil, fmt.Errorf("default privilege %q requires privileges", key)
+	}
+
+	granted := make(map[string]bool, len(privileges))
+	for _, name := range privileges {
+		granted[strings.ToUpper(name)] = true
+	}
+	grantable := make(map[string]bool, len(spec.Grantable))
+	for _, name := range cleanStrings(spec.Grantable) {
+		normalized := strings.ToUpper(name)
+		if !granted[normalized] {
+			return nil, fmt.Errorf("default privilege %q marks %q grantable, which is not in privileges", key, name)
+		}
+		grantable[normalized] = true
+	}
+
+	grants := make([]schemamodel.PrivilegeGrant, 0, len(privileges))
+	for _, name := range privileges {
+		grants = append(grants, schemamodel.PrivilegeGrant{
+			Privilege:  name,
+			WithOption: grantable[strings.ToUpper(name)],
+		})
+	}
+	return grants, nil
+}
+
+// defaultPrivilegeScope resolves the `dialects` key of one entry.
+//
+// A zero Kind is the key nobody wrote, and a declaration carrying no scope
+// reaches every dialect. Everything written goes to [dialectscope.Parse],
+// which resolves each alias to the canonical dialect name and refuses a value
+// naming none.
+func defaultPrivilegeScope(key string, node yaml.Node) ([]string, error) {
+	if node.Kind == 0 {
+		return nil, nil
+	}
+
+	var written stringList
+	if err := node.Decode(&written); err != nil {
+		return nil, fmt.Errorf("default privilege %q has an invalid dialects value: %w", key, err)
+	}
+	scope, err := dialectscope.Parse(strings.Join(cleanStrings(written), ","))
+	if err != nil {
+		return nil, fmt.Errorf("default privilege %q dialects: %w", key, err)
+	}
+	return scope, nil
 }
 
 func sortedKeys[V any](values map[string]V) []string {

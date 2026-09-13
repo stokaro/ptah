@@ -3449,6 +3449,129 @@ func (n *RevokePrivilegeNode) Accept(visitor Visitor) error {
 	return visitor.VisitRevokePrivilege(n)
 }
 
+// DefaultPrivilegeNode represents a PostgreSQL ALTER DEFAULT PRIVILEGES ... GRANT
+// statement: the privileges an object gets when a named role creates one in a
+// named schema.
+//
+// Grantor is part of the object's identity rather than metadata about it. The
+// catalog keys pg_default_acl on (defaclrole, defaclnamespace, defaclobjtype),
+// and two entries differing only in FOR ROLE are two objects. PostgreSQL
+// enforces it too: a member of the grantor role may issue the statement and a
+// non-member is refused with `permission denied to change default privileges`,
+// measured on 17.
+//
+// Schema is required. A statement with no IN SCHEMA sets the cluster-wide
+// default, which internal/devclean refuses during replay, so the node has no
+// spelling for it.
+//
+// WithOption is per privilege rather than per node, because the catalog records
+// grantability that way: one identity granted SELECT plainly and INSERT WITH
+// GRANT OPTION reads back as two rows with different is_grantable, measured on
+// PostgreSQL 17. A single flag beside a privilege list loses the distinction on
+// the read, and the comparison then flips it back and forth forever.
+type DefaultPrivilegeNode struct {
+	// Grantor is the role whose newly created objects the privileges apply to,
+	// the FOR ROLE clause.
+	Grantor string
+	// Schema is the schema the default applies in, the IN SCHEMA clause.
+	Schema string
+	// ObjectType is the object class the default covers: TABLES, SEQUENCES,
+	// FUNCTIONS or TYPES.
+	ObjectType string
+	// Grantee is the role receiving the privileges, the TO clause. PUBLIC names
+	// every role.
+	Grantee string
+	// Privileges are the privileges granted, each with its own grantability.
+	Privileges []DefaultPrivilege
+	// Comment is an optional comment for the operation.
+	Comment string
+}
+
+// DefaultPrivilege is one privilege in a default-privilege grant, with the
+// grantability that privilege carries.
+type DefaultPrivilege struct {
+	// Privilege is the privilege name, e.g. SELECT, INSERT, USAGE.
+	Privilege string
+	// WithOption controls WITH GRANT OPTION for this privilege alone.
+	WithOption bool
+}
+
+// NewDefaultPrivilege creates a new ALTER DEFAULT PRIVILEGES ... GRANT node.
+func NewDefaultPrivilege(grantor, schema, objectType, grantee string, privileges []DefaultPrivilege) *DefaultPrivilegeNode {
+	return &DefaultPrivilegeNode{
+		Grantor:    grantor,
+		Schema:     schema,
+		ObjectType: objectType,
+		Grantee:    grantee,
+		Privileges: privileges,
+	}
+}
+
+// SetComment sets a comment for the ALTER DEFAULT PRIVILEGES operation.
+func (n *DefaultPrivilegeNode) SetComment(comment string) *DefaultPrivilegeNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DefaultPrivilegeNode.
+func (n *DefaultPrivilegeNode) Accept(visitor Visitor) error {
+	return visitor.VisitDefaultPrivilege(n)
+}
+
+// RevokeDefaultPrivilegeNode represents a PostgreSQL
+// ALTER DEFAULT PRIVILEGES ... REVOKE statement.
+//
+// It is a sibling type rather than a flag on [DefaultPrivilegeNode], matching
+// the grant and revoke pair beside it. Removing a default privilege is a REVOKE
+// and never a DROP: the catalog row disappears when the last privilege on it
+// goes, and there is no object to drop.
+type RevokeDefaultPrivilegeNode struct {
+	// Grantor is the role whose default the revoke applies to, the FOR ROLE
+	// clause.
+	Grantor string
+	// Schema is the schema the default applies in, the IN SCHEMA clause.
+	Schema string
+	// ObjectType is the object class the default covers: TABLES, SEQUENCES,
+	// FUNCTIONS or TYPES.
+	ObjectType string
+	// Grantee is the role losing the privileges, the FROM clause.
+	Grantee string
+	// Privileges are the privileges revoked.
+	Privileges []string
+	// GrantOptionFor revokes only the grant option, leaving the privilege.
+	GrantOptionFor bool
+	// Comment is an optional comment for the operation.
+	Comment string
+}
+
+// NewRevokeDefaultPrivilege creates a new ALTER DEFAULT PRIVILEGES ... REVOKE node.
+func NewRevokeDefaultPrivilege(grantor, schema, objectType, grantee string, privileges []string) *RevokeDefaultPrivilegeNode {
+	return &RevokeDefaultPrivilegeNode{
+		Grantor:    grantor,
+		Schema:     schema,
+		ObjectType: objectType,
+		Grantee:    grantee,
+		Privileges: privileges,
+	}
+}
+
+// SetGrantOptionFor enables or disables REVOKE GRANT OPTION FOR.
+func (n *RevokeDefaultPrivilegeNode) SetGrantOptionFor(grantOptionFor bool) *RevokeDefaultPrivilegeNode {
+	n.GrantOptionFor = grantOptionFor
+	return n
+}
+
+// SetComment sets a comment for the ALTER DEFAULT PRIVILEGES REVOKE operation.
+func (n *RevokeDefaultPrivilegeNode) SetComment(comment string) *RevokeDefaultPrivilegeNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for RevokeDefaultPrivilegeNode.
+func (n *RevokeDefaultPrivilegeNode) Accept(visitor Visitor) error {
+	return visitor.VisitRevokeDefaultPrivilege(n)
+}
+
 // RoleOperation represents an operation that can be performed on a role during ALTER ROLE.
 //
 // This interface allows for different types of role modifications to be represented

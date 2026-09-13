@@ -517,6 +517,36 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
+			"DefaultPrivilegesAdded",
+			&difftypes.SchemaDiff{DefaultPrivilegesAdded: []difftypes.DefaultPrivilegeRef{{
+				Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "app", Privilege: "SELECT",
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"DefaultPrivilegesRemoved",
+			&difftypes.SchemaDiff{DefaultPrivilegesRemoved: []difftypes.DefaultPrivilegeRef{{
+				Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "app", Privilege: "SELECT",
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"DefaultPrivilegeOptionsAdded",
+			&difftypes.SchemaDiff{DefaultPrivilegeOptionsAdded: []difftypes.DefaultPrivilegeRef{{
+				Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "app",
+				Privilege: "SELECT", WithOption: true,
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"DefaultPrivilegeOptionsRevoked",
+			&difftypes.SchemaDiff{DefaultPrivilegeOptionsRevoked: []difftypes.DefaultPrivilegeRef{{
+				Grantor: "owner", Schema: "app", ObjectType: "TABLES", Grantee: "app",
+				Privilege: "SELECT", WithOption: true,
+			}}},
+			&schemamodel.Database{},
+		},
+		{
 			"ConstraintsAdded",
 			&difftypes.SchemaDiff{
 				// The record a comparison carries. A name with no definition is

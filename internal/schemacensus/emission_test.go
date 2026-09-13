@@ -115,6 +115,9 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// them is the first fragment and is classified.
 		"$$ LANGUAGE PLPGSQL",
 		"$$ LANGUAGE SQL",
+		// A rule about objects nobody has created yet. It creates none itself,
+		// so the guard has no name to count.
+		"ALTER DEFAULT PRIVILEGES",
 		// Alterations of an object something else created.
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
 		"ALTER TABLE \"B\"",

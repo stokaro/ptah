@@ -331,3 +331,20 @@ v0.3.0 ptah.run/migration/shadow
 # AtlasTestOption's signature mentions the type, not because a caller could
 # observe it (stokaro/ptah#3119).
 v0.5.0 ptah.run/migration/dbtest
+
+# ast.Visitor gained VisitDefaultPrivilege and VisitRevokeDefaultPrivilege, so
+# an embedder implementing the interface outside this repository has to answer
+# two more methods.
+#
+# The interface carries one method per node kind, which is what makes a renderer
+# that forgets a kind fail to compile rather than drop the object in silence.
+# There is no way to add a node kind without it, and the alternative -- a
+# default implementation through an embedded no-op -- is exactly the shape that
+# turns a missing arm into a silent drop. ast.NoopVisitor exists for an embedder
+# that wants that trade deliberately.
+#
+# Pre-v1, so no compatibility is owed; ptah.run/core/renderer reports the same
+# break because its own exported surface mentions the interface
+# (stokaro/ptah#3197).
+v0.5.0 ptah.run/core/ast
+v0.5.0 ptah.run/core/renderer
