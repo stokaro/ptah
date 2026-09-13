@@ -612,6 +612,22 @@ function outsideCodeSpans(line, inSpan) {
   return { outside, inSpan: segments.length % 2 === 0 ? !inSpan : inSpan };
 }
 
+// blankLinkDestinations blanks the URL inside a Markdown link, keeping its
+// length so a finding still points at the column the author wrote at.
+//
+// A destination is not prose. Smartypants transforms text, and a double hyphen
+// in an href survives verbatim -- measured through the site's own processor --
+// so a rule about what the reader sees must not read one. Without this,
+// linking to a heading named for a flag reports the anchor as an unbackticked
+// flag, and the remedy the message names cannot be applied: backticks inside a
+// destination make it a different URL (stokaro/ptah#3221).
+function blankLinkDestinations(text) {
+  return text.replace(
+    /\]\(([^)]*)\)/g,
+    (_, destination) => `](${' '.repeat(destination.length)})`,
+  );
+}
+
 // countAsSubject matches a cardinal of two or more standing immediately in
 // front of `things`. See countAsSubjectViolations for what the rule is and
 // which neighbouring constructions it must leave alone.
@@ -711,7 +727,7 @@ function bareFlagViolations(lines) {
       continue;
     }
     const span = outsideCodeSpans(line, inSpan);
-    const outside = span.outside;
+    const outside = blankLinkDestinations(span.outside);
     inSpan = span.inSpan;
     for (const match of outside.matchAll(/(?<![`\w-])--[a-z][a-z0-9-]*/g)) {
       findings.push({
@@ -915,6 +931,10 @@ function selftest() {
     // a time, the file is clean.
     'The refusal names two',
     'things that layout does not have.',
+    '',
+    // A flag in the link TEXT is prose the reader meets, so blanking the
+    // destination must not reach it.
+    'Read [the --force flag](../reference/command-flags/) before using it.',
   ].join('\n');
 
   const expected = [
@@ -943,6 +963,9 @@ function selftest() {
     { line: 84, needle: 'the count is not the subject' },
     { line: 86, needle: 'the count is not the subject' },
     { line: 88, needle: 'the count is not the subject' },
+    // A flag in link TEXT is still prose the reader meets, so blanking the
+    // destination must not silence it.
+    { line: 91, needle: 'bare flag "--force"' },
   ];
 
   const findings = analyze(violating);
@@ -1127,6 +1150,11 @@ function selftest() {
     '<svg role="img" aria-labelledby="ptah-flow-title">',
     '  <title id="ptah-flow-title">Sources reach the database.</title>',
     '</svg>',
+    '',
+    // A link to a heading named for a flag. The anchor legitimately begins with
+    // a double hyphen, smartypants leaves a destination verbatim, and backticks
+    // there would make it a different URL.
+    'See [Apply migrations](../versioned/apply/#--allow-dirty-means-two-different-things).',
   ].join('\n');
 
   for (const finding of analyze(clean)) {
