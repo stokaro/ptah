@@ -3462,8 +3462,8 @@
         "/operate/deliver/",
         "/operate/overview/"
       ],
-      "visibleWords": 490,
-      "sourceBytes": 3888
+      "visibleWords": 568,
+      "sourceBytes": 4399
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",

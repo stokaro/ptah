@@ -81,6 +81,16 @@ the approval model, operations, the security model and the support windows all
 live there, and this page deliberately does not restate any of them -- a second
 copy of an install command is a second thing to get wrong.
 
+## Watching it work
+
+[Recorded runs](https://operator.ptah.run/demo/) are terminal sessions
+captured while the operator ran against a Kubernetes cluster: applying a schema,
+changing it, approving a plan, refusing a destructive change, closing drift,
+failing and recovering. Each one is checked while it is recorded -- the
+conditions the session claims are read off the live objects -- and published
+only if every check held, so what a reader watches is a session that happened
+rather than a screencast of one.
+
 ## Next steps
 
 - [Deliver a schema change](../deliver/) places the operator in the wider path
