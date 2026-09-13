@@ -410,7 +410,12 @@ directive from that migration.
 
 The first row is the engine rather than a Ptah policy, and it is decided by the
 target's transactional-DDL capability rather than by a list of dialect names.
-MySQL, MariaDB, ClickHouse and Spanner commit DDL as it runs.
+MySQL, MariaDB, ClickHouse, Oracle and Spanner commit DDL as it runs.
+CockroachDB refuses for a narrower reason: a target named with no server version
+in hand resolves to the newest measured line, where a schema statement inside a
+transaction commits itself first, so the rollback has nothing left to undo. A
+connected CockroachDB server on an older line reaches the capability through the
+version ladder and is accepted.
 
 Timeouts themselves are not tied to that capability and reach every target whose
 server takes a session or transaction timeout; a target that takes none refuses

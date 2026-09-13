@@ -51,7 +51,12 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 		// SQLite is the mirror image: one transaction spans the run, and there
 		// is no session timeout Ptah sets around a migration.
 		{dialect: platform.SQLite, wantTimeouts: false, wantTxAll: true},
-		{dialect: platform.SQLServer, wantTimeouts: false, wantTxAll: false},
+		// SQL Server carries the rollback policy and not the timeout one. The
+		// engine rolls a schema change back inside an explicit transaction, and
+		// the migrator's tx-mode all path is dialect-neutral, so the key admits
+		// a target that was refused while the value read false
+		// (stokaro/ptah#3192).
+		{dialect: platform.SQLServer, wantTimeouts: false, wantTxAll: true},
 		{dialect: platform.ClickHouse, wantTimeouts: false, wantTxAll: false},
 		{dialect: platform.Spanner, wantTimeouts: false, wantTxAll: false},
 	}
