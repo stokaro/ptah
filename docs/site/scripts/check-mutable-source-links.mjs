@@ -23,7 +23,7 @@ const latestLabel = /latest development source/i;
 // The rule exists because a source file on master can disagree with the
 // documentation version a reader is on, so an unlabelled link sends them to
 // code that is not what they are reading about. These files have no per-version
-// meaning: contribution rules, conduct and licence apply to master, which is
+// meaning: contribution rules, conduct and license apply to master, which is
 // where a reader would act on them, and a link to a tag would be the wrong
 // target rather than the safe one.
 //

@@ -17,6 +17,11 @@ import PageActions from './PageActions.astro';
 import { pageSourceActions, publishesLlmsTxt, tableOfContentsHtml } from '../lib/page-furniture.mjs';
 
 const { entry, toc } = Astro.locals.starlightRoute;
+
+// The FAQ's headings are its groups, not the sections of one argument, so the
+// rail says what it is listing. Every other page keeps Starlight's wording.
+const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
+const contentsLabel = isFaq ? 'Groups' : Astro.locals.t('tableOfContents.onThisPage');
 const source = pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: import.meta.env.BASE_URL });
 ---
 
@@ -34,7 +39,7 @@ const source = pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: impo
       )}
       <starlight-toc data-min-h={toc.minHeadingLevel} data-max-h={toc.maxHeadingLevel}>
         <nav aria-labelledby="starlight__on-this-page">
-          <h2 id="starlight__on-this-page">{Astro.locals.t('tableOfContents.onThisPage')}</h2>
+          <h2 id="starlight__on-this-page">{contentsLabel}</h2>
           <Fragment set:html={tableOfContentsHtml(toc.items)} />
         </nav>
       </starlight-toc>

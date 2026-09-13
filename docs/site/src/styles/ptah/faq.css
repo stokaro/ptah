@@ -1,30 +1,151 @@
-/* The FAQ tag rail, and the chips under each question.
+/* The FAQ: the filter above the questions, the group headings inside them, and
+ * the row of links each answer ends with.
  *
- * These live here rather than scoped inside FaqFilter.astro because the chips
- * are created after the markdown renders, one set per question heading, and
- * Astro's scoping only reaches elements its template emitted.
- *
- * Everything below is built from the tokens the rest of the site uses, so the
- * rail follows both themes without declaring a colour of its own.
+ * The filter renders outside .sl-markdown-content, so it takes none of the
+ * prose line-height; its own metrics are declared here. Everything else styles
+ * markup the page itself produced -- `## Group`, `### Question`, and the list
+ * of links that closes an answer -- and is scoped to the FAQ route by
+ * .ptah-faq on the article.
  */
+
+/* ---------- the filter ---------- */
 
 .faq-filter {
 	display: block;
-	margin-block: 0 1.75rem;
+	margin-block: 0 1.5rem;
 	padding-bottom: 1.25rem;
 	border-bottom: 1px solid var(--sl-color-hairline);
 	line-height: 1.4;
 }
 
-.faq-filter__head {
+.faq-filter__field {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 0.5rem 0.75rem;
-	margin-bottom: 0.75rem;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 12px;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: var(--sl-color-bg);
+	cursor: text;
 }
 
-.faq-filter__title {
+.faq-filter__icon {
+	font-size: 14px;
+	color: var(--sl-color-gray-3);
+}
+
+.faq-filter__field input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	padding: 0;
+	background: none;
+	color: var(--sl-color-text);
+	font: 15px var(--__sl-font, inherit);
+	line-height: 1.4;
+}
+
+.faq-filter__field input::placeholder {
+	color: var(--sl-color-gray-3);
+}
+
+.faq-filter__field input:focus {
+	outline: none;
+}
+
+.faq-filter__field:focus-within {
+	border-color: var(--sl-color-accent);
+}
+
+.faq-filter__count {
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 12px;
+	color: var(--sl-color-gray-3);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.faq-filter__clear {
+	font: inherit;
+	font-size: 12px;
+	font-family: var(--__sl-font-mono, monospace);
+	background: none;
+	border: 0;
+	padding: 0;
+	color: var(--sl-color-text-accent);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.faq-symptoms {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.faq-symptoms__label {
+	font: 500 11px var(--__sl-font-mono, monospace);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+	margin-right: 4px;
+}
+
+.faq-symptom {
+	font: 13px var(--__sl-font-mono, monospace);
+	line-height: 1.4;
+	padding: 4px 9px;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+	cursor: pointer;
+}
+
+.faq-symptom:hover {
+	color: var(--sl-color-text);
+	border-color: var(--sl-color-gray-3);
+}
+
+.faq-symptom[aria-pressed='true'] {
+	color: var(--sl-color-text-invert);
+	background: var(--sl-color-bg-accent);
+	border-color: transparent;
+}
+
+.faq-filter__empty {
+	margin: 1.25rem 0 0;
+	color: var(--sl-color-gray-3);
+}
+
+.faq-filter__field input:focus-visible,
+.faq-symptom:focus-visible,
+.faq-filter__clear:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+
+/* ---------- the page ---------- */
+
+/* Starlight wraps a heading with its anchor link and makes the heading itself
+ * `display: inline`, so vertical space and rules sit on the wrapper. An inline
+ * heading given a border paints it across its own line box, which is a rule
+ * the width of the words rather than of the column. */
+
+/* A group heading names a set of questions rather than opening a section of
+ * prose. The site's rule above an h2 says "the body starts here", which is the
+ * wrong claim fourteen times down one page, so it goes. */
+.sl-markdown-content.ptah-faq .sl-heading-wrapper.level-h2 {
+	margin-top: 2.75rem;
+	padding-top: 0;
+	border-top: 0;
+	line-height: 1.4;
+}
+
+.sl-markdown-content.ptah-faq h2 {
+	font-family: var(--__sl-font-mono, monospace);
 	font-size: 0.8125rem;
 	font-weight: 500;
 	letter-spacing: 0.08em;
@@ -32,125 +153,137 @@
 	color: var(--sl-color-gray-3);
 }
 
-.faq-filter__count {
-	font-family: var(--__sl-font-mono, monospace);
-	font-size: 0.75rem;
+/* The line under a group heading is the intro, where the group has one. */
+.sl-markdown-content.ptah-faq .sl-heading-wrapper.level-h2 + p {
+	margin-top: 0.5rem;
+	font-size: 0.90625rem;
 	color: var(--sl-color-gray-3);
-	font-variant-numeric: tabular-nums;
-	margin-inline-start: auto;
 }
 
-.faq-filter__reset {
-	font: inherit;
-	font-size: 0.8125rem;
-	background: none;
-	border: 0;
-	padding: 0;
-	color: var(--sl-color-text-accent);
-	cursor: pointer;
-	text-decoration: underline;
-	text-underline-offset: 3px;
+/* A question opens a row of its own: the rule above it is what lets the page be
+ * read by skimming the questions. */
+.sl-markdown-content.ptah-faq .sl-heading-wrapper.level-h3 {
+	display: block;
+	margin-top: 1.5rem;
+	padding-top: 1.375rem;
+	border-top: 1px solid var(--sl-color-hairline);
+	line-height: 1.4;
 }
 
-.faq-filter__rail {
+.sl-markdown-content.ptah-faq
+	.sl-heading-wrapper.level-h2
+	+ .sl-heading-wrapper.level-h3,
+.sl-markdown-content.ptah-faq
+	.sl-heading-wrapper.level-h2
+	+ p
+	+ .sl-heading-wrapper.level-h3 {
+	margin-top: 0.875rem;
+}
+
+.sl-markdown-content.ptah-faq h3 {
+	font-size: 1.125rem;
+	letter-spacing: -0.01em;
+}
+
+.sl-markdown-content.ptah-faq .sl-heading-wrapper.level-h3 + p {
+	margin-top: 0.625rem;
+}
+
+/* The links an answer ends with: a row, not a bullet list. Each is a
+ * destination the reader chooses between, so they sit side by side. */
+.sl-markdown-content.ptah-faq p + ul {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.375rem;
+	gap: 6px 20px;
+	margin-top: 0.75rem;
+	padding: 0;
+	list-style: none;
 }
 
-.faq-filter__tag {
-	font: inherit;
-	font-size: 0.8125rem;
-	line-height: 1.3;
-	display: inline-flex;
-	align-items: baseline;
-	gap: 0.4rem;
-	padding: 0.25rem 0.7rem;
-	border: 1px solid var(--sl-color-hairline);
-	border-radius: 999px;
-	background: transparent;
-	color: var(--sl-color-gray-2);
-	cursor: pointer;
-}
-
-.faq-filter__tag:hover {
-	color: var(--sl-color-text);
-	border-color: var(--sl-color-gray-3);
-}
-
-.faq-filter__tag[aria-pressed='true'] {
-	color: var(--sl-color-text-invert);
-	background: var(--sl-color-bg-accent);
-	border-color: transparent;
+.sl-markdown-content.ptah-faq p + ul > li {
+	margin: 0;
+	font-size: 0.875rem;
 	font-weight: 500;
 }
 
-.faq-filter__n {
-	font-variant-numeric: tabular-nums;
-	font-size: 0.6875rem;
-	opacity: 0.7;
+.sl-markdown-content.ptah-faq p + ul > li > a {
+	text-decoration: none;
+	white-space: nowrap;
 }
 
-.faq-filter__empty {
-	margin: 1.5rem 0 0;
-	color: var(--sl-color-gray-3);
+.sl-markdown-content.ptah-faq p + ul > li > a::after {
+	content: ' \2192';
 }
 
-/* The chips under a question say why it matched and double as a way into the
- * same filter, so a reader who arrives on one question can widen from it. */
-.faq-chips {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 0.25rem 0.6rem;
-	margin-block: 0.35rem 0 !important;
+.sl-markdown-content.ptah-faq p + ul > li > a:hover {
+	text-decoration: underline;
 }
 
-/* A display of its own beats the browser's `[hidden] { display: none }`, so the
- * row has to say it again. Without this the chips of a filtered-away question
- * stay on screen with no question above them. */
-.faq-chips[hidden],
-.sl-markdown-content .sl-heading-wrapper[hidden] {
+/* A display of its own beats the browser's `[hidden] { display: none }`, so a
+ * filtered-away heading wrapper or link row has to say it again. */
+.sl-markdown-content.ptah-faq .sl-heading-wrapper[hidden],
+.sl-markdown-content.ptah-faq ul[hidden] {
 	display: none;
 }
 
-.faq-chip {
-	font: inherit;
-	font-size: 0.75rem;
-	line-height: 1.4;
-	background: none;
-	border: 0;
-	border-bottom: 1px dotted var(--sl-color-hairline);
-	padding: 0 0 1px;
-	color: var(--sl-color-gray-3);
-	cursor: pointer;
+@media (max-width: 50rem) {
+	.faq-filter__count {
+		display: none;
+	}
 }
 
-.faq-chip::before {
-	content: '#';
-	opacity: 0.55;
-}
-
-.faq-chip:hover {
-	color: var(--sl-color-text-accent);
-	border-bottom-color: var(--sl-color-text-accent);
-}
-
-.faq-chip[data-on='true'] {
-	color: var(--sl-color-text-accent);
-	font-weight: 500;
-}
-
-.faq-filter__tag:focus-visible,
-.faq-filter__reset:focus-visible,
-.faq-chip:focus-visible {
-	outline: 2px solid var(--sl-color-accent);
-	outline-offset: 2px;
-}
+/* ---------- the address ---------- */
 
 /* The at sign is drawn, not written: it is the one character that turns two
  * harmless halves into an address a plaintext scan can match. See
  * ContactEmail.astro for what this does and does not protect. */
 .contact-email__at::before {
 	content: '@';
+}
+
+/* The word an answer commits to, drawn beside it rather than buried in the
+ * first line. Colour carries the meaning, so the three read apart at a glance
+ * without a second cue the palette does not have. */
+.faq-verdict {
+	display: inline-block;
+	margin-right: 0.5rem;
+	padding: 1px 7px;
+	border: 1px solid;
+	border-radius: 2px;
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	vertical-align: 2px;
+}
+
+.faq-verdict[data-verdict='yes'] {
+	color: oklch(0.52 0.12 150);
+	border-color: oklch(0.52 0.12 150 / 0.45);
+}
+
+.faq-verdict[data-verdict='no'] {
+	color: oklch(0.62 0.16 60);
+	border-color: oklch(0.62 0.16 60 / 0.5);
+}
+
+.faq-verdict[data-verdict='partly'] {
+	color: var(--sl-color-gray-2);
+	border-color: var(--sl-color-hairline);
+}
+
+:root:not([data-theme='light']) .faq-verdict[data-verdict='yes'] {
+	color: oklch(0.78 0.13 150);
+	border-color: oklch(0.78 0.13 150 / 0.45);
+}
+
+:root:not([data-theme='light']) .faq-verdict[data-verdict='no'] {
+	color: oklch(0.8 0.15 70);
+	border-color: oklch(0.8 0.15 70 / 0.5);
+}
+
+/* The field has one clear control, the one that says what it clears. */
+.faq-filter__field input::-webkit-search-cancel-button {
+	display: none;
 }
