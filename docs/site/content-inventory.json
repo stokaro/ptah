@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 135,
-    "authored": 132,
+    "pages": 136,
+    "authored": 133,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -15,7 +15,7 @@
       "landing": 13,
       "reference": 33,
       "status": 9,
-      "troubleshooting": 4,
+      "troubleshooting": 5,
       "tutorial": 4
     }
   },
@@ -59,6 +59,7 @@
       ],
       "inboundLinks": [
         "/atlas/overview/",
+        "/faq/",
         "/reference/configuration/"
       ],
       "visibleWords": 1052,
@@ -266,7 +267,8 @@
       "inboundLinks": [
         "/",
         "/atlas/docs-coverage/",
-        "/atlas/feature-matrix/"
+        "/atlas/feature-matrix/",
+        "/faq/"
       ],
       "visibleWords": 548,
       "sourceBytes": 4499
@@ -426,6 +428,7 @@
         "/atlas/schema-commands/",
         "/concepts/migration-directory/",
         "/direct/apply/",
+        "/faq/",
         "/reference/atlas-commands/",
         "/reference/overview/",
         "/schema/hcl/",
@@ -734,6 +737,7 @@
         "/start/choose-a-workflow/"
       ],
       "inboundLinks": [
+        "/faq/",
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 490,
@@ -782,6 +786,7 @@
         "/databases/overview/",
         "/databases/postgresql/",
         "/databases/support-policy/",
+        "/faq/",
         "/reference/capabilities/",
         "/versioned/lint/"
       ],
@@ -1343,6 +1348,7 @@
         "/databases/support-evidence/",
         "/databases/support-policy/",
         "/extend/query-builder/",
+        "/faq/",
         "/reference/capabilities/"
       ],
       "visibleWords": 747,
@@ -1440,6 +1446,7 @@
         "/direct/compare-and-drift/",
         "/direct/overview/",
         "/direct/plan-and-approve/",
+        "/faq/",
         "/operate/deliver/",
         "/schema/lineage/",
         "/schema/security/",
@@ -1501,6 +1508,7 @@
         "/direct/inspect/",
         "/direct/overview/",
         "/direct/plan-and-approve/",
+        "/faq/",
         "/schema/serve/",
         "/schema/stats/",
         "/schema/validate-and-format/",
@@ -1655,6 +1663,7 @@
       "inboundLinks": [
         "/direct/apply/",
         "/direct/overview/",
+        "/faq/",
         "/reference/native-commands/",
         "/start/quick-start-direct/"
       ],
@@ -1700,6 +1709,7 @@
         "/databases/postgresql/",
         "/extend/overview/",
         "/extend/public-api/",
+        "/faq/",
         "/versioned/lint/"
       ],
       "visibleWords": 2430,
@@ -1832,6 +1842,7 @@
         "/databases/sqlserver/",
         "/extend/components/",
         "/extend/overview/",
+        "/faq/",
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
@@ -1875,6 +1886,91 @@
       ],
       "visibleWords": 2850,
       "sourceBytes": 22344
+    },
+    {
+      "path": "docs/site/src/content/docs/faq.md",
+      "route": "/faq/",
+      "title": "FAQ",
+      "description": "Short answers to what to use, what not to expect, and which guide to open next.",
+      "sidebarPath": "Getting started",
+      "sidebarLabel": null,
+      "type": "troubleshooting",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "What should I use for this task, what should I not expect, and which guide explains it?",
+      "goal": "Choose the right path for a task and recognize the limit behind a surprising result.",
+      "sourceOfTruth": [
+        "cmd",
+        "internal/cli",
+        "docs/site/src/content/docs"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "squash",
+        "compact migrations",
+        "slow fresh database",
+        "already exists",
+        "existing database",
+        "partial migration",
+        "dirty state",
+        "stuck migration",
+        "table was dropped",
+        "not reversible",
+        "checksum mismatch",
+        "drift ignored",
+        "no such command",
+        "which license",
+        "commercial support",
+        "report a bug"
+      ],
+      "sourceMode": null,
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/adoption/",
+        "/atlas/license-boundary/",
+        "/atlas/overview/",
+        "/concepts/desired-schema-and-sources/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/support-matrix/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/direct/plan-and-approve/",
+        "/extend/components/",
+        "/extend/public-api/",
+        "/inference/overview/",
+        "/operate/ai-agent-permissions/",
+        "/operate/kubernetes-operator/",
+        "/operate/oci-registry/",
+        "/operate/seed-data/",
+        "/operate/troubleshooting/",
+        "/reference/atlas-commands/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/sql/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/generate/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/",
+        "/versioned/reference-data/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 4379,
+      "sourceBytes": 33113
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -2512,6 +2608,7 @@
       ],
       "inboundLinks": [
         "/",
+        "/faq/",
         "/reference/native-commands/",
         "/start/choose-a-workflow/",
         "/start/overview/"
@@ -3126,6 +3223,7 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
+        "/faq/",
         "/operate/ai-agent-connect/",
         "/operate/ai-agents/",
         "/operate/ai-assist/",
@@ -3460,6 +3558,7 @@
         "/operate/oci-registry/"
       ],
       "inboundLinks": [
+        "/faq/",
         "/operate/deliver/",
         "/operate/overview/"
       ],
@@ -3523,6 +3622,7 @@
         "/atlas/feature-matrix/",
         "/atlas/overview/",
         "/concepts/migration-directory/",
+        "/faq/",
         "/operate/deliver/",
         "/operate/kubernetes-operator/",
         "/operate/overview/",
@@ -3622,6 +3722,7 @@
         "/versioned/reference-data/"
       ],
       "inboundLinks": [
+        "/faq/",
         "/versioned/reference-data/"
       ],
       "visibleWords": 490,
@@ -3672,6 +3773,7 @@
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
         "/direct/inspect/",
+        "/faq/",
         "/operate/overview/",
         "/operate/seed-data/",
         "/schema/visualize/",
@@ -3730,6 +3832,7 @@
         "/atlas/migrate-commands/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
+        "/faq/",
         "/operate/troubleshooting/",
         "/reference/command-flags/",
         "/reference/extension-variables/",
@@ -3923,6 +4026,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/direct/plan-and-approve/",
+        "/faq/",
         "/operate/oci-registry/",
         "/operate/overview/",
         "/operate/seed-data/",
@@ -4256,6 +4360,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/extend/overview/",
+        "/faq/",
         "/operate/oci-registry/",
         "/operate/seed-data/",
         "/reference/atlas-commands/",
@@ -4446,6 +4551,7 @@
         "/atlas/docs-coverage/",
         "/concepts/desired-schema-and-sources/",
         "/direct/compare-and-drift/",
+        "/faq/",
         "/operate/oci-registry/",
         "/schema/document/",
         "/schema/export/",
@@ -5077,6 +5183,7 @@
       ],
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
+        "/faq/",
         "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
@@ -5399,6 +5506,7 @@
         "/concepts/database-urls-and-dev-databases/",
         "/concepts/desired-schema-and-sources/",
         "/direct/inspect/",
+        "/faq/",
         "/schema/document/",
         "/schema/protobuf/",
         "/schema/visualize/",
@@ -5454,6 +5562,7 @@
         "/concepts/desired-schema-and-sources/",
         "/direct/apply/",
         "/direct/overview/",
+        "/faq/",
         "/reference/native-commands/",
         "/schema/work-with-a-source/",
         "/start/adopt-an-existing-database/",
@@ -5563,6 +5672,7 @@
         "/direct/inspect/",
         "/direct/plan-and-approve/",
         "/extend/editor-and-shell/",
+        "/faq/",
         "/inference/quick-start/",
         "/schema/document/",
         "/schema/lineage/",
@@ -6045,6 +6155,7 @@
         "/atlas/migrate-commands/",
         "/concepts/migration-directory/",
         "/databases/postgresql/",
+        "/faq/",
         "/versioned/generate/",
         "/versioned/import/",
         "/versioned/integrity-and-safety/",
@@ -6088,6 +6199,7 @@
       "outboundLinks": [],
       "inboundLinks": [
         "/concepts/migration-directory/",
+        "/faq/",
         "/start/adopt-an-existing-database/",
         "/versioned/apply/",
         "/versioned/import/",
@@ -6152,6 +6264,7 @@
         "/direct/apply/",
         "/direct/compare-and-drift/",
         "/direct/plan-and-approve/",
+        "/faq/",
         "/schema/composite/",
         "/schema/sql/",
         "/schema/work-with-a-source/",
@@ -6206,6 +6319,7 @@
       "inboundLinks": [
         "/atlas/migrate-commands/",
         "/concepts/migration-directory/",
+        "/faq/",
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
@@ -6261,6 +6375,7 @@
         "/atlas/retained-divergences/",
         "/concepts/database-urls-and-dev-databases/",
         "/concepts/migration-directory/",
+        "/faq/",
         "/operate/oci-registry/",
         "/reference/atlas-commands/",
         "/start/quick-start-migrations/",
@@ -6321,6 +6436,7 @@
         "/databases/postgresql/",
         "/databases/sqlserver/",
         "/extend/components/",
+        "/faq/",
         "/operate/oci-registry/",
         "/testing/ci/",
         "/testing/overview/",
@@ -6374,6 +6490,7 @@
       ],
       "inboundLinks": [
         "/concepts/migration-directory/",
+        "/faq/",
         "/operate/troubleshooting/",
         "/versioned/apply/",
         "/versioned/generate/",
@@ -6480,6 +6597,7 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/faq/",
         "/operate/overview/",
         "/operate/seed-data/",
         "/reference/go-annotations/",
@@ -6532,6 +6650,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/atlas/retained-divergences/",
+        "/faq/",
         "/operate/deliver/",
         "/operate/troubleshooting/",
         "/start/quick-start-migrations/",
