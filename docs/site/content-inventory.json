@@ -1969,8 +1969,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [],
-      "visibleWords": 4367,
-      "sourceBytes": 33359
+      "visibleWords": 4461,
+      "sourceBytes": 34117
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -3733,7 +3733,7 @@
       "route": "/operate/troubleshooting/",
       "title": "Troubleshooting",
       "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -4091,7 +4091,7 @@
       "route": "/reference/glossary/",
       "title": "Glossary",
       "description": "Ptah's product, workflow, database-support, and compatibility terms, with the file that pins each one.",
-      "sidebarPath": "Reference > Rules and diagnostics",
+      "sidebarPath": "",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [

@@ -178,6 +178,28 @@
 	padding-left: 6px;
 }
 
+/* The first top-level page after the last disclosure group opens the trio a
+ * reader reaches for when something is wrong or a word is unfamiliar. A rule
+ * above it says those rows answer across the groups rather than inside one. */
+.sidebar-content .top-level > li:has(> details) + li:has(> a.page) {
+	margin-top: 10px;
+	padding-top: 8px;
+	border-top: 1px solid var(--sl-color-hairline);
+}
+
+/* The question count beside FAQ: a figure, so it takes the mono face and the
+ * row's own ink rather than Starlight's pill. */
+.sidebar-content .top-level > li > a.page .sl-badge {
+	border: 0;
+	padding: 0;
+	background: none;
+	font-family: var(--__sl-font-mono, monospace);
+	font-size: 12px;
+	font-weight: 400;
+	color: inherit;
+	opacity: 0.75;
+}
+
 /* ---------- Subgroup labels ---------- */
 
 /* A subgroup is a heading inside an open group, not another disclosure: mono

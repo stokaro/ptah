@@ -1,166 +1,175 @@
 ---
-// The tag rail above the FAQ, and the filtering it drives.
-//
-// The page is one long sequence of questions on purpose: no topical headings,
-// stable anchors, one reading order. That shape is good for linking into and
-// poor for browsing, so the tags carry the browsing without cutting the page
-// into sections.
-//
-// Each question owns its tags in src/faq-tags.mjs, keyed by the anchor the
-// heading declares. Nothing is written twice: the rail, the chips under each
-// question and the filter all read that one map.
-//
-// Without JavaScript the rail still renders and every question stays visible,
-// which is the correct fallback for a page whose job is to be readable.
-import { questionTags, tagLabels } from '../faq-tags.mjs';
-
-const counts = new Map();
-for (const tags of Object.values(questionTags)) {
-  for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+/**
+ * The FAQ's filter: one field over the questions, and the symptoms a reader is
+ * more likely to arrive with than a term.
+ *
+ * The page itself carries the structure -- `## Group` with `### Question` under
+ * it -- so this adds no headings and moves nothing. It hides what does not
+ * match, including a group heading whose questions all went, and says how many
+ * of how many are left.
+ *
+ * A chip names its questions; free text matches what a question says. The two
+ * are different lookups on purpose: a reader who has the failure does not have
+ * the words the answer is written in, so "drift ignored" has to reach the
+ * question that says "drift disappeared". src/faq-symptoms.mjs is that map.
+ *
+ * Without JavaScript the field and the chips are absent and every question is
+ * on the page, which is the right fallback for a page that is meant to be read.
+ */
+interface Props {
+  symptoms: { label: string; questions: string[] }[];
+  count: number;
 }
 
-// Most-used first, then alphabetical, so the rail opens with the facets that
-// actually carry the page rather than with whatever sorted first.
-const rail = [...counts.entries()]
-  .map(([id, count]) => ({ id, count, label: tagLabels[id] ?? id }))
-  .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
-
-const total = Object.keys(questionTags).length;
+const { symptoms, count } = Astro.props;
 ---
 
-<ptah-faq-filter
-  class="faq-filter"
-  data-tags={JSON.stringify(questionTags)}
-  data-labels={JSON.stringify(tagLabels)}
->
-  <div class="faq-filter__head">
-    <span class="faq-filter__title">Filter by topic</span>
-    <span class="faq-filter__count" data-faq-count>{total} questions</span>
-    <button class="faq-filter__reset" type="button" data-faq-reset hidden>Show all</button>
-  </div>
-  <div class="faq-filter__rail" role="group" aria-label="Filter questions by topic. Selecting more than one shows questions in any of them.">
-    {rail.map((tag) => (
-      <button class="faq-filter__tag" type="button" data-faq-tag={tag.id} aria-pressed="false">
-        {tag.label}<span class="faq-filter__n">{tag.count}</span>
-      </button>
-    ))}
-  </div>
-  <p class="faq-filter__empty" data-faq-empty hidden>No question carries that combination.</p>
+<ptah-faq-filter class="faq-filter" data-count={String(count)}>
+  <label class="faq-filter__field">
+    <span class="faq-filter__icon" aria-hidden="true">⌕</span>
+    <input
+      id="faq-filter-input"
+      type="search"
+      autocomplete="off"
+      placeholder="Filter questions by words or symptoms"
+      aria-label="Filter questions by words or symptoms"
+    />
+    <span class="faq-filter__count" data-faq-count>{count} questions</span>
+    <button class="faq-filter__clear" type="button" data-faq-clear hidden>Clear ×</button>
+  </label>
+  {
+    symptoms.length > 0 && (
+      <div class="faq-symptoms" role="group" aria-label="Filter by a symptom">
+        <span class="faq-symptoms__label">Symptoms</span>
+        {symptoms.map((symptom) => (
+          <button
+            class="faq-symptom"
+            type="button"
+            data-faq-symptom={symptom.label}
+            data-faq-questions={symptom.questions.join(' ')}
+            aria-pressed="false"
+          >
+            {symptom.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  <p class="faq-filter__empty" data-faq-empty hidden></p>
 </ptah-faq-filter>
 
 <script>
-  // A question is its heading plus everything up to the next heading. The
-  // markup is flat, so the group is gathered by walking forward rather than by
-  // asking for a container that does not exist.
   class PtahFaqFilter extends HTMLElement {
     connectedCallback() {
-      const tagsByAnchor = JSON.parse(this.dataset.tags || '{}');
-      const labels = JSON.parse(this.dataset.labels || '{}');
       const content = document.querySelector('.sl-markdown-content');
       if (!content) return;
 
-      // Starlight wraps each heading in a display:contents div, so the element
-      // sitting among the content's children is that wrapper and not the h2.
-      // Walking from the h2 finds its own anchor link and stops, which leaves
-      // every answer outside its question -- headings hide on a filter and the
-      // prose they belong to stays on screen.
-      const startsAQuestion = (node) =>
-        node.tagName === 'H2' || Boolean(node.querySelector?.('h2[id]'));
+      // Starlight wraps a heading in a display:contents div, so the element
+      // among the content's children is that wrapper. Walking from the heading
+      // itself finds its own anchor link and stops, which would leave every
+      // answer outside the question it belongs to.
+      const top = (heading) => heading.closest('.sl-heading-wrapper') ?? heading;
+      const headingIn = (node) => node.querySelector?.('h2[id], h3[id]') ?? null;
 
-      const questions = [];
-      for (const heading of content.querySelectorAll('h2[id]')) {
-        const tags = tagsByAnchor[heading.id];
-        if (!tags) continue;
-        const top = heading.closest('.sl-heading-wrapper') ?? heading;
-
-        // Inserted before the group is recorded, and recorded with it: chips
-        // gathered afterwards belong to no question and stay on screen when
-        // their question is filtered away.
-        const chips = this.#chips(tags, labels);
-        top.after(chips);
-
-        const nodes = [top, chips];
-        for (
-          let node = chips.nextElementSibling;
-          node && !startsAQuestion(node);
-          node = node.nextElementSibling
-        ) {
-          nodes.push(node);
+      const runFrom = (startEl, stop) => {
+        const nodes = [startEl];
+        for (let n = startEl.nextElementSibling; n; n = n.nextElementSibling) {
+          const h = headingIn(n) ?? (/^H[23]$/.test(n.tagName) ? n : null);
+          if (h && stop(h)) break;
+          nodes.push(n);
         }
-        questions.push({ anchor: heading.id, tags, nodes });
-      }
+        return nodes;
+      };
+
+      const questions = [...content.querySelectorAll('h3[id]')].map((h) => ({
+        id: h.id,
+        nodes: runFrom(top(h), () => true),
+        // The question and its answer, lowercased once rather than per keystroke.
+        haystack: '',
+      }));
       if (questions.length === 0) return;
 
-      const active = new Set();
-      const buttons = [...this.querySelectorAll('[data-faq-tag]')];
-      const countEl = this.querySelector('[data-faq-count]');
-      const resetEl = this.querySelector('[data-faq-reset]');
-      const emptyEl = this.querySelector('[data-faq-empty]');
-
-      // The contents rail lists the same questions, so it has to follow the
-      // filter. A rail still offering a question the page has hidden sends the
-      // reader to blank space.
-      const tocLinks = new Map();
-      for (const link of document.querySelectorAll('starlight-toc a[href^="#"]')) {
-        tocLinks.set(decodeURIComponent(link.getAttribute('href').slice(1)), link);
+      const groups = [...content.querySelectorAll('h2[id]')].map((h) => ({
+        id: h.id,
+        nodes: runFrom(top(h), (next) => next.tagName === 'H2'),
+      }));
+      // A group owns the questions inside its run.
+      for (const group of groups) {
+        const own = new Set(group.nodes);
+        group.questions = questions.filter((q) => own.has(q.nodes[0]));
+        // The heading and anything before the first question: the intro line.
+        const firstQuestion = group.questions[0]?.nodes[0];
+        group.chrome = firstQuestion
+          ? group.nodes.slice(0, group.nodes.indexOf(firstQuestion))
+          : group.nodes;
       }
+      for (const q of questions) {
+        q.haystack = q.nodes.map((n) => n.textContent).join(' ').toLowerCase();
+      }
+
+      const field = this.querySelector('#faq-filter-input');
+      const countEl = this.querySelector('[data-faq-count]');
+      const clearEl = this.querySelector('[data-faq-clear]');
+      const emptyEl = this.querySelector('[data-faq-empty]');
+      const chips = [...this.querySelectorAll('[data-faq-symptom]')];
+      const total = Number(this.dataset.count) || questions.length;
+
+      // A chip names its questions; free text matches what a question says.
+      // The two are different lookups on purpose: a reader who has the symptom
+      // does not have the words the answer is written in.
+      const bySymptom = new Map(
+        chips.map((chip) => [chip.dataset.faqSymptom, new Set(chip.dataset.faqQuestions.split(' '))]),
+      );
 
       const render = () => {
-        // Any selected tag matches, so picking a second facet widens the result
-        // rather than narrowing it to their overlap.
-        const shown = questions.filter(
-          (question) => active.size === 0 || question.tags.some((tag) => active.has(tag)),
+        const term = field.value.trim().toLowerCase();
+        const picked = bySymptom.get(term);
+        const shown = questions.filter((q) =>
+          term === '' ? true : picked ? picked.has(q.id) : q.haystack.includes(term),
         );
-        const visible = new Set(shown.map((question) => question.anchor));
-        for (const question of questions) {
-          const hide = !visible.has(question.anchor);
-          for (const node of question.nodes) node.hidden = hide;
-          const entry = tocLinks.get(question.anchor);
-          if (entry) {
-            // Hide the row, not the link: the rail nests its links in list
-            // items, and hiding the anchor alone leaves an empty bullet.
-            (entry.closest('li') ?? entry).hidden = hide;
-          }
+        const visible = new Set(shown.map((q) => q.id));
+
+        for (const q of questions) {
+          const hide = !visible.has(q.id);
+          for (const node of q.nodes) node.hidden = hide;
         }
-        for (const button of buttons) {
-          button.setAttribute('aria-pressed', String(active.has(button.dataset.faqTag)));
+        for (const group of groups) {
+          const hide = group.questions.every((q) => !visible.has(q.id));
+          for (const node of group.chrome) node.hidden = hide;
         }
-        for (const chip of this.#chipsInPage(content)) {
-          chip.dataset.on = String(active.has(chip.dataset.faqChip));
+        for (const chip of chips) {
+          chip.setAttribute('aria-pressed', String(chip.dataset.faqSymptom === term));
         }
-        countEl.textContent =
-          active.size === 0
-            ? `${questions.length} questions`
-            : `${shown.length} of ${questions.length} questions`;
-        resetEl.hidden = active.size === 0;
+
+        countEl.textContent = term === '' ? `${total} questions` : `${shown.length} of ${total}`;
+        clearEl.hidden = term === '';
         emptyEl.hidden = shown.length > 0;
+        if (shown.length === 0) {
+          emptyEl.textContent = `No question matches "${field.value.trim()}". Try the site search, or open Troubleshooting.`;
+        }
       };
 
-      const toggle = (tag) => {
-        if (active.has(tag)) active.delete(tag);
-        else active.add(tag);
-        render();
-      };
-
-      for (const button of buttons) {
-        button.addEventListener('click', () => toggle(button.dataset.faqTag));
+      field.addEventListener('input', render);
+      for (const chip of chips) {
+        chip.addEventListener('click', () => {
+          const symptom = chip.dataset.faqSymptom;
+          field.value = field.value.trim().toLowerCase() === symptom ? '' : symptom;
+          render();
+          field.focus();
+        });
       }
-      resetEl.addEventListener('click', () => {
-        active.clear();
+      clearEl.addEventListener('click', () => {
+        field.value = '';
         render();
-      });
-      content.addEventListener('click', (event) => {
-        const chip = event.target.closest('[data-faq-chip]');
-        if (chip) toggle(chip.dataset.faqChip);
+        field.focus();
       });
 
       // A shared link names one question, and a filter that hid it would make
-      // the link look broken. Clearing on arrival is the only behaviour that
-      // keeps every anchor reachable.
+      // the link look broken. Clearing on arrival keeps every anchor reachable.
       const revealHash = () => {
         const id = decodeURIComponent(location.hash.replace(/^#/, ''));
-        if (!id || !tagsByAnchor[id]) return;
-        active.clear();
+        if (!id || !document.getElementById(id)) return;
+        field.value = '';
         render();
         document.getElementById(id)?.scrollIntoView({ block: 'start' });
       };
@@ -168,25 +177,6 @@ const total = Object.keys(questionTags).length;
 
       render();
       revealHash();
-    }
-
-    #chips(tags, labels) {
-      const list = document.createElement('p');
-      list.className = 'faq-chips';
-      for (const tag of tags) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'faq-chip';
-        chip.dataset.faqChip = tag;
-        chip.dataset.on = 'false';
-        chip.textContent = labels[tag] ?? tag;
-        list.append(chip);
-      }
-      return list;
-    }
-
-    #chipsInPage(content) {
-      return content.querySelectorAll('[data-faq-chip]');
     }
   }
 

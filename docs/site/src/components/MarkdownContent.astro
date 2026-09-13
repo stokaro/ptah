@@ -17,16 +17,22 @@
 import '@astrojs/starlight/style/markdown.css';
 import FaqFilter from './FaqFilter.astro';
 import ContactEmail from './ContactEmail.astro';
+import { faqSymptoms } from '../faq-symptoms.mjs';
 
 const { entry } = Astro.locals.starlightRoute;
 
-// The one route that carries tags. Matched on the entry id rather than on the
-// URL, so a base path or a version prefix cannot change the answer.
+// The one route that carries the filter. Matched on the entry id rather than
+// on the URL, so a base path or a version prefix cannot change the answer.
 const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
+
+// The questions are `###` under a `##` group, so the count comes from the
+// source rather than from a number kept in step by hand.
+const questionCount = (entry.body?.match(/^### /gm) ?? []).length;
+const symptoms = faqSymptoms;
 ---
 
-{isFaq && <FaqFilter />}
-<div class="sl-markdown-content">
+{isFaq && <FaqFilter symptoms={symptoms} count={questionCount} />}
+<div class:list={['sl-markdown-content', isFaq && 'ptah-faq']}>
   <slot />
 </div>
 {isFaq && <ContactEmail />}

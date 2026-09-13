@@ -27,6 +27,9 @@ const pageMetadata = z.object({
   // stripping an unknown frontmatter field.
   lengthWaiver: z.never().optional(),
   quickstart: z.boolean().optional(),
+  // The FAQ draws the word an answer commits to as a tag; see
+  // src/lib/markdown-faq-verdict.mjs.
+  faqVerdicts: z.boolean().optional(),
 }).superRefine((data, context) => {
   for (const problem of validatePageMetadata(data, { repositoryRoot })) {
     context.addIssue({ code: 'custom', path: problem.path, message: problem.message });
