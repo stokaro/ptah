@@ -14,6 +14,7 @@ const jobContracts = [
   { changed: 'INVENTORY_CHANGED', result: 'INVENTORY_RESULT', label: 'feature inventory' },
   { changed: 'EXAMPLES_CHANGED', result: 'EXAMPLES_RESULT', label: 'example acceptance' },
   { changed: 'INFERENCE_CHANGED', result: 'INFERENCE_RESULT', label: 'inference quick start' },
+  { changed: 'POSTGRES_CHANGED', result: 'POSTGRES_RESULT', label: 'PostgreSQL quick start' },
   { changed: 'QUICKSTART_CHANGED', result: 'QUICKSTART_RESULT', label: 'quick-start acceptance' },
   { changed: 'ASSETS_CHANGED', result: 'ASSETS_RESULT', label: 'generated assets' },
 ];
@@ -178,7 +179,9 @@ function selftest() {
     {
       label: 'root Go dependency change',
       paths: ['go.mod'],
-      groups: ['examples', 'generated', 'inference', 'inventory', 'quickstart'],
+      // The PostgreSQL quick start joins this list because a dependency change
+      // can change the SQL its page prints, and the page states that SQL.
+      groups: ['examples', 'generated', 'inference', 'inventory', 'postgres', 'quickstart'],
     },
     {
       label: 'nested documentation module source',
@@ -194,6 +197,19 @@ function selftest() {
       label: 'Protobuf export fixture',
       paths: ['docs/site/fixtures/protobuf-export/schema.yaml'],
       groups: ['assets', 'generated', 'site', 'style'],
+    },
+    {
+      // A group name the filter parser cannot read is not an error: it keeps
+      // the previous group and files these patterns under it, so the page would
+      // have run somebody else's job and its own would never have been asked.
+      label: 'the PostgreSQL quick start page',
+      paths: ['docs/site/src/content/docs/start/quick-start-postgresql.mdx'],
+      groups: ['inventory', 'postgres', 'quickstart', 'site', 'style'],
+    },
+    {
+      label: 'the script that runs it',
+      paths: ['docs/site/scripts/check-postgresql-quick-start.sh'],
+      groups: ['postgres', 'site', 'style'],
     },
   ];
   for (const pathCase of pathCases) {

@@ -25,6 +25,7 @@ jobs:
       inventory: ${{ steps.filter.outputs.inventory }}
       examples: ${{ steps.filter.outputs.examples }}
       inference: ${{ steps.filter.outputs.inference }}
+      postgres: ${{ steps.filter.outputs.postgres }}
       quickstart: ${{ steps.filter.outputs.quickstart }}
       assets: ${{ steps.filter.outputs.assets }}
       embedded: ${{ steps.embedded-filter.outputs.embedded }}
@@ -131,6 +132,21 @@ jobs:
               - 'docs/site/scripts/build-inference-quick-start.mjs'
               - 'docs/site/scripts/check-inference-quick-start.sh'
               - 'docs/site/src/content/docs/inference/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docs.yml'
+            postgres:
+              # The page and the script that runs it, plus what renders the SQL
+              # the page prints and what connects to PostgreSQL to do it.
+              - 'docs/site/src/content/docs/start/quick-start-postgresql.mdx'
+              - 'docs/site/scripts/check-postgresql-quick-start.sh'
+              - 'cmd/ptah/**'
+              - 'internal/cli/**'
+              - 'internal/dialects/**'
+              - 'internal/dbschema/**'
+              - 'core/**'
+              - 'dbschema/**'
+              - 'migration/**'
               - 'go.mod'
               - 'go.sum'
               - '.github/workflows/docs.yml'
@@ -703,6 +719,32 @@ jobs:
           PTAH_DOCKER_CONTEXT: default
         run: docs/site/scripts/check-inference-quick-start.sh
 
+  postgresql-quick-start:
+    name: PostgreSQL quick-start acceptance
+    needs: changes
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.postgres == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The page promises a plan, a drift verdict and an ALTER. This runs its
+      # own commands and fails on the first one that does not answer as the
+      # page says it will.
+      - name: Execute the disposable PostgreSQL tutorial
+        env:
+          PTAH_DOCKER_CONTEXT: default
+        run: |
+          set -euo pipefail
+          go build -o bin/ptah ./cmd/ptah
+          docs/site/scripts/check-postgresql-quick-start.sh
+
   generated-documentation:
     name: Generated documentation
     needs: changes
@@ -809,6 +851,7 @@ jobs:
       - feature-inventory
       - example-acceptance
       - inference-quick-start
+      - postgresql-quick-start
       - quickstart-acceptance
       - asset-freshness
     runs-on: ubuntu-latest
@@ -823,6 +866,7 @@ jobs:
           INVENTORY_CHANGED: ${{ needs.changes.outputs.inventory }}
           EXAMPLES_CHANGED: ${{ needs.changes.outputs.examples }}
           INFERENCE_CHANGED: ${{ needs.changes.outputs.inference }}
+          POSTGRES_CHANGED: ${{ needs.changes.outputs.postgres }}
           QUICKSTART_CHANGED: ${{ needs.changes.outputs.quickstart }}
           ASSETS_CHANGED: ${{ needs.changes.outputs.assets }}
           CHANGES_RESULT: ${{ needs.changes.result }}
@@ -832,6 +876,7 @@ jobs:
           INVENTORY_RESULT: ${{ needs.feature-inventory.result }}
           EXAMPLES_RESULT: ${{ needs.example-acceptance.result }}
           INFERENCE_RESULT: ${{ needs.inference-quick-start.result }}
+          POSTGRES_RESULT: ${{ needs.postgresql-quick-start.result }}
           QUICKSTART_RESULT: ${{ needs.quickstart-acceptance.result }}
           ASSETS_RESULT: ${{ needs.asset-freshness.result }}
         run: |

@@ -69,6 +69,7 @@ export const sidebar = [
       { slug: 'start/install' },
       { slug: 'start/install-options' },
       { slug: 'start/quick-start' },
+      { slug: 'start/quick-start-postgresql' },
       { slug: 'start/quick-start-migrations' },
       { slug: 'start/quick-start-direct', label: 'Update a schema and detect drift' },
       { slug: 'start/choose-a-workflow' },

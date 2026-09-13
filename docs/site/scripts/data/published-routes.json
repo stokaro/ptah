@@ -141,6 +141,7 @@
   "/start/quick-start-declarative/",
   "/start/quick-start-direct/",
   "/start/quick-start-migrations/",
+  "/start/quick-start-postgresql/",
   "/start/quick-start/",
   "/testing/ci/",
   "/testing/migrations-and-schema/",
