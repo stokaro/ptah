@@ -107,7 +107,8 @@ One spelling covers two unrelated safety questions. On `ptah migrations up` it
 asks for a verified retry of a migration body that failed part-way; on
 `ptah-compat migrate apply` it asks to adopt a database that already holds
 objects this history did not create. Neither implies the other, so read the flag
-against the command it was typed after. See [Apply migrations](../versioned/apply/).
+against the command it was typed after. See
+[Apply migrations](../versioned/apply/#--allow-dirty-means-two-different-things).
 
 ## Why does `ptah` reject a command that works in `ptah-compat`, and the other way round? {#native-vs-compat-surface}
 
