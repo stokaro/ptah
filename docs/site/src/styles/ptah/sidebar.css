@@ -143,6 +143,17 @@
 .sidebar-content .top-level a.page > * + * {
 	margin-inline-start: 0.25em;
 }
+
+/* A page that is a top-level row rather than a member of a group. The 20px
+ * indent above exists to put a page under its group's label, so applying it to
+ * a row that has no group makes it read as the last child of the group before
+ * it. This row is a sibling of the disclosure headings, so it takes their
+ * padding, weight and ink. */
+.sidebar-content .top-level > li > a.page {
+	padding: 6px 8px;
+	font-weight: 500;
+	color: var(--sl-color-white);
+}
 /* The current page: a 2px accent edge on the left, where the eye starts a row,
  * accent text and the accent tint behind it. The edge takes 2px of the 20px
  * indent so the label keeps its column. The radius opens on the left so the
@@ -156,6 +167,15 @@
 	font-weight: 500;
 	color: var(--sl-color-accent);
 	background: var(--sl-color-accent-low);
+}
+
+/* The same row when it is the current page. The accent edge takes 2px of its
+ * 8px padding, the way it takes 2px of a group member's 20px, so the label
+ * keeps the column it sits in either way. */
+.sidebar-content .top-level > li > a.page[aria-current='page'],
+.sidebar-content .top-level > li > a.page[aria-current='page']:hover,
+.sidebar-content .top-level > li > a.page[aria-current='page']:focus-visible {
+	padding-left: 6px;
 }
 
 /* ---------- Subgroup labels ---------- */

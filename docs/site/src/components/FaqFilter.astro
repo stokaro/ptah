@@ -56,23 +56,38 @@ const total = Object.keys(questionTags).length;
     connectedCallback() {
       const tagsByAnchor = JSON.parse(this.dataset.tags || '{}');
       const labels = JSON.parse(this.dataset.labels || '{}');
-      const content = this.closest('.sl-markdown-content') ?? this.parentElement;
+      const content = document.querySelector('.sl-markdown-content');
       if (!content) return;
+
+      // Starlight wraps each heading in a display:contents div, so the element
+      // sitting among the content's children is that wrapper and not the h2.
+      // Walking from the h2 finds its own anchor link and stops, which leaves
+      // every answer outside its question -- headings hide on a filter and the
+      // prose they belong to stays on screen.
+      const startsAQuestion = (node) =>
+        node.tagName === 'H2' || Boolean(node.querySelector?.('h2[id]'));
 
       const questions = [];
       for (const heading of content.querySelectorAll('h2[id]')) {
         const tags = tagsByAnchor[heading.id];
         if (!tags) continue;
-        const nodes = [heading];
+        const top = heading.closest('.sl-heading-wrapper') ?? heading;
+
+        // Inserted before the group is recorded, and recorded with it: chips
+        // gathered afterwards belong to no question and stay on screen when
+        // their question is filtered away.
+        const chips = this.#chips(tags, labels);
+        top.after(chips);
+
+        const nodes = [top, chips];
         for (
-          let node = heading.nextElementSibling;
-          node && node.tagName !== 'H2';
+          let node = chips.nextElementSibling;
+          node && !startsAQuestion(node);
           node = node.nextElementSibling
         ) {
           nodes.push(node);
         }
         questions.push({ anchor: heading.id, tags, nodes });
-        heading.after(this.#chips(tags, labels));
       }
       if (questions.length === 0) return;
 

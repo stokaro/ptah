@@ -25,8 +25,8 @@ const { entry } = Astro.locals.starlightRoute;
 const isFaq = entry.id === 'faq' || entry.id === 'faq.md';
 ---
 
+{isFaq && <FaqFilter />}
 <div class="sl-markdown-content">
-  {isFaq && <FaqFilter />}
-  {isFaq && <ContactEmail />}
   <slot />
 </div>
+{isFaq && <ContactEmail />}
