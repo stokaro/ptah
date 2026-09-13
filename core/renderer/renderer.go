@@ -10,9 +10,10 @@
 // CockroachDB, YugabyteDB, and Spanner are rendered by the PostgreSQL renderer
 // constructed for that dialect, so their capability presets decide what each
 // one emits. Unsupported dialects are reported as errors instead of falling
-// back to a generic renderer. Each dialect renderer implements the ast.Visitor
-// interface outright rather than embedding ast.NoopVisitor, so a new node kind
-// breaks the build until every dialect has answered for it.
+// back to a generic renderer. Each dialect renderer dispatches on the node's
+// concrete type and refuses one it does not recognize, and
+// ptah.run/internal/astrouteguard holds every renderer to a decision about
+// every node kind.
 //
 // Example usage:
 //
@@ -179,16 +180,107 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		}
 	}
 	return &validatingRenderer{
-		RenderVisitor: raw,
-		dialect:       dialect,
-		capabilities:  caps.Clone(),
+		inner:        raw,
+		dialect:      dialect,
+		capabilities: caps.Clone(),
 	}, nil
 }
 
+// validatingRenderer prepares a node before the dialect renderer sees it.
+//
+// The inner renderer is a NAMED field rather than an embedded one. Embedding
+// would promote every method the interface declares, so the moment the
+// interface gains one this wrapper would satisfy it without a line of code and
+// the preparation below would stop running -- with no compile error, at exit 0,
+// and with the AST-level refusals this type owns silently gone.
 type validatingRenderer struct {
-	RenderVisitor
+	inner        RenderVisitor
 	dialect      string
 	capabilities capability.Capabilities
+}
+
+// Dialect, Reset, Output, GetDialect and GetOutput reach the inner renderer
+// unchanged. They are written out because the field is named; that is the price
+// of the paragraph above, and it is one the compiler collects rather than one a
+// reader has to remember.
+func (r *validatingRenderer) Dialect() string    { return r.inner.Dialect() }
+func (r *validatingRenderer) Reset()             { r.inner.Reset() }
+func (r *validatingRenderer) Output() string     { return r.inner.Output() }
+func (r *validatingRenderer) GetDialect() string { return r.inner.GetDialect() }
+func (r *validatingRenderer) GetOutput() string  { return r.inner.GetOutput() }
+
+// VisitNode prepares node and hands the prepared one to the dialect renderer.
+//
+// Preparation is where every AST-level refusal in the product lives: a column
+// with no name, a foreign key whose column lists disagree in arity, a
+// referential action the target has no spelling for, an INCLUDE list on a
+// target without covering indexes. Two preparations rewrite rather than refuse
+// -- a MySQL table carrying a foreign key gains ENGINE=InnoDB, and SQL Server
+// RESTRICT becomes NO ACTION -- and neither has a second implementation below
+// this wrapper.
+//
+// A failure clears the buffer, so an error never returns a partial statement
+// and the renderer is reusable afterwards.
+func (r *validatingRenderer) VisitNode(node ast.Node) error {
+	prepared, err := r.prepared(node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if list, ok := prepared.(*ast.StatementList); ok {
+		return r.renderPreparedList(list)
+	}
+	if err := r.inner.VisitNode(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
+// prepared applies the preparation the node's kind asks for, and returns the
+// node unchanged for a kind that asks for none.
+//
+// A kind reaching the default arm is not an omission: most nodes carry nothing
+// a target can refuse before rendering. The kinds listed here are the ones that
+// do.
+func (r *validatingRenderer) prepared(node ast.Node) (ast.Node, error) {
+	switch n := node.(type) {
+	case *ast.StatementList:
+		return prepareStatementListNode(r.dialect, r.capabilities, n)
+	case *ast.CreateTableNode:
+		return prepareCreateTableNode(r.dialect, r.capabilities, n)
+	case *ast.AlterTableNode:
+		return prepareAlterTableNode(r.dialect, r.capabilities, n)
+	case *ast.ColumnNode:
+		return prepareColumnNode(r.dialect, r.capabilities, "", n)
+	case *ast.ConstraintNode:
+		return prepareConstraintNode(r.dialect, r.capabilities, n)
+	case *ast.IndexNode:
+		return prepareIndexNode(r.dialect, r.capabilities, n)
+	case *ast.ExtensionNode:
+		return prepareExtensionNode(r.dialect, n)
+	case *ast.CreateMaterializedViewNode:
+		return prepareCreateMaterializedViewNode(r.dialect, n)
+	default:
+		return node, nil
+	}
+}
+
+// renderPreparedList emits an already-prepared list, statement by statement.
+//
+// The whole list is prepared before any of it renders, which is what makes a
+// list whose last statement is unrenderable produce nothing rather than a
+// prefix. Each statement then goes straight to the inner renderer: preparing it
+// again here would run every preparation twice and make idempotence a silent
+// requirement.
+func (r *validatingRenderer) renderPreparedList(list *ast.StatementList) error {
+	for _, statement := range list.Statements {
+		if err := r.inner.VisitNode(statement); err != nil {
+			r.Reset()
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *validatingRenderer) Render(node ast.Node) (string, error) {
@@ -197,118 +289,12 @@ func (r *validatingRenderer) Render(node ast.Node) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	output, err := r.RenderVisitor.Render(prepared)
+	output, err := r.inner.Render(prepared)
 	if err != nil {
 		r.Reset()
 		return "", err
 	}
 	return output, nil
-}
-
-func (r *validatingRenderer) VisitStatementList(list *ast.StatementList) error {
-	prepared, err := prepareStatementListNode(r.dialect, r.capabilities, list)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	for _, statement := range prepared.Statements {
-		if err := statement.Accept(r.RenderVisitor); err != nil {
-			r.Reset()
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitCreateTable(node *ast.CreateTableNode) error {
-	prepared, err := prepareCreateTableNode(r.dialect, r.capabilities, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitCreateTable(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitAlterTable(node *ast.AlterTableNode) error {
-	prepared, err := prepareAlterTableNode(r.dialect, r.capabilities, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitAlterTable(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitColumn(node *ast.ColumnNode) error {
-	prepared, err := prepareColumnNode(r.dialect, r.capabilities, "", node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitColumn(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitConstraint(node *ast.ConstraintNode) error {
-	prepared, err := prepareConstraintNode(r.dialect, r.capabilities, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitConstraint(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitIndex(node *ast.IndexNode) error {
-	prepared, err := prepareIndexNode(r.dialect, r.capabilities, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitIndex(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitExtension(node *ast.ExtensionNode) error {
-	prepared, err := prepareExtensionNode(r.dialect, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitExtension(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
-}
-
-func (r *validatingRenderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	prepared, err := prepareCreateMaterializedViewNode(r.dialect, node)
-	if err != nil {
-		r.Reset()
-		return err
-	}
-	if err := r.RenderVisitor.VisitCreateMaterializedView(prepared); err != nil {
-		r.Reset()
-		return err
-	}
-	return nil
 }
 
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.

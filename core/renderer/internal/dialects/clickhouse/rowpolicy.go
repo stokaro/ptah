@@ -36,8 +36,8 @@ import (
 //     which it is would be indistinguishable from a restrictive one somebody
 //     wrote by hand (stokaro/ptah#1736).
 
-// VisitCreatePolicy renders a ClickHouse CREATE ROW POLICY.
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+// renderCreatePolicy renders a ClickHouse CREATE ROW POLICY.
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	if !r.caps.Has(capability.RowLevelSecurity) {
 		r.notSupported("CREATE POLICY", node.Name)
 		return nil
@@ -93,8 +93,8 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	return nil
 }
 
-// VisitDropPolicy renders a ClickHouse DROP ROW POLICY.
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+// renderDropPolicy renders a ClickHouse DROP ROW POLICY.
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	if !r.caps.Has(capability.RowLevelSecurity) {
 		r.notSupported("DROP POLICY", node.Name)
 		return nil
@@ -108,7 +108,7 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return nil
 }
 
-// VisitAlterTableEnableRLS names the table-level switch ClickHouse does not
+// renderAlterTableEnableRLS names the table-level switch ClickHouse does not
 // have.
 //
 // PostgreSQL needs the switch beside the policy because they are separate
@@ -116,7 +116,7 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 // a declaration asking for the switch is already satisfied by the policy this
 // renderer emits. It is reported rather than dropped, because an author who
 // wrote a statement should not have to guess whether it did anything.
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	if !r.caps.Has(capability.RowLevelSecurity) {
 		r.notSupported("ALTER TABLE ENABLE ROW LEVEL SECURITY", node.Table)
 		return nil
@@ -126,8 +126,8 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitAlterTableDisableRLS names the same absent switch from the other side.
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+// renderAlterTableDisableRLS names the same absent switch from the other side.
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	if !r.caps.Has(capability.RowLevelSecurity) {
 		r.notSupported("ALTER TABLE DISABLE ROW LEVEL SECURITY", node.Table)
 		return nil

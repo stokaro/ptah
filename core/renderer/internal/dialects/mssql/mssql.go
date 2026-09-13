@@ -64,7 +64,7 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	// Only the MySQL family has a schema-level character set and collation, so
 	// a declared one reaches the output nowhere here.
 	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
@@ -81,7 +81,7 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	if node.IfNotExists {
 		r.w.WriteLinef("IF DB_ID(%s) IS NULL", escapeStringLiteral(node.Name))
 		r.w.WriteLinef("    CREATE DATABASE %s;", escapeIdentifier(node.Name))
@@ -122,7 +122,7 @@ func tableLeafName(table string) string {
 	return parts[len(parts)-1]
 }
 
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// T-SQL has no trailing table-option clause, so every option the author
 	// declared is dropped here. It was dropped before this line too; what is
 	// new is that the loss is now reported rather than silent.
@@ -214,7 +214,7 @@ func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
 	}
 }
 
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
@@ -285,11 +285,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitColumn(_ *ast.ColumnNode) error { return nil }
+func (r *Renderer) renderColumn(_ *ast.ColumnNode) error { return nil }
 
-func (r *Renderer) VisitConstraint(_ *ast.ConstraintNode) error { return nil }
+func (r *Renderer) renderConstraint(_ *ast.ConstraintNode) error { return nil }
 
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -326,7 +326,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -342,24 +342,24 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitEnum(_ *ast.EnumNode) error { return nil }
+func (r *Renderer) renderEnum(_ *ast.EnumNode) error { return nil }
 
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	r.notSupported("CREATE TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	r.notSupported("ALTER TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s", node.Text)
 	return nil
 }
 
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -372,17 +372,17 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	r.notSupported("DROP TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	r.notSupported("extensions", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	r.notSupported("DROP EXTENSION", node.Name)
 	return nil
 }
@@ -405,7 +405,7 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 	return true
 }
 
-// VisitCreateSequence renders a T-SQL CREATE SEQUENCE.
+// renderCreateSequence renders a T-SQL CREATE SEQUENCE.
 //
 // Every clause here was measured against SQL Server 2025 (RTM-CU8),
 // 17.0.4075.5, rather than read from the grammar, because T-SQL and PostgreSQL
@@ -426,7 +426,7 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 // The clause ORDER is PostgreSQL's, and that is measured too:
 // `AS ... INCREMENT BY ... MINVALUE ... MAXVALUE ... START WITH ... CACHE ...
 // CYCLE` is accepted, so the shared ordering needs no T-SQL variant.
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -453,7 +453,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	return nil
 }
 
-// VisitAlterSequence renders a T-SQL ALTER SEQUENCE, and refuses by name the
+// renderAlterSequence renders a T-SQL ALTER SEQUENCE, and refuses by name the
 // two options the engine will not alter in place.
 //
 // `ALTER SEQUENCE ... AS <type>` is `Argument 'AS' cannot be used in an ALTER
@@ -462,7 +462,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 // value. Both are named rather than dropped, because a plan that silently
 // omits the option an author changed reports success and leaves the sequence
 // as it was.
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -490,14 +490,14 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	return nil
 }
 
-// VisitDropSequence renders a T-SQL DROP SEQUENCE.
+// renderDropSequence renders a T-SQL DROP SEQUENCE.
 //
 // DROP SEQUENCE IF EXISTS is accepted; CASCADE is `Incorrect syntax near the
 // keyword 'CASCADE'`, and there is nothing to render in its place. The engine
 // refuses a drop a column default still draws from -- `Cannot DROP SEQUENCE
 // because it is being referenced by object` -- which is the same protection
 // PostgreSQL gives without CASCADE.
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
@@ -604,7 +604,7 @@ func viewAttributeClause(attributes []string) string {
 	return " WITH " + strings.Join(attributes, ", ")
 }
 
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -621,40 +621,40 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
 // TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	r.w.WriteLinef("-- SQLSERVER: continuous aggregate %s is not supported by this target; skipped.", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	r.w.WriteLinef("-- SQLSERVER: continuous aggregate %s is not supported by this target; skipped.", node.Name)
 	return nil
 }
 
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	r.w.WriteLinef("-- SQLSERVER: hypertable %s is not supported by this target; skipped.", node.Table)
 	return nil
 }
 
-// VisitCreateSynonym renders a CREATE SYNONYM statement.
+// renderCreateSynonym renders a CREATE SYNONYM statement.
 //
 // The target goes through the same identifier escaping as the alias. It is a
 // NAME, not a body: writing it verbatim the way a view's SELECT is written
 // would emit an unquoted identifier that breaks on the first reserved word or
 // space, and a four-part target naming a linked server would break sooner.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -663,8 +663,8 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
-// VisitDropSynonym renders a DROP SYNONYM statement.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+// renderDropSynonym renders a DROP SYNONYM statement.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -677,7 +677,7 @@ func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -690,31 +690,31 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-// VisitCreateMaterializedView refuses: SQL Server has no materialized view
+// renderCreateMaterializedView refuses: SQL Server has no materialized view
 // object (an indexed view is a different construct with different rules).
 //
 // Rendering a comment instead makes `schema render` exit 0 on a model the
 // planner refuses at `schema apply` time, so the surface a user is told to
 // validate with disagrees with the surface that executes.
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
-// VisitDropMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+// renderDropMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
-// VisitRefreshMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+// renderRefreshMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
-// VisitAlterMaterializedViewRefresh refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+// renderAlterMaterializedViewRefresh refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	return materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
 }
 
@@ -722,7 +722,7 @@ func materializedViewsUnsupported(statement, name string) error {
 	return unsupportedFeaturef("%s %s: materialized views are not supported by SQL Server; remove matview definitions for this target", statement, name)
 }
 
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -751,7 +751,7 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -764,7 +764,7 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	return nil
 }
 
-// VisitCreateRole renders a T-SQL CREATE ROLE, and refuses a declaration
+// renderCreateRole renders a T-SQL CREATE ROLE, and refuses a declaration
 // carrying attributes a database role does not have.
 //
 // This is where the two engines' role models actually differ, and the
@@ -780,7 +780,7 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 // false, the comparison would report the same pending change on every run
 // forever. The fail-closed shape is ClickHouse's and mysqllike's -- name the
 // role, name the reason, refuse (stokaro/ptah#1698).
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if r.refuses(capability.RoleManagement, "roles", node.Name) {
 		return nil
 	}
@@ -828,8 +828,8 @@ func refuseServerLevelRoleAttributes(operation string, node *ast.CreateRoleNode)
 		ptaherr.ErrUnsupportedFeature, operation, node.Name, strings.Join(unhonored, ", "))
 }
 
-// VisitDropRole renders a T-SQL DROP ROLE. IF EXISTS is accepted.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+// renderDropRole renders a T-SQL DROP ROLE. IF EXISTS is accepted.
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	if r.refuses(capability.RoleManagement, "roles", node.Name) {
 		return nil
 	}
@@ -842,14 +842,14 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
-// VisitAlterRole refuses rather than emitting or commenting.
+// renderAlterRole refuses rather than emitting or commenting.
 //
 // `ALTER ROLE` exists in T-SQL, and it renames a role or moves members in and
 // out of it. It does not change attributes, because a database role has none.
 // An ALTER reaching here is asking for a PostgreSQL attribute transition, and
 // a comment saying so would let the plan apply, report success, and leave the
 // role exactly as it was.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("ALTER ROLE", node.Name)
 		return nil
@@ -860,7 +860,7 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 		ptaherr.ErrUnsupportedFeature, node.Name)
 }
 
-// VisitGrantPrivilege renders a T-SQL GRANT.
+// renderGrantPrivilege renders a T-SQL GRANT.
 //
 // Two measured facts shape it. A schema grant is spelled `ON SCHEMA::[name]`,
 // and omitting the `::` does not fail safely: `GRANT SELECT ON [app]` looks for
@@ -868,7 +868,7 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 // different object whenever a table of that name exists. And `USAGE` is
 // `Incorrect syntax near 'USAGE'` -- PostgreSQL's schema-access privilege has
 // no T-SQL counterpart, so it is reported rather than emitted.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if r.refuses(capability.RoleManagement, "GRANT", node.Role) {
 		return nil
 	}
@@ -895,12 +895,12 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokePrivilege renders a T-SQL REVOKE.
+// renderRevokePrivilege renders a T-SQL REVOKE.
 //
 // Revoking only the grant option is its own spelling, `REVOKE GRANT OPTION FOR
 // ... CASCADE`, and the CASCADE is not optional in practice: the option let the
 // grantee grant onward, so those grants have to go with it.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if r.refuses(capability.RoleManagement, "REVOKE", node.Role) {
 		return nil
 	}
@@ -971,7 +971,7 @@ func grantTargetIdentifier(objectType, objectName string) string {
 // an object inside one.
 const grantObjectTypeSchema = "SCHEMA"
 
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	sql := strings.TrimSpace(node.SQL)
 	if !strings.HasSuffix(sql, ";") {
 		sql += ";"
@@ -1007,14 +1007,14 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 // granting on the schema, or on every object in it -- applies to what exists
 // rather than to what is created next. So the declaration is named and skipped
 // rather than approximated with a statement that means something else.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.VisitDefaultPrivilege] carries.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// [Renderer.renderDefaultPrivilege] carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
@@ -1524,7 +1524,7 @@ func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) er
 	case op.HasCurrent:
 		operation = ast.ExtendedPropertyUpdate
 	}
-	return r.VisitExtendedProperty(&ast.ExtendedPropertyNode{
+	return r.renderExtendedProperty(&ast.ExtendedPropertyNode{
 		Name:      commentPropertyName,
 		Value:     op.Comment,
 		Operation: operation,

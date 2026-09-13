@@ -81,6 +81,4 @@ func (n *UpsertNode) SetComment(comment string) *UpsertNode {
 }
 
 // Accept implements the Node interface for UpsertNode.
-func (n *UpsertNode) Accept(visitor Visitor) error {
-	return visitor.VisitUpsert(n)
-}
+func (n *UpsertNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }

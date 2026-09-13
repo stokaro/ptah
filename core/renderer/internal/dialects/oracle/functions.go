@@ -33,7 +33,7 @@ import (
 // verbatim, so what is rendered here is what comes back, and a comparison
 // against the declaration that produced it is byte for byte.
 
-// VisitCreateFunction renders an Oracle CREATE FUNCTION or CREATE PROCEDURE.
+// renderCreateFunction renders an Oracle CREATE FUNCTION or CREATE PROCEDURE.
 //
 // A routine whose declared language this target does not run is named and
 // skipped rather than refused, which is the answer the other dialects reached
@@ -48,7 +48,7 @@ import (
 // [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql, so a
 // routine annotated without `language=` lands in this branch and is skipped
 // when it looks like it should have been generated.
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	if node.IsProcedure() {
 		if r.refuses(capability.Procedures, "CREATE PROCEDURE", node.Name) {
 			return nil
@@ -129,12 +129,12 @@ func routineHeader(node *ast.CreateFunctionNode, determinism, security string) [
 	return append(header, "IS")
 }
 
-// VisitDropFunction renders an Oracle DROP FUNCTION or DROP PROCEDURE.
+// renderDropFunction renders an Oracle DROP FUNCTION or DROP PROCEDURE.
 //
 // The verb has to match the object: `DROP FUNCTION p` on a procedure is
 // ORA-04043, so a drop that guessed would fail and leave the routine in place
 // while reporting the plan it did not run.
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	if node.IsProcedure() {
 		if r.refuses(capability.Procedures, "DROP PROCEDURE", node.Name) {
 			return nil

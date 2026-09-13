@@ -1,7 +1,6 @@
 package ast
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -29,9 +28,7 @@ type AlterTableNode struct {
 }
 
 // Accept implements the Node interface for AlterTableNode.
-func (n *AlterTableNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterTable(n)
-}
+func (n *AlterTableNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // EnumNode represents a CREATE TYPE ... AS ENUM statement (PostgreSQL-specific).
 //
@@ -57,9 +54,7 @@ func NewEnum(name string, values ...string) *EnumNode {
 }
 
 // Accept implements the Node interface for EnumNode.
-func (n *EnumNode) Accept(visitor Visitor) error {
-	return visitor.VisitEnum(n)
-}
+func (n *EnumNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateTableNode represents a CREATE TABLE statement with all its components.
 //
@@ -295,9 +290,7 @@ func NewCreateTable(name string) *CreateTableNode {
 }
 
 // Accept implements the Node interface for CreateTableNode.
-func (n *CreateTableNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateTable(n)
-}
+func (n *CreateTableNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateSchemaNode represents a CREATE SCHEMA statement.
 type CreateSchemaNode struct {
@@ -319,9 +312,7 @@ func NewCreateSchema(name string) *CreateSchemaNode {
 }
 
 // Accept implements the Node interface for CreateSchemaNode.
-func (n *CreateSchemaNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateSchema(n)
-}
+func (n *CreateSchemaNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateDatabaseNode represents a CREATE DATABASE statement.
 type CreateDatabaseNode struct {
@@ -337,9 +328,7 @@ func NewCreateDatabase(name string) *CreateDatabaseNode {
 }
 
 // Accept implements the Node interface for CreateDatabaseNode.
-func (n *CreateDatabaseNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateDatabase(n)
-}
+func (n *CreateDatabaseNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AddColumn adds a column to the CREATE TABLE statement and returns the table node for chaining.
 //
@@ -524,9 +513,7 @@ func NewColumn(name, dataType string) *ColumnNode {
 }
 
 // Accept implements the Node interface for ColumnNode.
-func (n *ColumnNode) Accept(visitor Visitor) error {
-	return visitor.VisitColumn(n)
-}
+func (n *ColumnNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // SetPrimary marks the column as a primary key and returns the column for chaining.
 //
@@ -794,9 +781,7 @@ type ConstraintNode struct {
 }
 
 // Accept implements the Node interface for ConstraintNode.
-func (n *ConstraintNode) Accept(visitor Visitor) error {
-	return visitor.VisitConstraint(n)
-}
+func (n *ConstraintNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // IndexPart represents one column or expression inside a CREATE INDEX column list.
 type IndexPart struct {
@@ -953,9 +938,7 @@ func NewExtension(name string) *ExtensionNode {
 }
 
 // Accept implements the Node interface for ExtensionNode.
-func (n *ExtensionNode) Accept(visitor Visitor) error {
-	return visitor.VisitExtension(n)
-}
+func (n *ExtensionNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // SetIfNotExists marks the extension to use IF NOT EXISTS clause.
 //
@@ -1061,9 +1044,7 @@ func (n *DropExtensionNode) SetComment(comment string) *DropExtensionNode {
 }
 
 // Accept implements the Node interface for DropExtensionNode.
-func (n *DropExtensionNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropExtension(n)
-}
+func (n *DropExtensionNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateSequenceNode represents a CREATE SEQUENCE statement (PostgreSQL).
 //
@@ -1174,9 +1155,7 @@ func (n *CreateSequenceNode) SetComment(comment string) *CreateSequenceNode {
 }
 
 // Accept implements the Node interface for CreateSequenceNode.
-func (n *CreateSequenceNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateSequence(n)
-}
+func (n *CreateSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterSequenceNode represents an ALTER SEQUENCE statement (PostgreSQL). Only
 // the set (non-nil / non-empty) options are emitted, so it can express either a
@@ -1272,9 +1251,7 @@ func (n *AlterSequenceNode) SetComment(comment string) *AlterSequenceNode {
 }
 
 // Accept implements the Node interface for AlterSequenceNode.
-func (n *AlterSequenceNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterSequence(n)
-}
+func (n *AlterSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropSequenceNode represents a DROP SEQUENCE statement (PostgreSQL).
 type DropSequenceNode struct {
@@ -1320,9 +1297,7 @@ func (n *DropSequenceNode) SetComment(comment string) *DropSequenceNode {
 }
 
 // Accept implements the Node interface for DropSequenceNode.
-func (n *DropSequenceNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropSequence(n)
-}
+func (n *DropSequenceNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // NewIndex creates a new index node with the specified name, table, and columns.
 //
@@ -1339,9 +1314,7 @@ func NewIndex(name, table string, columns ...string) *IndexNode {
 }
 
 // Accept implements the Node interface for IndexNode.
-func (n *IndexNode) Accept(visitor Visitor) error {
-	return visitor.VisitIndex(n)
-}
+func (n *IndexNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // SetParts replaces the structured index parts and returns the index for chaining.
 func (n *IndexNode) SetParts(parts []IndexPart) *IndexNode {
@@ -1533,9 +1506,7 @@ func (n *DropIndexNode) SetComment(comment string) *DropIndexNode {
 }
 
 // Accept implements the Node interface for DropIndexNode.
-func (n *DropIndexNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropIndex(n)
-}
+func (n *DropIndexNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CommentNode represents SQL comments that can be included in generated scripts.
 //
@@ -1556,9 +1527,7 @@ func NewComment(text string) *CommentNode {
 }
 
 // Accept implements the Node interface for CommentNode.
-func (n *CommentNode) Accept(visitor Visitor) error {
-	return visitor.VisitComment(n)
-}
+func (n *CommentNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropTableNode represents a DROP TABLE statement.
 //
@@ -1641,9 +1610,7 @@ func (n *DropTableNode) SetComment(comment string) *DropTableNode {
 }
 
 // Accept implements the Node interface for DropTableNode.
-func (n *DropTableNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropTable(n)
-}
+func (n *DropTableNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateTypeNode represents a CREATE TYPE statement with various type definitions.
 //
@@ -1682,9 +1649,7 @@ func (n *CreateTypeNode) SetComment(comment string) *CreateTypeNode {
 }
 
 // Accept implements the Node interface for CreateTypeNode.
-func (n *CreateTypeNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateType(n)
-}
+func (n *CreateTypeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterTypeNode represents an ALTER TYPE statement with one or more operations.
 //
@@ -1721,9 +1686,7 @@ func (n *AlterTypeNode) AddOperation(operation TypeOperation) *AlterTypeNode {
 }
 
 // Accept implements the Node interface for AlterTypeNode.
-func (n *AlterTypeNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterType(n)
-}
+func (n *AlterTypeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropTypeNode represents a DROP TYPE statement (PostgreSQL-specific).
 //
@@ -1790,9 +1753,7 @@ func (n *DropTypeNode) SetComment(comment string) *DropTypeNode {
 }
 
 // Accept implements the Node interface for DropTypeNode.
-func (n *DropTypeNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropType(n)
-}
+func (n *DropTypeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateViewNode represents a CREATE VIEW statement.
 type CreateViewNode struct {
@@ -1856,9 +1817,7 @@ func (n *CreateViewNode) SetComment(comment string) *CreateViewNode {
 }
 
 // Accept implements the Node interface for CreateViewNode.
-func (n *CreateViewNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateView(n)
-}
+func (n *CreateViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropViewNode represents a DROP VIEW statement.
 type DropViewNode struct {
@@ -1890,9 +1849,7 @@ func (n *DropViewNode) SetComment(comment string) *DropViewNode {
 	return n
 }
 
-func (n *DropViewNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropView(n)
-}
+func (n *DropViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateSynonymNode represents a CREATE SYNONYM statement.
 //
@@ -1935,9 +1892,7 @@ func (n *CreateSynonymNode) SetComment(comment string) *CreateSynonymNode {
 }
 
 // Accept implements the Node interface for CreateSynonymNode.
-func (n *CreateSynonymNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateSynonym(n)
-}
+func (n *CreateSynonymNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateHypertableNode represents the TimescaleDB call that turns an ordinary
 // table into a hypertable.
@@ -1994,9 +1949,7 @@ func (n *CreateHypertableNode) SetComment(comment string) *CreateHypertableNode 
 }
 
 // Accept implements the Node interface for CreateHypertableNode.
-func (n *CreateHypertableNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateHypertable(n)
-}
+func (n *CreateHypertableNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateContinuousAggregateNode represents the statement that creates a
 // TimescaleDB continuous aggregate.
@@ -2051,9 +2004,7 @@ func (n *CreateContinuousAggregateNode) SetComment(comment string) *CreateContin
 }
 
 // Accept implements the Node interface for CreateContinuousAggregateNode.
-func (n *CreateContinuousAggregateNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateContinuousAggregate(n)
-}
+func (n *CreateContinuousAggregateNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropContinuousAggregateNode represents the statement that removes one.
 //
@@ -2084,9 +2035,7 @@ func (n *DropContinuousAggregateNode) SetIfExists() *DropContinuousAggregateNode
 }
 
 // Accept implements the Node interface for DropContinuousAggregateNode.
-func (n *DropContinuousAggregateNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropContinuousAggregate(n)
-}
+func (n *DropContinuousAggregateNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropSynonymNode represents a DROP SYNONYM statement.
 //
@@ -2116,9 +2065,7 @@ func (n *DropSynonymNode) SetComment(comment string) *DropSynonymNode {
 }
 
 // Accept implements the Node interface for DropSynonymNode.
-func (n *DropSynonymNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropSynonym(n)
-}
+func (n *DropSynonymNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // ExtendedPropertyNode represents one SQL Server extended-property statement.
 //
@@ -2187,9 +2134,7 @@ func (n *ExtendedPropertyNode) SetComment(comment string) *ExtendedPropertyNode 
 }
 
 // Accept implements the Node interface for ExtendedPropertyNode.
-func (n *ExtendedPropertyNode) Accept(visitor Visitor) error {
-	return visitor.VisitExtendedProperty(n)
-}
+func (n *ExtendedPropertyNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
 // A materialized view node carries no refresh strategy: refreshing is an
@@ -2273,9 +2218,7 @@ func (n *CreateMaterializedViewNode) SetComment(comment string) *CreateMateriali
 	return n
 }
 
-func (n *CreateMaterializedViewNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateMaterializedView(n)
-}
+func (n *CreateMaterializedViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropMaterializedViewNode represents a DROP MATERIALIZED VIEW statement.
 type DropMaterializedViewNode struct {
@@ -2305,9 +2248,7 @@ func (n *DropMaterializedViewNode) SetComment(comment string) *DropMaterializedV
 	return n
 }
 
-func (n *DropMaterializedViewNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropMaterializedView(n)
-}
+func (n *DropMaterializedViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterMaterializedViewRefreshNode changes a ClickHouse materialized view's
 // refresh schedule in place.
@@ -2336,9 +2277,7 @@ func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *
 }
 
 // Accept dispatches to the visitor.
-func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterMaterializedViewRefresh(n)
-}
+func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // RefreshMaterializedViewNode represents a REFRESH MATERIALIZED VIEW statement.
 type RefreshMaterializedViewNode struct {
@@ -2367,9 +2306,7 @@ func (n *RefreshMaterializedViewNode) SetComment(comment string) *RefreshMateria
 	return n
 }
 
-func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error {
-	return visitor.VisitRefreshMaterializedView(n)
-}
+func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateTriggerNode represents a CREATE TRIGGER statement.
 type CreateTriggerNode struct {
@@ -2482,9 +2419,7 @@ func (n *CreateTriggerNode) SetComment(comment string) *CreateTriggerNode {
 }
 
 // Accept implements the Node interface for CreateTriggerNode.
-func (n *CreateTriggerNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateTrigger(n)
-}
+func (n *CreateTriggerNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropTriggerNode represents a DROP TRIGGER statement.
 type DropTriggerNode struct {
@@ -2523,9 +2458,7 @@ func (n *DropTriggerNode) SetComment(comment string) *DropTriggerNode {
 	return n
 }
 
-func (n *DropTriggerNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropTrigger(n)
-}
+func (n *DropTriggerNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateFunctionNode represents a CREATE FUNCTION statement for PostgreSQL custom functions.
 //
@@ -2745,9 +2678,7 @@ func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode {
 }
 
 // Accept implements the Node interface for CreateFunctionNode.
-func (n *CreateFunctionNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateFunction(n)
-}
+func (n *CreateFunctionNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreatePolicyNode represents a CREATE POLICY statement for PostgreSQL Row-Level Security.
 //
@@ -2869,9 +2800,7 @@ func (n *CreatePolicyNode) SetComment(comment string) *CreatePolicyNode {
 }
 
 // Accept implements the Node interface for CreatePolicyNode.
-func (n *CreatePolicyNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreatePolicy(n)
-}
+func (n *CreatePolicyNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterTableEnableRLSNode represents an ALTER TABLE ... ENABLE ROW LEVEL SECURITY statement.
 //
@@ -2924,9 +2853,7 @@ func (n *AlterTableEnableRLSNode) SetComment(comment string) *AlterTableEnableRL
 }
 
 // Accept implements the Node interface for AlterTableEnableRLSNode.
-func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterTableEnableRLS(n)
-}
+func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropFunctionNode represents a DROP FUNCTION statement for PostgreSQL custom functions.
 //
@@ -3015,9 +2942,7 @@ func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode {
 }
 
 // Accept implements the Node interface for DropFunctionNode.
-func (n *DropFunctionNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropFunction(n)
-}
+func (n *DropFunctionNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropPolicyNode represents a DROP POLICY statement for PostgreSQL Row-Level Security.
 //
@@ -3074,9 +2999,7 @@ func (n *DropPolicyNode) SetComment(comment string) *DropPolicyNode {
 }
 
 // Accept implements the Node interface for DropPolicyNode.
-func (n *DropPolicyNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropPolicy(n)
-}
+func (n *DropPolicyNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterTableDisableRLSNode represents an ALTER TABLE ... DISABLE ROW LEVEL SECURITY statement.
 //
@@ -3112,9 +3035,7 @@ func (n *AlterTableDisableRLSNode) SetComment(comment string) *AlterTableDisable
 }
 
 // Accept implements the Node interface for AlterTableDisableRLSNode.
-func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterTableDisableRLS(n)
-}
+func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateRoleNode represents a CREATE ROLE statement for PostgreSQL role management.
 //
@@ -3243,9 +3164,7 @@ func (n *CreateRoleNode) SetComment(comment string) *CreateRoleNode {
 }
 
 // Accept implements the Node interface for CreateRoleNode.
-func (n *CreateRoleNode) Accept(visitor Visitor) error {
-	return visitor.VisitCreateRole(n)
-}
+func (n *CreateRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DropRoleNode represents a DROP ROLE statement for PostgreSQL role management.
 //
@@ -3302,9 +3221,7 @@ func (n *DropRoleNode) SetComment(comment string) *DropRoleNode {
 }
 
 // Accept implements the Node interface for DropRoleNode.
-func (n *DropRoleNode) Accept(visitor Visitor) error {
-	return visitor.VisitDropRole(n)
-}
+func (n *DropRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterRoleNode represents an ALTER ROLE statement for PostgreSQL role management.
 //
@@ -3359,9 +3276,7 @@ func (n *AlterRoleNode) SetComment(comment string) *AlterRoleNode {
 }
 
 // Accept implements the Node interface for AlterRoleNode.
-func (n *AlterRoleNode) Accept(visitor Visitor) error {
-	return visitor.VisitAlterRole(n)
-}
+func (n *AlterRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // GrantPrivilegeNode represents a PostgreSQL GRANT statement.
 type GrantPrivilegeNode struct {
@@ -3402,9 +3317,7 @@ func (n *GrantPrivilegeNode) SetComment(comment string) *GrantPrivilegeNode {
 }
 
 // Accept implements the Node interface for GrantPrivilegeNode.
-func (n *GrantPrivilegeNode) Accept(visitor Visitor) error {
-	return visitor.VisitGrantPrivilege(n)
-}
+func (n *GrantPrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // RevokePrivilegeNode represents a PostgreSQL REVOKE statement.
 type RevokePrivilegeNode struct {
@@ -3445,9 +3358,7 @@ func (n *RevokePrivilegeNode) SetComment(comment string) *RevokePrivilegeNode {
 }
 
 // Accept implements the Node interface for RevokePrivilegeNode.
-func (n *RevokePrivilegeNode) Accept(visitor Visitor) error {
-	return visitor.VisitRevokePrivilege(n)
-}
+func (n *RevokePrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // DefaultPrivilegeNode represents a PostgreSQL ALTER DEFAULT PRIVILEGES ... GRANT
 // statement: the privileges an object gets when a named role creates one in a
@@ -3514,9 +3425,7 @@ func (n *DefaultPrivilegeNode) SetComment(comment string) *DefaultPrivilegeNode 
 }
 
 // Accept implements the Node interface for DefaultPrivilegeNode.
-func (n *DefaultPrivilegeNode) Accept(visitor Visitor) error {
-	return visitor.VisitDefaultPrivilege(n)
-}
+func (n *DefaultPrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // RevokeDefaultPrivilegeNode represents a PostgreSQL
 // ALTER DEFAULT PRIVILEGES ... REVOKE statement.
@@ -3568,9 +3477,7 @@ func (n *RevokeDefaultPrivilegeNode) SetComment(comment string) *RevokeDefaultPr
 }
 
 // Accept implements the Node interface for RevokeDefaultPrivilegeNode.
-func (n *RevokeDefaultPrivilegeNode) Accept(visitor Visitor) error {
-	return visitor.VisitRevokeDefaultPrivilege(n)
-}
+func (n *RevokeDefaultPrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // RoleOperation represents an operation that can be performed on a role during ALTER ROLE.
 //
@@ -3717,9 +3624,7 @@ func NewRawSQL(sql string) *RawSQLNode {
 }
 
 // Accept implements the Node interface for RawSQLNode.
-func (n *RawSQLNode) Accept(visitor Visitor) error {
-	return visitor.VisitRawSQL(n)
-}
+func (n *RawSQLNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // RoutineKind identifies which CREATE routine form an opaque routine wraps.
 type RoutineKind string
@@ -3756,31 +3661,20 @@ func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode 
 	}
 }
 
-// Accept renders opaque routines through the raw SQL visitor contract while
-// keeping the AST node type available to parser consumers.
-func (n *OpaqueRoutineNode) Accept(visitor Visitor) error {
-	raw := RawSQLNode{SQL: n.SQL}
-	return visitor.VisitRawSQL(&raw)
-}
-
-// Accept implements the Node interface for StatementList.
+// Accept hands the visitor this node.
 //
-// When the visitor implements VisitStatementList, this method delegates the
-// entire list and returns that method's result. Otherwise, it visits each
-// statement in order and stops at the first error.
-func (sl *StatementList) Accept(visitor Visitor) error {
-	if listVisitor, ok := visitor.(interface {
-		VisitStatementList(*StatementList) error
-	}); ok {
-		return listVisitor.VisitStatementList(sl)
-	}
-	for _, stmt := range sl.Statements {
-		if err := stmt.Accept(visitor); err != nil {
-			return fmt.Errorf("error visiting statement: %w", err)
-		}
-	}
-	return nil
-}
+// A routine is a complete statement, so a renderer reads the SQL out of this
+// node rather than being handed a substitute carrying only the text.
+func (n *OpaqueRoutineNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// Accept hands the visitor the list itself.
+//
+// It does not walk the statements. A renderer decides the order it emits them
+// in and what it does between them -- the render path prepares every statement
+// before it emits any, so a list whose last statement is unrenderable produces
+// nothing rather than a prefix -- and a walk here would take that decision away
+// from the only place that can make it.
+func (sl *StatementList) Accept(visitor Visitor) error { return visitor.VisitNode(sl) }
 
 // IsZero reports whether the spec declares no TTL at all.
 //

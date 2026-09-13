@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/mysqllike"
 )
 
-// TestVisitCreateTable_CarriesAColumnComment pins the clause on the path that
+// TestVisitNode_CreateTableCarriesAColumnComment pins the clause on the path that
 // did not write it.
 //
 // There are two column renderers here: the one CREATE TABLE uses and the one
@@ -25,7 +25,7 @@ import (
 //
 // The table's own comment survived both, which is what made the loss hard to
 // see: the schema looked commented.
-func TestVisitCreateTable_CarriesAColumnComment(t *testing.T) {
+func TestVisitNode_CreateTableCarriesAColumnComment(t *testing.T) {
 	tests := []struct {
 		name    string
 		comment string
@@ -56,7 +56,7 @@ func TestVisitCreateTable_CarriesAColumnComment(t *testing.T) {
 
 // The control. A column with no comment must gain no clause: COMMENT ” is a
 // comment, and it is not the same as having none.
-func TestVisitCreateTable_AColumnWithoutACommentGainsNoClause(t *testing.T) {
+func TestVisitNode_CreateTableAColumnWithoutACommentGainsNoClause(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(renderColumnComment(c, ""), qt.Not(qt.Contains), "COMMENT")
@@ -73,7 +73,7 @@ func renderColumnComment(c *qt.C, comment string) string {
 		Columns: []*ast.ColumnNode{column},
 	}
 
-	c.Assert(renderer.VisitCreateTable(table), qt.IsNil)
+	c.Assert(renderer.VisitNode(table), qt.IsNil)
 
 	return renderer.GetOutput()
 }
@@ -82,7 +82,7 @@ func renderColumnComment(c *qt.C, comment string) string {
 // nothing pinned it: the mutation that removes it from ADD COLUMN survived
 // until this test existed. Both paths now share one clause, so both are
 // measured, or a later edit takes the working half down with the broken one.
-func TestVisitAlterTable_AddColumnCarriesTheComment(t *testing.T) {
+func TestVisitNode_AlterTableAddColumnCarriesTheComment(t *testing.T) {
 	tests := []struct {
 		name    string
 		comment string
@@ -120,7 +120,7 @@ func renderAddColumn(c *qt.C, comment string) string {
 		Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: column}},
 	}
 
-	c.Assert(renderer.VisitAlterTable(alter), qt.IsNil)
+	c.Assert(renderer.VisitNode(alter), qt.IsNil)
 
 	return renderer.GetOutput()
 }

@@ -52,7 +52,7 @@ type Renderer struct {
 
 	// forceNotNullSet, when non-nil, lists the set of column names that must
 	// not be wrapped in Nullable(...) regardless of their declared nullability.
-	// It is set by VisitCreateTable for the duration of a single table
+	// It is set by renderCreateTable for the duration of a single table
 	// rendering and cleared on return; it captures the columns that appear in
 	// the MergeTree sorting key and/or PRIMARY KEY, which ClickHouse rejects
 	// when wrapped in Nullable(...).
@@ -125,8 +125,8 @@ func (r *Renderer) notSupported(feature, name string) {
 	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
 }
 
-// VisitCreateSchema renders schema creation as ClickHouse database creation.
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+// renderCreateSchema renders schema creation as ClickHouse database creation.
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	// Only the MySQL family has a schema-level character set and collation, so
 	// a declared one reaches the output nowhere here.
 	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
@@ -139,8 +139,8 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	return nil
 }
 
-// VisitCreateDatabase renders a CREATE DATABASE statement.
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+// renderCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -595,7 +595,7 @@ func refuseForeignIndexAccessMethod(index, indexType string) error {
 // It has to name every key that function consumes: a key missing here is
 // reported as a loss it did not suffer, and a key present here that the
 // function stopped reading is a loss nothing reports (stokaro/ptah#2976).
-// TestVisitCreateTable_RendersEveryTableOptionItKeeps drives each one through
+// TestRenderCreateTable_RendersEveryTableOptionItKeeps drives each one through
 // the renderer rather than trusting the list.
 var tableEngineOptionKeys = []string{
 	"ENGINE",
@@ -735,7 +735,7 @@ func splitColumns(expr string) []string {
 	return out
 }
 
-// VisitCreateTable renders a CREATE TABLE statement for ClickHouse.
+// renderCreateTable renders a CREATE TABLE statement for ClickHouse.
 //
 // MergeTree-family engines require an ORDER BY; if the annotation does not
 // supply one we fall back to the table's primary key columns and otherwise
@@ -745,7 +745,7 @@ func splitColumns(expr string) []string {
 // rejects Nullable(T) for sort-key columns. We compute the set up front and
 // thread it through r.forceNotNullSet so the per-column renderer can return
 // a precise error rather than silently stripping Nullable.
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// Every option outside the engine spec is dropped. It was dropped before
 	// this line too; what is new is that the loss is reported.
 	r.sink.RecordDroppedTableOptions(node.Name, node.Options, tableEngineOptionKeys...)
@@ -1033,13 +1033,13 @@ func (r *Renderer) writeEngineSpec(spec tableEngineSpec) {
 	}
 }
 
-// VisitAlterTable renders ALTER TABLE statements for ClickHouse.
+// renderAlterTable renders ALTER TABLE statements for ClickHouse.
 //
 // ClickHouse supports ADD/DROP/MODIFY COLUMN against MergeTree tables,
 // though MODIFY COLUMN has restrictions on type changes that affect the
 // sort key. Constraints translate to ADD/DROP CONSTRAINT (CHECK only);
 // foreign keys, primary keys and unique constraints have no equivalent.
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, op := range node.Operations {
 		switch op := op.(type) {
 		case *ast.AddColumnOperation:
@@ -1125,21 +1125,21 @@ func (r *Renderer) renderAddSkippingIndex(tableName string, op *ast.AddSkippingI
 	return nil
 }
 
-// VisitColumn is called from within VisitAlterTable / VisitCreateTable
-// rather than as a top-level statement. The actual rendering happens in
-// renderColumn; this method exists only to satisfy the visitor interface.
-func (r *Renderer) VisitColumn(*ast.ColumnNode) error { return nil }
+// renderColumnNode answers a column that arrives on its own, which is nothing.
+// A column reaches the output as part of the table or the ALTER that carries
+// it, and renderColumn is what writes it there.
+func (r *Renderer) renderColumnNode(*ast.ColumnNode) error { return nil }
 
-// VisitConstraint mirrors VisitColumn: constraints are rendered inline by
-// the table / alter visitors. This stub satisfies the visitor interface.
-func (r *Renderer) VisitConstraint(*ast.ConstraintNode) error { return nil }
+// renderConstraint mirrors renderColumnNode: constraints are rendered inline by
+// the table / alter handlers, so one on its own writes nothing.
+func (r *Renderer) renderConstraint(*ast.ConstraintNode) error { return nil }
 
-// VisitIndex emits a ClickHouse data-skipping index. Without an explicit
+// renderIndex emits a ClickHouse data-skipping index. Without an explicit
 // type annotation we emit a `minmax` index with GRANULARITY 8192, which is
 // the most generally-useful default. Users wanting `set(N)` /
 // `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
 // `granularity=` keys on //ptah:schema:index.
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// Before anything is recorded or written: a type this server cannot read
 	// makes the whole ALTER fail, so the author gets no index rather than a
 	// weaker one, and a record about a lesser loss would describe the wrong
@@ -1223,9 +1223,9 @@ func (r *Renderer) recordLostPartOrder(node *ast.IndexNode) {
 	}
 }
 
-// VisitDropIndex emits ALTER TABLE … DROP INDEX. The table name is
+// renderDropIndex emits ALTER TABLE … DROP INDEX. The table name is
 // required; without it we emit a self-explanatory comment.
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: DROP INDEX %s skipped (no target table; ClickHouse requires ALTER TABLE ... DROP INDEX)", node.Name)
 		return nil
@@ -1263,14 +1263,14 @@ func escapeQualifiedIdentifier(identifier string) string {
 	return escapeIdentifierValue(ref.Schema) + "." + escapeIdentifierValue(ref.Name)
 }
 
-func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return fmt.Errorf("%w: clickhouse: upsert rendering is not implemented", ptaherr.ErrUnsupportedFeature)
 }
 
-// VisitDropTable emits DROP TABLE [IF EXISTS] name. The SYNC modifier is
+// renderDropTable emits DROP TABLE [IF EXISTS] name. The SYNC modifier is
 // not added here because it changes durability semantics; callers wanting
 // it can opt in by raising a separate AST hook in the future.
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1282,53 +1282,53 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-// VisitComment passes through SQL comments verbatim.
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+// renderComment passes through SQL comments verbatim.
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s --", node.Text)
 	return nil
 }
 
-// VisitRawSQL passes through raw SQL verbatim.
+// renderRawSQL passes through raw SQL verbatim.
 //
 // ClickHouse-targeted migrations should not normally produce RawSQLNodes —
 // those are emitted by the PostgreSQL planner for its DO-block constraint
 // drop — but if a future caller routes one through, we just let it pass.
 // Callers responsible for the raw text are also responsible for it being
 // compatible with ClickHouse.
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(node.SQL)
 	return nil
 }
 
-// VisitEnum is a no-op for ClickHouse. ClickHouse has Enum8 / Enum16 column
+// renderEnum is a no-op for ClickHouse. ClickHouse has Enum8 / Enum16 column
 // types, but they are declared inline at the column level (not as a
 // separately-defined type), so emitting a top-level `CREATE TYPE … ENUM`
 // statement here would be invalid SQL.
-func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
+func (r *Renderer) renderEnum(node *ast.EnumNode) error {
 	r.notSupported("CREATE TYPE ... AS ENUM (use Enum8/Enum16 inline at the column level)", node.Name)
 	return nil
 }
 
-// VisitCreateType emits a not-supported comment. ClickHouse has neither
+// renderCreateType emits a not-supported comment. ClickHouse has neither
 // CREATE TYPE nor named domain types.
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	r.notSupported("CREATE TYPE", node.Name)
 	return nil
 }
 
-// VisitAlterType is a no-op (see VisitCreateType).
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+// renderAlterType is a no-op (see renderCreateType).
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	r.notSupported("ALTER TYPE", node.Name)
 	return nil
 }
 
-// VisitDropType is a no-op (see VisitCreateType), and names which kind of type
+// renderDropType is a no-op (see renderCreateType), and names which kind of type
 // it declined.
 //
 // The node carries enums, domains, composite types and range types, and a
 // message reading DROP TYPE for a domain sends the reader looking for a type
 // that was never declared under that word (stokaro/ptah#1708).
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	kind := "DROP TYPE"
 	if node.Domain {
 		kind = "DROP DOMAIN"
@@ -1337,51 +1337,51 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	return nil
 }
 
-// VisitExtension is a no-op for ClickHouse, which has no equivalent of
+// renderExtension is a no-op for ClickHouse, which has no equivalent of
 // PostgreSQL extensions.
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	r.notSupported("CREATE EXTENSION", node.Name)
 	return nil
 }
 
-// VisitDropExtension mirrors VisitExtension.
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+// renderDropExtension mirrors renderExtension.
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	r.notSupported("DROP EXTENSION", node.Name)
 	return nil
 }
 
-// VisitCreateFunction is a no-op for ClickHouse. ClickHouse has UDFs but
+// renderCreateFunction is a no-op for ClickHouse. ClickHouse has UDFs but
 // the syntax is incompatible with the PostgreSQL-shaped CreateFunctionNode.
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	r.notSupported("CREATE FUNCTION", node.Name)
 	return nil
 }
 
-// VisitDropFunction mirrors VisitCreateFunction.
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+// renderDropFunction mirrors renderCreateFunction.
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	r.notSupported("DROP FUNCTION", node.Name)
 	return nil
 }
 
-// VisitCreateSequence is a no-op for ClickHouse (no standalone sequences).
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+// renderCreateSequence is a no-op for ClickHouse (no standalone sequences).
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	r.notSupported("CREATE SEQUENCE", node.Name)
 	return nil
 }
 
-// VisitAlterSequence mirrors VisitCreateSequence.
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+// renderAlterSequence mirrors renderCreateSequence.
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	r.notSupported("ALTER SEQUENCE", node.Name)
 	return nil
 }
 
-// VisitDropSequence mirrors VisitCreateSequence.
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+// renderDropSequence mirrors renderCreateSequence.
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	r.notSupported("DROP SEQUENCE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	statement := "CREATE VIEW"
 	if node.Replace {
 		statement = "CREATE OR REPLACE VIEW"
@@ -1413,7 +1413,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if !r.capabilities().Has(capability.Views) {
 		r.notSupported("DROP VIEW", node.Name)
 		return nil
@@ -1454,7 +1454,7 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 // column the renderer could name without parsing the body.
 const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 
-// VisitCreateMaterializedView renders ClickHouse's materialized view, which
+// renderCreateMaterializedView renders ClickHouse's materialized view, which
 // stores its result in an inner table the server creates alongside it.
 //
 // The stored-versus-recomputed reading capability.MaterializedViews names was
@@ -1476,7 +1476,7 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 // reconcile -- so it is a ClickHouse capability worth modeling on its own
 // terms, not a value of the shared refresh_strategy attribute
 // (stokaro/ptah#1625).
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
 		return nil
@@ -1509,14 +1509,14 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 	return nil
 }
 
-// VisitDropMaterializedView renders the drop as DROP VIEW.
+// renderDropMaterializedView renders the drop as DROP VIEW.
 //
 // ClickHouse has no DROP MATERIALIZED VIEW: on 26.7.3.19 that spelling is
 // "Syntax error: failed at position 6 (MATERIALIZED)" and the server's own
 // list of what DROP accepts contains VIEW and not MATERIALIZED VIEW.
 // DROP VIEW removes the materialized view and the inner table that stores its
 // result together, and DROP VIEW IF EXISTS is accepted twice in a row.
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("DROP MATERIALIZED VIEW", node.Name)
 		return nil
@@ -1539,7 +1539,7 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 	return nil
 }
 
-// VisitRefreshMaterializedView stays a named diagnostic even where the create
+// renderRefreshMaterializedView stays a named diagnostic even where the create
 // and drop arms emit.
 //
 // ClickHouse keeps a materialized view current by consuming inserts into its
@@ -1548,15 +1548,15 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 // "Syntax error: failed at position 1 (REFRESH)". The server's refreshable
 // materialized views are driven by a REFRESH EVERY clause on CREATE and by
 // SYSTEM REFRESH VIEW, neither of which this node describes.
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
 	return nil
 }
 
-// VisitAlterMaterializedViewRefresh changes a refreshable materialized view's
+// renderAlterMaterializedViewRefresh changes a refreshable materialized view's
 // schedule in place, which is the one way to change it without losing the rows
 // the view has accumulated (stokaro/ptah#1802).
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("ALTER TABLE ... MODIFY REFRESH", node.Name)
 		return nil
@@ -1576,12 +1576,12 @@ func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterialized
 	return nil
 }
 
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	r.notSupported("CREATE TRIGGER", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	r.notSupported("DROP TRIGGER", node.Name)
 	return nil
 }
@@ -1590,52 +1590,52 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.
 
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
 // TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	r.notSupported("CREATE CONTINUOUS AGGREGATE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	r.notSupported("DROP CONTINUOUS AGGREGATE", node.Name)
 	return nil
 }
 
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	r.notSupported("CREATE HYPERTABLE", node.Table)
 	return nil
 }
 
-// VisitCreateSynonym refuses: ClickHouse has no synonym object.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+// renderCreateSynonym refuses: ClickHouse has no synonym object.
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.notSupported("CREATE SYNONYM", node.Name)
 	return nil
 }
 
-// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// renderExtendedProperty refuses: an extended property is a SQL Server object,
 // and ClickHouse has no catalog to attach one to.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	r.notSupported("EXTENDED PROPERTY", node.Name)
 	return nil
 }
 
-// VisitDropSynonym refuses for the same reason.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+// renderDropSynonym refuses for the same reason.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	r.notSupported("DROP SYNONYM", node.Name)
 	return nil
 }

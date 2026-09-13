@@ -55,7 +55,7 @@ func (r *Renderer) rowTTLUnsupported(table string) error {
 // writeRowTTLOperation renders whichever of the two row-level TTL operations it
 // is handed, and nothing for any other node.
 //
-// It exists so [Renderer.VisitAlterTable] carries one arm for the pair rather
+// It exists so [Renderer.renderAlterTable] carries one arm for the pair rather
 // than two: that switch already renders every ALTER shape every PostgreSQL-wire
 // dialect has, and its complexity is budgeted.
 func (r *Renderer) writeRowTTLOperation(node *ast.AlterTableNode, operation ast.AlterOperation) error {
@@ -147,7 +147,7 @@ func (r *Renderer) rowDeletionPolicyUnsupported(table string) error {
 //
 // The two pairs are unrelated -- a CockroachDB row-level TTL is a set of
 // storage parameters and a row deletion policy is a Spanner table clause -- but
-// they reach VisitAlterTable through the same switch, whose complexity is
+// they reach renderAlterTable through the same switch, whose complexity is
 // budgeted, so one arm dispatches all four.
 func (r *Renderer) writeRowExpiryOperation(node *ast.AlterTableNode, operation ast.AlterOperation) error {
 	switch op := operation.(type) {

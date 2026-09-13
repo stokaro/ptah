@@ -19,13 +19,12 @@ type AddColumnOperation struct {
 	Column *ColumnNode
 }
 
-// Accept implements the Node interface for AddColumnOperation.
+// Accept hands the visitor this operation.
 //
-// The visitor typically handles this by delegating to the column's Accept method
-// or by processing it within the VisitAlterTable method.
-func (op *AddColumnOperation) Accept(visitor Visitor) error {
-	return op.Column.Accept(visitor)
-}
+// The column it carries is not visited separately: an ALTER TABLE renderer reads
+// the operation to learn which alteration was asked for, and a visitor handed
+// the bare column could not tell this operation from its siblings.
+func (op *AddColumnOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
 
 // alterOperation implements the marker method for type safety.
 func (op *AddColumnOperation) alterOperation() {}
@@ -43,11 +42,11 @@ type DropColumnOperation struct {
 
 // Accept implements the Node interface for DropColumnOperation.
 //
-// The actual rendering is typically handled by the visitor's VisitAlterTable method
-// rather than delegating to a separate visitor method.
-func (op *DropColumnOperation) Accept(_visitor Visitor) error {
-	// This would be handled by the visitor's VisitAlterTable method
-	return nil
+// An operation is not a statement. A renderer reached with one standing alone
+// has no table to alter and refuses it; the operation is rendered as part of the
+// ALTER TABLE that carries it.
+func (op *DropColumnOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(op)
 }
 
 // alterOperation implements the marker method for type safety.
@@ -83,13 +82,12 @@ type ModifyColumnOperation struct {
 	HasPreviousDefault bool
 }
 
-// Accept implements the Node interface for ModifyColumnOperation.
+// Accept hands the visitor this operation.
 //
-// The visitor typically handles this by delegating to the column's Accept method
-// or by processing it within the VisitAlterTable method.
-func (op *ModifyColumnOperation) Accept(visitor Visitor) error {
-	return op.Column.Accept(visitor)
-}
+// The column it carries is not visited separately: an ALTER TABLE renderer reads
+// the operation to learn which alteration was asked for, and a visitor handed
+// the bare column could not tell this operation from its siblings.
+func (op *ModifyColumnOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
 
 // alterOperation implements the marker method for type safety.
 func (op *ModifyColumnOperation) alterOperation() {}
@@ -105,11 +103,13 @@ type AlterGeneratedColumnExpressionOperation struct {
 }
 
 // Accept implements the Node interface for AlterGeneratedColumnExpressionOperation.
-func (op *AlterGeneratedColumnExpressionOperation) Accept(_visitor Visitor) error {
-	return nil
+func (op *AlterGeneratedColumnExpressionOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
+
+		// alterOperation implements the marker method for type safety.
+		op)
 }
 
-// alterOperation implements the marker method for type safety.
 func (op *AlterGeneratedColumnExpressionOperation) alterOperation() {}
 
 // AddConstraintOperation represents an ADD CONSTRAINT operation in ALTER TABLE statements.
@@ -121,13 +121,12 @@ type AddConstraintOperation struct {
 	Constraint *ConstraintNode
 }
 
-// Accept implements the Node interface for AddConstraintOperation.
+// Accept hands the visitor this operation.
 //
-// The visitor typically handles this by delegating to the constraint's Accept method
-// or by processing it within the VisitAlterTable method.
-func (op *AddConstraintOperation) Accept(visitor Visitor) error {
-	return op.Constraint.Accept(visitor)
-}
+// The constraint it carries is not visited separately: an ALTER TABLE renderer reads
+// the operation to learn which alteration was asked for, and a visitor handed
+// the bare constraint could not tell this operation from its siblings.
+func (op *AddConstraintOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
 
 // alterOperation implements the marker method for type safety.
 func (op *AddConstraintOperation) alterOperation() {}
@@ -169,11 +168,13 @@ type DropConstraintOperation struct {
 
 // Accept implements the Node interface for DropConstraintOperation.
 //
-// The actual rendering is typically handled by the visitor's VisitAlterTable method
-// rather than delegating to a separate visitor method.
-func (op *DropConstraintOperation) Accept(_visitor Visitor) error {
-	// This would be handled by the visitor's VisitAlterTable method
-	return nil
+// An operation is not a statement. A renderer reached with one standing alone
+// has no table to alter and refuses it; the operation is rendered as part of the
+// ALTER TABLE that carries it.
+func (op *DropConstraintOperation) Accept(visitor Visitor) error {
+	return visitor.
+		// This would be handled by the visitor's VisitAlterTable method
+		VisitNode(op)
 }
 
 // alterOperation implements the marker method for type safety.
@@ -196,9 +197,13 @@ type RenameColumnOperation struct {
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;
 // this stub exists to satisfy the Node interface.
-func (op *RenameColumnOperation) Accept(_visitor Visitor) error { return nil }
+func (op *RenameColumnOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *RenameColumnOperation) alterOperation() {}
 
 // RenameTableOperation represents a RENAME TO operation in ALTER TABLE statements.
@@ -216,9 +221,13 @@ type RenameTableOperation struct {
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;
 // this stub exists to satisfy the Node interface.
-func (op *RenameTableOperation) Accept(_visitor Visitor) error { return nil }
+func (op *RenameTableOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *RenameTableOperation) alterOperation() {}
 
 // AddIndexOperation adds a secondary index to an existing table, the shape
@@ -241,7 +250,7 @@ type AddIndexOperation struct {
 // Accept implements the Node interface for AddIndexOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method.
-func (op *AddIndexOperation) Accept(_visitor Visitor) error { return nil }
+func (op *AddIndexOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
 
 func (op *AddIndexOperation) alterOperation() {}
 
@@ -269,9 +278,13 @@ type AddSkippingIndexOperation struct {
 // Accept implements the Node interface for AddSkippingIndexOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method.
-func (op *AddSkippingIndexOperation) Accept(_visitor Visitor) error { return nil }
+func (op *AddSkippingIndexOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *AddSkippingIndexOperation) alterOperation() {}
 
 // ModifyTTLOperation represents ClickHouse's `ALTER TABLE x MODIFY TTL ...`
@@ -291,9 +304,13 @@ type ModifyTTLOperation struct {
 // Accept implements the Node interface for ModifyTTLOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method.
-func (op *ModifyTTLOperation) Accept(_visitor Visitor) error { return nil }
+func (op *ModifyTTLOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *ModifyTTLOperation) alterOperation() {}
 
 // SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
@@ -312,11 +329,13 @@ type SetRowTTLOperation struct {
 // Accept implements the Node interface for SetRowTTLOperation. The rendering
 // happens inside VisitAlterTable, as it does for the other table-level
 // operations.
-func (op *SetRowTTLOperation) Accept(_visitor Visitor) error {
-	return nil
+func (op *SetRowTTLOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
+
+		// alterOperation implements the marker method for type safety.
+		op)
 }
 
-// alterOperation implements the marker method for type safety.
 func (op *SetRowTTLOperation) alterOperation() {}
 
 // SetRowDeletionPolicyOperation represents the statement that puts a row
@@ -343,9 +362,13 @@ type SetRowDeletionPolicyOperation struct {
 // Accept implements the Node interface for SetRowDeletionPolicyOperation. The
 // rendering happens inside VisitAlterTable, as it does for the other
 // table-level operations.
-func (op *SetRowDeletionPolicyOperation) Accept(_visitor Visitor) error { return nil }
+func (op *SetRowDeletionPolicyOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *SetRowDeletionPolicyOperation) alterOperation() {}
 
 // DropRowDeletionPolicyOperation represents ALTER TABLE ... DROP TTL, which
@@ -353,9 +376,13 @@ func (op *SetRowDeletionPolicyOperation) alterOperation() {}
 type DropRowDeletionPolicyOperation struct{}
 
 // Accept implements the Node interface for DropRowDeletionPolicyOperation.
-func (op *DropRowDeletionPolicyOperation) Accept(_visitor Visitor) error { return nil }
+func (op *DropRowDeletionPolicyOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *DropRowDeletionPolicyOperation) alterOperation() {}
 
 // ResetRowTTLOperation represents ALTER TABLE ... RESET (<parameters>) for
@@ -373,11 +400,13 @@ type ResetRowTTLOperation struct {
 }
 
 // Accept implements the Node interface for ResetRowTTLOperation.
-func (op *ResetRowTTLOperation) Accept(_visitor Visitor) error {
-	return nil
+func (op *ResetRowTTLOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
+
+		// alterOperation implements the marker method for type safety.
+		op)
 }
 
-// alterOperation implements the marker method for type safety.
 func (op *ResetRowTTLOperation) alterOperation() {}
 
 // SetCommentOperation carries an object's comment to the state a declaration
@@ -434,16 +463,24 @@ type RenameConstraintOperation struct {
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;
 // this stub exists to satisfy the Node interface.
-func (op *RenameConstraintOperation) Accept(_visitor Visitor) error { return nil }
+func (op *RenameConstraintOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *RenameConstraintOperation) alterOperation() {}
 
 // Accept implements the Node interface for SetCommentOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;
 // this stub exists to satisfy the Node interface.
-func (op *SetCommentOperation) Accept(_visitor Visitor) error { return nil }
+func (op *SetCommentOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// alterOperation implements the marker method for type safety.
+		// alterOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *SetCommentOperation) alterOperation() {}

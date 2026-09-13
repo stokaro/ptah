@@ -93,7 +93,7 @@ func (r *Renderer) dropGuard() string {
 	return ""
 }
 
-// VisitCreateSchema refuses, because an Oracle schema is not an object anybody
+// renderCreateSchema refuses, because an Oracle schema is not an object anybody
 // creates.
 //
 // A schema here IS a user: objects live in the namespace of the account that
@@ -106,12 +106,12 @@ func (r *Renderer) dropGuard() string {
 //
 // Rendering CREATE USER from this node would silently create an account, which
 // is a privilege decision no schema file should make on an operator's behalf.
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	r.notSupported("schemas", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	r.notSupported("databases", node.Name)
 	return nil
 }
@@ -151,7 +151,7 @@ func tableLeafName(table string) string {
 	return parts[len(parts)-1]
 }
 
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// Oracle has no trailing table-option clause, so every option the author
 	// declared is dropped here. It was dropped before this line too; what is
 	// new is that the loss is now reported rather than silent.
@@ -285,7 +285,7 @@ func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
 	}
 }
 
-// VisitAlterTable renders Oracle's ALTER TABLE, whose clause names differ from
+// renderAlterTable renders Oracle's ALTER TABLE, whose clause names differ from
 // the SQL every other dialect here writes.
 //
 // Measured on 23.26 and 21.3 alike:
@@ -361,7 +361,7 @@ func quotedColumnsAreQuotedInExpressions(node *ast.CreateTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	table := escapeQualifiedIdentifier(node.Name)
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
@@ -415,11 +415,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitColumn(_ *ast.ColumnNode) error { return nil }
+func (r *Renderer) renderColumnNode(_ *ast.ColumnNode) error { return nil }
 
-func (r *Renderer) VisitConstraint(_ *ast.ConstraintNode) error { return nil }
+func (r *Renderer) renderConstraintNode(_ *ast.ConstraintNode) error { return nil }
 
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -460,7 +460,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -475,18 +475,18 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return unsupportedFeaturef("upsert rendering is not implemented")
 }
 
-func (r *Renderer) VisitEnum(_ *ast.EnumNode) error { return nil }
+func (r *Renderer) renderEnum(_ *ast.EnumNode) error { return nil }
 
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s", node.Text)
 	return nil
 }
 
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -520,7 +520,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	// A domain is rendered where the preset says so -- 23 has CREATE DOMAIN
 	// and 21 answers ORA-00901 (stokaro/ptah#1920).
 	if domain, isDomain := node.TypeDef.(*ast.DomainTypeDef); isDomain && r.domainsRendered() {
@@ -539,11 +539,11 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	return unsupportedFeaturef("CREATE TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	return unsupportedFeaturef("ALTER TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	if node.Domain && r.domainsRendered() {
 		return r.visitDropDomain(node)
 	}
@@ -553,17 +553,17 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	r.notSupported("extensions", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	r.notSupported("DROP EXTENSION", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -577,7 +577,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -596,7 +596,7 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -608,7 +608,7 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -625,7 +625,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -637,7 +637,7 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	// Refreshing is an operation on this target rather than a property of the
 	// view: there is no clause here that could schedule one, so a declared
 	// schedule reaches the output nowhere and the view is populated once.
@@ -651,7 +651,7 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 	return nil
 }
 
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -663,9 +663,9 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 	return nil
 }
 
-// VisitRefreshMaterializedView renders Oracle's refresh, which is a procedure
+// renderRefreshMaterializedView renders Oracle's refresh, which is a procedure
 // call rather than a statement.
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	if node.Concurrently {
 		return unsupportedFeaturef("REFRESH MATERIALIZED VIEW %s: CONCURRENTLY is not supported", node.Name)
 	}
@@ -673,13 +673,13 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	return nil
 }
 
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	return unsupportedFeaturef("ALTER MATERIALIZED VIEW %s: changing a refresh policy is not rendered for Oracle", node.Name)
 }
 
-// VisitCreateTrigger renders the trigger header; the body is PL/SQL the
+// renderCreateTrigger renders the trigger header; the body is PL/SQL the
 // declaration supplies.
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -709,7 +709,7 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -719,27 +719,27 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	r.notSupported("RLS policies", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	r.notSupported("DROP POLICY", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	r.notSupported("row-level security", node.Table)
 	return nil
 }
 
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	r.notSupported("row-level security", node.Table)
 	return nil
 }
 
-// VisitCreateRole renders Oracle's CREATE ROLE, and refuses a declaration that
+// renderCreateRole renders Oracle's CREATE ROLE, and refuses a declaration that
 // describes a user rather than a role.
 //
 // Oracle's CREATE ROLE takes none of the attributes ast.CreateRoleNode carries
@@ -753,7 +753,7 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 //
 // No IF NOT EXISTS guard, measured on 23.26.2.0.0: a second CREATE ROLE answers
 // ORA-01921, and the clause is not accepted (stokaro/ptah#1920).
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	if attribute := oracleUserOnlyRoleAttribute(node); attribute != "" {
 		return unsupportedFeaturef(
 			"role %q declares %s, which in Oracle describes a USER rather than a ROLE; "+
@@ -790,12 +790,12 @@ func oracleUserOnlyRoleAttribute(node *ast.CreateRoleNode) string {
 	}
 }
 
-// VisitDropRole renders DROP ROLE, unguarded.
+// renderDropRole renders DROP ROLE, unguarded.
 //
 // Measured on 23.26.2.0.0: dropping an absent role answers ORA-01919, and
 // Oracle has no IF EXISTS on this statement -- the same shape DROP TRIGGER
 // carries above.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -803,19 +803,19 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
-// VisitAlterRole stays refused, and the reason is not that Oracle lacks the
+// renderAlterRole stays refused, and the reason is not that Oracle lacks the
 // statement.
 //
 // Oracle has ALTER ROLE, and it changes how the role is AUTHENTICATED --
 // IDENTIFIED BY, EXTERNALLY, GLOBALLY. It cannot change the capability flags
 // ast.AlterRoleNode carries, because a role has none of them. Rendering it
 // would answer a different question than the one asked.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	r.notSupported("ALTER ROLE", node.Name)
 	return nil
 }
 
-// VisitGrantPrivilege renders both grant shapes Oracle has: an object privilege
+// renderGrantPrivilege renders both grant shapes Oracle has: an object privilege
 // with ON, and a system privilege without it.
 //
 // WITH GRANT OPTION is refused rather than emitted, and the refusal is the
@@ -824,7 +824,7 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 // `ORA-01926: A role cannot be granted a privilege with the WITH GRANT OPTION`.
 // Emitting it would render a statement the server refuses, which is worse than
 // refusing it here -- the plan would fail halfway through.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if node.WithOption {
 		return unsupportedFeaturef(
 			"grant to role %q carries WITH GRANT OPTION, which Oracle refuses for a role "+
@@ -840,8 +840,8 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// VisitRevokePrivilege mirrors the grant, with the same two shapes.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+// renderRevokePrivilege mirrors the grant, with the same two shapes.
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -863,7 +863,7 @@ func oracleGrantTarget(object string) string {
 	return " ON " + escapeQualifiedIdentifier(object)
 }
 
-// VisitExtendedProperty names the property as skipped: an extended property is
+// renderExtendedProperty names the property as skipped: an extended property is
 // SQL Server's own object, and Oracle has no catalog to attach one to.
 //
 // The nearest Oracle construct is COMMENT ON, which Ptah already models as an
@@ -871,47 +871,47 @@ func oracleGrantTarget(object string) string {
 // value nobody can read back into the one slot the comment already owns.
 //
 // Skipped rather than refused, which is the difference between this and
-// VisitAlterRole above. A refusal fails the whole render, and
+// renderAlterRole above. A refusal fails the whole render, and
 // schemamodel.ExtendedProperty carries no dialect scope -- exactly as
 // schemamodel.Synonym does not -- so refusing here would make one schema
 // renderable on five targets and fatal on the sixth. Every other renderer
 // writes this comment; Oracle answering differently would be the asymmetry,
 // not the consistency.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	r.w.WriteLinef("-- ORACLE: extended property %q is not supported", node.Name)
 	return nil
 }
 
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
 // TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	r.w.WriteLinef("-- ORACLE: continuous aggregate %s is not supported by this target; skipped.", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	r.w.WriteLinef("-- ORACLE: continuous aggregate %s is not supported by this target; skipped.", node.Name)
 	return nil
 }
 
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	r.w.WriteLinef("-- ORACLE: hypertable %s is not supported by this target; skipped.", node.Table)
 	return nil
 }
 
-// VisitCreateSynonym renders Oracle's own object: a synonym is a native Oracle
+// renderCreateSynonym renders Oracle's own object: a synonym is a native Oracle
 // concept rather than a compatibility shim.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -920,7 +920,7 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -932,7 +932,7 @@ func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(strings.TrimSpace(node.SQL))
 	return nil
 }
@@ -946,14 +946,14 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 //
 // The grant visitor beside this one renders unconditionally, so copying its
 // shape would emit nothing and record nothing. The skip is explicit.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.VisitDefaultPrivilege] carries.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// renderDefaultPrivilege carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }

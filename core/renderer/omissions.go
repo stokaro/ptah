@@ -128,11 +128,11 @@ type omissionReporter interface {
 
 // ReportOmissionsTo passes the sink to the wrapped dialect renderer.
 //
-// The wrapper embeds [RenderVisitor] as an interface, so a method the interface
+// The wrapper holds [RenderVisitor] as a named field, so a method the interface
 // does not declare is not promoted; without this the assertion below would
 // always fail and every render would report nothing.
 func (r *validatingRenderer) ReportOmissionsTo(sink *renderdiag.Sink) {
-	if reporter, ok := r.RenderVisitor.(omissionReporter); ok {
+	if reporter, ok := r.inner.(omissionReporter); ok {
 		reporter.ReportOmissionsTo(sink)
 	}
 }

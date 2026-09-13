@@ -40,8 +40,9 @@ func NewEnumTypeDef(values ...string) *EnumTypeDef {
 
 // Accept implements the Node interface for EnumTypeDef.
 func (td *EnumTypeDef) Accept(visitor Visitor) error {
-	// This is typically handled by the parent CreateTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent CreateTypeNode's visitor
+		VisitNode(td)
 }
 
 // typeDefinition implements the marker method for type safety.
@@ -84,8 +85,9 @@ func NewCompositeTypeDef(fields ...*CompositeField) *CompositeTypeDef {
 
 // Accept implements the Node interface for CompositeTypeDef.
 func (td *CompositeTypeDef) Accept(visitor Visitor) error {
-	// This is typically handled by the parent CreateTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent CreateTypeNode's visitor
+		VisitNode(td)
 }
 
 // typeDefinition implements the marker method for type safety.
@@ -146,8 +148,9 @@ func (td *DomainTypeDef) SetCheck(expression string) *DomainTypeDef {
 
 // Accept implements the Node interface for DomainTypeDef.
 func (td *DomainTypeDef) Accept(visitor Visitor) error {
-	// This is typically handled by the parent CreateTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent CreateTypeNode's visitor
+		VisitNode(td)
 }
 
 // typeDefinition implements the marker method for type safety.
@@ -207,8 +210,9 @@ func (td *RangeTypeDef) SetSubtypeDiff(subtypeDiff string) *RangeTypeDef {
 
 // Accept implements the Node interface for RangeTypeDef.
 func (td *RangeTypeDef) Accept(visitor Visitor) error {
-	// This is typically handled by the parent CreateTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent CreateTypeNode's visitor
+		VisitNode(td)
 }
 
 // typeDefinition implements the marker method for type safety.
@@ -255,8 +259,9 @@ func (op *AddEnumValueOperation) SetAfter(value string) *AddEnumValueOperation {
 
 // Accept implements the Node interface for AddEnumValueOperation.
 func (op *AddEnumValueOperation) Accept(visitor Visitor) error {
-	// This is typically handled by the parent AlterTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent AlterTypeNode's visitor
+		VisitNode(op)
 }
 
 // typeOperation implements the marker method for type safety.
@@ -286,8 +291,9 @@ func NewRenameEnumValueOperation(oldValue, newValue string) *RenameEnumValueOper
 
 // Accept implements the Node interface for RenameEnumValueOperation.
 func (op *RenameEnumValueOperation) Accept(visitor Visitor) error {
-	// This is typically handled by the parent AlterTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent AlterTypeNode's visitor
+		VisitNode(op)
 }
 
 // typeOperation implements the marker method for type safety.
@@ -314,8 +320,9 @@ func NewRenameTypeOperation(newName string) *RenameTypeOperation {
 
 // Accept implements the Node interface for RenameTypeOperation.
 func (op *RenameTypeOperation) Accept(visitor Visitor) error {
-	// This is typically handled by the parent AlterTypeNode's visitor
-	return nil
+	return visitor.
+		// This is typically handled by the parent AlterTypeNode's visitor
+		VisitNode(op)
 }
 
 // typeOperation implements the marker method for type safety.
@@ -356,9 +363,10 @@ func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperati
 }
 
 // Accept implements the Node interface for DomainConstraintOperation.
-func (op *DomainConstraintOperation) Accept(_ Visitor) error {
-	// Handled by the parent AlterTypeNode's visitor, as every type operation is.
-	return nil
+func (op *DomainConstraintOperation) Accept(visitor Visitor) error {
+	return visitor.
+		// Handled by the parent AlterTypeNode's visitor, as every type operation is.
+		VisitNode(op)
 }
 
 // typeOperation implements the marker method for type safety.
@@ -383,9 +391,13 @@ func NewDropDomainDefaultOperation() *DomainDefaultOperation {
 }
 
 // Accept implements the Node interface for DomainDefaultOperation.
-func (op *DomainDefaultOperation) Accept(_ Visitor) error { return nil }
+func (op *DomainDefaultOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// typeOperation implements the marker method for type safety.
+		// typeOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *DomainDefaultOperation) typeOperation() {}
 
 // DomainNotNullOperation sets or drops a domain's NOT NULL in an ALTER DOMAIN
@@ -401,9 +413,13 @@ func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation {
 }
 
 // Accept implements the Node interface for DomainNotNullOperation.
-func (op *DomainNotNullOperation) Accept(_ Visitor) error { return nil }
+func (op *DomainNotNullOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// typeOperation implements the marker method for type safety.
+		// typeOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *DomainNotNullOperation) typeOperation() {}
 
 // CompositeAttributeOperation adds or removes one attribute of a composite type
@@ -435,7 +451,11 @@ func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttribu
 }
 
 // Accept implements the Node interface for CompositeAttributeOperation.
-func (op *CompositeAttributeOperation) Accept(_ Visitor) error { return nil }
+func (op *CompositeAttributeOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(
 
-// typeOperation implements the marker method for type safety.
+		// typeOperation implements the marker method for type safety.
+		op)
+}
+
 func (op *CompositeAttributeOperation) typeOperation() {}

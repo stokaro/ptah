@@ -18,7 +18,7 @@ var extendedPropertyProcedures = map[ast.ExtendedPropertyOperation]string{
 	ast.ExtendedPropertyDrop:   "sp_dropextendedproperty",
 }
 
-// VisitExtendedProperty renders one of SQL Server's three extended-property
+// renderExtendedProperty renders one of SQL Server's three extended-property
 // procedures.
 //
 // Every argument is a STRING literal, including the names of the objects the
@@ -39,7 +39,7 @@ var extendedPropertyProcedures = map[ast.ExtendedPropertyOperation]string{
 // A drop passes no @value. sp_dropextendedproperty does not take one, and
 // passing it answers `Procedure or function sp_dropextendedproperty has too
 // many arguments specified`.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	procedure, known := extendedPropertyProcedures[node.Operation]
 	if !known {
 		return fmt.Errorf("extended property %q: unknown operation %q", node.Name, node.Operation)

@@ -36,7 +36,11 @@ func TestNewMySQLRoutine(t *testing.T) {
 	}})
 }
 
-func TestMySQLRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+// TestMySQLRoutineNode_AcceptHandsTheVisitorTheRoutine pins that the visitor
+// receives the routine, with its dialect and kind still on it. A renderer needs
+// those to decide the delimiter it wraps the body in, and a visitor handed the
+// bare statement has neither.
+func TestMySQLRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewMySQLRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
@@ -45,10 +49,12 @@ func TestMySQLRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	err := routine.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"MySQLRoutine:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(routine.Dialect, qt.Equals, "mysql")
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 }
 
-func TestMySQLRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
+func TestMySQLRoutineNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewMySQLRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
@@ -56,8 +62,8 @@ func TestMySQLRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
 
 	err := routine.Accept(visitor)
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+	c.Assert(err, qt.ErrorMatches, "mock error")
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"MySQLRoutine:CREATE PROCEDURE p() SELECT 1;"})
 }
 
 func TestNewPostgresDoBlock(t *testing.T) {
@@ -70,7 +76,7 @@ func TestNewPostgresDoBlock(t *testing.T) {
 	c.Assert(block.Body.SQL, qt.Equals, "")
 }
 
-func TestPostgresDoBlockNode_AcceptDelegatesToRawSQL(t *testing.T) {
+func TestPostgresDoBlockNode_AcceptHandsTheVisitorTheBlock(t *testing.T) {
 	c := qt.New(t)
 
 	block := ast.NewPostgresDoBlock(" DO $$ BEGIN PERFORM 1; END $$; ")
@@ -80,7 +86,7 @@ func TestPostgresDoBlockNode_AcceptDelegatesToRawSQL(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN PERFORM 1; END $$;")
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:DO $$ BEGIN PERFORM 1; END $$;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"PostgresDoBlock:DO $$ BEGIN PERFORM 1; END $$;"})
 }
 
 func TestNewPostgresRoutine(t *testing.T) {
@@ -97,7 +103,7 @@ func TestNewPostgresRoutine(t *testing.T) {
 	c.Assert(routine.Language, qt.Equals, "sql")
 }
 
-func TestPostgresRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+func TestPostgresRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
@@ -106,7 +112,7 @@ func TestPostgresRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	err := routine.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"PostgresRoutine:CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;"})
 }
 
 func TestNewSQLServerRoutine(t *testing.T) {
@@ -125,7 +131,7 @@ func TestNewSQLServerRoutine(t *testing.T) {
 	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
 }
 
-func TestSQLServerRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+func TestSQLServerRoutineNode_AcceptHandsTheVisitorTheRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewSQLServerRoutine(" CREATE PROCEDURE [dbo].[p] AS SELECT 1; ", "sqlserver", ast.RoutineKindProcedure)
@@ -134,5 +140,5 @@ func TestSQLServerRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	err := routine.Accept(visitor)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE [dbo].[p] AS SELECT 1;"})
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"SQLServerRoutine:CREATE PROCEDURE [dbo].[p] AS SELECT 1;"})
 }

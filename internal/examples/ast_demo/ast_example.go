@@ -238,92 +238,33 @@ type SchemaAnalyzer struct {
 	IndexCount  int
 }
 
-func (a *SchemaAnalyzer) VisitCreateTable(node *ast.CreateTableNode) error {
-	a.TableCount++
-	a.ColumnCount += len(node.Columns)
+// VisitNode counts the tables, columns and indexes a schema declares.
+//
+// One method, and the kinds this analyzer does not care about need no mention.
+// A renderer must answer an unrecognized node with an error, because silence
+// there is indistinguishable from a deliberate skip; an analyzer is the other
+// case, and ignoring what it does not count is the whole point of it.
+//
+// The statement list is walked here rather than by Accept. Accept hands a
+// visitor the node it was given and nothing else, so a visitor that counts only
+// top-level statements and one that descends into every nested list are both
+// expressible, and neither is imposed by the AST.
+func (a *SchemaAnalyzer) VisitNode(node ast.Node) error {
+	switch n := node.(type) {
+	case *ast.StatementList:
+		for _, statement := range n.Statements {
+			if err := statement.Accept(a); err != nil {
+				return err
+			}
+		}
+	case *ast.CreateTableNode:
+		a.TableCount++
+		a.ColumnCount += len(n.Columns)
+	case *ast.IndexNode:
+		a.IndexCount++
+	}
 	return nil
 }
-
-func (a *SchemaAnalyzer) VisitCreateSchema(node *ast.CreateSchemaNode) error     { return nil }
-func (a *SchemaAnalyzer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error { return nil }
-func (a *SchemaAnalyzer) VisitAlterTable(node *ast.AlterTableNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitColumn(node *ast.ColumnNode) error                 { return nil }
-func (a *SchemaAnalyzer) VisitConstraint(node *ast.ConstraintNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitIndex(node *ast.IndexNode) error {
-	a.IndexCount++
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDropIndex(node *ast.DropIndexNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitEnum(node *ast.EnumNode) error                     { return nil }
-func (a *SchemaAnalyzer) VisitCreateType(node *ast.CreateTypeNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitAlterType(node *ast.AlterTypeNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitComment(node *ast.CommentNode) error               { return nil }
-func (a *SchemaAnalyzer) VisitDropTable(node *ast.DropTableNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitDropType(node *ast.DropTypeNode) error             { return nil }
-func (a *SchemaAnalyzer) VisitExtension(node *ast.ExtensionNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitDropExtension(node *ast.DropExtensionNode) error   { return nil }
-func (a *SchemaAnalyzer) VisitCreateFunction(node *ast.CreateFunctionNode) error { return nil }
-func (a *SchemaAnalyzer) VisitCreateSequence(node *ast.CreateSequenceNode) error { return nil }
-func (a *SchemaAnalyzer) VisitAlterSequence(node *ast.AlterSequenceNode) error   { return nil }
-func (a *SchemaAnalyzer) VisitDropSequence(node *ast.DropSequenceNode) error     { return nil }
-func (a *SchemaAnalyzer) VisitCreatePolicy(node *ast.CreatePolicyNode) error     { return nil }
-func (a *SchemaAnalyzer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitCreateView(node *ast.CreateViewNode) error             { return nil }
-func (a *SchemaAnalyzer) VisitDropView(node *ast.DropViewNode) error                 { return nil }
-func (a *SchemaAnalyzer) VisitCreateSynonym(node *ast.CreateSynonymNode) error       { return nil }
-func (a *SchemaAnalyzer) VisitCreateHypertable(node *ast.CreateHypertableNode) error { return nil }
-func (a *SchemaAnalyzer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDropSynonym(node *ast.DropSynonymNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error { return nil }
-func (a *SchemaAnalyzer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitAlterMaterializedViewRefresh(
-	node *ast.AlterMaterializedViewRefreshNode,
-) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitCreateTrigger(node *ast.CreateTriggerNode) error { return nil }
-func (a *SchemaAnalyzer) VisitDropTrigger(node *ast.DropTriggerNode) error     { return nil }
-func (a *SchemaAnalyzer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitCreateRole(node *ast.CreateRoleNode) error { return nil }
-func (a *SchemaAnalyzer) VisitDropRole(node *ast.DropRoleNode) error     { return nil }
-func (a *SchemaAnalyzer) VisitAlterRole(node *ast.AlterRoleNode) error   { return nil }
-func (a *SchemaAnalyzer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
-	return nil
-}
-func (a *SchemaAnalyzer) VisitRawSQL(node *ast.RawSQLNode) error { return nil }
-func (a *SchemaAnalyzer) VisitUpsert(node *ast.UpsertNode) error { return nil }
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}

@@ -28,7 +28,7 @@ import (
 //   - `WITH SCHEMABINDING` is accepted, and the catalog reports it back as
 //     sys.sql_modules.is_schema_bound.
 
-// VisitCreateFunction renders a T-SQL CREATE FUNCTION.
+// renderCreateFunction renders a T-SQL CREATE FUNCTION.
 //
 // A function whose declared language this target does not run is named and
 // skipped rather than refused, which is the answer the MySQL family already
@@ -43,7 +43,7 @@ import (
 // it: [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql,
 // so a function annotated without `language=` lands in this branch and is
 // skipped when it looks like it should have been generated.
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure is gated on its own key. The two are one catalog object
 	// differing in one property, but a target can host one and not the other,
 	// and refusing a procedure under the function key would say the wrong
@@ -119,11 +119,11 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	return nil
 }
 
-// VisitDropFunction renders a T-SQL DROP FUNCTION.
+// renderDropFunction renders a T-SQL DROP FUNCTION.
 //
 // The IF EXISTS clause is accepted, unlike its counterpart on CREATE, so the
 // guarded form needs no catalog test.
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	if node.IsProcedure() {
 		if r.refuses(capability.Procedures, "DROP PROCEDURE", node.Name) {
 			return nil

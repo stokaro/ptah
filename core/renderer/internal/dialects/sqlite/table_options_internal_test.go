@@ -24,13 +24,13 @@ var renderedFor = map[string]string{
 	"WITHOUT ROWID": "WITHOUT ROWID",
 }
 
-// TestVisitCreateTable_RendersEveryTableOptionItKeeps binds the list to the
+// TestRenderCreateTable_RendersEveryTableOptionItKeeps binds the list to the
 // writer that reads it.
 //
 // A key the list names is claimed to be carried, so the statement has to show
 // it. Without this, deleting a clause from writeTableOptions leaves its key in
 // the list and the option is lost in the silence the report exists to end.
-func TestVisitCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
+func TestRenderCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
 	for _, key := range sqliteTableOptionKeys {
 		t.Run(key, func(t *testing.T) {
 			c := qt.New(t)
@@ -52,12 +52,12 @@ func TestVisitCreateTable_RendersEveryTableOptionItKeeps(t *testing.T) {
 	}
 }
 
-// TestVisitCreateTable_ReportsAMySQLTableOption is the other half.
+// TestRenderCreateTable_ReportsAMySQLTableOption is the other half.
 //
 // Every assertion above is satisfied by a renderer that reports nothing, so an
 // option SQLite has no clause for has to arrive as a record. Before this,
 // SQLite dropped all four MySQL-family options and said nothing at all.
-func TestVisitCreateTable_ReportsAMySQLTableOption(t *testing.T) {
+func TestRenderCreateTable_ReportsAMySQLTableOption(t *testing.T) {
 	c := qt.New(t)
 
 	renderer := New()

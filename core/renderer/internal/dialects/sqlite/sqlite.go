@@ -74,7 +74,7 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 // belongs to. It is not a schema anybody creates.
 const defaultSchema = "main"
 
-func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	if node.Name == defaultSchema {
 		// `main` is where the connection already is, so there is nothing to
 		// create and nothing to refuse. An introspected SQLite database
@@ -89,12 +89,12 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	r.notSupported("databases", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -200,7 +200,7 @@ func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
 	}
 }
 
-func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
+func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
@@ -235,11 +235,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitColumn(_ *ast.ColumnNode) error { return nil }
+func (r *Renderer) renderColumn(_ *ast.ColumnNode) error { return nil }
 
-func (r *Renderer) VisitConstraint(_ *ast.ConstraintNode) error { return nil }
+func (r *Renderer) renderConstraint(_ *ast.ConstraintNode) error { return nil }
 
-func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -275,7 +275,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
+func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -314,20 +314,20 @@ func sqliteIndexTarget(indexName, tableName string) (renderedIndexName, rendered
 		escapeIdentifier(tableParts[len(tableParts)-1])
 }
 
-func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return unsupportedFeaturef("upsert rendering is not implemented")
 }
 
-func (r *Renderer) VisitEnum(_ *ast.EnumNode) error {
+func (r *Renderer) renderEnum(_ *ast.EnumNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitComment(node *ast.CommentNode) error {
+func (r *Renderer) renderComment(node *ast.CommentNode) error {
 	r.w.WriteLinef("-- %s", node.Text)
 	return nil
 }
 
-func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
+func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -340,57 +340,57 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
+func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 	r.notSupported("CREATE TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
+func (r *Renderer) renderAlterType(node *ast.AlterTypeNode) error {
 	r.notSupported("ALTER TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 	r.notSupported("DROP TYPE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 	r.notSupported("extensions", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
 	r.notSupported("DROP EXTENSION", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	r.notSupported("CREATE FUNCTION", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	r.notSupported("DROP FUNCTION", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	r.notSupported("CREATE SEQUENCE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 	r.notSupported("ALTER SEQUENCE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 	r.notSupported("DROP SEQUENCE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -411,7 +411,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -424,31 +424,31 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
-// VisitCreateMaterializedView refuses: SQLite has no materialized view object.
+// renderCreateMaterializedView refuses: SQLite has no materialized view object.
 //
 // Rendering a comment instead makes `schema render` exit 0 on a model the
 // planner refuses at `schema apply` time, so the surface a user is told to
 // validate with disagrees with the surface that executes. The SQLite planner
 // answers "materialized views are not supported".
-func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
-// VisitDropMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+// renderDropMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode) error {
 	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
-// VisitRefreshMaterializedView refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+// renderRefreshMaterializedView refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
-// VisitAlterMaterializedViewRefresh refuses for the same reason as
-// VisitCreateMaterializedView.
-func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+// renderAlterMaterializedViewRefresh refuses for the same reason as
+// renderCreateMaterializedView.
+func (r *Renderer) renderAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
 	return materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
 }
 
@@ -456,7 +456,7 @@ func materializedViewsUnsupported(statement, name string) error {
 	return unsupportedFeaturef("%s %s: materialized views are not supported", statement, name)
 }
 
-func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -483,7 +483,7 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -496,47 +496,47 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	r.notSupported("RLS policies", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 	r.notSupported("DROP POLICY", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+func (r *Renderer) renderAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	r.notSupported("row-level security", node.Table)
 	return nil
 }
 
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	r.notSupported("row-level security", node.Table)
 	return nil
 }
 
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	r.notSupported("roles", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 	r.notSupported("DROP ROLE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	r.notSupported("ALTER ROLE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	r.notSupported("GRANT", node.Role)
 	return nil
 }
 
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	r.notSupported("REVOKE", node.Role)
 	return nil
 }
@@ -547,19 +547,19 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 // granting on the schema, or on every object in it -- applies to what exists
 // rather than to what is created next. So the declaration is named and skipped
 // rather than approximated with a statement that means something else.
-func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
 
-// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
-// [Renderer.VisitDefaultPrivilege] carries.
-func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+// renderRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// [Renderer.renderDefaultPrivilege] carries.
+func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
 	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
 	return nil
 }
 
-func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(strings.TrimSpace(node.SQL))
 	return nil
 }
@@ -631,7 +631,7 @@ func (r *Renderer) notSupported(feature, name string) {
 //
 // It has to name every key that function reads: a key present here and dropped
 // there is a loss nothing reports, which is the defect this list exists inside
-// (stokaro/ptah#2976). TestVisitCreateTable_RendersEveryTableOptionItKeeps
+// (stokaro/ptah#2976). TestRenderCreateTable_RendersEveryTableOptionItKeeps
 // drives each one through the renderer rather than trusting the list.
 var sqliteTableOptionKeys = []string{"STRICT", "WITHOUT_ROWID", "WITHOUT ROWID"}
 
@@ -976,52 +976,52 @@ func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: sqlite: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }
 
-// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// renderCreateContinuousAggregate refuses: a continuous aggregate is a
 // TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+func (r *Renderer) renderCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
 	r.notSupported("CREATE CONTINUOUS AGGREGATE", node.Name)
 	return nil
 }
 
-func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+func (r *Renderer) renderDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
 	r.notSupported("DROP CONTINUOUS AGGREGATE", node.Name)
 	return nil
 }
 
-// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// renderCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+func (r *Renderer) renderCreateHypertable(node *ast.CreateHypertableNode) error {
 	r.notSupported("CREATE HYPERTABLE", node.Table)
 	return nil
 }
 
-// VisitCreateSynonym refuses: SQLite has no synonym object of any kind.
-func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+// renderCreateSynonym refuses: SQLite has no synonym object of any kind.
+func (r *Renderer) renderCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.notSupported("CREATE SYNONYM", node.Name)
 	return nil
 }
 
-// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// renderExtendedProperty refuses: an extended property is a SQL Server object,
 // and SQLite has no catalog to attach one to.
 //
 // There is no capability key behind this refusal, for the reason
-// VisitCreateSynonym gives: a key would have exactly one value forever and
+// renderCreateSynonym gives: a key would have exactly one value forever and
 // would invite a preset to turn it on.
-func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+func (r *Renderer) renderExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	r.notSupported("EXTENDED PROPERTY", node.Name)
 	return nil
 }
 
-// VisitDropSynonym refuses for the same reason.
-func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+// renderDropSynonym refuses for the same reason.
+func (r *Renderer) renderDropSynonym(node *ast.DropSynonymNode) error {
 	r.notSupported("DROP SYNONYM", node.Name)
 	return nil
 }
