@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 )
 
@@ -76,12 +77,72 @@ func TestTxModeAllDocumentation_NamesTheCapabilityItDecidesOn(t *testing.T) {
 }
 
 // TestTxModeAllDocumentation_ListsEveryTargetThatCommitsAsItRuns is the
-// converse: the page names four engines, and a fifth preset losing the
-// capability must not leave that sentence behind.
+// converse, and it derives the list rather than quoting it.
+//
+// A sentence pinned as a literal agrees with itself however the presets move:
+// the page named MySQL, MariaDB, ClickHouse and Spanner while CockroachDB and
+// Oracle refused the mode too, and an assertion on those words could not see
+// it. Here the refused set comes from the presets, so a preset crossing the
+// line in either direction fails until the page says so.
 func TestTxModeAllDocumentation_ListsEveryTargetThatCommitsAsItRuns(t *testing.T) {
 	c := qt.New(t)
 
 	page := txModeAllDocumentation(c)
 
-	c.Assert(page, qt.Contains, "MySQL, MariaDB, ClickHouse and Spanner commit DDL as it runs.")
+	for _, target := range txModeAllTargets {
+		t.Run(target.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(
+				capability.ForDialect(target.dialect).Has(capability.TransactionalDDL),
+				qt.IsFalse,
+				qt.Commentf("this table lists the targets the mode refuses"),
+			)
+			c.Assert(page, qt.Contains, target.pageName,
+				qt.Commentf("the page must name every target that refuses --tx-mode all"))
+		})
+	}
+}
+
+// txModeAllTargets are the dialects whose preset refuses `--tx-mode all`, with
+// the spelling the page owes each one.
+//
+// Naming the page spelling beside the dialect is what makes the row readable:
+// `platform.SQLServer` is `sqlserver` and no page writes it that way.
+var txModeAllTargets = []struct {
+	dialect  string
+	pageName string
+}{
+	{dialect: platform.MySQL, pageName: "MySQL"},
+	{dialect: platform.MariaDB, pageName: "MariaDB"},
+	{dialect: platform.ClickHouse, pageName: "ClickHouse"},
+	{dialect: platform.Oracle, pageName: "Oracle"},
+	{dialect: platform.Spanner, pageName: "Spanner"},
+	{dialect: platform.CockroachDB, pageName: "CockroachDB"},
+}
+
+// TestTxModeAllDocumentation_CensusMatchesEveryPreset holds the other end of the
+// pair. The table above is hand-written, so a preset losing the capability
+// without joining it would leave the page silent about a target that refuses,
+// and this test would pass on the rows that remain. The census walks every
+// dialect [capability.ForDialect] has a preset for and compares both ways.
+func TestTxModeAllDocumentation_CensusMatchesEveryPreset(t *testing.T) {
+	c := qt.New(t)
+
+	listed := make(map[string]bool, len(txModeAllTargets))
+	for _, target := range txModeAllTargets {
+		listed[target.dialect] = true
+	}
+
+	dialects := capability.DefaultDialects()
+	c.Assert(len(dialects) > len(txModeAllTargets), qt.IsTrue,
+		qt.Commentf("some target must accept the mode, or this census compares an empty claim"))
+
+	for _, dialect := range dialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			wraps := capability.ForDialect(dialect).Has(capability.TransactionalDDL)
+			c.Assert(listed[dialect], qt.Equals, !wraps,
+				qt.Commentf("a dialect refusing --tx-mode all belongs in txModeAllTargets, and one accepting it does not"))
+		})
+	}
 }

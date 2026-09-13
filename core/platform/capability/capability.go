@@ -1848,7 +1848,24 @@ func SQLServer2022() Capabilities {
 		RowDeletionPolicy:       false,
 		NamedNotNullConstraints: false,
 		MigrationTimeouts:       false,
-		TransactionalDDL:        false,
+		// TransactionalDDL is on because both halves the key needs are here.
+		// The engine rolls a schema change back: measured on 17.0.4075.5, one
+		// session inside a throwaway database, six DDL batches -- CREATE TABLE,
+		// CREATE SCHEMA, a table with a CHECK constraint, CREATE SEQUENCE,
+		// CREATE INDEX and CREATE VIEW -- all visible inside the transaction and
+		// all gone after ROLLBACK. A statement that fails mid-transaction leaves
+		// XACT_STATE() at -1 and the rollback takes the earlier statements with
+		// it, which is the failed-migration case rather than the accepted-
+		// statement one.
+		//
+		// The migrator half needs no SQL Server path: tx-mode all opens one
+		// transaction through the connection abstraction and executes every
+		// migration on it, so the dialect reaches it as soon as this key admits
+		// it. Measured end to end against the same server: two migrations under
+		// `--tx-mode all` where the second fails leave neither table behind and
+		// record the batch as dirty, and the same two with the conflict removed
+		// commit together (stokaro/ptah#3192).
+		TransactionalDDL: true,
 		// Both keys name a PostgreSQL catalog, and SQL Server has neither.
 		// Measured on 17.0.4075.5: `SELECT COUNT(*) FROM pg_inherits` answers
 		// `Invalid object name 'pg_inherits'`, and `WITH RECURSIVE m AS
