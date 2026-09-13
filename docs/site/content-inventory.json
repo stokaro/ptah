@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 134,
-    "authored": 131,
+    "pages": 135,
+    "authored": 132,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 4,
-      "tutorial": 3
+      "tutorial": 4
     }
   },
   "pages": [
@@ -1134,7 +1134,8 @@
         "/databases/distributed/",
         "/databases/overview/",
         "/databases/support-matrix/",
-        "/direct/inspect/"
+        "/direct/inspect/",
+        "/start/quick-start-postgresql/"
       ],
       "visibleWords": 6123,
       "sourceBytes": 43626
@@ -5404,6 +5405,7 @@
         "/start/choose-a-workflow/",
         "/start/overview/",
         "/start/quick-start-direct/",
+        "/start/quick-start-postgresql/",
         "/versioned/import/",
         "/versioned/overview/"
       ],
@@ -5456,6 +5458,7 @@
         "/schema/work-with-a-source/",
         "/start/adopt-an-existing-database/",
         "/start/overview/",
+        "/start/quick-start-postgresql/",
         "/start/quick-start/",
         "/versioned/overview/"
       ],
@@ -5571,6 +5574,7 @@
         "/start/install-options/",
         "/start/overview/",
         "/start/quick-start-migrations/",
+        "/start/quick-start-postgresql/",
         "/start/quick-start/"
       ],
       "visibleWords": 414,
@@ -5667,6 +5671,7 @@
         "/versioned/generate/"
       ],
       "inboundLinks": [
+        "/start/quick-start-postgresql/",
         "/start/quick-start/"
       ],
       "visibleWords": 356,
@@ -5719,10 +5724,59 @@
         "/databases/sqlite/",
         "/start/choose-a-workflow/",
         "/start/overview/",
+        "/start/quick-start-postgresql/",
         "/start/quick-start/"
       ],
       "visibleWords": 268,
       "sourceBytes": 4229
+    },
+    {
+      "path": "docs/site/src/content/docs/start/quick-start-postgresql.mdx",
+      "route": "/start/quick-start-postgresql/",
+      "title": "PostgreSQL quick start",
+      "description": "Apply and verify a first Ptah schema change against a disposable PostgreSQL, from an empty directory to a column added and checked.",
+      "sidebarPath": "Getting started",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I get a verified Ptah result against PostgreSQL rather than SQLite?",
+      "goal": "Apply a desired schema to a throwaway PostgreSQL, add a column, and verify the database matches.",
+      "sourceOfTruth": [
+        "internal/cli/schema",
+        "internal/cli/db"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "PostgreSQL quick start",
+        "try Ptah with Postgres",
+        "first result on PostgreSQL"
+      ],
+      "sourceMode": "source-neutral",
+      "overlaps": [
+        "/start/quick-start/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/postgresql/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/start/quick-start-direct/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 515,
+      "sourceBytes": 7026
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start.mdx",
@@ -5773,7 +5827,8 @@
         "/start/install-options/",
         "/start/install/",
         "/start/overview/",
-        "/start/quick-start-direct/"
+        "/start/quick-start-direct/",
+        "/start/quick-start-postgresql/"
       ],
       "visibleWords": 321,
       "sourceBytes": 4346

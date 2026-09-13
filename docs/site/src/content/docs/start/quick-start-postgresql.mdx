@@ -1,0 +1,287 @@
+---
+title: PostgreSQL quick start
+description: Apply and verify a first Ptah schema change against a disposable PostgreSQL, from an empty directory to a column added and checked.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I get a verified Ptah result against PostgreSQL rather than SQLite?
+goal: Apply a desired schema to a throwaway PostgreSQL, add a column, and verify the database matches.
+sourceOfTruth:
+  - internal/cli/schema
+  - internal/cli/db
+generated: false
+searchAliases:
+  - PostgreSQL quick start
+  - try Ptah with Postgres
+  - first result on PostgreSQL
+overlaps:
+  - /start/quick-start/
+  - /direct/apply/
+  - /direct/compare-and-drift/
+disposition: keep
+sourceMode: source-neutral
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+The same first result as the [quick start](../quick-start/), on the engine you
+are likely to use. You will start a throwaway PostgreSQL, apply a desired
+schema, ask for a column, review the SQL that change costs, apply it, and check
+the database agrees. Then you remove the database and nothing is left behind.
+
+Take this one if you already know you are on PostgreSQL. Take the
+[SQLite quick start](../quick-start/) if you want the shortest path with no
+Docker and no server at all; nothing here is different about Ptah, only about
+what it is pointed at.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../install/) if you do not have
+  one.
+- Docker, to run the disposable database. Nothing else is installed.
+- A terminal and about ten minutes.
+
+Confirm that the binary runs:
+
+```console
+ptah version
+```
+
+## Step 1. Start a database you can throw away
+
+```bash
+docker run -d --name ptah-quick-start \
+  -e POSTGRES_USER=ptah -e POSTGRES_PASSWORD=ptah -e POSTGRES_DB=app \
+  -p 55432:5432 postgres:18-alpine
+```
+
+Port 55432 rather than 5432, so this cannot collide with a PostgreSQL you
+already run. The password is in the command because this database exists for
+the next ten minutes; a database you care about takes its URL from the
+environment or a secret store instead.
+
+Wait until it is ready to accept connections:
+
+```bash
+docker exec ptah-quick-start pg_isready -U ptah
+```
+
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+## Step 2. Write the schema you want
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir ptah-postgres-quick-start
+cd ptah-postgres-quick-start
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id    BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+export DB='postgres://ptah:ptah@localhost:55432/app?sslmode=disable'
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-postgres-quick-start | Out-Null
+Set-Location ptah-postgres-quick-start
+@'
+CREATE TABLE users (
+    id    BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content schema.sql
+$env:DB = 'postgres://ptah:ptah@localhost:55432/app?sslmode=disable'
+```
+
+</TabItem>
+</Tabs>
+
+`schema.sql` is the schema you want. The database is empty.
+
+## Step 3. See what that would cost
+
+```console
+ptah schema apply --schema-file schema.sql --db-url "$DB" --dry-run
+```
+
+Expected output on standard output:
+
+```text
+Planned schema changes:
+-- POSTGRES TABLE: users --
+CREATE TABLE "users" (
+  "id" BIGSERIAL PRIMARY KEY NOT NULL,
+  "email" TEXT NOT NULL
+);
+```
+
+`--dry-run` opens the database to read its current schema and executes no
+planned statement. The SQL is PostgreSQL's, rendered for this engine rather
+than copied from the file.
+
+## Step 4. Apply it
+
+```console
+ptah schema apply --schema-file schema.sql --db-url "$DB" --auto-approve
+```
+
+Expected output ends with, on standard output:
+
+```text
+Auto-approval enabled; applying schema changes.
+Schema apply completed successfully.
+```
+
+:::caution
+`--auto-approve` executes the displayed plan without prompting. This tutorial
+uses it against a container you are about to delete. For a database you care
+about, review the plan and use an approval flow.
+:::
+
+## Step 5. Ask whether the database agrees
+
+```console
+ptah schema drift --schema-file schema.sql --db-url "$DB"
+```
+
+```text
+No schema drift detected.
+```
+
+That answer comes from reading the live database, not from the file. It is the
+check worth putting in a pipeline.
+
+## Step 6. Ask for a column
+
+Rewrite the schema you want. Nothing else changes:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id         BIGSERIAL PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TIMESTAMPTZ
+);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE TABLE users (
+    id         BIGSERIAL PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TIMESTAMPTZ
+);
+'@ | Set-Content schema.sql
+```
+
+</TabItem>
+</Tabs>
+
+The same check now has something to report:
+
+```console
+ptah schema drift --schema-file schema.sql --db-url "$DB"
+```
+
+Expected output includes, on standard output:
+
+```text
+Schema drift detected (highest severity: warning).
+```
+
+```text
+Findings:
+- columns_added: 1 (warning)
+```
+
+And the plan is an `ALTER`, against the database as it is rather than as the
+file describes it:
+
+```console
+ptah schema apply --schema-file schema.sql --db-url "$DB" --dry-run
+```
+
+Expected output ends with, on standard output:
+
+```text
+ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMPTZ;
+```
+
+## Step 7. Apply the reviewed change, and check again
+
+```console
+ptah schema apply --schema-file schema.sql --db-url "$DB" --auto-approve
+ptah schema drift --schema-file schema.sql --db-url "$DB"
+```
+
+```text
+No schema drift detected.
+```
+
+The table now carries the column, and you can see it from PostgreSQL itself:
+
+```console
+docker exec ptah-quick-start psql -U ptah -d app -c '\d users'
+```
+
+Expected output includes, on standard output:
+
+```text
+ id         | bigint                   |           | not null | nextval('users_id_seq'::regclass)
+ email      | text                     |           | not null |
+ created_at | timestamp with time zone |           |          |
+```
+
+## Step 8. Remove it
+
+The database and the working directory, and nothing else:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+docker rm -f ptah-quick-start
+cd ..
+rm -rf ptah-postgres-quick-start
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+docker rm -f ptah-quick-start
+Set-Location ..
+Remove-Item -Recurse -Force ptah-postgres-quick-start
+```
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+- [Evolve the schema and add a drift gate](../quick-start-direct/) turns the
+  check in step 5 into one a pull request fails on.
+- [Create and apply a versioned migration](../quick-start-migrations/) is the
+  other route: files you review and replay rather than a plan derived each time.
+- [Choose a schema workflow](../choose-a-workflow/) before using a shared
+  database.
+- [Adopt an existing database](../adopt-an-existing-database/) if yours already
+  has tables in it.
+- [PostgreSQL](../../databases/postgresql/) is what this engine supports beyond
+  the two statements above.
