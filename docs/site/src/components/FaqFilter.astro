@@ -117,8 +117,14 @@ const { symptoms, count } = Astro.props;
       // A chip names its questions; free text matches what a question says.
       // The two are different lookups on purpose: a reader who has the symptom
       // does not have the words the answer is written in.
+      // Keyed on the lowercased label, because the field is compared
+      // lowercased: a label with a capital in it -- an identifier such as
+      // UnsupportedEngine -- would otherwise match nothing.
       const bySymptom = new Map(
-        chips.map((chip) => [chip.dataset.faqSymptom, new Set(chip.dataset.faqQuestions.split(' '))]),
+        chips.map((chip) => [
+          chip.dataset.faqSymptom.toLowerCase(),
+          new Set(chip.dataset.faqQuestions.split(' ')),
+        ]),
       );
 
       const render = () => {
@@ -138,7 +144,7 @@ const { symptoms, count } = Astro.props;
           for (const node of group.chrome) node.hidden = hide;
         }
         for (const chip of chips) {
-          chip.setAttribute('aria-pressed', String(chip.dataset.faqSymptom === term));
+          chip.setAttribute('aria-pressed', String(chip.dataset.faqSymptom.toLowerCase() === term));
         }
 
         countEl.textContent = term === '' ? `${total} questions` : `${shown.length} of ${total}`;
@@ -153,7 +159,8 @@ const { symptoms, count } = Astro.props;
       for (const chip of chips) {
         chip.addEventListener('click', () => {
           const symptom = chip.dataset.faqSymptom;
-          field.value = field.value.trim().toLowerCase() === symptom ? '' : symptom;
+          const active = field.value.trim().toLowerCase() === symptom.toLowerCase();
+          field.value = active ? '' : symptom;
           render();
           field.focus();
         });
