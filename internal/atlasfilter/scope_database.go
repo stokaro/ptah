@@ -108,11 +108,20 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return s.databaseGrantSelected(out, keptTables, grant)
 	})
+	// Projected BEFORE the roles below, which keep a role that a surviving
+	// statement names. A default privilege names two of them, so projecting it
+	// afterwards would describe one pointing at a role the same description
+	// says is absent.
+	out.DefaultPrivileges = keep(db.DefaultPrivileges,
+		func(privilege catalog.DefaultPrivilege) bool {
+			return s.defaultPrivilegeSelected(privilege.Schema)
+		})
 	out.Roles = keep(db.Roles, func(role catalog.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
-		return databaseGrantRoleReferenced(out.Grants, role.Name)
+		return databaseGrantRoleReferenced(out.Grants, role.Name) ||
+			databaseDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
 	})
 }
 
@@ -264,6 +273,23 @@ func databaseSequenceNameKept(sequences []catalog.Sequence, schema, name string)
 func databaseGrantRoleReferenced(grants []catalog.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// databaseDefaultPrivilegeRoleReferenced reads BOTH ends, because Ptah renders
+// both: the grantor is FOR ROLE and the grantee is TO. A retention rule that
+// read the grantee alone would keep a description whose ALTER DEFAULT
+// PRIVILEGES names a grantor nothing defines.
+func databaseDefaultPrivilegeRoleReferenced(
+	privileges []catalog.DefaultPrivilege,
+	role string,
+) bool {
+	for _, privilege := range privileges {
+		if strings.EqualFold(privilege.Grantor, role) ||
+			strings.EqualFold(privilege.Grantee, role) {
 			return true
 		}
 	}

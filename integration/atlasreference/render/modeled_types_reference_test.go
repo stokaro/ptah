@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
-	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/atlasreference"
 )
 
 // referenceEnv names the environment variable holding the path to the pinned

@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/migratebaseline"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migratebaseline"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/shadow"
 )

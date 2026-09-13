@@ -534,6 +534,9 @@ func (r *renderer) renderBody() {
 	r.renderTriggers()
 	r.renderRLSPolicies()
 	r.renderGrants()
+	// After the grants: a grant is about an object the document already declares,
+	// a default privilege about objects that do not exist yet.
+	r.renderDefaultPrivileges()
 	r.renderManagedData()
 }
 

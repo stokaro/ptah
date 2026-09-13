@@ -66,6 +66,7 @@ func planObjectsAfterTables(
 	result = reportRowLevelSecurity(result, diff, caps)
 	result = planRowPolicies(result, diff, caps)
 	result = planGrants(result, diff)
+	result = reportDefaultPrivileges(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
 }

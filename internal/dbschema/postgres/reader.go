@@ -208,29 +208,8 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		schema.RLSPolicies = rlsPolicies
 	}
 
-	if r.caps.Has(capability.RoleManagement) {
-		// Read roles and grants (PostgreSQL-specific)
-		if err := r.readRolesInto(ctx, schema); err != nil {
-			return nil, err
-		}
-
-		grants, err := r.readGrants(ctx, standaloneSequenceSet(schema.Sequences))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read grants: %w", err)
-		}
-		schema.Grants = grants
-
-		memberships, err := r.readRoleMemberships(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read role memberships: %w", err)
-		}
-		schema.RoleMemberships = memberships
-
-		owners, err := r.readObjectOwners(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read object owners: %w", err)
-		}
-		schema.ObjectOwners = owners
+	if err := r.readRoleManagedObjects(ctx, schema); err != nil {
+		return nil, err
 	}
 
 	// Enhance tables with constraint information
@@ -3479,6 +3458,25 @@ func (r *Reader) rolesInScopeClauses() []string {
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole`)
 	}
+	if r.caps.Has(capability.CatalogDefaultPrivileges) {
+		// The role a default privilege in scope applies to
+		// (pg_default_acl.defaclrole). Ptah renders the grantor -- it is FOR
+		// ROLE, and it is half the identity -- so without this branch a
+		// description carries an ALTER DEFAULT PRIVILEGES naming a role it
+		// never defines. The object-type filter is the read's, so the two
+		// agree on which rows the description can carry.
+		clauses = append(clauses, `SELECT d.defaclrole FROM pg_default_acl d
+			JOIN scope s ON s.oid = d.defaclnamespace
+			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`)
+		// Granted a default privilege in scope (pg_default_acl.defaclacl),
+		// read in the same shape readDefaultPrivilegesForSchema uses. A
+		// grantee of 0 is PUBLIC, which matches no pg_roles row and so adds
+		// nothing here.
+		clauses = append(clauses, `SELECT acl.grantee FROM pg_default_acl d
+			JOIN scope s ON s.oid = d.defaclnamespace
+			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`)
+	}
 	return clauses
 }
 
@@ -3495,7 +3493,9 @@ func (r *Reader) rolesInScopeClauses() []string {
 //
 //   - holding a privilege on a relation in a schema in scope, or on one of
 //     those schemas -- or having granted one;
-//   - being named by a row-level security policy on a table in scope.
+//   - being named by a row-level security policy on a table in scope;
+//   - being named by a default privilege in a schema in scope, either as the
+//     role whose new objects it applies to or as the role receiving it.
 //
 // Equivalently: a role is described exactly when some other statement in the
 // same description can name it. Nothing else is reported, and a role that
@@ -4036,6 +4036,110 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 	return grants, nil
 }
 
+// readDefaultPrivileges reads what ALTER DEFAULT PRIVILEGES established for the
+// schemas under this read, one row per granted privilege.
+//
+// The gate is the caller's: pg_default_acl is a relation a server either has or
+// does not, and asking a server without it costs the whole read.
+func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPrivilege, error) {
+	var privileges []catalog.DefaultPrivilege
+	for _, schemaName := range r.schemasToRead() {
+		schemaPrivileges, err := r.readDefaultPrivilegesForSchema(ctx, schemaName)
+		if err != nil {
+			return nil, err
+		}
+		privileges = append(privileges, schemaPrivileges...)
+	}
+	return privileges, nil
+}
+
+// readDefaultPrivilegesForSchema reads one schema's pg_default_acl entries.
+//
+// The grain is one privilege per row, which is what aclexplode answers: the
+// catalog stores a merged aclitem[] per (defaclrole, defaclnamespace,
+// defaclobjtype), and grantability is recorded per privilege inside it. Folding
+// the rows back into a declaration is the desired side's job, and a read that
+// collapsed them here would have to pick one grantability for the whole
+// identity and compare a guess against the catalog forever.
+//
+// The join to pg_namespace is an inner join deliberately: it drops the
+// cluster-wide entries, which pg_default_acl records with defaclnamespace 0.
+// Ptah models no such entry -- internal/devclean refuses an
+// ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay -- so a described
+// row of that shape names an object nothing could apply back. defaclobjtype 'n'
+// (SCHEMAS) is left out for the same reason, by the object-type filter, whose
+// CASE is also what turns the catalog's one-character codes into the keywords a
+// statement writes.
+//
+// The grantee carries the reserved-name exclusion the other grant reads carry,
+// through the one definition of "reserved", so a default privilege held by a
+// pg_ role is left out of the description exactly as an ordinary grant to it is.
+// The escape is load-bearing: LIKE reads a bare underscore as a
+// single-character wildcard, so an unescaped 'pg_%' also drops pgbouncer,
+// pgadmin and pgpool, which are ordinary user roles. The GRANTOR is not
+// filtered, because the bootstrap superuser is the ordinary grantor of a default
+// privilege -- excluding it there would empty this read on a stock server.
+func (r *Reader) readDefaultPrivilegesForSchema(
+	ctx context.Context,
+	schemaName string,
+) ([]catalog.DefaultPrivilege, error) {
+	query := `
+		WITH exploded AS (
+			SELECT
+				pg_get_userbyid(d.defaclrole) AS grantor,
+				n.nspname AS schema_name,
+				CASE d.defaclobjtype
+					WHEN 'r' THEN 'TABLES'
+					WHEN 'S' THEN 'SEQUENCES'
+					WHEN 'f' THEN 'FUNCTIONS'
+					WHEN 'T' THEN 'TYPES'
+				END AS object_type,
+				CASE acl.grantee
+					WHEN 0 THEN 'PUBLIC'
+					ELSE pg_get_userbyid(acl.grantee)
+				END AS grantee,
+				acl.privilege_type AS privilege,
+				acl.is_grantable AS with_option
+			FROM pg_default_acl d
+			JOIN pg_namespace n ON n.oid = d.defaclnamespace
+			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+			WHERE n.nspname = $1
+			AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
+		)
+		SELECT grantor, schema_name, object_type, grantee, privilege, with_option
+		FROM exploded
+		WHERE ` + reservedrole.ExcludeSQL("grantee") + `
+		ORDER BY schema_name, grantor, object_type, grantee, privilege`
+
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query default privileges for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var privileges []catalog.DefaultPrivilege
+	for rows.Next() {
+		var privilege catalog.DefaultPrivilege
+		var rawSchema string
+		if err := rows.Scan(
+			&privilege.Grantor,
+			&rawSchema,
+			&privilege.ObjectType,
+			&privilege.Grantee,
+			&privilege.Privilege,
+			&privilege.WithOption,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan default privilege for schema %s: %w", schemaName, err)
+		}
+		privilege.Schema = r.outputSchema(rawSchema)
+		privileges = append(privileges, privilege)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read default privileges for schema %s: %w", schemaName, err)
+	}
+	return privileges, nil
+}
+
 // readAllViews reads views from whichever currentCatalog the server has. A view is not
 // an object kind a preset rules out -- every dialect this reader serves has
 // views -- so the choice is which currentCatalog can answer, not whether to ask.
@@ -4052,6 +4156,58 @@ func (r *Reader) readAllViews(ctx context.Context) ([]catalog.View, error) {
 		views = append(views, schemaViews...)
 	}
 	return views, nil
+}
+
+// readRoleManagedObjects reads what a server's role model carries: the roles
+// themselves, the grants on objects, the memberships between roles, who owns
+// each object, and the defaults a role's new objects get.
+//
+// It sits beside readCapabilityGatedObjects for the same reason: the reads are
+// one idea -- ask only for what this server can have -- and inline they push
+// ReadSchemaContext past the nesting limit, which is what the limit is for.
+//
+// The default privileges answer a second gate inside the first. RoleManagement
+// says the server models roles and object privileges, and each engine satisfies
+// it in its own vocabulary; CatalogDefaultPrivileges says something narrower --
+// this server has pg_default_acl. A missing relation is a parse failure, so a
+// server that manages roles without that catalog would lose the whole
+// description rather than this one family.
+func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Database) error {
+	if !r.caps.Has(capability.RoleManagement) {
+		return nil
+	}
+
+	if err := r.readRolesInto(ctx, schema); err != nil {
+		return err
+	}
+
+	grants, err := r.readGrants(ctx, standaloneSequenceSet(schema.Sequences))
+	if err != nil {
+		return fmt.Errorf("failed to read grants: %w", err)
+	}
+	schema.Grants = grants
+
+	memberships, err := r.readRoleMemberships(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read role memberships: %w", err)
+	}
+	schema.RoleMemberships = memberships
+
+	owners, err := r.readObjectOwners(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read object owners: %w", err)
+	}
+	schema.ObjectOwners = owners
+
+	if !r.caps.Has(capability.CatalogDefaultPrivileges) {
+		return nil
+	}
+	defaultPrivileges, err := r.readDefaultPrivileges(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read default privileges: %w", err)
+	}
+	schema.DefaultPrivileges = defaultPrivileges
+	return nil
 }
 
 // readCapabilityGatedObjects reads the object kinds whose presence a capability

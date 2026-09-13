@@ -154,6 +154,22 @@ func roundTripRows() []roundTripRow {
 			count: func(d *schemamodel.Database) int { return len(d.Grants) },
 		},
 		{
+			// The grantor is what forces the family its own block. It is part of
+			// a default privilege's identity, and the `permission` block reports
+			// a grantor as an export loss rather than writing one, so a family
+			// routed through that block would leave this round trip as a warning
+			// and nothing else.
+			field: "DefaultPrivileges",
+			seed: func(d *schemamodel.Database) {
+				d.DefaultPrivileges = append(d.DefaultPrivileges, schemamodel.DefaultPrivilege{
+					StructName: "D", Grantor: "app_owner", Schema: "public",
+					ObjectType: "TABLES", Grantee: "app_reader",
+					Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+				})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.DefaultPrivileges) },
+		},
+		{
 			field: "Hypertables",
 			seed: func(d *schemamodel.Database) {
 				d.Hypertables = append(d.Hypertables, schemamodel.Hypertable{
@@ -320,7 +336,7 @@ var nonObjectDatabaseFields = []string{
 // it. Synonyms and extended properties were exactly that, and nothing said so
 // until the round trip was measured.
 //
-// All sixteen families now survive. The two that did not, until the HCL
+// Every family in the table survives. The ones that did not, until the HCL
 // surface gained a `synonym` and an `extended_property` block, are the reason
 // the sweep is a sweep: the question is asked of every family rather than of
 // the ones somebody suspected.

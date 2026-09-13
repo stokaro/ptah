@@ -159,6 +159,25 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 			node:    ast.NewRevokePrivilege("app_role", "TABLE", "users", []string{"SELECT"}),
 			skipped: "-- SPANNER: revoke on users from app_role is not supported by this target; skipped.",
 		},
+		{
+			// The skip names the four fields that are the object's identity and
+			// none of the privileges. The render path emits one node per
+			// declaration and the plan path one per privilege, so a line
+			// carrying the privilege list would make the two surfaces name
+			// different objects for the same refusal.
+			name: "default privilege",
+			node: ast.NewDefaultPrivilege("app_owner", "app", "TABLES", "app_reader",
+				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
+			skipped: "-- SPANNER: default privilege on TABLES in schema app for role app_owner to app_reader " +
+				"is not supported by this target; skipped.",
+		},
+		{
+			name: "revoke default privilege",
+			node: ast.NewRevokeDefaultPrivilege("app_owner", "app", "TABLES", "app_reader",
+				[]string{"SELECT"}),
+			skipped: "-- SPANNER: default privilege on TABLES in schema app for role app_owner to app_reader " +
+				"is not supported by this target; skipped.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -209,6 +228,67 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 			name:    "revoke without object",
 			node:    ast.NewRevokePrivilege("app_role", "TABLE", "", []string{"SELECT"}),
 			wantErr: "REVOKE requires an object type and object name",
+		},
+		// A default privilege has four identity fields and a payload, and each
+		// row leaves exactly one of them out. The refusal below is the same
+		// capability gate the rows above meet, so a visitor that asked the
+		// capability set first would answer every one of these with a skip
+		// comment and no error -- and a caller who wrote an incomplete
+		// declaration would be told the target declined it rather than that the
+		// declaration is incomplete.
+		{
+			name:    "default privilege without privileges",
+			node:    ast.NewDefaultPrivilege("app_owner", "app", "TABLES", "app_reader", nil),
+			wantErr: "ALTER DEFAULT PRIVILEGES requires at least one privilege",
+		},
+		{
+			name: "default privilege without grantor",
+			node: ast.NewDefaultPrivilege("", "app", "TABLES", "app_reader",
+				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
+			wantErr: "ALTER DEFAULT PRIVILEGES requires a grantor role",
+		},
+		{
+			name: "default privilege without schema",
+			node: ast.NewDefaultPrivilege("app_owner", "", "TABLES", "app_reader",
+				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
+			wantErr: "ALTER DEFAULT PRIVILEGES requires a schema",
+		},
+		{
+			name: "default privilege without object type",
+			node: ast.NewDefaultPrivilege("app_owner", "app", "", "app_reader",
+				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
+			wantErr: "ALTER DEFAULT PRIVILEGES requires an object type",
+		},
+		{
+			name: "default privilege without grantee",
+			node: ast.NewDefaultPrivilege("app_owner", "app", "TABLES", "",
+				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
+			wantErr: "ALTER DEFAULT PRIVILEGES requires a grantee",
+		},
+		{
+			name:    "revoke default privilege without privileges",
+			node:    ast.NewRevokeDefaultPrivilege("app_owner", "app", "TABLES", "app_reader", nil),
+			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires at least one privilege",
+		},
+		{
+			name:    "revoke default privilege without grantor",
+			node:    ast.NewRevokeDefaultPrivilege("", "app", "TABLES", "app_reader", []string{"SELECT"}),
+			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires a grantor role",
+		},
+		{
+			name:    "revoke default privilege without schema",
+			node:    ast.NewRevokeDefaultPrivilege("app_owner", "", "TABLES", "app_reader", []string{"SELECT"}),
+			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires a schema",
+		},
+		{
+			name:    "revoke default privilege without object type",
+			node:    ast.NewRevokeDefaultPrivilege("app_owner", "app", "", "app_reader", []string{"SELECT"}),
+			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires an object type",
+		},
+		{
+			name:    "revoke default privilege without grantee",
+			node:    ast.NewRevokeDefaultPrivilege("app_owner", "app", "TABLES", "", []string{"SELECT"}),
+			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires a grantee",
 		},
 	}
 

@@ -122,6 +122,7 @@ func excludeDatabase(
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants)
+	filtered.DefaultPrivileges = state.filterDefaultPrivileges(filtered.DefaultPrivileges)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
@@ -218,6 +219,7 @@ func excludeGenerated(
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
+	filtered.DefaultPrivileges = state.filterGeneratedDefaultPrivileges(filtered.DefaultPrivileges)
 	filtered.Dependencies = nil
 	filtered.FunctionDependencies = nil
 	filtered.SelfReferencingForeignKeys = nil
@@ -1233,6 +1235,43 @@ func (s *exclusionState) filterRoleMemberships(
 	})
 }
 
+// filterDefaultPrivileges drops a default privilege whose schema left, and one
+// whose grantor or grantee left.
+//
+// A default privilege names no object of its own: it describes objects that do
+// not exist yet, so what a selector can reach are its two roles and the schema
+// it applies in. Both ends are asked, and both are asked before the answer is
+// combined -- a selector naming the grantor and one naming the grantee are two
+// selectors, and reporting only the first as matched would call the second
+// empty against a description it did name something in.
+//
+// Keeping a row whose role left would leave the description rendering
+// ALTER DEFAULT PRIVILEGES for a role the filtered description does not define,
+// which is the defect filterRoleMemberships avoids on the other pair of role
+// ends.
+func (s *exclusionState) filterDefaultPrivileges(
+	privileges []catalog.DefaultPrivilege,
+) []catalog.DefaultPrivilege {
+	return keep(privileges, func(privilege catalog.DefaultPrivilege) bool {
+		grantorNamed := s.matches("role", privilege.Grantor)
+		granteeNamed := s.matches("role", privilege.Grantee)
+		return !grantorNamed && !granteeNamed && !s.schemaExcluded(privilege.Schema)
+	})
+}
+
+// filterGeneratedDefaultPrivileges is filterDefaultPrivileges for the desired
+// side. Both sides of a comparison subtract the same objects, so a default
+// privilege excluded from one alone would come back as a grant or as a revoke.
+func (s *exclusionState) filterGeneratedDefaultPrivileges(
+	privileges []schemamodel.DefaultPrivilege,
+) []schemamodel.DefaultPrivilege {
+	return keep(privileges, func(privilege schemamodel.DefaultPrivilege) bool {
+		grantorNamed := s.matches("role", privilege.Grantor)
+		granteeNamed := s.matches("role", privilege.Grantee)
+		return !grantorNamed && !granteeNamed && !s.schemaExcluded(privilege.Schema)
+	})
+}
+
 func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {
 	return keep(grants, func(grant catalog.Grant) bool {
 		named := s.matches("grant", grant.QualifiedTarget(), grant.Role+"."+grant.QualifiedTarget())
@@ -1767,6 +1806,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		RLSPolicies:          slices.Clone(schema.RLSPolicies),
 		Roles:                slices.Clone(schema.Roles),
 		Grants:               slices.Clone(schema.Grants),
+		DefaultPrivileges:    slices.Clone(schema.DefaultPrivileges),
 		RoleMemberships:      slices.Clone(schema.RoleMemberships),
 		ObjectOwners:         slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
@@ -1815,6 +1855,10 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.RLSEnabledTables = slices.Clone(schema.RLSEnabledTables)
 	filtered.Roles = slices.Clone(schema.Roles)
 	filtered.Grants = slices.Clone(schema.Grants)
+	// A shallow struct copy carries a slice header, so a field left out here is
+	// not dropped -- it is ALIASED, and the filter below then writes through the
+	// caller's own state.
+	filtered.DefaultPrivileges = slices.Clone(schema.DefaultPrivileges)
 	return &filtered
 }
 

@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -155,6 +156,32 @@ func revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 func revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantOptionsRevoked {
 		result = append(result, revokeNode(grant).SetGrantOptionFor(true))
+	}
+	return result
+}
+
+// reportDefaultPrivileges names every default privilege the diff carries and
+// plans no statement for any of them.
+//
+// It is the one part of access control this planner reports rather than emits.
+// ALTER DEFAULT PRIVILEGES records, in pg_default_acl, what an object gets when
+// a named role creates one; ClickHouse has no catalog for that, and its nearest
+// statement -- a grant on the database -- applies to what exists rather than to
+// what is created next, so it would mean something the author did not write.
+// The renderer answers each node with a named skip, which is how the operator
+// sees the declaration they wrote.
+//
+// Every diff category is read. One the loops miss is a declared change that
+// produces no statement and no diagnostic, which is the silence
+// stokaro/ptah#1628 is about.
+func reportDefaultPrivileges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, privilege := range slices.Concat(diff.DefaultPrivilegesAdded, diff.DefaultPrivilegeOptionsAdded) {
+		result = append(result, ast.NewDefaultPrivilege(
+			privilege.Grantor, privilege.Schema, privilege.ObjectType, privilege.Grantee, nil))
+	}
+	for _, privilege := range slices.Concat(diff.DefaultPrivilegesRemoved, diff.DefaultPrivilegeOptionsRevoked) {
+		result = append(result, ast.NewRevokeDefaultPrivilege(
+			privilege.Grantor, privilege.Schema, privilege.ObjectType, privilege.Grantee, nil))
 	}
 	return result
 }

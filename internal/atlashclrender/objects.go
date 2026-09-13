@@ -557,6 +557,118 @@ func (r *renderer) renderGrants() {
 	}
 }
 
+// renderDefaultPrivileges writes one `default_privilege` block per declaration:
+// the privileges an object gets when a named role creates one in a named schema.
+//
+// The block is a sibling of `permission` rather than a shape of it, because a
+// default privilege's identity includes the GRANTOR and a `permission` block has
+// nowhere to put one. [renderer.renderGrants] reports a grant's observed grantor
+// as an export loss, and `ptah schema export --cleanup-go-annotations` turns any
+// loss diagnostic into
+// [ptah.run/internal/goannotationexport.ErrLossyCleanup]. Routing this family
+// through `permission` would therefore make that command refuse every schema
+// that declares a default privilege, permanently. The grantor is not optional
+// metadata here; it is part of what the object IS. This block carries it, so it
+// emits no such warning.
+//
+// A declaration missing any part of its identity is dropped with a diagnostic
+// rather than written half-formed. What is checked here is what the PostgreSQL
+// renderer refuses to emit a statement without, so a block written anyway would
+// round trip into a schema nothing can apply.
+func (r *renderer) renderDefaultPrivileges() {
+	privileges := make([]schemamodel.DefaultPrivilege, 0, len(r.db.DefaultPrivileges))
+	for _, privilege := range r.db.DefaultPrivileges {
+		privilege.Canonicalize()
+		if !defaultPrivilegeComplete(privilege) {
+			r.warn("default_privileges."+privilege.Grantee,
+				"default privilege requires a grantor, a schema, an object type, "+
+					"a grantee, and at least one privilege")
+			continue
+		}
+		privileges = append(privileges, privilege)
+	}
+	// Deduplicate merges two declarations sharing an identity, but this render is
+	// reachable from a model that pass has not run over. So the privilege
+	// spelling joins the identity in the sort key: without it such a pair keeps
+	// whichever order the slice was built in, and the document differs between
+	// two renders of one schema.
+	slices.SortFunc(privileges, func(a, b schemamodel.DefaultPrivilege) int {
+		return cmp.Or(
+			cmp.Compare(a.Grantor, b.Grantor),
+			cmp.Compare(a.Schema, b.Schema),
+			cmp.Compare(a.ObjectType, b.ObjectType),
+			cmp.Compare(a.Grantee, b.Grantee),
+			cmp.Compare(
+				strings.Join(privilegeNames(a.Privileges), ","),
+				strings.Join(privilegeNames(b.Privileges), ","),
+			),
+		)
+	})
+	for _, privilege := range privileges {
+		r.line("default_privilege {")
+		// `for_role` rather than `for`: in a `permission` block `for` names the
+		// object granted on, and one word meaning the target in one block and the
+		// grantor in its sibling is a document nobody can skim.
+		r.rawAttr(1, "for_role", r.roleTarget(privilege.Grantor))
+		r.rawAttr(1, "schema", r.schemaRef(privilege.Schema))
+		// Quoted, for the reason every keyword-valued attribute in this file is:
+		// bare, TABLES is an HCL variable reference with nothing behind it.
+		r.stringAttr(1, "object_type", privilege.ObjectType)
+		r.rawAttr(1, "to", r.roleTarget(privilege.Grantee))
+		r.rawAttr(1, "privileges", privilegeList(privilegeNames(privilege.Privileges)))
+		r.rawAttr(1, "grantable", optionalPrivilegeList(grantablePrivilegeNames(privilege.Privileges)))
+		r.stringAttr(1, "comment", privilege.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
+// defaultPrivilegeComplete reports whether a declaration carries everything the
+// statement needs: its four-part identity and at least one privilege.
+func defaultPrivilegeComplete(privilege schemamodel.DefaultPrivilege) bool {
+	return privilege.Grantor != "" &&
+		privilege.Schema != "" &&
+		privilege.ObjectType != "" &&
+		privilege.Grantee != "" &&
+		len(privilege.Privileges) > 0
+}
+
+// privilegeNames is every privilege a declaration grants, grantable or not.
+func privilegeNames(grants []schemamodel.PrivilegeGrant) []string {
+	names := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		names = append(names, grant.Privilege)
+	}
+	return names
+}
+
+// grantablePrivilegeNames is the subset carrying WITH GRANT OPTION.
+//
+// It is a subset of what [privilegeNames] returns rather than a list of its own,
+// which is what the parser checks on the way back: a grantable privilege that is
+// not granted at all renders nothing and compares as a difference no plan can
+// resolve.
+func grantablePrivilegeNames(grants []schemamodel.PrivilegeGrant) []string {
+	names := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		if grant.WithOption {
+			names = append(names, grant.Privilege)
+		}
+	}
+	return names
+}
+
+// optionalPrivilegeList renders a privilege list, and nothing at all for an
+// empty one. Without the empty answer every declaration granting no grant option
+// would carry `grantable = []`, which says what the absent attribute says and
+// reads as a setting its author chose.
+func optionalPrivilegeList(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return privilegeList(values)
+}
+
 func groupRLSEnabledByTable(
 	values []schemamodel.RLSEnabledTable,
 	tables []schemamodel.Table,

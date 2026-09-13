@@ -38,6 +38,7 @@ var routedObjectRows = []struct {
 	{kind: "function", object: "func_probe"},
 	{kind: "trigger", object: "trigger_probe"},
 	{kind: "grant", object: "grant_probe"},
+	{kind: "default privilege", object: "defaultpriv_probe"},
 }
 
 // routedObjectSchema declares one object of every kind in routedObjectRows.
@@ -69,6 +70,16 @@ func routedObjectSchema() *schemamodel.Database {
 		}},
 		Grants: []schemamodel.Grant{{
 			StructName: "G", Role: "grant_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe",
+		}},
+		// The grantee is what this row is measured by: PostgreSQL writes it into
+		// the TO clause, and every renderer that declines the statement names it
+		// in the skip comment. The grantor gets a name of its own for the reason
+		// the grant names its own role -- spelled role_probe it would let the
+		// role row be satisfied by this statement's line.
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+			StructName: "DP", Grantor: "defaultpriv_owner", Schema: "defaultpriv_schema",
+			ObjectType: "TABLES", Grantee: "defaultpriv_probe",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
 	}
 }
@@ -273,6 +284,7 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				"postgres     function  func_probe",
 				"postgres     trigger   trigger_probe",
 				"postgres     grant     grant_probe",
+				"postgres     default privilege defaultpriv_probe",
 			},
 		},
 		{
@@ -341,7 +353,7 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 			},
 		},
 		{
-			name:   "sqlite names the four kinds it has no object for",
+			name:   "sqlite names the five kinds it has no object for",
 			cells:  dialectCells(cells, platform.SQLite),
 			answer: "named",
 			want: []string{
@@ -349,6 +361,7 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				"sqlite       role      role_probe",
 				"sqlite       function  func_probe",
 				"sqlite       grant     grant_probe",
+				"sqlite       default privilege defaultpriv_probe",
 			},
 		},
 		{

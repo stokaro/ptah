@@ -14,9 +14,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/migratesum"
 )
 

@@ -292,6 +292,65 @@
       ],
       "type": "object"
     },
+    "ptah.schema.defaultprivilege": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL default privilege: what a grantee receives on objects a named role creates in a named schema.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Default privilege comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
+            "for_role": {
+              "description": "Role whose newly created objects the privileges apply to. PostgreSQL refuses the statement from a non-member of this role, so it is part of the object's identity rather than a decoration.",
+              "type": "string"
+            },
+            "grantable": {
+              "description": "The subset of privileges carrying WITH GRANT OPTION. A name outside privileges is refused.",
+              "type": "string"
+            },
+            "grantee": {
+              "description": "Role receiving the privileges; PUBLIC names every role.",
+              "type": "string"
+            },
+            "object_type": {
+              "description": "TABLES, SEQUENCES, FUNCTIONS or TYPES.",
+              "type": "string"
+            },
+            "privileges": {
+              "description": "Comma-separated privileges, such as SELECT,INSERT.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Schema the default applies in. The cluster-wide form, written without IN SCHEMA, has no spelling here.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "for_role",
+            "grantee",
+            "object_type",
+            "privileges",
+            "schema"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:defaultprivilege"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.domain": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL domain type.",
@@ -1780,6 +1839,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.grant"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.defaultprivilege"
     },
     {
       "$ref": "#/$defs/ptah.schema.data"

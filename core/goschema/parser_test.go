@@ -233,6 +233,7 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 		{name: "rls_enable", annotation: `//ptah:schema:rls:enable table="users" bogus="x"`},
 		{name: "role", annotation: `//ptah:schema:role name="app" bogus="x"`},
 		{name: "grant", annotation: `//ptah:schema:grant role="app" privilege="SELECT" bogus="x"`},
+		{name: "defaultprivilege", annotation: `//ptah:schema:defaultprivilege for_role="owner" schema="app" object_type="TABLES" grantee="app" privileges="SELECT" bogus="x"`},
 		{name: "data", annotation: `//ptah:schema:data table="countries" key="code" file="countries.yaml" bogus="x"`},
 	}
 

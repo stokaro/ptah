@@ -45,6 +45,7 @@ var routedKinds = []routedKind{
 	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
+	{name: "default privilege", want: 1, count: countNodes[*ast.DefaultPrivilegeNode]},
 }
 
 func countNodes[T ast.Node](statements []ast.Node) int {
@@ -105,6 +106,14 @@ func routingFixture() schemamodel.Database {
 		}},
 		Grants: []schemamodel.Grant{{
 			StructName: "G", Role: "role_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe",
+		}},
+		// The grantee is PUBLIC, which names every role. This grid counts nodes
+		// rather than reading names, so a complete declaration here needs no
+		// role of its own beside the one the role and grant rows use.
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+			StructName: "DP", Grantor: "role_probe", Schema: "public",
+			ObjectType: "TABLES", Grantee: "PUBLIC",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 		}},
 	}
 }

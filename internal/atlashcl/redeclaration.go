@@ -314,6 +314,11 @@ func (p *parser) rejectRedeclarations() error {
 //     the same reason, is written down in schemadir_order.go.
 //   - `permission`. It renders GRANT, which PostgreSQL accepts twice without
 //     error, so a repeat is not a redeclaration.
+//   - `default_privilege`. Two blocks sharing an identity lose nothing:
+//     Deduplicate MERGES their privilege lists rather than dropping the second,
+//     which is what PostgreSQL does with two ALTER DEFAULT PRIVILEGES statements
+//     naming one identity. There is no silent drop here for this ledger to
+//     report.
 //   - `data`. A managed-data block declares no database object; two of them
 //     against one table are two loads, not one object declared twice.
 //

@@ -658,6 +658,35 @@ func (s *scopeSelection) extensionMatches(schema, name string) bool {
 	return false
 }
 
+// defaultPrivilegeSelected keeps a default privilege for as long as its schema
+// is in the projection.
+//
+// It is the schema-grant rule of [scopeSelection.databaseGrantSelected], for the
+// schema-grant reason: a default privilege names no object -- it describes
+// objects that do not exist yet -- so the schema it applies in is the whole of
+// what a selection can decide about it. Where include selectors narrow the
+// projection, naming an object says nothing about a schema-wide default, so one
+// is kept only for a schema --schema named.
+//
+// Both projections call this, which is what makes the two sides of a comparison
+// agree. A rule that kept a default privilege on the live side and dropped it
+// on the desired side reports a revoke nobody asked for, and the other way round
+// a grant.
+func (s *scopeSelection) defaultPrivilegeSelected(schema string) bool {
+	if !s.schemaAllowed(schema) {
+		return false
+	}
+	if len(s.selectors) == 0 {
+		return true
+	}
+	// The effective schema, not the raw one: a default privilege in the
+	// connected schema carries no schema of its own, and comparing "" against
+	// the --schema names would drop exactly the defaults of the schema the run
+	// is pointed at.
+	_, named := s.allowed[strings.TrimSpace(s.effectiveSchema(schema))]
+	return named
+}
+
 // selectedQualifiedName applies the schema universe and include selectors to
 // an object whose only schema qualification is an optional "schema." prefix
 // on its name (generated views, materialized views, functions, and enums).

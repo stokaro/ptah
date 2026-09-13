@@ -254,6 +254,8 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 	diff.RolesRemoved = nil
 	diff.GrantsRemoved = nil
 	diff.GrantOptionsRevoked = nil
+	diff.DefaultPrivilegesRemoved = nil
+	diff.DefaultPrivilegeOptionsRevoked = nil
 	diff.ConstraintsRemoved = matchingConstraintRemovals(
 		diff.ConstraintsRemoved,
 		diff.ConstraintsAdded,

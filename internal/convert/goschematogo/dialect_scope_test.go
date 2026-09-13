@@ -48,8 +48,17 @@ func scopedDatabase() *schemamodel.Database {
 		Triggers: []schemamodel.Trigger{
 			{StructName: "G", Name: "g", Table: "t", Timing: "BEFORE", Event: "INSERT", Dialects: scope},
 		},
-		Roles:            []schemamodel.Role{{StructName: "R", Name: "r", Dialects: scope}},
-		Grants:           []schemamodel.Grant{{StructName: "GR", Role: "r", Privileges: []string{"SELECT"}, OnTable: "t", Dialects: scope}},
+		Roles:  []schemamodel.Role{{StructName: "R", Name: "r", Dialects: scope}},
+		Grants: []schemamodel.Grant{{StructName: "GR", Role: "r", Privileges: []string{"SELECT"}, OnTable: "t", Dialects: scope}},
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+			StructName: "DP",
+			Grantor:    "owner",
+			Schema:     "app",
+			ObjectType: "TABLES",
+			Grantee:    "r",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+			Dialects:   scope,
+		}},
 		RLSPolicies:      []schemamodel.RLSPolicy{{StructName: "T", Name: "p", Table: "t", Dialects: scope}},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "T", Table: "t", Dialects: scope}},
 	}
@@ -83,6 +92,7 @@ func TestRender_EveryScopedObjectKeepsItsDialectScope(t *testing.T) {
 		"ptah:schema:trigger",
 		"ptah:schema:role",
 		"ptah:schema:grant",
+		"ptah:schema:defaultprivilege",
 		"ptah:schema:rls:policy",
 		"ptah:schema:rls:enable",
 	}
@@ -148,6 +158,7 @@ var exportedWithTheirScope = map[string]bool{
 	"Trigger":          true,
 	"Role":             true,
 	"Grant":            true,
+	"DefaultPrivilege": true,
 	"RLSPolicy":        true,
 	"RLSEnabledTable":  true,
 }

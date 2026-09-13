@@ -148,6 +148,21 @@ grants:
     role: app_user
     privileges: [SELECT, INSERT]
     on_table: users
+default_privileges:
+  owner_tables_to_app_user:
+    for_role: app_owner
+    schema: public
+    object_type: tables
+    grantee: app_user
+    privileges: [SELECT, INSERT]
+    grantable: [INSERT]
+    dialects: [postgres]
+  owner_sequences_to_app_user:
+    for_role: app_owner
+    schema: public
+    object_type: SEQUENCES
+    grantee: app_user
+    privileges: USAGE
 tables:
   tenants:
     columns:
@@ -213,6 +228,25 @@ rls_policies:
 	c.Assert(db.Grants[0].Privileges, qt.DeepEquals, []string{"USAGE"})
 	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
 	c.Assert(db.Grants[1].OnTable, qt.Equals, "users")
+	// Sorted by entry key, not by document order: the document writes the
+	// TABLES entry first and "owner_sequences..." sorts before
+	// "owner_tables...", so a builder ranging over the map would land here
+	// roughly half the time.
+	c.Assert(db.DefaultPrivileges, qt.HasLen, 2)
+	c.Assert(db.DefaultPrivileges[0].ObjectType, qt.Equals, "SEQUENCES")
+	c.Assert(db.DefaultPrivileges[0].Grantor, qt.Equals, "app_owner")
+	c.Assert(db.DefaultPrivileges[0].Schema, qt.Equals, "public")
+	c.Assert(db.DefaultPrivileges[0].Grantee, qt.Equals, "app_user")
+	c.Assert(db.DefaultPrivileges[0].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
+		{Privilege: "USAGE"},
+	})
+	c.Assert(db.DefaultPrivileges[0].Dialects, qt.IsNil)
+	c.Assert(db.DefaultPrivileges[1].ObjectType, qt.Equals, "TABLES")
+	c.Assert(db.DefaultPrivileges[1].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
+		{Privilege: "SELECT"},
+		{Privilege: "INSERT", WithOption: true},
+	})
+	c.Assert(db.DefaultPrivileges[1].Dialects, qt.DeepEquals, []string{"postgres"})
 	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(db.RLSPolicies, qt.HasLen, 1)
 	c.Assert(db.Constraints, qt.HasLen, 1)
@@ -227,6 +261,12 @@ rls_policies:
 	c.Assert(sql, qt.Contains, `CREATE POLICY users_tenant_isolation ON users`)
 	c.Assert(sql, qt.Contains, `GRANT USAGE ON SCHEMA public TO app_user;`)
 	c.Assert(sql, qt.Contains, `GRANT SELECT, INSERT ON TABLE users TO app_user;`)
+	// Two statements for the one TABLES entry, because grantability belongs to
+	// the privilege: WITH GRANT OPTION on the whole list would grant SELECT
+	// grantably, which the document did not ask for.
+	c.Assert(sql, qt.Contains, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public GRANT SELECT ON TABLES TO app_user;`)
+	c.Assert(sql, qt.Contains, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public GRANT INSERT ON TABLES TO app_user WITH GRANT OPTION;`)
+	c.Assert(sql, qt.Contains, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public GRANT USAGE ON SEQUENCES TO app_user;`)
 }
 
 func TestParse_TrimsScalarEnumValues(t *testing.T) {
@@ -394,6 +434,159 @@ triggers:
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
+}
+
+// TestParse_RejectsIncompleteDefaultPrivileges covers the refusals a
+// `default_privileges` entry can earn.
+//
+// The grantable row is the one an author reaches by hand. Everything else in
+// the entry is either written or missing, while `grantable` has to agree with a
+// second list beside it: a name outside `privileges` is a privilege marked
+// grantable and not granted, which renders nothing and compares as a difference
+// no plan resolves.
+//
+// The object-type row keeps this reader as strict as the annotation parser. A
+// keyword outside the four would otherwise reach the server as a syntax error
+// in a statement the author did not write.
+func TestParse_RejectsIncompleteDefaultPrivileges(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "grantable names a privilege that is not granted",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT, INSERT]
+    grantable: [UPDATE]
+`,
+			want: `default privilege "owner_tables" marks "UPDATE" grantable, which is not in privileges`,
+		},
+		{
+			name: "missing grantor",
+			yaml: `
+default_privileges:
+  owner_tables:
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT]
+`,
+			want: `default privilege "owner_tables" requires for_role`,
+		},
+		{
+			name: "missing schema",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT]
+`,
+			want: `default privilege "owner_tables" requires schema`,
+		},
+		{
+			name: "missing grantee",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    privileges: [SELECT]
+`,
+			want: `default privilege "owner_tables" requires grantee`,
+		},
+		{
+			name: "missing privileges",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+`,
+			want: `default privilege "owner_tables" requires privileges`,
+		},
+		{
+			name: "object type outside the four",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLE
+    grantee: app_user
+    privileges: [SELECT]
+`,
+			want: `default privilege "owner_tables" has unsupported object_type "TABLE", expected one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,
+		},
+		{
+			name: "dialects written with nothing in it",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT]
+    dialects: []
+`,
+			want: `default privilege "owner_tables" dialects: names no dialect`,
+		},
+		{
+			name: "dialects naming no supported dialect",
+			yaml: `
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT]
+    dialects: postgress
+`,
+			want: `default privilege "owner_tables" dialects: "postgress" names no supported dialect`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := yamlschema.Parse([]byte(tt.yaml))
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			c.Assert(db, qt.IsNil)
+		})
+	}
+}
+
+// TestParse_DefaultPrivilegeWithoutDialectsReachesEveryDialect is the control
+// beside the two dialects refusals: they must close on a scope that names
+// nothing, not on the key being read at all.
+func TestParse_DefaultPrivilegeWithoutDialectsReachesEveryDialect(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := yamlschema.Parse([]byte(`
+default_privileges:
+  owner_tables:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_user
+    privileges: [SELECT]
+`))
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.DefaultPrivileges, qt.HasLen, 1)
+	c.Assert(db.DefaultPrivileges[0].Dialects, qt.IsNil)
 }
 
 func TestParse_RejectsUnknownColumnAttributes(t *testing.T) {

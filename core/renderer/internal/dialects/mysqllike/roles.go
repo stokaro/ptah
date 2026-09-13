@@ -103,6 +103,24 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 }
 
 // VisitRevokePrivilege renders REVOKE.
+// ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
+// pg_default_acl, the privileges an object gets when a named role creates one.
+// No other engine here has a catalog for that, and the nearest thing on each --
+// granting on the schema, or on every object in it -- applies to what exists
+// rather than to what is created next. So the declaration is named and skipped
+// rather than approximated with a statement that means something else.
+func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	r.notGenerated("default privilege", node.Grantee)
+	return nil
+}
+
+// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// [Renderer.VisitDefaultPrivilege] carries.
+func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	r.notGenerated("default privilege", node.Grantee)
+	return nil
+}
+
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("revoke", node.Role)

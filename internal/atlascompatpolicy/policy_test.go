@@ -205,6 +205,7 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "row-level security settings", database: &schemamodel.Database{RLSEnabledTables: []schemamodel.RLSEnabledTable{{}}}},
 		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
 		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
+		{name: "default privileges", database: &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{}}}},
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
 		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Partition: &schemamodel.PartitionSpec{}}}}},
@@ -437,6 +438,36 @@ func TestStrictCEValidatesUnlistedLiveSchemaCleanObjects(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support cleaning live schema triggers`)
 	c.Assert(atlascompatpolicy.Full().ValidateSchemaCleanSnapshot(database), qt.IsNil)
+}
+
+// TestStrictCERefusesCleaningLiveDefaultPrivileges covers the cleanup-snapshot
+// list, which the desired-schema table above cannot reach. A default privilege
+// is not one of the named objects a cleanup plan lists, so a desired-schema
+// entry on its own would leave strict `schema clean` destroying an object
+// strict mode says it does not model.
+func TestStrictCERefusesCleaningLiveDefaultPrivileges(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+		Grantor:    "app_owner",
+		Schema:     "app",
+		ObjectType: "TABLES",
+		Grantee:    "app_reader",
+		Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+	}}}
+
+	err := atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(database)
+
+	c.Assert(err, qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support cleaning live schema default privileges`)
+	c.Assert(atlascompatpolicy.Full().ValidateSchemaCleanSnapshot(database), qt.IsNil)
+	// The inspected path shares the desired-schema list and no baseline filter
+	// touches it: a carve-out added by analogy with plpgsql or the PUBLIC USAGE
+	// grant would drop the authored row and redden this assertion.
+	c.Assert(atlascompatpolicy.StrictCE().ValidateInspectedSchema(database), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspected schema default privileges`)
+	// A stock PostgreSQL database carries no pg_default_acl rows, so strict mode
+	// accepts an ordinary cleanup snapshot without a carve-out.
+	c.Assert(atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(&schemamodel.Database{}), qt.IsNil)
 }
 
 func TestStrictCEUnknownHCLPolicy(t *testing.T) {

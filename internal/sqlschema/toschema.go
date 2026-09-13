@@ -685,6 +685,9 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	if appendRoutine(database, stmt) {
 		return nil
 	}
+	if appendPrivilegeDeclaration(database, stmt) {
+		return nil
+	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
 		database.Schemas = append(database.Schemas, schemamodel.Schema{
@@ -717,8 +720,6 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 		database.Sequences = append(database.Sequences, toSequence(node))
 	case *ast.CreateRoleNode:
 		database.Roles = append(database.Roles, toRole(node))
-	case *ast.GrantPrivilegeNode:
-		database.Grants = append(database.Grants, toGrant(node))
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node))
 	case *ast.AlterTableEnableRLSNode:
@@ -726,13 +727,15 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	case *ast.CommentNode:
 		applyRoleComment(database, node)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
-		*ast.PostgresDoBlockNode, *ast.RawSQLNode:
+		*ast.RevokeDefaultPrivilegeNode, *ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
 		// schemamodel.Database is what a schema SHOULD contain, and none of
 		// these names an object it would contain. A CREATE DATABASE names the
 		// database this model already is; a DROP names an object by its
-		// absence, which the desired schema expresses by not declaring it; a DO
-		// block and a raw statement do work rather than declare a thing.
+		// absence, which the desired schema expresses by not declaring it; an
+		// ALTER DEFAULT PRIVILEGES ... REVOKE names a privilege the same way,
+		// by taking it back; a DO block and a raw statement do work rather than
+		// declare a thing.
 		//
 		// Written out rather than left to fall through, so that the default
 		// below means "nobody decided" and not "somebody decided not to".
@@ -803,6 +806,30 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
 		database.Functions = append(database.Functions, toSQLServerRoutine(node))
 	case *ast.MySQLRoutineNode:
 		database.Functions = append(database.Functions, toMySQLRoutine(node))
+	default:
+		return false
+	}
+	return true
+}
+
+// appendPrivilegeDeclaration records the statements that declare access, and
+// reports whether it recognized one.
+//
+// Separate from the statement switch for the reason [appendRoutine] is: two
+// more cases take that function past the cyclomatic threshold, and these two
+// answer one question -- what access the schema grants, on the objects it has
+// and on the objects a role will create in it.
+//
+// The sentence above appendStatement holds here too. A node kind with a case in
+// neither function is refused by that switch's default, so nothing is dropped
+// by falling through; a node kind this package decides not to model says so
+// there, in a case of its own.
+func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node) bool {
+	switch node := stmt.(type) {
+	case *ast.GrantPrivilegeNode:
+		database.Grants = append(database.Grants, toGrant(node))
+	case *ast.DefaultPrivilegeNode:
+		database.DefaultPrivileges = append(database.DefaultPrivileges, toDefaultPrivilege(node))
 	default:
 		return false
 	}

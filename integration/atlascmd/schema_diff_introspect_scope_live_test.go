@@ -14,9 +14,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/atlas"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"

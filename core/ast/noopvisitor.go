@@ -69,5 +69,7 @@ func (NoopVisitor) VisitDropRole(*DropRoleNode) error                           
 func (NoopVisitor) VisitAlterRole(*AlterRoleNode) error                             { return nil }
 func (NoopVisitor) VisitGrantPrivilege(*GrantPrivilegeNode) error                   { return nil }
 func (NoopVisitor) VisitRevokePrivilege(*RevokePrivilegeNode) error                 { return nil }
+func (NoopVisitor) VisitDefaultPrivilege(*DefaultPrivilegeNode) error               { return nil }
+func (NoopVisitor) VisitRevokeDefaultPrivilege(*RevokeDefaultPrivilegeNode) error   { return nil }
 func (NoopVisitor) VisitRawSQL(*RawSQLNode) error                                   { return nil }
 func (NoopVisitor) VisitUpsert(*UpsertNode) error                                   { return nil }

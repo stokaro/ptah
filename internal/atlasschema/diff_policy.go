@@ -102,6 +102,11 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 	filtered.GrantsRemoved = slices.DeleteFunc(slices.Clone(filtered.GrantsRemoved), func(ref difftypes.GrantRef) bool {
 		return strings.EqualFold(ref.ObjectType, "TABLE") && hasTable(removedTables, ref.ObjectName)
 	})
+	// Default privileges are absent from this function on purpose. Every removal
+	// it prunes is keyed to a dropped table, and dropping a table removes
+	// nothing from pg_default_acl: a default privilege belongs to a schema and
+	// an object type, and it decides what a table created later receives.
+	// Pruning one here would suppress a removal the desired state asked for.
 	return &filtered
 }
 

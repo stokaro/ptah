@@ -94,6 +94,19 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 	}
 }
 
+// derivedNodeKinds are the AST node kinds the routing fixture causes without
+// declaring an object of that kind.
+//
+// A default privilege names the schema it applies in, and the fixture declares
+// no schema of its own. Both surfaces turn that name into a namespace: the
+// render appends it through schemasForRender, and the plan emits it as a
+// precondition, because `ALTER DEFAULT PRIVILEGES ... IN SCHEMA` against a
+// schema the server does not hold fails with SQLSTATE 3F000.
+//
+// They are counted here rather than added to routedKinds, which is the census
+// of DECLARED object kinds and excludes namespaces on purpose.
+var derivedNodeKinds = []string{"CreateSchemaNode"}
+
 // assertRenderAndPlanAgree is the per-dialect body.
 //
 // It lives here rather than inline because a target that cannot create a
@@ -129,12 +142,13 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	// Non-vacuity: two empty censuses are equal. The fixture declares one
 	// object of every kind in routedKinds, and each of those kinds is one
 	// AST node kind, so a surface that carried them all reports exactly
-	// that many rows.
+	// that many rows, plus the kinds below that the fixture causes without
+	// declaring.
 	//
 	// Check rather than Assert so a surface that lost a kind still reaches
 	// the comparison below, which is the assertion that names which kind
 	// went missing on which side.
-	c.Check(renderCensus, qt.HasLen, len(routedKinds),
+	c.Check(renderCensus, qt.HasLen, len(routedKinds)+len(derivedNodeKinds),
 		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
 
 	c.Assert(planCensus, qt.DeepEquals, renderCensus,

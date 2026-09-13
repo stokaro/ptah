@@ -99,6 +99,10 @@ type Visitor interface {
 	VisitGrantPrivilege(*GrantPrivilegeNode) error
 	// VisitRevokePrivilege renders a REVOKE statement (PostgreSQL-specific)
 	VisitRevokePrivilege(*RevokePrivilegeNode) error
+	// VisitDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... GRANT statement (PostgreSQL-specific)
+	VisitDefaultPrivilege(*DefaultPrivilegeNode) error
+	// VisitRevokeDefaultPrivilege renders an ALTER DEFAULT PRIVILEGES ... REVOKE statement (PostgreSQL-specific)
+	VisitRevokeDefaultPrivilege(*RevokeDefaultPrivilegeNode) error
 	// VisitRawSQL renders a literal SQL fragment verbatim. Use sparingly —
 	// reach for structured nodes first.
 	VisitRawSQL(*RawSQLNode) error

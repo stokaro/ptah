@@ -134,6 +134,18 @@ func scopedKinds() []scopedKind {
 			},
 			count: func(db *schemamodel.Database) int { return len(db.Grants) },
 		},
+		{
+			name: "DefaultPrivileges",
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+					StructName: "DP", Grantor: "app_owner", Schema: "app",
+					ObjectType: "TABLES", Grantee: "app_reader",
+					Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+					Dialects:   scope,
+				}}
+			},
+			count: func(db *schemamodel.Database) int { return len(db.DefaultPrivileges) },
+		},
 	}
 }
 

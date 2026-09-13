@@ -28,6 +28,7 @@ func NewDatabase() *Database {
 		ContinuousAggregates: make([]ContinuousAggregate, 0),
 		Roles:                make([]Role, 0),
 		Grants:               make([]Grant, 0),
+		DefaultPrivileges:    make([]DefaultPrivilege, 0),
 		ManagedData:          make([]ManagedData, 0),
 		EmbeddedSources: EmbeddedSources{
 			Fields:      make([]Field, 0),
@@ -76,6 +77,7 @@ func AppendDatabase(dst, src *Database) {
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 }
 

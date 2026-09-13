@@ -145,6 +145,10 @@ func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *difftypes.Sche
 // renderer turns each into a comment -- so a privilege list or a policy body
 // would be detail nobody reads.
 func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// Outside the gate below, because no target this planner serves has
+	// ALTER DEFAULT PRIVILEGES however much of the rest of access control it
+	// manages. A target that plans a real GRANT still has nothing to plan here.
+	result = p.reportUnsupportedDefaultPrivileges(result, diff)
 	if p.capabilities().Has(capability.RoleManagement) {
 		// Grants are planned as real DDL; RLS is not, and the two are split
 		// below so a target that manages roles still reports the policy it
@@ -160,6 +164,30 @@ func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *diffty
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
 	}
 	return p.reportUnsupportedRowLevelSecurity(result, diff)
+}
+
+// reportUnsupportedDefaultPrivileges names the default privileges no target in
+// this family hosts.
+//
+// ALTER DEFAULT PRIVILEGES records, in pg_default_acl, what an object gets when
+// a named role creates one. MySQL, MariaDB, SQL Server and Oracle have no
+// catalog for that, and the nearest statement on each applies to what exists
+// rather than to what is created next, so there is nothing to approximate it
+// with and every renderer here answers the node with a named skip.
+//
+// Every diff category is read. One the loops miss is a declaration that
+// produces no statement and no diagnostic, which is the silent drop this file
+// exists to prevent.
+func (p *Planner) reportUnsupportedDefaultPrivileges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, privilege := range slices.Concat(diff.DefaultPrivilegesAdded, diff.DefaultPrivilegeOptionsAdded) {
+		result = append(result, ast.NewDefaultPrivilege(
+			privilege.Grantor, privilege.Schema, privilege.ObjectType, privilege.Grantee, nil))
+	}
+	for _, privilege := range slices.Concat(diff.DefaultPrivilegesRemoved, diff.DefaultPrivilegeOptionsRevoked) {
+		result = append(result, ast.NewRevokeDefaultPrivilege(
+			privilege.Grantor, privilege.Schema, privilege.ObjectType, privilege.Grantee, nil))
+	}
+	return result
 }
 
 // reportUnsupportedRowLevelSecurity names the row-level security no target in

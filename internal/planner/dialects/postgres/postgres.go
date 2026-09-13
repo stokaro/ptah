@@ -455,9 +455,10 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 // The schema is taken from the qualified name each comparison already puts on
 // the diff -- tables, enums, domains, composites, ranges, sequences, functions,
 // views, materialized views and a trigger's target relation are all named that
-// way. Extensions keep installation schema on their desired definitions, so
-// their additions contribute that exact identifier directly. Names that carry
-// no schema contribute none, which is every name on a single-schema migration.
+// way. Extensions keep installation schema on their desired definitions, and a
+// default privilege keeps the schema its IN SCHEMA clause names, so both
+// contribute that exact identifier directly. Names that carry no schema
+// contribute none, which is every name on a single-schema migration.
 func (p *Planner) addSchemaPreconditions(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
@@ -508,6 +509,26 @@ func (p *Planner) addSchemaPreconditions(
 		if _, ok := seen[extension.Schema]; !ok {
 			seen[extension.Schema] = struct{}{}
 			schemas = append(schemas, extension.Schema)
+		}
+	}
+	// A default privilege names its schema in the IN SCHEMA clause rather than
+	// qualifying an object name, so it contributes that name the way an
+	// extension contributes its installation schema. Read through tableref.Parse
+	// above it would contribute nothing -- a bare name is not qualified -- and
+	// the ALTER would run against a schema the plan never created:
+	// `ERROR: schema "app" does not exist (SQLSTATE 3F000)`.
+	//
+	// The additions alone. A privilege the database already holds, and a
+	// privilege being revoked, both name a schema that has to exist for the
+	// catalog row to exist.
+	for _, privilege := range diff.DefaultPrivilegesAdded {
+		schema := strings.TrimSpace(privilege.Schema)
+		if schema == "" || systemschema.IsUncreatableSchema(p.dialect, schema) {
+			continue
+		}
+		if _, ok := seen[schema]; !ok {
+			seen[schema] = struct{}{}
+			schemas = append(schemas, schema)
 		}
 	}
 	slices.Sort(schemas)
@@ -1747,6 +1768,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.removeGrants(result, diff)
 	result = p.revokeGrantOptions(result, diff)
 
+	// 7.6. Revoke removed default privileges. The position is a correctness
+	// requirement and not a grouping: PostgreSQL refuses to drop a role that
+	// still holds a default ACL entry, so this has to reach the server before
+	// step 14 below drops the role. A plan carrying the revoke after the DROP
+	// ROLE renders, lints and passes every offline test; only a live apply
+	// shows it.
+	result = p.removeDefaultPrivileges(result, diff)
+	result = p.revokeDefaultPrivilegeOptions(result, diff)
+
 	// 8. Enable RLS on tables (must be done after table creation and modification)
 	result = p.enableRLSOnTables(result, diff, semantics)
 
@@ -1762,6 +1792,12 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
 	result = p.addNewGrants(result, diff)
+
+	// 9.6. Add default privileges. The statement names a schema and two roles,
+	// so it follows the schema preconditions at step 0, addNewRoles at step 1
+	// and modifyExistingRoles at step 7: the grantor and the grantee exist by
+	// now, and so does the schema the defaults apply in.
+	result = p.addNewDefaultPrivileges(result, diff)
 
 	// 10. Add new indexes
 	result, err = p.addNewIndexes(result, diff)
@@ -2039,6 +2075,79 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 		result = append(result, node)
 	}
 	return result
+}
+
+// addNewDefaultPrivileges plans the ALTER DEFAULT PRIVILEGES ... GRANT for each
+// default privilege the declaration adds, and for each one the database already
+// holds whose WITH GRANT OPTION the declaration now asks for.
+//
+// One node per privilege, which is the grain the comparison works at: the
+// catalog records grantability per privilege, so one identity can hold a
+// grantable privilege beside a plain one.
+//
+// SetWithOption(true) on the second loop is the whole meaning of that
+// statement. A DefaultPrivilegeOptionsAdded entry describes a privilege both
+// sides hold, differing only in the grant option, so a GRANT written without
+// the option re-issues what the server already has: the statement succeeds, the
+// option stays off, and the next comparison asks for the same change again.
+func (p *Planner) addNewDefaultPrivileges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, privilege := range diff.DefaultPrivilegesAdded {
+		result = append(result, defaultPrivilegeGrantNode(privilege, privilege.WithOption))
+	}
+	for _, privilege := range diff.DefaultPrivilegeOptionsAdded {
+		result = append(result, defaultPrivilegeGrantNode(privilege, true))
+	}
+	return result
+}
+
+// removeDefaultPrivileges plans the revoke for each default privilege the
+// database holds and the declaration does not.
+//
+// It is an ALTER DEFAULT PRIVILEGES ... REVOKE and never a DROP. pg_default_acl
+// offers nothing to drop: the row is the privilege list, and it disappears when
+// its last privilege goes.
+func (p *Planner) removeDefaultPrivileges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, privilege := range diff.DefaultPrivilegesRemoved {
+		result = append(result, defaultPrivilegeRevokeNode(privilege))
+	}
+	return result
+}
+
+// revokeDefaultPrivilegeOptions plans the downgrade that takes WITH GRANT
+// OPTION away and leaves the privilege in place.
+//
+// GRANT OPTION FOR is what separates the two statements: the same statement
+// without the clause takes away the privilege the declaration still asks for,
+// and the next comparison then asks for it back.
+func (p *Planner) revokeDefaultPrivilegeOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, privilege := range diff.DefaultPrivilegeOptionsRevoked {
+		result = append(result, defaultPrivilegeRevokeNode(privilege).SetGrantOptionFor(true))
+	}
+	return result
+}
+
+// defaultPrivilegeGrantNode builds the GRANT node for one default-privilege
+// reference, with the grantability the caller decided.
+func defaultPrivilegeGrantNode(ref difftypes.DefaultPrivilegeRef, withOption bool) *ast.DefaultPrivilegeNode {
+	return ast.NewDefaultPrivilege(
+		ref.Grantor,
+		ref.Schema,
+		ref.ObjectType,
+		ref.Grantee,
+		[]ast.DefaultPrivilege{{Privilege: ref.Privilege, WithOption: withOption}},
+	)
+}
+
+// defaultPrivilegeRevokeNode is [defaultPrivilegeGrantNode] for the statement
+// that takes a default privilege back.
+func defaultPrivilegeRevokeNode(ref difftypes.DefaultPrivilegeRef) *ast.RevokeDefaultPrivilegeNode {
+	return ast.NewRevokeDefaultPrivilege(
+		ref.Grantor,
+		ref.Schema,
+		ref.ObjectType,
+		ref.Grantee,
+		[]string{ref.Privilege},
+	)
 }
 
 func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {

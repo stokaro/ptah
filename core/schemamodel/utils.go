@@ -362,6 +362,9 @@ func NormalizeTableScopedNames(r *Database) {
 			grant.OnTable = table.QualifiedName()
 		}
 	}
+	for i := range r.DefaultPrivileges {
+		r.DefaultPrivileges[i].Canonicalize()
+	}
 	for i := range r.Triggers {
 		trigger := &r.Triggers[i]
 		if table := resolveTableReference(r.Tables, trigger.StructName, trigger.Table); table != nil {
@@ -1246,6 +1249,8 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Triggers: Deduplicated by table name + trigger name combination
 //   - Constraints: Deduplicated by explicit table + name, or declaring struct + name when table is omitted
 //   - Grants: Deduplicated by role + privileges + grant option + (table or schema) target
+//   - DefaultPrivileges: Deduplicated by grantor + schema + object type + grantee,
+//     merging the privilege lists of the declarations that share one identity
 //   - Roles: Deduplicated by role name
 //   - Schemas: Deduplicated by schema name
 //   - RLS policies: Deduplicated by resolved table + policy name combination
@@ -1543,6 +1548,7 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Triggers = deduplicateTriggers(r.Triggers)
 	r.Constraints = deduplicateConstraints(r.Constraints)
 	r.Grants = deduplicateGrants(r.Grants)
+	r.DefaultPrivileges = deduplicateDefaultPrivileges(r.DefaultPrivileges)
 	r.Roles = deduplicateRoles(r.Roles)
 }
 
@@ -1744,6 +1750,63 @@ func newGrantKey(g Grant) grantKey {
 		onSchema:   g.OnSchema,
 		onSequence: g.OnSequence,
 		withOption: g.WithOption,
+	}
+}
+
+// deduplicateDefaultPrivileges dedups by the object's identity alone --
+// grantor, schema, object type and grantee -- and merges the privilege lists of
+// the declarations that share one.
+//
+// The grant sibling puts its privilege list and grant option INTO the key, so
+// two declarations for one target both survive. That is wrong here: the catalog
+// holds one merged ACL per identity, so two surviving declarations would be
+// compared against one row forever. Merging is what pg_default_acl itself does
+// with two statements naming the same identity.
+func deduplicateDefaultPrivileges(privileges []DefaultPrivilege) []DefaultPrivilege {
+	position := make(map[defaultPrivilegeKey]int, len(privileges))
+	deduplicated := make([]DefaultPrivilege, 0, len(privileges))
+	for _, privilege := range privileges {
+		privilege.Canonicalize()
+		key := newDefaultPrivilegeKey(privilege)
+		index, seen := position[key]
+		if !seen {
+			position[key] = len(deduplicated)
+			deduplicated = append(deduplicated, privilege)
+			continue
+		}
+		merged := deduplicated[index]
+		merged.Privileges = append(merged.Privileges, privilege.Privileges...)
+		merged.Canonicalize()
+		deduplicated[index] = merged
+	}
+	return deduplicated
+}
+
+// defaultPrivilegeKey is the identity deduplicateDefaultPrivileges compares on.
+//
+// A struct rather than a joined string, for the reason [grantKey] carries:
+// Canonicalize trims and upper-cases the components, it does not reject a role
+// or schema name holding whatever separator a joined key would pick.
+//
+// Dialects is deliberately absent, matching [newGrantKey]. Deduplicate runs on
+// the unscoped database, so two declarations for one identity scoped to
+// different targets are one object whose privileges merge -- and the scope of
+// the first declaration is what survives. A declaration that means to reach one
+// target and not another says so by naming a different grantee or object type,
+// which is a different object.
+type defaultPrivilegeKey struct {
+	grantor    string
+	schema     string
+	objectType string
+	grantee    string
+}
+
+func newDefaultPrivilegeKey(d DefaultPrivilege) defaultPrivilegeKey {
+	return defaultPrivilegeKey{
+		grantor:    d.Grantor,
+		schema:     d.Schema,
+		objectType: d.ObjectType,
+		grantee:    d.Grantee,
 	}
 }
 

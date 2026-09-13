@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/migrationartifact"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/migration/migrationfile"

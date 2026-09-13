@@ -90,27 +90,28 @@ func annotationScopeError(removal removedLine, directive annotationmeta.Directiv
 type representationMatcher func(removedLine, *schemamodel.Database, *schemamodel.Database) bool
 
 var representationMatchers = map[string]representationMatcher{
-	"ptah:schema:field":      fieldRepresented,
-	"ptah:embedded":          embeddedRepresented,
-	"ptah:schema:index":      indexRepresented,
-	"ptah:schema:table":      tableRepresented,
-	"ptah:schema:schema":     schemaRepresented,
-	"ptah:schema:constraint": constraintRepresented,
-	"ptah:schema:enum":       enumRepresented,
-	"ptah:schema:extension":  extensionRepresented,
-	"ptah:schema:function":   functionRepresented,
-	"ptah:schema:sequence":   sequenceRepresented,
-	"ptah:schema:domain":     domainRepresented,
-	"ptah:schema:composite":  compositeRepresented,
-	"ptah:schema:range":      rangeRepresented,
-	"ptah:schema:view":       viewRepresented,
-	"ptah:schema:matview":    materializedViewRepresented,
-	"ptah:schema:trigger":    triggerRepresented,
-	"ptah:schema:rls:policy": rlsPolicyDirectiveRepresented,
-	"ptah:schema:rls:enable": rlsEnableRepresented,
-	"ptah:schema:role":       roleRepresented,
-	"ptah:schema:grant":      grantRepresented,
-	"ptah:schema:data":       dataRepresented,
+	"ptah:schema:field":            fieldRepresented,
+	"ptah:embedded":                embeddedRepresented,
+	"ptah:schema:index":            indexRepresented,
+	"ptah:schema:table":            tableRepresented,
+	"ptah:schema:schema":           schemaRepresented,
+	"ptah:schema:constraint":       constraintRepresented,
+	"ptah:schema:enum":             enumRepresented,
+	"ptah:schema:extension":        extensionRepresented,
+	"ptah:schema:function":         functionRepresented,
+	"ptah:schema:sequence":         sequenceRepresented,
+	"ptah:schema:domain":           domainRepresented,
+	"ptah:schema:composite":        compositeRepresented,
+	"ptah:schema:range":            rangeRepresented,
+	"ptah:schema:view":             viewRepresented,
+	"ptah:schema:matview":          materializedViewRepresented,
+	"ptah:schema:trigger":          triggerRepresented,
+	"ptah:schema:rls:policy":       rlsPolicyDirectiveRepresented,
+	"ptah:schema:rls:enable":       rlsEnableRepresented,
+	"ptah:schema:role":             roleRepresented,
+	"ptah:schema:grant":            grantRepresented,
+	"ptah:schema:defaultprivilege": defaultPrivilegeRepresented,
+	"ptah:schema:data":             dataRepresented,
 }
 
 func annotationRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
@@ -217,6 +218,56 @@ func grantRepresented(removal removedLine, _, exportedDB *schemamodel.Database) 
 			grant.OnSchema == removal.values["on_schema"] &&
 			grant.OnSequence == removal.values["on_sequence"]
 	})
+}
+
+// defaultPrivilegeRepresented reports whether the exported schema carries the
+// default privilege the removed annotation declared.
+//
+// The declaration is put through the model's own canonicalization before the
+// comparison instead of being compared as written. The parser upper-cases the
+// object type and every privilege name, so an annotation spelling either in
+// lower case would match nothing here -- and because representationMatchers
+// fails closed, "matched nothing" is indistinguishable from "the directive
+// produced no object at all" and refuses a cleanup that is in fact safe.
+func defaultPrivilegeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	declared := schemamodel.DefaultPrivilege{
+		Grantor:    removal.values["for_role"],
+		Schema:     removal.values["schema"],
+		ObjectType: removal.values["object_type"],
+		Grantee:    removal.values["grantee"],
+		Privileges: declaredPrivilegeGrants(removal.values),
+	}
+	declared.Canonicalize()
+	return slices.ContainsFunc(exportedDB.DefaultPrivileges, func(privilege schemamodel.DefaultPrivilege) bool {
+		return privilege.Grantor == declared.Grantor &&
+			privilege.Schema == declared.Schema &&
+			privilege.ObjectType == declared.ObjectType &&
+			privilege.Grantee == declared.Grantee &&
+			slices.Equal(privilege.Privileges, declared.Privileges)
+	})
+}
+
+// declaredPrivilegeGrants folds the annotation's privileges and grantable lists
+// into the pairs the model holds.
+//
+// The Go annotation parser owns the same fold and refuses a grantable name that
+// is absent from privileges; this side cannot call that one across the package
+// boundary and has no refusal to make, so a name outside privileges is simply
+// not represented here and the comparison above rejects the declaration.
+func declaredPrivilegeGrants(values map[string]string) []schemamodel.PrivilegeGrant {
+	grantable := make(map[string]bool)
+	for _, name := range splitAnnotationList(values["grantable"]) {
+		grantable[strings.ToUpper(name)] = true
+	}
+	privileges := splitAnnotationList(values["privileges"])
+	grants := make([]schemamodel.PrivilegeGrant, 0, len(privileges))
+	for _, name := range privileges {
+		grants = append(grants, schemamodel.PrivilegeGrant{
+			Privilege:  name,
+			WithOption: grantable[strings.ToUpper(name)],
+		})
+	}
+	return grants
 }
 
 func dataRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {

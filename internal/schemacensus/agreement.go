@@ -101,6 +101,10 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the same leading `--` line, above GRANT",
 		},
 		{
+			Field: "schemamodel.DefaultPrivilege.Comment", RenderOnly: true,
+			Reason: "the same leading `--` line, above ALTER DEFAULT PRIVILEGES",
+		},
+		{
 			Field: "schemamodel.RLSEnabledTable.Comment", RenderOnly: true,
 			Reason: "the same leading `--` line, above ALTER TABLE ... ENABLE ROW LEVEL SECURITY",
 		},

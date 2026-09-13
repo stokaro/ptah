@@ -1172,6 +1172,68 @@ func TestExport_FailurePath_RejectsCleanupModesWithoutCleanup(t *testing.T) {
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 }
 
+// TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges drives the
+// export path over a tree that declares nothing but this family.
+//
+// Without the family's term in the object count the export refuses the tree
+// with ErrNoAnnotations, because no other declaration is here to carry it.
+// Without its entry in the cleanup representation table the export renders the
+// HCL and then refuses to remove the annotation it just represented: that table
+// fails closed, so a missing entry reads as "this directive produced nothing".
+// The lower-case row covers what canonicalization is for: the parser
+// upper-cases the object type and every privilege name, so a matcher comparing
+// the annotation as written would refuse that spelling alone.
+func TestExport_HappyPath_CleansAGoTreeDeclaringOnlyDefaultPrivileges(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{
+			name:       "written in the spelling the model keeps",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT,INSERT" grantable="INSERT"`,
+		},
+		{
+			name:       "written in lower case",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="tables" grantee="app_reader" privileges="select,insert" grantable="insert"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := t.TempDir()
+			source := filepath.Join(root, "models.go")
+			c.Assert(os.WriteFile(
+				source,
+				[]byte("package models\n\n"+test.annotation+"\ntype AccessControl struct{}\n"),
+				0o600,
+			), qt.IsNil)
+			output := filepath.Join(root, "schema.hcl")
+
+			result, err := goannotationexport.Export(goannotationexport.Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Diagnostics, qt.HasLen, 0)
+			c.Assert(result.Cleanup, qt.HasLen, 1)
+			assertFileBytes(c, source, []byte("package models\n\ntype AccessControl struct{}\n"))
+			outputData, err := os.ReadFile(output)
+			c.Assert(err, qt.IsNil)
+			parsed, err := atlashcl.Parse(outputData, output)
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.DefaultPrivileges, qt.HasLen, 1)
+			c.Assert(parsed.DefaultPrivileges[0].ObjectType, qt.Equals, "TABLES")
+			c.Assert(parsed.DefaultPrivileges[0].Privileges, qt.DeepEquals, []schemamodel.PrivilegeGrant{
+				{Privilege: "SELECT"},
+				{Privilege: "INSERT", WithOption: true},
+			})
+		})
+	}
+}
+
 func writeSimpleModel(c *qt.C, root string) string {
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models

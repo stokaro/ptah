@@ -316,6 +316,12 @@ func (a *SchemaAnalyzer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error
 func (a *SchemaAnalyzer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return nil
 }
+func (a *SchemaAnalyzer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	return nil
+}
 func (a *SchemaAnalyzer) VisitRawSQL(node *ast.RawSQLNode) error { return nil }
 func (a *SchemaAnalyzer) VisitUpsert(node *ast.UpsertNode) error { return nil }
 

@@ -82,6 +82,42 @@ tables:
 	// );
 }
 
+// ExampleParse_defaultPrivileges shows how the two lists a `default_privileges`
+// entry writes reach the model as one list of pairs.
+//
+// `grantable` names the subset of `privileges` carrying WITH GRANT OPTION, so
+// the entry below describes SELECT granted plainly and INSERT granted with the
+// option. PostgreSQL records grantability per privilege and renders the pair as
+// two statements; a single flag over the whole entry could only say that both
+// privileges are grantable or that neither is.
+func ExampleParse_defaultPrivileges() {
+	document := []byte(`
+default_privileges:
+  owner_tables_to_reader:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_reader
+    privileges: [SELECT, INSERT]
+    grantable: [INSERT]
+`)
+
+	db := must.Must(yamlschema.Parse(document))
+
+	for _, privilege := range db.DefaultPrivileges {
+		fmt.Printf("%s in %s for %s to %s\n",
+			privilege.ObjectType, privilege.Schema, privilege.Grantor, privilege.Grantee)
+		for _, granted := range privilege.Privileges {
+			fmt.Printf("  %s grantable=%t\n", granted.Privilege, granted.WithOption)
+		}
+	}
+
+	// Output:
+	// TABLES in public for app_owner to app_reader
+	//   SELECT grantable=false
+	//   INSERT grantable=true
+}
+
 // ExampleParseFile reads the same document from a path. A schema file is the
 // usual case: ParseFile is what `ptah schema render --schema-file schema.yaml`
 // reaches.

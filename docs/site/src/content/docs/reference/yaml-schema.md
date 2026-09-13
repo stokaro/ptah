@@ -79,6 +79,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `rls_policies` | Row-level security policies. |
 | `roles` | PostgreSQL role declarations. |
 | `grants` | Table or schema permission grants. |
+| `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
@@ -126,6 +127,44 @@ extensions:
     schema: extensions
     if_not_exists: true
 ```
+
+## Default privileges
+
+Each entry under `default_privileges` declares one PostgreSQL default
+privilege. The map key names the entry in error messages and nothing else: a
+default privilege has no name of its own, and `for_role`, `schema`,
+`object_type` and `grantee` together identify it.
+
+| Key | Meaning |
+| --- | --- |
+| `for_role` | Role whose newly created objects the privileges apply to. Required. |
+| `schema` | Schema the default applies in. Required. |
+| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`. Required. |
+| `grantee` | Role receiving the privileges. `PUBLIC` names every role. Required. |
+| `privileges` | Privileges granted, such as `SELECT`. Required. |
+| `grantable` | The subset of `privileges` carrying `WITH GRANT OPTION`. A name outside `privileges` is refused. |
+| `comment` | Default privilege comment. |
+| `dialects` | Target dialects this entry belongs to. Written with no dialect in it, it is refused rather than read as every dialect. |
+
+```yaml
+default_privileges:
+  owner_tables_to_reader:
+    for_role: app_owner
+    schema: public
+    object_type: TABLES
+    grantee: app_reader
+    privileges: [SELECT, INSERT]
+    grantable: [INSERT]
+```
+
+`grantable` is a subset rather than one boolean over the whole entry because
+PostgreSQL records grantability per privilege. The entry above renders two
+statements: `SELECT` plainly, and `INSERT` with the grant option. Reading the
+database back reports the same two rows, so the comparison converges.
+
+Writing the cluster-wide form, which omits `IN SCHEMA`, is not possible here.
+`schema` is required, and a default privilege with no schema is a different
+object that Ptah does not model.
 
 ## Tables
 

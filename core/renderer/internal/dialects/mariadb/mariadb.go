@@ -321,6 +321,16 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return r.r.VisitRevokePrivilege(node)
 }
 
+// VisitDefaultPrivilege delegates to the shared MySQL-family renderer.
+func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	return r.r.VisitDefaultPrivilege(node)
+}
+
+// VisitRevokeDefaultPrivilege delegates to the shared MySQL-family renderer.
+func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	return r.r.VisitRevokeDefaultPrivilege(node)
+}
+
 // VisitRawSQL delegates to the mysqllike renderer
 func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return r.r.VisitRawSQL(node)

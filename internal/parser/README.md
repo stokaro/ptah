@@ -58,6 +58,23 @@ instead of emitting a table nobody described. ClickHouse is exempt, where
 - Schema-qualified table names
 - Multiple operations in a single statement
 
+### ALTER DEFAULT PRIVILEGES
+- `ALTER DEFAULT PRIVILEGES FOR ROLE r IN SCHEMA s GRANT privileges ON TABLES |
+  SEQUENCES | FUNCTIONS | TYPES TO grantee [WITH GRANT OPTION]`
+- The `REVOKE` form, with an optional `GRANT OPTION FOR` prefix and `FROM grantee`
+- `FOR USER`, PostgreSQL's synonym for `FOR ROLE`, naming the same catalog entry
+
+Both scope clauses are required here, where PostgreSQL makes them optional. With
+no `FOR ROLE` the grantor is whoever runs the statement, and with no `IN SCHEMA`
+the default applies in every schema in the database. The schema model holds
+neither, so each is refused rather than read into a declaration that would
+render back as a different statement. `ROUTINES` and `SCHEMAS` are refused for
+the same reason: no object class in the model spells either.
+
+One role, one schema and one grantee per statement. PostgreSQL accepts a list in
+each of the three positions, and reading one here would keep its first name and
+drop the rest.
+
 ### CREATE INDEX
 - Regular indexes
 - Unique indexes

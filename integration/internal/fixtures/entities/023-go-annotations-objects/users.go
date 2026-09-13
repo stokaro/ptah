@@ -81,6 +81,10 @@ type UserTrigger struct{}
 //ptah:schema:grant role="fixture_app_user" privilege="USAGE,SELECT" on_sequence="fixture_order_seq" comment="Sequence usage for fixture_app_user"
 type AccessControlMarker struct{}
 
+//ptah:schema:defaultprivilege for_role="fixture_owner" schema="public" object_type="TABLES" grantee="fixture_app_user" privileges="SELECT,INSERT" grantable="INSERT" comment="Future tables readable, insertable and re-grantable"
+//ptah:schema:defaultprivilege for_role="fixture_owner" schema="public" object_type="SEQUENCES" grantee="fixture_app_user" privileges="USAGE" comment="Future sequences usable"
+type DefaultPrivilegeMarker struct{}
+
 //ptah:schema:data table="users" key="id" file="users.yaml"
 type UserSeedDataMarker struct{}
 
