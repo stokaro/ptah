@@ -32,7 +32,7 @@
 // The visitor pattern enables dialect-specific rendering without modifying the
 // AST nodes. Each node implements an Accept method that calls the visitor method
 // for that node's own kind, so the interface carries one method per kind:
-// [Visitor] declares 46 of them, from VisitCreateTable through VisitUpsert. Read
+// [Visitor] declares 48 of them, from VisitCreateTable through VisitUpsert. Read
 // the interface for the current set rather than a list repeated in prose.
 //
 // A consumer that handles only part of the AST can embed [NoopVisitor], whose

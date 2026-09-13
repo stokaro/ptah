@@ -14,9 +14,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/migrate"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migrate"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/shadow"

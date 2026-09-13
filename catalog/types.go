@@ -88,6 +88,10 @@ type Database struct {
 	RLSPolicies []RLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []Role       `json:"roles"`        // PostgreSQL roles
 	Grants      []Grant      `json:"grants"`       // PostgreSQL privilege grants
+	// DefaultPrivileges are the pg_default_acl entries this read found, one
+	// row per granted privilege. omitempty keeps the serialization of every
+	// dialect that has no such catalog byte-identical.
+	DefaultPrivileges []DefaultPrivilege `json:"default_privileges,omitempty"`
 
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
@@ -1576,6 +1580,50 @@ type RoleMembership struct {
 	Member string `json:"member"`
 	// AdminOption reports whether Member may grant Role onward.
 	AdminOption bool `json:"admin_option"`
+}
+
+// DefaultPrivilege is one row of pg_default_acl, exploded to one privilege.
+//
+// The grain is one privilege per row, matching [Grant] and matching what
+// aclexplode answers: the catalog stores a merged aclitem[] per (defaclrole,
+// defaclnamespace, defaclobjtype), and the server explodes it into one row per
+// (grantee, privilege, is_grantable). The desired-state side is what folds them
+// back into a declaration.
+//
+// Identity is Grantor, Schema, ObjectType and Grantee together. Two rows
+// differing only in Grantor are two objects: PostgreSQL keys the catalog on the
+// grantor and refuses the statement from a non-member of that role, measured on
+// 17. A comparison that dropped the grantor would plan a change that deletes
+// somebody else's default.
+//
+// Schema is always set. The cluster-wide form, which pg_default_acl records with
+// defaclnamespace 0, is outside what Ptah models: internal/devclean refuses an
+// ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay, so a described row
+// of that shape could not be applied back.
+type DefaultPrivilege struct {
+	// Grantor is the role whose newly created objects the privileges apply to,
+	// pg_get_userbyid(pg_default_acl.defaclrole).
+	Grantor string `json:"grantor"`
+	// Schema is the schema the default applies in.
+	Schema string `json:"schema"`
+	// ObjectType is the object class, as the keyword a statement writes:
+	// TABLES, SEQUENCES, FUNCTIONS or TYPES.
+	ObjectType string `json:"object_type"`
+	// Grantee is the role receiving the privilege. PUBLIC is the spelling for
+	// aclexplode's grantee 0.
+	Grantee string `json:"grantee"`
+	// Privilege is the granted privilege, e.g. SELECT or USAGE.
+	Privilege string `json:"privilege"`
+	// WithOption reports aclexplode's is_grantable for this privilege alone.
+	// The catalog records grantability per privilege, so one identity can hold
+	// a grantable privilege beside a plain one.
+	WithOption bool `json:"with_option,omitempty"`
+}
+
+// QualifiedName names one default-privilege object, which is its whole identity
+// rather than a name the catalog stores.
+func (d DefaultPrivilege) QualifiedName() string {
+	return d.ObjectType + " in " + d.Schema + " for " + d.Grantor + " to " + d.Grantee
 }
 
 // Grant represents a privilege grant read from the database.

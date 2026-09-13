@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/migrateup"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/dbtarget"
 )
 

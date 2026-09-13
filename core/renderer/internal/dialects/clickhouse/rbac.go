@@ -345,6 +345,27 @@ func refuseRoleAttributes(node *ast.CreateRoleNode) error {
 	)
 }
 
+// VisitDefaultPrivilege names and skips a default-privilege declaration.
+//
+// ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
+// pg_default_acl, the privileges an object gets when a named role creates one.
+// ClickHouse has no catalog for that. Its grant surface is rich enough that the
+// arm above renders a real GRANT, which is why this one differs from its
+// neighbours: the nearest ClickHouse statement, a grant on the database, applies
+// to what exists rather than to what is created next, so it would mean something
+// the author did not write.
+func (r *Renderer) VisitDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
+	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
+	return nil
+}
+
+// VisitRevokeDefaultPrivilege names and skips the revoke half, for the reason
+// [Renderer.VisitDefaultPrivilege] carries.
+func (r *Renderer) VisitRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilegeNode) error {
+	r.notSupported("ALTER DEFAULT PRIVILEGES", node.Grantee)
+	return nil
+}
+
 // writeRBACComment writes a node's comment as one leading `-- ` line.
 //
 // The line is the only place that sentence can go: ClickHouse cannot store a

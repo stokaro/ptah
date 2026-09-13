@@ -109,6 +109,10 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
+	filtered.DefaultPrivileges = keep(db.DefaultPrivileges,
+		func(privilege schemamodel.DefaultPrivilege) bool {
+			return defaultPrivilegeAllowed(allowed, privilege.Schema, defaultSchema)
+		})
 	filtered.Enums = keepReferencedGeneratedEnums(db.Enums, filtered.Fields)
 	filtered.Dependencies = filterDependencies(db.Dependencies, keptTables)
 	filtered.FunctionDependencies = filterNamedDependencies(db.FunctionDependencies, allowed, defaultSchema)
@@ -177,6 +181,10 @@ func FilterDatabaseWithDefaultSchema(
 	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return dbGrantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
+	filtered.DefaultPrivileges = keep(db.DefaultPrivileges,
+		func(privilege catalog.DefaultPrivilege) bool {
+			return defaultPrivilegeAllowed(allowed, privilege.Schema, defaultSchema)
+		})
 	filtered.Enums = keepReferencedDatabaseEnums(db.Enums, filtered.Tables)
 
 	return &filtered
@@ -314,6 +322,19 @@ func grantAllowed(
 		return tableReferenceAllowed(keptTables, grant.OnTable)
 	}
 	return false
+}
+
+// defaultPrivilegeAllowed answers both projections, because they are the two
+// sides of one comparison and a disagreement between them invents work: a
+// default privilege kept on the live side and dropped on the desired side reads
+// as an object to revoke, and the other way round as one to grant.
+//
+// A default privilege belongs to its own schema and to nothing else. It rides on
+// no table -- it describes objects that do not exist yet -- so there is no
+// second reason to keep one, and the empty schema is the connected one, which is
+// what the shared effectiveSchema resolves.
+func defaultPrivilegeAllowed(allowed map[string]struct{}, schema, defaultSchema string) bool {
+	return schemaAllowed(allowed, effectiveSchema(schema, defaultSchema))
 }
 
 func dbGrantAllowed(

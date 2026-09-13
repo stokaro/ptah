@@ -98,6 +98,19 @@ func TestApplyReadScope(t *testing.T) {
 			want: []string{"comps", "doms", "public", "rngs", "seqs"},
 		},
 		{
+			name: "a default privilege's schema may be its only appearance",
+			base: []string{"public"},
+			desired: &schemamodel.Database{
+				DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+					Grantor:    "app_owner",
+					Schema:     "app",
+					ObjectType: "TABLES",
+					Grantee:    "app_reader",
+				}},
+			},
+			want: []string{"app", "public"},
+		},
+		{
 			name: "blank names are not schemas",
 			base: []string{"public"},
 			desired: &schemamodel.Database{

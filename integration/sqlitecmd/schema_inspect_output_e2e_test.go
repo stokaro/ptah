@@ -12,11 +12,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/atlas"
-	"ptah.run/internal/cli/schema"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/migration/migrator"
 )

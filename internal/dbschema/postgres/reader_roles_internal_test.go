@@ -81,6 +81,15 @@ const (
 	readsPolicyRoles      = "unnest(pol.polroles)"
 	readsPostgresExcluded = "!= 'postgres'"
 
+	// The two ends of a default privilege. They are separate reasons because
+	// the catalog stores them in separate places: the role whose new objects
+	// the defaults apply to is a column of pg_default_acl, and the role
+	// receiving them is inside the aclitem[] the server explodes. A branch
+	// that read one and not the other would leave the description naming a
+	// role it does not define, which is the invariant readRoles states.
+	readsDefaultPrivilegeRole = "d.defaclrole"
+	readsDefaultPrivilegeACL  = "aclexplode(d.defaclacl)"
+
 	// readsScopedRoleSet is the outer statement consuming the set the branches
 	// build. Binding the schema names is not on its own a restriction: the
 	// scope CTE still references them, so a query that computes the used-role
@@ -177,6 +186,9 @@ var (
 	bySchemaGrant     = []string{readsSchemaACL, readsGrantee}
 	bySchemaGrantor   = []string{readsSchemaACL, readsGrantor}
 	byPolicy          = []string{readsPolicyRoles}
+
+	byDefaultPrivilegeRole  = []string{readsDefaultPrivilegeRole}
+	byDefaultPrivilegeGrant = []string{readsDefaultPrivilegeACL, readsGrantee}
 
 	bySchemaOwner   = []string{readsSchemaOwner}
 	byRelationOwner = []string{readsRelationOwner}
@@ -447,6 +459,8 @@ func branchReadsAll(branch string, reads []string) bool {
 func fullCluster() []clusterRole {
 	return []clusterRole{
 		{name: "app_schema_grantee", schema: "app", reads: bySchemaGrant},
+		{name: "default_privilege_grantee", schema: "public", reads: byDefaultPrivilegeGrant},
+		{name: "default_privilege_role", schema: "public", reads: byDefaultPrivilegeRole},
 		{name: "pg_reserved", schema: "public", reads: byRelationGrant},
 		{name: "pgbouncer", schema: "", reads: nil},
 		{name: "policy_named", schema: "public", reads: byPolicy},
@@ -621,6 +635,24 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 			used:    clusterRole{name: "policy_named", schema: "public", reads: byPolicy},
 			schemas: []string{"public"},
 		},
+		{
+			name: "the role a default privilege in scope applies to",
+			used: clusterRole{
+				name:   "default_privilege_role",
+				schema: "public",
+				reads:  byDefaultPrivilegeRole,
+			},
+			schemas: []string{"public"},
+		},
+		{
+			name: "granted a default privilege in scope",
+			used: clusterRole{
+				name:   "default_privilege_grantee",
+				schema: "public",
+				reads:  byDefaultPrivilegeGrant,
+			},
+			schemas: []string{"public"},
+		},
 	}
 
 	for _, test := range tests {
@@ -693,8 +725,8 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 			name:    "public only",
 			schemas: []string{"public"},
 			want: []string{
-				"policy_named", "schema_grantee", "schema_grantor",
-				"table_grantee", "table_grantor",
+				"default_privilege_grantee", "default_privilege_role", "policy_named",
+				"schema_grantee", "schema_grantor", "table_grantee", "table_grantor",
 			},
 		},
 		{
@@ -706,8 +738,9 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 			name:    "both schemas",
 			schemas: []string{"public", "app"},
 			want: []string{
-				"app_schema_grantee", "policy_named", "schema_grantee",
-				"schema_grantor", "table_grantee", "table_grantor",
+				"app_schema_grantee", "default_privilege_grantee", "default_privilege_role",
+				"policy_named", "schema_grantee", "schema_grantor", "table_grantee",
+				"table_grantor",
 			},
 		},
 	}
@@ -805,6 +838,52 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 	}
 }
 
+func TestReadRolesAsksForDefaultPrivilegeRolesOnlyWhereTheCatalogHasThem(t *testing.T) {
+	// pg_default_acl is read under the same capability that gates
+	// readDefaultPrivileges, so a PostgreSQL-family target that manages roles
+	// without that relation is not sent a query naming a catalog it does not
+	// have -- a missing relation does not parse, and the role read is not a
+	// read this description can do without.
+	//
+	// Both ends of the family are in the fixture, so a gate that kept one
+	// branch and dropped the other is a row lost rather than a query that still
+	// answers.
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want []string
+	}{
+		{
+			name: "the catalog has pg_default_acl",
+			caps: capability.Postgres16(),
+			want: []string{"default_privilege_grantee", "default_privilege_role", "table_grantee"},
+		},
+		{
+			name: "the catalog has no pg_default_acl",
+			caps: capability.Postgres16().With(capability.CatalogDefaultPrivileges, false),
+			want: []string{"table_grantee"},
+		},
+	}
+
+	cluster := []clusterRole{
+		{name: "default_privilege_grantee", schema: "public", reads: byDefaultPrivilegeGrant},
+		{name: "default_privilege_role", schema: "public", reads: byDefaultPrivilegeRole},
+		{name: "table_grantee", schema: "public", reads: byRelationGrant},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := newRolesServer(c, cluster, []string{"public"}, test.caps)
+
+			roles, err := reader.readRoles(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(roleNames(roles), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
 	// Ptah describes no ownership: it emits no OWNER TO and no
 	// CREATE SCHEMA ... AUTHORIZATION. An owner is therefore a role the
@@ -883,9 +962,9 @@ func TestReadRolesOutOfScopeReportsWhatTheDescriptionLeavesOut(t *testing.T) {
 			name:    "app only",
 			schemas: []string{"app"},
 			want: []string{
-				"pgbouncer", "policy_named", "schema_grantee", "schema_grantor",
-				"someone_elses", "table_grantee", "table_grantor", "third_party",
-				"unrelated_tenant",
+				"default_privilege_grantee", "default_privilege_role", "pgbouncer",
+				"policy_named", "schema_grantee", "schema_grantor", "someone_elses",
+				"table_grantee", "table_grantor", "third_party", "unrelated_tenant",
 			},
 		},
 		{
@@ -1102,7 +1181,8 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{
-		"policy_named", "schema_grantee", "schema_grantor", "table_grantee", "table_grantor",
+		"default_privilege_grantee", "default_privilege_role", "policy_named",
+		"schema_grantee", "schema_grantor", "table_grantee", "table_grantor",
 	})
 	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{
 		"app_schema_grantee", "pgbouncer", "someone_elses", "third_party", "unrelated_tenant",

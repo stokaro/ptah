@@ -850,6 +850,151 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 	return nil
 }
 
+// parseDefaultPrivilege reads a `default_privilege` block: the privileges an
+// object gets when a named role creates one in a named schema.
+//
+// It is a sibling of `permission` rather than a shape of it because a default
+// privilege's identity includes the GRANTOR, and a `permission` block has
+// nowhere to put one -- the renderer reports a grant's observed grantor as an
+// export loss, and `ptah schema export --cleanup-go-annotations` turns any loss
+// diagnostic into a refusal to clean. A family routed through `permission` would
+// make that command refuse every schema declaring a default privilege.
+//
+// `for_role` names the grantor and `to` names the grantee. `for` is not reused
+// for the grantor: in a `permission` block it names the object granted on.
+//
+// Every part of the identity is required, because the identity is what the
+// object IS: two declarations differing only in grantor are two objects, and one
+// missing a part addresses nothing.
+//
+// The object-type keyword is taken as written rather than checked against the
+// closed set ALTER DEFAULT PRIVILEGES names. [ptah.run/core/goschema] declares
+// that set once, for the annotation surface that owns it, and a second copy here
+// would agree on the day it was written and drift the first time either side
+// moved -- with the side holding the stale list refusing a document the model
+// can hold. The cost of taking it as written is that a misspelled keyword
+// reaches the server, which names it; one exported predicate both surfaces read
+// is what closes that.
+func (p *parser) parseDefaultPrivilege(block *hclsyntax.Block) error {
+	if len(block.Labels) != 0 {
+		return p.blockError(block, "default_privilege block does not accept labels")
+	}
+	if err := p.rejectUnsupportedDefaultPrivilegeAttrs(block); err != nil {
+		return err
+	}
+	privileges, err := p.defaultPrivilegeGrants(block)
+	if err != nil {
+		return err
+	}
+	objectType, err := p.stringAttr(block, "object_type", "default_privilege")
+	if err != nil {
+		return err
+	}
+	privilege := schemamodel.DefaultPrivilege{
+		Grantor:    roleTargetName(p.optionalRawExpr(block.Body.Attributes["for_role"])),
+		Schema:     p.optionalRefName(block.Body.Attributes["schema"]),
+		ObjectType: objectType,
+		Grantee:    roleTargetName(p.optionalRawExpr(block.Body.Attributes["to"])),
+		Privileges: privileges,
+		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+	}
+	if err := p.requireDefaultPrivilegeIdentity(block, privilege); err != nil {
+		return err
+	}
+	p.db.DefaultPrivileges = append(p.db.DefaultPrivileges, privilege)
+	return nil
+}
+
+// requireDefaultPrivilegeIdentity refuses a block that addresses nothing, naming
+// the missing attribute rather than the field behind it.
+func (p *parser) requireDefaultPrivilegeIdentity(
+	block *hclsyntax.Block,
+	privilege schemamodel.DefaultPrivilege,
+) error {
+	switch {
+	case privilege.Grantor == "":
+		return p.blockError(block, "default_privilege requires for_role")
+	case privilege.Schema == "":
+		return p.blockError(block, "default_privilege requires schema")
+	case privilege.ObjectType == "":
+		return p.blockError(block, "default_privilege requires object_type")
+	case privilege.Grantee == "":
+		return p.blockError(block, "default_privilege requires to")
+	default:
+		return nil
+	}
+}
+
+// defaultPrivilegeGrants folds the block's two privilege lists into the one list
+// of pairs the model holds.
+//
+// The pair is the grain the catalog reports: pg_default_acl explodes to one row
+// per privilege, each with its own is_grantable, so one identity granted SELECT
+// plainly and INSERT WITH GRANT OPTION is two rows and not one flag. Keeping two
+// parallel lists past this point would let them disagree about which privileges
+// they cover.
+//
+// A `grantable` entry `privileges` does not name is refused rather than dropped.
+// It is a contradiction the model cannot hold -- a privilege marked grantable
+// that is not granted at all renders nothing, and compares as a difference no
+// plan can resolve.
+func (p *parser) defaultPrivilegeGrants(block *hclsyntax.Block) ([]schemamodel.PrivilegeGrant, error) {
+	privileges, err := p.rawListAttr(block, "privileges")
+	if err != nil {
+		return nil, err
+	}
+	if len(privileges) == 0 {
+		return nil, p.blockError(block, "default_privilege requires privileges")
+	}
+	grantable, err := p.rawListAttr(block, "grantable")
+	if err != nil {
+		return nil, err
+	}
+	granted := make(map[string]bool, len(privileges))
+	for _, name := range privileges {
+		granted[privilegeKey(name)] = true
+	}
+	withOption := make(map[string]bool, len(grantable))
+	for _, name := range grantable {
+		if !granted[privilegeKey(name)] {
+			return nil, p.blockError(block,
+				"default_privilege grantable %q is not one of its privileges", name)
+		}
+		withOption[privilegeKey(name)] = true
+	}
+	grants := make([]schemamodel.PrivilegeGrant, 0, len(privileges))
+	for _, name := range privileges {
+		grants = append(grants, schemamodel.PrivilegeGrant{
+			Privilege:  name,
+			WithOption: withOption[privilegeKey(name)],
+		})
+	}
+	return grants, nil
+}
+
+// privilegeKey folds a privilege name the way
+// [schemamodel.DefaultPrivilege.Canonicalize] does, so that `grantable` and
+// `privileges` are compared on the spelling the model will hold rather than on
+// the one the document happens to use.
+func privilegeKey(name string) string {
+	return strings.ToUpper(strings.TrimSpace(name))
+}
+
+func (p *parser) rejectUnsupportedDefaultPrivilegeAttrs(block *hclsyntax.Block) error {
+	if err := p.rejectNestedBlocks(block, "default_privilege"); err != nil {
+		return err
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"for_role":    true,
+		"schema":      true,
+		"object_type": true,
+		"to":          true,
+		"privileges":  true,
+		"grantable":   true,
+		"comment":     true,
+	}, "default_privilege")
+}
+
 func (p *parser) parseManagedData(block *hclsyntax.Block) error {
 	if len(block.Labels) != 0 {
 		return p.labeledDataBlockError(block)

@@ -16,7 +16,7 @@ import (
 // TestAppendDatabase_MergesEveryObjectFamily is the guard the two families
 // stokaro/ptah#1999 lost would have needed.
 //
-// [appendDatabase] is a list of twenty-four assignments, and a family added to
+// [appendDatabase] is one assignment per family, and a family added to
 // [schemamodel.Database] joins it only if somebody remembers. Two did not, and the
 // failure was silent in the direction that matters: the objects were dropped
 // from the DESIRED side, so `schema apply` answered "no changes" for a

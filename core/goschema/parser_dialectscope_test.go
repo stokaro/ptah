@@ -102,6 +102,12 @@ type Rol struct{}`,
 type Grn struct{}`,
 			scope: func(db schemamodel.Database) []string { return db.Grants[0].Dialects },
 		},
+		{
+			name: "default privilege",
+			code: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT" dialects="postgresql"
+type Dpr struct{}`,
+			scope: func(db schemamodel.Database) []string { return db.DefaultPrivileges[0].Dialects },
+		},
 	}
 
 	for _, test := range tests {

@@ -107,6 +107,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
+| [`ptah:schema:defaultprivilege`](#ptahschemadefaultprivilege) | A PostgreSQL default privilege | struct |
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
 | [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
@@ -655,6 +656,48 @@ name would win. Privilege names the server rewrites on the way in — `ALL`,
 `CREATE`, `DROP`, `SYSTEM` and the rest — are refused too, because they never
 read back as written. See
 [ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
+
+### `//ptah:schema:defaultprivilege`
+
+Declares a PostgreSQL default privilege: what a grantee receives on objects a
+named role creates in a named schema. It is `ALTER DEFAULT PRIVILEGES`, and no
+other engine has the statement.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `comment` | No | Default privilege comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `for_role` | Yes | Role whose newly created objects the privileges apply to. |
+| `grantable` | No | The subset of `privileges` carrying `WITH GRANT OPTION`. |
+| `grantee` | Yes | Role receiving the privileges; `PUBLIC` names every role. |
+| `object_type` | Yes | `TABLES`, `SEQUENCES`, `FUNCTIONS` or `TYPES`. |
+| `privileges` | Yes | Comma-separated privileges, such as `SELECT,INSERT`. |
+| `schema` | Yes | Schema the default applies in. |
+
+The directive needs a holder struct. Written at file level, below the closing
+brace of the declaration above it, it contributes no object and reports
+nothing, the same trap index annotations carry. Give it a struct of its own:
+
+```go
+//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT,INSERT" grantable="INSERT"
+type AccessControl struct{}
+```
+
+The object's identity is `for_role`, `schema`, `object_type` and `grantee`
+together. Two declarations differing only in `for_role` are two objects:
+PostgreSQL enforces the grantor and refuses the statement from a role that is
+not a member of it.
+
+`grantable` names a subset of `privileges`, not a second list. Grantability is
+recorded per privilege, so one identity granted `SELECT` plainly and `INSERT
+WITH GRANT OPTION` reads back from the catalog as two rows. A name in
+`grantable` that is absent from `privileges` is refused while the file is
+parsed, rather than kept as a declaration nothing can render.
+
+`object_type` accepts those four keywords and nothing else; any other value is
+refused at parse time. `SCHEMAS` is refused with the rest, because the form
+that would name it sets a cluster-wide default instead of a schema-scoped one,
+and `schema` is required here.
 
 ### `//ptah:schema:rls:enable`
 

@@ -4986,9 +4986,13 @@ func (p *Parser) parsePostgreSQLWithClause(table *ast.CreateTableNode) error {
 	return nil
 }
 
-// parseAlterStatement parses ALTER TABLE statements. Most tails become an
-// AlterTableNode carrying operations; ENABLE ROW LEVEL SECURITY is its own
-// node kind, so the return type is the Node interface.
+// parseAlterStatement dispatches on the keyword after ALTER, the way
+// [Parser.parseDropStatement] does for DROP.
+//
+// The branch has to come before the TABLE expectation. Reading TABLE straight
+// after ALTER leaves ALTER DEFAULT PRIVILEGES unreadable, and that costs more
+// than a .sql file an author hand-wrote: `ptah db read` renders the statement,
+// so a parser that cannot read it cannot read Ptah's own output back.
 func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "ALTER"); err != nil {
 		return nil, err
@@ -4996,8 +5000,28 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 
 	p.skipWhitespace()
 
+	if p.current.Type != lexer.TokenIdentifier {
+		return nil, fmt.Errorf("expected ALTER target, got %s at position %d", p.current.Type, p.current.Start)
+	}
+
+	target := strings.ToUpper(p.current.Value)
+	switch target {
+	case "TABLE":
+		return p.parseAlterTable()
+	case "DEFAULT":
+		return p.parseAlterDefaultPrivileges()
+	default:
+		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
+	}
+}
+
+// parseAlterTable parses the ALTER TABLE statement, with ALTER consumed and
+// TABLE current. Most tails become an AlterTableNode carrying operations;
+// ENABLE ROW LEVEL SECURITY is its own node kind, so the return type is the
+// Node interface.
+func (p *Parser) parseAlterTable() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
-		return nil, fmt.Errorf("expected TABLE after ALTER: %w", err)
+		return nil, err
 	}
 
 	p.skipWhitespace()

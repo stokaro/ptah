@@ -57,6 +57,35 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 	}})
 }
 
+// TestPreserveUnmanagedObjects_KeepsTheDefaultPrivilegesTheDatabaseHolds pins
+// this step as additive for the default-privilege family.
+//
+// A migration test runs against a database that may already carry default
+// privileges no Go declaration describes -- another suite's, or the DBA's. They
+// are outside this step's ownership, so applying a desired schema must not plan
+// a REVOKE against them. The additions stay, because bringing the declared
+// state up is exactly what this step is for.
+func TestPreserveUnmanagedObjects_KeepsTheDefaultPrivilegesTheDatabaseHolds(t *testing.T) {
+	c := qt.New(t)
+	ref := difftypes.DefaultPrivilegeRef{
+		Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
+		Grantee: "app_reader", Privilege: "SELECT",
+	}
+	diff := &difftypes.SchemaDiff{
+		DefaultPrivilegesAdded:         []difftypes.DefaultPrivilegeRef{ref},
+		DefaultPrivilegesRemoved:       []difftypes.DefaultPrivilegeRef{ref},
+		DefaultPrivilegeOptionsAdded:   []difftypes.DefaultPrivilegeRef{ref},
+		DefaultPrivilegeOptionsRevoked: []difftypes.DefaultPrivilegeRef{ref},
+	}
+
+	preserveUnmanagedObjects(diff, "postgres")
+
+	c.Assert(diff.DefaultPrivilegesRemoved, qt.IsNil)
+	c.Assert(diff.DefaultPrivilegeOptionsRevoked, qt.IsNil)
+	c.Assert(diff.DefaultPrivilegesAdded, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{ref})
+	c.Assert(diff.DefaultPrivilegeOptionsAdded, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{ref})
+}
+
 func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) {
 	c := qt.New(t)
 	semantics := identifier.ForDialect("sqlite")

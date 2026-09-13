@@ -431,6 +431,11 @@ func rowLevelSecurityNames(diff *difftypes.SchemaDiff) []string {
 
 // roleAndGrantNames lists every role the diff changes and every role a changed
 // grant names, which is what an operator has to find in their schema.
+//
+// A default privilege names two roles, the grantor and the grantee, and both go
+// in: the author wrote one of them into the declaration, and which one is not
+// something this refusal can know. An entry this list does not read is a
+// declaration SQLite drops in silence.
 func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(diff.RolesAdded.Names(), diff.RolesRemoved.Names())
 	for _, role := range diff.RolesModified {
@@ -441,6 +446,12 @@ func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 	}
 	for _, grant := range slices.Concat(diff.GrantOptionsAdded, diff.GrantOptionsRevoked) {
 		names = append(names, grant.Role)
+	}
+	for _, privilege := range slices.Concat(
+		diff.DefaultPrivilegesAdded, diff.DefaultPrivilegesRemoved,
+		diff.DefaultPrivilegeOptionsAdded, diff.DefaultPrivilegeOptionsRevoked,
+	) {
+		names = append(names, privilege.Grantor, privilege.Grantee)
 	}
 	slices.Sort(names)
 	return slices.Compact(names)

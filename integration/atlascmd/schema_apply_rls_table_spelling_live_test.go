@@ -14,9 +14,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/atlas"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/schemaload"
 )

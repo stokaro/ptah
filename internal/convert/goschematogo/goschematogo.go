@@ -267,6 +267,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.MaterializedViews) > 0 ||
 		len(ctx.db.Roles) > 0 ||
 		len(ctx.db.Grants) > 0 ||
+		len(ctx.db.DefaultPrivileges) > 0 ||
 		len(ctx.db.CompositeTypes) > 0 ||
 		len(ctx.db.Domains) > 0 ||
 		len(ctx.db.Ranges) > 0 ||
@@ -355,6 +356,9 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, grant := range sortedGrants(ctx.db.Grants) {
 		w.writeComment(grantAnnotation(grant))
+	}
+	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
+		w.writeComment(defaultPrivilegeAnnotation(privilege))
 	}
 	if ctx.hasGlobalObjects() {
 		w.writeLine("type PtahSchemaObjects struct{}")
@@ -696,6 +700,33 @@ func grantAnnotation(grant schemamodel.Grant) string {
 	)
 }
 
+// defaultPrivilegeAnnotation writes one default privilege back as a directive.
+//
+// The model holds one privilege list where the directive has two, so the
+// grantable names are projected back out of the pairs. Writing every privilege
+// into `grantable` instead would turn a plain SELECT into a grantable one on
+// the next parse, and nothing between here and the server would notice.
+func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
+	names := make([]string, 0, len(privilege.Privileges))
+	var grantable []string
+	for _, granted := range privilege.Privileges {
+		names = append(names, granted.Privilege)
+		if granted.WithOption {
+			grantable = append(grantable, granted.Privilege)
+		}
+	}
+	return annotation("ptah:schema:defaultprivilege",
+		attr{name: "for_role", value: privilege.Grantor, set: true},
+		attr{name: "schema", value: privilege.Schema, set: true},
+		attr{name: "object_type", value: privilege.ObjectType, set: true},
+		attr{name: "grantee", value: privilege.Grantee, set: true},
+		attr{name: "privileges", value: strings.Join(names, ","), set: len(names) > 0},
+		attr{name: "grantable", value: strings.Join(grantable, ","), set: len(grantable) > 0},
+		attr{name: "comment", value: privilege.Comment, set: privilege.Comment != ""},
+		dialectsAttr(privilege.Dialects),
+	)
+}
+
 func annotation(name string, attrs ...attr) string {
 	var builder strings.Builder
 	builder.WriteString("//")
@@ -998,6 +1029,39 @@ func grantSortKey(grant schemamodel.Grant) string {
 		grant.OnSequence,
 		strings.Join(grant.Privileges, ","),
 		strconv.FormatBool(grant.WithOption),
+	}, "\x00")
+}
+
+func sortedDefaultPrivileges(values []schemamodel.DefaultPrivilege) []schemamodel.DefaultPrivilege {
+	result := append([]schemamodel.DefaultPrivilege(nil), values...)
+	sort.Slice(result, func(i, j int) bool {
+		return defaultPrivilegeSortKey(result[i]) < defaultPrivilegeSortKey(result[j])
+	})
+	return result
+}
+
+// defaultPrivilegeSortKey orders by the object's identity -- grantor, schema,
+// object type, grantee -- so the export order follows the declarations rather
+// than the order they arrived in.
+//
+// The privilege spelling joins the identity because two declarations sharing an
+// identity are what an unfolded model still holds: sort.Slice is not stable, so
+// equal keys would let two such declarations swap places between runs, and the
+// export would stop being byte-identical over the same input.
+//
+// The separator keeps the fields apart: concatenated, a grantor of "ab" reads
+// the same as a grantor of "a" beside a schema of "b".
+func defaultPrivilegeSortKey(privilege schemamodel.DefaultPrivilege) string {
+	names := make([]string, 0, len(privilege.Privileges))
+	for _, granted := range privilege.Privileges {
+		names = append(names, granted.Privilege+":"+strconv.FormatBool(granted.WithOption))
+	}
+	return strings.Join([]string{
+		privilege.Grantor,
+		privilege.Schema,
+		privilege.ObjectType,
+		privilege.Grantee,
+		strings.Join(names, ","),
 	}, "\x00")
 }
 

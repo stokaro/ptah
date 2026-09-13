@@ -1724,6 +1724,38 @@ func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 		SetComment(grant.Comment)
 }
 
+// FromDefaultPrivilege converts a schemamodel.DefaultPrivilege to an
+// ast.DefaultPrivilegeNode.
+//
+// The declaration is canonicalized first, for the reason [FromGrant]
+// canonicalizes a grant: without it a declaration written `select` on `tables`
+// renders in that spelling while the reader reports SELECT on TABLES, and the
+// comparison reports a change on every run.
+//
+// Grantability is copied per privilege rather than folded into one flag beside
+// the list. The catalog records it that way -- one identity granted SELECT
+// plainly and INSERT WITH GRANT OPTION reads back as two rows with different
+// is_grantable -- and the PostgreSQL renderer splits the list into one statement
+// per grantability. Folding it here would decide for the whole declaration what
+// each privilege carries, and the read would disagree on the next run.
+func FromDefaultPrivilege(defaultPrivilege schemamodel.DefaultPrivilege) *ast.DefaultPrivilegeNode {
+	defaultPrivilege.Canonicalize()
+	privileges := make([]ast.DefaultPrivilege, 0, len(defaultPrivilege.Privileges))
+	for _, granted := range defaultPrivilege.Privileges {
+		privileges = append(privileges, ast.DefaultPrivilege{
+			Privilege:  granted.Privilege,
+			WithOption: granted.WithOption,
+		})
+	}
+	return ast.NewDefaultPrivilege(
+		defaultPrivilege.Grantor,
+		defaultPrivilege.Schema,
+		defaultPrivilege.ObjectType,
+		defaultPrivilege.Grantee,
+		privileges,
+	).SetComment(defaultPrivilege.Comment)
+}
+
 // WalkDatabase converts a complete schemamodel.Database to AST nodes and visits
 // them in executable order without materializing a second whole-schema
 // representation.
@@ -1749,7 +1781,8 @@ func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 //  6. Unique index definitions (CREATE UNIQUE INDEX statements), plus all
 //     MySQL-family indexes required before foreign-key creation
 //  7. Foreign key constraints (ALTER TABLE statements)
-//  8. Dialect-specific objects such as views, RLS policies, grants, and triggers
+//  8. Dialect-specific objects such as views, RLS policies, grants, default
+//     privileges, and triggers
 //  9. Non-unique index definitions (CREATE INDEX statements)
 //
 // This ordering ensures that:
@@ -2182,7 +2215,8 @@ func appendRoleAndFunctionStatements(visit func(ast.Node) error, database schema
 
 // appendPostTableObjectStatements appends every declared object whose statement
 // names a table or a column, for every target: a sequence's OWNED BY, views and
-// materialized views, row-level security and its policies, grants, and triggers.
+// materialized views, row-level security and its policies, grants, default
+// privileges, and triggers.
 //
 // Views and materialized views share one dependency ordering because a view may
 // select from another; emitting the two kinds one after the other gets that
@@ -2217,6 +2251,16 @@ func appendPostTableObjectStatements(
 	}
 	for _, grant := range database.Grants {
 		if err := visit(FromGrant(grant)); err != nil {
+			return err
+		}
+	}
+	// Beside the grants, and unconditional. A default privilege names a schema
+	// and two roles, and both kinds are emitted earlier in this walk, so there
+	// is nothing here to wait for. The traversal is hand-written and no
+	// reflection reads it, so leaving the loop out gives a schema that parses,
+	// compares and renders at exit 0 with the declaration nowhere in the output.
+	for _, defaultPrivilege := range database.DefaultPrivileges {
+		if err := visit(FromDefaultPrivilege(defaultPrivilege)); err != nil {
 			return err
 		}
 	}
@@ -2305,6 +2349,14 @@ func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Sc
 	return nil
 }
 
+// schemasForRender is every schema the render has to create, which is more than
+// the ones a document declares.
+//
+// An extension and a default privilege each NAME a schema without declaring it,
+// so a document carrying only one of those renders a statement into a schema
+// that does not exist. The planner already emits the precondition for both, and
+// a render that did not would disagree with the plan about the same document --
+// which internal/modelast's render-and-plan agreement test is what measures.
 func schemasForRender(database schemamodel.Database, targetPlatform string) []schemamodel.Schema {
 	schemas := slices.Clone(database.Schemas)
 	if !supportsExtensionInstallationSchema(targetPlatform) {
@@ -2315,8 +2367,14 @@ func schemasForRender(database schemamodel.Database, targetPlatform string) []sc
 	for _, schema := range schemas {
 		seen[schema.Name] = struct{}{}
 	}
+	named := make([]string, 0, len(database.Extensions)+len(database.DefaultPrivileges))
 	for _, extension := range database.Extensions {
-		name := extension.Schema
+		named = append(named, extension.Schema)
+	}
+	for _, privilege := range database.DefaultPrivileges {
+		named = append(named, privilege.Schema)
+	}
+	for _, name := range named {
 		if name == "" || systemschema.IsPostgresSystemSchema(name) {
 			continue
 		}

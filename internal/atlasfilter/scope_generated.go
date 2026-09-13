@@ -103,11 +103,18 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return s.generatedGrantSelected(out, grant)
 	})
+	// Same order and the same reason as the database side: the roles below keep
+	// a role a surviving statement names, and a default privilege names two.
+	out.DefaultPrivileges = keep(db.DefaultPrivileges,
+		func(privilege schemamodel.DefaultPrivilege) bool {
+			return s.defaultPrivilegeSelected(privilege.Schema)
+		})
 	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
-		return generatedGrantRoleReferenced(out.Grants, role.Name)
+		return generatedGrantRoleReferenced(out.Grants, role.Name) ||
+			generatedDefaultPrivilegeRoleReferenced(out.DefaultPrivileges, role.Name)
 	})
 }
 
@@ -299,6 +306,22 @@ func generatedSequenceNameKept(sequences []schemamodel.Sequence, name string) bo
 func generatedGrantRoleReferenced(grants []schemamodel.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// generatedDefaultPrivilegeRoleReferenced is
+// databaseDefaultPrivilegeRoleReferenced for the desired side, reading both
+// ends for the same reason: the renderer writes the grantor into FOR ROLE.
+func generatedDefaultPrivilegeRoleReferenced(
+	privileges []schemamodel.DefaultPrivilege,
+	role string,
+) bool {
+	for _, privilege := range privileges {
+		if strings.EqualFold(privilege.Grantor, role) ||
+			strings.EqualFold(privilege.Grantee, role) {
 			return true
 		}
 	}

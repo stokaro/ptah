@@ -239,6 +239,7 @@ var convertedFamilies = map[string]string{
 	"RLSPolicies":          "RLSPolicies",
 	"Roles":                "Roles",
 	"Grants":               "Grants",
+	"DefaultPrivileges":    "DefaultPrivileges",
 }
 
 // unconvertedFamilies are the read families that deliberately do not become

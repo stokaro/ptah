@@ -65,6 +65,7 @@ func objectMarker(gate objectKindGate) string {
 		"sequence":           "order_number_seq",
 		"role":               "app_user",
 		"grant":              "app_user",
+		"default privilege":  "app_user",
 		"row-level security": "users",
 		"policy":             "users_self",
 	}
@@ -174,6 +175,14 @@ func singleObjectFixture(gate objectKindGate) schemamodel.Database {
 		kept.Roles = full.Roles
 	case "grant":
 		kept.Grants = full.Grants
+	case "default privilege":
+		// Without the role, for the reason the grant above keeps none: the
+		// MySQL family and ClickHouse refuse a declared role outright, so a
+		// fixture carrying one measures the role rather than the default
+		// privilege. A default privilege naming roles the schema does not
+		// declare is what one written for an externally managed owner looks
+		// like.
+		kept.DefaultPrivileges = full.DefaultPrivileges
 	case "row-level security":
 		kept.RLSEnabledTables = full.RLSEnabledTables
 	case "policy":

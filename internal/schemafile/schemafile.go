@@ -320,9 +320,9 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     naming CREATE SYNONYM still loads a database with none
 //     (stokaro/ptah#1031, stokaro/ptah#1026).
 //   - The YAML surface has a top-level key for tables, enums, extensions,
-//     functions, views, matviews, triggers, roles, grants and row-level
-//     security, and NONE for a sequence, a domain, a composite type or a range.
-//     A YAML schema declaring one table was measured planning
+//     functions, views, matviews, triggers, roles, grants, default privileges
+//     and row-level security, and NONE for a sequence, a domain, a composite
+//     type or a range. A YAML schema declaring one table was measured planning
 //     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
 //     holding one of each.
 func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
@@ -720,6 +720,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)

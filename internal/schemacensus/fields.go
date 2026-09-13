@@ -95,16 +95,6 @@ func deepCopyDatabase(schema schemamodel.Database) schemamodel.Database {
 	return copied
 }
 
-// Copy returns a database sharing no slice, map or pointer with its input.
-//
-// A caller that renders or finalizes a fixture needs this rather than a struct
-// copy: [schemamodel.Finalize] writes into the slices it is handed, so a struct
-// copy leaves the fixture finalized and the next caller measures a schema the
-// previous one derived.
-func Copy(schema schemamodel.Database) schemamodel.Database {
-	return deepCopyDatabase(schema)
-}
-
 // Ablate returns a copy of schema with every instance of the field named by path
 // set to its zero value. The input is not modified: the copy shares no slice,
 // map or pointer with it.

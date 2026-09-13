@@ -51,37 +51,16 @@ func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedO
 	filtered.Triggers = keepUnscoped(current.Triggers, names["trigger"], func(v catalog.Trigger) (string, string) { return v.Schema, v.Name })
 	filtered.Roles = keepUnscoped(current.Roles, names["role"], func(v catalog.Role) (string, string) { return "", v.Name })
 	filtered.Grants = keepUnscoped(current.Grants, names["grant"], func(v catalog.Grant) (string, string) { return "", v.Role })
-	filtered.RLSPolicies = keepUnscoped(current.RLSPolicies, names["rls policy"], func(v catalog.RLSPolicy) (string, string) { return "", v.Name })
-	filtered.Tables = clearScopedRLSEnabled(current.Tables, names["rls enable"])
+	// A default privilege is named by its whole identity rather than by one of
+	// its roles, because that is what the scope report collects: a grantee alone
+	// would suppress every object sharing it, and two declarations differing
+	// only in grantor or object type would be one name.
+	filtered.DefaultPrivileges = keepUnscopedIdentities(
+		current.DefaultPrivileges,
+		names["default privilege"],
+		catalog.DefaultPrivilege.QualifiedName,
+	)
 	return &filtered
-}
-
-// clearScopedRLSEnabled turns off the row-level-security flag on every table a
-// scope kept out of the desired schema.
-//
-// Row-level security is the one scoped kind whose enablement is a FIELD on
-// another object rather than an entry in a list of its own, so the suppression
-// cannot drop a row: it has to clear the flag and leave the table. A scoped-away
-// enablement left set reads as an enabled table the declaration does not mention,
-// which is the shape of `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` against a
-// target the declaration promised not to describe.
-func clearScopedRLSEnabled(tables []catalog.Table, scopedAway map[string]bool) []catalog.Table {
-	if len(scopedAway) == 0 || len(tables) == 0 {
-		return tables
-	}
-	cleared := slices.Clone(tables)
-	changed := false
-	for index, table := range cleared {
-		if !table.RLSEnabled || !matchesScopedAway(table.Schema, table.Name, scopedAway) {
-			continue
-		}
-		cleared[index].RLSEnabled = false
-		changed = true
-	}
-	if !changed {
-		return tables
-	}
-	return cleared
 }
 
 // keepUnscoped returns the values whose identity is not among the scoped-away
@@ -94,6 +73,32 @@ func keepUnscoped[T any](values []T, scopedAway map[string]bool, identityOf func
 	for _, value := range values {
 		schema, name := identityOf(value)
 		if !matchesScopedAway(schema, name, scopedAway) {
+			kept = append(kept, value)
+		}
+	}
+	if len(kept) == len(values) {
+		return values
+	}
+	return slices.Clip(kept)
+}
+
+// keepUnscopedIdentities returns the values whose whole identity string is not
+// among the scoped-away names, sharing the original slice when nothing is
+// dropped.
+//
+// It is separate from [keepUnscoped] because the name it matches is not an
+// object name one side may qualify and the other may not. A default privilege
+// is collected under its four-part identity, written the same way on both
+// sides, and putting that through the two-spelling match would split it on the
+// last dot in a schema name and suppress nothing for exactly the object that
+// carries one.
+func keepUnscopedIdentities[T any](values []T, scopedAway map[string]bool, identityOf func(T) string) []T {
+	if len(scopedAway) == 0 || len(values) == 0 {
+		return values
+	}
+	kept := make([]T, 0, len(values))
+	for _, value := range values {
+		if !scopedAway[identityOf(value)] {
 			kept = append(kept, value)
 		}
 	}

@@ -295,6 +295,7 @@ func databaseHasSchemaObjects(db *schemamodel.Database) bool {
 		len(db.RLSEnabledTables) +
 		len(db.Roles) +
 		len(db.Grants) +
+		len(db.DefaultPrivileges) +
 		len(db.ManagedData)
 	return objectCount > 0
 }
