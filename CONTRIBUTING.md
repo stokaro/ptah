@@ -92,11 +92,11 @@ so look at what is already running before you invoke either.
 ### Tests
 
 Use [quicktest](https://github.com/frankban/quicktest) as `qt`; `depguard`
-refuses `testify`. Tests are declarative -- no `if`, `switch`, or `goto` in a
-test function -- black-box by default, and split into happy-path and
-failure-path functions rather than one table with a `wantErr` branch. AGENTS.md
-carries the full standard, including where integration tests live and why a
-table row holds data rather than a checker.
+refuses `testify`. A test function holds no `if`, `switch`, or `goto`; tests are
+black-box by default, and split into happy-path and failure-path functions
+rather than one table with a `wantErr` branch. AGENTS.md carries the full
+standard, including where integration tests live and why a table row holds data
+rather than a checker.
 
 ### Documentation
 
