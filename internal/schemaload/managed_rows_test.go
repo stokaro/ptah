@@ -49,7 +49,7 @@ func TestReadManagedRows_EmptyFileIsNotAnUnreadOne(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData[0].Rows, qt.HasLen, 0)
-	c.Assert(db.ManagedData[0].Rows, qt.Not(qt.IsNil))
+	c.Assert(db.ManagedData[0].Rows, qt.IsNotNil)
 }
 
 func TestReadManagedRows_MissingFile(t *testing.T) {
