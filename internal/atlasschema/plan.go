@@ -168,6 +168,17 @@ func PreparePlanFile(
 	}
 
 	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect)
+	// The data statements carry their own severity rather than the analyzer's.
+	// A DELETE of a reference row removes no table and tightens no constraint,
+	// so the analyzer calls it safe; the row it removes is gone all the same.
+	for _, declared := range computation.dataStatements {
+		destructive = destructive || declared.severity == safety.Destructive
+		statements = append(statements, PlanStatement{
+			SQL:      declared.sql,
+			Severity: declared.severity,
+			Reason:   declared.reason,
+		})
+	}
 
 	return PlanFile{
 		FormatVersion:   PlanFormatVersion,

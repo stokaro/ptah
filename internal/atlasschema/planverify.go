@@ -138,8 +138,11 @@ func RehearsePlanStatements(
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)
 	}
-	if len(computation.statements) > 0 {
-		return &PlanDesiredStateError{Phase: "rehearsal", Drift: computation.statements}
+	// Convergence includes the declared rows. A rehearsal whose schema matches
+	// and whose reference table does not is not a rehearsal of the desired
+	// state.
+	if drift := computation.executionStatements(); len(drift) > 0 {
+		return &PlanDesiredStateError{Phase: "rehearsal", Drift: drift}
 	}
 	return nil
 }
@@ -171,8 +174,8 @@ func VerifyAppliedPlanState(
 		return fmt.Errorf(
 			"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
 	}
-	if len(computation.statements) > 0 {
-		return &PlanDesiredStateError{Phase: "post-apply", Drift: computation.statements}
+	if drift := computation.executionStatements(); len(drift) > 0 {
+		return &PlanDesiredStateError{Phase: "post-apply", Drift: drift}
 	}
 	return nil
 }
