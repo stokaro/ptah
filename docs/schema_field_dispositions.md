@@ -44,7 +44,7 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-366 fields are reachable from the desired schema, and each one carries
+370 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
@@ -55,7 +55,7 @@ exactly one disposition.
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 16 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
-| `data` | 7 | reference or seed rows, which are not DDL |
+| `data` | 11 | reference or seed rows, which are not DDL |
 
 ### Fields that should render and do not
 
@@ -299,10 +299,14 @@ None.
 | `schemamodel.IndexPart.Prefix` | `ddl` | — |
 | `schemamodel.ManagedData.File` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
 | `schemamodel.ManagedData.Keys` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
+| `schemamodel.ManagedData.Rows` | `data` | the declared rows themselves, read from File; the schema artifact carries these because it cannot carry the working copy File names |
 | `schemamodel.ManagedData.Schema` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
 | `schemamodel.ManagedData.SourceDir` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
 | `schemamodel.ManagedData.StructName` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
 | `schemamodel.ManagedData.Table` | `data` | part of the reference-row declaration; `ptah seed` reads it and no renderer does |
+| `schemamodel.ManagedValue.Null` | `data` | a declared cell that is null, which is not the same as a column the row never names |
+| `schemamodel.ManagedValue.Tag` | `data` | the YAML tag a declared cell resolved to; it separates 007 from "007" in one column |
+| `schemamodel.ManagedValue.Text` | `data` | the exact text that declared a cell, kept because resolving it to a Go value loses leading zeros, decimal scale and date spelling |
 | `schemamodel.MaterializedView.Body` | `ddl` | — |
 | `schemamodel.MaterializedView.Comment` | `ddl` | — |
 | `schemamodel.MaterializedView.DependsOn` | `planning` | the same ordering edge, on a materialized view |
