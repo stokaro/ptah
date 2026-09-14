@@ -1857,6 +1857,15 @@ type ManagedData struct {
 	// entry retains its root after composite merging. ParseFS and ParseSource
 	// retain a filesystem-relative directory because they have no host root.
 	SourceDir string
+	// Rows carries the declared rows once something has read File, and is the
+	// only form that survives publication: File and SourceDir point into the
+	// working copy of whoever wrote the annotation, and an artifact that
+	// travels carries neither. [LoadManagedRowValues] fills it.
+	//
+	// A nil slice means the file has not been read, which is why publication
+	// refuses it rather than publishing a table with no rows. An empty non-nil
+	// slice means the file was read and declares none.
+	Rows []ManagedRow
 }
 
 // SelfReferencingFK represents a field-level self-referencing foreign key that

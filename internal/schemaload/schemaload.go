@@ -241,6 +241,40 @@ func (o Options) loadGoRoots(rootDirs []string) (*schemamodel.Database, error) {
 	return withGoAnnotationLimits(result), nil
 }
 
+// ReadManagedRows resolves every declared row file while the working copy that
+// declared it is still reachable.
+//
+// It is not part of loading a schema. A managed-data annotation names a file
+// that only publication and data planning read, and a schema that renders DDL
+// has no business failing because a row file is absent: an existing fixture
+// declares one it never wrote, and `ptah schema render` reads that fixture.
+// Publication is the caller that must not go on without the rows, because an
+// artifact travels without the working copy the annotation points into, so
+// publication is the caller that asks.
+//
+// ParseDirs records an absolute source directory, so the empty root here is the
+// one this function has to offer and the one the join never uses.
+//
+// A file that declares no rows yields an empty slice rather than a nil one. The
+// difference is the whole statement: nil means nobody read the file, and a
+// publisher refuses that rather than publishing a table with no rows.
+func ReadManagedRows(db *schemamodel.Database) error {
+	for index, declaration := range db.ManagedData {
+		if declaration.File == "" || declaration.Rows != nil {
+			continue
+		}
+		rows, err := schemamodel.LoadManagedRowValues("", declaration)
+		if err != nil {
+			return err
+		}
+		if rows == nil {
+			rows = make([]schemamodel.ManagedRow, 0)
+		}
+		db.ManagedData[index].Rows = rows
+	}
+	return nil
+}
+
 // loadCommand runs an external schema command and returns its parsed output. The
 // resolver's dialect hint is applied when the command does not set its own.
 func (o Options) loadCommand(ctx context.Context, command schemasource.Command) (*schemamodel.Database, error) {

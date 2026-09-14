@@ -449,7 +449,21 @@ ptah schema push \
 
 Annotated Go models publish the same way, with `--root-dir ./models` in place
 of `--schema-file`. Ptah merges the selected sources and renders one canonical
-`schema.hcl` layer.
+`schema.hcl` layer, plus a `managed-data.json` layer when the schema declares
+reference data.
+
+That second layer carries the declared rows themselves, under
+`application/vnd.stokaro.ptah.managed-data.v1+json`. A `data` block names a file
+in the working copy that declared it, and an artifact travels without that
+working copy, so the rows travel instead. Each value keeps the YAML tag it
+resolved to and the text that declared it: `007` and `"007"` are different
+values in the same column, and resolving them to Go values loses the
+difference. A column absent from a row was not declared, and a column written as
+`null` was declared null.
+
+A reader that does not know the managed-data media type refuses the artifact
+instead of reading the schema layer and deploying a database without the rows
+its author declared.
 
 That canonical HCL includes API export metadata authored in YAML, HCL, or Go:
 `api_name`, `openapi_name`, `graphql_name`, and `proto_name` on tables and

@@ -133,7 +133,13 @@ func (l Limits) normalized() Limits {
 type PushOptions struct {
 	ArtifactType   string
 	LayerMediaType string
-	Tags           []string
+	// LayerMediaTypes names the media type of individual files by path, for an
+	// artifact whose layers are not all the same kind. A path the map does not
+	// name takes LayerMediaType. The map is what lets a reader refuse the part
+	// of an artifact it does not understand instead of reading the part it
+	// does and reporting success over the rest.
+	LayerMediaTypes map[string]string
+	Tags            []string
 	// WriteOnceTags are checked before any tags move. A tag already resolving
 	// to different content fails the push. Registry-side immutable-tag policy
 	// is still required to protect against concurrent writers.
@@ -147,7 +153,12 @@ type PushOptions struct {
 type PullOptions struct {
 	ExpectedArtifactTypes []string
 	LayerMediaType        string
-	Limits                Limits
+	// AcceptedLayerMediaTypes is the whole set a multi-layer artifact admits.
+	// When it is set, LayerMediaType is ignored and a layer outside the set is
+	// refused, which is how a reader that predates a layer fails closed rather
+	// than reading around it.
+	AcceptedLayerMediaTypes []string
+	Limits                  Limits
 }
 
 // PushResult identifies a pushed artifact and all tags applied to it.
@@ -223,7 +234,7 @@ func PushTo(ctx context.Context, target oras.Target, fsys fs.FS, opts PushOption
 	}
 	tags = moveTagLast(tags, DefaultTag)
 
-	layers, err := pushFileLayers(ctx, target, fsys, opts.LayerMediaType, opts.Limits)
+	layers, err := pushFileLayers(ctx, target, fsys, opts.LayerMediaType, opts.LayerMediaTypes, opts.Limits)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -283,7 +294,11 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 	if kind := manifest.Annotations[annotationArtifactKind]; kind != "" && kind != manifest.ArtifactType {
 		return Artifact{}, fmt.Errorf("%w: artifact annotation %q does not match %q", ErrUnexpectedArtifactType, kind, manifest.ArtifactType)
 	}
-	files, err := fetchFileLayers(ctx, target, manifest.Layers, acceptedLayerMediaTypes(opts.LayerMediaType, manifest.ArtifactType), opts.Limits)
+	accepted := opts.AcceptedLayerMediaTypes
+	if len(accepted) == 0 {
+		accepted = acceptedLayerMediaTypes(opts.LayerMediaType, manifest.ArtifactType)
+	}
+	files, err := fetchFileLayers(ctx, target, manifest.Layers, accepted, opts.Limits)
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -325,6 +340,7 @@ func pushFileLayers(
 	target oras.Target,
 	fsys fs.FS,
 	mediaType string,
+	mediaTypes map[string]string,
 	limits Limits,
 ) ([]ocispec.Descriptor, error) {
 	var layers []ocispec.Descriptor
@@ -367,7 +383,11 @@ func pushFileLayers(
 			return fmt.Errorf("%w: files exceed %d total bytes", ErrArtifactLimit, limits.TotalBytes)
 		}
 		total += size
-		layer := content.NewDescriptorFromBytes(mediaType, contents)
+		fileMediaType, err := layerMediaTypeFor(name, mediaType, mediaTypes)
+		if err != nil {
+			return err
+		}
+		layer := content.NewDescriptorFromBytes(fileMediaType, contents)
 		layer.Annotations = map[string]string{ocispec.AnnotationTitle: name}
 		if err := target.Push(ctx, layer, bytes.NewReader(contents)); err != nil &&
 			!errors.Is(err, errdef.ErrAlreadyExists) {
@@ -383,6 +403,20 @@ func pushFileLayers(
 		return nil, fmt.Errorf("artifact must contain at least one file")
 	}
 	return layers, nil
+}
+
+// layerMediaTypeFor answers with the media type one file is written under. A
+// path the caller named takes that type, and every other path takes the
+// artifact's default.
+func layerMediaTypeFor(name, mediaType string, mediaTypes map[string]string) (string, error) {
+	named, declared := mediaTypes[name]
+	if !declared {
+		return mediaType, nil
+	}
+	if strings.TrimSpace(named) == "" {
+		return "", fmt.Errorf("artifact file %q has an empty media type", name)
+	}
+	return named, nil
 }
 
 func readArtifactFile(fsys fs.FS, name string, maxBytes int64) ([]byte, error) {

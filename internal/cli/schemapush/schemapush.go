@@ -75,6 +75,12 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// An artifact travels without the working copy that declared it, so the
+	// declared rows are read here, where the working copy is still reachable,
+	// rather than wherever the artifact is later read.
+	if err := schemaload.ReadManagedRows(db); err != nil {
+		return err
+	}
 	result, err := schemaartifact.Push(cmd.Context(), reference, db, schemaartifact.PushOptions{
 		Latest:           opts.latest,
 		GeneratedVersion: opts.generatedVersion,

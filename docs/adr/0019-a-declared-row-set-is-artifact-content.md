@@ -87,12 +87,20 @@ The schema artifact gains one layer, `managed-data.json`, under
 of the artifact: schema, table, key columns, managed columns, and rows.
 
 The authored form stays YAML. The published form is canonical JSON: members
-sorted, no trailing zeros, no aliases, and an absent value spelled by omitting
-the key while a SQL `NULL` is spelled `null`. YAML cannot carry that
-distinction safely, because its scalar resolution rewrites the values a
-reference table is made of: unquoted `NO` reads as false, `1.0` as a float, and
-a leading-zero code as an integer. A format whose reader has to guess the type
-of `NO` cannot be the wire form of a row whose column is `CHAR(2)`.
+sorted, no aliases, and an absent value spelled by omitting the key while a SQL
+`NULL` is spelled `null`.
+
+Resolution is what the published form has to survive, and it is lossy for the
+values a reference table is made of. Measured against go.yaml.in/yaml/v3, the
+loader this repository uses: `007` resolves to the integer 7, `1.0` to the
+float 1, `2020-01-01` to a `time.Time`, and `0x1F` to 31. A published row
+therefore carries the YAML tag its scalar resolved to and the exact text that
+declared it, which is what separates `007` from `"007"` in a `CHAR(3)` column.
+
+This paragraph corrects the first revision of this record, which claimed that
+an unquoted `NO` reads as false. That is YAML 1.1, and the measurement above
+says yaml/v3 reads it as the string it looks like. The conclusion is unchanged
+and the reason for it is now the measured one (stokaro/ptah#3235).
 
 One layer, not one per table. A per-table layout makes the order of a manifest
 listing part of the contract and multiplies the entries a reader has to
