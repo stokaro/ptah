@@ -64,7 +64,44 @@ ptah migrations checkpoint --migrations-dir ./migrations \
 | `--dialect` | Asserted dialect; inferred from the shadow database when omitted. |
 | `--schemas` | Comma-separated schemas to introspect. |
 | `--dir-format` | Checkpoint convention: `ptah` (default) or `atlas`. `auto` is refused. |
+| `--data-table` | Reference table whose rows the checkpoint carries, as `table` or `schema.table`. Repeatable. |
 | `--dry-run` | Print the checkpoint SQL instead of writing files. |
+
+## Reference rows a fresh database needs
+
+A schema-only checkpoint is enough until a migration after it reads a row an
+earlier migration inserted. A fresh database bootstrapped from the checkpoint
+never ran that earlier migration, so the row is not there, and the later
+migration updates nothing while reporting success.
+
+`--data-table` puts those rows in the checkpoint:
+
+```bash
+ptah migrations checkpoint \
+  --migrations-dir ./migrations \
+  --shadow-db "sqlite://$(mktemp -u).db" \
+  --data-table regions \
+  --data-table reference.currencies
+```
+
+The rows are read from the shadow database **after the replay**, so they are the
+rows this history produces at the checkpoint's own version. This matters more
+than it sounds: a migration after the checkpoint may read a column later
+renamed, or a reference value later retired, and a checkpoint that carried
+today's declarations would hand a fresh database values that no migration after
+it was written against.
+
+The statements are `INSERT`s after the schema, in the same file, introduced by a
+`-- ptah:checkpoint-data <table> rows=<n>` marker, so a checkpoint that carries
+data says so in its own bytes. Row order is sorted rather than whatever the
+database returned, because a checkpoint whose bytes change between runs is one
+whose checksum nobody can reproduce.
+
+A table that does not exist at the checkpoint's version is refused, and so is a
+table with no primary key: rows with no identity are not rows this mechanism can
+promise to reproduce.
+
+A checkpoint written without `--data-table` is schema-only, exactly as before.
 
 ## File format
 
