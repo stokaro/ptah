@@ -390,7 +390,6 @@ jobs:
           npm run check:style
           npx playwright install --with-deps chromium
           npm run check:responsive:selftest
-          npm run check:glossary:selftest
           npm run check:glossary-coverage:selftest
           npm run check:accessibility:selftest
           npm run check:visual-snapshots:selftest
@@ -402,7 +401,6 @@ jobs:
           # Need the built site, so they run after the build rather than with
           # the other checks.
           npm run check:responsive
-          npm run check:glossary
           npm run check:glossary-coverage
           npm run check:accessibility
           npm run check:visual-snapshots -- --output "$RUNNER_TEMP/ptah-docs-visual-snapshots"

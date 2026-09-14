@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 // Holds the glossary map to the pages around it.
 //
-// check-glossary.mjs measures the affordance: it opens every panel and checks
-// it lands beside its term and is not clipped. Nothing measured the content,
-// and the content is where the two failures live:
+// The two failures it holds are both about content:
 //
 //   - an entry whose `learnMore` names a page that does not exist, which is a
 //     dead link a reader meets only after deciding they want to know more;
 //   - a term in the map that the glossary page does not render, which is a
 //     definition nobody can reach.
 //
-// It also reports how many terms are surfaced outside the glossary page. That
-// number is not a gate: a `<GlossaryTerm>` needs MDX, and most pages are
-// Markdown, so a rule demanding coverage would demand a conversion nobody has
-// decided on (stokaro/ptah#3224). It is printed so the gap stays visible
-// instead of being rediscovered.
+// It measures the content and nothing about presentation. The inline tooltip it
+// used to report coverage for is gone: it never placed a panel beside its term
+// in any browser the gate ran, reached three pages, and cost a four-minute
+// check to say so (stokaro/ptah#3224). A term is reached by a page linking to
+// the glossary now.
 //
 // Usage:
 //   node scripts/check-glossary-coverage.mjs [--selftest]
@@ -77,26 +75,6 @@ function pageRoutes(root, prefix = '') {
     routes.push(slug === 'index' ? `/${prefix}` : `/${prefix}${slug}/`);
   }
   return routes;
-}
-
-/** surfacedOutsideGlossary counts the terms any other page shows as a tooltip. */
-function surfacedOutsideGlossary(root) {
-  const surfaced = new Set();
-  const walk = (dir) => {
-    for (const name of readdirSync(dir)) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (extname(name) !== '.mdx' || name === 'glossary.mdx') continue;
-      for (const match of readFileSync(full, 'utf8').matchAll(/term="([^"]+)"/g)) {
-        surfaced.add(match[1]);
-      }
-    }
-  };
-  walk(root);
-  return surfaced;
 }
 
 function selftest() {
@@ -192,12 +170,8 @@ async function main() {
   }
 
   const total = Object.keys(glossary).length;
-  const surfaced = surfacedOutsideGlossary(contentRoot);
   const renderNote = built ? `${rendered.length} rendered` : 'page not built, list unchecked';
-  console.log(
-    `check-glossary-coverage.mjs: OK (${total} terms, ${renderNote}, ` +
-      `${surfaced.size} surfaced as a tooltip outside the glossary page)`,
-  );
+  console.log(`check-glossary-coverage.mjs: OK (${total} terms, ${renderNote})`);
 }
 
 await main();
