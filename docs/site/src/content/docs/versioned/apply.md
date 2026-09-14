@@ -215,9 +215,47 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
   "out_of_order_migrations": [],
   "total_migrations": 1,
   "has_pending_changes": false,
-  "current_version_key": "1785255952"
+  "current_version_key": "1785255952",
+  "contract_version": 1,
+  "migrations": [
+    {
+      "version": 1785255952,
+      "version_key": "1785255952",
+      "description": "Create users",
+      "checksum": "h1:Ow4bDq9rLuGUoQxXSbCJn/y4Q1oZbLvBg9wEQ8B4V0M=",
+      "applied_checksum": "h1:Ow4bDq9rLuGUoQxXSbCJn/y4Q1oZbLvBg9wEQ8B4V0M=",
+      "state": "applied"
+    }
+  ]
 }
 ```
+
+`contract_version` is the version of the document, not of Ptah. A consumer that
+does not know the version it reads should refuse the document rather than read
+the fields it recognizes out of a shape that means something else. A new field
+an existing reader can ignore does not raise it.
+
+The `migrations` array is what a caller plans from. Each entry carries the
+migration's version and exact revision identity, its description, the checksum
+of the file as it stands, the checksum the revision row recorded, whether the
+file is a checkpoint, the transaction mode the file declares resolved for this
+dialect, and one state:
+
+| State | Meaning |
+| --- | --- |
+| `applied` | A clean revision row whose file still accounts for it |
+| `modified` | A clean revision row whose file no longer accounts for it; nothing may apply while one exists |
+| `dirty` | The version a failed or interrupted run left behind |
+| `pending` | Not applied |
+| `out-of-order` | Pending, below the current version |
+| `checkpoint-covered` | Below the checkpoint a fresh database bootstraps from, so it will never run here |
+
+`checkpoint_version` names that checkpoint when one applies.
+
+Comparing `checksum` against `applied_checksum` is not the rule that decides
+`modified`, and a caller must not reimplement it: an Atlas history records a
+running hash over every preceding file, so the two strings differ for reasons
+that are not an edit. `state` is that rule's own answer.
 
 Set `--exit-code` in CI when pending migrations should fail the job: the
 command then exits `1` while pending work exists and `0` once the database is

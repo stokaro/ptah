@@ -143,9 +143,13 @@ func IsDirtyMigration(err error) bool {
 
 // ChecksumMismatchError reports that an already-applied migration file changed.
 type ChecksumMismatchError struct {
-	Version  int64
-	Stored   string
-	Computed string
+	Version int64
+	// RevisionKey is the exact revision identity the mismatch is about. Version
+	// does not identify a row on its own: an Atlas repeatable migration carries
+	// an opaque token instead of a decimal spelling.
+	RevisionKey string
+	Stored      string
+	Computed    string
 	// Description is the migration's own description, used to name the file a
 	// converted repeatable came from.
 	Description string

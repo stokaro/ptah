@@ -55,27 +55,74 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	ctx context.Context,
 	migrations []*Migration,
 ) (bool, error) {
-	if !m.metadataAvailable || m.legacyRevisionTable {
-		return false, nil
-	}
 	revisions, err := m.GetRevisions(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to read revisions for checksum verification: %w", err)
+	}
+	classified, err := m.classifyAppliedChecksums(migrations, revisions)
+	if err != nil {
+		return false, err
+	}
+	if len(classified.mismatches) == 0 {
+		return classified.needsReconcile, nil
+	}
+	if classified.coherentProjection {
+		return true, nil
+	}
+	return false, classified.mismatches[0]
+}
+
+// appliedChecksumClassification is one pass of the applied-checksum rule over
+// every migration, rather than the first answer that rule produces.
+//
+// VerifyAppliedChecksums wants the first mismatch and the status contract wants
+// all of them, and both have to be the same rule: an Atlas revision hash is a
+// running hash over every preceding file, and a second interpreter of it
+// disagrees with the first the moment either learns something.
+type appliedChecksumClassification struct {
+	// mismatches are the applied revisions no current file accounts for, in
+	// directory order.
+	mismatches []*ChecksumMismatchError
+	// needsReconcile reports that a row matched a provable applied-history
+	// projection rather than the current full-directory entry.
+	needsReconcile bool
+	// coherentProjection reports that the mismatches are explained by a
+	// coherent historical projection, which makes them not mismatches at all.
+	coherentProjection bool
+}
+
+func (c appliedChecksumClassification) mismatchedKeys() map[string]struct{} {
+	if len(c.mismatches) == 0 || c.coherentProjection {
+		return nil
+	}
+	keys := make(map[string]struct{}, len(c.mismatches))
+	for _, mismatch := range c.mismatches {
+		keys[mismatch.RevisionKey] = struct{}{}
+	}
+	return keys
+}
+
+func (m *Migrator) classifyAppliedChecksums(
+	migrations []*Migration,
+	revisions []MigrationRevision,
+) (appliedChecksumClassification, error) {
+	if !m.metadataAvailable || m.legacyRevisionTable {
+		return appliedChecksumClassification{}, nil
 	}
 	revisionsByKey := appliedRevisionsByKey(revisions)
 	implicitFloor := implicitAtlasProjectionFloor(migrations, revisions)
 	currentProjection, err := atlasAppliedProjectionHashes(migrations, revisionsByKey, implicitFloor)
 	if err != nil {
-		return false, err
+		return appliedChecksumClassification{}, err
 	}
 
-	needsReconcile := false
-	var mismatch *ChecksumMismatchError
+	classified := appliedChecksumClassification{}
 	for _, migration := range migrations {
 		if migration.isAtlasRepeatable() {
 			continue
 		}
-		revision := revisionsByKey[migration.RevisionVersion()]
+		key := migration.RevisionVersion()
+		revision := revisionsByKey[key]
 		if revision.State != migrationStateApplied || revision.Checksum == "" {
 			continue
 		}
@@ -83,32 +130,28 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 		if revisionChecksumMatches(stored, migration) {
 			continue
 		}
-		if stored == currentProjection[migration.RevisionVersion()] {
-			needsReconcile = true
+		if stored == currentProjection[key] {
+			classified.needsReconcile = true
 			continue
 		}
-		if mismatch == nil {
-			mismatch = &ChecksumMismatchError{
-				Version:             migration.Version,
-				Stored:              stored,
-				Computed:            migrationRevisionHash(migration),
-				Description:         migration.Description,
-				ConvertedRepeatable: migration.Version == ConvertedFlywayRepeatableVersion,
-			}
-		}
+		classified.mismatches = append(classified.mismatches, &ChecksumMismatchError{
+			Version:             migration.Version,
+			RevisionKey:         key,
+			Stored:              stored,
+			Computed:            migrationRevisionHash(migration),
+			Description:         migration.Description,
+			ConvertedRepeatable: migration.Version == ConvertedFlywayRepeatableVersion,
+		})
 	}
-	if mismatch == nil {
-		return needsReconcile, nil
+	if len(classified.mismatches) > 0 {
+		classified.coherentProjection = atlasCoherentHistoricalProjectionMatches(
+			migrations,
+			revisionsByKey,
+			implicitFloor,
+			currentProjection,
+		)
 	}
-	if atlasCoherentHistoricalProjectionMatches(
-		migrations,
-		revisionsByKey,
-		implicitFloor,
-		currentProjection,
-	) {
-		return true, nil
-	}
-	return false, mismatch
+	return classified, nil
 }
 
 func appliedRevisionsByKey(revisions []MigrationRevision) map[string]MigrationRevision {
