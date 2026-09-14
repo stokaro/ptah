@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -18,6 +19,42 @@ import (
 // written inline so that no literal in this file looks like a credential.
 const probeUser = "u" + ":" + "p"
 
+// settle waits until nothing is still dialing the listener.
+//
+// A connect that fails leaves an attempt in flight: the accept count of a
+// listener still grows after the call that dialed it has returned, measured at
+// one extra accept two seconds later. Releasing the port under that attempt
+// hands it to the next test, which then counts a connection it never made --
+// and a test asserting "a refusal reaches no database" reads somebody else's
+// dial as its own.
+//
+// A listener nothing ever reached returns at once, and that is a statement
+// rather than an optimization: a test whose read was refused never called
+// connect, so no packet aimed at this port exists. Only a test that did dial
+// waits, and it waits for the count to stop moving rather than for a chosen
+// number of milliseconds.
+func settle(dialed *atomic.Int64) {
+	if dialed.Load() == 0 {
+		return
+	}
+	const (
+		quiet    = 25 * time.Millisecond
+		unmoving = 2
+		giveUp   = 2 * time.Second
+	)
+	deadline := time.Now().Add(giveUp)
+	last := dialed.Load()
+	for still := 0; still < unmoving && time.Now().Before(deadline); {
+		time.Sleep(quiet)
+		now := dialed.Load()
+		if now == last {
+			still++
+			continue
+		}
+		last, still = now, 0
+	}
+}
+
 // countingDatabase listens on a local port and counts connections, returning a
 // URL that points at it.
 //
@@ -29,9 +66,14 @@ func countingDatabase(c *qt.C) (string, *atomic.Int64) {
 	c.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { _ = listener.Close() })
 
 	dialed := &atomic.Int64{}
+	// The port goes back to the operating system only once nothing is still
+	// dialing it; see settle.
+	c.Cleanup(func() {
+		settle(dialed)
+		_ = listener.Close()
+	})
 	go func() {
 		for {
 			conn, acceptErr := listener.Accept()
