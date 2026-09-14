@@ -735,11 +735,15 @@ ptah schema push \
   --dialect postgres
 ```
 
-Ptah resolves and merges the selected desired-schema sources, then renders
-exactly one canonical `schema.hcl` layer. Publication fails closed if the schema
-cannot be represented without loss. In particular:
+Ptah resolves and merges the selected desired-schema sources, then renders one
+canonical `schema.hcl` layer, and a `managed-data.json` layer beside it when the
+schema declares reference data. Publication fails closed if the schema cannot be
+represented without loss. In particular:
 
-- managed reference data is rejected;
+- a managed-data declaration whose row file was never read is rejected, so a
+  table is never published with no rows;
+- a row that does not declare its key columns, declares one as null, or repeats
+  the key of another row is rejected before any database sees it;
 - role passwords are rejected so credentials cannot be published in an
   artifact;
 - any lossy renderer diagnostic rejects the artifact;
@@ -747,8 +751,21 @@ cannot be represented without loss. In particular:
 
 No partial or best-effort schema artifact is pushed.
 
-Pulling validates the artifact type, layer media type, expected single
-`schema.hcl` layout, and HCL syntax before creating the output:
+The managed-data layer carries each declared row set under
+`application/vnd.stokaro.ptah.managed-data.v1+json`, with the version in the
+media type. Every value is the YAML tag it resolved to plus the exact text that
+declared it, because resolving to a Go value loses what a reference table is
+made of: `007` becomes 7, `1.0` becomes 1, and `2020-01-01` becomes a timestamp.
+A column absent from a row was not declared; a column written as `null` was
+declared null, and nothing collapses the two.
+
+A reader that does not know the managed-data media type refuses the whole
+artifact rather than reading the schema and deploying a database without the
+rows its author declared. A `data` block with no rows in the layer, and rows in
+the layer that no `data` block declares, are both refused for the same reason.
+
+Pulling validates the artifact type, every layer media type, the expected
+layout, and HCL syntax before creating the output:
 
 ```bash
 ptah schema pull \

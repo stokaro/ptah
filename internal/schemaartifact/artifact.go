@@ -28,9 +28,27 @@ const (
 	FileName = "schema.hcl"
 	// LayerMediaType identifies canonical Ptah schema HCL layers.
 	LayerMediaType = "application/vnd.stokaro.ptah.schema.hcl.v1"
+	// ManagedDataFileName is the declared-rows layer name, present only in an
+	// artifact whose schema declares managed data.
+	ManagedDataFileName = "managed-data.json"
+	// ManagedDataLayerMediaType identifies the declared-rows layer. The version
+	// suffix is the format version: a reader that does not know this media type
+	// refuses the artifact rather than reading the schema layer and publishing a
+	// database without the rows its author declared.
+	ManagedDataLayerMediaType = "application/vnd.stokaro.ptah.managed-data.v1+json"
 
 	annotationFormat = "io.stokaro.ptah.schema-format"
 	canonicalFormat  = "hcl"
+)
+
+// layerMediaTypes names the media type of every layer this package writes that
+// is not canonical schema HCL, and acceptedLayerMediaTypes is the whole set a
+// pull admits. A layer outside the set is refused by the reader.
+var (
+	layerMediaTypes = map[string]string{
+		ManagedDataFileName: ManagedDataLayerMediaType,
+	}
+	acceptedLayerMediaTypes = []string{LayerMediaType, ManagedDataLayerMediaType}
 )
 
 // PushOptions controls schema artifact tags and metadata.
@@ -55,6 +73,11 @@ type PushResult struct {
 }
 
 // Artifact is a validated canonical schema retrieved from OCI storage.
+//
+// Database carries the declared rows of the managed-data layer in its
+// ManagedData entries when the artifact has one. Their File and SourceDir are
+// empty: an artifact that travels carries rows, not a path into the working
+// copy that published them.
 type Artifact struct {
 	Database   *schemamodel.Database
 	FileSystem fs.FS
@@ -74,12 +97,17 @@ func Capture(db *schemamodel.Database) (fs.FS, error) {
 	if db == nil {
 		return nil, fmt.Errorf("schema database is required")
 	}
-	if len(db.ManagedData) > 0 {
-		return nil, fmt.Errorf("schema artifact cannot represent managed data without loss")
-	}
+	var err error
 	for _, role := range db.Roles {
 		if role.Password != "" {
 			return nil, fmt.Errorf("schema artifact cannot contain password for role %q", role.Name)
+		}
+	}
+	var managed []byte
+	if len(db.ManagedData) > 0 {
+		managed, err = encodeManagedData(db)
+		if err != nil {
+			return nil, err
 		}
 	}
 	rendered, err := atlashclrender.Render(db)
@@ -103,7 +131,11 @@ func Capture(db *schemamodel.Database) (fs.FS, error) {
 	if len(roundTrip.Diagnostics) > 0 || !bytes.Equal(roundTrip.Data, rendered.Data) {
 		return nil, fmt.Errorf("canonical schema HCL is not stable after parsing")
 	}
-	snapshot, err := fsnapshot.FromFiles(map[string][]byte{FileName: rendered.Data})
+	files := map[string][]byte{FileName: rendered.Data}
+	if managed != nil {
+		files[ManagedDataFileName] = managed
+	}
+	snapshot, err := fsnapshot.FromFiles(files)
 	if err != nil {
 		return nil, fmt.Errorf("build schema artifact filesystem: %w", err)
 	}
@@ -136,11 +168,12 @@ func PushTo(
 		return PushResult{}, err
 	}
 	result, err := ociartifact.PushTo(ctx, target, prepared.FileSystem, ociartifact.PushOptions{
-		ArtifactType:   ociartifact.SchemaArtifactType,
-		LayerMediaType: LayerMediaType,
-		Tags:           prepared.Tags,
-		WriteOnceTags:  prepared.writeOnceTags(),
-		Annotations:    prepared.Annotations,
+		ArtifactType:    ociartifact.SchemaArtifactType,
+		LayerMediaType:  LayerMediaType,
+		LayerMediaTypes: layerMediaTypes,
+		Tags:            prepared.Tags,
+		WriteOnceTags:   prepared.writeOnceTags(),
+		Annotations:     prepared.Annotations,
 	})
 	if err != nil {
 		return PushResult{}, err
@@ -160,11 +193,12 @@ func push(
 		return PushResult{}, err
 	}
 	result, err := client.Push(ctx, reference, prepared.FileSystem, ociartifact.PushOptions{
-		ArtifactType:   ociartifact.SchemaArtifactType,
-		LayerMediaType: LayerMediaType,
-		Tags:           prepared.Tags,
-		WriteOnceTags:  prepared.writeOnceTags(),
-		Annotations:    prepared.Annotations,
+		ArtifactType:    ociartifact.SchemaArtifactType,
+		LayerMediaType:  LayerMediaType,
+		LayerMediaTypes: layerMediaTypes,
+		Tags:            prepared.Tags,
+		WriteOnceTags:   prepared.writeOnceTags(),
+		Annotations:     prepared.Annotations,
 	})
 	if err != nil {
 		return PushResult{}, err
@@ -178,8 +212,8 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string) (Ar
 		return Artifact{}, fmt.Errorf("OCI client is required")
 	}
 	pulled, err := client.Pull(ctx, reference, ociartifact.PullOptions{
-		ExpectedArtifactTypes: []string{ociartifact.SchemaArtifactType},
-		LayerMediaType:        LayerMediaType,
+		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
+		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
 	})
 	if err != nil {
 		return Artifact{}, err
@@ -190,8 +224,8 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string) (Ar
 // PullFrom retrieves and validates a canonical schema from target.
 func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string) (Artifact, error) {
 	pulled, err := ociartifact.PullFrom(ctx, target, selector, ociartifact.PullOptions{
-		ExpectedArtifactTypes: []string{ociartifact.SchemaArtifactType},
-		LayerMediaType:        LayerMediaType,
+		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
+		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
 	})
 	if err != nil {
 		return Artifact{}, err
@@ -272,8 +306,21 @@ func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
 	if err != nil {
 		return Artifact{}, fmt.Errorf("read schema artifact: %w", err)
 	}
-	if len(entries) != 1 || entries[0].Name() != FileName || entries[0].IsDir() {
-		return Artifact{}, fmt.Errorf("schema artifact must contain exactly %s", FileName)
+	managedDataPresent := false
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return Artifact{}, fmt.Errorf("schema artifact must contain only %s and %s", FileName, ManagedDataFileName)
+		}
+		switch entry.Name() {
+		case FileName:
+		case ManagedDataFileName:
+			managedDataPresent = true
+		default:
+			return Artifact{}, fmt.Errorf("schema artifact carries unexpected file %s", entry.Name())
+		}
+	}
+	if len(entries) == 0 || (len(entries) == 1 && managedDataPresent) {
+		return Artifact{}, fmt.Errorf("schema artifact must contain %s", FileName)
 	}
 	data, err := fs.ReadFile(pulled.FileSystem, FileName)
 	if err != nil {
@@ -282,6 +329,16 @@ func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
 	db, err := atlashcl.Parse(data, FileName)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("parse schema artifact: %w", err)
+	}
+	managed := []byte(nil)
+	if managedDataPresent {
+		managed, err = fs.ReadFile(pulled.FileSystem, ManagedDataFileName)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("read managed data layer: %w", err)
+		}
+	}
+	if err := attachManagedRows(db, managed); err != nil {
+		return Artifact{}, err
 	}
 	return Artifact{
 		Database:   db,

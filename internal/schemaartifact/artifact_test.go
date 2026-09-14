@@ -83,12 +83,15 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(snapshot, qt.IsNil)
 	})
 
-	t.Run("managed data", func(t *testing.T) {
+	// A declaration whose file was never read is refused by name. Publishing it
+	// as a table with no rows would be the loss the refusal used to name, moved
+	// one step later and made silent.
+	t.Run("managed data that was never read", func(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
-		db.ManagedData = []schemamodel.ManagedData{{Table: "users"}}
+		db.ManagedData = []schemamodel.ManagedData{{Table: "users", Keys: []string{"id"}, File: "users.yaml"}}
 		snapshot, err := schemaartifact.Capture(db)
-		c.Assert(err, qt.ErrorMatches, "schema artifact cannot represent managed data without loss")
+		c.Assert(err, qt.ErrorMatches, `managed data for table users was never read from users.yaml`)
 		c.Assert(snapshot, qt.IsNil)
 	})
 
