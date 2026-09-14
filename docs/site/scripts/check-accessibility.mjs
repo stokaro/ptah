@@ -75,22 +75,6 @@ async function keyboardChecks(page, origin, base) {
     if ((before === null) === (after === null)) problems.push('/schema/document/: Enter did not toggle the sidebar group');
   }
 
-  await page.goto(`${origin}${base}/reference/capabilities/`, { waitUntil: 'load' });
-  const glossary = page.locator('.ptah-glossary-trigger').first();
-  if (await glossary.count() !== 1) {
-    problems.push('/reference/capabilities/: glossary trigger is absent');
-  } else {
-    await glossary.focus();
-    await page.keyboard.press('Enter');
-    if (await page.locator('.ptah-glossary-panel:popover-open').count() !== 1) {
-      problems.push('/reference/capabilities/: Enter did not open the glossary definition');
-    }
-    await page.keyboard.press('Escape');
-    if (await page.locator('.ptah-glossary-panel:popover-open').count() !== 0) {
-      problems.push('/reference/capabilities/: Escape did not close the glossary definition');
-    }
-  }
-
   await page.goto(`${origin}${base}/start/quick-start/`, { waitUntil: 'load' });
   const tabs = page.getByRole('tab');
   if (await tabs.count() > 1) {

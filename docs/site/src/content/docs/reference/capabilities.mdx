@@ -20,24 +20,19 @@ behavior. What a capability is and how gating works is explained in
 per-engine status and operational notes are on the
 [Database support matrix](../../databases/support-matrix/).
 
-import GlossaryTerm from '../../../components/GlossaryTerm.astro';
-
 ## How to read a row
 
 A cell in the matrices below is one glyph, and two different claims can wear
-the same one. Focus the ⓘ, or tap it, for what each word means; the
-definitions come from `docs/site/src/glossary.ts` rather than from this page,
-so they cannot drift from the ones used elsewhere.
+the same one. [The glossary](../glossary/) defines each word, from
+`docs/site/src/glossary.ts` rather than from this page, so the meanings cannot
+drift from the ones used elsewhere.
 
-- A value can be <GlossaryTerm term="measured" /> or
-  <GlossaryTerm term="carried" />. The distinction is pinned by
+- A value can be measured or carried. The distinction is pinned by
   `core/platform/capability/capability_measured_lines_test.go`, which requires
   every registered key on a recorded line to be one or the other, with a
   reason attached to the second.
-- A release line is <GlossaryTerm term="certified" />,
-  <GlossaryTerm term="legacy-tested" /> or
-  <GlossaryTerm term="best-effort" />. The level says who re-measures the
-  preset, not how well the engine works.
+- A release line is certified, legacy-tested or best-effort. The level says who
+  re-measures the preset, not how well the engine works.
 
 ## What capabilities decide
 

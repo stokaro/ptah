@@ -15,7 +15,6 @@ overlaps: []
 disposition: keep
 ---
 
-import GlossaryTerm from '../../../components/GlossaryTerm.astro';
 import GlossaryList from '../../../components/GlossaryList.astro';
 
 Every term below carries its definition, the page that uses it, and where a
@@ -23,25 +22,11 @@ definition is pinned, the file that decides it. Definitions come from one
 source, `docs/site/src/glossary.ts`, so the same term cannot come to mean two
 different things on two pages.
 
-Where a dense table elsewhere cannot carry a definition, the same entry appears
-beside the term as an inline ⓘ: focus it with <kbd>Tab</kbd> or tap it, and
-press <kbd>Esc</kbd> to dismiss.
+A page that uses a term links here rather than repeating the definition, so a
+reader who meets a word for the first time has one place to go and the word has
+one meaning.
 
 <GlossaryList />
-
-## Inside a table that scrolls
-
-This is the case the inline affordance is most likely to break, so it is
-exercised here rather than assumed. The table below is five columns wide and
-scrolls horizontally on a phone; every cell in the last column carries a term.
-The `exampledb` rows are fictional and do not state current Ptah support.
-
-| Dialect | Line | Support | Probe | Note |
-| --- | --- | --- | --- | --- |
-| exampledb | 99.1 | <GlossaryTerm term="certified" /> | every pull request | <GlossaryTerm term="measured">measured on this line</GlossaryTerm> |
-| exampledb | 98.0 | <GlossaryTerm term="legacy-tested" /> | every pull request | <GlossaryTerm term="measured">measured on this line</GlossaryTerm> |
-| exampledb | 97.0 | <GlossaryTerm term="best-effort" /> | none | <GlossaryTerm term="carried">carried from 98.0</GlossaryTerm> |
-| exampledb | 96.0 | <GlossaryTerm term="known-incompatible" /> | none | <GlossaryTerm term="carried">carried from 97.0</GlossaryTerm> |
 
 ## Adding a term
 
@@ -51,7 +36,6 @@ The list above renders from that map, so the term appears here without being
 transcribed, and `check-glossary-coverage.mjs` refuses an entry that names a
 page which does not exist.
 
-Then use `<GlossaryTerm term="…" />` wherever a table shows the term as a glyph
-or a number whose meaning lives elsewhere on the page. A term with no entry in
-the map is a build error rather than a silent blank, so a typo cannot ship as an
-empty tooltip.
+Then link here from the pages that use it. The definition stays in the map and
+is rendered in one place, which is what keeps a word from meaning one thing on
+one page and something else on the next.

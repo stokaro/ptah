@@ -776,8 +776,8 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   return. Document an exit code there and link to it, rather than restating the
   number.
 - Product terms belong in `src/glossary.ts`. The glossary page renders those
-  definitions and dense tables may reuse them through `GlossaryTerm`; do not
-  write a second local definition that can drift.
+  definitions; a page that uses a term links there rather than writing a second
+  local definition that can drift.
 - Generated command and flag rows remain generator-owned. The
   `.ptah-reference-filter` affordance filters rendered rows only; it must never
   replace, truncate, or hand-copy the exhaustive inventory.
@@ -886,10 +886,9 @@ Complete this for every documentation PR:
    npm run check:search-ranking:selftest && npm run versions:selftest &&
    npm run build && npm run check:responsive && npm run check:accessibility &&
    npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots &&
-   npm run check:glossary:selftest && npm run check:glossary &&
    npm run check:navigation && npm run check:search-ranking`
-   all pass in `docs/site`. `check:responsive` and `check:glossary` read the
-   built site, so they run last. Run every `:selftest` alongside its check: a
+   all pass in `docs/site`. `check:responsive` reads the built site, so it runs
+   last. Run every `:selftest` alongside its check: a
    check whose self-test is failing is not reporting on your content.
 6. `docs/site/content-inventory.json` regenerated for any page, metadata,
    sidebar, or internal-link change. Update `CONTENT_INVENTORY.md` only when a
@@ -1016,7 +1015,7 @@ governed by existing, the same property `check:style` has and for the same
 reason.
 
 The table lists the rules this guide states. The documentation job also runs
-`check:limitations`, `check:glossary`, and the four checks that hold
+`check:limitations`, `check:glossary-coverage`, and the four checks that hold
 `atlas/feature-matrix.md` to its source data — `check-matrix-verdict-prose`,
 `check-matrix-citations`, `check-matrix-flag-names`, and
 `build-feature-matrix --check`. They govern named pages rather than prose in

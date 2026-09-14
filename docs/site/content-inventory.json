@@ -110,8 +110,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 2315,
-      "sourceBytes": 19438
+      "visibleWords": 2312,
+      "sourceBytes": 19216
     },
     {
       "path": "docs/site/src/content/docs/atlas/docs-coverage.md",
@@ -3873,6 +3873,7 @@
         "/databases/clickhouse/",
         "/databases/support-matrix/",
         "/operate/oci-registry/",
+        "/reference/glossary/",
         "/reference/test-cases/",
         "/testing/migrations-and-schema/"
       ],
@@ -3889,8 +3890,8 @@
         "/operate/troubleshooting/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1602,
-      "sourceBytes": 11573
+      "visibleWords": 1592,
+      "sourceBytes": 11362
     },
     {
       "path": "docs/site/src/content/docs/reference/command-flags.md",
@@ -4115,9 +4116,11 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
-      "inboundLinks": [],
-      "visibleWords": 286,
-      "sourceBytes": 2593
+      "inboundLinks": [
+        "/reference/capabilities/"
+      ],
+      "visibleWords": 179,
+      "sourceBytes": 1470
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
