@@ -316,6 +316,15 @@ type CheckpointFromShadowOptions struct {
 	// migrator's own default. It only has an effect on dialects that implement
 	// advisory locking.
 	MigrationLockTimeout time.Duration
+	// DataTables names the reference tables whose rows the checkpoint carries,
+	// spelled "table" or "schema.table".
+	//
+	// The rows are read from the shadow database after the replay, so they are
+	// the rows this history produces at the checkpoint's own version. A
+	// checkpoint that bootstrapped today's declarations instead would hand a
+	// fresh database values that no migration after the checkpoint was written
+	// against.
+	DataTables []string
 	// SchemaQualifier, when non-empty, prefixes every object the checkpoint
 	// creates with a schema qualifier, exactly as the same-named option does on
 	// a generated migration. It applies to a single-schema checkpoint only, and
@@ -401,10 +410,26 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
-	return generateCheckpointWithDatabaseQualified(
+	goSchema := dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, shadowConn.Info().Dialect)
+	upSQL, downSQL, err = generateCheckpointWithDatabaseQualified(
 		ctx,
 		shadowConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, shadowConn.Info().Dialect),
+		goSchema,
 		opts.SchemaQualifier,
 	)
+	if err != nil {
+		return "", "", err
+	}
+	// The rows go after the schema they belong in, in the same file: a
+	// checkpoint that created the tables and left the rows to a second
+	// mechanism would have a state in which the first ran and the second did
+	// not.
+	bootstrap, err := renderBootstrapData(ctx, shadowConn, goSchema, opts.DataTables)
+	if err != nil {
+		return "", "", err
+	}
+	if bootstrap != "" {
+		upSQL = strings.TrimRight(upSQL, "\n") + "\n\n" + bootstrap
+	}
+	return upSQL, downSQL, nil
 }

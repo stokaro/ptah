@@ -43,6 +43,7 @@ const (
 	editFlag                 = "edit"
 	editorFlag               = "editor"
 	migrationLockTimeoutFlag = "migration-lock-timeout"
+	dataTableFlag            = "data-table"
 )
 
 type options struct {
@@ -59,6 +60,7 @@ type options struct {
 	edit                 bool
 	editor               string
 	migrationLockTimeout string
+	dataTables           []string
 }
 
 // NewMigrateCheckpointCommand returns the `checkpoint` command.
@@ -103,6 +105,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.edit, editFlag, false, "Open the written checkpoint files in an editor before reporting them (the directory checksum is refreshed afterwards)")
 	flags.StringVar(&opts.editor, editorFlag, "", "Editor command used with --edit (defaults to $VISUAL, then $EDITOR)")
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Maximum time to wait for the shadow database's migration advisory lock during the replay (for example 10s). Empty waits indefinitely.")
+	flags.StringArrayVar(&opts.dataTables, dataTableFlag, nil, "Reference table whose rows the checkpoint carries, as table or schema.table (repeatable); the rows are read at the checkpoint's own version")
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
@@ -208,6 +211,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		MigrationsDir:        opts.migrationsDir,
 		MigrationsFS:         migrationsFS,
 		Dialect:              opts.dialect,
+		DataTables:           opts.dataTables,
 		Schemas:              dbcli.ParseSchemas(opts.schemas),
 		ProviderOptions:      []migrator.FSProviderOption{migrator.WithMigrationDirFormat(dirFormat)},
 		ConnectTimeout:       connectTimeout,

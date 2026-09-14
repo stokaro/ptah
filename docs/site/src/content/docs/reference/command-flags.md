@@ -635,6 +635,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--data-table` | `stringArray` | `[]` | `PTAH_DATA_TABLE` | — |
 | `--description` | `string` | `checkpoint` | `PTAH_DESCRIPTION` | — |
 | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
