@@ -261,6 +261,48 @@ Set `--exit-code` in CI when pending migrations should fail the job: the
 command then exits `1` while pending work exists and `0` once the database is
 up to date.
 
+## The evidence a run leaves
+
+`ptah migrations up --json` prints one document describing the run, on the
+successful path and on the failing one. Under this flag the document is standard
+output and everything written for a person goes to standard error, so a caller
+parses one stream and reads the other.
+
+```json
+{
+  "contract_version": 1,
+  "direction": "up",
+  "outcome": "failed",
+  "planned": [1785255952, 1785255999],
+  "applied": [1785255952],
+  "error": "failed to apply migration 1785255999: ...",
+  "status": { "…": "the history after the run" }
+}
+```
+
+The outcome is read from the revision table rather than from the exit status,
+because a run that died between its last statement and its answer exits the same
+way as one that never started:
+
+| Outcome | Meaning |
+| --- | --- |
+| `up-to-date` | Nothing was pending, so nothing was selected |
+| `applied` | Every selected migration is recorded applied, and no row is dirty |
+| `dry-run` | The run was asked to change nothing, and did not |
+| `failed` | The run stopped, and the migration that failed committed nothing: its dirty row counts no applied statements |
+| `partial` | The migration that failed committed some of its statements and not the rest |
+| `unknown` | The evidence could not be read, or a dirty row does not say how far it got |
+
+`failed` and `partial` are different instructions. A `failed` run may be retried
+once the cause is fixed. A `partial` run must not: the recovery is
+`ptah migrations repair --resume-from`, which has the row's partial digest to
+prove which statements it may skip. `unknown` is for a person.
+
+`planned` is what the migrator selected while holding the migration lock, which
+a `--limit`, a target version or a checkpoint narrows; `applied` names the
+selected migrations the history records afterwards, so a migration that was
+already applied before the run is not counted as this run's work.
+
 ## Execution controls
 
 The defaults are safe for most runs; three controls matter once several
