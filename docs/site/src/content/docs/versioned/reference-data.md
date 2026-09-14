@@ -141,6 +141,43 @@ keep at least one desired row for such a table. The all-delete change is
 destructive, so it still requires `--allow-destructive`, and
 `--protected-table` still applies.
 
+## Reference rows in a schema plan
+
+`ptah migrations data` writes a data migration into a directory, which is the
+versioned workflow. Direct schema changes reconcile the same rows without a
+migration file: `ptah schema plan` and `ptah schema apply` compare the declared
+rows against the database and include the statements that reach them.
+
+The data stage runs whether or not the schema changed. A release that only edits
+a reference row changes no DDL, and a planner that stopped at the schema diff
+would report an empty plan for a change its author made.
+
+What the plan carries is decided by what the declaration owns:
+
+- a table the plan is about to create holds nothing, so every declared row is an
+  `INSERT` and nothing is read back from a table that is not there;
+- a column no declaration names is never read and never written, so a value
+  beside the managed ones survives reconciliation untouched;
+- a repeated reconciliation over converged rows plans nothing.
+
+Severity is assigned by what the statement does to the rows, not by what a SQL
+analyzer makes of it:
+
+| Statement | Severity |
+| --- | --- |
+| `INSERT` of a declared row | safe |
+| `UPDATE` of managed columns | warning |
+| `DELETE` of a row the declaration no longer holds | destructive |
+
+The analyzer reads all three as safe, because none of them removes a table or
+tightens a constraint. That is true about the schema and false about the rows,
+and a plan whose deletions read as safe is a plan an approval policy waves
+through.
+
+Convergence includes the rows. A rehearsal or a post-apply verification whose
+schema matches and whose reference table does not is not a verification of the
+desired schema.
+
 ## Declarative data versus `ptah seed`
 
 `ptah seed` remains the imperative path — it runs environment-scoped SQL seed

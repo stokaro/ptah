@@ -179,7 +179,18 @@ func PlanApply(
 	if err != nil {
 		return ApplyPlan{}, err
 	}
-	return ApplyPlan{statements: computation.statements}, nil
+	return ApplyPlan{statements: computation.executionStatements()}, nil
+}
+
+// executionStatements is the DDL followed by the data. A row belongs in a
+// table the same plan may be creating or altering, so the schema moves first;
+// within the data, datadiff already orders inserts, updates and deletes.
+func (c applyComputation) executionStatements() []string {
+	statements := slices.Clone(c.statements)
+	for _, declared := range c.dataStatements {
+		statements = append(statements, declared.sql)
+	}
+	return statements
 }
 
 // applyComputation carries a computed schema apply plan together with the
@@ -188,8 +199,13 @@ func PlanApply(
 // re-reading the database.
 type applyComputation struct {
 	statements []string
-	current    *catalog.Database
-	desired    *schemamodel.Database
+	// dataStatements reconcile declared rows. They are kept apart from the DDL
+	// so a plan can record the severity this package assigns them: a SQL
+	// analyzer reads a DELETE of a reference row as safe, which is true about
+	// the schema and false about the row.
+	dataStatements []dataStatement
+	current        *catalog.Database
+	desired        *schemamodel.Database
 	// readScope is the schema allow-list current was read at, nil when the read
 	// was the connection's own default. A saved plan records no schema scope, so
 	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
@@ -334,21 +350,25 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
 	diff = applyDiffPolicy(diff, opts.Policy)
-	if !diff.HasChanges() {
-		return computation, nil
+	if diff.HasChanges() {
+		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
+			Capabilities:         info.Capabilities,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+			),
+		})
+		if err != nil {
+			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
+		}
 	}
-
-	computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
-		Capabilities:         info.Capabilities,
-		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-		ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-			opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
-		),
-	})
-
+	// The data stage runs whether or not the schema changed. A release that
+	// only edits a reference row changes no DDL, and a planner that returned
+	// here would report an empty plan for a change its author made.
+	computation.dataStatements, err = managedDataStatements(ctx, conn, desired, current)
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
+		return applyComputation{}, err
 	}
 	return computation, nil
 }
@@ -689,7 +709,7 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 	return ApplyRuntimePlan{
-		plan:    ApplyPlan{statements: computation.statements},
+		plan:    ApplyPlan{statements: computation.executionStatements()},
 		dryRun:  opts.DryRun,
 		conn:    conn,
 		txMode:  opts.TxMode,
