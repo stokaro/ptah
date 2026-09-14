@@ -66,6 +66,20 @@ type MigrationStatus struct {
 	// migration operations refuse to continue until the row is repaired; see
 	// [Migrator.RepairMigration].
 	DirtyRevision *MigrationRevision `json:"dirty_revision,omitempty"`
+	// ContractVersion is [StatusContractVersion], so a consumer can refuse a
+	// document it does not understand instead of reading the fields it
+	// recognizes out of a shape that means something else.
+	ContractVersion int `json:"contract_version"`
+	// Migrations is every migration the directory holds, in directory order,
+	// with what the file is, what the database recorded for it, and whether the
+	// two still agree. The version lists above answer "which versions"; this
+	// answers the questions a caller has to settle before it may execute
+	// anything.
+	Migrations []MigrationRecord `json:"migrations,omitempty"`
+	// CheckpointVersion is the checkpoint this database bootstraps from, and
+	// zero when none applies. A migration below it is covered rather than
+	// missing.
+	CheckpointVersion int64 `json:"checkpoint_version,omitempty"`
 }
 
 // MigrationStatusSnapshot contains a migration status and the revision rows
@@ -1527,7 +1541,18 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 		)
 	}
 
+	classified, err := m.classifyAppliedChecksums(providerMigrations, revisions)
+	if err != nil {
+		return MigrationStatusSnapshot{}, err
+	}
+	// A checkpoint bootstraps a database that has applied nothing, so there is
+	// no version to report where one has.
+	bootstrapVersion := int64(0)
+	if bootstrap != nil {
+		bootstrapVersion = bootstrap.Version
+	}
 	status := &MigrationStatus{
+		ContractVersion:         StatusContractVersion,
 		CurrentVersion:          currentVersion,
 		CurrentVersionKey:       currentVersionKey,
 		CurrentVersionKeySet:    currentVersionKeySet,
@@ -1540,6 +1565,16 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 		TotalMigrations:         len(providerMigrations),
 		HasPendingChanges:       len(pendingMigrationList) > 0 || dirtyRevision != nil,
 		DirtyRevision:           dirtyRevision,
+		CheckpointVersion:       bootstrapVersion,
+		Migrations: m.migrationRecords(
+			providerMigrations,
+			revisions,
+			pendingMigrationList,
+			outOfOrderMigrations,
+			bootstrapVersion,
+			dirtyRevision,
+			classified.mismatchedKeys(),
+		),
 	}
 	span.SetAttributes(
 		attr("migration.current_version", status.CurrentVersion),
