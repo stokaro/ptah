@@ -5,6 +5,7 @@ package migrateup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,6 +59,7 @@ const (
 	webhookFlag              = "webhook"
 	plainHTTPFlag            = "plain-http"
 	skipReportFlag           = "skip-report"
+	jsonFlag                 = "json"
 )
 
 type options struct {
@@ -93,6 +95,7 @@ type options struct {
 	logFormat            string
 	logLevel             string
 	metricsAddr          string
+	jsonOutput           bool
 }
 
 type parsedMigrationSettings struct {
@@ -224,6 +227,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before applying migrations; must return HTTP 200")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.BoolVar(&opts.skipReport, skipReportFlag, false, "Do not attach a deployment report after applying an OCI migration artifact")
+	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Print the run's evidence as one JSON document, on success and on failure")
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -378,7 +382,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	defer shutdownObservability(runtime)
-	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
+	// Under --json the document is the output, so everything written for a
+	// person goes to standard error. A `=== MIGRATE UP ===` banner in front of
+	// it would reach the caller as a parse error rather than as a help.
+	emit := cliobs.NewEmitter(humanOutput(cmd, opts), runtime)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -549,27 +556,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	var checksDeferred []int64
-	err = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
-		Amount:     opts.limit,
-		AllowDirty: opts.allowDirty,
-		Preflight:  preflightHook,
-		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
-			checksDeferred = versions
-		},
-	})
-	if err != nil {
-		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](err); ok {
-			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
-		}
-		return fmt.Errorf("error running migrations: %w", err)
+	outcome := applyPendingMigrations(cmd, mig, opts, preflightHook)
+	finalStatus := outcome.status
+	if err := outcome.err(); err != nil {
+		return err
 	}
-
-	// Get final status
-	finalStatus, err := mig.GetMigrationStatus(context.Background())
-	if err != nil {
-		return fmt.Errorf("error getting final migration status: %w", err)
-	}
+	checksDeferred := outcome.checksDeferred
 	publishDeploymentReportIfNeeded(cmd.Context(), runtime, emit, deploymentReportPublication{
 		source:     source.OCI,
 		dialect:    conn.Info().Dialect,
@@ -581,8 +573,106 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		skip:       opts.skipReport,
 	})
 
-	emitMigrateUpSummary(emit, opts, status, finalStatus)
-	emitMigrateUpDeferredChecks(emit, checksDeferred)
+	if !opts.jsonOutput {
+		emitMigrateUpSummary(emit, opts, status, finalStatus)
+		emitMigrateUpDeferredChecks(emit, checksDeferred)
+	}
+	return nil
+}
+
+// migrateUpOutcome is one run and everything the command has to say about it.
+type migrateUpOutcome struct {
+	status         *migrator.MigrationStatus
+	checksDeferred []int64
+	runErr         error
+	statusErr      error
+}
+
+// err is the failure the command returns, in the order the caller can act on:
+// the run's own error first, and the unreadable status only when the run
+// itself succeeded.
+func (o migrateUpOutcome) err() error {
+	if o.runErr != nil {
+		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](o.runErr); ok {
+			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
+		}
+		return fmt.Errorf("error running migrations: %w", o.runErr)
+	}
+	if o.statusErr != nil {
+		return fmt.Errorf("error getting final migration status: %w", o.statusErr)
+	}
+	return nil
+}
+
+// applyPendingMigrations runs the migrations and gathers the run's evidence.
+//
+// The status is read on both paths, and the failing one is why: a run that
+// stopped is exactly the run whose caller has to be told what the database now
+// holds. A status that cannot be read leaves the outcome unknown rather than
+// replacing it with a guess, and the document is written before either failure
+// is returned.
+func applyPendingMigrations(
+	cmd *cobra.Command,
+	mig *migrator.Migrator,
+	opts *options,
+	preflightHook migrator.PreMigrationHook,
+) migrateUpOutcome {
+	outcome := migrateUpOutcome{}
+	// The selected plan is captured rather than derived from the pending list
+	// afterwards: a limit, a target version or a checkpoint narrows what the
+	// migrator selected under its own lock, and a document that reported the
+	// pending list would name work this run never intended to do.
+	var selectedPlan *migrator.MigrationPlan
+	outcome.runErr = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
+		Amount:     opts.limit,
+		AllowDirty: opts.allowDirty,
+		Preflight:  preflightHook,
+		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
+			selectedPlan = &plan
+		},
+		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
+			outcome.checksDeferred = versions
+		},
+	})
+	status, statusErr := mig.GetMigrationStatus(context.Background())
+	if statusErr != nil {
+		outcome.statusErr = statusErr
+		status = nil
+	}
+	outcome.status = status
+	if !opts.jsonOutput {
+		return outcome
+	}
+	if err := emitRunResult(cmd.OutOrStdout(), migrator.RunEvidence{
+		Direction: migrator.MigrationDirectionUp,
+		Plan:      selectedPlan,
+		After:     status,
+		Err:       outcome.runErr,
+		DryRun:    opts.dryRun,
+	}); err != nil && outcome.runErr == nil {
+		outcome.runErr = err
+	}
+	return outcome
+}
+
+// humanOutput selects where this command's human-facing output goes.
+func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
+	if opts.jsonOutput {
+		return cmd.ErrOrStderr()
+	}
+	return cmd.OutOrStdout()
+}
+
+// emitRunResult writes the run's evidence as one JSON document.
+//
+// It goes to standard output on both the successful and the failing path,
+// because the caller that most needs the evidence is the one whose run stopped.
+func emitRunResult(w io.Writer, evidence migrator.RunEvidence) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(migrator.NewRunResult(evidence)); err != nil {
+		return fmt.Errorf("error writing migration run result: %w", err)
+	}
 	return nil
 }
 
