@@ -93,7 +93,9 @@ func (r Result) Diagnostic(file string) string {
 		file, first.Statement.Line, first.Message, first.Remedy)
 }
 
-// Analyze classifies an authored file's statements.
+// Analyze classifies an ordered statement list that is about to run inside one
+// transaction: an authored migration file, or a schema apply plan, which can
+// be edited or saved and so is authored too.
 //
 // A target that cannot host the constructs at all is never reported: the check
 // is keyed on the capability that governs each rule rather than on the dialect
@@ -146,7 +148,7 @@ func enumValueFinding(dialect string, statement Statement, pending map[string]st
 		Statement: statement,
 		Reason:    ReasonEnumValueUsed,
 		Message: fmt.Sprintf(
-			"it uses %s, a value this file adds to the pre-existing enum type %s, "+
+			"it uses %s, a value an earlier statement in the same transaction adds to the pre-existing enum type %s, "+
 				"and a new enum value is not usable until the transaction that added it commits",
 			value, typeName),
 		Remedy: "mark the file `-- +ptah no_transaction`, or add the value in an earlier migration",

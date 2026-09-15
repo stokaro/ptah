@@ -399,12 +399,32 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 	return nil
 }
 
-// trackerDDL is the tracker table every dialect gets.
+// trackerDDL is the statement that creates the tracker table when it is absent.
+// It runs on every Apply, so it has to succeed against a table that exists.
 //
 // The checksum column holds the hex SHA-256 of the seed file's bytes as they
 // were when the seed ran, and it is read on the next run: a file whose bytes no
 // longer hash to the recorded value is refused with a [ChecksumMismatchError]
 // rather than reported as already applied.
+//
+// The default arm is the portable spelling. These dialects refuse it, and each
+// gets its own:
+//
+//   - ClickHouse needs a table engine and has its own type names.
+//   - SQL Server has no IF NOT EXISTS on CREATE TABLE; T-SQL refuses it at
+//     parse time with Msg 156, so the guard is IF OBJECT_ID(...) IS NULL, the
+//     spelling the migrator uses for its revision table. The column type
+//     changes too: T-SQL's TIMESTAMP is rowversion, a counter the server fills
+//     in, and inserting the time a seed ran into it fails with Msg 273. The
+//     column is DATETIME2.
+//   - Oracle accepts CREATE TABLE IF NOT EXISTS on 23 and refuses it on 21 with
+//     ORA-00922. The table is created from a PL/SQL block that ignores
+//     ORA-00955, name already used, and raises every other error. The block
+//     does not read [capability.ObjectExistenceGuards]: one statement for both
+//     lines means a 23 server measures exactly what a 21 server is sent.
+//
+// Every name is unqualified, so each guard looks in the schema the CREATE
+// TABLE and every later tracker statement resolve against.
 func trackerDDL(dialect string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.ClickHouse:
@@ -414,6 +434,30 @@ func trackerDDL(dialect string) string {
     checksum String,
     applied_at DateTime
 ) ENGINE = MergeTree ORDER BY seed_path`
+	case platform.SQLServer:
+		return `IF OBJECT_ID(N'schema_seeds', N'U') IS NULL
+BEGIN
+    CREATE TABLE schema_seeds (
+        seed_path VARCHAR(512) PRIMARY KEY,
+        env VARCHAR(128) NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        applied_at DATETIME2 NOT NULL
+    )
+END`
+	case platform.Oracle:
+		return `BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE schema_seeds (
+        seed_path VARCHAR(512) PRIMARY KEY,
+        env VARCHAR(128) NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        applied_at TIMESTAMP NOT NULL
+    )';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN
+            RAISE;
+        END IF;
+END;`
 	default:
 		return `CREATE TABLE IF NOT EXISTS schema_seeds (
     seed_path VARCHAR(512) PRIMARY KEY,

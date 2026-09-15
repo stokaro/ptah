@@ -490,3 +490,71 @@ func TestRenderErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderNullKeyPredicate pins the predicate a key column holding NULL gets.
+// Written as `= NULL` it is UNKNOWN for every row, so the statement succeeds
+// and matches nothing.
+func TestRenderNullKeyPredicate(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &datadiff.DataDiff{
+		Table: "scoped",
+		Keys:  []string{"code", "tenant"},
+		Updates: []datadiff.RowUpdate{
+			{
+				Key:     map[string]any{"code": "one", "tenant": nil},
+				Desired: datadiff.Row{"code": "one", "tenant": nil, "label": "new"},
+				Live:    datadiff.Row{"code": "one", "tenant": nil, "label": "old"},
+			},
+		},
+		Deletes: []datadiff.Row{
+			{"code": "two", "tenant": nil, "label": "gone"},
+		},
+	}
+
+	wantUp := `UPDATE "scoped" SET "label" = 'new' WHERE "code" = 'one' AND "tenant" IS NULL;
+DELETE FROM "scoped" WHERE "code" = 'two' AND "tenant" IS NULL;
+`
+	wantDown := `INSERT INTO "scoped" ("code", "label", "tenant") VALUES ('two', 'gone', NULL);
+UPDATE "scoped" SET "label" = 'old' WHERE "code" = 'one' AND "tenant" IS NULL;
+`
+
+	up, down, err := datadiff.Render(diff, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Equals, wantUp)
+	c.Assert(down, qt.Equals, wantDown)
+}
+
+// TestRenderClickHouseUpdateIsAlterTable pins the statement a row change takes
+// on ClickHouse, which answers a plain UPDATE with "Lightweight updates are not
+// supported" unless the table carries a materialized _block_number column. The
+// INSERT and the DELETE keep their ordinary spelling, which the server accepts.
+func TestRenderClickHouseUpdateIsAlterTable(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &datadiff.DataDiff{
+		Table:   "settings",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "two", "label": "second"}},
+		Updates: []datadiff.RowUpdate{
+			{
+				Key:     map[string]any{"code": "one"},
+				Desired: datadiff.Row{"code": "one", "label": "new"},
+				Live:    datadiff.Row{"code": "one", "label": "old"},
+			},
+		},
+		Deletes: []datadiff.Row{{"code": "three", "label": "gone"}},
+	}
+
+	wantUp := "INSERT INTO `settings` (`code`, `label`) VALUES ('two', 'second');\n" +
+		"ALTER TABLE `settings` UPDATE `label` = 'new' WHERE `code` = 'one';\n" +
+		"DELETE FROM `settings` WHERE `code` = 'three';\n"
+	wantDown := "INSERT INTO `settings` (`code`, `label`) VALUES ('three', 'gone');\n" +
+		"ALTER TABLE `settings` UPDATE `label` = 'old' WHERE `code` = 'one';\n" +
+		"DELETE FROM `settings` WHERE `code` = 'two';\n"
+
+	up, down, err := datadiff.Render(diff, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Equals, wantUp)
+	c.Assert(down, qt.Equals, wantDown)
+}

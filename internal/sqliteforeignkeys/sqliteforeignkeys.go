@@ -35,6 +35,11 @@ const (
 // stands, because a statement a person put in the middle of a plan means
 // something there. The bracket is what this repository's planner emits, and
 // what the pinned community binary emits.
+//
+// A comment in front of a pragma is not part of it. The planner writes one above
+// each of the two, and a plan split into statements keeps it on the statement
+// that follows, so a checker that read the comment as the statement's first word
+// would recognize no plan this repository prepares.
 func Brackets(statements []string) bool {
 	if len(statements) < 2 {
 		return false
@@ -44,6 +49,22 @@ func Brackets(statements []string) bool {
 	}
 	enabled, ok := parse(statements[len(statements)-1])
 	return ok && enabled
+}
+
+// AppendIndex reports where statements added to the end of a plan go so that
+// the plan stays bracketed: at the enabling pragma, which puts them inside the
+// bracket, when statements are bracketed, and after the last statement
+// otherwise.
+//
+// Placed after the enabling pragma, they end the plan instead of it, Brackets
+// answers false, and the apply opens an ordinary transaction in which the
+// disabling pragma is silently ignored. The rebuild then runs with enforcement
+// on: its DROP fails against a referencing row, or cascades and removes it.
+func AppendIndex(statements []string) int {
+	if Brackets(statements) {
+		return len(statements) - 1
+	}
+	return len(statements)
 }
 
 // BracketsSQL is Brackets over SQL text that has not been split yet, which is
@@ -68,7 +89,7 @@ func BracketsSQL(sqlText string) bool {
 // at all. It accepts the spellings SQLite accepts, so that a plan written by
 // hand is recognized as readily as a plan this repository emitted.
 func parse(stmt string) (enabled, ok bool) {
-	normalized := strings.ToLower(strings.TrimSpace(stmt))
+	normalized := strings.ToLower(strings.TrimSpace(sqlutil.StripCommentsForDialect(stmt, platform.SQLite)))
 	normalized = strings.TrimSpace(strings.TrimSuffix(normalized, ";"))
 	rest, isPragma := strings.CutPrefix(normalized, "pragma ")
 	if !isPragma {

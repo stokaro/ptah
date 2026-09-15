@@ -444,3 +444,125 @@ func declaredTimeSchema(moment, day string) *schemamodel.Database {
 	schemamodel.Finalize(db)
 	return db
 }
+
+// TestDeclaredRowsWidenedDeclarationLive adds a column to a table that already
+// carries declared rows, and gives the declaration a value for it.
+//
+// The data stage runs after the DDL is planned and before it has run, so it
+// reads the table as the database still has it. Asking that table for the
+// column the plan is about to add is what PostgreSQL answers 42703 to, and the
+// whole reconciliation stops before anything is written (stokaro/ptah#3260).
+func TestDeclaredRowsWidenedDeclarationLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "widen")
+	defer done()
+
+	applyDeclaredRows(c, ctx, conn, declaredWidthSchema(false))
+	applyDeclaredRows(c, ctx, conn, declaredWidthSchema(true))
+
+	c.Assert(declaredRowLabel(c, ctx, conn, "one"), qt.Equals, "Retention window")
+	c.Assert(declaredRowNote(c, ctx, conn, "one"), qt.Equals, "added with the column")
+}
+
+func declaredRowNote(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, code string) string {
+	c.Helper()
+	rows, err := conn.QueryContext(ctx, `SELECT "note" FROM "settings" WHERE "code" = '`+code+`'`)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+
+	note := ""
+	c.Assert(rows.Next(), qt.IsTrue)
+	c.Assert(rows.Scan(&note), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
+	return note
+}
+
+// declaredWidthSchema is one declared row, with a second column and its value
+// arriving in the wider revision.
+func declaredWidthSchema(wide bool) *schemamodel.Database {
+	fields := []schemamodel.Field{
+		{StructName: "Setting", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
+		{StructName: "Setting", FieldName: "Label", Name: "label", Type: "TEXT"},
+	}
+	row := schemamodel.ManagedRow{
+		"code":  {Tag: "str", Text: "one"},
+		"label": {Tag: "str", Text: "Retention window"},
+	}
+	if wide {
+		fields = append(fields, schemamodel.Field{
+			StructName: "Setting", FieldName: "Note", Name: "note", Type: "TEXT", Nullable: true,
+		})
+		row["note"] = schemamodel.ManagedValue{Tag: "str", Text: "added with the column"}
+	}
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Setting", Name: "settings"}},
+		Fields: fields,
+		ManagedData: []schemamodel.ManagedData{{
+			StructName: "Setting",
+			Table:      "settings",
+			Keys:       []string{"code"},
+			File:       "settings.yaml",
+			Rows:       []schemamodel.ManagedRow{row},
+		}},
+	}
+	schemamodel.Finalize(db)
+	return db
+}
+
+// TestDeclaredRowsDefaultSchemaLive writes the connection's own schema into the
+// declaration, which is the spelling an author reaches for when the project has
+// more than one schema.
+//
+// The readers blank the schema of an object in the connection's own schema, so
+// a declaration carrying it has to match a table the catalog reports with no
+// schema at all. Comparing the two literally leaves the live rows unread, every
+// declared row reads as an insert, and the second apply fails on the primary key
+// (stokaro/ptah#3280).
+func TestDeclaredRowsDefaultSchemaLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "default_schema")
+	defer done()
+
+	desired := declaredSchemaQualifiedRows("public")
+	applyDeclaredRows(c, ctx, conn, desired)
+
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
+
+	// And the apply is repeatable: an unread live set would plan the insert
+	// again, which the primary key refuses.
+	applyDeclaredRows(c, ctx, conn, desired)
+	c.Assert(declaredRowCodes(c, ctx, conn, "regions"), qt.DeepEquals, []string{"emea"})
+}
+
+// declaredSchemaQualifiedRows is one declared row set whose declaration names
+// the schema its table lives in.
+func declaredSchemaQualifiedRows(schema string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Region", Name: "regions", Schema: schema}},
+		Fields: []schemamodel.Field{
+			{StructName: "Region", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
+			{StructName: "Region", FieldName: "Name", Name: "name", Type: "TEXT"},
+		},
+		ManagedData: []schemamodel.ManagedData{{
+			StructName: "Region",
+			Schema:     schema,
+			Table:      "regions",
+			Keys:       []string{"code"},
+			File:       "regions.yaml",
+			Rows: []schemamodel.ManagedRow{{
+				"code": {Tag: "str", Text: "emea"},
+				"name": {Tag: "str", Text: "Europe, Middle East and Africa"},
+			}},
+		}},
+	}
+	schemamodel.Finalize(db)
+	return db
+}
