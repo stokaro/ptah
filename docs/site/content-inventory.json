@@ -6213,8 +6213,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1554,
-      "sourceBytes": 11647
+      "visibleWords": 1601,
+      "sourceBytes": 11958
     },
     {
       "path": "docs/site/src/content/docs/versioned/generate.mdx",

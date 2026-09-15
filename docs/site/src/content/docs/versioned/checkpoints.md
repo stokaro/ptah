@@ -97,6 +97,12 @@ data says so in its own bytes. Row order is sorted rather than whatever the
 database returned, because a checkpoint whose bytes change between runs is one
 whose checksum nobody can reproduce.
 
+A binary column is written as a hexadecimal literal in the engine's own
+spelling: `'\x5cff41'::bytea` on PostgreSQL, CockroachDB and Spanner,
+`X'5cff41'` on MySQL, MariaDB and SQLite, and `0x5cff41` on SQL Server. A fresh
+database receives the bytes the history wrote, including bytes that are not
+valid text.
+
 A table that does not exist at the checkpoint's version is refused, and so is a
 table with no primary key: rows with no identity are not rows this mechanism can
 promise to reproduce.

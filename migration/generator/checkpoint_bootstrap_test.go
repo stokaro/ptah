@@ -204,3 +204,56 @@ func writeFile(c *qt.C, path, contents string) {
 	c.Helper()
 	c.Assert(os.WriteFile(path, []byte(contents), 0o600), qt.IsNil)
 }
+
+// TestCheckpointBootstrapCarriesBinaryColumnBytewise holds a checkpoint to the
+// bytes and the storage class of a BLOB column. SQLite accepts a text literal
+// into a BLOB column without complaint and stores it as TEXT, so a fresh
+// database bootstrapped that way holds the same bytes under a different type,
+// and a later `WHERE payload = X'...'` matches nothing there
+// (stokaro/ptah#3297).
+func TestCheckpointBootstrapCarriesBinaryColumnBytewise(t *testing.T) {
+	c := qt.New(t)
+	history := c.TempDir()
+	writeFile(c, filepath.Join(history, "0000000001_payloads.up.sql"),
+		"CREATE TABLE payloads (code TEXT PRIMARY KEY, payload BLOB NOT NULL);\n"+
+			"INSERT INTO payloads (code, payload) VALUES ('alpha', X'5cff41'), ('beta', X'5c5c42'), ('gamma', X'275c5c'), ('delta', X'');\n")
+	writeFile(c, filepath.Join(history, "0000000001_payloads.down.sql"), "DROP TABLE payloads;\n")
+
+	upSQL, downSQL := generateSQLiteCheckpoint(c, history, "payloads")
+
+	c.Assert(upSQL, qt.Contains, generator.BootstrapDataMarker+" payloads rows=4")
+	checkpoint := c.TempDir()
+	writeFile(c, filepath.Join(checkpoint, "0000000002_snapshot.checkpoint.up.sql"), upSQL)
+	writeFile(c, filepath.Join(checkpoint, "0000000002_snapshot.checkpoint.down.sql"), downSQL)
+
+	want := []string{"alpha blob 5CFF41", "beta blob 5C5C42", "delta blob ", "gamma blob 275C5C"}
+	c.Assert(readPayloads(c, history, "full-history.db"), qt.DeepEquals, want)
+	c.Assert(readPayloads(c, checkpoint, "from-checkpoint.db"), qt.DeepEquals, want)
+}
+
+// readPayloads applies dir to a new SQLite database and reads each payload
+// back as its storage class and its bytes, both computed by SQLite rather than
+// by the reader the checkpoint was generated with.
+func readPayloads(c *qt.C, dir, name string) []string {
+	c.Helper()
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(c.TempDir(), name))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	rows, err := conn.QueryContext(ctx,
+		"SELECT code || ' ' || typeof(payload) || ' ' || hex(payload) FROM payloads ORDER BY code")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	got := make([]string, 0)
+	for rows.Next() {
+		var line string
+		c.Assert(rows.Scan(&line), qt.IsNil)
+		got = append(got, line)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return got
+}

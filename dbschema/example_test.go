@@ -70,8 +70,8 @@ func ExampleReadSchemaWithSchemasContext() {
 
 // ExampleReadTableRows reads current rows projected onto named columns, the
 // row-level read migration/datadiff builds on. Each row is a map keyed by the
-// caller's exact column spellings, and driver []byte values arrive as string
-// so values compare stably across drivers. No ORDER BY is issued -- row order
+// caller's exact column spellings, and a text column's value arrives as string
+// even from a driver that scans it as []byte. No ORDER BY is issued -- row order
 // is unspecified -- so the example sorts before printing.
 func ExampleReadTableRows() {
 	ctx := context.Background()
