@@ -915,9 +915,10 @@ its own
 
 ```text
 0000000001_a.up.sql cannot run inside a transaction: line 3 it uses 'brilliant',
-a value this file adds to the pre-existing enum type mood, and a new enum value
-is not usable until the transaction that added it commits; mark the file
-`-- +ptah no_transaction`, or add the value in an earlier migration
+a value an earlier statement in the same transaction adds to the pre-existing
+enum type mood, and a new enum value is not usable until the transaction that
+added it commits; mark the file `-- +ptah no_transaction`, or add the value in
+an earlier migration
 ```
 
 The enum check is semantic rather than keyword-based, because the keyword

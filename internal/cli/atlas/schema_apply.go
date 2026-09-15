@@ -33,7 +33,6 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
 	migrationlint "ptah.run/migration/lint"
-	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -786,18 +785,12 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// A plan carrying `-- atlas:txmode` says how it is to be executed, and it
 	// says so from the artifact the operator reviewed. It is resolved against
 	// --tx-mode under the same rule a migration file's directive answers to,
-	// through the same function: the directive wins, except under --tx-mode
-	// all, where the combination is refused rather than silently decided
-	// (stokaro/ptah#1700).
-	planMode, err := atlasschema.PlanTxMode(path, plan.SQL())
+	// through the function the native `ptah schema apply --plan` calls too:
+	// the directive wins, except under --tx-mode all, where the combination is
+	// refused rather than silently decided (stokaro/ptah#1700).
+	txMode, err = atlasschema.ResolvePlanTxMode(txMode, path, plan.SQL())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
-	}
-	if planMode != migrationfile.FileTxModeUnspecified {
-		txMode, err = migrator.ResolveAtlasDirectiveTxMode(txMode, planMode, path)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
 	}
 	// Atlas requires the desired state to verify a plan file; the Atlas plan
 	// format has nothing else to verify against, so the compat tree mirrors

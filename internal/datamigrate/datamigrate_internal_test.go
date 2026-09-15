@@ -28,6 +28,11 @@ func TestRejectsExplicitInsert(t *testing.T) {
 		{name: "postgres serial accepts", dialect: "postgres", col: catalog.Column{IsAutoIncrement: true}, want: false},
 		{name: "mysql auto_increment accepts", dialect: "mysql", col: catalog.Column{IsAutoIncrement: true}, want: false},
 		{name: "sqlite autoincrement accepts", dialect: "sqlite", col: catalog.Column{IsAutoIncrement: true}, want: false},
+		// Oracle sets IsAutoIncrement for both identity modes, and only
+		// GENERATED ALWAYS refuses an explicit value (ORA-32795), so the
+		// generation mode decides: stokaro/ptah#3295.
+		{name: "oracle always rejects", dialect: "oracle", col: catalog.Column{IsAutoIncrement: true, IdentityGeneration: "ALWAYS"}, want: true},
+		{name: "oracle by-default accepts", dialect: "oracle", col: catalog.Column{IsAutoIncrement: true, IdentityGeneration: "BY_DEFAULT"}, want: false},
 		{name: "plain column accepts", dialect: "postgres", col: catalog.Column{}, want: false},
 	}
 
@@ -60,6 +65,13 @@ func TestInsertableColumns_Success(t *testing.T) {
 			columns:  []catalog.Column{{Name: "id"}, {Name: "label"}, {Name: "label_len", GeneratedKind: "STORED"}},
 			keys:     []string{"id"},
 			wantCols: []string{"id", "label"},
+		},
+		{
+			name:     "oracle by-default identity key kept",
+			dialect:  "oracle",
+			columns:  []catalog.Column{{Name: "CODE"}, {Name: "ID", IsAutoIncrement: true, IdentityGeneration: "BY_DEFAULT"}},
+			keys:     []string{"ID"},
+			wantCols: []string{"CODE", "ID"},
 		},
 		{
 			name:     "postgres serial non-key kept",
@@ -102,6 +114,13 @@ func TestInsertableColumns_Refusals(t *testing.T) {
 			columns: []catalog.Column{{Name: "code"}, {Name: "n", IsAutoIncrement: true}},
 			keys:    []string{"code"},
 			wantErr: `"n"`,
+		},
+		{
+			name:    "oracle identity-always key refused",
+			dialect: "oracle",
+			columns: []catalog.Column{{Name: "ID", IsAutoIncrement: true, IdentityGeneration: "ALWAYS"}, {Name: "CODE"}},
+			keys:    []string{"ID"},
+			wantErr: `column(s) "ID" reject explicit inserts`,
 		},
 		{
 			name:    "missing key column",
