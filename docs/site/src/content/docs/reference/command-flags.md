@@ -1104,6 +1104,7 @@ Read the columns as follows.
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
+| `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
 | `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |

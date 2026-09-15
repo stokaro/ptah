@@ -127,6 +127,14 @@ type MigrateUpOptions struct {
 	// TargetVersion limits the run to pending migrations at or below this
 	// version. Zero means latest.
 	TargetVersion int64
+	// RefuseTargetVersionAlreadyPassed fails a run that cannot reach
+	// TargetVersion with a [*TargetVersionPassedError] instead of selecting
+	// nothing. It is read only when TargetVersion is above zero, and only when
+	// the selection came out empty, so a target still reachable through an
+	// out-of-order pending migration is applied either way. A caller that hands
+	// an operator's exact version to the migrator sets it; a caller for which
+	// an empty run is a successful no-op leaves it clear.
+	RefuseTargetVersionAlreadyPassed bool
 	// Amount limits the run to the first N pending migrations after exec-order
 	// and target-version filtering. Zero means all selected migrations.
 	Amount uint64
@@ -1834,11 +1842,10 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 
-	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
+	migrationsToApply, err := m.selectUpMigrations(opts, migrations, appliedMigrations, appliedIdentities, currentVersion)
 	if err != nil {
 		return err
 	}
-	migrationsToApply = limitMigrationsToApply(migrationsToApply, opts.Amount)
 	plan := MigrationPlan{
 		Direction:            MigrationDirectionUp,
 		CurrentVersion:       currentVersion,
@@ -1881,6 +1888,67 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
+}
+
+// selectUpMigrations picks the migrations one up run applies: the pending set
+// the execution order allows, narrowed by the target version and then by the
+// amount, and refused outright where the bound cannot be honored. Narrowing
+// and refusing stay beside the selection because each reads what the step
+// before it produced, and the refusal is about what was selected rather than
+// about the options.
+func (m *Migrator) selectUpMigrations(
+	opts MigrateUpOptions,
+	migrations []*Migration,
+	appliedMigrations []int64,
+	appliedIdentities migrationIdentitySet,
+	currentVersion int64,
+) ([]*Migration, error) {
+	selected, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
+	if err != nil {
+		return nil, err
+	}
+	selected = limitMigrationsToApply(selected, opts.Amount)
+	if err := refuseUnreachableTargetVersion(opts, currentVersion, selected); err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
+// TargetVersionPassedError reports an up run bounded at a version the recorded
+// history already sits above, with no pending migration left that reaches it.
+type TargetVersionPassedError struct {
+	// TargetVersion is the bound the caller asked the run to stop at.
+	TargetVersion int64
+	// CurrentVersion is the highest version the revision table records as
+	// applied.
+	CurrentVersion int64
+}
+
+// Error describes the target the run was given and the version the database
+// already holds.
+func (e *TargetVersionPassedError) Error() string {
+	return fmt.Sprintf(
+		"cannot migrate up to version %d: the database already records version %d",
+		e.TargetVersion,
+		e.CurrentVersion,
+	)
+}
+
+// refuseUnreachableTargetVersion reports a bounded run that cannot arrive
+// where it was sent. Without it the run selects nothing and exits 0, so an
+// operator executing an approved plan is told a version was reached that the
+// database never reached.
+func refuseUnreachableTargetVersion(opts MigrateUpOptions, currentVersion int64, selected []*Migration) error {
+	if !opts.RefuseTargetVersionAlreadyPassed || opts.TargetVersion <= 0 {
+		return nil
+	}
+	if len(selected) > 0 || currentVersion <= opts.TargetVersion {
+		return nil
+	}
+	return &TargetVersionPassedError{
+		TargetVersion:  opts.TargetVersion,
+		CurrentVersion: currentVersion,
+	}
 }
 
 func hasMigrationVersion(migrations []*Migration, version int64) bool {
