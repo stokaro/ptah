@@ -3,6 +3,8 @@ package schemaartifact_test
 import (
 	"context"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -165,4 +167,84 @@ func managedUsersDatabase() *schemamodel.Database {
 		}},
 	}}
 	return db
+}
+
+// TestMaterialize_WritesTheRowsBesideTheSchema is the defect this pair of files
+// exists to prevent: an artifact that declares rows, written to disk as the
+// canonical HCL alone, hands a consumer a `data` block whose `file` names a path
+// in the working copy that published it. Every consumer that materializes
+// before planning -- which is what a process holding database credentials and no
+// registry credentials has to do -- then plans a schema with the rows missing
+// (stokaro/ptah#3256).
+func TestMaterialize_WritesTheRowsBesideTheSchema(t *testing.T) {
+	c := qt.New(t)
+	store := memory.New()
+	_, err := schemaartifact.PushTo(
+		context.Background(), store, managedUsersDatabase(), schemaartifact.PushOptions{Latest: true},
+	)
+	c.Assert(err, qt.IsNil)
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	c.Assert(err, qt.IsNil)
+
+	directory := t.TempDir()
+	written, err := schemaartifact.Materialize(pulled, filepath.Join(directory, "schema.hcl"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.DeepEquals, []string{
+		filepath.Join(directory, "schema.hcl"),
+		filepath.Join(directory, schemaartifact.ManagedDataFileName),
+	})
+	rows, err := os.ReadFile(written[1])
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rows), qt.Contains, `"first@example.com"`)
+	// The materialized layer is the artifact's own bytes, so what a consumer
+	// reads back is what the digest covered.
+	layer, err := fs.ReadFile(pulled.FileSystem, schemaartifact.ManagedDataFileName)
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.DeepEquals, layer)
+}
+
+// TestMaterialize_WritesOneFileWhenNothingDeclaresRows is the control: the
+// second file is written because the artifact carries rows, not because
+// materializing always writes two.
+func TestMaterialize_WritesOneFileWhenNothingDeclaresRows(t *testing.T) {
+	c := qt.New(t)
+	store := memory.New()
+	_, err := schemaartifact.PushTo(
+		context.Background(), store, usersDatabase(), schemaartifact.PushOptions{Latest: true},
+	)
+	c.Assert(err, qt.IsNil)
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	c.Assert(err, qt.IsNil)
+
+	directory := t.TempDir()
+	written, err := schemaartifact.Materialize(pulled, filepath.Join(directory, "schema.hcl"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.DeepEquals, []string{filepath.Join(directory, "schema.hcl")})
+	_, err = os.Stat(filepath.Join(directory, schemaartifact.ManagedDataFileName))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
+}
+
+// TestMaterialize_LeavesNoSchemaWithoutItsRows keeps the two writes one
+// outcome. A canonical HCL beside a row layer that failed to land is the one
+// result a reader cannot tell from an artifact that declares no rows.
+func TestMaterialize_LeavesNoSchemaWithoutItsRows(t *testing.T) {
+	c := qt.New(t)
+	store := memory.New()
+	_, err := schemaartifact.PushTo(
+		context.Background(), store, managedUsersDatabase(), schemaartifact.PushOptions{Latest: true},
+	)
+	c.Assert(err, qt.IsNil)
+	pulled, err := schemaartifact.PullFrom(context.Background(), store, "latest")
+	c.Assert(err, qt.IsNil)
+	directory := t.TempDir()
+	blocker := filepath.Join(directory, schemaartifact.ManagedDataFileName)
+	c.Assert(os.WriteFile(blocker, []byte("taken"), 0o600), qt.IsNil)
+
+	_, err = schemaartifact.Materialize(pulled, filepath.Join(directory, "schema.hcl"))
+
+	c.Assert(err, qt.IsNotNil)
+	_, err = os.Stat(filepath.Join(directory, "schema.hcl"))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
 }

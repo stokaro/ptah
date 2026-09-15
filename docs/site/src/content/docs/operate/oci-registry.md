@@ -534,6 +534,16 @@ pull never overwrites a working copy. A reference the registry does not hold
 refuses with `error: pull ...: fetch OCI manifest: ...: not found` and exits `2`
 as well.
 
+An artifact that declares reference rows is written as two files: the canonical
+HCL at `--out`, and `managed-data.json` beside it. Both paths are printed. The
+HCL carries the declaration and not the rows -- a `data` block names the row
+file of the working copy that published the artifact, and that path exists
+nowhere else -- so the layer beside the schema is the only account of the rows a
+consumer has. Keep the pair together: `--schema-file` reads the rows from it,
+whether you name the HCL or the directory holding it. Neither file is written
+when the other cannot be, because a canonical HCL beside a missing row layer
+reads exactly like an artifact that declares no rows.
+
 ### Exit codes
 
 Both verbs exit `0` on success and `2` on every refusal: a usage error, an

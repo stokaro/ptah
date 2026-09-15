@@ -773,7 +773,11 @@ ptah schema pull \
   --out ./schema.hcl
 ```
 
-The output file must not already exist.
+The output file must not already exist. An artifact that declares reference rows
+is written as two files: the canonical HCL at `--out`, and `managed-data.json`
+beside it, which is where the rows are. Both paths are printed, and
+`--schema-file` reads the pair whether it is given the HCL or the directory
+holding it.
 
 Use the OCI schema directly for live comparison or drift detection through the
 repeatable `--schema-file` input:

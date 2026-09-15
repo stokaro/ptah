@@ -247,7 +247,7 @@ func qualifiedTable(schema, table string) string {
 	return schema + "." + table
 }
 
-// attachManagedRows joins the rows of the managed-data layer to the
+// AttachManagedRows joins the rows of the managed-data layer to the
 // declarations the canonical schema HCL already carries.
 //
 // The two describe one thing from two sides: the HCL says which table a
@@ -255,7 +255,12 @@ func qualifiedTable(schema, table string) string {
 // allowed to exist without the other, and where they both speak they have to
 // agree, because a reader that trusted one of them would publish a table whose
 // rows nobody declared or whose identity nobody agreed on.
-func attachManagedRows(db *schemamodel.Database, layer []byte) error {
+//
+// It is exported because the join happens in two places: when an artifact is
+// read out of a registry, and when one that was materialized to disk is read
+// back from there. A second implementation of the agreement above is a second
+// set of refusals to keep in step.
+func AttachManagedRows(db *schemamodel.Database, layer []byte) error {
 	if len(db.ManagedData) == 0 {
 		if layer != nil {
 			return fmt.Errorf("schema artifact carries a managed data layer no data block declares")

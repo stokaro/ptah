@@ -4,6 +4,7 @@ package schemaartifact
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -233,36 +234,71 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string) 
 	return validatePulled(pulled)
 }
 
-// PullToFile retrieves reference and writes its canonical HCL to output.
-func PullToFile(ctx context.Context, reference, output string, plainHTTP bool) (Artifact, string, error) {
+// PullToFile retrieves reference and materializes it at output. It returns the
+// paths it created, the canonical HCL first.
+func PullToFile(ctx context.Context, reference, output string, plainHTTP bool) (Artifact, []string, error) {
 	if strings.TrimSpace(output) == "" {
-		return Artifact{}, "", fmt.Errorf("schema artifact output file is required")
+		return Artifact{}, nil, fmt.Errorf("schema artifact output file is required")
 	}
 	resolved, err := pathguard.ResolveCLIPath(output)
 	if err != nil {
-		return Artifact{}, "", fmt.Errorf("resolve schema artifact output: %w", err)
+		return Artifact{}, nil, fmt.Errorf("resolve schema artifact output: %w", err)
 	}
 	if _, err := os.Lstat(resolved); err == nil {
-		return Artifact{}, "", fmt.Errorf("schema artifact output already exists: %s", resolved)
+		return Artifact{}, nil, fmt.Errorf("schema artifact output already exists: %s", resolved)
 	} else if !os.IsNotExist(err) {
-		return Artifact{}, "", fmt.Errorf("stat schema artifact output: %w", err)
+		return Artifact{}, nil, fmt.Errorf("stat schema artifact output: %w", err)
 	}
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
 	if err != nil {
-		return Artifact{}, "", err
+		return Artifact{}, nil, err
 	}
 	artifact, err := Pull(ctx, client, reference)
 	if err != nil {
-		return Artifact{}, "", err
+		return Artifact{}, nil, err
 	}
+	written, err := Materialize(artifact, resolved)
+	if err != nil {
+		return Artifact{}, nil, err
+	}
+	return artifact, written, nil
+}
+
+// Materialize writes the files of artifact to disk: the canonical HCL at
+// output, and, when the artifact declares rows, the managed-data layer beside it
+// under its canonical name. It returns the paths it created, output first.
+//
+// The rows are written because an artifact that declares them is not the schema
+// without them. A materialization that wrote the HCL alone would hand a consumer
+// a `data` block whose `file` names a path in the working copy that published
+// the artifact, which exists nowhere else -- so the consumer would plan a schema
+// with the rows silently missing, or refuse with a message about a file it was
+// never going to find (stokaro/ptah#3256).
+//
+// Neither file survives a failure to write the other. A canonical HCL beside a
+// half-written row layer is the one outcome a reader cannot tell from an
+// artifact that declares no rows at all.
+func Materialize(artifact Artifact, output string) ([]string, error) {
 	contents, err := fs.ReadFile(artifact.FileSystem, FileName)
 	if err != nil {
-		return Artifact{}, "", fmt.Errorf("read canonical schema artifact: %w", err)
+		return nil, fmt.Errorf("read canonical schema artifact: %w", err)
 	}
-	if err := writeExclusive(resolved, contents); err != nil {
-		return Artifact{}, "", err
+	managed, err := fs.ReadFile(artifact.FileSystem, ManagedDataFileName)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("read managed data layer: %w", err)
 	}
-	return artifact, resolved, nil
+	if err := writeExclusive(output, contents); err != nil {
+		return nil, err
+	}
+	if managed == nil {
+		return []string{output}, nil
+	}
+	rows := filepath.Join(filepath.Dir(output), ManagedDataFileName)
+	if err := writeExclusive(rows, managed); err != nil {
+		_ = os.Remove(output)
+		return nil, err
+	}
+	return []string{output, rows}, nil
 }
 
 func prepare(
@@ -337,7 +373,7 @@ func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
 			return Artifact{}, fmt.Errorf("read managed data layer: %w", err)
 		}
 	}
-	if err := attachManagedRows(db, managed); err != nil {
+	if err := AttachManagedRows(db, managed); err != nil {
 		return Artifact{}, err
 	}
 	return Artifact{
