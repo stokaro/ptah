@@ -113,6 +113,14 @@ down re-inserts it. Applying up then down restores the original table contents.
 Values are rendered as dialect-correct, safely-escaped SQL literals, so a value
 containing quotes, backslashes, or semicolons cannot break out of its literal.
 
+The statement is the one the engine accepts, which is not the same spelling
+everywhere. ClickHouse refuses a plain `UPDATE` on a table without a
+materialized `_block_number` column, so a row change there is written as
+`ALTER TABLE ... UPDATE`; the server applies that as a background mutation, so
+the new value appears shortly after the statement returns rather than at once.
+A key column holding `NULL` is addressed with `IS NULL`: `= NULL` is UNKNOWN for
+every row, so the statement would succeed and match nothing.
+
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
