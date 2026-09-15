@@ -673,6 +673,10 @@ skips is only ever the prefix that really survived:
   Nothing is recorded as committed, and the retry runs the body from its first
   statement. An Atlas-format row written for such a failure is removed rather
   than left claiming progress that no longer exists.
+- Under `file` on Oracle, Ptah opens no transaction around the body. Oracle
+  commits before every schema statement, so each statement commits as it runs,
+  as under `none`, and `applied` counts the statements that ran before the one
+  that failed. Oracle does not support `all`.
 - Under `file` on MySQL and MariaDB, the server may commit the open transaction
   around DDL, so part of a failed body can survive its final rollback. Ptah does
   not infer that prefix from SQL keywords. Before and after each statement it

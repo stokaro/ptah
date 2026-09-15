@@ -22,7 +22,8 @@ import (
 // schema statement. Returning a transaction whose Commit and Rollback do
 // nothing states that plainly; opening a real one would promise an atomicity
 // the engine does not provide, which is what capability.TransactionalDDL reads
-// false for and what internal/ddltx classifies as ImplicitCommit.
+// false for. With no transaction open every statement commits on its own, which
+// is why internal/ddltx classifies Oracle as NoTransaction.
 type Writer struct {
 	db     sqlrunner.Runner
 	schema string

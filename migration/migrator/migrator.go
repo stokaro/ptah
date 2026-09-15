@@ -615,7 +615,7 @@ func (m *Migrator) revisionEngineClause() string {
 // revisionEngineRefusal answers a named engine the revision table cannot be,
 // before any statement runs.
 //
-// Two dialects cannot take one, for opposite reasons.
+// Some targets cannot take one, for opposite reasons.
 //
 // On the MySQL family the server accepts the statement and Ptah then refuses
 // the table: requireTransactionalMetadataEngine reads the engine back and
@@ -626,10 +626,10 @@ func (m *Migrator) revisionEngineClause() string {
 // every later verb fails until an operator drops it by hand. Refusing first
 // leaves the database as it was.
 //
-// On SQL Server the statement has no engine clause at all: both DDL builders
-// take an early return for it, so a named engine is dropped in silence while
-// revisionEngineClause still reports one -- and an unrelated create failure
-// would then name a clause the server never saw.
+// On SQL Server and Oracle the statement has no engine clause at all: both DDL
+// builders take a branch of their own for each, so a named engine is dropped in
+// silence while revisionEngineClause still reports one -- and an unrelated
+// create failure would then name a clause the server never saw.
 //
 // ClickHouse is deliberately not in this list. Which engines a revision table
 // can be is the server's judgment there, it answers with its own message, and
@@ -646,13 +646,31 @@ func revisionEngineRefusal(dialect, engine string) error {
 				"which records that a migration was applied even when the statement around it fails "+
 				"(unset --migrations-engine or PTAH_MIGRATIONS_ENGINE for this target)",
 			engine, dialect)
-	case platform.NormalizeDialect(dialect) == platform.SQLServer:
+	case revisionTableHasNoEngineClause(dialect):
 		return fmt.Errorf(
 			"migrations engine %q cannot be named on %s: the revision table there has no engine clause "+
 				"(unset --migrations-engine or PTAH_MIGRATIONS_ENGINE for this target)",
 			engine, dialect)
 	}
 	return nil
+}
+
+// revisionTableHasNoEngineClause reports whether both revision-table DDL
+// builders give this target a statement of its own with no engine clause in
+// it.
+//
+// It is one predicate because the refusal above and the two builders have to
+// agree: a target listed here but rendered through the generic statement would
+// refuse an engine the table could carry, and a builder branch missing from
+// here would drop a named engine in silence.
+// TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders holds the pair.
+func revisionTableHasNoEngineClause(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer, platform.Oracle:
+		return true
+	default:
+		return false
+	}
 }
 
 // revisionEngineClauseFor is the same decision without a Migrator, for the
@@ -742,6 +760,14 @@ func (m *Migrator) migrationsSchemaStatement() string {
 	if platform.NormalizeDialect(m.connectionDialect()) == platform.SQLite {
 		return ""
 	}
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
+		// An Oracle schema is a user, and a migrator does not create accounts.
+		// The generic statement below is not Oracle's CREATE SCHEMA: measured
+		// on Oracle Free 23.26.3.0.0 it answers ORA-02420, missing schema
+		// authorization clause. A configured schema that does not exist fails
+		// on the CREATE TABLE that names it, with the server's own message.
+		return ""
+	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(
 			"IF SCHEMA_ID(%s) IS NULL EXEC(%s)",
@@ -822,6 +848,32 @@ BEGIN
     )
 END`, sqlServerObjectLiteral, qualifiedTable)
 	}
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		// Oracle has neither BIGINT nor TEXT and takes DEFAULT only before NOT
+		// NULL. Measured on Oracle Free 23.26.3.0.0, one column at a time:
+		//
+		//	version BIGINT                                ORA-00902: invalid datatype
+		//	description TEXT                              ORA-00902: invalid datatype
+		//	state VARCHAR(32) NOT NULL DEFAULT 'applied'  ORA-03076: unexpected item DEFAULT
+		//
+		// Every text column Ptah can write as an empty string is nullable here,
+		// because Oracle stores '' as NULL: a NOT NULL description would refuse
+		// a migration that has none. revisionText reads the NULL back as ''.
+		// There is no engine clause, which revisionTableHasNoEngineClause
+		// states (stokaro/ptah#3298).
+		return oracleCreateTableIfAbsent(fmt.Sprintf(`CREATE TABLE %s (
+    version NUMBER(19) PRIMARY KEY,
+    description CLOB NULL,
+    applied_at TIMESTAMP NOT NULL,
+    state VARCHAR2(32) DEFAULT 'applied' NOT NULL,
+    applied NUMBER(10) DEFAULT 1 NOT NULL,
+    total NUMBER(10) DEFAULT 1 NOT NULL,
+    error CLOB NULL,
+    error_stmt CLOB NULL,
+    execution_time_ms NUMBER(19) DEFAULT 0 NOT NULL,
+    checksum VARCHAR2(64) NULL
+)`, qualifiedTable))
+	}
 	engineClause := revisionEngineClauseFor(dialect, engine)
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
@@ -835,6 +887,27 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
 )%s`, qualifiedTable, revisionTimestampType(dialect), engineClause)
+}
+
+// oracleCreateTableIfAbsent wraps a CREATE TABLE so that a table which already
+// exists is left alone, which is what IF NOT EXISTS does on the other targets.
+//
+// Oracle 21 has no IF NOT EXISTS -- capability.Oracle21 turns
+// object_existence_guards off -- so the guard is a PL/SQL block that runs the
+// statement and ignores ORA-00955, "name is already used by an existing
+// object". One spelling then serves both release lines. Measured on Oracle
+// Free 23.26.3.0.0: the block creates the table, and running it a second time
+// is accepted and changes nothing. The statement travels as a string literal,
+// so its quotes are doubled.
+func oracleCreateTableIfAbsent(createTable string) string {
+	return `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE '` + strings.ReplaceAll(createTable, "'", "''") + `';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`
 }
 
 // revisionTimestampType is the type the revision table gives its timestamp
@@ -879,7 +952,7 @@ func (m *Migrator) getAppliedMigrationsSQL() string {
 		return fmt.Sprintf(
 			"SELECT version FROM %s WHERE %s AND %s ORDER BY %s, version",
 			m.qualifiedMigrationsTable(),
-			atlasAppliedRevisionPredicate,
+			atlasAppliedRevisionPredicateFor(m.connectionDialect()),
 			m.atlasRevisionRowPredicate(),
 			m.atlasVersionNumberExpression(),
 		)
@@ -1080,6 +1153,8 @@ func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (boo
 		return m.clickHouseMigrationsColumnExists(ctx, name)
 	case platform.SQLite:
 		return m.sqliteMigrationsColumnExists(ctx, name)
+	case platform.Oracle:
+		return m.oracleMigrationsColumnExists(ctx, name)
 	}
 	query := `
 SELECT COUNT(*)
@@ -1143,6 +1218,27 @@ func (m *Migrator) sqliteMigrationsColumnExists(ctx context.Context, name string
 		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
 	}
 	return false, nil
+}
+
+// oracleMigrationsColumnExists asks ALL_TAB_COLUMNS, because Oracle has no
+// information_schema. The revision table's columns are created unquoted, so
+// the catalog holds their upper-case fold; the table name is quoted and kept as
+// given.
+func (m *Migrator) oracleMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
+	query := sqlutil.Rebind(platform.Oracle, `SELECT COUNT(*)
+FROM all_tab_columns
+WHERE owner = ? AND table_name = ? AND column_name = ?`)
+	var count int
+	if err := m.conn.QueryRowContext(
+		ctx,
+		query,
+		configuredOrConnectionSchema(m.metadataTableSchemaName(), m.connectionSchemaName()),
+		m.migrationsTableName(),
+		strings.ToUpper(name),
+	).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	return count > 0, nil
 }
 
 func (m *Migrator) clickHouseMigrationsColumnExists(ctx context.Context, name string) (bool, error) {

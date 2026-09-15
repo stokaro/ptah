@@ -881,6 +881,14 @@ const clickHouseTablePresenceQuery = `SELECT count()
 FROM system.tables
 WHERE database = ? AND name = ? AND is_temporary = 0`
 
+// oracleTablePresenceQuery asks ALL_TABLES, because Oracle has no
+// information_schema. A schema is a user there, so the owner is the configured
+// schema or the connected account. The name is compared exactly: Ptah quotes
+// the revision table's name, so the catalog keeps the case it was given.
+const oracleTablePresenceQuery = `SELECT COUNT(*)
+FROM all_tables
+WHERE owner = ? AND table_name = ?`
+
 func migrationTablePresenceQuery(
 	dialect,
 	configuredSchema,
@@ -920,6 +928,11 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 		), []any{table}, nil
 	case platform.SQLServer:
 		return sqlServerTablePresenceQuery, []any{
+			configuredOrConnectionSchema(configuredSchema, connectionSchema),
+			table,
+		}, nil
+	case platform.Oracle:
+		return oracleTablePresenceQuery, []any{
 			configuredOrConnectionSchema(configuredSchema, connectionSchema),
 			table,
 		}, nil

@@ -159,6 +159,7 @@ func TestAtlasVersionNumberExpression_GuardsEveryDialectBranch(t *testing.T) {
 		{name: "postgres", dialect: "postgres", wantCast: "BIGINT"},
 		{name: "sqlite", dialect: "sqlite", wantCast: "BIGINT"},
 		{name: "sqlserver", dialect: "sqlserver", wantCast: "BIGINT"},
+		{name: "oracle has no BIGINT", dialect: "oracle", wantCast: "NUMBER(19)"},
 		{name: "unset dialect falls back to the default branch", dialect: "", wantCast: "BIGINT"},
 	}
 

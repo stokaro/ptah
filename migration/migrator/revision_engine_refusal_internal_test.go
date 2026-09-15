@@ -5,11 +5,13 @@ package migrator
 // observe it without a live database of each dialect.
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // TestRevisionEngineRefusal_TurnsDownAnEngineTheTableCannotBe pins the refusal
@@ -50,6 +52,15 @@ func TestRevisionEngineRefusal_TurnsDownAnEngineTheTableCannotBe(t *testing.T) {
 			engine:  "MergeTree",
 			want:    `.*"MergeTree".*no engine clause.*`,
 		},
+		{
+			// Oracle commits DDL implicitly as the MySQL family does, and that
+			// is all the two share: read as that family, the refusal tells an
+			// Oracle operator the engine must be InnoDB (stokaro/ptah#3298).
+			name:    "oracle refuses any engine at all",
+			dialect: platform.Oracle,
+			engine:  "MergeTree",
+			want:    `migrations engine "MergeTree" cannot be named on oracle: the revision table there has no engine clause .*`,
+		},
 	}
 
 	for _, test := range tests {
@@ -78,6 +89,7 @@ func TestRevisionEngineRefusal_AcceptsWhatTheTableCanBe(t *testing.T) {
 		{name: "mysql accepts it however it is spelled", dialect: platform.MySQL, engine: "innodb"},
 		{name: "an unset engine is what every other target uses", dialect: platform.MySQL, engine: ""},
 		{name: "sqlserver with no engine is untouched", dialect: platform.SQLServer, engine: ""},
+		{name: "oracle with no engine is untouched", dialect: platform.Oracle, engine: ""},
 		{name: "postgres names none and is asked for none", dialect: platform.Postgres, engine: ""},
 	}
 
@@ -86,6 +98,38 @@ func TestRevisionEngineRefusal_AcceptsWhatTheTableCanBe(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(revisionEngineRefusal(test.dialect, test.engine), qt.IsNil)
+		})
+	}
+}
+
+// TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders holds the refusal
+// and the statements it speaks for to one answer.
+//
+// The native builder is compared over every dialect with a capability preset,
+// in both directions: a target the predicate lists must render no engine, and
+// a target it does not list must render the one it was given. The Atlas
+// builder has no engine clause on the PostgreSQL family either, so it is held
+// only for the targets the predicate lists.
+func TestRevisionTableHasNoEngineClause_AgreesWithBothBuilders(t *testing.T) {
+	const engine = "ProbeEngine3298"
+
+	for _, dialect := range capability.DefaultDialects() {
+		t.Run("native "+dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			ddl := ptahRevisionsTableDDL(dialect, `"schema_migrations"`, "N'schema_migrations'", engine)
+
+			c.Assert(strings.Contains(ddl, engine), qt.Equals, !revisionTableHasNoEngineClause(dialect))
+		})
+	}
+	for _, dialect := range []string{platform.SQLServer, platform.Oracle} {
+		t.Run("atlas "+dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			ddl := atlasRevisionsTableDDL(dialect, `"atlas_schema_revisions"`, "N'atlas_schema_revisions'", engine)
+
+			c.Assert(revisionTableHasNoEngineClause(dialect), qt.IsTrue)
+			c.Assert(ddl, qt.Not(qt.Contains), engine)
 		})
 	}
 }

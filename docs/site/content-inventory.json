@@ -694,8 +694,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1423,
-      "sourceBytes": 11252
+      "visibleWords": 1426,
+      "sourceBytes": 11279
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1008,7 +1008,7 @@
       "path": "docs/site/src/content/docs/databases/oracle.md",
       "route": "/databases/oracle/",
       "title": "Oracle",
-      "description": "Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, and PL/SQL routines.",
+      "description": "Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, PL/SQL routines, and versioned migrations.",
       "sidebarPath": "Databases",
       "sidebarLabel": null,
       "type": "reference",
@@ -1034,13 +1034,14 @@
       "outboundLinks": [
         "/databases/support-matrix/",
         "/reference/capabilities/",
-        "/reference/go-annotations/"
+        "/reference/go-annotations/",
+        "/versioned/apply/"
       ],
       "inboundLinks": [
         "/databases/support-matrix/"
       ],
-      "visibleWords": 911,
-      "sourceBytes": 6533
+      "visibleWords": 1107,
+      "sourceBytes": 7713
     },
     {
       "path": "docs/site/src/content/docs/databases/overview.mdx",
@@ -6160,6 +6161,7 @@
         "/atlas/docs-coverage/",
         "/atlas/migrate-commands/",
         "/concepts/migration-directory/",
+        "/databases/oracle/",
         "/databases/postgresql/",
         "/faq/",
         "/versioned/generate/",
@@ -6169,8 +6171,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5151,
-      "sourceBytes": 38089
+      "visibleWords": 5198,
+      "sourceBytes": 38369
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
