@@ -372,3 +372,75 @@ func declaredHierarchySchema(codes ...string) *schemamodel.Database {
 	schemamodel.Finalize(db)
 	return db
 }
+
+// TestDeclaredRowsConvergeOverTimeLive is the date family, which a driver scans
+// into a time.Time while the declaration carries text.
+//
+// Comparing those as strings can never pair them, so every reconciliation plans
+// the same UPDATE again and an apply that should be a no-op writes on every run
+// (stokaro/ptah#3261). Only a server decides what the driver returns, so the
+// property is not observable offline.
+func TestDeclaredRowsConvergeOverTimeLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "time_converge")
+	defer done()
+
+	desired := declaredTimeSchema("2026-01-02T03:04:05Z", "2026-01-02")
+	applyDeclaredRows(c, ctx, conn, desired)
+
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
+}
+
+// TestDeclaredRowsChangeATimeLive is the control: a moment that did change is
+// still planned, so the convergence above is agreement rather than a comparison
+// that pairs everything.
+func TestDeclaredRowsChangeATimeLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "time_change")
+	defer done()
+
+	applyDeclaredRows(c, ctx, conn, declaredTimeSchema("2026-01-02T03:04:05Z", "2026-01-02"))
+
+	changed := declaredTimeSchema("2026-03-04T05:06:07Z", "2026-03-04")
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredPlanSQL(plan), qt.HasLen, 1)
+
+	applyDeclaredRows(c, ctx, conn, changed)
+	again, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: changed})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredPlanSQL(again), qt.DeepEquals, []string(nil))
+}
+
+// declaredTimeSchema is one row carrying a timestamp and a date.
+func declaredTimeSchema(moment, day string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Window", Name: "windows"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Window", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
+			{StructName: "Window", FieldName: "Seen", Name: "seen", Type: "TIMESTAMPTZ", Nullable: true},
+			{StructName: "Window", FieldName: "Day", Name: "day", Type: "DATE", Nullable: true},
+		},
+		ManagedData: []schemamodel.ManagedData{{
+			StructName: "Window",
+			Table:      "windows",
+			Keys:       []string{"code"},
+			File:       "windows.yaml",
+			Rows: []schemamodel.ManagedRow{{
+				"code": {Tag: "str", Text: "one"},
+				"seen": {Tag: "str", Text: moment},
+				"day":  {Tag: "str", Text: day},
+			}},
+		}},
+	}
+	schemamodel.Finalize(db)
+	return db
+}

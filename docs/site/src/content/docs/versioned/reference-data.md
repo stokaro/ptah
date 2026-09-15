@@ -166,7 +166,10 @@ What the plan carries is decided by what the declaration owns:
   `INSERT` and nothing is read back from a table that is not there;
 - a column no declaration names is never read and never written, so a value
   beside the managed ones survives reconciliation untouched;
-- a repeated reconciliation over converged rows plans nothing.
+- a repeated reconciliation over converged rows plans nothing, including a date
+  or timestamp column: the driver returns a moment where the declaration wrote
+  text, and the two are compared as the instant they name. In a text column both
+  spellings stay separate values.
 
 The plan orders the statements the way the migration body does, from the same
 dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`
