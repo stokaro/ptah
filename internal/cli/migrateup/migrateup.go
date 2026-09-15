@@ -528,48 +528,17 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
-	// The report is written once, at the first moment the run knows what it is
-	// about to do, and every caller below asks for it without knowing whether
-	// another already has. A run that selects nothing reaches the migration lock
-	// and comes back without passing through the pre-migration hook, so the two
-	// callers are not alternatives a reader has to keep in agreement.
-	planReported := false
-	emitPlanOutput := func() {
-		if planReported {
-			return
-		}
-		planReported = true
-		if opts.dryRun {
-			emit.Println("=== DRY RUN MODE ===")
-			emit.Println("No actual changes will be made to the database")
-			emit.Println()
-		}
-
-		emit.Println("=== MIGRATE UP ===")
-		emit.Printf("Database: %s\n", dburldisplay.Format(dbURL))
-		emit.Printf("Dialect: %s\n", conn.Info().Dialect)
-		emit.Printf("Migrations directory: %s\n", migrationsDir)
-		emit.Printf("Migration directory format: %s\n", settings.dirFormat)
-		emit.Printf("Transaction mode: %s\n", settings.txMode)
-		emit.Println()
-
-		if onlineCfg.Enabled() {
-			emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
-		}
-		emit.Printf("Current version: %d\n", status.CurrentVersion)
-		emit.Printf("Total migrations: %d\n", status.TotalMigrations)
-		emit.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
-		if len(status.OutOfOrderMigrations) > 0 {
-			emit.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
-		}
-		if opts.verbose {
-			emit.Printf("Pending migration versions: %v\n", status.PendingMigrations)
-			if len(status.OutOfOrderMigrations) > 0 {
-				emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
-			}
-		}
-		emit.Println()
+	report := &planReport{
+		emit:      emit,
+		opts:      opts,
+		settings:  settings,
+		status:    status,
+		onlineCfg: onlineCfg,
+		dbURL:     dbURL,
+		dialect:   conn.Info().Dialect,
+		dir:       migrationsDir,
 	}
+	emitPlanOutput := report.write
 
 	// A bounded run does not take this shortcut. Whether the target is still
 	// reachable is decided under the migration lock, where the recorded history
@@ -651,6 +620,65 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
+}
+
+// planReport is the block a run prints about the work it is about to do: where
+// it is connected, which directory it read, and what that directory holds
+// against the recorded history.
+type planReport struct {
+	emit      cliobs.Emitter
+	opts      *options
+	settings  parsedMigrationSettings
+	status    *migrator.MigrationStatus
+	onlineCfg projectconfig.OnlineDDLConfig
+	dbURL     string
+	dialect   string
+	dir       string
+	written   bool
+}
+
+// write prints the report, and prints nothing on a second call.
+//
+// Writing it once is a property of the report rather than of any caller: a run
+// asks for it at the first moment it knows what it will do, and which moment
+// that is depends on whether the selection came out empty. A caller that had to
+// know whether another already wrote it would be keeping two readings of that
+// question in agreement.
+func (r *planReport) write() {
+	if r.written {
+		return
+	}
+	r.written = true
+	if r.opts.dryRun {
+		r.emit.Println("=== DRY RUN MODE ===")
+		r.emit.Println("No actual changes will be made to the database")
+		r.emit.Println()
+	}
+
+	r.emit.Println("=== MIGRATE UP ===")
+	r.emit.Printf("Database: %s\n", dburldisplay.Format(r.dbURL))
+	r.emit.Printf("Dialect: %s\n", r.dialect)
+	r.emit.Printf("Migrations directory: %s\n", r.dir)
+	r.emit.Printf("Migration directory format: %s\n", r.settings.dirFormat)
+	r.emit.Printf("Transaction mode: %s\n", r.settings.txMode)
+	r.emit.Println()
+
+	if r.onlineCfg.Enabled() {
+		r.emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", r.onlineCfg.Tool, r.onlineCfg.ThresholdRows)
+	}
+	r.emit.Printf("Current version: %d\n", r.status.CurrentVersion)
+	r.emit.Printf("Total migrations: %d\n", r.status.TotalMigrations)
+	r.emit.Printf("Pending migrations: %d\n", len(r.status.PendingMigrations))
+	if len(r.status.OutOfOrderMigrations) > 0 {
+		r.emit.Printf("Out-of-order migrations: %v\n", r.status.OutOfOrderMigrations)
+	}
+	if r.opts.verbose {
+		r.emit.Printf("Pending migration versions: %v\n", r.status.PendingMigrations)
+		if len(r.status.OutOfOrderMigrations) > 0 {
+			r.emit.Printf("Out-of-order migration versions: %v\n", r.status.OutOfOrderMigrations)
+		}
+	}
+	r.emit.Println()
 }
 
 // migrateUpOutcome is one run and everything the command has to say about it.
