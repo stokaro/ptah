@@ -84,6 +84,12 @@ refreshes `ptah.sum`, so the data migration applies and rolls back like any othe
 `--dry-run` prints the SQL instead of writing files; a run with no drift writes
 nothing.
 
+A row file naming a column the live table does not carry is refused, naming the
+columns: the read asks the database for a name it cannot resolve, and SQLite
+answers such a name with the name itself, which would reach the rollback as the
+value each row is restored to. Apply the schema change first, or take the column
+out of the row file.
+
 ## Safety gates
 
 A data migration is applied through the ordinary migration path, where neither

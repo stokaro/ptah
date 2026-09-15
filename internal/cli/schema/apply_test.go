@@ -340,3 +340,76 @@ func TestSchemaApplyPlanRejectsConflictingFlags(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "ptah schema apply --plan cannot be combined with --dev-url: .*", qt.Commentf("%s", out))
 }
+
+// writeTxModeDirectivePlan computes a native plan that creates the orders
+// table and rewrites it so its first statement carries `-- atlas:txmode none`,
+// the header `ptah-compat schema plan --directive` writes into a plan file.
+func writeTxModeDirectivePlan(c *qt.C, dir, dbPath string) string {
+	c.Helper()
+	planPath := filepath.Join(dir, "directive.plan.json")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	out, err := runSchema("", "plan",
+		"--db-url", "sqlite://"+dbPath,
+		"--schema-file", schemaPath,
+		"--output", planPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	plan, err := atlasschema.ReadPlanFile(planPath)
+	c.Assert(err, qt.IsNil)
+	directive, err := atlasschema.ParsePlanDirective("atlas:txmode none")
+	c.Assert(err, qt.IsNil)
+	document, err := atlasschema.MarshalPlanFile(plan.WithDirectiveHeader([]atlasschema.PlanDirective{directive}))
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(planPath, document, 0o600), qt.IsNil)
+	return planPath
+}
+
+// TestSchemaApplyPlanFileHonorsTheTxModeDirective_HappyPath is the control for
+// the refusal below: a plan carrying `-- atlas:txmode none` applies with no
+// --tx-mode on the command line, so the refusal is about the combination with
+// --tx-mode all and not about the header itself.
+func TestSchemaApplyPlanFileHonorsTheTxModeDirective_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	planPath := writeTxModeDirectivePlan(c, dir, dbPath)
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--plan", planPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "-- atlas:txmode none")
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+}
+
+// TestSchemaApplyPlanFileHonorsTheTxModeDirective_FailurePath is
+// stokaro/ptah#3284 at the command boundary: the native verb read --tx-mode
+// alone, so a plan whose header selects none applied under --tx-mode all and
+// reported success. ptah-compat refuses that combination, and the native verb
+// must not be looser than it about the same file.
+func TestSchemaApplyPlanFileHonorsTheTxModeDirective_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	planPath := writeTxModeDirectivePlan(c, dir, dbPath)
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--plan", planPath,
+		"--tx-mode", "all",
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`cannot set txmode directive to "none" in ".*directive\.plan\.json" when txmode "all" is set globally`,
+		qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+}
