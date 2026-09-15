@@ -16,7 +16,11 @@
 // fmt's default verb) followed by the value. The tag keeps distinct kinds from
 // colliding — notably a SQL NULL stays distinct from an empty string — while
 // still making the "V" form driver-agnostic (a desired int 1 and a live int64 1
-// compare equal). It remains only approximate across dialects for the "V" form:
+// compare equal). One pair is compared as values rather than as strings: a
+// time.Time the driver returned against the text a declaration carries, which
+// otherwise can never pair and leaves a date column planning the same UPDATE
+// forever. Two texts stay two texts, so a text column keeps both spellings of
+// one instant. It remains only approximate across dialects for the "V" form:
 // numeric scale, boolean encoding, and decimal precision differences between
 // PostgreSQL, MySQL, and others are not modeled. Type-exact, dialect-aware value
 // comparison is a known follow-up, matching the issue's "cross-dialect value
@@ -29,6 +33,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Row is a single table row keyed by column name. It matches the shape returned
@@ -176,9 +181,74 @@ func keyValues(keys []string, row Row) map[string]any {
 // does not spuriously register as an update.
 func managedColumnsDiffer(desired, live Row) bool {
 	for col, desiredValue := range desired {
-		if normalizeValue(desiredValue) != normalizeValue(live[col]) {
+		if !valuesEqual(desiredValue, live[col]) {
 			return true
 		}
+	}
+	return false
+}
+
+// valuesEqual answers whether a declared value and the value the database
+// returned are the same value.
+//
+// The two arrive in different shapes. A declaration carries text -- the YAML
+// says `2026-01-02T03:04:05Z` -- while a driver decides for itself what a
+// timestamp column scans into, and pgx makes it a time.Time. Compared as
+// strings those can never pair, so every reconciliation of a date or timestamp
+// column plans the same UPDATE again and the convergence the reference-data
+// page promises never arrives (stokaro/ptah#3261).
+//
+// The instant comparison is entered only where one side is a time and the other
+// is text. Two texts stay two texts: in a text column `2026-01-02T03:04:05Z`
+// and `2026-01-02T04:04:05+01:00` are different values, and folding them would
+// report a converged row the author never wrote.
+func valuesEqual(desired, live any) bool {
+	if desiredTime, liveText, ok := timeAndText(desired, live); ok {
+		return sameInstant(desiredTime, liveText)
+	}
+	if liveTime, desiredText, ok := timeAndText(live, desired); ok {
+		return sameInstant(liveTime, desiredText)
+	}
+	return normalizeValue(desired) == normalizeValue(live)
+}
+
+// timeAndText reports the pair where one value is a time and the other is text.
+func timeAndText(candidate, other any) (time.Time, string, bool) {
+	moment, ok := candidate.(time.Time)
+	if !ok {
+		return time.Time{}, "", false
+	}
+	switch text := other.(type) {
+	case string:
+		return moment, text, true
+	case []byte:
+		return moment, string(text), true
+	}
+	return time.Time{}, "", false
+}
+
+// timeLayouts are the spellings a declaration writes a moment in. A value that
+// parses in none of them is not a moment, and the comparison falls back to the
+// text it is.
+var timeLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02 15:04:05.999999999-07:00",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+func sameInstant(moment time.Time, text string) bool {
+	trimmed := strings.TrimSpace(text)
+	for _, layout := range timeLayouts {
+		// A layout without a zone reads as UTC, which is the zone the readers
+		// hand back for a column that carries none.
+		parsed, err := time.Parse(layout, trimmed)
+		if err != nil {
+			continue
+		}
+		return parsed.UTC().Equal(moment.UTC())
 	}
 	return false
 }
@@ -198,7 +268,8 @@ func sortedKeys[V any](m map[string]V) []string {
 // NULL), "S" for a string, "B" for []byte, and "V" for any other value via fmt's
 // default verb. The tag keeps a NULL distinct from an empty string, so a live
 // NULL versus a desired "" is correctly reported as a change rather than
-// silently matching. See the package documentation for the remaining
+// silently matching. A time and the text naming it are paired before this is
+// reached; see valuesEqual. The package documentation carries the remaining
 // cross-dialect limitations (numeric scale, boolean encoding) of the "V" form.
 func normalizeValue(v any) string {
 	switch value := v.(type) {
