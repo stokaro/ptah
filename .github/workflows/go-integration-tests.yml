@@ -453,7 +453,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
-          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock') }}
+          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh') }}
 
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
