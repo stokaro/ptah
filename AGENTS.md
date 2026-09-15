@@ -736,6 +736,42 @@ imports: the helper that opens the database usually lives in a sibling file.
 The Docker suite in `cmd/integration-test` covers apply, rollback, idempotency,
 parallel execution, partial-failure recovery and schema diff.
 
+### An engine-observable change carries an engine-level test
+
+A unit test says which statement Ptah built. It cannot say the statement was
+accepted, and for a whole class of defect that is the only question: the
+statement reads correctly and a server refuses it. stokaro/ptah#3252 is the
+shape -- declared rows planned in an order the foreign key rejects, passing
+every offline assertion because no fixture had a constraint to violate.
+
+So a change carries a test under `integration/` when any of these holds, read
+off the diff rather than judged:
+
+- it changes the SQL an engine receives, or the order the statements arrive in;
+- what it depends on is decided by a constraint, a permission, a transaction or
+  a catalog rather than by Ptah's own code;
+- it gives a CLI verb an effect on a database, or moves an existing effect to
+  another verb, another phase or another connection.
+
+Placement follows the naming above: `*_live_test.go` where a server decides,
+`*_e2e_test.go` where the shipped binary does, and the engine is asked for
+through `dbtarget`. The row varies by engine where the engines answer
+differently, and the expected value comes from reading the database back -- a
+row restating the literal the production code wrote measures nothing.
+
+**The unit test stays.** It names the defect; the engine test proves the defect
+matters. Replacing one with the other loses half the answer.
+
+Nothing is owed where the behavior is settled inside Ptah -- a refusal issued
+before connecting, a rendering, a parse, a rank over a fixture -- or where the
+engine normalizes the difference away, so the assertion would hold whatever the
+code did. Where a change meets none of the conditions, the pull request says
+which one it misses, in a sentence.
+
+`internal/testcontour` runs the result, and a skip there is a failure: an engine
+a new test needs joins `.github/workflows/go-integration-tests.yml` in the same
+change.
+
 ### Declarative tests only
 
 No `if`, `switch` or `goto` in a test function. `for` over a static table is
