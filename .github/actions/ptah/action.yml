@@ -140,6 +140,40 @@ runs:
     # Go is set up only when a Go source is in play. A run whose desired schema
     # is a SQL file has no reason to install a toolchain, and installing one
     # anyway is how "the action is source-neutral" stays false in practice.
+    #
+    # go-version-file defaults to go.mod at the caller's repository root, and
+    # actions/setup-go fails outright when that file is not there. That is a
+    # hard failure for a caller whose module lives in a subdirectory, and for one
+    # whose Go annotations are not in a module at all -- neither of which the
+    # toolchain is actually needed for: Ptah parses annotations itself, and the
+    # only thing here that runs `go` is install.sh's install-from-source
+    # fallback. Resolve a version instead of letting the absence of a file the
+    # caller never named end the run.
+    - name: Resolve the Go toolchain source
+      id: go-toolchain
+      if: >-
+        inputs.setup-go == 'true' &&
+        (inputs.dir != '' ||
+         (inputs.schema-file == '' && inputs.schema-cmd == ''))
+      shell: bash
+      env:
+        GO_VERSION: ${{ inputs.go-version }}
+        GO_VERSION_FILE: ${{ inputs.go-version-file }}
+      run: |
+        set -euo pipefail
+        if [ -n "$GO_VERSION" ]; then
+          printf 'version=%s\n' "$GO_VERSION" >>"$GITHUB_OUTPUT"
+          printf 'file=\n' >>"$GITHUB_OUTPUT"
+        elif [ -n "$GO_VERSION_FILE" ] && [ -f "$GO_VERSION_FILE" ]; then
+          printf 'version=\n' >>"$GITHUB_OUTPUT"
+          printf 'file=%s\n' "$GO_VERSION_FILE" >>"$GITHUB_OUTPUT"
+        else
+          printf '::notice::no Go version file at %s; using the latest stable Go\n' \
+            "${GO_VERSION_FILE:-<unset>}"
+          printf 'version=stable\n' >>"$GITHUB_OUTPUT"
+          printf 'file=\n' >>"$GITHUB_OUTPUT"
+        fi
+
     - name: Set up Go
       if: >-
         inputs.setup-go == 'true' &&
@@ -147,8 +181,8 @@ runs:
          (inputs.schema-file == '' && inputs.schema-cmd == ''))
       uses: actions/setup-go@v7
       with:
-        go-version: ${{ inputs.go-version }}
-        go-version-file: ${{ inputs.go-version == '' && inputs.go-version-file || '' }}
+        go-version: ${{ steps.go-toolchain.outputs.version }}
+        go-version-file: ${{ steps.go-toolchain.outputs.file }}
         cache: false
 
     - name: Install Ptah

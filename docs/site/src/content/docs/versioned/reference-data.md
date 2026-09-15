@@ -84,6 +84,12 @@ refreshes `ptah.sum`, so the data migration applies and rolls back like any othe
 `--dry-run` prints the SQL instead of writing files; a run with no drift writes
 nothing.
 
+A row file naming a column the live table does not carry is refused, naming the
+columns: the read asks the database for a name it cannot resolve, and SQLite
+answers such a name with the name itself, which would reach the rollback as the
+value each row is restored to. Apply the schema change first, or take the column
+out of the row file.
+
 ## Safety gates
 
 A data migration is applied through the ordinary migration path, where neither
@@ -113,6 +119,14 @@ down re-inserts it. Applying up then down restores the original table contents.
 Values are rendered as dialect-correct, safely-escaped SQL literals, so a value
 containing quotes, backslashes, or semicolons cannot break out of its literal.
 
+The statement is the one the engine accepts, which is not the same spelling
+everywhere. ClickHouse refuses a plain `UPDATE` on a table without a
+materialized `_block_number` column, so a row change there is written as
+`ALTER TABLE ... UPDATE`; the server applies that as a background mutation, so
+the new value appears shortly after the statement returns rather than at once.
+A key column holding `NULL` is addressed with `IS NULL`: `= NULL` is UNKNOWN for
+every row, so the statement would succeed and match nothing.
+
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
@@ -139,13 +153,14 @@ database recomputes them and inserting an explicit value for them errors; on
 rollback they recompute from the restored base columns.
 
 Auto-increment and serial columns that accept explicit inserts (MySQL
-`AUTO_INCREMENT`, SQLite `AUTOINCREMENT`, PostgreSQL `SERIAL` and `GENERATED
-BY DEFAULT AS IDENTITY`) are re-inserted with their original values preserved.
+`AUTO_INCREMENT`, SQLite `AUTOINCREMENT`, PostgreSQL `SERIAL`, and `GENERATED
+BY DEFAULT AS IDENTITY` on PostgreSQL and Oracle) are re-inserted with their
+original values preserved.
 
 If the table has an identity column that *rejects* explicit inserts — SQL
-Server `IDENTITY` or PostgreSQL `GENERATED ALWAYS AS IDENTITY` — the full row
-cannot be restored, so this case is refused with an error naming the column;
-keep at least one desired row for such a table. The all-delete change is
+Server `IDENTITY`, or `GENERATED ALWAYS AS IDENTITY` on PostgreSQL and Oracle —
+the full row cannot be restored, so this case is refused with an error naming
+the column; keep at least one desired row for such a table. The all-delete change is
 destructive, so it still requires `--allow-destructive`, and
 `--protected-table` still applies.
 
@@ -176,6 +191,13 @@ dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`
 children-first. Two reference tables joined by a foreign key are therefore
 applied in one run, against the constraint the same plan created a few
 statements earlier.
+
+On SQLite, a plan that also rebuilds a table carries the rows inside the
+rebuild's `PRAGMA foreign_keys` pair, ahead of the pragma that turns enforcement
+back on. The rows then run with enforcement suspended, like the rebuild, and the
+foreign-key check the apply runs before it commits refuses the whole plan when a
+row names a parent that does not exist. See
+[SQLite](../../databases/sqlite/#what-renders-natively).
 
 Severity is assigned by what the statement does to the rows, not by what a SQL
 analyzer makes of it:

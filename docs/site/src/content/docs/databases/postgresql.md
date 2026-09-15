@@ -84,6 +84,22 @@ Changing a table between logged and unlogged rewrites it under a lock that
 blocks readers and writers. Ptah does not plan that change, and the `PG307`
 lint rule reports it in a migration that contains one.
 
+## Function changes
+
+A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
+accepts that: a new body, language, security context, volatility, planner
+property, or setting. Views, policies, and triggers that call the function stay
+in place.
+
+A changed return type cannot be applied that way. PostgreSQL refuses it with
+`cannot change return type of existing function` (SQLSTATE 42P13), so Ptah
+plans `DROP FUNCTION` followed by the create, in the migration and in its
+rollback. The drop names the function's argument list, so an overloaded name
+loses only the overload that changed. The drop does not use `CASCADE`: when a
+view, policy, or trigger uses the function, the server refuses the drop with
+SQLSTATE 2BP01 and the migration stops, instead of removing an object the
+schema still declares. Measured on PostgreSQL 18.
+
 ## Materialized view refresh
 
 Ptah does not refresh materialized views, and a declaration cannot ask it to.

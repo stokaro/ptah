@@ -1,6 +1,7 @@
 package sqliteforeignkeys_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -33,6 +34,20 @@ func TestBracketsRecognizesAWrappedPlan(t *testing.T) {
 			name:       "case and spacing are SQLite's, not ours",
 			statements: []string{"  pragma   FOREIGN_KEYS=OFF ;", `DROP TABLE "t"`, "PRAGMA foreign_keys=ON"},
 			want:       true,
+		},
+		{
+			name: "the comment the planner writes above each pragma",
+			statements: []string{
+				"-- Disable foreign-key enforcement for the table rebuild below\n" + sqliteforeignkeys.DisableStatement,
+				`DROP TABLE "t"`,
+				"-- Restore foreign-key enforcement after the table rebuild\n" + sqliteforeignkeys.EnableStatement,
+			},
+			want: true,
+		},
+		{
+			name:       "a commented-out pragma is not a pragma",
+			statements: []string{"-- " + sqliteforeignkeys.DisableStatement, `DROP TABLE "t"`, sqliteforeignkeys.EnableStatement},
+			want:       false,
 		},
 		{
 			name:       "an empty plan",
@@ -83,6 +98,64 @@ func TestBracketsRecognizesAWrappedPlan(t *testing.T) {
 			c.Assert(sqliteforeignkeys.Brackets(tt.statements), qt.Equals, tt.want)
 		})
 	}
+}
+
+func TestAppendIndexPointsInsideTheBracket(t *testing.T) {
+	tests := []struct {
+		name       string
+		statements []string
+		want       int
+	}{
+		{
+			name:       "a bracketed plan takes additions ahead of the enabling pragma",
+			statements: []string{sqliteforeignkeys.DisableStatement, `DROP TABLE "t"`, sqliteforeignkeys.EnableStatement},
+			want:       2,
+		},
+		{
+			name: "a bracketed plan whose pragmas carry the planner's comments",
+			statements: []string{
+				"-- Disable foreign-key enforcement for the table rebuild below\n" + sqliteforeignkeys.DisableStatement,
+				`DROP TABLE "t"`,
+				"-- Restore foreign-key enforcement after the table rebuild\n" + sqliteforeignkeys.EnableStatement,
+			},
+			want: 2,
+		},
+		{
+			name:       "an unbracketed plan takes additions at its end",
+			statements: []string{`CREATE TABLE "t" ("id" INTEGER)`, `CREATE INDEX "i" ON "t" ("id")`},
+			want:       2,
+		},
+		{
+			name:       "a plan that only disables is not bracketed",
+			statements: []string{sqliteforeignkeys.DisableStatement, `DROP TABLE "t"`},
+			want:       2,
+		},
+		{
+			name:       "an empty plan",
+			statements: nil,
+			want:       0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(sqliteforeignkeys.AppendIndex(tt.statements), qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestAppendIndexKeepsAPlanBracketed is the property the index exists for: a
+// statement added where it points leaves Brackets answering true.
+func TestAppendIndexKeepsAPlanBracketed(t *testing.T) {
+	c := qt.New(t)
+	plan := []string{sqliteforeignkeys.DisableStatement, `DROP TABLE "t"`, sqliteforeignkeys.EnableStatement}
+
+	extended := slices.Insert(slices.Clone(plan), sqliteforeignkeys.AppendIndex(plan), `INSERT INTO "c" ("id") VALUES (1)`)
+
+	c.Assert(sqliteforeignkeys.Brackets(extended), qt.IsTrue)
+	c.Assert(extended[1:3], qt.DeepEquals, []string{`DROP TABLE "t"`, `INSERT INTO "c" ("id") VALUES (1)`})
 }
 
 func TestBracketsSQLReadsAGeneratedMigrationFile(t *testing.T) {

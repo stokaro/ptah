@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -29,9 +30,6 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 	oldIncrement, newIncrement := int64(1), int64(5)
 
 	prior := &schemamodel.Database{
-		Functions: []schemamodel.Function{
-			{Name: "audit", Returns: "VOID", Language: "plpgsql", Body: "BEGIN END;"},
-		},
 		Sequences: []schemamodel.Sequence{
 			{Name: "order_seq", Increment: &oldIncrement},
 		},
@@ -40,6 +38,11 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 		},
 	}
 
+	current := &catalog.Database{
+		Functions: []catalog.Function{
+			{Name: "audit", Returns: "VOID", Language: "plpgsql", Body: "BEGIN END;"},
+		},
+	}
 	functions := reverseFunctionDiffs([]difftypes.FunctionDiff{{
 		FunctionName: "audit",
 		Changes:      map[string]string{"body": "BEGIN END; -> BEGIN RAISE NOTICE 'x'; END;"},
@@ -47,7 +50,7 @@ func TestReverseSchemaDiff_RoutineOperandsComeFromThePriorSchema(t *testing.T) {
 			Name: "audit", Returns: "VOID", Language: "plpgsql",
 			Body: "BEGIN RAISE NOTICE 'x'; END;",
 		},
-	}}, prior)
+	}}, current, platform.Postgres)
 	c.Assert(functions, qt.HasLen, 1)
 	c.Assert(functions[0].Desired.Body, qt.Equals, "BEGIN END;",
 		qt.Commentf("the rollback replaces the function with the body the database held"))
