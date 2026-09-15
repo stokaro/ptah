@@ -175,10 +175,17 @@ SQL:
 - `KEY`, `SPATIAL`, `FULLTEXT` and `INDEX` open a table-level index here, and
   both engines reserve all four, so no column carries those names bare. Ptah
   reads the word as an index on this family and in dialect-neutral documents,
-  which have no family to ask. PostgreSQL and SQLite declare no index inside
-  `CREATE TABLE` and leave `key`, `spatial` and `fulltext` free, so a `.sql`
-  source read for those dialects gets a column; reading the word as an index
-  everywhere refused DDL both engines accept (stokaro/ptah#3089).
+  which have no family to ask. A `.sql` source read for another dialect gets a
+  column wherever that engine has no table element opening with the word.
+  `key`, `spatial` and `fulltext` are columns on PostgreSQL, YugabyteDB,
+  CockroachDB, Spanner, ClickHouse, SQLite and Oracle. SQL Server reserves
+  `key`, so only `spatial` and `fulltext` are columns there. `index` is a
+  column on PostgreSQL, YugabyteDB and Spanner, and on CockroachDB unless a
+  column list follows it, directly or after a name. SQL Server reads `index` as
+  its own inline index and ClickHouse as a data-skipping index, and SQLite and
+  Oracle reserve it. Read as an index on the other dialects, `key text` would be
+  refused, and `spatial nvarchar(32)` would become an index named after its
+  type with the column lost (stokaro/ptah#3089, stokaro/ptah#3299).
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique

@@ -2107,15 +2107,14 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			// ClickHouse declares a data-skipping index inside the column
 			// list. Only ClickHouse does: MySQL spells a table-level index the
 			// same way, `INDEX name (cols)`, and the two are told apart by
-			// whether a parenthesis or an expression follows the name -- which
-			// this parser cannot see without a token of lookahead it does not
-			// have. Reading the keyword by dialect costs nothing a caller has
-			// today, because a ClickHouse file parsed with no dialect at all
-			// already failed here (stokaro/ptah#1574).
+			// whether a parenthesis or an expression follows the name, which the
+			// dialect answers without scanning ahead. Reading the keyword by
+			// dialect costs a caller nothing, because a ClickHouse file parsed
+			// with no dialect at all fails here too (stokaro/ptah#1574).
 			if p.dialect == platform.ClickHouse {
 				return p.parseInlineSkippingIndex(table)
 			}
-			if !tableBodyReadsKeywordAsIndex(p.dialect, keyword) {
+			if !p.tableBodyReadsKeywordAsIndex(keyword) {
 				break
 			}
 			start := p.current.Start
@@ -2127,7 +2126,7 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			return nil
 		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE",
 			"SPATIAL", "FULLTEXT", "KEY":
-			if !tableBodyReadsKeywordAsIndex(p.dialect, keyword) {
+			if !p.tableBodyReadsKeywordAsIndex(keyword) {
 				break
 			}
 			start := p.current.Start
@@ -5583,38 +5582,91 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 // PRIMARY, UNIQUE, FOREIGN, CHECK and EXCLUDE are reserved wherever Ptah
 // renders, so no column can be named after them and no dialect has to be asked.
 //
-// PostgreSQL and SQLite declare no index inside CREATE TABLE, so a table element
-// opening with one of these words there can only be a column, and both engines
-// leave the name free. Measured on PostgreSQL 17 and SQLite 3.51:
-// `CREATE TABLE t (a INT, key TEXT)` is accepted by both, `spatial` and
-// `fulltext` likewise, and `index` by PostgreSQL alone -- SQLite reserves that
-// one, which is why it is not listed for it. MySQL 8 refuses all four as column
-// names and reads `KEY idx_ab (a, b)` in the same position as an index, so the
-// MySQL family keeps the keyword.
+// Each dialect Ptah names answers from its own grammar. An engine with no table
+// element opening with the word can only mean a column, and reading an index
+// there fails in one of two ways. `key text` is refused at the type. Worse,
+// `spatial nvarchar(32)` has the shape of `SPATIAL name (cols)`, so it parses
+// without an error as an index named after the type over a column named `32`,
+// and the column is gone (stokaro/ptah#3089, stokaro/ptah#3299).
 //
-// Reading the word as an index everywhere refused valid DDL: a PostgreSQL file
-// with a column named `key` failed with a token class and a byte offset
-// (stokaro/ptah#3089), and the repository's own examples/viz/schema.sql was one.
+// Measured on each engine with `CREATE TABLE t (id ..., <word> <type>)` and with
+// an inline index element:
 //
-// A dialect this does not name keeps the previous reading, generic mode
-// included. The best-effort mode has no family to ask, and turning an
-// unrecognized KEY into a column there would drop an index without a word --
-// the defect stokaro/ptah#2778 fixed on the ALTER path, whose
-// isAlterAddConstraintStart asks this same question for ALTER TABLE ADD.
-func tableBodyReadsKeywordAsIndex(dialect, keyword string) bool {
+//   - MySQL 8 and MariaDB refuse all four words as column names and read
+//     `KEY idx_ab (a, b)` as an index, so the family keeps every keyword.
+//   - PostgreSQL and Spanner accept all four as columns. Neither declares an
+//     index inside CREATE TABLE: Spanner answers `INDEX idx_b (b)` with
+//     `Type <idx_b> does not exist`. YugabyteDB takes PostgreSQL's grammar and
+//     is read as PostgreSQL; it is the one engine here that was not measured.
+//   - ClickHouse accepts key, spatial and fulltext as columns. Its INDEX is the
+//     data-skipping index, which parseTableElement reads before asking this.
+//   - SQLite and Oracle accept key, spatial and fulltext as columns and reserve
+//     index (Oracle answers ORA-03050), so both keep that one.
+//   - SQL Server accepts spatial and fulltext as columns and reserves key. It has
+//     an inline `INDEX idx_b (b)`, and it reads `index nvarchar(32)` as an index
+//     too, refusing it with error 16216. Both words keep the index reading.
+//   - CockroachDB accepts key, spatial and fulltext as columns and refuses
+//     `KEY idx_b (b)`. INDEX is both: `INDEX idx_b (b)` and `INDEX (b)` are
+//     indexes and `index text` is a column, so the tokens after the keyword
+//     decide (see indexKeywordOpensColumnList).
+//
+// A word the engine reserves keeps the index reading, because no document the
+// engine accepts carries it as a column.
+//
+// The dialect-neutral mode, and a dialect name Ptah does not know, keep the
+// index reading. There is no grammar to ask, and turning an unrecognized KEY
+// into a column would drop an index without a word -- the defect
+// stokaro/ptah#2778 fixed on the ALTER path, whose isAlterAddConstraintStart
+// asks this same question for ALTER TABLE ADD.
+func (p *Parser) tableBodyReadsKeywordAsIndex(keyword string) bool {
 	switch keyword {
 	case "KEY", "SPATIAL", "FULLTEXT", "INDEX":
 	default:
 		return true
 	}
-	switch dialect {
-	case platform.Postgres:
+	switch p.dialect {
+	case platform.Postgres, platform.YugabyteDB, platform.Spanner, platform.ClickHouse:
 		return false
-	case platform.SQLite:
+	case platform.SQLite, platform.Oracle:
 		return keyword == "INDEX"
+	case platform.SQLServer:
+		return keyword == "INDEX" || keyword == "KEY"
+	case platform.CockroachDB:
+		return keyword == "INDEX" && p.indexKeywordOpensColumnList()
 	default:
 		return true
 	}
+}
+
+// indexKeywordOpensColumnList reports whether the INDEX keyword at the current
+// token is followed by an index's column list, either directly or after a
+// name: `INDEX (b)` and `INDEX idx_b (b)` open one, and `index text` does not.
+//
+// It scans a copy of the lexer, so the parser stays on the keyword whichever
+// way the element is then read. A type carrying parentheses opens the same way
+// as a named index, and CockroachDB reads it as one too: `index varchar(32)` is
+// refused at `32`.
+func (p *Parser) indexKeywordOpensColumnList() bool {
+	scan := *p.lexer
+	next := func() lexer.Token {
+		for {
+			token := scan.NextToken()
+			switch token.Type {
+			case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
+			default:
+				return token
+			}
+		}
+	}
+	token := next()
+	if token.MatchOperatorValue("(") {
+		return true
+	}
+	if token.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(token) {
+		return false
+	}
+	afterName := next()
+	return afterName.MatchOperatorValue("(")
 }
 
 // isMySQLFamilyDialect reports whether a dialect writes MySQL's ALTER TABLE
