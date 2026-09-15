@@ -168,9 +168,14 @@ func TestInspect_AnUncreatedTableCountsEveryDeclaredRowAsAnInsert(t *testing.T) 
 // release passes through: the declaration adds a column and the database has
 // not gained it yet.
 //
-// Reading the column instead is what SQLite answers with a string literal for,
-// so the projection drops it and every row reports the update it will need once
-// the column lands. The structural comparison reports the column itself.
+// The column is dropped from the read and compared as absent, so every row
+// reports the update it will need once the column lands, and the structural
+// comparison reports the column itself.
+//
+// Each declared iso3 value is the column's own name on purpose. That is what
+// SQLite returns for a quoted name it cannot resolve — a string literal — so a
+// read that asks for the column anyway compares every row against a value
+// nothing in the database holds and reports no drift at all.
 func TestInspect_ADeclaredColumnTheTableLacksIsComparedAsAbsent(t *testing.T) {
 	c := qt.New(t)
 
@@ -182,10 +187,10 @@ func TestInspect_ADeclaredColumnTheTableLacksIsComparedAsAbsent(t *testing.T) {
 	writeRegionsFixture(t, root, `
 - code: US
   name: United States
-  iso3: USA
+  iso3: iso3
 - code: CZ
   name: Czechia
-  iso3: CZE
+  iso3: iso3
 `)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
