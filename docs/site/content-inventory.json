@@ -6611,13 +6611,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-<<<<<<< HEAD
-      "visibleWords": 1474,
-      "sourceBytes": 10334
-=======
-      "visibleWords": 1452,
-      "sourceBytes": 10223
->>>>>>> a7e38be53 (fix(datadiff): a declared moment and the moment a driver returns are one value)
+      "visibleWords": 1509,
+      "sourceBytes": 10545
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",
