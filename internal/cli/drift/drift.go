@@ -14,10 +14,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/schemaops"
+	"ptah.run/internal/datamigrate"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -115,17 +117,23 @@ type runOptions struct {
 }
 
 type driftReport struct {
-	Drift            bool                  `json:"drift"`
-	Failed           bool                  `json:"failed"`
-	FailureThreshold string                `json:"failure_threshold"`
-	HighestSeverity  safety.Severity       `json:"highest_severity"`
-	Dialect          string                `json:"dialect,omitempty"`
-	Sources          string                `json:"sources,omitempty"`
-	DatabaseURL      string                `json:"database_url,omitempty"`
-	IgnoredTables    []string              `json:"ignored_tables,omitempty"`
-	Findings         []safety.Finding      `json:"findings,omitempty"`
-	Diff             *difftypes.SchemaDiff `json:"diff,omitempty"`
-	Error            string                `json:"error,omitempty"`
+	Drift            bool             `json:"drift"`
+	Failed           bool             `json:"failed"`
+	FailureThreshold string           `json:"failure_threshold"`
+	HighestSeverity  safety.Severity  `json:"highest_severity"`
+	Dialect          string           `json:"dialect,omitempty"`
+	Sources          string           `json:"sources,omitempty"`
+	DatabaseURL      string           `json:"database_url,omitempty"`
+	IgnoredTables    []string         `json:"ignored_tables,omitempty"`
+	Findings         []safety.Finding `json:"findings,omitempty"`
+	// ManagedData names the declared reference tables whose live rows differ,
+	// in counts. It is absent when every declared row is in place, so the
+	// section appears only where there is something to act on, and it carries
+	// no key, column or value: a caller that must not read row data reports
+	// this drift without reading any.
+	ManagedData *datamigrate.Summary  `json:"managed_data,omitempty"`
+	Diff        *difftypes.SchemaDiff `json:"diff,omitempty"`
+	Error       string                `json:"error,omitempty"`
 }
 
 func runDrift(cmd *cobra.Command, opts runOptions) error {
@@ -197,14 +205,20 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		Schemas:         schemas,
 		PlainHTTP:       opts.plainHTTP,
 		Vars:            declaredVars,
+		ManagedData:     true,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	findings := safety.ClassifySchemaDiff(result.Diff)
+	// The row findings join the schema findings in one list, so the severity
+	// threshold, the text report and the workflow annotations read row drift
+	// through the code that already reads structural drift. A database whose
+	// structure matches and whose declared rows were edited by hand is drift,
+	// and the check exists to say so.
+	findings := append(safety.ClassifySchemaDiff(result.Diff), managedDataFindings(result.DataDrift)...)
 	highest := safety.Highest(findings)
-	hasDrift := result.Diff.HasChanges()
+	hasDrift := result.Diff.HasChanges() || result.DataDrift.HasChanges()
 	failed := opts.useExitCode && hasDrift && shouldFailDrift(highest, opts.severity)
 	report := driftReport{
 		Drift:            hasDrift,
@@ -216,6 +230,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		DatabaseURL:      result.DatabaseURL,
 		IgnoredTables:    ignoredTables,
 		Findings:         findings,
+		ManagedData:      driftedManagedData(result.DataDrift),
 		Diff:             result.Diff,
 	}
 
@@ -234,6 +249,27 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	}
 	if failed {
 		return exitcode.New(1, errDriftDetected)
+	}
+	return nil
+}
+
+// managedDataFindings returns the row-drift findings the comparison produced.
+// A comparison that did not run, and one that found every declared row in
+// place, both contribute nothing.
+func managedDataFindings(summary *datamigrate.Summary) []safety.Finding {
+	if summary == nil {
+		return nil
+	}
+	return summary.Findings
+}
+
+// driftedManagedData returns the section the report carries: the summary when
+// rows drifted, and nothing when they did not. A section listing no table on
+// every clean run is noise a reader learns to skip, and skipping it is how the
+// one run that lists a table gets missed.
+func driftedManagedData(summary *datamigrate.Summary) *datamigrate.Summary {
+	if summary.HasChanges() {
+		return summary
 	}
 	return nil
 }
@@ -338,6 +374,9 @@ func writeTextReport(w io.Writer, report driftReport) error {
 			return err
 		}
 	}
+	if err := writeManagedDataSection(w, report.ManagedData); err != nil {
+		return err
+	}
 	if len(report.Findings) == 0 {
 		return nil
 	}
@@ -351,6 +390,37 @@ func writeTextReport(w io.Writer, report driftReport) error {
 		}
 	}
 	return nil
+}
+
+// writeManagedDataSection prints one line per declared table whose rows drifted.
+// The counts say how much moved and the table says where; the values stay in
+// the database, where a reader who wants them can go and look.
+func writeManagedDataSection(w io.Writer, summary *datamigrate.Summary) error {
+	if !summary.HasChanges() {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nManaged data:"); err != nil {
+		return err
+	}
+	for _, table := range summary.Tables {
+		if _, err := fmt.Fprintf(w, "- %s: %s\n", managedTableName(table), managedCounts(table)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// managedTableName spells the table the way the annotation does: qualified when
+// the declaration names a schema, bare when it leaves the connection's default.
+func managedTableName(table datamigrate.TableDrift) string {
+	return schemamodel.QualifyTableName(table.Schema, table.Table)
+}
+
+// managedCounts renders one table's volume. Every operation is printed,
+// including the zeroes, so two tables' lines line up and a reader comparing
+// runs is never looking at a column that moved.
+func managedCounts(table datamigrate.TableDrift) string {
+	return fmt.Sprintf("%d insert(s), %d update(s), %d delete(s)", table.Inserts, table.Updates, table.Deletes)
 }
 
 func writeGitHubActionsReport(w io.Writer, report driftReport) error {
@@ -374,6 +444,14 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 	)
 	if _, err := fmt.Fprintf(w, "::%s title=Ptah schema drift::%s\n", level, escapeWorkflowCommand(message)); err != nil {
 		return err
+	}
+	if report.ManagedData.HasChanges() {
+		for _, table := range report.ManagedData.Tables {
+			message := fmt.Sprintf("%s: %s", managedTableName(table), managedCounts(table))
+			if _, err := fmt.Fprintf(w, "::%s title=Ptah managed data drift::%s\n", level, escapeWorkflowCommand(message)); err != nil {
+				return err
+			}
+		}
 	}
 	for _, finding := range report.Findings {
 		message := fmt.Sprintf("%s: %d (%s)", finding.Category, finding.Count, finding.Severity)

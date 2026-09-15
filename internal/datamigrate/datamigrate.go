@@ -1,14 +1,15 @@
 // Package datamigrate composes the declarative reference/seed data pipeline:
 // it parses //ptah:schema:data annotations, reads the corresponding live
-// rows, diffs them, and renders the difference as a single reversible SQL
-// migration body pair.
+// rows, diffs them, and answers either with counts ([Inspect]) or with a single
+// reversible SQL migration body pair ([Generate]).
 //
 // It is the database-facing orchestration layer that sits above the pure
-// migration/datadiff computation and below the ptah migrations data command. It
-// lives under internal/ because it is a composition of existing public building
-// blocks (core/goschema, dbschema, migration/datadiff) rather than a new public
-// contract, and it is kept separate from the command so it can be exercised
-// end to end against an in-memory database without cobra.
+// migration/datadiff computation and below the ptah migrations data and ptah
+// schema drift commands. It lives under internal/ because it is a composition
+// of existing public building blocks (core/goschema, dbschema,
+// migration/datadiff) rather than a new public contract, and it is kept
+// separate from the commands so it can be exercised end to end against an
+// in-memory database without cobra.
 package datamigrate
 
 import (
@@ -29,13 +30,30 @@ import (
 	"ptah.run/migration/safety"
 )
 
-// Options configures [Generate].
+// Options configures [Generate] and [Inspect].
 type Options struct {
 	// RootDir is the directory of Go sources carrying //ptah:schema:data
 	// annotations. It is passed verbatim to goschema.ParseDir and reused to
 	// resolve each annotation's YAML row-data file, so it must be the same root
-	// the annotations were authored against.
+	// the annotations were authored against. Desired replaces the parse; the
+	// row files still resolve against RootDir for an annotation whose recorded
+	// source directory is relative.
 	RootDir string
+	// Desired supplies an already-resolved desired schema. When set it replaces
+	// the RootDir parse, so a caller that merged several Go roots with schema
+	// files inspects every declaration it resolved; re-parsing one root would
+	// answer for one source and present it as the whole declaration. Each
+	// annotation records the directory it was authored in, so the row files
+	// still resolve from where their author put them.
+	Desired *schemamodel.Database
+	// Live is the introspected schema of the database being read. A managed
+	// table it does not carry is compared against no rows at all rather than
+	// read, so every declared row counts as an insert: a table nothing has
+	// created yet answers no SELECT. Leave it nil to read every managed table,
+	// which is what a caller that means to write a migration wants — there a
+	// table the annotation names and the database lacks is an error, not a
+	// column of insert counts.
+	Live *catalog.Database
 	// Dialect selects the SQL dialect for literal and identifier rendering. When
 	// empty the dialect reported by the connection is used, matching how the
 	// command infers it from --db-url.
@@ -62,8 +80,9 @@ type Options struct {
 // Generate composes the full data-migration pipeline against conn and returns a
 // single reversible SQL body pair covering every managed table.
 //
-// It parses the Go annotations under opts.RootDir and, for each declared
-// //ptah:schema:data table, loads the desired rows, reads the live rows
+// It resolves the declarations from opts.Desired, or by parsing the Go
+// annotations under opts.RootDir, and for each declared
+// //ptah:schema:data table loads the desired rows, reads the live rows
 // projected onto the managed column set (the union of the desired rows' columns
 // plus the key columns), and computes the row-level diff. When a table's desired
 // set is empty but the live table is populated, every live row becomes a full
@@ -101,18 +120,116 @@ type Options struct {
 // schemamodel.ManagedData); an empty schema targets the connection's default
 // schema. The schema qualifies both the live-row read and the generated DML.
 func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (upSQL, downSQL string, err error) {
-	if conn == nil {
-		return "", "", errors.New("datamigrate: a database connection is required")
+	inspected, err := inspect(ctx, conn, opts)
+	if err != nil {
+		return "", "", err
+	}
+	if len(inspected.diffs) == 0 {
+		return "", "", nil
+	}
+
+	if err := checkPolicy(mergeByTable(inspected.changes), opts); err != nil {
+		return "", "", err
 	}
 
 	dialect := opts.Dialect
 	if dialect == "" {
 		dialect = conn.Info().Dialect
 	}
+	orderByDependency(inspected.desired, inspected.diffs)
+	return composeByPhase(inspected.diffs, dialect)
+}
 
-	db, err := goschema.ParseDir(opts.RootDir)
+// TableDrift is how far one managed table's live rows sit from its
+// declaration, as counts.
+//
+// It carries no key, no column name and no value, because the callers it
+// exists for report drift where a row must not be published: an operator's
+// status field and a drift document a pipeline archives. The SQL that would
+// close the difference is [Generate]'s answer, and asking for it is the
+// deliberate second step.
+type TableDrift struct {
+	// Schema is the declared schema of the table, empty for the connection's
+	// default schema, matching how the annotation spells it.
+	Schema string `json:"schema,omitempty"`
+	// Table is the table name the annotation names.
+	Table string `json:"table"`
+	// Inserts counts declared rows the live table does not hold.
+	Inserts int `json:"inserts"`
+	// Updates counts live rows whose managed columns hold a different value
+	// from the declaration.
+	Updates int `json:"updates"`
+	// Deletes counts live rows the declaration no longer holds.
+	Deletes int `json:"deletes"`
+}
+
+// Summary is the values-free answer to "have the declared rows drifted".
+//
+// Tables lists only the managed tables that differ, ordered by qualified name,
+// so a clean database summarizes as an empty Tables and no findings. Findings
+// expresses the same volume in the migration/safety vocabulary the schema-diff
+// report uses, so a caller that already classifies DDL findings by severity
+// classifies row drift with the same code.
+type Summary struct {
+	// Tables holds one entry per drifted managed table.
+	Tables []TableDrift `json:"tables,omitempty"`
+	// Findings totals the volume across every table, one finding per operation.
+	Findings []safety.Finding `json:"findings,omitempty"`
+}
+
+// HasChanges reports whether any managed table differs from its declaration. A
+// nil Summary has no changes, so a caller that did not ask for the comparison
+// reads the same answer as one whose comparison came back clean.
+func (s *Summary) HasChanges() bool {
+	return s != nil && len(s.Tables) > 0
+}
+
+// Inspect compares every declared row set against the live database and returns
+// the difference as counts, reading the same rows and running the same diff
+// [Generate] renders. The two cannot disagree about whether a table drifted:
+// the comparison is one function and the rendering is what is built on top.
+//
+// It never applies the destructive or protected-table gates. Those refuse to
+// write a migration; reporting that rows drifted is what an operator asks for
+// before deciding anything, and a refusal there would hide the answer behind
+// the flag that permits the change.
+//
+// The returned Summary is never nil. A nil connection, an unreadable row file,
+// and a managed table [Options.Live] carries but the database cannot read are
+// errors naming the input.
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (*Summary, error) {
+	inspected, err := inspect(ctx, conn, opts)
 	if err != nil {
-		return "", "", fmt.Errorf("datamigrate: parse Go annotations in %q: %w", opts.RootDir, err)
+		return nil, err
+	}
+	return summarize(mergeByTable(inspected.changes)), nil
+}
+
+// inspection is the read-and-diff half of the pipeline, shared by [Generate]
+// and [Inspect] so a rendered migration and a reported count answer for the
+// same comparison.
+type inspection struct {
+	// desired is the schema the declarations were read from, which
+	// orderByDependency reads for the foreign-key graph.
+	desired *schemamodel.Database
+	// diffs holds one row-level diff per drifted table, in declaration order.
+	diffs []*datadiff.DataDiff
+	// changes is the same drift expressed as counts, one entry per diff.
+	changes []tableChange
+}
+
+func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (inspection, error) {
+	if conn == nil {
+		return inspection{}, errors.New("datamigrate: a database connection is required")
+	}
+
+	db := opts.Desired
+	if db == nil {
+		parsed, err := goschema.ParseDir(opts.RootDir)
+		if err != nil {
+			return inspection{}, fmt.Errorf("datamigrate: parse Go annotations in %q: %w", opts.RootDir, err)
+		}
+		db = parsed
 	}
 
 	managed := slices.Clone(db.ManagedData)
@@ -126,40 +243,62 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		return cmp.Compare(a.File, b.File)
 	})
 
-	diffs := make([]*datadiff.DataDiff, 0, len(managed))
-	var changes []tableChange
+	result := inspection{desired: db, diffs: make([]*datadiff.DataDiff, 0, len(managed))}
 	for _, md := range managed {
-		diff, err := computeTable(ctx, conn, opts.RootDir, md)
+		diff, err := computeTable(ctx, conn, opts, md)
 		if err != nil {
-			return "", "", err
+			return inspection{}, err
 		}
 		if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
 			// No drift for this table; it contributes nothing in either direction.
 			continue
 		}
-		diffs = append(diffs, diff)
-		changes = append(changes, tableChange{schema: md.Schema, table: md.Table, updates: len(diff.Updates), deletes: len(diff.Deletes)})
+		result.diffs = append(result.diffs, diff)
+		result.changes = append(result.changes, tableChange{
+			schema:  md.Schema,
+			table:   md.Table,
+			inserts: len(diff.Inserts),
+			updates: len(diff.Updates),
+			deletes: len(diff.Deletes),
+		})
 	}
-
-	if len(diffs) == 0 {
-		return "", "", nil
-	}
-
-	if err := checkPolicy(mergeByTable(changes), opts); err != nil {
-		return "", "", err
-	}
-
-	orderByDependency(db, diffs)
-	return composeByPhase(diffs, dialect)
+	return result, nil
 }
 
-// tableChange records how many rows a single managed table's diff would update
-// and delete, the two operations the destructive gate cares about, along with
-// the table's schema so the gates identify and report it as schema.table.
-// Inserts are additive and are not tracked here.
+// summarize turns the merged per-table volumes into the reportable [Summary].
+// It reads the merged list so a table two annotations both declare is one entry
+// with one set of counts, the way the gates already report it.
+func summarize(changes []tableChange) *Summary {
+	summary := &Summary{Tables: make([]TableDrift, 0, len(changes))}
+	var inserts, updates, deletes int
+	for _, change := range changes {
+		summary.Tables = append(summary.Tables, TableDrift{
+			Schema:  change.schema,
+			Table:   change.table,
+			Inserts: change.inserts,
+			Updates: change.updates,
+			Deletes: change.deletes,
+		})
+		inserts += change.inserts
+		updates += change.updates
+		deletes += change.deletes
+	}
+	slices.SortFunc(summary.Tables, func(a, b TableDrift) int {
+		return cmp.Compare(qualifiedName(a.Schema, a.Table), qualifiedName(b.Schema, b.Table))
+	})
+	summary.Findings = rowFindings(inserts, updates, deletes)
+	return summary
+}
+
+// tableChange records how many rows a single managed table's diff would insert,
+// update and delete, along with the table's schema so the gates identify and
+// report it as schema.table. The destructive gate reads the update and delete
+// counts alone; a report reads all three, because a declared row the database
+// never got is drift even though writing it takes nothing away.
 type tableChange struct {
 	schema  string
 	table   string
+	inserts int
 	updates int
 	deletes int
 }
@@ -181,6 +320,7 @@ func mergeByTable(changes []tableChange) []tableChange {
 	for _, change := range changes {
 		key := change.qualified()
 		if i, ok := index[key]; ok {
+			merged[i].inserts += change.inserts
 			merged[i].updates += change.updates
 			merged[i].deletes += change.deletes
 			continue
@@ -196,13 +336,23 @@ func mergeByTable(changes []tableChange) []tableChange {
 // projection, and compute the row-level diff. Rendering happens later, in
 // composeByPhase, once every table's diff is known and can be ordered by
 // dependency.
-func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDir string, md schemamodel.ManagedData) (*datadiff.DataDiff, error) {
-	desired, err := schemamodel.LoadManagedRows(rootDir, md)
+func computeTable(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts Options,
+	md schemamodel.ManagedData,
+) (*datadiff.DataDiff, error) {
+	desired, err := schemamodel.LoadManagedRows(opts.RootDir, md)
 	if err != nil {
 		return nil, err
 	}
 
-	columns, err := readColumns(ctx, conn, md, desired)
+	liveTable, readable := readableLiveTable(opts.Live, conn, md)
+	if !readable {
+		return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, nil)
+	}
+
+	columns, err := readColumns(ctx, conn, liveTable, md, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -215,10 +365,59 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 	return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
 }
 
+// readableLiveTable answers whether the live table can be read for the row
+// comparison, and returns the introspected table when it can.
+//
+// A caller that supplied no live schema always reads: it is saying it has no
+// second opinion, so the database answers for itself and an unreadable table is
+// an error naming it. With a live schema supplied, a table it does not carry
+// and a table missing one of the key columns both answer false, and the
+// comparison then runs against no live rows at all — every declared row is an
+// insert. The key columns are what a row is matched on, so a read without one
+// of them could not tell an insert from an update.
+//
+// Table identity is [findManagedTable]'s, the same match the empty-desired
+// column read resolves the table with, so a schema-qualified annotation and a
+// reader that blanks the default schema agree here and there.
+// The returned table is nil when the caller supplied no live schema, which is
+// what tells the projection there is nothing to narrow against.
+func readableLiveTable(
+	live *catalog.Database,
+	conn *dbschema.DatabaseConnection,
+	md schemamodel.ManagedData,
+) (*catalog.Table, bool) {
+	if live == nil {
+		return nil, true
+	}
+	table, found := findManagedTable(live, md.Schema, conn.Info().Schema, md.Table)
+	if !found {
+		return nil, false
+	}
+	present := liveColumnNames(table)
+	for _, key := range md.Keys {
+		if _, ok := present[key]; !ok {
+			return nil, false
+		}
+	}
+	return &table, true
+}
+
+// liveColumnNames indexes a live table's columns by the exact name a read would
+// quote. The match is exact because dbschema.ReadTableRows quotes what it is
+// given, so a name that differs here is a name the database would refuse.
+func liveColumnNames(table catalog.Table) map[string]struct{} {
+	names := make(map[string]struct{}, len(table.Columns))
+	for _, column := range table.Columns {
+		names[column.Name] = struct{}{}
+	}
+	return names
+}
+
 // readColumns selects which live columns to read for a managed table's diff.
 //
 // With desired rows present, Ptah reconciles only the managed columns (the union
-// of the desired rows' columns and the keys), so that is the projection.
+// of the desired rows' columns and the keys), so that is the projection, narrowed
+// by [projectOntoLive] to what the live table can return.
 //
 // With an empty desired set, every live row will become a DELETE, and the
 // reversible down re-inserts each deleted row. Reading only the keys would make
@@ -226,11 +425,40 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 // restore — every other column. So the projection widens to the table's full
 // non-generated column set (see [fullNonGeneratedColumns]); an empty desired set
 // against an empty table stays a clean no-op because the read returns no rows.
-func readColumns(ctx context.Context, conn *dbschema.DatabaseConnection, md schemamodel.ManagedData, desired []map[string]any) ([]string, error) {
+func readColumns(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	liveTable *catalog.Table,
+	md schemamodel.ManagedData,
+	desired []map[string]any,
+) ([]string, error) {
 	if len(desired) == 0 {
 		return fullNonGeneratedColumns(ctx, conn, md.Schema, md.Table, md.Keys)
 	}
-	return managedColumns(desired, md.Keys), nil
+	return projectOntoLive(managedColumns(desired, md.Keys), liveTable), nil
+}
+
+// projectOntoLive drops the managed columns the live table does not carry, so
+// the read asks only for what the database can return. A nil live table is a
+// caller with no introspected schema, and the full projection goes through.
+//
+// The dropped column is still compared: the diff reads every column the
+// declaration names, and one missing from the live row reads as absent, which
+// is what a column the table has not gained yet is. So a declaration that adds
+// a column reports the rows that will need its value beside the structural
+// finding that reports the column, on every dialect. Reading the column
+// instead is what one dialect does with a quoted name it cannot resolve: SQLite
+// returns the name as a string literal, and every row then differs from a value
+// nothing in the database holds.
+func projectOntoLive(columns []string, liveTable *catalog.Table) []string {
+	if liveTable == nil {
+		return columns
+	}
+	present := liveColumnNames(*liveTable)
+	return slices.DeleteFunc(columns, func(column string) bool {
+		_, ok := present[column]
+		return !ok
+	})
 }
 
 // fullNonGeneratedColumns introspects the live schema for the managed table and
@@ -566,26 +794,43 @@ func checkDestructive(changes []tableChange, opts Options) error {
 		strings.Join(details, ", "))
 }
 
-// destructiveFindings expresses the row-change volume as migration/safety
-// findings, the same shape safety.ClassifySchemaDiff produces for DDL. A DELETE
-// removes rows and an UPDATE overwrites existing row values, so both are marked
-// Destructive here. This is deliberately stricter than the DDL classifier,
-// which treats in-place value rewrites (for example SET EXPRESSION) as a
-// Warning: row data a data migration overwrites in a live database cannot be
-// recovered from the migration alone, so the stricter default is intentional.
-// INSERTs are additive and contribute no finding.
-func destructiveFindings(updates, deletes int) []safety.Finding {
+// rowFindings expresses the row-change volume as migration/safety findings, the
+// same shape safety.ClassifySchemaDiff produces for DDL.
+//
+// A DELETE removes rows and an UPDATE overwrites existing row values, so both
+// are marked Destructive. This is deliberately stricter than the DDL
+// classifier, which treats in-place value rewrites (for example SET EXPRESSION)
+// as a Warning: row data a write overwrites in a live database cannot be
+// recovered from the migration alone, so the stricter classification is
+// intentional. An INSERT writes a declared row the database does not hold and
+// takes nothing away, so it is Safe — a threshold set to destructive passes a
+// database that is only missing reference rows, and a threshold that fails on
+// any drift still sees it.
+//
+// The findings are ordered insert, update, delete rather than by severity. A
+// caller that needs a different order sorts; a caller that appends these to
+// another list needs the order to be the same on every run, which this is.
+func rowFindings(inserts, updates, deletes int) []safety.Finding {
 	var findings []safety.Finding
-	addFinding(&findings, "data_rows_updated", updates)
-	addFinding(&findings, "data_rows_deleted", deletes)
+	addFinding(&findings, "data_rows_inserted", inserts, safety.Safe)
+	addFinding(&findings, "data_rows_updated", updates, safety.Destructive)
+	addFinding(&findings, "data_rows_deleted", deletes, safety.Destructive)
 	return findings
 }
 
-func addFinding(findings *[]safety.Finding, category string, count int) {
+// destructiveFindings is the volume the generate-time gate decides on: the
+// operations that overwrite or remove a live row. It reads [rowFindings] rather
+// than building its own list, so the gate and the report cannot disagree about
+// which operation is destructive.
+func destructiveFindings(updates, deletes int) []safety.Finding {
+	return rowFindings(0, updates, deletes)
+}
+
+func addFinding(findings *[]safety.Finding, category string, count int, severity safety.Severity) {
 	if count == 0 {
 		return
 	}
-	*findings = append(*findings, safety.Finding{Category: category, Count: count, Severity: safety.Destructive})
+	*findings = append(*findings, safety.Finding{Category: category, Count: count, Severity: severity})
 }
 
 // managedColumns returns the distinct, sorted set of columns Ptah manages for a
