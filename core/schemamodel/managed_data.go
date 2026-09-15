@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -138,6 +139,95 @@ func LoadManagedRowValues(rootDir string, md ManagedData) ([]ManagedRow, error) 
 		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+// ResolveManagedRows returns the rows md carries as the column maps a row
+// comparison consumes, the shape [LoadManagedRows] returns for the same
+// declaration read from its file.
+//
+// A declaration that carries its rows is the only form a published artifact
+// has: the artifact travels without the working copy the annotation pointed
+// into, so md.File and md.SourceDir there name no file this process can read.
+// Callers that accept both forms resolve the carried rows through this function
+// and read the file through LoadManagedRows, so the two answer alike about the
+// same declaration.
+//
+// Each value resolves the way the YAML scalar that declared it resolves, which
+// is what makes the two loaders agree: `007` under an int tag is the number 7
+// and under a string tag is the three characters, and a timestamp is a
+// time.Time either way. A nil md.Rows returns no rows and no error — nothing
+// has read the declaration, and it is the file that holds the answer. A value
+// whose text does not resolve under its own tag is an error naming the table,
+// the row and the column.
+func ResolveManagedRows(md ManagedData) ([]map[string]any, error) {
+	if md.Rows == nil {
+		return nil, nil
+	}
+	rows := make([]map[string]any, 0, len(md.Rows))
+	for index, declared := range md.Rows {
+		row := make(map[string]any, len(declared))
+		for column, value := range declared {
+			resolved, err := resolveManagedValue(value)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"managed data for table %q, row %d, column %q: %w",
+					QualifyTableName(md.Schema, md.Table), index+1, column, err,
+				)
+			}
+			row[column] = resolved
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// resolveManagedValue turns one declared scalar into the Go value the YAML
+// resolver would have produced for it.
+//
+// A string keeps its text, because that is what quoting it said. Every other
+// tag is resolved by handing the text back to the YAML resolver rather than by
+// parsing it here: the resolver owns which texts are integers and which layouts
+// are timestamps, and a second list of those rules would answer differently the
+// first time the first one moved.
+func resolveManagedValue(value ManagedValue) (any, error) {
+	if value.Null {
+		return nil, nil
+	}
+	switch value.Tag {
+	case "", "str":
+		return value.Text, nil
+	case "int", "float", "bool", "timestamp":
+		var resolved any
+		if err := yaml.Unmarshal([]byte(value.Text), &resolved); err != nil {
+			return nil, fmt.Errorf("%q is tagged %q and does not parse as one: %w", value.Text, value.Tag, err)
+		}
+		if got := managedValueTag(resolved); got != value.Tag {
+			return nil, fmt.Errorf("%q is tagged %q and resolves as %q", value.Text, value.Tag, got)
+		}
+		return resolved, nil
+	default:
+		return nil, fmt.Errorf("carries the unsupported YAML tag %q", value.Tag)
+	}
+}
+
+// managedValueTag names the tag a resolved value carries, so a declared tag can
+// be held to what its own text resolves to. An unrecognized Go type answers the
+// empty string, which matches no declared tag and is reported as a mismatch.
+func managedValueTag(value any) string {
+	switch value.(type) {
+	case int, int64, uint64:
+		return "int"
+	case float64:
+		return "float"
+	case bool:
+		return "bool"
+	case time.Time:
+		return "timestamp"
+	case string:
+		return "str"
+	default:
+		return ""
+	}
 }
 
 func managedRowFromNode(item *yaml.Node) (ManagedRow, error) {

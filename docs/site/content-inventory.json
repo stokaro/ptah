@@ -1454,8 +1454,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 890,
-      "sourceBytes": 9611
+      "visibleWords": 991,
+      "sourceBytes": 10252
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1518,8 +1518,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 1873,
-      "sourceBytes": 15758
+      "visibleWords": 1962,
+      "sourceBytes": 16267
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -6611,8 +6611,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1509,
-      "sourceBytes": 10545
+      "visibleWords": 1574,
+      "sourceBytes": 10885
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

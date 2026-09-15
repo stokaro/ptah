@@ -303,3 +303,108 @@ func TestRunDrift_AnIgnoredTableLeavesItsRowsAlone(t *testing.T) {
 	c.Assert(code, qt.Equals, 0)
 	c.Assert(stdout, qt.Contains, "No schema drift detected.")
 }
+
+// TestRunDrift_GitHubActionsAnnotatesEveryDriftedTable covers the annotation a
+// workflow reads. The job summary and the pull-request annotations are all a
+// reviewer sees of this run, so a drifted table missing from them is drift
+// nobody is told about.
+//
+// Two tables drift here, because one annotation is what a loop writing only
+// the first table also produces.
+func TestRunDrift_GitHubActionsAnnotatesEveryDriftedTable(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TB.TempDir()
+	root := twoTableManagedDataRoot(c, dir)
+	url := seededTwoTableDatabase(c, dir)
+
+	code, stdout, stderr := runDriftCommand(c, "--db-url", url, "--root-dir", root, "--format", "github-actions")
+
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout, qt.Contains,
+		"::error title=Ptah managed data drift::cities: 1 insert(s), 0 update(s), 0 delete(s)\n")
+	c.Assert(stdout, qt.Contains,
+		"::error title=Ptah managed data drift::countries: 0 insert(s), 1 update(s), 0 delete(s)\n")
+	// The annotations reach a pull request, so they carry counts and no value.
+	c.Assert(stdout, qt.Not(qt.Contains), "Czech Republic")
+	c.Assert(stdout, qt.Not(qt.Contains), "Czechia")
+}
+
+// TestRunDrift_GitHubActionsWritesNoRowAnnotationWithoutRowDrift is the
+// control: the annotation appears for the run that has something to report and
+// for no other.
+func TestRunDrift_GitHubActionsWritesNoRowAnnotationWithoutRowDrift(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TB.TempDir()
+	root := managedDataRoot(c, dir, declaredRows)
+	url := seededDatabase(c, dir, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czechia"},
+	})
+
+	code, stdout, stderr := runDriftCommand(c, "--db-url", url, "--root-dir", root, "--format", "github-actions")
+
+	c.Assert(code, qt.Equals, 0)
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout, qt.Equals, "::notice title=Ptah drift check::No schema drift detected\n")
+}
+
+// twoTableManagedDataRoot writes a Go entity root declaring two reference
+// tables, so a report that names one table can be told from a report that
+// names every table that drifted.
+func twoTableManagedDataRoot(c *qt.C, dir string) string {
+	c.Helper()
+	root := filepath.Join(dir, "entities")
+	c.Assert(os.MkdirAll(root, 0o750), qt.IsNil)
+	source := `package entities
+
+//ptah:schema:data table="countries" key="code" file="countries.yaml"
+//ptah:schema:table name="countries"
+type Country struct {
+	//ptah:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+
+//ptah:schema:data table="cities" key="code" file="cities.yaml"
+//ptah:schema:table name="cities"
+type City struct {
+	//ptah:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(source), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "countries.yaml"), []byte(declaredRows), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "cities.yaml"), []byte(`
+- code: PRG
+  name: Prague
+`), 0o600), qt.IsNil)
+	return root
+}
+
+// seededTwoTableDatabase creates both reference tables and leaves each one row
+// away from its declaration: countries holds an edited name, cities holds
+// nothing.
+func seededTwoTableDatabase(c *qt.C, dir string) string {
+	c.Helper()
+	ctx := context.Background()
+	url := "sqlite://" + filepath.Join(dir, "app.db")
+
+	conn, err := dbschema.ConnectToDatabase(ctx, url)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `CREATE TABLE countries (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `CREATE TABLE cities (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	for _, row := range [][2]string{{"US", "United States"}, {"CZ", "Czech Republic"}} {
+		_, insertErr := conn.ExecContext(ctx, `INSERT INTO countries (code, name) VALUES (?, ?)`, row[0], row[1])
+		c.Assert(insertErr, qt.IsNil)
+	}
+	dbschema.CloseAndWarn(conn)
+	return url
+}

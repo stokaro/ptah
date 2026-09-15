@@ -119,6 +119,26 @@ jobs:
           comment: "false"
           lint: "true"
 
+      # go-version-file defaults to go.mod at the caller's repository root, and
+      # setup-go fails outright when it is not there. This repository always has
+      # one, so the failure was only reachable downstream: the published copy of
+      # the action lives in a repository with no go.mod, and its smoke had been
+      # red since the input was introduced while this board stayed green.
+      #
+      # Naming a file that does not exist drives the same resolution, so the
+      # case is now reachable from here.
+      - name: Run local Ptah action with no Go version file to read
+        uses: ./.github/actions/ptah
+        with:
+          binary-path: ${{ runner.temp }}/ptah
+          go-version-file: this-file-does-not-exist/go.mod
+          dir: ${{ runner.temp }}/ptah-action-models
+          db-url: sqlite:///${{ runner.temp }}/ptah-action-no-go-mod.db
+          dialect: sqlite
+          migration-dir: internal/cli/lint/testdata/clean
+          comment: "false"
+          lint: "true"
+
   ptah-action-gate:
     name: Ptah Action gate
     if: always() && github.event_name == 'pull_request'
