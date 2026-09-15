@@ -83,6 +83,8 @@ type AccessControl struct{}
 
 This renders `GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO app_writer;`.
 
+`ptah introspect` describes a grant on a standalone sequence with `on_sequence` as well, so the package it writes compares equal to the database it was read from.
+
 ## Advanced Role Configurations
 
 ### Service Roles

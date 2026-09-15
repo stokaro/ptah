@@ -611,8 +611,9 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	}
 	// A grant's target is an HCL traversal in the rendered `permission` block,
 	// so an omitted target leaves a reference to a block that is not there.
-	// Measured on PostgreSQL 17: a GRANT on a sequence arrives with the
-	// sequence in OnTable rather than OnSequence, so both are read here.
+	// Both target fields are read: PostgreSQL accepts GRANT ... ON TABLE for a
+	// sequence, so a declaration may name a sequence in OnTable as well as in
+	// OnSequence.
 	for _, grant := range db.Grants {
 		add(grant.OnTable)
 		add(grant.OnSequence)

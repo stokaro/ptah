@@ -984,9 +984,16 @@ func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 			WithOption: dbGrant.WithOption,
 			GrantedBy:  dbGrant.GrantedBy,
 		}
-		if strings.EqualFold(dbGrant.ObjectType, "SCHEMA") {
+		switch {
+		case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
 			grant.OnSchema = dbGrant.ObjectName
-		} else {
+		case strings.EqualFold(dbGrant.ObjectType, "SEQUENCE"):
+			// PostgreSQL accepts GRANT ... ON TABLE for a sequence, so a sequence
+			// described under OnTable still replays. The comparator keys a grant
+			// by its object type, though, and the read reports SEQUENCE, so that
+			// description would never match the row it was made from.
+			grant.OnSequence = dbGrant.QualifiedTarget()
+		default:
 			grant.OnTable = dbGrant.QualifiedTarget()
 		}
 		grant.Canonicalize()
