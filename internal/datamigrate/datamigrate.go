@@ -267,14 +267,14 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 		return cmp.Compare(a.File, b.File)
 	})
 
-	columns, err := columnCatalog(ctx, conn, opts.Live, managed)
+	columnCatalog, err := readColumnCatalog(ctx, conn, opts.Live, managed)
 	if err != nil {
 		return inspection{}, err
 	}
 
 	result := inspection{desired: db, diffs: make([]*datadiff.DataDiff, 0, len(managed))}
 	for _, md := range managed {
-		diff, err := computeTable(ctx, conn, opts, md, columns, want)
+		diff, err := computeTable(ctx, conn, opts, md, columnCatalog, want)
 		if err != nil {
 			return inspection{}, err
 		}
@@ -426,26 +426,26 @@ func computeTable(
 // Nothing about its columns can be decided then, and the read goes out as the
 // declaration wrote it for the database to answer.
 func managedTable(
-	columns *catalog.Database,
+	columnCatalog *catalog.Database,
 	conn *dbschema.DatabaseConnection,
 	md schemamodel.ManagedData,
 ) *catalog.Table {
-	table, found := findManagedTable(columns, md.Schema, conn.Info().Schema, md.Table)
+	table, found := findManagedTable(columnCatalog, md.Schema, conn.Info().Schema, md.Table)
 	if !found {
 		return nil
 	}
 	return &table
 }
 
-// columnCatalog returns the introspected schema the column decisions are made
-// against: which columns a declared table carries, and what the database will
+// readColumnCatalog returns the introspected schema the column decisions are
+// made against: which columns a declared table carries, and what the database will
 // accept an explicit value for.
 //
 // A caller that supplied a live schema already read one, and reading a second
 // would let the two disagree about the same table within one run. A caller that
 // did not is reading in order to write a migration, and the whole declaration's
 // schemas are read once here rather than once per table.
-func columnCatalog(
+func readColumnCatalog(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	live *catalog.Database,
