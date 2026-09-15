@@ -528,7 +528,17 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
+	// The report is written once, at the first moment the run knows what it is
+	// about to do, and every caller below asks for it without knowing whether
+	// another already has. A run that selects nothing reaches the migration lock
+	// and comes back without passing through the pre-migration hook, so the two
+	// callers are not alternatives a reader has to keep in agreement.
+	planReported := false
 	emitPlanOutput := func() {
+		if planReported {
+			return
+		}
+		planReported = true
 		if opts.dryRun {
 			emit.Println("=== DRY RUN MODE ===")
 			emit.Println("No actual changes will be made to the database")
@@ -601,9 +611,25 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			preflightHook,
 		)
 	}
+	preflightHook = dbcli.CombineMigrationHooks(
+		func(context.Context, migrator.MigrationPlan) error {
+			emitPlanOutput()
+			return nil
+		},
+		preflightHook,
+	)
+
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, emitPlanOutput, preflightHook)
+	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook)
+	// A pre-migration hook is work a run does before applying something, so a
+	// selection that came out empty passes none of them, the report above
+	// included. That report is what says why nothing was applied, and a bounded
+	// run against a database already at its target is where an operator has
+	// nothing else to read.
+	if outcome.selectedNothing() {
+		emitPlanOutput()
+	}
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
 		return err
@@ -646,6 +672,13 @@ func (o migrateUpOutcome) selectedCount() int {
 	return len(o.plan.Versions)
 }
 
+// selectedNothing reports a run whose migrator reached a decision, under its own
+// lock, to apply nothing. A run refused before the plan was built is not this:
+// it never decided what it would do, so it has nothing to say about it.
+func (o migrateUpOutcome) selectedNothing() bool {
+	return o.plan != nil && len(o.plan.Versions) == 0
+}
+
 // err is the failure the command returns, in the order the caller can act on:
 // the run's own error first, and the unreadable status only when the run
 // itself succeeded.
@@ -674,7 +707,6 @@ func applyPendingMigrations(
 	mig *migrator.Migrator,
 	opts *options,
 	toVersion int64,
-	emitPlanOutput func(),
 	preflightHook migrator.PreMigrationHook,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
@@ -692,14 +724,8 @@ func applyPendingMigrations(
 		RefuseTargetVersionAlreadyPassed: true,
 		AllowDirty:                       opts.allowDirty,
 		Preflight:                        preflightHook,
-		// The report rides the plan observer rather than a pre-migration hook.
-		// A hook is work the run does before applying something, so the migrator
-		// skips it when the selection came out empty; the report is what tells
-		// an operator why the selection came out empty, and a bounded run
-		// against a database already at the target is where it is needed most.
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			outcome.plan = &plan
-			emitPlanOutput()
 		},
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions
