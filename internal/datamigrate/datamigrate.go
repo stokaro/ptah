@@ -26,6 +26,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
+	"ptah.run/internal/managedrows"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -457,41 +458,9 @@ func readColumns(
 	if len(desired) == 0 {
 		return fullNonGeneratedColumns(ctx, conn, md.Schema, md.Table, md.Keys)
 	}
-	return projectOntoLive(managedColumns(desired, md.Keys), liveTable), nil
+	return managedrows.ProjectOntoLive(managedrows.Columns(desired, md.Keys), liveTable), nil
 }
 
-// projectOntoLive drops the managed columns the live table does not carry, so
-// the read asks only for what the database can return. A nil live table is a
-// caller with no introspected schema, and the full projection goes through.
-//
-// The dropped column is still compared: the diff reads every column the
-// declaration names, and one missing from the live row reads as absent, which
-// is what a column the table has not gained yet is. So a declaration that adds
-// a column reports the rows that will need its value beside the structural
-// finding that reports the column, on every dialect. Reading the column
-// instead is what one dialect does with a quoted name it cannot resolve: SQLite
-// returns the name as a string literal, and every row then differs from a value
-// nothing in the database holds.
-func projectOntoLive(columns []string, liveTable *catalog.Table) []string {
-	if liveTable == nil {
-		return columns
-	}
-	present := liveColumnNames(*liveTable)
-	return slices.DeleteFunc(columns, func(column string) bool {
-		_, ok := present[column]
-		return !ok
-	})
-}
-
-// fullNonGeneratedColumns introspects the live schema for the managed table and
-// returns the columns to read and re-insert for an empty-desired full delete.
-//
-// It backs the empty-desired case: when a managed table's desired row set is
-// empty but the table is populated, every live row becomes a DELETE, and the
-// reversible down re-inserts the row from exactly the columns returned here. The
-// column selection and its safety refusals live in the pure [insertableColumns];
-// this function only performs the introspection and locates the table. A table
-// that cannot be found in the introspected schema is surfaced as an error.
 func fullNonGeneratedColumns(ctx context.Context, conn *dbschema.DatabaseConnection, schema, table string, keys []string) ([]string, error) {
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemaScope(schema, conn.Info().Schema))
 	if err != nil {
@@ -855,35 +824,6 @@ func addFinding(findings *[]safety.Finding, category string, count int, severity
 	*findings = append(*findings, safety.Finding{Category: category, Count: count, Severity: severity})
 }
 
-// managedColumns returns the distinct, sorted set of columns Ptah manages for a
-// table: every column that appears in any desired row plus the key columns. The
-// keys are always included so a key that never appears as a data column is still
-// projected. It is used for the drift path where desired rows are present; the
-// empty-desired path reads the table's full non-generated column set instead (see
-// [readColumns]). The result is deduplicated and sorted because
-// dbschema.ReadTableRows rejects duplicate columns and a stable order keeps the
-// generated SQL deterministic.
-func managedColumns(rows []map[string]any, keys []string) []string {
-	set := make(map[string]struct{}, len(keys))
-	for _, k := range keys {
-		set[k] = struct{}{}
-	}
-	for _, row := range rows {
-		for col := range row {
-			set[col] = struct{}{}
-		}
-	}
-
-	cols := make([]string, 0, len(set))
-	for col := range set {
-		cols = append(cols, col)
-	}
-	slices.Sort(cols)
-	return cols
-}
-
-// qualifiedName returns the canonical table identity used for lookups and
-// human-readable block labels.
 func qualifiedName(schema, table string) string {
 	return schemamodel.QualifyTableName(schema, table)
 }
