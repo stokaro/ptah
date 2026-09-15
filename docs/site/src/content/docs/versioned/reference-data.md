@@ -84,6 +84,12 @@ refreshes `ptah.sum`, so the data migration applies and rolls back like any othe
 `--dry-run` prints the SQL instead of writing files; a run with no drift writes
 nothing.
 
+A row file naming a column the live table does not carry is refused, naming the
+columns: the read asks the database for a name it cannot resolve, and SQLite
+answers such a name with the name itself, which would reach the rollback as the
+value each row is restored to. Apply the schema change first, or take the column
+out of the row file.
+
 ## Safety gates
 
 A data migration is applied through the ordinary migration path, where neither
@@ -112,6 +118,14 @@ down re-inserts it. Applying up then down restores the original table contents.
 
 Values are rendered as dialect-correct, safely-escaped SQL literals, so a value
 containing quotes, backslashes, or semicolons cannot break out of its literal.
+
+The statement is the one the engine accepts, which is not the same spelling
+everywhere. ClickHouse refuses a plain `UPDATE` on a table without a
+materialized `_block_number` column, so a row change there is written as
+`ALTER TABLE ... UPDATE`; the server applies that as a background mutation, so
+the new value appears shortly after the statement returns rather than at once.
+A key column holding `NULL` is addressed with `IS NULL`: `= NULL` is UNKNOWN for
+every row, so the statement would succeed and match nothing.
 
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration

@@ -202,7 +202,26 @@ func updateStmt(dialect, table string, keys []string, setRow, keyRow Row) (strin
 	if err != nil {
 		return "", err
 	}
+	if usesAlterTableDML(dialect) {
+		return fmt.Sprintf(
+			"ALTER TABLE %s UPDATE %s WHERE %s;",
+			table, strings.Join(assignments, ", "), where,
+		), nil
+	}
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s;", table, strings.Join(assignments, ", "), where), nil
+}
+
+// usesAlterTableDML reports whether the dialect writes a row change as an ALTER
+// TABLE rather than as an UPDATE.
+//
+// ClickHouse answers a plain UPDATE with "Lightweight updates are not
+// supported" unless the table carries a materialized _block_number column,
+// which a reference table does not. Its own spelling is ALTER TABLE ... UPDATE,
+// a mutation the server applies in the background. DELETE needs no arm: the
+// lightweight delete has been on by default there since 23.3, and the plain
+// statement is accepted (stokaro/ptah#3281).
+func usesAlterTableDML(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.ClickHouse
 }
 
 // deleteStmt renders a DELETE that matches rows on the key columns, whose values
@@ -226,6 +245,14 @@ func keyPredicate(dialect string, keys []string, values Row) (string, error) {
 		v, ok := values[k]
 		if !ok {
 			return "", fmt.Errorf("datadiff: missing key column %q", k)
+		}
+		// A key column holding NULL is addressed with IS NULL. Written as
+		// `= NULL` the predicate is UNKNOWN for every row, so the statement
+		// succeeds and changes nothing: the row the diff found stays exactly
+		// where it was, and the next run finds it again (stokaro/ptah#3279).
+		if v == nil {
+			parts[i] = sqlident.Quote(dialect, k) + " IS NULL"
+			continue
 		}
 		lit, err := renderLiteral(dialect, v)
 		if err != nil {
