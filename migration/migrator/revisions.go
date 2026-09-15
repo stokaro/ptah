@@ -374,7 +374,14 @@ FROM %s
 FROM %s
 WHERE %s AND %s
 ORDER BY %s
-%s`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicateFor(m.connectionDialect()), m.atlasRevisionRowPredicate(), m.atlasVersionNumberExpression()+", version", revisionFirstRowClause(m.connectionDialect()))
+%s`,
+			m.atlasRevisionProjection(),
+			m.qualifiedMigrationsTable(),
+			atlasDirtyRevisionPredicateFor(m.connectionDialect()),
+			m.atlasRevisionRowPredicate(),
+			m.atlasVersionNumberExpression()+", version",
+			revisionFirstRowClause(m.connectionDialect()),
+		)
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at

@@ -24,8 +24,10 @@ import (
 //	ptah:  ORA-03076: unexpected item DEFAULT in a column definition or inline constraint
 //	atlas: ORA-03062: missing comma or right parenthesis
 //
-// The rollback runs on a second migrator, so Initialize meets a revision table
-// that already exists, which is the path every run after the first one takes
+// MetadataPresent is asked before and after, because it reads the catalog
+// without Initialize and Oracle has no information_schema to read it from. The
+// rollback runs on a second migrator, so Initialize meets a revision table that
+// already exists, which is the path every run after the first one takes
 // (stokaro/ptah#3298).
 func TestOracleMigratorAppliesAndRollsBackLive(t *testing.T) {
 	tests := []struct {
@@ -45,7 +47,13 @@ func TestOracleMigratorAppliesAndRollsBackLive(t *testing.T) {
 			dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+test.table+`"`)
 
 			applier := newOracle3298Migrator(c, conn, oracle3298Migrations(), test.format, test.table)
+			present, err := applier.MetadataPresent(ctx)
+			c.Assert(err, qt.IsNil)
+			c.Assert(present, qt.IsFalse)
 			c.Assert(applier.MigrateUp(ctx), qt.IsNil)
+			present, err = applier.MetadataPresent(ctx)
+			c.Assert(err, qt.IsNil)
+			c.Assert(present, qt.IsTrue)
 			c.Assert(oracle3298TableCount(c, conn, "PTAH_3298_WIDGETS"), qt.Equals, 1)
 			c.Assert(oracle3298TableCount(c, conn, "PTAH_3298_GADGETS"), qt.Equals, 1)
 			applied, err := applier.GetAppliedMigrations(ctx)
@@ -102,6 +110,36 @@ func TestOracleMigratorKeepsEveryStatementItRanLive(t *testing.T) {
 	c.Assert(revisions[0].Applied, qt.Equals, 2)
 	c.Assert(revisions[0].Total, qt.Equals, 3)
 	c.Assert(revisions[0].Dirty, qt.IsTrue)
+}
+
+// TestOracleMigratorKeepsTheRevisionTableInANamedSchemaLive names the schema
+// the revision table lives in, which on Oracle is an account.
+//
+// A schema is a user there, so the migrator sends no statement to create one.
+// Sent the generic `CREATE SCHEMA IF NOT EXISTS`, Oracle Free 23.26.3.0.0
+// answers ORA-02420, missing schema authorization clause. The schema named here
+// is the connected account's own, the one a test can rely on existing
+// (stokaro/ptah#3298).
+func TestOracleMigratorKeepsTheRevisionTableInANamedSchemaLive(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn := connectOracle3298(c)
+	schema := conn.Info().Schema
+	const table = "ptah_3298_schema_revisions"
+	dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+schema+`"."`+table+`"`)
+	mig, err := migrator.NewFSMigrator(conn, oracle3298Migrations())
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithMigrationsTable(schema, table)
+
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	var owned int
+	err = conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM all_tables WHERE owner = :1 AND table_name = :2", schema, table).Scan(&owned)
+	c.Assert(err, qt.IsNil)
+	c.Assert(owned, qt.Equals, 1)
+	applied, err := mig.GetAppliedMigrations(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(applied, qt.DeepEquals, []int64{1, 2})
 }
 
 func oracle3298Migrations() fstest.MapFS {

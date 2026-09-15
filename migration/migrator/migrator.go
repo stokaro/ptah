@@ -762,8 +762,10 @@ func (m *Migrator) migrationsSchemaStatement() string {
 	}
 	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
 		// An Oracle schema is a user, and a migrator does not create accounts.
-		// A configured schema that does not exist fails on the CREATE TABLE
-		// that names it, with the server's own message.
+		// The generic statement below is not Oracle's CREATE SCHEMA: measured
+		// on Oracle Free 23.26.3.0.0 it answers ORA-02420, missing schema
+		// authorization clause. A configured schema that does not exist fails
+		// on the CREATE TABLE that names it, with the server's own message.
 		return ""
 	}
 	if m.isSQLServer() {
