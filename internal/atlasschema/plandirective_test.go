@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // TestParsePlanDirectiveAcceptsEverySpellingOfALine covers the two ways one
@@ -274,4 +275,92 @@ func TestPlanTxModeRefusesAnUnreadableValueInThePlan(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `txmode "all" is not allowed in file directive "hand.plan.hcl".*`)
 	c.Assert(mode, qt.Equals, migrationfile.FileTxModeUnspecified)
+}
+
+// TestResolvePlanTxMode_HappyPath pins how a plan's `-- atlas:txmode` header
+// combines with the operator's --tx-mode. Every command that executes a plan
+// file resolves the mode through this one function, so the rows are the
+// contract both binaries answer to (stokaro/ptah#3284).
+func TestResolvePlanTxMode_HappyPath(t *testing.T) {
+	const statement = "CREATE INDEX CONCURRENTLY users_email_idx ON users (email);\n"
+	tests := []struct {
+		name      string
+		global    migrator.MigrationTxMode
+		migration string
+		want      migrator.MigrationTxMode
+	}{
+		{
+			name:      "the directive overrides the default file mode",
+			global:    migrator.MigrationTxModeFile,
+			migration: "-- atlas:txmode none\n\n" + statement,
+			want:      migrator.MigrationTxModeNone,
+		},
+		{
+			name:      "the directive overrides a global none",
+			global:    migrator.MigrationTxModeNone,
+			migration: "-- atlas:txmode file\n\n" + statement,
+			want:      migrator.MigrationTxModeFile,
+		},
+		{
+			name:      "a plan stating no mode keeps the global mode",
+			global:    migrator.MigrationTxModeNone,
+			migration: statement,
+			want:      migrator.MigrationTxModeNone,
+		},
+		{
+			// Under all, only a plan that states a mode is refused.
+			name:      "a plan stating no mode runs under all",
+			global:    migrator.MigrationTxModeAll,
+			migration: statement,
+			want:      migrator.MigrationTxModeAll,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			mode, err := atlasschema.ResolvePlanTxMode(test.global, "change.plan.json", test.migration)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(mode, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestResolvePlanTxMode_FailurePath pins the refusals: a directive under
+// --tx-mode all is refused rather than decided, and a header whose value
+// cannot be read does not execute as though it said nothing.
+func TestResolvePlanTxMode_FailurePath(t *testing.T) {
+	const statement = "CREATE TABLE t (id INTEGER PRIMARY KEY);\n"
+	tests := []struct {
+		name      string
+		global    migrator.MigrationTxMode
+		migration string
+		wantErr   string
+	}{
+		{
+			name:      "a directive under all",
+			global:    migrator.MigrationTxModeAll,
+			migration: "-- atlas:txmode none\n\n" + statement,
+			wantErr:   `cannot set txmode directive to "none" in "change.plan.json" when txmode "all" is set globally`,
+		},
+		{
+			name:      "an unreadable value",
+			global:    migrator.MigrationTxModeFile,
+			migration: "-- atlas:txmode all\n\n" + statement,
+			wantErr:   `txmode "all" is not allowed in file directive "change.plan.json".*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			mode, err := atlasschema.ResolvePlanTxMode(test.global, "change.plan.json", test.migration)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(mode, qt.Equals, migrator.MigrationTxMode(""))
+		})
+	}
 }

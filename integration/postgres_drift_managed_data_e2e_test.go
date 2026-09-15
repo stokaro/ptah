@@ -39,6 +39,36 @@ const driftManagedDataRows = `- code: US
   name: Czechia
 `
 
+// driftManagedDataEntitiesWithISO3 and driftManagedDataRowsWithISO3 are the
+// release that adds a column: the struct declares the field and the row file
+// carries its value, and the live table has neither.
+//
+// Each iso3 value is one no live row could hold, so a read that asks the
+// server for the column is told apart from one that leaves it out.
+const driftManagedDataEntitiesWithISO3 = `package entities
+
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
+//ptah:schema:table name="regions"
+type Region struct {
+	//ptah:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+
+	//ptah:schema:field name="iso3" type="TEXT"
+	ISO3 string
+}
+`
+
+const driftManagedDataRowsWithISO3 = `- code: US
+  name: United States
+  iso3: USA
+- code: CZ
+  name: Czechia
+  iso3: CZE
+`
+
 // TestPostgresDriftManagedDataE2E drives `ptah schema drift` against a live
 // PostgreSQL server, which is what decides the two answers a unit test on
 // SQLite cannot see.
@@ -150,29 +180,58 @@ func TestPostgresDriftManagedDataE2E(t *testing.T) {
 
 	// A column the declaration names and the table does not carry. PostgreSQL
 	// answers 42703 to a read that asks for it, so the check has to leave it out
-	// of the projection and compare it as absent.
+	// of the comparison; the schema comparison reports the column itself.
+	//
+	// The row this run edits in the database is what tells that apart from a
+	// check that leaves the whole table out: the column drops out and the edited
+	// row still has to be counted.
 	t.Run("a column the table has not gained", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(
-			`- code: US
-  name: United States
-  iso3: USA
-- code: CZ
-  name: Czechia
-  iso3: CZE
-`), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(driftManagedDataEntitiesWithISO3), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftManagedDataRowsWithISO3), 0o600), qt.IsNil)
 		t.Cleanup(func() {
+			c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(driftManagedDataEntities), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftManagedDataRows), 0o600), qt.IsNil)
 		})
+		_, execErr := targetDB.ExecContext(ctx, `UPDATE regions SET name = 'Czech Republic' WHERE code = 'CZ'`)
+		c.Assert(execErr, qt.IsNil)
+		c.Assert(regionName(c, ctx, targetDB, "CZ"), qt.Equals, "Czech Republic")
 
 		stdout, stderr, runErr := runCLIProcess(ctx, workDir, binary,
 			"schema", "drift", "--db-url", scopedURL, "--root-dir", root, "--format", "json")
 
 		c.Assert(exitStatusOf(c, runErr), qt.Equals, 1)
 		c.Assert(stderr, qt.Equals, "")
-		c.Assert(stdout, qt.Contains, `"updates": 2`)
+		// One update: the edited row. The declared iso3 is out of the row
+		// comparison, and the column arrives as structural drift instead.
+		c.Assert(stdout, qt.Contains, `"updates": 1`)
+		c.Assert(stdout, qt.Contains, `"category": "columns_added"`)
 		c.Assert(stdout, qt.Not(qt.Contains), "42703")
 		c.Assert(stdout, qt.Not(qt.Contains), "iso3 does not exist")
+
+		_, execErr = targetDB.ExecContext(ctx, `UPDATE regions SET name = 'Czechia' WHERE code = 'CZ'`)
+		c.Assert(execErr, qt.IsNil)
+	})
+
+	// The same declaration through the verb that writes SQL. A migration body
+	// cannot leave the column out: it would write the rollback from a read the
+	// server refuses, so the refusal comes before any SQL exists.
+	t.Run("a migration body refuses the column the table has not gained", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(driftManagedDataEntitiesWithISO3), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftManagedDataRowsWithISO3), 0o600), qt.IsNil)
+		t.Cleanup(func() {
+			c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(driftManagedDataEntities), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftManagedDataRows), 0o600), qt.IsNil)
+		})
+
+		stdout, stderr, runErr := runCLIProcess(ctx, workDir, binary,
+			"migrations", "data", "--db-url", scopedURL, "--root-dir", root,
+			"--migrations-dir", filepath.Join(workDir, "migrations"), "--dry-run")
+
+		c.Assert(exitStatusOf(c, runErr), qt.Not(qt.Equals), 0)
+		c.Assert(stdout+stderr, qt.Contains, `does not have declared column(s) "iso3"`)
+		c.Assert(stdout, qt.Not(qt.Contains), "UPDATE")
 	})
 
 	// Nothing the check did wrote to the table. A read-only verb that left a row

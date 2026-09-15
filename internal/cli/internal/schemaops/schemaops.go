@@ -48,7 +48,9 @@ type CompareOptions struct {
 	// compared against the live table as well as its structure, filling
 	// [CompareResult.DataDrift]. The comparison runs on the connection the
 	// structural read already opened and costs one SELECT per declared table,
-	// so a caller that does not report row drift leaves it off.
+	// so a caller that does not report row drift leaves it off. That SELECT is
+	// also a privilege the structural read alone does not need, which is why
+	// the caller asks for it rather than getting it by default.
 	ManagedData bool
 }
 
