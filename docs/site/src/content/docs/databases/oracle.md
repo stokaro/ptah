@@ -1,6 +1,6 @@
 ---
 title: Oracle
-description: Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, and PL/SQL routines.
+description: Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, PL/SQL routines, and versioned migrations.
 type: reference
 audience:
   - "database-engineer"
@@ -118,6 +118,28 @@ A `CREATE` handed to the server without it returns **no error at all** and
 leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
 `ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
 semicolon on every statement it sends.
+
+## Versioned migrations
+
+`ptah migrations up`, `down` and `status` run against Oracle, with either
+revision table format. The revision table has an Oracle spelling of its own:
+`NUMBER` and `CLOB` columns, `DEFAULT` written before `NOT NULL`, and a PL/SQL
+block that creates the table only when it is absent, because the 21 line has no
+`IF NOT EXISTS`. Oracle stores an empty string as `NULL`, so the text columns of
+that table are nullable. The spelling is measured on the 23 line; on the 21 line
+it rests on the capability preset.
+
+Each statement of a migration commits as it runs, under `--tx-mode file` as
+under `none`. Oracle commits before every schema statement, and Ptah opens no
+transaction around the body, so when a statement fails, the statements before
+it stay applied and the revision row counts them. See
+[what a failed body records](../../versioned/apply/). For the same reason
+`--tx-mode all` is refused.
+
+`--migrations-engine` is refused on Oracle, because the revision table has no
+engine clause to carry it. Ptah takes no advisory lock on Oracle, so two
+`ptah migrations up` runs against one schema are not serialized: run one at a
+time.
 
 ## Open work
 
