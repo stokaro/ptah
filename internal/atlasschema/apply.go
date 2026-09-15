@@ -34,6 +34,14 @@ import (
 type ApplyOptions struct {
 	ToURLs  []string
 	Exclude []string
+	// ProjectRoot bounds the files a desired state may make this process read.
+	//
+	// A declaration names the file that carries its rows, and a schema is not
+	// always one the reader wrote, so the path it names is confined to the
+	// project the caller is operating in rather than followed anywhere. That is
+	// the boundary `file()` in atlas.hcl already has. An empty value confines
+	// nothing, for a caller that has no project to name.
+	ProjectRoot string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -105,6 +113,9 @@ type ApplyRuntimeOptions struct {
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
+	// ProjectRoot bounds the files a desired state may make this process read;
+	// see [ApplyOptions.ProjectRoot].
+	ProjectRoot string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -386,7 +397,7 @@ func computeApplyPlan(
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
 	// here would report an empty plan for a change its author made.
-	computation.dataStatements, err = managedDataStatements(ctx, conn, desired, current)
+	computation.dataStatements, err = managedDataStatements(ctx, conn, desired, current, opts.ProjectRoot)
 	if err != nil {
 		return applyComputation{}, err
 	}
@@ -711,6 +722,7 @@ func PrepareApply(
 	}
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+		ProjectRoot:               opts.ProjectRoot,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,
 		Schemas:                   opts.Schemas,

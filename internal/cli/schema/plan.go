@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -172,6 +173,7 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	}
 
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
+		ProjectRoot: schemaroot.Of(opts.rootDirs),
 		Name:        opts.name,
 		DevURL:      opts.devURL,
 		Desired:     desired,
