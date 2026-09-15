@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlsafety"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
@@ -52,14 +53,20 @@ type PlanStatement struct {
 // state they were computed against, so a stale plan is detectable before
 // execution.
 type PlanFile struct {
-	FormatVersion   int             `json:"format_version"`
-	Name            string          `json:"name"`
-	Dialect         string          `json:"dialect"`
-	FromFingerprint string          `json:"from_fingerprint"`
-	ToFingerprint   string          `json:"to_fingerprint"`
-	Exclude         []string        `json:"exclude,omitempty"`
-	Destructive     bool            `json:"destructive"`
-	Statements      []PlanStatement `json:"statements"`
+	FormatVersion   int      `json:"format_version"`
+	Name            string   `json:"name"`
+	Dialect         string   `json:"dialect"`
+	FromFingerprint string   `json:"from_fingerprint"`
+	ToFingerprint   string   `json:"to_fingerprint"`
+	Exclude         []string `json:"exclude,omitempty"`
+	// SchemasBeyondURL names the schemas the source fingerprint covers that the
+	// connection URL's own scope does not: a desired state naming a schema other
+	// than the one a schema-limited URL connects to. The fingerprint describes
+	// those schemas together with the URL's scope, and [VerifyPlanTarget] reads
+	// the same set, so a change in any schema the plan writes makes it stale.
+	SchemasBeyondURL []string        `json:"schemas_beyond_url,omitempty"`
+	Destructive      bool            `json:"destructive"`
+	Statements       []PlanStatement `json:"statements"`
 }
 
 // PlanFileOptions configures PreparePlanFile.
@@ -186,36 +193,35 @@ func PreparePlanFile(
 	statements = slices.Insert(statements, computation.dataIndex(), data...)
 
 	return PlanFile{
-		FormatVersion:   PlanFormatVersion,
-		Name:            name,
-		Dialect:         conn.Info().Dialect,
-		FromFingerprint: fromFingerprint,
-		ToFingerprint:   toFingerprint,
-		Exclude:         opts.Exclude,
-		Destructive:     destructive,
-		Statements:      statements,
+		FormatVersion:    PlanFormatVersion,
+		Name:             name,
+		Dialect:          conn.Info().Dialect,
+		FromFingerprint:  fromFingerprint,
+		ToFingerprint:    toFingerprint,
+		Exclude:          opts.Exclude,
+		SchemasBeyondURL: computation.schemasBeyondURL,
+		Destructive:      destructive,
+		Statements:       statements,
 	}, nil
 }
 
 // planSourceSchema is the target state a plan's from-fingerprint describes.
 //
-// It has to be the read [VerifyPlanTarget] will make when the plan is used, and
-// that read is the connection's own default: a plan file records an exclude
-// list and no schema scope, so nothing in it can tell the verifier which
-// schemas the planning run covered. Planning may nonetheless have read wider —
-// the database side is read at the scope the desired state names, so a document
-// declaring a schema beyond the connected one is compared against it — and
-// fingerprinting that wider read made a freshly saved plan report itself stale
-// against the database it had just been computed from. Measured on PostgreSQL
-// 17.10, a two-schema document against a database holding `public.a` and an
-// empty `extra`: `schema plan` then `schema apply --plan` refused with "the
-// target database schema does not match the plan's source fingerprint" with
-// nothing having changed in between.
+// It has to be the read [VerifyPlanTarget] will make when the plan is used,
+// which [planTargetState] owns. A read of the connection's own default schema
+// is not that read. The statements a plan records write every schema its desired
+// state names, and a fingerprint of the connected schema alone accepted a plan
+// after the table it was about to create had been created in another one.
+// Measured on PostgreSQL 17 against a database holding `public.a` and an empty
+// `extra`, planning a document that adds `extra.b`: verification returned nil
+// after `CREATE TABLE extra.b`, and the plan's own `CREATE TABLE "extra"."b"`
+// then failed with SQLSTATE 42P07 (stokaro/ptah#3285).
 //
-// The extra read happens only when the two scopes differ, which is the case a
-// desired state naming another schema creates and no other. The exclusion is
-// applied here the way computeApplyPlan applied it to its own read, so the two
-// fingerprints describe the same subtraction.
+// The planning read is not reused, for two reasons. It may name a schema the
+// verification read has no reason to name, such as one the plan creates on a
+// realm-scoped URL; and computeApplyPlan subtracts the exclusion through a
+// different path from the one the verifier takes. A plan whose read was the
+// connection's own default has neither difference, so its planning read stands.
 func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
@@ -224,7 +230,29 @@ func planSourceSchema(ctx context.Context,
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+	return planTargetState(ctx, conn, computation.schemasBeyondURL, exclude)
+}
+
+// planTargetState reads the database state a saved plan's source fingerprint
+// describes: the schemas the connection URL covers now, together with the
+// schemas the plan recorded beyond them, with the plan's exclusion subtracted.
+//
+// The URL's scope is resolved at the time of the read rather than recorded.
+// On a realm-scoped URL that is what makes a schema created after planning part
+// of the read, and so part of what makes the plan stale.
+//
+// The connection's default schema is the one computeApplyPlan gave the
+// exclusion when the plan was recorded. Passing a different one would subtract a
+// different set of objects and report a fresh plan as stale.
+func planTargetState(ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	schemasBeyondURL, exclude []string,
+) (*catalog.Database, error) {
+	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+	if err != nil {
+		return nil, fmt.Errorf("read database schema: %w", err)
+	}
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemascope.Union(urlScope, schemasBeyondURL))
 	if err != nil {
 		return nil, fmt.Errorf("read database schema: %w", err)
 	}
@@ -429,7 +457,9 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // VerifyPlanTarget checks that the connected database is the state the plan
 // was computed against: the dialects must be compatible and the current
 // schema, filtered with the plan's recorded exclude patterns, must match the
-// plan's source fingerprint. A fingerprint mismatch returns *StalePlanError.
+// plan's source fingerprint. The schema is read at the connection URL's scope
+// together with the plan's [PlanFile.SchemasBeyondURL]. A fingerprint mismatch
+// returns *StalePlanError.
 func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile) error {
 	if conn == nil {
 		return errors.New("plan verification requires database connection")
@@ -441,16 +471,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 			plan.Dialect, conn.Info().Dialect)
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+	current, err := planTargetState(ctx, conn, plan.SchemasBeyondURL, plan.Exclude)
 	if err != nil {
-		return fmt.Errorf("read database schema: %w", err)
-	}
-	// The connection's default schema is the same one computeApplyPlan gave the
-	// exclusion when the plan was recorded. Passing a different one here would
-	// subtract a different set of objects and mis-report a fresh plan as stale.
-	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, plan.Exclude, conn.Info().Schema)
-	if err != nil {
-		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
+		return err
 	}
 	fingerprint, err := SchemaFingerprint(current)
 	if err != nil {

@@ -6,8 +6,10 @@ package generator
 import (
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -56,10 +58,15 @@ func reverseProceduresRemoved(added difftypes.FunctionChanges) difftypes.Functio
 	return reverseRoutinesOfKind(added, difftypes.RoutineChange.IsProcedure)
 }
 
-// reverseFunctionDiffs reverses function modifications for down migrations
+// reverseFunctionDiffs reverses function modifications for down migrations.
+//
+// current is the pre-change database the rollback restores. It is the catalog
+// rather than its conversion because only the catalog carries the identity that
+// tells two overloads of one name apart; see [priorFunction].
 func reverseFunctionDiffs(
 	functionDiffs []difftypes.FunctionDiff,
-	prior *schemamodel.Database,
+	current *catalog.Database,
+	dialect string,
 ) []difftypes.FunctionDiff {
 	reversed := make([]difftypes.FunctionDiff, len(functionDiffs))
 	for i, functionDiff := range functionDiffs {
@@ -82,24 +89,54 @@ func reverseFunctionDiffs(
 			// The replacement renders from the operand, so reversing the change
 			// map without reversing the operand would have the down direction
 			// re-apply the body it is undoing (stokaro/ptah#2315).
-			Desired: priorFunction(prior, functionDiff.FunctionName),
+			Desired: priorFunction(
+				current, dialect, functionDiff.FunctionName, functionDiff.CurrentSignature,
+			),
+			CurrentSignature: forwardRoutineSignature(functionDiff),
 		}
 	}
 	return reversed
 }
 
-// priorFunction is the function the pre-change database held.
+// forwardRoutineSignature is the argument list that addresses the routine the
+// forward direction leaves in the database, which is the routine a rollback
+// drops when it has to rebuild it (stokaro/ptah#3288).
+//
+// When the forward change left the arguments alone, that routine is addressed
+// exactly as the one it replaced, so the identity the comparison read from the
+// catalog still holds. When the arguments changed, the routine is the
+// declaration, and its parameters are the list -- the same answer the reversal
+// of an addition gives in [reverseRoutinesOfKind].
+func forwardRoutineSignature(functionDiff difftypes.FunctionDiff) string {
+	if _, changed := functionDiff.Changes["parameters"]; changed {
+		return functionDiff.Desired.Parameters
+	}
+	return functionDiff.CurrentSignature
+}
+
+// priorFunction is the function the pre-change database held, as a declaration
+// the planner can render.
 //
 // The name is compared exactly, which is the identity the comparison that
 // produced the change already used: it pairs a declared routine with a reported
 // one by the name the declaration carries.
-func priorFunction(prior *schemamodel.Database, name string) schemamodel.Function {
-	if prior == nil {
+//
+// The signature is compared too, because a name does not select an overload.
+// Matching by name alone returned the first routine of that name, so rolling
+// back a change to `f(n integer)` restored `f()` instead: a replacement then
+// rewrote the wrong routine, and a rebuild dropped `f(n integer)` and never
+// created it again (stokaro/ptah#3288). The comparison records the signature
+// from this same catalog record, so the two agree by construction.
+func priorFunction(current *catalog.Database, dialect, name, signature string) schemamodel.Function {
+	if current == nil {
 		return schemamodel.Function{}
 	}
-	for _, function := range prior.Functions {
-		if function.Name == name {
-			return function
+	for _, function := range current.Functions {
+		if function.QualifiedName() == name && function.Signature() == signature {
+			// One routine through the conversion every other prior object
+			// takes, so the restored declaration is spelled the same way.
+			single := &catalog.Database{Functions: []catalog.Function{function}}
+			return dbschematogo.ConvertDBSchemaToGoSchema(single, dialect).Functions[0]
 		}
 	}
 	return schemamodel.Function{}

@@ -1449,12 +1449,15 @@ local plan file. The default format is the Atlas `.plan.hcl` shape: one
 heredoc, named with an Atlas-style UTC timestamp. The written file parses in
 Atlas's own plan reader; the `from`/`to` values are Ptah's sha256
 fingerprints, which Atlas parses but cannot verify against its
-own base64 hashes (those have no local recipe — in either direction). An
-`--output` path ending in `.json` writes the native JSON plan
-(`format_version` 1) instead, which additionally records per-statement safety
-severity, the dialect, and exclude patterns. Without
+own base64 hashes (those have no local recipe — in either direction). Without
 `--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
 `--auto-approve` is accepted for CLI compatibility.
+
+An `--output` path ending in `.json` writes the native JSON plan
+(`format_version` 1) instead, which additionally records per-statement safety
+severity, the dialect, exclude patterns, and the schemas the plan reads beyond
+a `--from` URL pinned to one schema. The `.plan.hcl` shape has no field for
+either of the last two, so a plan that needs them is refused in that shape.
 
 Use `--edit` to review or rewrite the planned SQL in `$VISUAL` or `$EDITOR`
 before publication. Ptah preserves statement text and comments, rejects

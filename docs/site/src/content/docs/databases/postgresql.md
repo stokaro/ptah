@@ -84,6 +84,22 @@ Changing a table between logged and unlogged rewrites it under a lock that
 blocks readers and writers. Ptah does not plan that change, and the `PG307`
 lint rule reports it in a migration that contains one.
 
+## Function changes
+
+A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
+accepts that: a new body, language, security context, volatility, planner
+property, or setting. Views, policies, and triggers that call the function stay
+in place.
+
+A changed return type cannot be applied that way. PostgreSQL refuses it with
+`cannot change return type of existing function` (SQLSTATE 42P13), so Ptah
+plans `DROP FUNCTION` followed by the create, in the migration and in its
+rollback. The drop names the function's argument list, so an overloaded name
+loses only the overload that changed. The drop does not use `CASCADE`: when a
+view, policy, or trigger uses the function, the server refuses the drop with
+SQLSTATE 2BP01 and the migration stops, instead of removing an object the
+schema still declares. Measured on PostgreSQL 18.
+
 ## Materialized view refresh
 
 Ptah does not refresh materialized views, and a declaration cannot ask it to.
@@ -123,9 +139,11 @@ privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 `ALTER ROLE` for attribute changes, and `GRANT`/`REVOKE` as declared grants
 change. Grants target a table, a schema, or a sequence, and table grants are
 compared per individual privilege, so a `privilege="SELECT,INSERT"` list
-round-trips cleanly through introspection. New-role SQL fails closed when the
-role already exists, so later comments and grants cannot be applied to a role
-with unverified security attributes. Role descriptions are applied with
+round-trips cleanly through introspection. A grant on a standalone sequence is
+described with `on_sequence`, so the description compares equal to the
+database it was read from. New-role SQL fails closed when the role already
+exists, so later comments and grants cannot be applied to a role with
+unverified security attributes. Role descriptions are applied with
 `COMMENT ON ROLE` after successful creation.
 
 Ordering is dependency-aware: roles are created before the functions and
