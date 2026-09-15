@@ -338,10 +338,13 @@ func TestRenderLiterals(t *testing.T) {
 			wantUp:  "INSERT INTO [t] ([id], [v]) VALUES ('r1', 0x275c5c);\n",
 		},
 		{
+			// Bare on Oracle, where the renderer spells an identifier the way
+			// the column it writes was created: a quoted lower-case name there
+			// is a different object from the one a bare name reaches.
 			name:    "byte slice oracle is HEXTORAW",
 			dialect: "oracle",
 			value:   []byte{0x5c, 0xff, 0x41},
-			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', HEXTORAW('5cff41'));\n",
+			wantUp:  "INSERT INTO t (id, v) VALUES ('r1', HEXTORAW('5cff41'));\n",
 		},
 		{
 			name:    "backslash not escaped for postgres",
