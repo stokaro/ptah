@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -198,4 +199,54 @@ func fingerprintHex(fill byte) string {
 		out[i] = fill
 	}
 	return string(out)
+}
+
+// TestPlanFileWithStatementsFromSQL_KeepsADeclaredRowDeletionDestructive pins
+// the severity a data statement carries through an edit round trip. The SQL
+// analyzer reads a DELETE of a reference row as safe, because nothing in the
+// text says the row was declared, so reading the text alone would hand a
+// machine caller destructive=false for a plan that removes data.
+func TestPlanFileWithStatementsFromSQL_KeepsADeclaredRowDeletionDestructive(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "edit-keeps-destructive.db")
+	applyPlan(c, conn, regionsSchema(regionRow("CZ", "Czechia", 2), regionRow("NO", "Norway", 1)))
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Destructive, qt.IsTrue)
+
+	// The operator quits the editor without changing anything.
+	edited := plan.WithStatementsFromSQL(plan.SQL())
+
+	c.Assert(planSQL(edited), qt.Contains, `DELETE FROM "regions"`)
+	c.Assert(planSeverity(edited, "DELETE"), qt.Equals, safety.Destructive)
+	c.Assert(edited.Destructive, qt.IsTrue)
+}
+
+// TestPlanFileWithDirectiveHeader_KeepsADeclaredRowDeletionDestructive covers
+// the second door into the same derivation. A directive header is spliced by
+// re-reading the combined text, and it reaches every `schema plan` run that
+// passes --directive, with no editor involved.
+func TestPlanFileWithDirectiveHeader_KeepsADeclaredRowDeletionDestructive(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "directive-keeps-destructive.db")
+	applyPlan(c, conn, regionsSchema(regionRow("CZ", "Czechia", 2), regionRow("NO", "Norway", 1)))
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: regionsSchema(regionRow("NO", "Norway", 1)),
+	})
+	c.Assert(err, qt.IsNil)
+
+	decorated := plan.WithDirectiveHeader([]atlasschema.PlanDirective{"atlas:txmode none"})
+
+	// The header is spliced in front of the first statement, so this asserts on
+	// the statement directly: planSeverity matches a prefix, and the directive
+	// comment stands at the start of the text rather than the verb.
+	c.Assert(decorated.Statements, qt.HasLen, 1)
+	c.Assert(decorated.Statements[0].SQL, qt.Contains, "atlas:txmode none")
+	c.Assert(decorated.Statements[0].SQL, qt.Contains, `DELETE FROM "regions"`)
+	c.Assert(decorated.Statements[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(decorated.Destructive, qt.IsTrue)
 }

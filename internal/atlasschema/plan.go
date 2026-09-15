@@ -279,13 +279,22 @@ func splitPlanStatements(sqlText, dialect string) []string {
 }
 
 // WithStatementsFromSQL returns a copy of the plan whose statement list,
-// per-statement severity, and plan-level destructive marker are re-derived
+// per-statement severity, and plan-level destructive marker are derived
 // from sqlText, split with the plan's own dialect. It backs `schema plan
 // --edit`, where the operator rewrites the planned SQL before it is saved.
 //
-// Re-deriving the severity metadata is the point: an edit that introduces a
-// DROP must not be saved under the destructive=false marker the pre-edit plan
-// carried.
+// Reading the severity out of the text is right for a statement the edit
+// produced: an edit that introduces a DROP must not be saved under the
+// destructive=false marker the plan was built with.
+//
+// It is wrong for a statement the plan classified above what its text says.
+// A DELETE of a row the declaration no longer holds reads as safe to the SQL
+// analyzer, because nothing in the text says the row was declared; the data
+// stage assigns that severity itself. So a statement sqlText carries unchanged
+// keeps the severity and reason the plan recorded for it. The rule is
+// monotone — severity only rises — which leaves the analyzer in charge of
+// every statement whose text the edit changed, and of every statement it
+// rates higher than the plan did.
 //
 // Statement text is preserved verbatim, so feeding back an unmodified
 // [PlanFile.SQL] reproduces the same statements — an editor the operator quits
@@ -300,8 +309,31 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // carries no such replay, so an edited JSON plan is only as good as the review
 // it received. [MarshalPlanFileAs] callers that accept edits must say so.
 func (p PlanFile) WithStatementsFromSQL(sqlText string) PlanFile {
-	p.Statements, p.Destructive = classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)
+	recorded := make(map[string]PlanStatement, len(p.Statements))
+	for _, statement := range p.Statements {
+		recorded[planStatementKey(statement.SQL, p.Dialect)] = statement
+	}
+	statements, destructive := classifyPlanStatements(splitPlanStatements(sqlText, p.Dialect), p.Dialect)
+	for i := range statements {
+		prior, ok := recorded[planStatementKey(statements[i].SQL, p.Dialect)]
+		if !ok || risk.Rank(prior.Severity) <= risk.Rank(statements[i].Severity) {
+			continue
+		}
+		statements[i].Severity = prior.Severity
+		statements[i].Reason = prior.Reason
+		destructive = destructive || prior.Severity == safety.Destructive
+	}
+	p.Statements, p.Destructive = statements, destructive
 	return p
+}
+
+// planStatementKey identifies a statement across an edit round trip, ignoring
+// comments and whitespace. That is what lets a directive header spliced in
+// front of the first statement resolve to the statement it decorates, so
+// [PlanFile.WithDirectiveHeader] needs no rule of its own.
+func planStatementKey(statement, dialect string) string {
+	body := sqlutil.StripCommentsForDialect(statement, dialect)
+	return strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(body), ";")), " ")
 }
 
 // HasChanges reports whether the plan contains any statement.
