@@ -74,6 +74,17 @@ The SQLite renderer and planner support:
 - Views without `WITH CHECK OPTION`, and row-level triggers (SQLite has no
   statement-level triggers).
 
+A rebuild of a table that other tables reference drops the original table,
+which is a foreign-key violation while enforcement is on. The plan therefore
+starts with `PRAGMA foreign_keys = off;` and ends with
+`PRAGMA foreign_keys = on;`, and outside a transaction those two statements do
+what they say. SQLite ignores the pragma inside a transaction, so when
+`ptah schema apply` finds a plan that starts and ends that way, it suspends
+enforcement on its connection instead, runs the plan, and runs
+`PRAGMA foreign_key_check` before it commits. An unresolved reference refuses
+the plan and rolls it back. Declared rows in the same plan go inside the pair,
+ahead of the enabling pragma, so the plan still ends with it.
+
 ## What a rebuild still refuses
 
 A rebuild is planned automatically wherever it can be. These are the cases it

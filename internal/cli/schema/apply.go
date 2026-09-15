@@ -365,7 +365,8 @@ func runSchemaApplyOnLockedSession(
 	if opts.dryRun {
 		return false, nil
 	}
-	if err := validateSchemaApplyConcurrentIndexPolicy(txMode, conn, statements); err != nil {
+	info := conn.Info()
+	if err := atlasschema.PreflightApplyTransaction(info.Dialect, info.Capabilities, txMode, statements); err != nil {
 		return false, err
 	}
 	// The dev database rehearses the exact ordered statements that would be
@@ -433,6 +434,14 @@ func runSchemaApplyPlanFileWithLockSession(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The plan's `-- atlas:txmode` header is part of what was reviewed, so it
+	// decides the transaction mode together with --tx-mode, under the rule
+	// ptah-compat applies to the same file. It is resolved before the
+	// connection, so a refused combination touches no database.
+	txMode, err = atlasschema.ResolvePlanTxMode(txMode, path, plan.SQL())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -486,7 +495,10 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if opts.dryRun {
 		return false, nil
 	}
-	if err := validateSchemaApplyConcurrentIndexPolicy(txMode, conn, plan.StatementSQL()); err != nil {
+	info := conn.Info()
+	if err := atlasschema.PreflightApplyTransaction(
+		info.Dialect, info.Capabilities, txMode, plan.StatementSQL(),
+	); err != nil {
 		return false, err
 	}
 	ok, err := confirmSchemaApply(cmd, opts)
@@ -524,28 +536,6 @@ func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 	for _, conflict := range conflicts {
 		if cmd.Flags().Changed(conflict.flag) {
 			return fmt.Errorf("ptah schema apply --%s cannot be combined with --%s: %s", applyPlanFlag, conflict.flag, conflict.reason)
-		}
-	}
-	return nil
-}
-
-func validateSchemaApplyConcurrentIndexPolicy(
-	txMode migrator.MigrationTxMode,
-	conn *dbschema.DatabaseConnection,
-	statements []string,
-) error {
-	if len(statements) == 0 {
-		return nil
-	}
-	if conn.Info().Dialect != "postgres" && conn.Info().Dialect != "postgresql" {
-		return nil
-	}
-	if txMode == migrator.MigrationTxModeNone {
-		return nil
-	}
-	for _, statement := range statements {
-		if strings.Contains(strings.ToUpper(statement), "CREATE INDEX CONCURRENTLY") {
-			return fmt.Errorf("the concurrent-index diff policy requires --tx-mode none for schema apply")
 		}
 	}
 	return nil

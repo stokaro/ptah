@@ -1185,10 +1185,11 @@
         "/databases/overview/",
         "/databases/support-matrix/",
         "/reference/configuration/",
-        "/reference/extension-variables/"
+        "/reference/extension-variables/",
+        "/versioned/reference-data/"
       ],
-      "visibleWords": 2878,
-      "sourceBytes": 19088
+      "visibleWords": 3002,
+      "sourceBytes": 19804
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlserver.md",
@@ -1454,8 +1455,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 890,
-      "sourceBytes": 9611
+      "visibleWords": 991,
+      "sourceBytes": 10252
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1518,8 +1519,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 1873,
-      "sourceBytes": 15758
+      "visibleWords": 1962,
+      "sourceBytes": 16267
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -3727,8 +3728,8 @@
         "/faq/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 490,
-      "sourceBytes": 4982
+      "visibleWords": 634,
+      "sourceBytes": 5751
     },
     {
       "path": "docs/site/src/content/docs/operate/troubleshooting.md",
@@ -4045,8 +4046,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3606,
-      "sourceBytes": 26029
+      "visibleWords": 3681,
+      "sourceBytes": 26525
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -6598,6 +6599,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/databases/sqlite/",
         "/direct/compare-and-drift/",
         "/operate/seed-data/"
       ],
@@ -6611,8 +6613,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1608,
-      "sourceBytes": 11105
+      "visibleWords": 1574,
+      "sourceBytes": 10885
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

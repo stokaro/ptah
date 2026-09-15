@@ -84,6 +84,12 @@ refreshes `ptah.sum`, so the data migration applies and rolls back like any othe
 `--dry-run` prints the SQL instead of writing files; a run with no drift writes
 nothing.
 
+A row file naming a column the live table does not carry is refused, naming the
+columns: the read asks the database for a name it cannot resolve, and SQLite
+answers such a name with the name itself, which would reach the rollback as the
+value each row is restored to. Apply the schema change first, or take the column
+out of the row file.
+
 ## Safety gates
 
 A data migration is applied through the ordinary migration path, where neither
@@ -185,6 +191,13 @@ dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`
 children-first. Two reference tables joined by a foreign key are therefore
 applied in one run, against the constraint the same plan created a few
 statements earlier.
+
+On SQLite, a plan that also rebuilds a table carries the rows inside the
+rebuild's `PRAGMA foreign_keys` pair, ahead of the pragma that turns enforcement
+back on. The rows then run with enforcement suspended, like the rebuild, and the
+foreign-key check the apply runs before it commits refuses the whole plan when a
+row names a parent that does not exist. See
+[SQLite](../../databases/sqlite/#what-renders-natively).
 
 Severity is assigned by what the statement does to the rows, not by what a SQL
 analyzer makes of it:
