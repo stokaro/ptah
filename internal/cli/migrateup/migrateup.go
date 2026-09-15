@@ -380,11 +380,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no
-	// flag on this surface spells. Both are environment-bound, so the group is
-	// resolved on what the operator typed: cobra's own ValidateFlagGroups reads
-	// Changed, which an exported PTAH_LIMIT sets, and would refuse a command
-	// line carrying one flag while naming a second one nobody wrote.
-	if err := cmdflags.ExclusiveOnCommandLine(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
+	// flag on this surface spells and arrives once the connection is open and
+	// the migration lock taken. Both are environment-bound and both document a
+	// default that applies everything, so the group is resolved on the values
+	// that select a bound, wherever the operator wrote them: cobra's own
+	// ValidateFlagGroups reads Changed, which an exported PTAH_LIMIT sets and a
+	// typed `--limit 0` sets too.
+	if err := cmdflags.ExclusiveValues(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
 		return err
 	}
 	integrityPolicy, err := migrationintegrity.Resolve()
@@ -526,38 +528,17 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
-	emitPlanOutput := func() {
-		if opts.dryRun {
-			emit.Println("=== DRY RUN MODE ===")
-			emit.Println("No actual changes will be made to the database")
-			emit.Println()
-		}
-
-		emit.Println("=== MIGRATE UP ===")
-		emit.Printf("Database: %s\n", dburldisplay.Format(dbURL))
-		emit.Printf("Dialect: %s\n", conn.Info().Dialect)
-		emit.Printf("Migrations directory: %s\n", migrationsDir)
-		emit.Printf("Migration directory format: %s\n", settings.dirFormat)
-		emit.Printf("Transaction mode: %s\n", settings.txMode)
-		emit.Println()
-
-		if onlineCfg.Enabled() {
-			emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
-		}
-		emit.Printf("Current version: %d\n", status.CurrentVersion)
-		emit.Printf("Total migrations: %d\n", status.TotalMigrations)
-		emit.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
-		if len(status.OutOfOrderMigrations) > 0 {
-			emit.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
-		}
-		if opts.verbose {
-			emit.Printf("Pending migration versions: %v\n", status.PendingMigrations)
-			if len(status.OutOfOrderMigrations) > 0 {
-				emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
-			}
-		}
-		emit.Println()
+	report := &planReport{
+		emit:      emit,
+		opts:      opts,
+		settings:  settings,
+		status:    status,
+		onlineCfg: onlineCfg,
+		dbURL:     dbURL,
+		dialect:   conn.Info().Dialect,
+		dir:       migrationsDir,
 	}
+	emitPlanOutput := report.write
 
 	// A bounded run does not take this shortcut. Whether the target is still
 	// reachable is decided under the migration lock, where the recorded history
@@ -610,6 +591,14 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Run migrations
 	startedAt := time.Now()
 	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook)
+	// A pre-migration hook is work a run does before applying something, so a
+	// selection that came out empty passes none of them, the report above
+	// included. That report is what says why nothing was applied, and a bounded
+	// run against a database already at its target is where an operator has
+	// nothing else to read.
+	if outcome.selectedNothing() {
+		emitPlanOutput()
+	}
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
 		return err
@@ -633,6 +622,65 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	return nil
 }
 
+// planReport is the block a run prints about the work it is about to do: where
+// it is connected, which directory it read, and what that directory holds
+// against the recorded history.
+type planReport struct {
+	emit      cliobs.Emitter
+	opts      *options
+	settings  parsedMigrationSettings
+	status    *migrator.MigrationStatus
+	onlineCfg projectconfig.OnlineDDLConfig
+	dbURL     string
+	dialect   string
+	dir       string
+	written   bool
+}
+
+// write prints the report, and prints nothing on a second call.
+//
+// Writing it once is a property of the report rather than of any caller: a run
+// asks for it at the first moment it knows what it will do, and which moment
+// that is depends on whether the selection came out empty. A caller that had to
+// know whether another already wrote it would be keeping two readings of that
+// question in agreement.
+func (r *planReport) write() {
+	if r.written {
+		return
+	}
+	r.written = true
+	if r.opts.dryRun {
+		r.emit.Println("=== DRY RUN MODE ===")
+		r.emit.Println("No actual changes will be made to the database")
+		r.emit.Println()
+	}
+
+	r.emit.Println("=== MIGRATE UP ===")
+	r.emit.Printf("Database: %s\n", dburldisplay.Format(r.dbURL))
+	r.emit.Printf("Dialect: %s\n", r.dialect)
+	r.emit.Printf("Migrations directory: %s\n", r.dir)
+	r.emit.Printf("Migration directory format: %s\n", r.settings.dirFormat)
+	r.emit.Printf("Transaction mode: %s\n", r.settings.txMode)
+	r.emit.Println()
+
+	if r.onlineCfg.Enabled() {
+		r.emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", r.onlineCfg.Tool, r.onlineCfg.ThresholdRows)
+	}
+	r.emit.Printf("Current version: %d\n", r.status.CurrentVersion)
+	r.emit.Printf("Total migrations: %d\n", r.status.TotalMigrations)
+	r.emit.Printf("Pending migrations: %d\n", len(r.status.PendingMigrations))
+	if len(r.status.OutOfOrderMigrations) > 0 {
+		r.emit.Printf("Out-of-order migrations: %v\n", r.status.OutOfOrderMigrations)
+	}
+	if r.opts.verbose {
+		r.emit.Printf("Pending migration versions: %v\n", r.status.PendingMigrations)
+		if len(r.status.OutOfOrderMigrations) > 0 {
+			r.emit.Printf("Out-of-order migration versions: %v\n", r.status.OutOfOrderMigrations)
+		}
+	}
+	r.emit.Println()
+}
+
 // migrateUpOutcome is one run and everything the command has to say about it.
 type migrateUpOutcome struct {
 	status         *migrator.MigrationStatus
@@ -650,6 +698,13 @@ func (o migrateUpOutcome) selectedCount() int {
 		return 0
 	}
 	return len(o.plan.Versions)
+}
+
+// selectedNothing reports a run whose migrator reached a decision, under its own
+// lock, to apply nothing. A run refused before the plan was built is not this:
+// it never decided what it would do, so it has nothing to say about it.
+func (o migrateUpOutcome) selectedNothing() bool {
+	return o.plan != nil && len(o.plan.Versions) == 0
 }
 
 // err is the failure the command returns, in the order the caller can act on:

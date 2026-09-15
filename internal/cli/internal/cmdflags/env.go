@@ -187,15 +187,20 @@ func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) 
 	if err := flags.Set(flag.Name, value); err != nil {
 		return fmt.Errorf("invalid value %q for %s: %w", value, envName, err)
 	}
-	markEnvApplied(flag)
+	markEnvApplied(flag, envName)
 	return nil
 }
 
-func markEnvApplied(flag *pflag.Flag) {
+// markEnvApplied records which variable set the flag's value. The name is what
+// a diagnostic has to print: an operator told that --limit conflicts with
+// something has to find PTAH_LIMIT in their pipeline, and deriving the name
+// again from a prefix a refusal was handed is a second answer to a question
+// this annotation already holds.
+func markEnvApplied(flag *pflag.Flag, envName string) {
 	if flag.Annotations == nil {
 		flag.Annotations = make(map[string][]string)
 	}
-	flag.Annotations[appliedEnvAnnotation] = []string{"true"}
+	flag.Annotations[appliedEnvAnnotation] = []string{envName}
 }
 
 func clearEnvApplied(flag *pflag.Flag) {
@@ -203,8 +208,17 @@ func clearEnvApplied(flag *pflag.Flag) {
 }
 
 func envApplied(flag *pflag.Flag) bool {
+	_, ok := appliedEnvName(flag)
+	return ok
+}
+
+// appliedEnvName returns the environment variable whose value the flag carries.
+func appliedEnvName(flag *pflag.Flag) (string, bool) {
 	values := flag.Annotations[appliedEnvAnnotation]
-	return len(values) > 0 && values[0] == "true"
+	if len(values) == 0 || values[0] == "" {
+		return "", false
+	}
+	return values[0], true
 }
 
 // SetOnCommandLine reports whether the caller typed the flag on the command
@@ -241,13 +255,26 @@ func MutuallyExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error
 			typed = append(typed, name)
 		}
 	}
-	if len(typed) < 2 {
+	return groupConflict(names, typed)
+}
+
+// groupConflict renders the refusal for a mutually exclusive group, and nil
+// below two conflicting values.
+//
+// names is the group in declaration order. set is how the operator spelled
+// each conflicting value: a flag name where cobra would print one, and a PTAH_*
+// variable where the value arrived from the environment. Every refusal about
+// such a group is built here so the sentence cannot say one thing for a typed
+// pair and another for a pair the environment carried.
+func groupConflict(names, set []string) error {
+	if len(set) < 2 {
 		return nil
 	}
-	slices.Sort(typed)
+	sorted := slices.Clone(set)
+	slices.Sort(sorted)
 	return fmt.Errorf(
 		"if any flags in the group [%s] are set none of the others can be; %v were all set",
-		strings.Join(names, " "), typed,
+		strings.Join(names, " "), sorted,
 	)
 }
 
@@ -297,6 +324,83 @@ func WithdrawEnvValue(flags *pflag.FlagSet, name string) error {
 	return nil
 }
 
+// ExclusiveValues enforces a mutually exclusive flag group whose members are
+// environment-bound and whose declared defaults each mean "no value".
+//
+// A member left at its default is outside the conflict, whoever wrote it.
+// `--limit 0` and `--to-version ""` are the documented spellings for "apply
+// everything" on `ptah migrations up`, so a pipeline that always writes both
+// flags and leaves one of its variables empty has asked for one bound; refusing
+// it names a flag the operator deliberately left blank.
+// [MutuallyExclusiveOnCommandLine] cannot read a default this way, because it
+// stands in for cobra's group validation, where `--flag=false` is a spelling
+// cobra refuses and the refusal has to stay identical to cobra's.
+//
+// Where each value came from decides the outcome:
+//
+//   - more than one member typed on the command line is refused in cobra's
+//     wording, exactly as [MutuallyExclusiveOnCommandLine] does;
+//   - exactly one member typed withdraws every other member's environment
+//     value, so the flag the operator wrote decides the run;
+//   - no member typed and more than one carrying a value is refused naming the
+//     variables that carry them, because nothing the operator wrote says which
+//     one they meant. Leaving that pair to the reader behind the group is how a
+//     configuration error surfaces from wherever the two values meet: in that
+//     layer's vocabulary rather than in the operator's, and after the work in
+//     front of it has already run.
+func ExclusiveValues(flags *pflag.FlagSet, names ...string) error {
+	typed := make([]string, 0, len(names))
+	for _, name := range names {
+		if carriesValue(flags, name) && SetOnCommandLine(flags, name) {
+			typed = append(typed, name)
+		}
+	}
+	if err := groupConflict(names, typed); err != nil {
+		return err
+	}
+	if len(typed) == 1 {
+		for _, name := range names {
+			if name == typed[0] || !carriesValue(flags, name) {
+				continue
+			}
+			if err := WithdrawEnvValue(flags, name); err != nil {
+				return err
+			}
+		}
+	}
+	// Asked again after the withdrawal rather than before it, so the refusal
+	// reports what still conflicts once the typed flag has had its say.
+	carried := make([]string, 0, len(names))
+	for _, name := range names {
+		if carriesValue(flags, name) {
+			carried = append(carried, valueSource(flags, name))
+		}
+	}
+	return groupConflict(names, carried)
+}
+
+// carriesValue reports whether a group member selects anything. A flag sitting
+// at its declared default selects nothing: a group [ExclusiveValues] guards
+// documents that default as the spelling for "no value", so a value equal to it
+// is the operator asking for none.
+func carriesValue(flags *pflag.FlagSet, name string) bool {
+	flag := flags.Lookup(name)
+	return flag != nil && flag.Value.String() != flag.DefValue
+}
+
+// valueSource is how the operator spelled the value a flag carries: the
+// variable when it arrived from the environment, and the flag itself otherwise.
+func valueSource(flags *pflag.FlagSet, name string) string {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return name
+	}
+	if envName, ok := appliedEnvName(flag); ok {
+		return envName
+	}
+	return name
+}
+
 // ExclusiveOnCommandLine enforces a mutually exclusive flag group whose members
 // are environment-bound, where the reader behind the group prefers one member
 // over another.
@@ -323,6 +427,10 @@ func WithdrawEnvValue(flags *pflag.FlagSet, name string) error {
 // --auto-approve are the worked example: with PTAH_DRY_RUN exported and
 // --auto-approve typed, the run prints the plan and applies nothing, so
 // withdrawing the variable there would turn a rehearsal into an apply.
+//
+// [ExclusiveValues] is the same rule for a group whose declared defaults spell
+// "no value", and it refuses a pair the environment alone carries rather than
+// leaving it to the reader behind the group.
 func ExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error {
 	if err := MutuallyExclusiveOnCommandLine(flags, names...); err != nil {
 		return err

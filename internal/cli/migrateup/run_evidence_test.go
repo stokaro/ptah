@@ -91,6 +91,31 @@ func TestMigrateUpJSONReportsADryRun(t *testing.T) {
 	c.Assert(result.Status.CurrentVersion, qt.Equals, int64(0))
 }
 
+// TestMigrateUpJSONNarrowsThePlanToTheBound is what a caller reads instead of
+// the summary written for a person: the bound has to reach the document, or a
+// pipeline parsing `planned` is told about work the run left alone.
+func TestMigrateUpJSONNarrowsThePlanToTheBound(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeThreeUpMigrations(c)
+	dbPath := filepath.Join(t.TempDir(), "evidence-bounded.db")
+
+	out, human, err := runUpSplit(
+		"--db-url", "sqlite://"+dbPath,
+		"--migrations-dir", migrationsDir,
+		"--to-version", "2",
+		"--json",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", human))
+	result := decodeRunResult(c, out)
+	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeApplied)
+	c.Assert(result.Planned, qt.DeepEquals, []int64{1, 2})
+	c.Assert(result.Applied, qt.DeepEquals, []int64{1, 2})
+	c.Assert(result.Status, qt.IsNotNil)
+	c.Assert(result.Status.CurrentVersion, qt.Equals, int64(2))
+	c.Assert(result.Status.PendingMigrations, qt.DeepEquals, []int64{3})
+}
+
 func decodeRunResult(c *qt.C, out string) migrator.RunResult {
 	c.Helper()
 	var result migrator.RunResult
