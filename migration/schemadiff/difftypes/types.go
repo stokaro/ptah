@@ -2055,8 +2055,9 @@ type FunctionDiff struct {
 
 	// Desired is the function this change asks the database to hold.
 	//
-	// A modification renders as CREATE OR REPLACE, and the change map records
-	// what differs rather than the body and attributes that replacement needs.
+	// A modification renders as CREATE OR REPLACE, or as a drop and a create
+	// where the server refuses the replacement, and the change map records
+	// what differs rather than the body and attributes the new definition needs.
 	// Carrying the declaration is what lets the planner write it without being
 	// handed the schema it came out of (stokaro/ptah#2315).
 	//
@@ -2067,6 +2068,26 @@ type FunctionDiff struct {
 	//
 	// It stays off the wire. The change map is the change; this is the operand.
 	Desired schemamodel.Function `json:"-"`
+
+	// CurrentSignature is the argument list that addresses the routine as the
+	// database holds it now.
+	//
+	// PostgreSQL refuses some changes through CREATE OR REPLACE: a different
+	// return type is answered with `cannot change return type of existing
+	// function` (SQLSTATE 42P13). A planner reconciles such a change as a DROP
+	// followed by a CREATE, the way a rebuilt [DomainDiff] is, and the DROP runs
+	// against the routine as it stands. When the name is overloaded only the
+	// argument list selects it; a bare name is refused as not unique
+	// (stokaro/ptah#3288).
+	//
+	// It is the catalog's identity list where the reader supplies one, and the
+	// recorded parameters otherwise. Desired.Parameters is not a substitute,
+	// because it describes the routine the change creates rather than the one
+	// the database holds. Empty means a routine without arguments, or a
+	// producer that recorded no identity.
+	//
+	// It stays off the wire, like Desired.
+	CurrentSignature string `json:"-"`
 }
 
 // DomainDiff represents changes to a PostgreSQL domain type.

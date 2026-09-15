@@ -320,7 +320,7 @@ func FunctionsWithSemantics(
 			// about ambiguity rather than existence (stokaro/ptah#2296).
 			removal := difftypes.RoutineRemoval{
 				Name:      databaseNames[identity],
-				Signature: recordedRoutineSignature(routine),
+				Signature: routine.Signature(),
 			}
 			if identity.Kind() == objectidentity.KindProcedure {
 				diff.ProceduresRemoved = append(diff.ProceduresRemoved, routineFromRemoval(removal))
@@ -713,6 +713,10 @@ func FunctionDefinitionsWithDialect(
 		// REPLACE from this, and the folding exists to make two spellings
 		// compare equal, not to decide what gets written (stokaro/ptah#2315).
 		Desired: genFunction,
+		// Also captured before the folding, for the same reason: a planner that
+		// has to drop this routine addresses it by what the catalog holds, not
+		// by the spelling the comparison converges on (stokaro/ptah#3288).
+		CurrentSignature: dbFunction.Signature(),
 	}
 
 	// Defense-in-depth: canonicalize a local copy. The annotation parser at
@@ -1152,7 +1156,7 @@ func declaredRoutineNamed(declared schemamodel.Function, name string) difftypes.
 // reportedRoutine carries a routine the database reported, with the argument
 // list a DROP addresses it by.
 //
-// recordedRoutineSignature prefers the catalog's own identity arguments and
+// [catalog.Function.Signature] prefers the catalog's own identity arguments and
 // falls back to the declaration parameters, which is the same answer the
 // overload-aware path records.
 func reportedRoutine(reported catalog.Function) difftypes.RoutineChange {
@@ -1168,7 +1172,7 @@ func reportedRoutine(reported catalog.Function) difftypes.RoutineChange {
 			Body:       reported.Body,
 			Comment:    reported.Comment,
 		},
-		Signature: recordedRoutineSignature(reported),
+		Signature: reported.Signature(),
 	}
 }
 
