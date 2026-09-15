@@ -87,16 +87,22 @@ fi
 
 mkdir -p "$source_dir"
 tar -xzf "$archive" --strip-components=1 -C "$source_dir"
-if [[ ! -f "$source_dir/go.mod" || ! -d "$source_dir/internal/cli/atlas" ]]; then
+# These three paths are Atlas's, not Ptah's. Atlas keeps its command under
+# cmd/atlas and the version symbol at ariga.io/atlas/cmd/atlas/internal/cmdapi,
+# and a rename of this repository's own tree must leave them alone: rewritten to
+# internal/cli/atlas they name a directory the archive does not carry, and the
+# layout check below is the only thing between that and a build error nobody can
+# read.
+if [[ ! -f "$source_dir/go.mod" || ! -d "$source_dir/cmd/atlas" ]]; then
 	printf 'atlas-ce: verified source archive has an unexpected layout\n' >&2
 	exit 1
 fi
 
 printf 'atlas-ce: building verified source archive\n'
 (
-	cd "$source_dir/internal/cli/atlas"
+	cd "$source_dir/cmd/atlas"
 	GOWORK=off go build -trimpath \
-		-ldflags "-X ariga.io/atlas/internal/cli/atlas/internal/cmdapi.version=$ATLAS_CE_VERSION" \
+		-ldflags "-X ariga.io/atlas/cmd/atlas/internal/cmdapi.version=$ATLAS_CE_VERSION" \
 		-o "$candidate" .
 )
 
