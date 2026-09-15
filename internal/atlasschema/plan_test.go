@@ -207,6 +207,22 @@ func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 	c.Assert(loaded, qt.DeepEquals, plan)
 }
 
+// TestReadPlanFileCarriesSchemasBeyondURL pins that the schemas a plan recorded
+// beyond its URL's scope survive the file. Verification reads them together with
+// the URL's scope; a reader that dropped them would check a plan writing `extra`
+// against the connected schema alone (stokaro/ptah#3285).
+func TestReadPlanFileCarriesSchemasBeyondURL(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "beyond.plan.json")
+	c.Assert(os.WriteFile(path, []byte(`{"format_version":1,"dialect":"postgres","from_fingerprint":"sha256:ab",`+
+		`"schemas_beyond_url":["extra"],"statements":[{"sql":"CREATE TABLE extra.b (id integer)"}]}`), 0o600), qt.IsNil)
+
+	plan, err := atlasschema.ReadPlanFile(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.SchemasBeyondURL, qt.DeepEquals, []string{"extra"})
+}
+
 func TestReadPlanFileValidatesContract(t *testing.T) {
 	dir := t.TempDir()
 

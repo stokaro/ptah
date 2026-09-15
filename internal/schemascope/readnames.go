@@ -2,6 +2,8 @@ package schemascope
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/internal/schemaselection"
@@ -73,4 +75,52 @@ func connectedSchemaNames(info catalog.ServerInfo) []string {
 		return names
 	}
 	return nil
+}
+
+// Union is every name either list carries, blank names dropped, sorted and
+// de-duplicated. It is nil when nothing is left, which leaves a dialect reader
+// on its own default rather than on an allow-list naming nothing.
+//
+// The order is part of the answer. Two reads that cover the same schemas have to
+// be asked for them the same way, because a saved plan's source fingerprint is
+// compared byte for byte with a read made later.
+func Union(base, more []string) []string {
+	names := make([]string, 0, len(base)+len(more))
+	for _, name := range slices.Concat(base, more) {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+// BeyondURL is the part of scope that asking [ReadNames] again later, with no
+// explicit selection, may not cover. urlScope is what ReadNames answered for the
+// same connection when scope was read.
+//
+// A connection at realm scope needs nothing recorded. The realm is listed again
+// at every read, so it covers a schema that did not exist when scope was read
+// and exists now -- which is exactly the change a later read is there to notice.
+// A connection limited to one schema covers that schema and no other, so every
+// other name in scope has to be carried to the later read or that read never
+// looks at it. stokaro/ptah#3285 is the case: a saved plan writing a second
+// schema was verified against the connected schema alone, and accepted after the
+// table it was about to create had been created behind its back.
+func BeyondURL(info catalog.ServerInfo, urlScope, scope []string) []string {
+	if schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
+		return nil
+	}
+	covered := Union(urlScope, nil)
+	var beyond []string
+	for _, name := range Union(scope, nil) {
+		if !slices.Contains(covered, name) {
+			beyond = append(beyond, name)
+		}
+	}
+	return beyond
 }
