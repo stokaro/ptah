@@ -380,11 +380,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no
-	// flag on this surface spells. Both are environment-bound, so the group is
-	// resolved on what the operator typed: cobra's own ValidateFlagGroups reads
-	// Changed, which an exported PTAH_LIMIT sets, and would refuse a command
-	// line carrying one flag while naming a second one nobody wrote.
-	if err := cmdflags.ExclusiveOnCommandLine(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
+	// flag on this surface spells and arrives once the connection is open and
+	// the migration lock taken. Both are environment-bound and both document a
+	// default that applies everything, so the group is resolved on the values
+	// that select a bound, wherever the operator wrote them: cobra's own
+	// ValidateFlagGroups reads Changed, which an exported PTAH_LIMIT sets and a
+	// typed `--limit 0` sets too.
+	if err := cmdflags.ExclusiveValues(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
 		return err
 	}
 	integrityPolicy, err := migrationintegrity.Resolve()
@@ -599,17 +601,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			preflightHook,
 		)
 	}
-	preflightHook = dbcli.CombineMigrationHooks(
-		func(context.Context, migrator.MigrationPlan) error {
-			emitPlanOutput()
-			return nil
-		},
-		preflightHook,
-	)
-
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook)
+	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, emitPlanOutput, preflightHook)
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
 		return err
@@ -680,6 +674,7 @@ func applyPendingMigrations(
 	mig *migrator.Migrator,
 	opts *options,
 	toVersion int64,
+	emitPlanOutput func(),
 	preflightHook migrator.PreMigrationHook,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
@@ -697,8 +692,14 @@ func applyPendingMigrations(
 		RefuseTargetVersionAlreadyPassed: true,
 		AllowDirty:                       opts.allowDirty,
 		Preflight:                        preflightHook,
+		// The report rides the plan observer rather than a pre-migration hook.
+		// A hook is work the run does before applying something, so the migrator
+		// skips it when the selection came out empty; the report is what tells
+		// an operator why the selection came out empty, and a bounded run
+		// against a database already at the target is where it is needed most.
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			outcome.plan = &plan
+			emitPlanOutput()
 		},
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions

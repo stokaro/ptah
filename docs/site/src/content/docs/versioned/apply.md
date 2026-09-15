@@ -473,8 +473,16 @@ and pipelines share a directory:
   version the database has already passed: nothing pending reaches the target
   there, and an exit `0` would report a state the database never arrived at. A
   database recorded at exactly the named version is not that case, and applies
-  nothing and succeeds. Passing `--limit` as well is refused: the two select
-  different prefixes of the pending list and neither outranks the other.
+  nothing and succeeds. Under `--exec-order linear-skip` a target the execution
+  order leaves pending is refused as well, naming the order rather than the
+  recorded version, because `--exec-order non-linear` is what reaches it.
+
+  Passing `--limit` as well is refused: the two select different prefixes of the
+  pending list and neither outranks the other. The refusal reads the values, not
+  the spelling, so `PTAH_TO_VERSION` beside `PTAH_LIMIT` is refused before the
+  run connects, while `--to-version ""` and `--limit 0` ask for no bound and
+  leave the other flag to decide. A flag typed beside the other's variable wins,
+  and the variable is withdrawn.
 
   The bound narrows what `--dry-run` reports and what `--json` names under
   `planned`, because both read the plan the migrator selected while holding the

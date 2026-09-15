@@ -1,7 +1,9 @@
 package migrateup_test
 
 import (
+	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/root"
 )
 
 // writeThreeUpMigrations writes a three-migration ptah-format directory, the
@@ -28,6 +31,19 @@ func writeThreeUpMigrations(c *qt.C) string {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	return dir
+}
+
+// runUpThroughRoot drives the shipped command tree. The PTAH_* binding is
+// installed on the root command, so a run assembled from the leaf alone reads
+// no environment variable and can say nothing about a rule over one.
+func runUpThroughRoot(args ...string) (string, error) {
+	cmd := root.NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(append([]string{"migrations", "up"}, args...))
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 // countRevisionTables answers whether a run created Ptah's revision table,
@@ -86,7 +102,67 @@ func TestMigrateUpToVersion_HappyPath(t *testing.T) {
 
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+		// The report is what tells the operator why nothing was applied, so an
+		// empty selection is where it is needed rather than where it is dropped.
+		c.Assert(out, qt.Contains, "=== MIGRATE UP ===")
+		c.Assert(out, qt.Contains, "Current version: 2")
+		c.Assert(out, qt.Contains, "Pending migrations: 1")
 	})
+
+	t.Run("an empty bound leaves a batch limit to decide", func(t *testing.T) {
+		c := qt.New(t)
+		migrationsDir := writeThreeUpMigrations(c)
+		dbPath := filepath.Join(c.TempDir(), "empty-bound.db")
+
+		out, err := runUp(
+			"--db-url", "sqlite://"+dbPath,
+			"--migrations-dir", migrationsDir,
+			"--to-version", "",
+			"--limit", "2",
+		)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	})
+
+	t.Run("a zero limit leaves the bound to decide", func(t *testing.T) {
+		c := qt.New(t)
+		migrationsDir := writeThreeUpMigrations(c)
+		dbPath := filepath.Join(c.TempDir(), "zero-limit.db")
+
+		out, err := runUp(
+			"--db-url", "sqlite://"+dbPath,
+			"--migrations-dir", migrationsDir,
+			"--limit", "0",
+			"--to-version", "2",
+		)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	})
+}
+
+// TestMigrateUpToVersionAlreadyReachedReportsTheDryRunHeader is the same empty
+// selection under --dry-run, where the lost report took the header saying
+// nothing would be written with it.
+func TestMigrateUpToVersionAlreadyReachedReportsTheDryRunHeader(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeThreeUpMigrations(c)
+	dbPath := filepath.Join(c.TempDir(), "reached-dry.db")
+	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--to-version", "2")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	out, err = runUp(
+		"--db-url", "sqlite://"+dbPath,
+		"--migrations-dir", migrationsDir,
+		"--to-version", "2",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "=== DRY RUN MODE ===")
+	c.Assert(out, qt.Contains, "=== MIGRATE UP ===")
+	c.Assert(out, qt.Contains, "Would have applied 0 migrations")
 }
 
 // TestMigrateUpToVersionDryRunReportsBoundedCount pins the count a preview
@@ -195,4 +271,59 @@ func TestMigrateUpWithoutToVersionReportsUpToDate(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Database is already up to date!")
 	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(3))
+}
+
+// TestMigrateUpToVersionAndLimitFromTheEnvironment_FailurePath is the pair
+// nobody typed. The refusal names the variables that carry it and arrives
+// before the connection is opened, where the migrator's own refusal names an
+// "amount" no flag spells and arrives under the migration lock.
+func TestMigrateUpToVersionAndLimitFromTheEnvironment_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LIMIT", "1")
+	t.Setenv("PTAH_TO_VERSION", "2")
+	migrationsDir := writeThreeUpMigrations(c)
+	dbPath := filepath.Join(c.TempDir(), "environment-pair.db")
+
+	out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir)
+
+	c.Assert(err, qt.ErrorMatches,
+		`if any flags in the group \[limit to-version\] are set none of the others can be; `+
+			`\[PTAH_LIMIT PTAH_TO_VERSION\] were all set`,
+		qt.Commentf("%s", out))
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// TestMigrateUpToVersionFromTheEnvironment_HappyPath is the control for the
+// refusal above, in both directions: one variable on its own still bounds a
+// run, and a typed flag beside the other variable is a run the operator can
+// have.
+func TestMigrateUpToVersionFromTheEnvironment_HappyPath(t *testing.T) {
+	t.Run("the variable alone bounds the run", func(t *testing.T) {
+		c := qt.New(t)
+		t.Setenv("PTAH_TO_VERSION", "2")
+		migrationsDir := writeThreeUpMigrations(c)
+		dbPath := filepath.Join(c.TempDir(), "environment-bound.db")
+
+		out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	})
+
+	t.Run("a typed bound withdraws the batch limit the environment carries", func(t *testing.T) {
+		c := qt.New(t)
+		t.Setenv("PTAH_LIMIT", "1")
+		migrationsDir := writeThreeUpMigrations(c)
+		dbPath := filepath.Join(c.TempDir(), "typed-bound.db")
+
+		out, err := runUpThroughRoot(
+			"--db-url", "sqlite://"+dbPath,
+			"--migrations-dir", migrationsDir,
+			"--to-version", "2",
+		)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	})
 }
