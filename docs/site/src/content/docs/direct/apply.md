@@ -156,6 +156,27 @@ Schema apply completed successfully.
 `--edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval, and the
 edited SQL is what gets applied.
 
+### Statements that cannot run inside a transaction
+
+The default `--tx-mode file`, and `--tx-mode all`, run the whole plan inside one
+transaction. PostgreSQL refuses some statements there: `CREATE INDEX
+CONCURRENTLY` and `DROP INDEX CONCURRENTLY`, and a statement that uses an enum
+value an earlier statement added to an existing type. The apply checks the plan
+for both before it rehearses, asks for approval, or sends anything, and refuses
+it by name. A plan that adds `archived` to an existing enum and a column
+defaulting to it stops with exit code `2`:
+
+```text illustration
+error: the planned changes cannot run inside a transaction: statement 2 of 2: it uses 'archived', a value an earlier statement in the same transaction adds to the pre-existing enum type "probe_status", and a new enum value is not usable until the transaction that added it commits; rerun with --tx-mode none, which commits each statement as it runs
+SQL: ALTER TABLE "messages" ADD COLUMN "archive_state" probe_status NOT NULL DEFAULT 'archived'
+```
+
+`--tx-mode none` runs each statement in its own transaction, where both are
+allowed. If a later statement then fails, the earlier ones stay applied. A value
+added to an enum type that the same plan creates is usable at once, so a saved
+or edited plan that creates the type, adds the value and uses it is not refused.
+The check covers `--plan` and `--edit` as well as a computed plan.
+
 ## Separate review from execution with a plan file
 
 Approving whatever the tool plans at execution time is the workflow's weakest
