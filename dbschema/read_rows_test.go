@@ -121,3 +121,26 @@ func TestReadTableRows_ValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestReadTableRows_BinaryColumnKeepsItsBytes reads a BLOB column back as the
+// bytes it holds, while a text column still arrives as string. A binary value
+// converted to string reaches the renderer as text, and a text literal is what
+// a server refuses or stores as a different value (stokaro/ptah#3297).
+func TestReadTableRows_BinaryColumnKeepsItsBytes(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	_, err = conn.ExecContext(ctx, "CREATE TABLE payloads (code TEXT PRIMARY KEY, payload BLOB NOT NULL)")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, "INSERT INTO payloads (code, payload) VALUES ('alpha', X'5cff41')")
+	c.Assert(err, qt.IsNil)
+
+	rows, err := dbschema.ReadTableRows(ctx, conn, "", "payloads", []string{"code", "payload"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.DeepEquals, []map[string]any{
+		{"code": "alpha", "payload": []byte{0x5c, 0xff, 0x41}},
+	})
+}

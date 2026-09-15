@@ -294,10 +294,54 @@ func TestRenderLiterals(t *testing.T) {
 			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', 0.1);\n",
 		},
 		{
-			name:    "byte slice treated as text",
+			// A binary value is spelled in hex digits, so a byte that is not
+			// valid UTF-8, a backslash and a quote all stay out of the literal.
+			name:    "byte slice postgres is a bytea literal",
 			dialect: "postgres",
-			value:   []byte("hi"),
-			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', 'hi');\n",
+			value:   []byte{0x5c, 0xff, 0x41},
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '\\x5cff41'::bytea);\n",
+		},
+		{
+			name:    "empty byte slice postgres is an empty bytea, not NULL",
+			dialect: "postgres",
+			value:   make([]byte, 0),
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '\\x'::bytea);\n",
+		},
+		{
+			name:    "byte slice spanner is a bytea literal",
+			dialect: "spanner",
+			value:   []byte{0x27, 0x5c, 0x5c},
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '\\x275c5c'::bytea);\n",
+		},
+		{
+			name:    "byte slice mysql is a hex literal",
+			dialect: "mysql",
+			value:   []byte{0x5c, 0xff, 0x41},
+			wantUp:  "INSERT INTO `t` (`id`, `v`) VALUES ('r1', X'5cff41');\n",
+		},
+		{
+			name:    "byte slice sqlite is a hex literal",
+			dialect: "sqlite",
+			value:   []byte{0x5c, 0xff, 0x41},
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', X'5cff41');\n",
+		},
+		{
+			name:    "byte slice clickhouse is a hex literal",
+			dialect: "clickhouse",
+			value:   []byte{0x5c, 0xff, 0x41},
+			wantUp:  "INSERT INTO `t` (`id`, `v`) VALUES ('r1', X'5cff41');\n",
+		},
+		{
+			name:    "byte slice sqlserver is a 0x literal",
+			dialect: "sqlserver",
+			value:   []byte{0x27, 0x5c, 0x5c},
+			wantUp:  "INSERT INTO [t] ([id], [v]) VALUES ('r1', 0x275c5c);\n",
+		},
+		{
+			name:    "byte slice oracle is HEXTORAW",
+			dialect: "oracle",
+			value:   []byte{0x5c, 0xff, 0x41},
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', HEXTORAW('5cff41'));\n",
 		},
 		{
 			name:    "backslash not escaped for postgres",
@@ -413,6 +457,25 @@ func TestRenderLiteralErrors(t *testing.T) {
 			c.Assert(down, qt.Equals, "")
 		})
 	}
+}
+
+// TestRenderBinaryLiteral_FailurePath refuses a []byte value for a dialect with
+// no known binary literal, rather than guessing one or writing the bytes as
+// text.
+func TestRenderBinaryLiteral_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	diff := &datadiff.DataDiff{
+		Table:   "t",
+		Keys:    []string{"id"},
+		Inserts: []datadiff.Row{{"id": "r1", "v": []byte{0x5c, 0xff, 0x41}}},
+	}
+
+	up, down, err := datadiff.Render(diff, "db2")
+
+	c.Assert(err, qt.ErrorMatches,
+		`datadiff: column "v": datadiff: no binary literal is known for dialect "db2", so a \[\]byte value cannot be rendered`)
+	c.Assert(up, qt.Equals, "")
+	c.Assert(down, qt.Equals, "")
 }
 
 // TestRenderErrors covers the structural validation failures: a nil diff, a

@@ -1,6 +1,7 @@
 package datadiff
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -61,8 +62,8 @@ import (
 // reconstructed. Likewise the inverse of an UPDATE restores exactly the non-key
 // columns present in RowUpdate.Live, so a forward UPDATE that introduces a value
 // for a column absent from the live row cannot be rolled back to that absence.
-// Binary blobs are out of scope for this phase: a []byte value is treated as
-// UTF-8 text (see [renderLiteral]).
+// A []byte value is written as a hexadecimal binary literal, and a dialect with
+// no known binary literal is refused (see [binaryLiteral]).
 func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 	upStmts, downStmts, err := RenderStatements(diff, dialect)
 	if err != nil {
@@ -320,14 +321,14 @@ func joinStatements(stmts []string) string {
 //   - unsigned ints  -> decimal digits
 //   - float32/float64 -> strconv.FormatFloat(f, 'g', -1, bitSize); NaN and
 //     infinities are rejected as they have no SQL literal
-//   - string, []byte -> a single-quoted literal (see below)
+//   - string         -> a single-quoted literal (see below)
+//   - []byte         -> a hexadecimal binary literal (see [binaryLiteral])
 //   - time.Time      -> a quoted timestamp literal (see [timeLiteral]); drivers
 //     scan timestamp columns as time.Time, so a managed timestamp column's live
 //     value reaches the renderer here
 //
 // Any other Go type is rejected with an error naming the type rather than being
-// formatted into SQL, which would be an injection risk. A []byte is treated as
-// UTF-8 text and escaped like a string; binary blob encoding is out of scope.
+// formatted into SQL, which would be an injection risk.
 //
 // # String escaping (per dialect)
 //
@@ -359,7 +360,7 @@ func renderLiteral(dialect string, v any) (string, error) {
 	case string:
 		return stringLiteral(dialect, val)
 	case []byte:
-		return stringLiteral(dialect, string(val))
+		return binaryLiteral(dialect, val)
 	case time.Time:
 		return timeLiteral(dialect, val), nil
 	}
@@ -463,6 +464,37 @@ func stringLiteral(dialect, s string) (string, error) {
 	}
 	s = strings.ReplaceAll(s, "'", "''")
 	return "'" + s + "'", nil
+}
+
+// binaryLiteral renders b as a hexadecimal binary literal for dialect.
+//
+// A character-string literal cannot carry arbitrary bytes into a binary column.
+// PostgreSQL refuses a byte that is not valid UTF-8 (SQLSTATE 22021), its bytea
+// input reads a backslash as an escape and stores a different value without an
+// error, and SQL Server refuses to convert a varchar literal to varbinary at
+// all. A literal spelled in hex digits holds none of those bytes:
+//
+//   - PostgreSQL, CockroachDB, YugabyteDB, Spanner -> '\x<hex>'::bytea
+//   - MySQL, MariaDB, SQLite, ClickHouse          -> X'<hex>'
+//   - SQL Server                                  -> 0x<hex>
+//   - Oracle                                      -> HEXTORAW('<hex>')
+//
+// The PostgreSQL spelling relies on standard_conforming_strings, as
+// [stringLiteral] does. Any other dialect is refused rather than given a guess.
+func binaryLiteral(dialect string, b []byte) (string, error) {
+	digits := hex.EncodeToString(b)
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return `'\x` + digits + `'::bytea`, nil
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse:
+		return "X'" + digits + "'", nil
+	case platform.SQLServer:
+		return "0x" + digits, nil
+	case platform.Oracle:
+		return "HEXTORAW('" + digits + "')", nil
+	default:
+		return "", fmt.Errorf("datadiff: no binary literal is known for dialect %q, so a []byte value cannot be rendered", dialect)
+	}
 }
 
 // usesBackslashEscapes reports whether dialect processes C-style backslash

@@ -12,11 +12,13 @@
 // # Value comparison
 //
 // Compute compares values by a normalized string form (see [Compute]): a
-// one-byte type tag ("N" nil, "S" string, "B" []byte, "V" everything else via
+// one-byte type tag ("N" nil, "S" a string or a []byte, "V" everything else via
 // fmt's default verb) followed by the value. The tag keeps distinct kinds from
 // colliding — notably a SQL NULL stays distinct from an empty string — while
 // still making the "V" form driver-agnostic (a desired int 1 and a live int64 1
-// compare equal). One pair is compared as values rather than as strings: a
+// compare equal). A string and a []byte holding the same bytes compare equal:
+// a declaration writes a binary column's value as text, and the driver hands it
+// back as bytes. One pair is compared as values rather than as strings: a
 // time.Time the driver returned against the text a declaration carries, which
 // otherwise can never pair and leaves a date column planning the same UPDATE
 // forever. Two texts stay two texts, so a text column keeps both spellings of
@@ -265,8 +267,11 @@ func sortedKeys[V any](m map[string]V) []string {
 
 // normalizeValue reduces a value to a comparable string form, prefixed with a
 // one-byte type tag so distinct kinds can never collide: "N" for nil (a SQL
-// NULL), "S" for a string, "B" for []byte, and "V" for any other value via fmt's
-// default verb. The tag keeps a NULL distinct from an empty string, so a live
+// NULL), "S" for a string or a []byte, and "V" for any other value via fmt's
+// default verb. A []byte shares the string tag because a declaration writes a
+// binary column's value as text while dbschema.ReadTableRows returns it as
+// bytes; with a tag of its own, every such row would plan the same UPDATE on
+// every run. The tag keeps a NULL distinct from an empty string, so a live
 // NULL versus a desired "" is correctly reported as a change rather than
 // silently matching. A time and the text naming it are paired before this is
 // reached; see valuesEqual. The package documentation carries the remaining
@@ -276,7 +281,7 @@ func normalizeValue(v any) string {
 	case nil:
 		return "N"
 	case []byte:
-		return "B" + string(value)
+		return "S" + string(value)
 	case string:
 		return "S" + value
 	default:
