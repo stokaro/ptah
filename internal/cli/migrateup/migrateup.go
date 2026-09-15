@@ -480,7 +480,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), settings.connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), settings.connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
@@ -523,7 +523,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		WithObserver(runtime.Observer())
 
 	// Get migration status before running
-	status, err := mig.GetMigrationStatus(context.Background())
+	status, err := mig.GetMigrationStatus(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
@@ -742,7 +742,12 @@ func applyPendingMigrations(
 	// afterwards: a limit, a target version or a checkpoint narrows what the
 	// migrator selected under its own lock, and a document that reported the
 	// pending list would name work this run never intended to do.
-	outcome.runErr = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
+	//
+	// The run watches the command's context, which an interrupt cancels. The
+	// root command reports an interrupted process with a signal status, so a
+	// migration that kept executing after the signal would commit behind a
+	// status that says it was stopped.
+	outcome.runErr = mig.MigrateUpWithOptions(cmd.Context(), migrator.MigrateUpOptions{
 		Amount:        opts.limit,
 		TargetVersion: toVersion,
 		// The native surface hands the migrator an operator's exact version, so
@@ -759,7 +764,9 @@ func applyPendingMigrations(
 			outcome.checksDeferred = versions
 		},
 	})
-	status, statusErr := mig.GetMigrationStatus(context.Background())
+	// The status read does not inherit the cancelation: after an interrupt it
+	// is the only account of which migrations committed before the signal.
+	status, statusErr := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))
 	if statusErr != nil {
 		outcome.statusErr = statusErr
 		status = nil
