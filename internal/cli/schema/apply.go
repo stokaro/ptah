@@ -434,6 +434,14 @@ func runSchemaApplyPlanFileWithLockSession(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The plan's `-- atlas:txmode` header is part of what was reviewed, so it
+	// decides the transaction mode together with --tx-mode, under the rule
+	// ptah-compat applies to the same file. It is resolved before the
+	// connection, so a refused combination touches no database.
+	txMode, err = atlasschema.ResolvePlanTxMode(txMode, path, plan.SQL())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

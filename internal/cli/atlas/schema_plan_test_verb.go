@@ -252,11 +252,7 @@ func atlasPlanTestPlanApplier(
 // a plan is executed under the mode it was reviewed with. A plan holding a
 // CONCURRENTLY statement runs the way it will run in production or not at all.
 func atlasPlanTestTxMode(path string, plan atlasschema.PlanFile) (migrator.MigrationTxMode, error) {
-	fileMode, err := atlasschema.PlanTxMode(path, plan.SQL())
-	if err != nil {
-		return "", err
-	}
-	return migrator.ResolveAtlasDirectiveTxMode(migrator.MigrationTxModeFile, fileMode, path)
+	return atlasschema.ResolvePlanTxMode(migrator.MigrationTxModeFile, path, plan.SQL())
 }
 
 // atlasPlanTestLocalPath resolves a `file://` URL against the test directory

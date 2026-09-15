@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // PlanDirectiveComment is the comment marker a directive line carries. A
@@ -189,10 +190,9 @@ func PlanDirectiveHeader(directives []PlanDirective) string {
 
 // PlanTxMode reports the transaction mode a plan's migration text selects, as
 // a FILE mode: the plan states how it wants to be executed, and how that
-// combines with an operator's `--tx-mode` is
-// internal/cli/internal/migrateflags.ResolveAtlasDirectiveTxMode's decision rather than
-// this function's. [migrationfile.FileTxModeUnspecified] means it states
-// nothing.
+// combines with an operator's `--tx-mode` is [ResolvePlanTxMode]'s decision
+// rather than this function's. [migrationfile.FileTxModeUnspecified] means it
+// states nothing.
 //
 // source names the plan for a refused value's diagnostic.
 func PlanTxMode(source, migration string) (migrationfile.FileTxMode, error) {
@@ -201,6 +201,37 @@ func PlanTxMode(source, migration string) (migrationfile.FileTxMode, error) {
 		return migrationfile.FileTxModeUnspecified, err
 	}
 	return parsed.TxMode, nil
+}
+
+// ResolvePlanTxMode returns the transaction mode a plan file executes under:
+// the operator's global mode combined with the `-- atlas:txmode` directive in
+// the plan's migration text.
+//
+// Every command that executes a plan file resolves the mode here, and none
+// resolves it inline. A plan is one reviewed artifact, and the native and
+// compatibility binaries reading its header differently -- one honoring the
+// directive and the other executing as though the line were a comment -- is
+// the defect this function exists to prevent (stokaro/ptah#3284).
+//
+// The rule is the one a versioned migration file's directive answers to,
+// through [migrator.ResolveAtlasDirectiveTxMode]: the directive wins, except
+// under [migrator.MigrationTxModeAll], where the combination is refused rather
+// than decided. A plan that states no mode executes under global unchanged. A
+// header whose value cannot be read is refused, as [PlanTxMode] refuses it.
+//
+// source names the plan in a refusal.
+func ResolvePlanTxMode(
+	global migrator.MigrationTxMode,
+	source, migration string,
+) (migrator.MigrationTxMode, error) {
+	planMode, err := PlanTxMode(source, migration)
+	if err != nil {
+		return "", err
+	}
+	if planMode == migrationfile.FileTxModeUnspecified {
+		return global, nil
+	}
+	return migrator.ResolveAtlasDirectiveTxMode(global, planMode, source)
 }
 
 func supportedPlanDirectiveList() string {

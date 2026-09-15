@@ -233,6 +233,16 @@ Auto-approval enabled; applying schema changes.
 Schema apply completed successfully.
 ```
 
+A plan file can carry an `-- atlas:txmode none` or `-- atlas:txmode file`
+header in its first statement; `ptah-compat schema plan --directive` writes
+one. `ptah schema apply --plan` executes the plan in the mode the header
+selects, so a plan holding `CREATE INDEX CONCURRENTLY` on PostgreSQL applies
+without `--tx-mode none` on the command line. The header and `--tx-mode`
+combine under the rule a versioned migration's directive answers to, and
+`ptah-compat schema apply --plan` resolves the same file the same way: the
+header wins, except under `--tx-mode all`, where a plan carrying a header is
+refused before the database is contacted.
+
 A plan file can also carry a reviewer's signature. `ptah schema approve` signs
 one with an SSH key and `ptah schema apply --plan --require-approval` refuses a
 plan that carries no signature from a list of approvers you commit:
