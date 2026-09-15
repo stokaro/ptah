@@ -511,3 +511,58 @@ func declaredWidthSchema(wide bool) *schemamodel.Database {
 	schemamodel.Finalize(db)
 	return db
 }
+
+// TestDeclaredRowsDefaultSchemaLive writes the connection's own schema into the
+// declaration, which is the spelling an author reaches for when the project has
+// more than one schema.
+//
+// The readers blank the schema of an object in the connection's own schema, so
+// a declaration carrying it has to match a table the catalog reports with no
+// schema at all. Comparing the two literally leaves the live rows unread, every
+// declared row reads as an insert, and the second apply fails on the primary key
+// (stokaro/ptah#3280).
+func TestDeclaredRowsDefaultSchemaLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "default_schema")
+	defer done()
+
+	desired := declaredSchemaQualifiedRows("public")
+	applyDeclaredRows(c, ctx, conn, desired)
+
+	plan, err := atlasschema.PreparePlanFile(ctx, conn, atlasschema.PlanFileOptions{Desired: desired})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string(nil))
+
+	// And the apply is repeatable: an unread live set would plan the insert
+	// again, which the primary key refuses.
+	applyDeclaredRows(c, ctx, conn, desired)
+	c.Assert(declaredRowCodes(c, ctx, conn, "regions"), qt.DeepEquals, []string{"emea"})
+}
+
+// declaredSchemaQualifiedRows is one declared row set whose declaration names
+// the schema its table lives in.
+func declaredSchemaQualifiedRows(schema string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Region", Name: "regions", Schema: schema}},
+		Fields: []schemamodel.Field{
+			{StructName: "Region", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
+			{StructName: "Region", FieldName: "Name", Name: "name", Type: "TEXT"},
+		},
+		ManagedData: []schemamodel.ManagedData{{
+			StructName: "Region",
+			Schema:     schema,
+			Table:      "regions",
+			Keys:       []string{"code"},
+			File:       "regions.yaml",
+			Rows: []schemamodel.ManagedRow{{
+				"code": {Tag: "str", Text: "emea"},
+				"name": {Tag: "str", Text: "Europe, Middle East and Africa"},
+			}},
+		}},
+	}
+	schemamodel.Finalize(db)
+	return db
+}
