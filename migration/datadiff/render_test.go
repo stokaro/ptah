@@ -345,6 +345,28 @@ func TestRenderLiterals(t *testing.T) {
 			value:   time.Date(2024, 3, 5, 6, 7, 8, 0, time.UTC),
 			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '2024-03-05 06:07:08+00:00');\n",
 		},
+		{
+			// Oracle creates a BOOLEAN column as NUMBER(1), and the literal
+			// follows the type the column became.
+			name:    "bool true oracle is 1",
+			dialect: "oracle",
+			value:   true,
+			wantUp:  "INSERT INTO t (id, v) VALUES ('r1', 1);\n",
+		},
+		{
+			name:    "bool false oracle is 0",
+			dialect: "oracle",
+			value:   false,
+			wantUp:  "INSERT INTO t (id, v) VALUES ('r1', 0);\n",
+		},
+		{
+			// Oracle reads a bare string through NLS_TIMESTAMP_FORMAT and
+			// refuses it with ORA-01843; the typed literal is accepted.
+			name:    "time oracle is a typed timestamp literal",
+			dialect: "oracle",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 123456789, time.FixedZone("", 2*3600)),
+			wantUp:  "INSERT INTO t (id, v) VALUES ('r1', TIMESTAMP '2024-03-05 06:07:08.123456789+02:00');\n",
+		},
 	}
 
 	for _, tt := range tests {

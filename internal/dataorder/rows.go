@@ -48,6 +48,27 @@ func SelfReferences(db *schemamodel.Database, table schemamodel.Table) []string 
 	return columns
 }
 
+// ColumnTypes returns the declared type of each column of one table, keyed by
+// column name.
+//
+// Both stages that write declared rows hand it to the row renderer, which needs
+// a column's type where a dialect refuses the literal a value would otherwise
+// take: a declared moment is text, and Oracle refuses text for a DATE or
+// TIMESTAMP column. It sits beside [SelfReferences] for the reason the package
+// exists: two stages reading one declaration must read it the same way.
+func ColumnTypes(db *schemamodel.Database, table schemamodel.Table) map[string]string {
+	if db == nil {
+		return nil
+	}
+	types := make(map[string]string)
+	for _, field := range db.Fields {
+		if field.StructName == table.StructName {
+			types[field.Name] = field.Type
+		}
+	}
+	return types
+}
+
 // Rows orders rows so that a row arrives after every row it references.
 //
 // references names the self-referencing columns; a row's value in one of them

@@ -6613,8 +6613,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1810,
-      "sourceBytes": 12288
+      "visibleWords": 1944,
+      "sourceBytes": 13064
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

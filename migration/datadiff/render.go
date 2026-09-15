@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlident"
 )
 
@@ -37,10 +38,13 @@ import (
 // the statements [RenderStatements] returns, joined with "\n". A string value
 // may carry a newline, which stays inside its literal, so the scripts cannot be
 // cut into statements at line breaks; a caller that needs the statements one by
-// one takes them from [RenderStatements]. Identifiers
-// are quoted for dialect via sqlident.Quote; values are rendered as
-// safely-escaped literals (see [renderLiteral]) so a string value can never
-// terminate its literal or inject SQL.
+// one takes them from [RenderStatements]. Identifiers are spelled for dialect
+// the way the schema renderers spell them, so a statement names the table and
+// columns they created: quoted on every dialect but Oracle, and bare on Oracle
+// wherever Oracle accepts a bare name, because there a quoted lower-case name is
+// a different object from the upper-case one a bare CREATE TABLE made. Values
+// are rendered as safely-escaped literals (see [renderLiteral]) so a string
+// value can never terminate its literal or inject SQL.
 //
 // Render returns an error for a nil diff, for a non-empty diff with no key
 // columns, for a row that is missing a key column or has no columns at all, and
@@ -48,11 +52,11 @@ import (
 //
 // # Table name
 //
-// The table is quoted via sqlident.Qualified(dialect, diff.Schema, diff.Table).
 // When diff.Schema is set the name is emitted schema-qualified (for PostgreSQL:
-// "app"."regions"); when it is empty only the table is quoted. diff.Table is
-// always treated as a single identifier, so a dotted table name is quoted whole
-// rather than split into schema and table — put the schema in diff.Schema.
+// "app"."regions"; for Oracle: app.regions); when it is empty only the table is
+// named. diff.Table is always treated as a single identifier, so a dotted table
+// name is quoted whole rather than split into schema and table — put the schema
+// in diff.Schema.
 //
 // # Limitations
 //
@@ -97,7 +101,7 @@ func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err er
 		return nil, nil, errors.New("datadiff: keys must be non-empty to render a non-empty diff")
 	}
 
-	table := sqlident.Qualified(dialect, diff.Schema, diff.Table)
+	table := sqlident.QualifiedIdent(dialect, diff.Schema, diff.Table)
 
 	up, err = renderUp(dialect, table, diff)
 	if err != nil {
@@ -114,21 +118,21 @@ func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err er
 func renderUp(dialect, table string, diff *DataDiff) ([]string, error) {
 	stmts := make([]string, 0, len(diff.Inserts)+len(diff.Updates)+len(diff.Deletes))
 	for _, row := range diff.Inserts {
-		s, err := insertStmt(dialect, table, row)
+		s, err := insertStmt(dialect, table, diff.ColumnTypes, row)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, u := range diff.Updates {
-		s, err := updateStmt(dialect, table, diff.Keys, u.Desired, u.Key)
+		s, err := updateStmt(dialect, table, diff.ColumnTypes, diff.Keys, u.Desired, u.Key)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, row := range diff.Deletes {
-		s, err := deleteStmt(dialect, table, diff.Keys, row)
+		s, err := deleteStmt(dialect, table, diff.ColumnTypes, diff.Keys, row)
 		if err != nil {
 			return nil, err
 		}
@@ -143,21 +147,21 @@ func renderUp(dialect, table string, diff *DataDiff) ([]string, error) {
 func renderDown(dialect, table string, diff *DataDiff) ([]string, error) {
 	stmts := make([]string, 0, len(diff.Inserts)+len(diff.Updates)+len(diff.Deletes))
 	for _, row := range slices.Backward(diff.Deletes) {
-		s, err := insertStmt(dialect, table, row)
+		s, err := insertStmt(dialect, table, diff.ColumnTypes, row)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, u := range slices.Backward(diff.Updates) {
-		s, err := updateStmt(dialect, table, diff.Keys, u.Live, u.Key)
+		s, err := updateStmt(dialect, table, diff.ColumnTypes, diff.Keys, u.Live, u.Key)
 		if err != nil {
 			return nil, err
 		}
 		stmts = append(stmts, s)
 	}
 	for _, row := range slices.Backward(diff.Inserts) {
-		s, err := deleteStmt(dialect, table, diff.Keys, row)
+		s, err := deleteStmt(dialect, table, diff.ColumnTypes, diff.Keys, row)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +172,7 @@ func renderDown(dialect, table string, diff *DataDiff) ([]string, error) {
 
 // insertStmt renders an INSERT for every column of row, columns sorted so the
 // output is deterministic. A row with no columns is an error.
-func insertStmt(dialect, table string, row Row) (string, error) {
+func insertStmt(dialect, table string, types map[string]string, row Row) (string, error) {
 	cols := sortedColumns(row)
 	if len(cols) == 0 {
 		return "", errors.New("datadiff: cannot render INSERT for a row with no columns")
@@ -176,11 +180,11 @@ func insertStmt(dialect, table string, row Row) (string, error) {
 	quotedCols := make([]string, len(cols))
 	literals := make([]string, len(cols))
 	for i, col := range cols {
-		lit, err := renderLiteral(dialect, row[col])
+		lit, err := renderColumnLiteral(dialect, types[col], row[col])
 		if err != nil {
 			return "", fmt.Errorf("datadiff: column %q: %w", col, err)
 		}
-		quotedCols[i] = sqlident.Quote(dialect, col)
+		quotedCols[i] = sqlident.Ident(dialect, col)
 		literals[i] = lit
 	}
 	return fmt.Sprintf(
@@ -193,7 +197,7 @@ func insertStmt(dialect, table string, row Row) (string, error) {
 // and matches rows on the key columns, whose values are taken from keyRow. Key
 // columns are skipped in the SET clause. An empty setRow, a setRow with no
 // non-key columns, or a keyRow missing a key column is an error.
-func updateStmt(dialect, table string, keys []string, setRow, keyRow Row) (string, error) {
+func updateStmt(dialect, table string, types map[string]string, keys []string, setRow, keyRow Row) (string, error) {
 	if len(setRow) == 0 {
 		return "", errors.New("datadiff: cannot render UPDATE for a row with no columns")
 	}
@@ -216,14 +220,14 @@ func updateStmt(dialect, table string, keys []string, setRow, keyRow Row) (strin
 
 	assignments := make([]string, len(setCols))
 	for i, col := range setCols {
-		lit, err := renderLiteral(dialect, setRow[col])
+		lit, err := renderColumnLiteral(dialect, types[col], setRow[col])
 		if err != nil {
 			return "", fmt.Errorf("datadiff: column %q: %w", col, err)
 		}
-		assignments[i] = sqlident.Quote(dialect, col) + " = " + lit
+		assignments[i] = sqlident.Ident(dialect, col) + " = " + lit
 	}
 
-	where, err := keyPredicate(dialect, keys, keyRow)
+	where, err := keyPredicate(dialect, types, keys, keyRow)
 	if err != nil {
 		return "", err
 	}
@@ -251,8 +255,8 @@ func usesAlterTableDML(dialect string) bool {
 
 // deleteStmt renders a DELETE that matches rows on the key columns, whose values
 // are taken from row.
-func deleteStmt(dialect, table string, keys []string, row Row) (string, error) {
-	where, err := keyPredicate(dialect, keys, row)
+func deleteStmt(dialect, table string, types map[string]string, keys []string, row Row) (string, error) {
+	where, err := keyPredicate(dialect, types, keys, row)
 	if err != nil {
 		return "", err
 	}
@@ -262,7 +266,7 @@ func deleteStmt(dialect, table string, keys []string, row Row) (string, error) {
 // keyPredicate builds a "<key> = <literal>" predicate for every key column,
 // sorted and joined with AND. Values are taken from values; a missing key column
 // is an error.
-func keyPredicate(dialect string, keys []string, values Row) (string, error) {
+func keyPredicate(dialect string, types map[string]string, keys []string, values Row) (string, error) {
 	sorted := slices.Clone(keys)
 	slices.Sort(sorted)
 	parts := make([]string, len(sorted))
@@ -276,14 +280,14 @@ func keyPredicate(dialect string, keys []string, values Row) (string, error) {
 		// succeeds and changes nothing: the row the diff found stays exactly
 		// where it was, and the next run finds it again (stokaro/ptah#3279).
 		if v == nil {
-			parts[i] = sqlident.Quote(dialect, k) + " IS NULL"
+			parts[i] = sqlident.Ident(dialect, k) + " IS NULL"
 			continue
 		}
-		lit, err := renderLiteral(dialect, v)
+		lit, err := renderColumnLiteral(dialect, types[k], v)
 		if err != nil {
 			return "", fmt.Errorf("datadiff: key column %q: %w", k, err)
 		}
-		parts[i] = sqlident.Quote(dialect, k) + " = " + lit
+		parts[i] = sqlident.Ident(dialect, k) + " = " + lit
 	}
 	return strings.Join(parts, " AND "), nil
 }
@@ -307,6 +311,54 @@ func joinStatements(stmts []string) string {
 	return strings.Join(stmts, "\n") + "\n"
 }
 
+// renderColumnLiteral renders v for a column declared as declaredType.
+//
+// The declared type matters only where a dialect refuses the literal a Go value
+// would otherwise take. A declaration writes a moment as text, and Oracle
+// refuses text for a DATE or TIMESTAMP column (see [refusesTextForDatetime]), so
+// there the text is read as the moment it names and rendered as a typed
+// timestamp literal. Text that names no moment is refused here rather than sent
+// to a server that would refuse it. An empty declaredType is a column whose type
+// the caller does not know, and v renders from its Go value alone.
+func renderColumnLiteral(dialect, declaredType string, v any) (string, error) {
+	text, isText := textValue(v)
+	if !isText || !refusesTextForDatetime(dialect, declaredType) {
+		return renderLiteral(dialect, v)
+	}
+	moment, ok := parseMoment(text)
+	if !ok {
+		return "", fmt.Errorf(
+			"datadiff: %q does not name a moment, and a %s column on %s does not accept text; write it as 2006-01-02, 2006-01-02 15:04:05 or RFC 3339",
+			text, declaredType, platform.NormalizeDialect(dialect))
+	}
+	return timeLiteral(dialect, moment), nil
+}
+
+// refusesTextForDatetime reports whether dialect refuses a string literal for a
+// column declared as declaredType because the column holds a moment.
+//
+// Only Oracle does, and which of its columns hold a moment is the type map's
+// answer rather than a second list here: the column is whatever
+// oracletype.Map created. PostgreSQL, MySQL and the rest convert the text
+// themselves, and their string literals stay as the declaration wrote them.
+func refusesTextForDatetime(dialect, declaredType string) bool {
+	return declaredType != "" &&
+		platform.NormalizeDialect(dialect) == platform.Oracle &&
+		oracletype.IsDatetime(declaredType)
+}
+
+// textValue returns v as text when it is a string or a []byte.
+func textValue(v any) (string, bool) {
+	switch text := v.(type) {
+	case string:
+		return text, true
+	case []byte:
+		return string(text), true
+	default:
+		return "", false
+	}
+}
+
 // renderLiteral renders v as a SQL value literal that is safe to embed directly
 // in a statement for dialect. It is the security-sensitive core of the renderer:
 // a string value can never terminate its literal or inject SQL.
@@ -315,7 +367,7 @@ func joinStatements(stmts []string) string {
 //
 //   - nil            -> NULL
 //   - bool           -> TRUE/FALSE, except 1/0 for MySQL, MariaDB, ClickHouse,
-//     and SQL Server (see [usesNumericBool])
+//     SQL Server, and Oracle (see [usesNumericBool])
 //   - signed ints    -> decimal digits
 //   - unsigned ints  -> decimal digits
 //   - float32/float64 -> strconv.FormatFloat(f, 'g', -1, bitSize); NaN and
@@ -421,7 +473,18 @@ func numericLiteral(v any) (string, bool, error) {
 // round-trips within the connection's session time zone. The layout produces only
 // digits and the punctuation ' - : . + space', so no escaping is required and the
 // value can never break out of its literal.
+//
+// Oracle takes the offset form behind the TIMESTAMP keyword. A bare string is
+// read through NLS_TIMESTAMP_FORMAT, DD-MON-RR by default, and refused with
+// ORA-01843; the typed literal is accepted by DATE, TIMESTAMP and TIMESTAMP WITH
+// TIME ZONE columns. Measured on 23.26: a TIMESTAMP column keeps the wall clock
+// and drops the offset, a TIMESTAMP WITH TIME ZONE column keeps both, and the
+// driver hands either back as the time.Time this renders, so the value
+// round-trips.
 func timeLiteral(dialect string, t time.Time) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "TIMESTAMP '" + t.Format("2006-01-02 15:04:05.999999999-07:00") + "'"
+	}
 	if usesTimeZoneOffsetLiteral(dialect) {
 		return "'" + t.Format("2006-01-02 15:04:05.999999999-07:00") + "'"
 	}
@@ -479,10 +542,18 @@ func usesBackslashEscapes(dialect string) bool {
 
 // usesNumericBool reports whether dialect spells boolean literals as 1/0 rather
 // than TRUE/FALSE.
+//
+// Oracle follows the type a BOOLEAN column is created as. oracletype.Map makes
+// it NUMBER(1), because 21.3 has no BOOLEAN type, and 1/0 is the literal a
+// NUMBER(1) column takes on every line. 23.26 also converts TRUE and FALSE, but
+// a literal chosen by the server's leniency would stop matching the column the
+// day the type map changes, and reading the map keeps the two in step.
 func usesNumericBool(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.SQLServer:
 		return true
+	case platform.Oracle:
+		return oracletype.Map("BOOLEAN") != "BOOLEAN"
 	default:
 		return false
 	}

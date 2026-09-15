@@ -12,9 +12,12 @@ import (
 // ReadTableRows reads the current rows of table, projected onto the requested
 // column set, from the database behind conn.
 //
-// The SELECT is built with dialect-aware, safely-quoted identifiers (via
-// internal/sqlident) keyed off conn.Info().Dialect, so callers never hand-quote
-// table or column names. When schema is non-empty the table is
+// The SELECT is built with dialect-aware, safely-escaped identifiers keyed off
+// conn.Info().Dialect, so callers never hand-quote table or column names. Names
+// are spelled the way the schema renderers spell them: quoted on every dialect
+// but Oracle, and bare on Oracle wherever Oracle accepts a bare name, so a
+// table Ptah created as ora_flags is read as ORA_FLAGS rather than as a quoted
+// "ora_flags" that does not exist. When schema is non-empty the table is
 // schema-qualified. columns is required and drives both the projection and the
 // keys of the returned maps: each returned row is a map[string]any keyed by the
 // requested column names, in the exact spelling passed in. []byte scan results
@@ -54,9 +57,9 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 
 	quoted := make([]string, len(columns))
 	for i, col := range columns {
-		quoted[i] = sqlident.Quote(dialect, col)
+		quoted[i] = sqlident.Ident(dialect, col)
 	}
-	query := "SELECT " + strings.Join(quoted, ", ") + " FROM " + sqlident.Qualified(dialect, schema, table)
+	query := "SELECT " + strings.Join(quoted, ", ") + " FROM " + sqlident.QualifiedIdent(dialect, schema, table)
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {

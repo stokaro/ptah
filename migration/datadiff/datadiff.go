@@ -20,9 +20,12 @@
 // time.Time the driver returned against the text a declaration carries, which
 // otherwise can never pair and leaves a date column planning the same UPDATE
 // forever. Two texts stay two texts, so a text column keeps both spellings of
-// one instant. It remains only approximate across dialects for the "V" form:
-// numeric scale, boolean encoding, and decimal precision differences between
-// PostgreSQL, MySQL, and others are not modeled. Type-exact, dialect-aware value
+// one instant. A declared number or boolean and the text a driver returned are
+// paired the same way, because Oracle's driver scans a NUMBER column as text: a
+// declared 30 meets "30", and a declared true meets the "1" a NUMBER(1) column
+// holds. It remains only approximate across dialects for the "V" form: numeric
+// scale and decimal precision differences between PostgreSQL, MySQL, and others
+// are not modeled. Type-exact, dialect-aware value
 // comparison is a known follow-up, matching the issue's "cross-dialect value
 // rendering is substantial" caveat.
 package datadiff
@@ -62,12 +65,18 @@ type DataDiff struct {
 	// connection's default schema. It does not affect the diff computation (rows
 	// are matched by key regardless of schema); it identifies the target table so
 	// [Render] can emit a schema-qualified name.
-	Schema  string
-	Table   string
-	Keys    []string
-	Inserts []Row
-	Updates []RowUpdate
-	Deletes []Row
+	Schema string
+	Table  string
+	Keys   []string
+	// ColumnTypes maps a column to the type its table declares for it. Compute
+	// leaves it empty; a caller that knows the declaration sets it before
+	// [Render], which reads it where a dialect refuses the literal a value would
+	// otherwise take: declared text for an Oracle DATE or TIMESTAMP column. A
+	// column the map does not name renders from its Go value alone.
+	ColumnTypes map[string]string
+	Inserts     []Row
+	Updates     []RowUpdate
+	Deletes     []Row
 }
 
 // Compute computes the row-level diff for schema.table between the desired rows
@@ -202,6 +211,13 @@ func managedColumnsDiffer(desired, live Row) bool {
 // is text. Two texts stay two texts: in a text column `2026-01-02T03:04:05Z`
 // and `2026-01-02T04:04:05+01:00` are different values, and folding them would
 // report a converged row the author never wrote.
+//
+// A declared number or boolean meets text the same way. Measured on Oracle
+// 23.26, the driver scans NUMBER(10) as "30" and NUMBER(1) as "1", so a
+// declared 30 or true never paired with its own column and every
+// reconciliation planned the same UPDATE again. The pair is equal only when the
+// text is exactly what the renderer writes for the value, a boolean as 1 or 0,
+// so "030" and "1.0" stay different values.
 func valuesEqual(desired, live any) bool {
 	if desiredTime, liveText, ok := timeAndText(desired, live); ok {
 		return sameInstant(desiredTime, liveText)
@@ -209,7 +225,25 @@ func valuesEqual(desired, live any) bool {
 	if liveTime, desiredText, ok := timeAndText(live, desired); ok {
 		return sameInstant(liveTime, desiredText)
 	}
+	if number, ok := numericText(desired); ok {
+		if text, isText := textValue(live); isText {
+			return number == text
+		}
+	}
 	return normalizeValue(desired) == normalizeValue(live)
+}
+
+// numericText is the text a numeric column hands back for a declared number or
+// boolean: the literal the renderer writes for it, with a boolean as 1 or 0.
+func numericText(v any) (string, bool) {
+	if flag, ok := v.(bool); ok {
+		if flag {
+			return "1", true
+		}
+		return "0", true
+	}
+	literal, ok, err := numericLiteral(v)
+	return literal, ok && err == nil
 }
 
 // timeAndText reports the pair where one value is a time and the other is text.
@@ -240,17 +274,25 @@ var timeLayouts = []string{
 }
 
 func sameInstant(moment time.Time, text string) bool {
+	parsed, ok := parseMoment(text)
+	return ok && parsed.UTC().Equal(moment.UTC())
+}
+
+// parseMoment reads text as the moment a declaration names, in the first of
+// timeLayouts it parses in. The comparison and the renderer both read a
+// declared moment through it, so the text a row is compared as is the text it
+// is written as.
+func parseMoment(text string) (time.Time, bool) {
 	trimmed := strings.TrimSpace(text)
 	for _, layout := range timeLayouts {
 		// A layout without a zone reads as UTC, which is the zone the readers
 		// hand back for a column that carries none.
 		parsed, err := time.Parse(layout, trimmed)
-		if err != nil {
-			continue
+		if err == nil {
+			return parsed, true
 		}
-		return parsed.UTC().Equal(moment.UTC())
 	}
-	return false
+	return time.Time{}, false
 }
 
 // sortedKeys returns the map keys in ascending order.
@@ -269,8 +311,9 @@ func sortedKeys[V any](m map[string]V) []string {
 // default verb. The tag keeps a NULL distinct from an empty string, so a live
 // NULL versus a desired "" is correctly reported as a change rather than
 // silently matching. A time and the text naming it are paired before this is
-// reached; see valuesEqual. The package documentation carries the remaining
-// cross-dialect limitations (numeric scale, boolean encoding) of the "V" form.
+// reached, and so are a number and the text naming it; see valuesEqual. The
+// package documentation carries the remaining cross-dialect limitations (numeric
+// scale, decimal precision) of the "V" form.
 func normalizeValue(v any) string {
 	switch value := v.(type) {
 	case nil:
