@@ -7,6 +7,7 @@ package schemaload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -452,7 +453,46 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
+	if err := attachMaterializedRows(result, absPath); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+// attachMaterializedRows reads the declared rows of a materialized artifact.
+//
+// `ptah schema pull` writes two files: the canonical HCL, and the declared rows
+// beside it under the artifact's own name. The HCL carries the declaration and
+// not the rows -- a `data` block names the row file of the working copy that
+// published the artifact, and that path exists nowhere else -- so a consumer
+// reading the materialized HCL alone would plan a schema whose rows are
+// silently absent (stokaro/ptah#3256).
+//
+// Nothing here guesses. The layer is read only where the schema declares rows
+// and none are loaded, and a layer that does not agree with the declaration is
+// refused rather than skipped: a reader that ignores a row set it cannot
+// account for is the failure this exists to prevent.
+func attachMaterializedRows(db *schemamodel.Database, schemaPath string) error {
+	if db == nil || len(db.ManagedData) == 0 {
+		return nil
+	}
+	for _, declaration := range db.ManagedData {
+		if declaration.Rows != nil {
+			return nil
+		}
+	}
+	directory := schemaPath
+	if !isSchemaDir(directory) {
+		directory = filepath.Dir(directory)
+	}
+	layer, err := os.ReadFile(filepath.Join(directory, schemaartifact.ManagedDataFileName))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read declared rows beside the schema: %w", err)
+	}
+	return schemaartifact.AttachManagedRows(db, layer)
 }
 
 // isSchemaDir reports whether path names an existing directory. A path that

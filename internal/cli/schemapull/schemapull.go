@@ -3,6 +3,7 @@ package schemapull
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -38,7 +39,7 @@ Authentication comes from the Docker credential store.`,
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
-	artifact, output, err := schemaartifact.PullToFile(
+	artifact, written, err := schemaartifact.PullToFile(
 		cmd.Context(),
 		reference,
 		opts.output,
@@ -47,11 +48,14 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// Every path is printed, not only the one --out named. An artifact that
+	// declares rows is materialized as two files, and a person who is told
+	// about one of them has no reason to keep the other.
 	fmt.Fprintf(
 		cmd.OutOrStdout(),
 		"Pulled %s to %s\nDigest: %s\n",
 		artifact.Reference,
-		output,
+		strings.Join(written, ", "),
 		artifact.Descriptor.Digest,
 	)
 	return nil

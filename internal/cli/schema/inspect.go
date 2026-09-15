@@ -335,7 +335,9 @@ func materializeOCISchemaFiles(
 			cleanup()
 			return nil, nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
 		}
-		_, output, err := schemaartifact.PullToFile(
+		// The canonical HCL is the source this inspection reads; a declared row
+		// layer lands beside it under its own name and is picked up from there.
+		_, written, err := schemaartifact.PullToFile(
 			cmd.Context(),
 			reference,
 			filepath.Join(target, inspectOCIMaterializedName),
@@ -345,7 +347,7 @@ func materializeOCISchemaFiles(
 			cleanup()
 			return nil, nil, err
 		}
-		materialized = append(materialized, output)
+		materialized = append(materialized, written[0])
 	}
 	return materialized, cleanup, nil
 }
