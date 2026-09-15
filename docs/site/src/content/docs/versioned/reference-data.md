@@ -118,6 +118,8 @@ down re-inserts it. Applying up then down restores the original table contents.
 
 Values are rendered as dialect-correct, safely-escaped SQL literals, so a value
 containing quotes, backslashes, or semicolons cannot break out of its literal.
+A value may span lines: the newline stays inside the literal, and the statement
+that carries it stays one statement.
 
 The statement is the one the engine accepts, which is not the same spelling
 everywhere. ClickHouse refuses a plain `UPDATE` on a table without a
@@ -199,6 +201,10 @@ foreign-key check the apply runs before it commits refuses the whole plan when a
 row names a parent that does not exist. See
 [SQLite](../../databases/sqlite/#what-renders-natively).
 
+Each planned statement writes or removes one row and is carried whole. A
+declared value that spans lines keeps its newline inside the literal, so the
+statement keeps the severity and the place in the order of the row it changes.
+
 Severity is assigned by what the statement does to the rows, not by what a SQL
 analyzer makes of it:
 
@@ -247,7 +253,8 @@ should own.
 
 ## Embedding
 
-The pieces are exported for embedding: `migration/datadiff` computes and renders
-the diff, `dbschema.ReadTableRows` reads the live rows, and `core/goschema`
+The pieces are exported for embedding: `migration/datadiff` computes the diff
+and renders it as scripts (`Render`) or as one statement per element
+(`RenderStatements`), `dbschema.ReadTableRows` reads the live rows, and `core/goschema`
 carries the managed-data model — so the whole pipeline can be driven from Go with
 no CLI, account, or cloud.

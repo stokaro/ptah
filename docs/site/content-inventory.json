@@ -1142,8 +1142,8 @@
         "/direct/inspect/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6259,
-      "sourceBytes": 44474
+      "visibleWords": 6283,
+      "sourceBytes": 44608
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -1455,8 +1455,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 991,
-      "sourceBytes": 10252
+      "visibleWords": 1156,
+      "sourceBytes": 11667
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -6613,8 +6613,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1574,
-      "sourceBytes": 10885
+      "visibleWords": 1810,
+      "sourceBytes": 12288
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

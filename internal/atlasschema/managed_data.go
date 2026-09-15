@@ -166,7 +166,11 @@ func managedDataDiff(
 	diff.Inserts = dataorder.Rows(diff.Inserts, declaration.Keys, selfReferences)
 	diff.Deletes = dataorder.Rows(diff.Deletes, declaration.Keys, selfReferences)
 	slices.Reverse(diff.Deletes)
-	up, _, err := datadiff.Render(diff, conn.Info().Dialect)
+	// The statements come from the renderer as a list. Its script form cannot
+	// be cut back into statements at line breaks: a declared value may carry a
+	// newline, which is legal inside a literal and is the byte the script joins
+	// statements with (stokaro/ptah#3278).
+	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("render managed rows of %s: %w", qualified, err)
 	}
@@ -180,13 +184,13 @@ func managedDataDiff(
 // the database holds, and a DELETE removes a row entirely: both are losses a
 // policy must be able to refuse, and neither is destructive to the schema, so
 // nothing in the DDL analyzer would have said so.
-func classifyDataStatements(up, qualified string) []dataStatement {
-	statements := make([]dataStatement, 0)
-	for statement := range strings.SplitSeq(strings.TrimSpace(up), "\n") {
+//
+// Each element of up is one whole statement, so its leading keyword is the
+// statement's own and not that of a fragment cut out of a literal.
+func classifyDataStatements(up []string, qualified string) []dataStatement {
+	statements := make([]dataStatement, 0, len(up))
+	for _, statement := range up {
 		trimmed := strings.TrimSpace(statement)
-		if trimmed == "" {
-			continue
-		}
 		declared := dataStatement{
 			sql:      trimmed,
 			phase:    phaseInsert,
