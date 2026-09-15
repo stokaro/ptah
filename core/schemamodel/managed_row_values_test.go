@@ -194,7 +194,7 @@ func TestResolveManagedRows_UnreadDeclaration(t *testing.T) {
 	c.Assert(unread, qt.IsNil)
 
 	empty, err := schemamodel.ResolveManagedRows(schemamodel.ManagedData{
-		Table: "countries", Keys: []string{"code"}, Rows: []schemamodel.ManagedRow{},
+		Table: "countries", Keys: []string{"code"}, Rows: make([]schemamodel.ManagedRow, 0),
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(empty, qt.IsNotNil)
