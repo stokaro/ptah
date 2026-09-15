@@ -129,6 +129,15 @@ the new value appears shortly after the statement returns rather than at once.
 A key column holding `NULL` is addressed with `IS NULL`: `= NULL` is UNKNOWN for
 every row, so the statement would succeed and match nothing.
 
+On Oracle the statements name tables and columns the way the schema renderer
+created them: bare wherever Oracle accepts a bare name, so a declared `regions`
+reaches the `REGIONS` table rather than a quoted `"regions"` that does not
+exist. A `BOOLEAN` column is `NUMBER(1)` there and takes `1` or `0`. A `DATE` or
+`TIMESTAMP` column takes a typed `TIMESTAMP '...'` literal, because Oracle
+refuses a plain string for a moment. Write a declared moment as `2024-03-01`,
+`2024-03-01 12:30:45` or RFC 3339; other text for such a column is refused when
+the statements are rendered.
+
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
@@ -186,7 +195,9 @@ What the plan carries is decided by what the declaration owns:
 - a repeated reconciliation over converged rows plans nothing, including a date
   or timestamp column: the driver returns a moment where the declaration wrote
   text, and the two are compared as the instant they name. In a text column both
-  spellings stay separate values.
+  spellings stay separate values. A declared number or boolean is compared the
+  same way with the text a driver returns for a numeric column, which is how the
+  Oracle driver reads `NUMBER`: `30` meets `"30"` and `true` meets `"1"`.
 
 The plan orders the statements the way the migration body does, from the same
 dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`

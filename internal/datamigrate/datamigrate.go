@@ -23,6 +23,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -284,7 +285,8 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 		// the table: parents first to write, children first to remove
 		// (stokaro/ptah#3266). composeByPhase reverses the whole delete phase,
 		// so these arrive in the order it expects.
-		references := selfReferences(db, md)
+		references, columnTypes := declarationShape(db, md)
+		diff.ColumnTypes = columnTypes
 		diff.Inserts = dataorder.Rows(diff.Inserts, md.Keys, references)
 		diff.Deletes = dataorder.Rows(diff.Deletes, md.Keys, references)
 		slices.Reverse(diff.Deletes)
@@ -370,17 +372,18 @@ func mergeByTable(changes []tableChange) []tableChange {
 	return merged
 }
 
-// selfReferences names the declaration's columns that reference its own table.
-func selfReferences(db *schemamodel.Database, md schemamodel.ManagedData) []string {
+// declarationShape reads the table a declaration belongs to: the columns that
+// reference that same table, and the type each column declares.
+func declarationShape(db *schemamodel.Database, md schemamodel.ManagedData) (references []string, columnTypes map[string]string) {
 	if db == nil {
-		return nil
+		return nil, nil
 	}
 	for _, table := range db.Tables {
 		if table.StructName == md.StructName || table.Name == md.Table {
-			return dataorder.SelfReferences(db, table)
+			return dataorder.SelfReferences(db, table), dataorder.ColumnTypes(db, table)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // computeTable runs the read-and-diff half of the pipeline for a single managed
@@ -405,7 +408,9 @@ func computeTable(
 		return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, nil)
 	}
 
-	columns, desired, err := readColumns(conn.Info().Dialect, managedTable(columnCatalog, conn, md), md, desired, want)
+	columns, desired, err := readColumns(
+		conn.Info().Dialect, conn.Info().IdentifierSemantics, managedTable(columnCatalog, conn, md), md, desired, want,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -554,6 +559,7 @@ func liveColumnNames(table catalog.Table) map[string]struct{} {
 // returns no rows either way.
 func readColumns(
 	dialect string,
+	names identifier.Semantics,
 	liveTable *catalog.Table,
 	md schemamodel.ManagedData,
 	desired []map[string]any,
@@ -586,7 +592,7 @@ func readColumns(
 	// missing one, so no live value is at stake, and counting each row as an
 	// overwrite would misstate what applying costs. The desired rows narrow with
 	// the columns, so the comparison runs over one column set.
-	narrowed := managedrows.ProjectOntoLive(columns, liveTable)
+	narrowed := managedrows.ProjectOntoLive(columns, liveTable, names)
 	if len(narrowed) == len(columns) {
 		return narrowed, desired, nil
 	}
@@ -864,12 +870,13 @@ func composeByPhase(ordered []*datadiff.DataDiff, dialect string) (upSQL, downSQ
 // key columns.
 func subDiff(d *datadiff.DataDiff, inserts []datadiff.Row, updates []datadiff.RowUpdate, deletes []datadiff.Row) *datadiff.DataDiff {
 	return &datadiff.DataDiff{
-		Schema:  d.Schema,
-		Table:   d.Table,
-		Keys:    d.Keys,
-		Inserts: inserts,
-		Updates: updates,
-		Deletes: deletes,
+		Schema:      d.Schema,
+		Table:       d.Table,
+		Keys:        d.Keys,
+		ColumnTypes: d.ColumnTypes,
+		Inserts:     inserts,
+		Updates:     updates,
+		Deletes:     deletes,
 	}
 }
 

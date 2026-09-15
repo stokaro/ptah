@@ -193,6 +193,21 @@ func splitTypeArguments(upper string) (base, arguments string) {
 	return strings.TrimSpace(upper[:index]), strings.TrimSpace(upper[index:])
 }
 
+// IsDatetime reports whether a column declared as declaredType is created as an
+// Oracle DATE or TIMESTAMP column.
+//
+// It reads the type [Map] lands on rather than the declared spelling, so a
+// writer of row values and the renderer that created the column agree about
+// which columns hold a moment. That matters because Oracle refuses a plain
+// string for such a column: its default NLS_TIMESTAMP_FORMAT is DD-MON-RR, and
+// measured on 23.26 both '2024-03-01 12:30:45' and '2024-03-01 12:30:45+00:00'
+// answer ORA-01843, while TIMESTAMP '2024-03-01 12:30:45+00:00' is accepted by
+// DATE, TIMESTAMP and TIMESTAMP WITH TIME ZONE columns alike.
+func IsDatetime(declaredType string) bool {
+	mapped := Base(Map(declaredType))
+	return mapped == "DATE" || strings.HasPrefix(mapped, "TIMESTAMP")
+}
+
 // Base returns the declared type without its argument list, upper-cased.
 //
 // It is exported because a caller that needs to recognize a declared type --

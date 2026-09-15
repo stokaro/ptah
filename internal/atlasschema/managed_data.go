@@ -84,7 +84,8 @@ func managedDataStatements(
 	})
 	phases := make([][]dataStatement, len(dataPhases))
 	for _, declaration := range declarations {
-		declared, err := managedDataDiff(ctx, conn, declaration, current, managedDataSelfReferences(desired, declaration))
+		selfReferences, columnTypes := managedDataShape(desired, declaration)
+		declared, err := managedDataDiff(ctx, conn, declaration, current, selfReferences, columnTypes)
 		if err != nil {
 			return nil, err
 		}
@@ -103,20 +104,25 @@ func managedDataStatements(
 	return statements, nil
 }
 
-// managedDataSelfReferences names the declaration's columns that reference its
-// own table, read from the table the declaration belongs to.
+// managedDataShape reads what the table a declaration belongs to says about its
+// rows: the columns that reference the same table, and each column's declared
+// type.
 //
 // A declaration carries a struct name and a table name; the fields that declare
-// the foreign keys belong to the table, so the table has to be found before the
-// columns can be. A declaration whose table the desired state does not define
-// has no references to read, and the rows keep their key order.
-func managedDataSelfReferences(desired *schemamodel.Database, declaration schemamodel.ManagedData) []string {
+// the foreign keys and the types belong to the table, so the table has to be
+// found before the columns can be. A declaration whose table the desired state
+// does not define has no references to read, so the rows keep their key order,
+// and no types, so each value renders from its Go value alone.
+func managedDataShape(
+	desired *schemamodel.Database,
+	declaration schemamodel.ManagedData,
+) (selfReferences []string, columnTypes map[string]string) {
 	for _, table := range desired.Tables {
 		if table.StructName == declaration.StructName || table.Name == declaration.Table {
-			return dataorder.SelfReferences(desired, table)
+			return dataorder.SelfReferences(desired, table), dataorder.ColumnTypes(desired, table)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func managedDataDiff(
@@ -125,6 +131,7 @@ func managedDataDiff(
 	declaration schemamodel.ManagedData,
 	current *catalog.Database,
 	selfReferences []string,
+	columnTypes map[string]string,
 ) ([]dataStatement, error) {
 	qualified := managedDataTableName(declaration)
 	if declaration.Rows == nil {
@@ -143,13 +150,15 @@ func managedDataDiff(
 	// A table this plan is about to create holds nothing, and reading it would
 	// fail rather than answer. Every declared row is an insert then.
 	liveRows := []map[string]any(nil)
-	if liveTable := managedrows.LiveTable(current, declaration.Schema, declaration.Table); liveTable != nil {
+	if liveTable := managedrows.LiveTable(current, declaration.Schema, declaration.Table, conn.Info().IdentifierSemantics); liveTable != nil {
 		// Only the columns the table already has. The plan may be about to add
 		// one the declaration names, and asking the server for it before the
 		// DDL runs stops the whole reconciliation with 42703
 		// (stokaro/ptah#3260); the value still reaches the plan, as the INSERT
 		// or UPDATE of a column the live row does not carry.
-		columns := managedrows.ProjectOntoLive(managedrows.Columns(desiredRows, declaration.Keys), liveTable)
+		columns := managedrows.ProjectOntoLive(
+			managedrows.Columns(desiredRows, declaration.Keys), liveTable, conn.Info().IdentifierSemantics,
+		)
 		liveRows, err = dbschema.ReadTableRows(ctx, conn, declaration.Schema, declaration.Table, columns)
 		if err != nil {
 			return nil, fmt.Errorf("read managed rows of %s: %w", qualified, err)
@@ -170,6 +179,7 @@ func managedDataDiff(
 	// be cut back into statements at line breaks: a declared value may carry a
 	// newline, which is legal inside a literal and is the byte the script joins
 	// statements with (stokaro/ptah#3278).
+	diff.ColumnTypes = columnTypes
 	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("render managed rows of %s: %w", qualified, err)

@@ -183,6 +183,18 @@ func isPlainIdentifier(name string) bool {
 	return true
 }
 
+// QualifiedIdent returns the spelling that refers to name in dialect, qualified
+// by schema when schema is not blank. Each part is spelled by [Ident], so a
+// statement that names a table this way names the table the DDL renderers
+// created: on Oracle `ora_flags` stays bare and folds to ORA_FLAGS, where
+// [Qualified] would write `"ora_flags"`, a different table.
+func QualifiedIdent(dialect, schema, name string) string {
+	if strings.TrimSpace(schema) == "" {
+		return Ident(dialect, name)
+	}
+	return Ident(dialect, schema) + "." + Ident(dialect, name)
+}
+
 // Qualified returns a dialect-quoted identifier optionally qualified by schema,
 // as in "schema"."name". A whitespace-only schema yields just the quoted name.
 // Otherwise, schema and name are quoted verbatim.

@@ -170,3 +170,32 @@ func TestOracleReservedWordsAreQuoted(t *testing.T) {
 		})
 	}
 }
+
+// TestQualifiedIdent pins the spelling a row statement shares with the Oracle
+// DDL renderer: bare where Oracle takes a bare name, quoted where it does not,
+// and the plain quoted form on every other dialect. Written with Qualified, an
+// Oracle statement names "ora_flags", which is not the ORA_FLAGS table a bare
+// CREATE TABLE made.
+func TestQualifiedIdent(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+		ident   string
+		want    string
+	}{
+		{name: "oracle plain name stays bare", dialect: "oracle", schema: "", ident: "ora_flags", want: "ora_flags"},
+		{name: "oracle schema qualified", dialect: "oracle", schema: "app", ident: "ora_flags", want: "app.ora_flags"},
+		{name: "oracle reserved word is quoted", dialect: "oracle", schema: "", ident: "comment", want: `"comment"`},
+		{name: "oracle name that is not plain is quoted", dialect: "oracle", schema: "", ident: "ora-flags", want: `"ora-flags"`},
+		{name: "blank schema yields the name alone", dialect: "oracle", schema: "  ", ident: "flags", want: "flags"},
+		{name: "postgres stays quoted", dialect: "postgres", schema: "app", ident: "flags", want: `"app"."flags"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.QualifiedIdent(tt.dialect, tt.schema, tt.ident), qt.Equals, tt.want)
+		})
+	}
+}
