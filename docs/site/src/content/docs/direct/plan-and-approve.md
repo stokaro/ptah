@@ -120,6 +120,13 @@ The file is what a reviewer reads:
 }
 ```
 
+`from_fingerprint` describes the schemas the database URL covers. A URL that
+names no schema covers every schema in the database; one pinned with
+`search_path` covers that schema alone. When the desired schema names a schema
+outside a pinned URL, the plan also records `schemas_beyond_url`, and applying
+the plan reads those schemas as well. A change in any schema the plan writes
+then makes the plan stale.
+
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script
 around this workflow has to treat a missing plan file as a normal outcome.

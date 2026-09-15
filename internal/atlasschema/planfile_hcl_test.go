@@ -288,6 +288,15 @@ func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 			want:   `the Atlas \.plan\.hcl format has no field for exclude patterns.*write the native JSON plan format.*or drop --exclude`,
 		},
 		{
+			// A plan limited to one schema by its URL that also writes another
+			// records the second one, and verification reads it. The Atlas shape
+			// has nowhere to put it, so a written .plan.hcl would be verified
+			// against the connected schema alone (stokaro/ptah#3285).
+			name:   "schemas_beyond_url",
+			mutate: func(plan *atlasschema.PlanFile) { plan.SchemasBeyondURL = []string{"audit", "extra"} },
+			want:   `the Atlas \.plan\.hcl format has no field for the schemas a plan reads beyond its connection URL's scope \(audit, extra\).*write the native JSON plan format.*`,
+		},
+		{
 			name: "heredoc_delimiter_line",
 			mutate: func(plan *atlasschema.PlanFile) {
 				plan.Statements[0].SQL = "CREATE TABLE x (\nSQL\n)"

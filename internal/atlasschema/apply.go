@@ -207,10 +207,13 @@ type applyComputation struct {
 	current        *catalog.Database
 	desired        *schemamodel.Database
 	// readScope is the schema allow-list current was read at, nil when the read
-	// was the connection's own default. A saved plan records no schema scope, so
-	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
-	// current has to know whether the two would be the same read.
+	// was the connection's own default.
 	readScope []string
+	// schemasBeyondURL is the part of readScope the connection URL's own scope
+	// does not cover when read again later; see [schemascope.BeyondURL]. A saved
+	// plan records it, and [VerifyPlanTarget] reads it together with the URL's
+	// scope, so the verification read covers every schema the planning read did.
+	schemasBeyondURL []string
 }
 
 // PreflightApplyTarget validates the target state before an apply lock is
@@ -290,11 +293,12 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current, readScope, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
+	read, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
 		return applyComputation{}, err
 	}
-	if err := validateCurrentApplyState(conn, current, readScope, opts); err != nil {
+	current := read.current
+	if err := validateCurrentApplyState(conn, current, read.readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
 	scoped := scopeApplyStates(current, desired, scope)
@@ -333,9 +337,10 @@ func computeApplyPlan(
 	applyExtensionSupportCoverage(desired, currentReports.Selection, desiredReports.Selection)
 
 	computation := applyComputation{
-		current:   current,
-		desired:   desired,
-		readScope: readScope,
+		current:          current,
+		desired:          desired,
+		readScope:        read.readScope,
+		schemasBeyondURL: read.schemasBeyondURL,
 	}
 	info := conn.Info()
 	// The comparison is told what applyDiffPolicy will do to its answer. The
@@ -460,25 +465,39 @@ func validateCurrentApplySchema(
 	return validate(dbschematogo.ConvertDBSchemaToGoSchema(current, ""))
 }
 
-// applyCurrentState reads the database side of an apply and reports the scope
-// it was read at, which [planSourceSchema] needs in order to fingerprint a
-// state [VerifyPlanTarget] can recompute.
+// applyRead is the database side of an apply together with the scopes it was
+// read at. [planSourceSchema] needs both scopes in order to fingerprint a state
+// [VerifyPlanTarget] can recompute.
+type applyRead struct {
+	current *catalog.Database
+	// readScope is the schema allow-list current was read at.
+	readScope []string
+	// schemasBeyondURL is the part of readScope the URL alone will not cover
+	// when read again; see [schemascope.BeyondURL].
+	schemasBeyondURL []string
+}
+
+// applyCurrentState reads the database side of an apply.
 func applyCurrentState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
 	desired *schemamodel.Database,
-) (current *catalog.Database, readScope []string, err error) {
+) (applyRead, error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read database schema: %w", err)
+		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
-	readScope = applyReadScope(requested, urlScope, desired)
-	current, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
+	readScope := applyReadScope(requested, urlScope, desired)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read database schema: %w", err)
+		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
-	return current, readScope, nil
+	return applyRead{
+		current:          current,
+		readScope:        readScope,
+		schemasBeyondURL: schemascope.BeyondURL(conn.Info(), urlScope, readScope),
+	}, nil
 }
 
 // applyReadScope resolves the schemas the DATABASE side of an apply is read at.
@@ -514,15 +533,7 @@ func applyReadScope(requested, base []string, desired *schemamodel.Database) []s
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}
-	scope := slices.Clone(base)
-	scope = append(scope, desiredSchemaNames(desired)...)
-	scope = slices.DeleteFunc(scope, func(name string) bool { return strings.TrimSpace(name) == "" })
-	slices.Sort(scope)
-	scope = slices.Compact(scope)
-	if len(scope) == 0 {
-		return nil
-	}
-	return scope
+	return schemascope.Union(base, desiredSchemaNames(desired))
 }
 
 // desiredSchemaNames is every schema a desired state names, over the

@@ -188,6 +188,13 @@ func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
 				"cannot be represented faithfully; write the native JSON plan format (--output <name>" + PlanFileSuffix + ") " +
 				"or drop --exclude")
 	}
+	if format == PlanFormatHCL && len(plan.SchemasBeyondURL) > 0 {
+		return fmt.Errorf(
+			"the Atlas .plan.hcl format has no field for the schemas a plan reads beyond its connection URL's scope "+
+				"(%s), so apply could not check them for changes before running the plan; write the native JSON plan "+
+				"format (--output <name>"+PlanFileSuffix+") or connect with a URL that covers those schemas",
+			strings.Join(plan.SchemasBeyondURL, ", "))
+	}
 	return nil
 }
 
