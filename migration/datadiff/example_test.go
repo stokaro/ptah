@@ -117,3 +117,33 @@ func ExampleRender() {
 	// UPDATE "app"."regions" SET "name" = 'Czech Republic' WHERE "code" = 'CZ';
 	// DELETE FROM "app"."regions" WHERE "code" = 'AT';
 }
+
+// ExampleRenderStatements renders the same kind of diff as a list, one element
+// per statement. A caller that executes or classifies statements one at a time
+// reads them here: a value may carry a newline, which stays inside its literal,
+// so the script Render returns cannot be cut into statements at line breaks.
+func ExampleRenderStatements() {
+	diff := &datadiff.DataDiff{
+		Table: "notices",
+		Keys:  []string{"code"},
+		Inserts: []datadiff.Row{
+			{"code": "welcome", "body": "Hello,\nand welcome."},
+		},
+	}
+
+	up, down, err := datadiff.RenderStatements(diff, "postgres")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("up statements:", len(up))
+	fmt.Printf("%q\n", up[0])
+	fmt.Println("down statements:", len(down))
+	fmt.Printf("%q\n", down[0])
+
+	// Output:
+	// up statements: 1
+	// "INSERT INTO \"notices\" (\"body\", \"code\") VALUES ('Hello,\nand welcome.', 'welcome');"
+	// down statements: 1
+	// "DELETE FROM \"notices\" WHERE \"code\" = 'welcome';"
+}

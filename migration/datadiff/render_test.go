@@ -2,6 +2,7 @@ package datadiff_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -557,4 +558,101 @@ func TestRenderClickHouseUpdateIsAlterTable(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, wantUp)
 	c.Assert(down, qt.Equals, wantDown)
+}
+
+// TestRenderStatements_ANewlineStaysInsideItsStatement pins the boundary a
+// caller reads statements by: one element per row, whole, however many lines
+// its literal spans. The script form joins statements with the same byte a
+// value may carry, so it cannot be cut at line breaks (stokaro/ptah#3278).
+func TestRenderStatements_ANewlineStaysInsideItsStatement(t *testing.T) {
+	c := qt.New(t)
+	diff := &datadiff.DataDiff{
+		Table:   "notices",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "a", "body": "first line\nsecond line"}},
+		Updates: []datadiff.RowUpdate{{
+			Key:     map[string]any{"code": "b"},
+			Desired: datadiff.Row{"code": "b", "body": "one\ntwo"},
+			Live:    datadiff.Row{"code": "b", "body": "plain"},
+		}},
+		Deletes: []datadiff.Row{{"code": "c\nd", "body": "gone"}},
+	}
+
+	up, down, err := datadiff.RenderStatements(diff, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.DeepEquals, []string{
+		"INSERT INTO \"notices\" (\"body\", \"code\") VALUES ('first line\nsecond line', 'a');",
+		"UPDATE \"notices\" SET \"body\" = 'one\ntwo' WHERE \"code\" = 'b';",
+		"DELETE FROM \"notices\" WHERE \"code\" = 'c\nd';",
+	})
+	c.Assert(down, qt.DeepEquals, []string{
+		"INSERT INTO \"notices\" (\"body\", \"code\") VALUES ('gone', 'c\nd');",
+		"UPDATE \"notices\" SET \"body\" = 'plain' WHERE \"code\" = 'b';",
+		"DELETE FROM \"notices\" WHERE \"code\" = 'a';",
+	})
+}
+
+// TestRenderStatements_RenderIsTheirJoin keeps the two forms one rendering: the
+// scripts Render returns are the statements joined with a newline and ended
+// with one.
+func TestRenderStatements_RenderIsTheirJoin(t *testing.T) {
+	c := qt.New(t)
+	diff := &datadiff.DataDiff{
+		Table:   "regions",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "AT", "name": "Aus\ntria"}},
+		Deletes: []datadiff.Row{{"code": "ZZ", "name": "Zeta"}},
+	}
+
+	upStatements, downStatements, err := datadiff.RenderStatements(diff, "mysql")
+	c.Assert(err, qt.IsNil)
+	up, down, err := datadiff.Render(diff, "mysql")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(up, qt.Equals, strings.Join(upStatements, "\n")+"\n")
+	c.Assert(down, qt.Equals, strings.Join(downStatements, "\n")+"\n")
+}
+
+// TestRenderStatements_EmptyDiff is the no-op: a diff with nothing to change
+// renders no statement in either direction.
+func TestRenderStatements_EmptyDiff(t *testing.T) {
+	c := qt.New(t)
+
+	up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "regions"}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.IsNil)
+	c.Assert(down, qt.IsNil)
+}
+
+func TestRenderStatements_FailurePath(t *testing.T) {
+	t.Run("nil diff", func(t *testing.T) {
+		c := qt.New(t)
+		up, down, err := datadiff.RenderStatements(nil, "postgres")
+		c.Assert(err, qt.ErrorMatches, `datadiff: nil diff`)
+		c.Assert(up, qt.IsNil)
+		c.Assert(down, qt.IsNil)
+	})
+	t.Run("non-empty diff without keys", func(t *testing.T) {
+		c := qt.New(t)
+		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
+			Table:   "t",
+			Inserts: []datadiff.Row{{"code": "US"}},
+		}, "postgres")
+		c.Assert(err, qt.ErrorMatches, `datadiff: keys must be non-empty to render a non-empty diff`)
+		c.Assert(up, qt.IsNil)
+		c.Assert(down, qt.IsNil)
+	})
+	t.Run("a value with no literal", func(t *testing.T) {
+		c := qt.New(t)
+		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
+			Table:   "t",
+			Keys:    []string{"code"},
+			Inserts: []datadiff.Row{{"code": "US", "name": "a\x00b"}},
+		}, "postgres")
+		c.Assert(err, qt.ErrorMatches, `datadiff: column "name": datadiff: string value contains a NUL byte.*`)
+		c.Assert(up, qt.IsNil)
+		c.Assert(down, qt.IsNil)
+	})
 }

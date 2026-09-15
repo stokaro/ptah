@@ -33,7 +33,11 @@ import (
 //   - the inverse of a DELETE re-inserts the captured live row.
 //
 // Both scripts are newline-terminated sequences of ';'-terminated statements,
-// or empty strings when diff carries no changes (a no-op is valid). Identifiers
+// or empty strings when diff carries no changes (a no-op is valid). They are
+// the statements [RenderStatements] returns, joined with "\n". A string value
+// may carry a newline, which stays inside its literal, so the scripts cannot be
+// cut into statements at line breaks; a caller that needs the statements one by
+// one takes them from [RenderStatements]. Identifiers
 // are quoted for dialect via sqlident.Quote; values are rendered as
 // safely-escaped literals (see [renderLiteral]) so a string value can never
 // terminate its literal or inject SQL.
@@ -60,29 +64,50 @@ import (
 // Binary blobs are out of scope for this phase: a []byte value is treated as
 // UTF-8 text (see [renderLiteral]).
 func Render(diff *DataDiff, dialect string) (up, down string, err error) {
-	if diff == nil {
-		return "", "", errors.New("datadiff: nil diff")
-	}
-
-	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
-		return "", "", nil
-	}
-
-	if len(diff.Keys) == 0 {
-		return "", "", errors.New("datadiff: keys must be non-empty to render a non-empty diff")
-	}
-
-	table := sqlident.Qualified(dialect, diff.Schema, diff.Table)
-
-	upStmts, err := renderUp(dialect, table, diff)
-	if err != nil {
-		return "", "", err
-	}
-	downStmts, err := renderDown(dialect, table, diff)
+	upStmts, downStmts, err := RenderStatements(diff, dialect)
 	if err != nil {
 		return "", "", err
 	}
 	return joinStatements(upStmts), joinStatements(downStmts), nil
+}
+
+// RenderStatements renders diff into the statements [Render] joins into its
+// scripts, one element per statement, in the same order and with the same
+// validation, quoting and escaping.
+//
+// up holds one statement per row: an INSERT for every element of
+// diff.Inserts, then an UPDATE for every element of diff.Updates, then a
+// DELETE for every element of diff.Deletes. down holds the inverse of each, in
+// fully reversed order. Every element is a complete ';'-terminated statement
+// with no trailing newline; an element spans several lines exactly when a
+// string value carries a newline.
+//
+// Both slices are nil when diff carries no changes. On error both are nil and
+// the error is the one [Render] returns for the same diff.
+func RenderStatements(diff *DataDiff, dialect string) (up, down []string, err error) {
+	if diff == nil {
+		return nil, nil, errors.New("datadiff: nil diff")
+	}
+
+	if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
+		return nil, nil, nil
+	}
+
+	if len(diff.Keys) == 0 {
+		return nil, nil, errors.New("datadiff: keys must be non-empty to render a non-empty diff")
+	}
+
+	table := sqlident.Qualified(dialect, diff.Schema, diff.Table)
+
+	up, err = renderUp(dialect, table, diff)
+	if err != nil {
+		return nil, nil, err
+	}
+	down, err = renderDown(dialect, table, diff)
+	if err != nil {
+		return nil, nil, err
+	}
+	return up, down, nil
 }
 
 // renderUp builds the forward statements in Inserts, Updates, Deletes order.
