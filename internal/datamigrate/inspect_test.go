@@ -181,6 +181,33 @@ const declaredWithISO3 = `
   iso3: CZE
 `
 
+// writeISO3Fixture writes the declaration of a release that adds a column: the
+// struct carries the field and the row file carries its value, and the database
+// has neither yet. The field is declared as well as the row value because that
+// is what makes the missing column structural drift the schema comparison
+// reports, rather than a row file naming a column nothing will ever create.
+func writeISO3Fixture(t *testing.T, root, yamlRows string) {
+	t.Helper()
+	c := qt.New(t)
+
+	goSrc := `package fixture
+
+//ptah:schema:data table="regions" key="code" file="regions.yaml"
+type Region struct {
+	//ptah:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+
+	//ptah:schema:field name="iso3" type="TEXT"
+	ISO3 string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(yamlRows), 0o600), qt.IsNil)
+}
+
 // TestInspect_AColumnTheTableLacksIsNotRowDrift covers the state a release
 // passes through: the declaration adds a column and the database has not gained
 // it yet.
@@ -198,7 +225,7 @@ func TestInspect_AColumnTheTableLacksIsNotRowDrift(t *testing.T) {
 		{"CZ", "Czechia"},
 	})
 	root := t.TempDir()
-	writeRegionsFixture(t, root, declaredWithISO3)
+	writeISO3Fixture(t, root, declaredWithISO3)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
 		RootDir: root,
@@ -223,7 +250,7 @@ func TestInspect_AnEditedRowDriftsBesideAColumnTheTableLacks(t *testing.T) {
 		{"CZ", "Czech Republic"},
 	})
 	root := t.TempDir()
-	writeRegionsFixture(t, root, declaredWithISO3)
+	writeISO3Fixture(t, root, declaredWithISO3)
 
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
 		RootDir: root,
@@ -426,7 +453,7 @@ func TestGenerate_RefusesAColumnTheTableDoesNotHave(t *testing.T) {
 
 	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
 	root := t.TempDir()
-	writeRegionsFixture(t, root, declaredWithISO3)
+	writeISO3Fixture(t, root, declaredWithISO3)
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
 		RootDir:          root,
