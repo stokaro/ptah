@@ -282,10 +282,28 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
 				db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
-				// PostgreSQL 17 introspection reports a GRANT on a sequence
-				// with the sequence in OnTable, so the rendered `permission`
-				// block carries a traversal naming it. Omitting the sequence
-				// under it leaves a reference to a block nothing declares.
+				// A read describes a GRANT on a sequence with the sequence in
+				// OnSequence, so the rendered `permission` block carries a
+				// traversal naming it. Omitting the sequence under it leaves a
+				// reference to a block nothing declares.
+				db.Grants = []schemamodel.Grant{{
+					Role:       "app_reader",
+					OnSequence: "order_seq",
+					Privileges: []string{"USAGE"},
+				}}
+				return db
+			},
+			want:     "sequence \"order_seq\"",
+			wantPath: "sequences.order_seq",
+		},
+		{
+			name: "a permission block spelled as a table grant targets the sequence",
+			database: func() *schemamodel.Database {
+				db := standaloneSequenceDatabase()
+				db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
+				// PostgreSQL accepts GRANT ... ON TABLE for a sequence, so an
+				// author may declare the same grant with the sequence in
+				// OnTable, and the rendered block names it all the same.
 				db.Grants = []schemamodel.Grant{{
 					Role:       "app_reader",
 					OnTable:    "order_seq",

@@ -1175,6 +1175,32 @@ func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames
 	}
 }
 
+// TestConvertDBSchemaToGoSchema_SequenceGrantIsNotDescribedAsATableGrant pins
+// where a SEQUENCE-typed row puts its target.
+//
+// PostgreSQL reports a grant on a standalone sequence with object type
+// SEQUENCE. The comparator keys a declared grant by the field its target sits
+// in, so a sequence described under OnTable is keyed as a TABLE grant and never
+// meets the SEQUENCE row it was made from: comparing a database with its own
+// description plans the grant again on every run. The table row in the same
+// read is the control, so the test measures the sequence arm and not the
+// conversion as a whole.
+func TestConvertDBSchemaToGoSchema_SequenceGrantIsNotDescribedAsATableGrant(t *testing.T) {
+	c := qt.New(t)
+
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		Grants: []catalog.Grant{
+			{Role: "writer", Privilege: "USAGE", ObjectType: "SEQUENCE", Schema: "shop", ObjectName: "order_seq"},
+			{Role: "writer", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+		},
+	}, "")
+
+	c.Assert(converted.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{Role: "writer", Privileges: []string{"USAGE"}, OnSequence: "shop.order_seq"},
+		{Role: "writer", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
+	})
+}
+
 // TestConvertDBSchemaToGoSchema_PartialRevokeIsNotDescribedAsAGrant pins the
 // one row shape that means the OPPOSITE of a grant.
 //
