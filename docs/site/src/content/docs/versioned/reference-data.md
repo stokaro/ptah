@@ -116,10 +116,12 @@ containing quotes, backslashes, or semicolons cannot break out of its literal.
 Managed tables are ordered by the schema's foreign-key dependency graph:
 `INSERT`s run parents-first and `DELETE`s children-first, so a migration
 spanning FK-related reference tables applies (and rolls back) without violating
-a foreign key. A managed table is matched to its `//ptah:schema:table`
-definition by qualified name, falling back to the bare table name when the
-`schema` attributes are not both set; tables with no matching definition fall
-back to alphabetical order.
+a foreign key. The rank is one declaration, read by the migration body and by
+the plan `ptah schema apply` prepares. A managed table is matched to its
+`//ptah:schema:table` definition by qualified name, falling back to the bare
+table name when the `schema` attributes are not both set; a bare name two
+schemas share resolves to neither, and tables with no matching definition fall
+back to alphabetical order after the ones that have it.
 
 Emptying a populated table's desired set generates a reversible full-table
 delete: `up` deletes every live row and `down` re-inserts it from the table's
@@ -159,6 +161,12 @@ What the plan carries is decided by what the declaration owns:
 - a column no declaration names is never read and never written, so a value
   beside the managed ones survives reconciliation untouched;
 - a repeated reconciliation over converged rows plans nothing.
+
+The plan orders the statements the way the migration body does, from the same
+dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`
+children-first. Two reference tables joined by a foreign key are therefore
+applied in one run, against the constraint the same plan created a few
+statements earlier.
 
 Severity is assigned by what the statement does to the rows, not by what a SQL
 analyzer makes of it:

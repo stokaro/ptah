@@ -6607,8 +6607,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1142,
-      "sourceBytes": 8340
+      "visibleWords": 1226,
+      "sourceBytes": 8850
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

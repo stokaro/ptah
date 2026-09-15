@@ -11,12 +11,27 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dataorder"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
 
+// dataPhase is which of the three passes a statement belongs to. The order of
+// the constants is the order the passes run in, and dataPhases is that order
+// written once so a reader and the loop cannot disagree.
+type dataPhase int
+
+const (
+	phaseInsert dataPhase = iota
+	phaseUpdate
+	phaseDelete
+)
+
+var dataPhases = []dataPhase{phaseInsert, phaseUpdate, phaseDelete}
+
 // dataStatement is one statement reconciling declared rows, carrying the
-// severity this package assigns it rather than the one a SQL analyzer would.
+// severity this package assigns it rather than the one a SQL analyzer would,
+// and the pass it runs in.
 //
 // The analyzer reads a DELETE of a reference row as safe, because it does not
 // remove a table or tighten a constraint. That is true about the schema and
@@ -24,6 +39,7 @@ import (
 // approval policy waves through.
 type dataStatement struct {
 	sql      string
+	phase    dataPhase
 	severity safety.Severity
 	reason   string
 }
@@ -33,6 +49,15 @@ type dataStatement struct {
 // It runs whether or not the schema diff has changes: a release that only edits
 // a reference row changes no DDL, and a planner that skipped the data stage
 // then would report an empty plan for a change the author made.
+//
+// The statements come out in the order the foreign keys allow, not in the order
+// the tables happen to be named: every INSERT and UPDATE parents-first, then
+// every DELETE children-first. Grouping by table instead puts a child's rows in
+// front of the parent's whenever the child sorts first — "countries" before
+// "regions" — and the constraint the same plan just created refuses them
+// (stokaro/ptah#3252). The rank is dataorder's, which is what the migration
+// body reads, so a plan and a migration cannot disagree about which row goes in
+// first.
 func managedDataStatements(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -42,22 +67,37 @@ func managedDataStatements(
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
 		return nil, nil
 	}
+	ranker := dataorder.New(desired)
 	declarations := slices.Clone(desired.ManagedData)
 	// One order for the statements a plan records, so two runs over one
-	// declaration produce one plan.
+	// declaration produce one plan. Tables the schema does not define rank
+	// together at the end and keep their names' order.
 	sort.SliceStable(declarations, func(i, j int) bool {
-		if declarations[i].Schema != declarations[j].Schema {
-			return declarations[i].Schema < declarations[j].Schema
+		left, right := declarations[i], declarations[j]
+		leftRank := ranker.Rank(left.Schema, left.Table)
+		rightRank := ranker.Rank(right.Schema, right.Table)
+		if leftRank != rightRank {
+			return leftRank < rightRank
 		}
-		return declarations[i].Table < declarations[j].Table
+		return managedDataTableName(left) < managedDataTableName(right)
 	})
-	statements := make([]dataStatement, 0, len(declarations))
+	phases := make([][]dataStatement, len(dataPhases))
 	for _, declaration := range declarations {
 		declared, err := managedDataDiff(ctx, conn, declaration, current)
 		if err != nil {
 			return nil, err
 		}
-		statements = append(statements, declared...)
+		for _, statement := range declared {
+			phases[statement.phase] = append(phases[statement.phase], statement)
+		}
+	}
+	// A deletion runs against the constraint from the other side: the row that
+	// references has to go before the row it references, so this phase alone
+	// reads the declaration order backwards.
+	slices.Reverse(phases[phaseDelete])
+	statements := make([]dataStatement, 0, len(declarations))
+	for _, phase := range dataPhases {
+		statements = append(statements, phases[phase]...)
 	}
 	return statements, nil
 }
@@ -119,14 +159,17 @@ func classifyDataStatements(up, qualified string) []dataStatement {
 		}
 		declared := dataStatement{
 			sql:      trimmed,
+			phase:    phaseInsert,
 			severity: safety.Safe,
 			reason:   fmt.Sprintf("inserts declared rows into %s", qualified),
 		}
 		switch {
 		case strings.HasPrefix(strings.ToUpper(trimmed), "DELETE"):
+			declared.phase = phaseDelete
 			declared.severity = safety.Destructive
 			declared.reason = fmt.Sprintf("removes a row from %s that the declaration no longer holds", qualified)
 		case strings.HasPrefix(strings.ToUpper(trimmed), "UPDATE"):
+			declared.phase = phaseUpdate
 			declared.severity = safety.Warning
 			declared.reason = fmt.Sprintf("overwrites managed columns of a row in %s", qualified)
 		}
