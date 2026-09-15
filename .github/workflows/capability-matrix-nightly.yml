@@ -102,6 +102,10 @@ jobs:
           set -euo pipefail
           "${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}" >"${RUNNER_TEMP}/docker-args"
           mapfile -t args <"${RUNNER_TEMP}/docker-args"
+          # The same removal as in capability-matrix.yml, for the same reason: a
+          # runner that keeps its Docker daemon between jobs keeps the server,
+          # and every cell asks for the same name and the same published port.
+          docker rm --force capability-probe-server >/dev/null 2>&1 || true
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell
@@ -180,6 +184,10 @@ jobs:
       - name: Server log
         if: always()
         run: docker logs capability-probe-server 2>&1 | tail -n 50 || true
+
+      - name: Remove this cell's server
+        if: always()
+        run: docker rm --force capability-probe-server >/dev/null 2>&1 || true
 
       - name: Upload the cell result
         if: always()

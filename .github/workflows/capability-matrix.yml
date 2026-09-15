@@ -454,6 +454,16 @@ jobs:
             exit 0
           fi
           mapfile -t args <"${RUNNER_TEMP}/docker-args"
+          # A runner that keeps its Docker daemon between jobs keeps the server
+          # too, and the name and the published port are the same for every
+          # cell. The probe then connects to whatever holds the port and reads
+          # another cell's engine: cell mariadb-10-11 measured a server
+          # reporting 11.8.9, which is the mariadb-11-8 cell's. The probe
+          # refuses that reading -- it compares the version against the cell it
+          # was asked for -- so the wrong data never lands, but the cell fails
+          # for a reason that has nothing to do with the engine. On a runner
+          # that gives each job its own machine this removes nothing.
+          docker rm --force capability-probe-server >/dev/null 2>&1 || true
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell
@@ -479,6 +489,13 @@ jobs:
       - name: Server log
         if: always()
         run: docker logs capability-probe-server 2>&1 | tail -n 50 || true
+
+      # The log above is the last thing the server is needed for. Removing it
+      # here is what keeps a shared runner clean for the next job; a runner with
+      # its own machine per job discards it either way.
+      - name: Remove this cell's server
+        if: always()
+        run: docker rm --force capability-probe-server >/dev/null 2>&1 || true
 
       - name: Upload the cell result
         if: always()
