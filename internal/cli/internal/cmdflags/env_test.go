@@ -532,3 +532,121 @@ func TestExclusiveOnCommandLineWithdrawsNothingWhenNothingWasTyped(t *testing.T)
 
 	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "/from/the/environment.yaml")
 }
+
+// newBoundedRunFlags is the shape ExclusiveValues is for: a pair of flags whose
+// declared defaults each spell "no bound".
+func newBoundedRunFlags() *cobra.Command {
+	cmd := &cobra.Command{Use: "up"}
+	cmd.Flags().Uint64("limit", 0, "Apply only the first N pending migrations")
+	cmd.Flags().String("to-version", "", "Apply pending migrations up to this version")
+	return cmd
+}
+
+// TestExclusiveValuesIgnoresAMemberLeftAtItsDefault is the pipeline that writes
+// both flags on every run and leaves one of its variables empty. The empty
+// value is the documented spelling for "no bound", so the run asks for one
+// bound and the other member is not part of a conflict.
+func TestExclusiveValuesIgnoresAMemberLeftAtItsDefault(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit         string
+		toVersion     string
+		wantLimit     string
+		wantToVersion string
+	}{
+		{
+			name:          "an empty version beside a batch limit",
+			limit:         "2",
+			toVersion:     "",
+			wantLimit:     "2",
+			wantToVersion: "",
+		},
+		{
+			name:          "a zero limit beside a version",
+			limit:         "0",
+			toVersion:     "2",
+			wantLimit:     "0",
+			wantToVersion: "2",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := newBoundedRunFlags()
+			c.Assert(cmd.Flags().Set("limit", test.limit), qt.IsNil)
+			c.Assert(cmd.Flags().Set("to-version", test.toVersion), qt.IsNil)
+
+			c.Assert(cmdflags.ExclusiveValues(cmd.Flags(), "limit", "to-version"), qt.IsNil)
+
+			c.Assert(cmd.Flags().Lookup("limit").Value.String(), qt.Equals, test.wantLimit)
+			c.Assert(cmd.Flags().Lookup("to-version").Value.String(), qt.Equals, test.wantToVersion)
+		})
+	}
+}
+
+// TestExclusiveValuesRefusesATypedPair proves the reading above did not buy
+// those runs by giving up the refusal, and keeps the sentence cobra's where
+// cobra would have written it.
+func TestExclusiveValuesRefusesATypedPair(t *testing.T) {
+	c := qt.New(t)
+	cmd := newBoundedRunFlags()
+	c.Assert(cmd.Flags().Set("limit", "1"), qt.IsNil)
+	c.Assert(cmd.Flags().Set("to-version", "2"), qt.IsNil)
+
+	err := cmdflags.ExclusiveValues(cmd.Flags(), "limit", "to-version")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals,
+		"if any flags in the group [limit to-version] are set none of the others can be;"+
+			" [limit to-version] were all set")
+}
+
+// TestExclusiveValuesRefusesAPairTheEnvironmentCarries names the variables
+// rather than the flags. Nothing on the command line says which value the
+// operator meant, and a refusal naming --limit sends them to grep a script that
+// never mentions it.
+func TestExclusiveValuesRefusesAPairTheEnvironmentCarries(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LIMIT", "1")
+	t.Setenv("PTAH_TO_VERSION", "2")
+	cmd := newBoundedRunFlags()
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	err := cmdflags.ExclusiveValues(cmd.Flags(), "limit", "to-version")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals,
+		"if any flags in the group [limit to-version] are set none of the others can be;"+
+			" [PTAH_LIMIT PTAH_TO_VERSION] were all set")
+}
+
+// TestExclusiveValuesLetsTheTypedFlagWithdrawTheEnvironmentValue is the control
+// for the refusal above: one variable exported and the other member typed is a
+// run the operator can have, and the flag they wrote decides it.
+func TestExclusiveValuesLetsTheTypedFlagWithdrawTheEnvironmentValue(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LIMIT", "1")
+	cmd := newBoundedRunFlags()
+	c.Assert(cmd.Flags().Set("to-version", "2"), qt.IsNil)
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.ExclusiveValues(cmd.Flags(), "limit", "to-version"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("limit").Value.String(), qt.Equals, "0")
+	c.Assert(cmd.Flags().Lookup("to-version").Value.String(), qt.Equals, "2")
+}
+
+// TestExclusiveValuesLeavesASingleEnvironmentValueAlone is the second control:
+// the refusal closes on a pair, and one variable on its own still decides the
+// run, which is what binding it is for.
+func TestExclusiveValuesLeavesASingleEnvironmentValueAlone(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_TO_VERSION", "2")
+	cmd := newBoundedRunFlags()
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.ExclusiveValues(cmd.Flags(), "limit", "to-version"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("to-version").Value.String(), qt.Equals, "2")
+}

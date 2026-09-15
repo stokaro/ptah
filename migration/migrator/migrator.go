@@ -1890,6 +1890,15 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	return nil
 }
 
+// upSelection is what one selection pass decided: the migrations an up run
+// applies, the pending migrations the execution order left behind, and the
+// order that decided both.
+type upSelection struct {
+	apply     []*Migration
+	skipped   []int64
+	execOrder ExecOrder
+}
+
 // selectUpMigrations picks the migrations one up run applies: the pending set
 // the execution order allows, narrowed by the target version and then by the
 // amount, and refused outright where the bound cannot be honored. Narrowing
@@ -1903,15 +1912,15 @@ func (m *Migrator) selectUpMigrations(
 	appliedIdentities migrationIdentitySet,
 	currentVersion int64,
 ) ([]*Migration, error) {
-	selected, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
+	selection, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
 	if err != nil {
 		return nil, err
 	}
-	selected = limitMigrationsToApply(selected, opts.Amount)
-	if err := refuseUnreachableTargetVersion(opts, currentVersion, selected); err != nil {
+	selection.apply = limitMigrationsToApply(selection.apply, opts.Amount)
+	if err := refuseUnreachableTargetVersion(opts, currentVersion, selection); err != nil {
 		return nil, err
 	}
-	return selected, nil
+	return selection.apply, nil
 }
 
 // TargetVersionPassedError reports an up run bounded at a version the recorded
@@ -1934,16 +1943,55 @@ func (e *TargetVersionPassedError) Error() string {
 	)
 }
 
+// TargetVersionSkippedError reports an up run bounded at a version the
+// execution order leaves pending. The migration is in the directory and
+// unapplied, and [ExecOrderLinearSkip] passes over it for sorting below the
+// recorded version.
+type TargetVersionSkippedError struct {
+	// TargetVersion is the bound the caller asked the run to stop at.
+	TargetVersion int64
+	// CurrentVersion is the highest version the revision table records as
+	// applied.
+	CurrentVersion int64
+	// ExecOrder is the execution order that passed over the target.
+	ExecOrder ExecOrder
+}
+
+// Error names the execution order that left the target pending, which is what
+// a caller can act on: the same target is reachable under
+// [ExecOrderNonLinear].
+func (e *TargetVersionSkippedError) Error() string {
+	return fmt.Sprintf(
+		"cannot migrate up to version %d: execution order %s leaves it pending because it sorts below the recorded version %d",
+		e.TargetVersion,
+		e.ExecOrder,
+		e.CurrentVersion,
+	)
+}
+
 // refuseUnreachableTargetVersion reports a bounded run that cannot arrive
 // where it was sent. Without it the run selects nothing and exits 0, so an
 // operator executing an approved plan is told a version was reached that the
 // database never reached.
-func refuseUnreachableTargetVersion(opts MigrateUpOptions, currentVersion int64, selected []*Migration) error {
+//
+// The reason is read out of the selection rather than out of the recorded
+// version alone. Both refusals describe a run that selected nothing while the
+// history sits above the bound, and telling an operator the history moved past
+// a version their directory still holds as pending sends them to look at the
+// database instead of at the execution order.
+func refuseUnreachableTargetVersion(opts MigrateUpOptions, currentVersion int64, selection upSelection) error {
 	if !opts.RefuseTargetVersionAlreadyPassed || opts.TargetVersion <= 0 {
 		return nil
 	}
-	if len(selected) > 0 || currentVersion <= opts.TargetVersion {
+	if len(selection.apply) > 0 || currentVersion <= opts.TargetVersion {
 		return nil
+	}
+	if slices.Contains(selection.skipped, opts.TargetVersion) {
+		return &TargetVersionSkippedError{
+			TargetVersion:  opts.TargetVersion,
+			CurrentVersion: currentVersion,
+			ExecOrder:      selection.execOrder,
+		}
 	}
 	return &TargetVersionPassedError{
 		TargetVersion:  opts.TargetVersion,
@@ -2216,10 +2264,11 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	if err != nil {
 		return err
 	}
-	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, targetVersion)
+	selection, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, targetVersion)
 	if err != nil {
 		return err
 	}
+	migrationsToApply := selection.apply
 	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
 		return err
 	}
@@ -3413,12 +3462,20 @@ func ensureNoTransactionHasNoTimeouts(version int64, timeouts migrationfile.Time
 	return fmt.Errorf("migration %d is marked no_transaction, so migration timeouts cannot be applied safely", version)
 }
 
+// migrationsToApply decides which pending migrations an up run may apply under
+// the execution order in force, up to targetVersion.
+//
+// It reports what it left behind as well as what it chose. A caller that has to
+// explain why a version was not applied cannot tell an out-of-order migration
+// the order declined from one the recorded history covers, and deriving the
+// skipped set a second time from the pending list is how one verdict becomes
+// two that disagree.
 func (m *Migrator) migrationsToApply(
 	migrations []*Migration,
 	applied []int64,
 	appliedIdentities migrationIdentitySet,
 	targetVersion int64,
-) ([]*Migration, error) {
+) (upSelection, error) {
 	currentVersion := maxAppliedVersion(applied)
 	bootstrap := checkpointBootstrap(migrations, applied, targetVersion)
 	floor := checkpointFloor(migrations, applied, bootstrap)
@@ -3456,10 +3513,13 @@ func (m *Migrator) migrationsToApply(
 				err.currentSourceVersionSet = true
 			}
 		}
-		return nil, err
+		return upSelection{}, err
 	}
 
-	migrationsToApply := make([]*Migration, 0, len(pendingMigrationList))
+	selection := upSelection{
+		apply:     make([]*Migration, 0, len(pendingMigrationList)),
+		execOrder: execOrder,
+	}
 	for _, migration := range pendingMigrationList {
 		// linear-skip leaves unapplied exactly what linear refuses, so it reads
 		// the verdict computed above instead of re-deriving it. Re-deriving is
@@ -3468,12 +3528,13 @@ func (m *Migrator) migrationsToApply(
 		// pending.
 		if execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
+			selection.skipped = append(selection.skipped, migration.Version)
 			continue
 		}
-		migrationsToApply = append(migrationsToApply, migration)
+		selection.apply = append(selection.apply, migration)
 	}
 
-	return migrationsToApply, nil
+	return selection, nil
 }
 
 // checkpointBootstrap returns the newest checkpoint the migrator runs to

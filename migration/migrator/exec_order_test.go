@@ -97,12 +97,14 @@ func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	linearSkip := linear.WithExecOrder(ExecOrderLinearSkip)
 	got, err := linearSkip.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, make([]int64, 0))
+	c.Assert(migrationVersions(got.apply), qt.DeepEquals, make([]int64, 0))
+	c.Assert(got.skipped, qt.DeepEquals, []int64{3})
 
 	nonLinear := linear.WithExecOrder(ExecOrderNonLinear)
 	got, err = nonLinear.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{3})
+	c.Assert(migrationVersions(got.apply), qt.DeepEquals, []int64{3})
+	c.Assert(got.skipped, qt.IsNil)
 }
 
 func TestValidateMigrateUpOptionsRejectsAmbiguousTarget(t *testing.T) {
