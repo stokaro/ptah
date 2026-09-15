@@ -3,6 +3,7 @@ package atlasschema
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
+	"ptah.run/internal/pathguard"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -64,6 +66,7 @@ func managedDataStatements(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	current *catalog.Database,
+	projectRoot string,
 ) ([]dataStatement, error) {
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
 		return nil, nil
@@ -85,7 +88,7 @@ func managedDataStatements(
 	phases := make([][]dataStatement, len(dataPhases))
 	for _, declaration := range declarations {
 		selfReferences, columnTypes := managedDataShape(desired, declaration)
-		declared, err := managedDataDiff(ctx, conn, declaration, current, selfReferences, columnTypes)
+		declared, err := managedDataDiff(ctx, conn, declaration, current, selfReferences, columnTypes, projectRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +128,33 @@ func managedDataShape(
 	return nil, nil
 }
 
+// declaredRows reads the rows a declaration still names, bounded by the project
+// the caller is operating in.
+//
+// The path is data: a schema says which file carries its rows, and a schema is
+// not always one the reader wrote. Following it anywhere would let a desired
+// state read whatever this process can, on every plan and apply rather than
+// only where an author publishes their own work. The boundary is the one
+// `file()` in atlas.hcl already has, and it is the project rather than the
+// declaration's own directory because `schema export` writes a path back out of
+// the directory it exports into, and refusing Ptah's own output would be a rule
+// that contradicts the tool applying it.
+func declaredRows(
+	declaration schemamodel.ManagedData,
+	qualified, projectRoot string,
+) ([]schemamodel.ManagedRow, error) {
+	sourceDir := declaration.SourceDir
+	if sourceDir == "" {
+		sourceDir = "."
+	}
+	if _, err := pathguard.ResolveWithinRoot(
+		filepath.Join(sourceDir, declaration.File), projectRoot,
+	); err != nil {
+		return nil, fmt.Errorf("managed data file %q for table %s: %w", declaration.File, qualified, err)
+	}
+	return schemamodel.LoadManagedRowValues("", declaration)
+}
+
 func managedDataDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -132,13 +162,37 @@ func managedDataDiff(
 	current *catalog.Database,
 	selfReferences []string,
 	columnTypes map[string]string,
+	projectRoot string,
 ) ([]dataStatement, error) {
 	qualified := managedDataTableName(declaration)
 	if declaration.Rows == nil {
-		return nil, fmt.Errorf(
-			"managed data for table %s was never read; a desired state that declares rows has to carry them",
-			qualified,
-		)
+		// The rows are read here because this is the function that cannot go on
+		// without them. An artifact carries them in its own layer and arrives
+		// with Rows already set; a working copy carries a file name, and only
+		// publication used to resolve it, so `schema plan` and `schema apply`
+		// refused a row set sitting next to the schema they were planning
+		// (stokaro/ptah#3269). Reading it at the refusal leaves one place that
+		// knows a declaration can still become rows.
+		//
+		// A declaration that names no file is the artifact case gone wrong: the
+		// layer was dropped on the way here, and there is nothing to resolve.
+		if declaration.File == "" {
+			return nil, fmt.Errorf(
+				"managed data for table %s was never read; a desired state that declares rows has to carry them",
+				qualified,
+			)
+		}
+		rows, err := declaredRows(declaration, qualified, projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		// A file that declares no rows is an empty row set, not an unread one.
+		// The difference is the whole statement: nil means nobody read the file,
+		// and planning an empty set deletes every row the table holds.
+		if rows == nil {
+			rows = make([]schemamodel.ManagedRow, 0)
+		}
+		declaration.Rows = rows
 	}
 	if len(declaration.Keys) == 0 {
 		return nil, fmt.Errorf("managed data for table %s declares no key column", qualified)

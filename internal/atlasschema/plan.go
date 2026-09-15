@@ -84,6 +84,9 @@ type PlanFileOptions struct {
 	// rather than a container (stokaro/ptah#1635).
 	DevURL string
 	ToURLs []string
+	// ProjectRoot bounds the files a desired state may make this process read;
+	// see [ApplyOptions.ProjectRoot].
+	ProjectRoot string
 	// ToSources carries the same sources as ToURLs with their atlas.hcl
 	// variable scopes; see [ApplyOptions.ToSources].
 	ToSources []schemafile.Source
@@ -149,6 +152,7 @@ func PreparePlanFile(
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
 		Desired:        opts.Desired,
+		ProjectRoot:    opts.ProjectRoot,
 
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,

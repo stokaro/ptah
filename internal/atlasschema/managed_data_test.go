@@ -2,6 +2,7 @@ package atlasschema_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,16 +111,141 @@ func TestPreparePlanFile_UnmanagedColumnsAreNotRewritten(t *testing.T) {
 }
 
 // TestPreparePlanFile_RefusesRowsNobodyRead covers the nil-versus-empty
-// distinction the whole publication path depends on.
+// distinction the whole publication path depends on. A declaration that names
+// no file has nothing left to resolve: the layer that carried its rows was
+// dropped between the artifact and here, and planning an empty set would delete
+// every row the table holds.
 func TestPreparePlanFile_RefusesRowsNobodyRead(t *testing.T) {
 	c := qt.New(t)
 	conn := managedDataConnection(c, "unread.db")
 	desired := regionsSchema()
 	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].File = ""
 
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
 
 	c.Assert(err, qt.ErrorMatches, `managed data for table regions was never read.*`)
+}
+
+// TestPreparePlanFile_ReadsRowsADeclarationStillNames is the other half. A
+// working copy carries a file name rather than the rows, and only publication
+// used to resolve it, so planning refused a row set sitting next to the schema
+// it was planning (stokaro/ptah#3269).
+func TestPreparePlanFile_ReadsRowsADeclarationStillNames(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "declared.db")
+	sourceDir := c.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(sourceDir, "regions.yaml"),
+		[]byte("- code: CZ\n  name: Czechia\n  rank: 1\n"),
+		0o600,
+	), qt.IsNil)
+	desired := regionsSchema()
+	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].SourceDir = sourceDir
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired})
+
+	c.Assert(err, qt.IsNil)
+	declared := make([]string, 0, len(plan.Statements))
+	for _, statement := range plan.Statements {
+		declared = append(declared, statement.SQL)
+	}
+	c.Assert(strings.Join(declared, "\n"), qt.Contains, "'CZ'")
+}
+
+// TestPreparePlanFile_RefusesARowFileOutsideTheProject keeps the read from
+// widening what a desired state can reach. The path is data, and a schema is not
+// always one the reader wrote, so it is bounded by the project the caller named
+// -- the boundary atlas.hcl's file() already has.
+//
+// The boundary is the project rather than the declaration's own directory
+// because `schema export` writes a path back out of the directory it exports
+// into, and a rule that refuses the tool's own output is a rule nobody can keep.
+func TestPreparePlanFile_RefusesARowFileOutsideTheProject(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "escape.db")
+	project := c.TempDir()
+	sourceDir := filepath.Join(project, "models")
+	c.Assert(os.MkdirAll(sourceDir, 0o750), qt.IsNil)
+	desired := regionsSchema()
+	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].SourceDir = sourceDir
+	desired.ManagedData[0].File = filepath.Join("..", "..", "secret.yaml")
+
+	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, ProjectRoot: project,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `.*outside.*`)
+}
+
+// TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource records why the
+// refusal above names only one shape. An absolute file is not a second escape:
+// the loader joins it to the source directory, and filepath.Join drops the
+// leading separator, so `/etc/passwd` reaches for `<source>/etc/passwd` and
+// leaves the project no more than a relative name does. Asserting a refusal for
+// it would be asserting a branch nothing can reach.
+func TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "absolute.db")
+	project := c.TempDir()
+	sourceDir := filepath.Join(project, "models")
+	c.Assert(os.MkdirAll(filepath.Join(sourceDir, "etc"), 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(sourceDir, "etc", "passwd"),
+		[]byte("- code: CZ\n  name: Czechia\n  rank: 1\n"),
+		0o600,
+	), qt.IsNil)
+	desired := regionsSchema()
+	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].SourceDir = sourceDir
+	desired.ManagedData[0].File = filepath.Join(string(filepath.Separator), "etc", "passwd")
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, ProjectRoot: project,
+	})
+
+	c.Assert(err, qt.IsNil, qt.Commentf("the absolute name was read under the source directory"))
+	declared := make([]string, 0, len(plan.Statements))
+	for _, statement := range plan.Statements {
+		declared = append(declared, statement.SQL)
+	}
+	c.Assert(strings.Join(declared, "\n"), qt.Contains, "'CZ'")
+}
+
+// TestPreparePlanFile_ReadsARowFileTheProjectStillContains is the control that
+// keeps the boundary from being a ban on relative paths. `schema export` writes
+// exactly this shape: the HCL in one directory of the project, the rows in
+// another, and the declaration pointing across.
+func TestPreparePlanFile_ReadsARowFileTheProjectStillContains(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "sibling.db")
+	project := c.TempDir()
+	models := filepath.Join(project, "models")
+	exported := filepath.Join(project, "schema")
+	c.Assert(os.MkdirAll(models, 0o750), qt.IsNil)
+	c.Assert(os.MkdirAll(exported, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(models, "regions.yaml"),
+		[]byte("- code: CZ\n  name: Czechia\n  rank: 1\n"),
+		0o600,
+	), qt.IsNil)
+	desired := regionsSchema()
+	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].SourceDir = exported
+	desired.ManagedData[0].File = filepath.Join("..", "models", "regions.yaml")
+
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, ProjectRoot: project,
+	})
+
+	c.Assert(err, qt.IsNil)
+	declared := make([]string, 0, len(plan.Statements))
+	for _, statement := range plan.Statements {
+		declared = append(declared, statement.SQL)
+	}
+	c.Assert(strings.Join(declared, "\n"), qt.Contains, "'CZ'")
 }
 
 func managedDataConnection(c *qt.C, name string) *dbschema.DatabaseConnection {

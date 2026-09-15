@@ -44,8 +44,22 @@ type Country struct {
 }
 ```
 
-The row-data file, resolved relative to the Go source directory, is a top-level
-YAML list of column maps:
+The row-data file is resolved relative to the Go source directory, and planning
+reads it from there. A path that leaves the project the command was pointed at
+is refused, naming what it reached for:
+
+```text
+error: managed data file "../../secret.yaml" for table regions: ".../secret.yaml" is outside allowed root ".../project"
+```
+
+The project is the first `--root-dir`, or the working directory when only
+`--schema-file` was given. It is the project rather than the directory holding
+the schema because `ptah schema export` writes a row path back out of the
+directory it exports into, and both spellings stay readable as long as they stay
+inside the project. This is the boundary `file()` in `atlas.hcl` already has: a
+declaration is data, and a desired state is not always one the reader wrote.
+
+The file itself is a top-level YAML list of column maps:
 
 ```yaml
 - code: US

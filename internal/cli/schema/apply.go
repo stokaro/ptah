@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -332,6 +333,7 @@ func runSchemaApplyOnLockedSession(
 	txMode migrator.MigrationTxMode,
 ) (applied bool, resultErr error) {
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
+		ProjectRoot: schemaroot.Of(opts.rootDirs),
 		DevURL:      opts.devURL,
 		ToURLs:      opts.toURLs,
 		Desired:     desired,
