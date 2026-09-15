@@ -106,6 +106,23 @@ Expected output includes:
 002_demo_users.dev.sql|dev
 ```
 
+## The tracker table
+
+`ptah seed` creates `schema_seeds` when at least one seed file matches the
+environment and the table is absent, and leaves an existing table in place. It
+holds the same columns on every engine: `seed_path`, `env`, `checksum` and
+`applied_at`.
+
+SQL Server and Oracle do not accept the `CREATE TABLE IF NOT EXISTS` statement
+the other engines get, so each has its own:
+
+- On SQL Server the statement is guarded with `IF OBJECT_ID(...) IS NULL`, and
+  `applied_at` is `DATETIME2`. In T-SQL, `TIMESTAMP` is a row version the
+  server fills in, not a point in time.
+- On Oracle the table is created from a PL/SQL block that ignores `ORA-00955`
+  (name already used). The same block runs on Oracle 21, which has no
+  `IF NOT EXISTS`, and on Oracle 23.
+
 ## Protect production-like environments
 
 `--env prod` and `--env production` are refused unless `--allow-prod` is set:

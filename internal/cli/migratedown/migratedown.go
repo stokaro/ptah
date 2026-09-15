@@ -326,7 +326,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
@@ -388,7 +388,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		WithObserver(runtime.Observer())
 
 	// Get migration status before running
-	status, err := mig.GetMigrationStatus(context.Background())
+	status, err := mig.GetMigrationStatus(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
@@ -403,7 +403,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	// Get applied migrations from the database
-	appliedMigrations, err := mig.GetAppliedMigrations(context.Background())
+	appliedMigrations, err := mig.GetAppliedMigrations(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error getting applied migrations: %w", err)
 	}
@@ -467,8 +467,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error running down migrations: %w", err)
 	}
 
-	// Get final status
-	finalStatus, err := mig.GetMigrationStatus(context.Background())
+	// The final status read does not inherit the cancelation: a rollback that
+	// committed before an interrupt still reports the version it left behind.
+	finalStatus, err := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))
 	if err != nil {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
@@ -786,8 +787,11 @@ func executeRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitte
 	if r.plan {
 		return runDynamicRollback(cmd, r.dynamicRollback, emit)
 	}
+	// The rollback watches the command's context, which an interrupt cancels.
+	// A down body that kept executing after the signal would commit a
+	// destructive change behind a status that says it was stopped.
 	return r.migrator.MigrateDownToWithPreflight(
-		context.Background(), r.targetVersion, r.preflightHook)
+		cmd.Context(), r.targetVersion, r.preflightHook)
 }
 
 // rollbackInputs are the resolved values a rollback strategy reads, gathered so

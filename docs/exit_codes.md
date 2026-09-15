@@ -45,6 +45,14 @@ A **deadline** is not a cancellation and keeps its own wording. A
 as canceled would take away the one word saying which. An interrupt that arrives
 while a command is already failing for its own reason keeps that reason too.
 
+`ptah migrations up` and `ptah migrations down` cancel the statement that is
+executing when the interrupt arrives. Migrations that committed before the
+signal stay applied. The interrupted migration is recorded as failed, the same
+revision row any failed migration leaves, so the revision table agrees with the
+signal status. Where its transaction rolls back, as on PostgreSQL, the
+interrupted migration changed nothing, and a later `ptah migrations up` refuses
+to continue past the failed row.
+
 ## Diagnostic Prefix
 
 A *process-level diagnostic* is the single line a surface prints when a command

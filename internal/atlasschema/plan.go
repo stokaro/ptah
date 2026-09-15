@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	digest "github.com/opencontainers/go-digest"
@@ -178,14 +179,18 @@ func PreparePlanFile(
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
 	// so the analyzer calls it safe; the row it removes is gone all the same.
+	data := make([]PlanStatement, 0, len(computation.dataStatements))
 	for _, declared := range computation.dataStatements {
 		destructive = destructive || declared.severity == safety.Destructive
-		statements = append(statements, PlanStatement{
+		data = append(data, PlanStatement{
 			SQL:      declared.sql,
 			Severity: declared.severity,
 			Reason:   declared.reason,
 		})
 	}
+	// A saved plan is applied as these statements, so the rows sit where an
+	// apply puts them: inside a SQLite rebuild's foreign-key bracket.
+	statements = slices.Insert(statements, computation.dataIndex(), data...)
 
 	return PlanFile{
 		FormatVersion:    PlanFormatVersion,

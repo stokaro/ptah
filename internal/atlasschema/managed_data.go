@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
+	"ptah.run/internal/managedrows"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -142,8 +143,13 @@ func managedDataDiff(
 	// A table this plan is about to create holds nothing, and reading it would
 	// fail rather than answer. Every declared row is an insert then.
 	liveRows := []map[string]any(nil)
-	if managedDataTableExists(current, declaration) {
-		columns := managedDataColumns(declaration, desiredRows)
+	if liveTable := managedrows.LiveTable(current, declaration.Schema, declaration.Table); liveTable != nil {
+		// Only the columns the table already has. The plan may be about to add
+		// one the declaration names, and asking the server for it before the
+		// DDL runs stops the whole reconciliation with 42703
+		// (stokaro/ptah#3260); the value still reaches the plan, as the INSERT
+		// or UPDATE of a column the live row does not carry.
+		columns := managedrows.ProjectOntoLive(managedrows.Columns(desiredRows, declaration.Keys), liveTable)
 		liveRows, err = dbschema.ReadTableRows(ctx, conn, declaration.Schema, declaration.Table, columns)
 		if err != nil {
 			return nil, fmt.Errorf("read managed rows of %s: %w", qualified, err)
@@ -262,40 +268,6 @@ func managedValue(value schemamodel.ManagedValue) (any, error) {
 //
 // A column no declaration names is not read and never written. Reconciling a
 // reference table is not permission to rewrite the columns beside it.
-func managedDataColumns(declaration schemamodel.ManagedData, rows []map[string]any) []string {
-	columns := make(map[string]struct{}, len(declaration.Keys))
-	for _, key := range declaration.Keys {
-		columns[key] = struct{}{}
-	}
-	for _, row := range rows {
-		for column := range row {
-			columns[column] = struct{}{}
-		}
-	}
-	names := make([]string, 0, len(columns))
-	for column := range columns {
-		names = append(names, column)
-	}
-	sort.Strings(names)
-	return names
-}
-
-func managedDataTableExists(current *catalog.Database, declaration schemamodel.ManagedData) bool {
-	if current == nil {
-		return false
-	}
-	for _, table := range current.Tables {
-		if table.Name != declaration.Table {
-			continue
-		}
-		if declaration.Schema != "" && table.Schema != declaration.Schema {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
 func managedDataTableName(declaration schemamodel.ManagedData) string {
 	if declaration.Schema == "" {
 		return declaration.Table

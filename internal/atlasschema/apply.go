@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/systemschema"
@@ -186,11 +187,25 @@ func PlanApply(
 // table the same plan may be creating or altering, so the schema moves first;
 // within the data, datadiff already orders inserts, updates and deletes.
 func (c applyComputation) executionStatements() []string {
-	statements := slices.Clone(c.statements)
+	data := make([]string, 0, len(c.dataStatements))
 	for _, declared := range c.dataStatements {
-		statements = append(statements, declared.sql)
+		data = append(data, declared.sql)
 	}
-	return statements
+	return slices.Insert(slices.Clone(c.statements), c.dataIndex(), data...)
+}
+
+// dataIndex is where the data goes among the DDL statements: after all of
+// them, except inside a SQLite rebuild's foreign-key bracket, where it goes
+// ahead of the pragma that closes the bracket.
+//
+// After that pragma, the plan no longer ends with it, the apply opens an
+// ordinary transaction in which the disabling pragma is silently ignored, and
+// the rebuild's DROP either fails against a referencing row or cascades into it
+// (stokaro/ptah#3282). Inside the bracket the rows run with enforcement
+// suspended too, and the foreign-key check the apply runs before it commits
+// still refuses a row whose reference does not resolve.
+func (c applyComputation) dataIndex() int {
+	return sqliteforeignkeys.AppendIndex(c.statements)
 }
 
 // applyComputation carries a computed schema apply plan together with the
