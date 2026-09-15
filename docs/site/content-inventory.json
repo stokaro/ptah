@@ -3934,8 +3934,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8769,
-      "sourceBytes": 86556
+      "visibleWords": 8776,
+      "sourceBytes": 86618
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -6166,8 +6166,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 4892,
-      "sourceBytes": 36351
+      "visibleWords": 5071,
+      "sourceBytes": 37576
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

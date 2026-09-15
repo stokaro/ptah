@@ -1842,12 +1842,8 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 
-	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
+	migrationsToApply, err := m.selectUpMigrations(opts, migrations, appliedMigrations, appliedIdentities, currentVersion)
 	if err != nil {
-		return err
-	}
-	migrationsToApply = limitMigrationsToApply(migrationsToApply, opts.Amount)
-	if err := refuseUnreachableTargetVersion(opts, currentVersion, migrationsToApply); err != nil {
 		return err
 	}
 	plan := MigrationPlan{
@@ -1892,6 +1888,30 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
+}
+
+// selectUpMigrations picks the migrations one up run applies: the pending set
+// the execution order allows, narrowed by the target version and then by the
+// amount, and refused outright where the bound cannot be honored. Narrowing
+// and refusing stay beside the selection because each reads what the step
+// before it produced, and the refusal is about what was selected rather than
+// about the options.
+func (m *Migrator) selectUpMigrations(
+	opts MigrateUpOptions,
+	migrations []*Migration,
+	appliedMigrations []int64,
+	appliedIdentities migrationIdentitySet,
+	currentVersion int64,
+) ([]*Migration, error) {
+	selected, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, opts.TargetVersion)
+	if err != nil {
+		return nil, err
+	}
+	selected = limitMigrationsToApply(selected, opts.Amount)
+	if err := refuseUnreachableTargetVersion(opts, currentVersion, selected); err != nil {
+		return nil, err
+	}
+	return selected, nil
 }
 
 // TargetVersionPassedError reports an up run bounded at a version the recorded

@@ -305,8 +305,8 @@ already applied before the run is not counted as this run's work.
 
 ## Execution controls
 
-The defaults are safe for most runs; three controls matter once several
-people and pipelines share a directory:
+The defaults are safe for most runs. These controls matter once several people
+and pipelines share a directory:
 
 - **Transaction mode** (`--tx-mode`): `file` (default) wraps each migration
   in its own transaction; `all` runs the selected batch in one; `none`
@@ -455,6 +455,30 @@ people and pipelines share a directory:
   file's statement count, or a dirty row for a migration whose file was rebased
   away. Legacy dirty rows without prefix metadata may resume only while their
   full-file checksum still matches.
+- **Version bound** (`--to-version`): apply pending migrations up to and
+  including one exact version, and stop there. An approved plan names the
+  versions it covers before the run starts, and this is how the run is held to
+  them. It is equally how you take half a backlog deliberately and watch what
+  happens.
+
+  ```bash illustration
+  ptah migrations up \
+    --db-url "$DATABASE_URL" \
+    --migrations-dir migrations \
+    --to-version 1785255952
+  ```
+
+  The version is written the way the migration file writes it, so leading zeros
+  are accepted. A version the directory does not carry is refused, and so is a
+  version the database has already passed: nothing pending reaches the target
+  there, and an exit `0` would report a state the database never arrived at. A
+  database recorded at exactly the named version is not that case, and applies
+  nothing and succeeds. Passing `--limit` as well is refused: the two select
+  different prefixes of the pending list and neither outranks the other.
+
+  The bound narrows what `--dry-run` reports and what `--json` names under
+  `planned`, because both read the plan the migrator selected while holding the
+  migration lock rather than the pending list read before it.
 - **Execution order** (`--exec-order`): `linear` (default) fails when a merge
   landed a pending migration below the current version; `linear-skip` warns
   and leaves it pending; `non-linear` applies it. Status reports such
