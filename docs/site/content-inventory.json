@@ -1518,8 +1518,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 1873,
-      "sourceBytes": 15758
+      "visibleWords": 1962,
+      "sourceBytes": 16267
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -6611,13 +6611,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-<<<<<<< HEAD
-      "visibleWords": 1474,
-      "sourceBytes": 10334
-=======
-      "visibleWords": 1452,
-      "sourceBytes": 10223
->>>>>>> a7e38be53 (fix(datadiff): a declared moment and the moment a driver returns are one value)
+      "visibleWords": 1574,
+      "sourceBytes": 10885
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",
