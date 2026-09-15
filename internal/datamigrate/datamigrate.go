@@ -365,7 +365,7 @@ func computeTable(
 	opts Options,
 	md schemamodel.ManagedData,
 ) (*datadiff.DataDiff, error) {
-	desired, err := schemamodel.LoadManagedRows(opts.RootDir, md)
+	desired, err := desiredRows(opts.RootDir, md)
 	if err != nil {
 		return nil, err
 	}
@@ -386,6 +386,27 @@ func computeTable(
 	}
 
 	return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
+}
+
+// desiredRows resolves one declaration's rows, from whichever half of it the
+// caller's desired schema arrived with.
+//
+// A declaration that carries its rows is read as it stands. A published schema
+// artifact is the caller this matters to: it travels without the working copy
+// the annotation pointed into, so the file name it records resolves against
+// whatever directory this process runs in, and reading it answers for a file
+// nobody published — or, more often, fails and takes the whole check down. A
+// declaration with no rows names a file in a checkout that is still here, and
+// the file is the answer.
+//
+// The two forms resolve to the same values for the same declaration, which is
+// [schemamodel.ResolveManagedRows]'s contract, so an artifact-sourced run and a
+// root-sourced run of one declaration report the same drift.
+func desiredRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, error) {
+	if md.Rows != nil {
+		return schemamodel.ResolveManagedRows(md)
+	}
+	return schemamodel.LoadManagedRows(rootDir, md)
 }
 
 // readableLiveTable answers whether the live table can be read for the row
