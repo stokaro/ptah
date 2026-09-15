@@ -83,7 +83,8 @@ func TestPostgresDriftManagedDataE2E(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftManagedDataRows), 0o600), qt.IsNil)
 
 	// The table does not exist yet. PostgreSQL answers 42P01 to a read of it, so
-	// this run is the one that used to take the whole check down.
+	// without the live-catalog short circuit this run takes the whole check
+	// down with an error about the table the same check is reporting as missing.
 	t.Run("a table the database has not created", func(t *testing.T) {
 		c := qt.New(t)
 
