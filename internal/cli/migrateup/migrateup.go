@@ -21,6 +21,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
@@ -52,6 +53,7 @@ const (
 	allowDestructiveFlag     = "allow-destructive"
 	allowDirtyFlag           = "allow-dirty"
 	limitFlag                = "limit"
+	toVersionFlag            = "to-version"
 	skipChecksFlag           = "skip-checks"
 	preUpHookFlag            = "pre-up-hook"
 	pgDumpToFlag             = "pg-dump-to"
@@ -78,6 +80,7 @@ type options struct {
 	allowDestructive     bool
 	allowDirty           bool
 	limit                uint64
+	toVersion            string
 	skipChecks           bool
 	preUpHook            string
 	pgDumpTo             string
@@ -220,6 +223,17 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Request a verified retry of a dirty migration; only an unchanged committed source prefix is skipped",
 	)
 	flags.Uint64Var(&opts.limit, limitFlag, 0, "Apply only the first N pending migrations (0 applies all)")
+	// A string rather than an int64: a migration version is written the way the
+	// file name writes it, and a zero-padded 0000000002 has to reach the same
+	// migration as 2. A separate empty state is what keeps the bound apart from
+	// the migrator's zero, which means latest.
+	flags.StringVar(
+		&opts.toVersion,
+		toVersionFlag,
+		"",
+		"Apply pending migrations up to and including this version; a version the directory does not "+
+			"carry, or one the database has already passed, is refused (empty applies all)",
+	)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
@@ -280,6 +294,26 @@ func parseMigrationSettings(
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
 	}, nil
+}
+
+// parseToVersion reads the --to-version bound into the migrator's operand.
+//
+// An unset flag answers zero, which the migrator reads as "latest". A typed
+// zero is refused instead of being folded into that: `--to-version 0` names no
+// migration, and reading it as "apply everything" is the guess the bound exists
+// to remove.
+func parseToVersion(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	version, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --%s %q: a migration version is a number", toVersionFlag, value)
+	}
+	if version <= 0 {
+		return 0, fmt.Errorf("invalid --%s %q: a migration version is greater than zero", toVersionFlag, value)
+	}
+	return version, nil
 }
 
 func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) options {
@@ -343,6 +377,16 @@ func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
 }
 
 func migrateUpCommand(cmd *cobra.Command, opts *options) error {
+	// --limit and --to-version select different prefixes of the pending list and
+	// neither outranks the other, so the pair is refused here rather than deep
+	// in the migrator, whose own refusal names an operand ("amount") that no
+	// flag on this surface spells. Both are environment-bound, so the group is
+	// resolved on what the operator typed: cobra's own ValidateFlagGroups reads
+	// Changed, which an exported PTAH_LIMIT sets, and would refuse a command
+	// line carrying one flag while naming a second one nobody wrote.
+	if err := cmdflags.ExclusiveOnCommandLine(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
+		return err
+	}
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -403,6 +447,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		migrationLockTimeoutValue,
 		connectTimeoutValue,
 	)
+	if err != nil {
+		return err
+	}
+	toVersion, err := parseToVersion(resolvedOpts.toVersion)
 	if err != nil {
 		return err
 	}
@@ -511,7 +559,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		emit.Println()
 	}
 
-	if !status.HasPendingChanges {
+	// A bounded run does not take this shortcut. Whether the target is still
+	// reachable is decided under the migration lock, where the recorded history
+	// cannot move underneath the answer, and the status read above happens
+	// before that lock exists. Returning here would report success for a run
+	// that never reached the version the operator named.
+	if !status.HasPendingChanges && toVersion == 0 {
 		emitPlanOutput()
 		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
 			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
@@ -556,7 +609,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, mig, opts, preflightHook)
+	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook)
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
 		return err
@@ -574,7 +627,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	})
 
 	if !opts.jsonOutput {
-		emitMigrateUpSummary(emit, opts, status, finalStatus)
+		emitMigrateUpSummary(emit, opts, outcome)
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
@@ -583,9 +636,20 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 // migrateUpOutcome is one run and everything the command has to say about it.
 type migrateUpOutcome struct {
 	status         *migrator.MigrationStatus
+	plan           *migrator.MigrationPlan
 	checksDeferred []int64
 	runErr         error
 	statusErr      error
+}
+
+// selectedCount is how many migrations this run set out to apply. A run whose
+// plan was never selected counts nothing rather than falling back to the
+// pending list, which is the number the bound was asked to narrow.
+func (o migrateUpOutcome) selectedCount() int {
+	if o.plan == nil {
+		return 0
+	}
+	return len(o.plan.Versions)
 }
 
 // err is the failure the command returns, in the order the caller can act on:
@@ -615,6 +679,7 @@ func applyPendingMigrations(
 	cmd *cobra.Command,
 	mig *migrator.Migrator,
 	opts *options,
+	toVersion int64,
 	preflightHook migrator.PreMigrationHook,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
@@ -622,13 +687,18 @@ func applyPendingMigrations(
 	// afterwards: a limit, a target version or a checkpoint narrows what the
 	// migrator selected under its own lock, and a document that reported the
 	// pending list would name work this run never intended to do.
-	var selectedPlan *migrator.MigrationPlan
 	outcome.runErr = mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
-		Amount:     opts.limit,
-		AllowDirty: opts.allowDirty,
-		Preflight:  preflightHook,
+		Amount:        opts.limit,
+		TargetVersion: toVersion,
+		// The native surface hands the migrator an operator's exact version, so
+		// a run that cannot reach it is an error here. `ptah-compat migrate
+		// apply --to-version` keeps the Atlas answer, which is an empty run and
+		// exit 0.
+		RefuseTargetVersionAlreadyPassed: true,
+		AllowDirty:                       opts.allowDirty,
+		Preflight:                        preflightHook,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
-			selectedPlan = &plan
+			outcome.plan = &plan
 		},
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions
@@ -645,7 +715,7 @@ func applyPendingMigrations(
 	}
 	if err := emitRunResult(cmd.OutOrStdout(), migrator.RunEvidence{
 		Direction: migrator.MigrationDirectionUp,
-		Plan:      selectedPlan,
+		Plan:      outcome.plan,
 		After:     status,
 		Err:       outcome.runErr,
 		DryRun:    opts.dryRun,
@@ -699,26 +769,22 @@ func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 	)
 }
 
-// emitMigrateUpSummary prints the closing run summary. Dry runs report how
-// many migrations would have been applied, bounded by --limit when set.
-func emitMigrateUpSummary(
-	emit cliobs.Emitter,
-	opts *options,
-	status,
-	finalStatus *migrator.MigrationStatus,
-) {
+// emitMigrateUpSummary prints the closing run summary.
+//
+// A dry run reports the plan the migrator selected while holding its own lock,
+// so --limit, --to-version, the execution order and a checkpoint each narrow
+// the count the same way they narrow the work. Recomputing it from the pending
+// list read before the lock would name migrations the run had already decided
+// to leave alone.
+func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpOutcome) {
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
-		wouldApply := uint64(len(status.PendingMigrations))
-		if opts.limit > 0 {
-			wouldApply = min(wouldApply, opts.limit)
-		}
-		emit.Printf("Would have applied %d migrations\n", wouldApply)
+		emit.Printf("Would have applied %d migrations\n", outcome.selectedCount())
 		return
 	}
 	emit.Println("✅ Migrations completed successfully!")
-	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+	emit.Printf("Database is now at version: %d\n", outcome.status.CurrentVersion)
 }
 
 func lintPathPrefixForSource(requested string, source migrationsource.Source) string {
