@@ -1500,7 +1500,8 @@
         "/schema/lineage/",
         "/start/install/",
         "/testing/ci/",
-        "/versioned/generate/"
+        "/versioned/generate/",
+        "/versioned/reference-data/"
       ],
       "inboundLinks": [
         "/",
@@ -1514,10 +1515,11 @@
         "/schema/validate-and-format/",
         "/start/quick-start-direct/",
         "/testing/ci/",
-        "/testing/overview/"
+        "/testing/overview/",
+        "/versioned/reference-data/"
       ],
-      "visibleWords": 1547,
-      "sourceBytes": 13481
+      "visibleWords": 1873,
+      "sourceBytes": 15758
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -6596,10 +6598,12 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/direct/compare-and-drift/",
         "/operate/seed-data/"
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/direct/compare-and-drift/",
         "/faq/",
         "/operate/overview/",
         "/operate/seed-data/",
@@ -6607,8 +6611,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1226,
-      "sourceBytes": 8850
+      "visibleWords": 1417,
+      "sourceBytes": 10012
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",
