@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -43,6 +44,12 @@ type CompareOptions struct {
 	// [ptah.run/internal/cli/internal/dbcli.DeclaredVars], which answers for
 	// both the atlas.hcl and the schema file.
 	Vars []string
+	// ManagedData asks for the reference rows the desired schema declares to be
+	// compared against the live table as well as its structure, filling
+	// [CompareResult.DataDrift]. The comparison runs on the connection the
+	// structural read already opened and costs one SELECT per declared table,
+	// so a caller that does not report row drift leaves it off.
+	ManagedData bool
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -53,6 +60,11 @@ type CompareResult struct {
 	Generated   *schemamodel.Database
 	Database    *catalog.Database
 	Diff        *difftypes.SchemaDiff
+	// DataDrift is the reference-row comparison, in counts, and is nil when
+	// [CompareOptions.ManagedData] did not ask for one. A non-nil DataDrift
+	// with no tables is a comparison that ran and found the declared rows in
+	// place, which is a different answer from one that never ran.
+	DataDrift *datamigrate.Summary
 }
 
 // Compare resolves the desired schema from Go entities, schema files, and/or an
@@ -116,6 +128,15 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, fmt.Errorf("error comparing schemas: %w", err)
 	}
 
+	// The row comparison runs here rather than in the calling command so it
+	// reuses the connection the structural read opened, which the deferred
+	// close above would already have returned by the time a command saw the
+	// result.
+	dataDrift, err := compareManagedData(ctx, conn, desired, dbSchema, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CompareResult{
 		Sources:     loadOpts.Sources(),
 		DatabaseURL: dburldisplay.Format(opts.DatabaseURL),
@@ -123,7 +144,34 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		Generated:   desired,
 		Database:    dbSchema,
 		Diff:        diff,
+		DataDrift:   dataDrift,
 	}, nil
+}
+
+// compareManagedData compares the declared reference rows against the live
+// table when the caller asked for it, and answers nil when it did not.
+//
+// It reads the filtered desired schema and the filtered live schema, so a table
+// excluded with --ignore is excluded from the row comparison the same way it is
+// excluded from the structural one.
+func compareManagedData(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	live *catalog.Database,
+	opts CompareOptions,
+) (*datamigrate.Summary, error) {
+	if !opts.ManagedData {
+		return nil, nil
+	}
+	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
+		Desired: desired,
+		Live:    live,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error comparing declared rows: %w", err)
+	}
+	return summary, nil
 }
 
 // FilterGeneratedTables returns a shallow copy of db without ignored tables and
@@ -185,6 +233,13 @@ func FilterGeneratedTables(db *schemamodel.Database, ignoredTables []string) *sc
 	})
 	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		return !isIgnoredTable(ignored, table.Table)
+	})
+	// A table nobody is checking has no rows to check either. Leaving the
+	// declaration in place would make a row comparison read a table the
+	// structural comparison had already dropped, and --ignore would exclude a
+	// table from half the check.
+	filtered.ManagedData = keep(db.ManagedData, func(md schemamodel.ManagedData) bool {
+		return !isIgnoredTable(ignored, schemamodel.QualifyTableName(md.Schema, md.Table), md.Table)
 	})
 	filtered.Dependencies = filterDependencies(db.Dependencies, ignored)
 	filtered.SelfReferencingForeignKeys = filterSelfReferencingForeignKeys(db.SelfReferencingForeignKeys, ignored)

@@ -172,9 +172,64 @@ the check again.
 Two more flags shape the check:
 
 - `--ignore` excludes scopes from the check, for example
-  `--ignore tables=audit_log`.
+  `--ignore tables=audit_log`. An excluded table's declared reference rows are
+  excluded with it.
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
+
+### Reference rows are part of the check
+
+A desired schema that declares reference rows — a `//ptah:schema:data`
+annotation, or a `data` block in an HCL schema — is checked against the rows the
+database holds as well as against its structure. A database whose tables match
+and whose lookup values somebody edited by hand is drift, and the check exits
+`1` for it.
+
+The report names the tables whose rows differ and how many rows moved. It
+carries no key, no column name and no value, so a pipeline may publish it
+where the row data itself must not go:
+
+```json
+{
+  "drift": true,
+  "highest_severity": "destructive",
+  "findings": [
+    { "category": "data_rows_updated", "count": 1, "severity": "destructive" }
+  ],
+  "managed_data": {
+    "tables": [
+      { "table": "countries", "inserts": 0, "updates": 1, "deletes": 0 }
+    ]
+  }
+}
+```
+
+The text report prints the same counts under a `Managed data:` heading, and
+`--format github-actions` writes one annotation per table.
+
+Three findings carry the volume, and they set the severity the threshold reads:
+
+| Finding | Severity | What it means |
+| --- | --- | --- |
+| `data_rows_inserted` | safe | The declaration holds a row the database does not. Writing it takes nothing away. |
+| `data_rows_updated` | destructive | A live row holds a value the declaration does not. Applying overwrites it, and the value it held is not recoverable from the plan. |
+| `data_rows_deleted` | destructive | The database holds a row the declaration no longer does. Applying removes it. |
+
+So `--severity destructive` passes a database that is only missing reference
+rows and fails one whose rows were edited or added to by hand.
+
+Two states get a defined answer rather than an error, because a check has to
+report rather than fall over:
+
+- a declared table the database has not created yet is compared against no
+  rows, so every declared row counts as an insert beside the `tables_added`
+  finding;
+- a column the declaration names and the table does not carry yet is compared
+  as absent, so the rows that will need its value are reported beside the
+  `columns_added` finding.
+
+[Reference data](../../versioned/reference-data/) declares the rows and
+reconciles them.
 
 In the JSON document, a PostgreSQL row-level-security policy is reported by the
 table that owns it together with its name, because a policy name is scoped to

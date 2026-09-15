@@ -186,6 +186,25 @@ Convergence includes the rows. A rehearsal or a post-apply verification whose
 schema matches and whose reference table does not is not a verification of the
 desired schema.
 
+## Reference rows in a drift check
+
+[`ptah schema drift`](../../direct/compare-and-drift/) compares the declared
+rows too, and reports the difference as counts: one entry per drifted table
+under `managed_data`, plus the `data_rows_inserted`, `data_rows_updated` and
+`data_rows_deleted` findings. It reads the rows and never publishes one, so a
+caller that must not carry row data — a pipeline archiving the document, an
+operator writing it into a status field — reports the drift without reading a
+value. The SQL that closes the difference is what `ptah migrations data` and
+`ptah schema plan` answer with, and asking for it is the deliberate next step.
+
+The drift check and the plan classify an `UPDATE` differently on purpose. The
+plan rates a statement, and overwriting managed columns is a warning there
+because the author asked for the new value. The drift finding rates what the
+database is about to lose: a live value nobody declared is gone once the
+statement runs, and it is the same loss `--allow-destructive` gates here. So
+`data_rows_updated` is destructive and a `schema drift --severity destructive`
+gate fails on a hand-edited reference row.
+
 ## Declarative data versus `ptah seed`
 
 `ptah seed` remains the imperative path — it runs environment-scoped SQL seed
