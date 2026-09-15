@@ -123,6 +123,12 @@ table name when the `schema` attributes are not both set; a bare name two
 schemas share resolves to neither, and tables with no matching definition fall
 back to alphabetical order after the ones that have it.
 
+Rows inside one table follow the same rule where the table references itself --
+a category tree, an org chart: a child row is written after its parent and
+removed before it. Two rows that reference each other stay in key order, because
+no arrangement satisfies a cycle and the server refuses it whichever row runs
+first.
+
 Emptying a populated table's desired set generates a reversible full-table
 delete: `up` deletes every live row and `down` re-inserts it from the table's
 complete column set, read from the live schema so the rollback restores whole

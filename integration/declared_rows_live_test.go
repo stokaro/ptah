@@ -300,3 +300,75 @@ func declaredCountry(code, name, region string) schemamodel.ManagedRow {
 		"region_code": {Tag: "str", Text: region},
 	}
 }
+
+// TestDeclaredRowsSelfReferenceLive drives a hierarchy: one table whose rows
+// reference rows of the same table.
+//
+// There is one table, so the table rank decides nothing; what is measured is
+// the order of the rows inside it. The child's key sorts before the parent's, so
+// a plan that walks the rows by key writes the child first and the constraint
+// refuses it (stokaro/ptah#3266).
+func TestDeclaredRowsSelfReferenceLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "self_ref")
+	defer done()
+
+	applyDeclaredRows(c, ctx, conn, declaredHierarchySchema("parent", "child"))
+	c.Assert(declaredRowCodes(c, ctx, conn, "nodes"), qt.DeepEquals, []string{"child", "parent"})
+}
+
+// TestDeclaredRowsSelfReferenceRemovalLive is the delete direction of the same
+// hierarchy: the parent row may only go once the row that references it has.
+func TestDeclaredRowsSelfReferenceRemovalLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	conn, done := declaredRowsDatabase(c, ctx, "self_ref_delete")
+	defer done()
+
+	applyDeclaredRows(c, ctx, conn, declaredHierarchySchema("parent", "child"))
+	applyDeclaredRows(c, ctx, conn, declaredHierarchySchema())
+
+	c.Assert(declaredRowCodes(c, ctx, conn, "nodes"), qt.DeepEquals, []string(nil))
+}
+
+// declaredHierarchySchema is one table referencing itself. `child` sorts before
+// `parent`, so the key order is the wrong order in both directions.
+func declaredHierarchySchema(codes ...string) *schemamodel.Database {
+	rows := make([]schemamodel.ManagedRow, 0, len(codes))
+	for _, code := range codes {
+		row := schemamodel.ManagedRow{"code": {Tag: "str", Text: code}}
+		if code == "child" {
+			row["parent_code"] = schemamodel.ManagedValue{Tag: "str", Text: "parent"}
+		}
+		rows = append(rows, row)
+	}
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Node", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
+			{
+				StructName:     "Node",
+				FieldName:      "ParentCode",
+				Name:           "parent_code",
+				Type:           "TEXT",
+				Nullable:       true,
+				Foreign:        "nodes(code)",
+				ForeignKeyName: "fk_nodes_parent",
+			},
+		},
+		ManagedData: []schemamodel.ManagedData{{
+			StructName: "Node",
+			Table:      "nodes",
+			Keys:       []string{"code"},
+			File:       "nodes.yaml",
+			Rows:       rows,
+		}},
+	}
+	schemamodel.Finalize(db)
+	return db
+}

@@ -83,7 +83,7 @@ func managedDataStatements(
 	})
 	phases := make([][]dataStatement, len(dataPhases))
 	for _, declaration := range declarations {
-		declared, err := managedDataDiff(ctx, conn, declaration, current)
+		declared, err := managedDataDiff(ctx, conn, declaration, current, managedDataSelfReferences(desired, declaration))
 		if err != nil {
 			return nil, err
 		}
@@ -102,11 +102,28 @@ func managedDataStatements(
 	return statements, nil
 }
 
+// managedDataSelfReferences names the declaration's columns that reference its
+// own table, read from the table the declaration belongs to.
+//
+// A declaration carries a struct name and a table name; the fields that declare
+// the foreign keys belong to the table, so the table has to be found before the
+// columns can be. A declaration whose table the desired state does not define
+// has no references to read, and the rows keep their key order.
+func managedDataSelfReferences(desired *schemamodel.Database, declaration schemamodel.ManagedData) []string {
+	for _, table := range desired.Tables {
+		if table.StructName == declaration.StructName || table.Name == declaration.Table {
+			return dataorder.SelfReferences(desired, table)
+		}
+	}
+	return nil
+}
+
 func managedDataDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	declaration schemamodel.ManagedData,
 	current *catalog.Database,
+	selfReferences []string,
 ) ([]dataStatement, error) {
 	qualified := managedDataTableName(declaration)
 	if declaration.Rows == nil {
@@ -136,6 +153,13 @@ func managedDataDiff(
 	if err != nil {
 		return nil, fmt.Errorf("compare managed rows of %s: %w", qualified, err)
 	}
+	// The table order above puts a table after the tables it references. A row
+	// can reference a row of its own table -- a category tree, an org chart --
+	// and that order is inside one table, so it is decided here: parents first
+	// to write, children first to remove (stokaro/ptah#3266).
+	diff.Inserts = dataorder.Rows(diff.Inserts, declaration.Keys, selfReferences)
+	diff.Deletes = dataorder.Rows(diff.Deletes, declaration.Keys, selfReferences)
+	slices.Reverse(diff.Deletes)
 	up, _, err := datadiff.Render(diff, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("render managed rows of %s: %w", qualified, err)
