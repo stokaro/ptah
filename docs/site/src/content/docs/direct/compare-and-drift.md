@@ -218,15 +218,22 @@ Three findings carry the volume, and they set the severity the threshold reads:
 So `--severity destructive` passes a database that is only missing reference
 rows and fails one whose rows were edited or added to by hand.
 
-Two states get a defined answer rather than an error, because a check has to
-report rather than fall over:
+A database that is behind on structure gets a defined answer rather than an
+error, because a check has to report rather than fall over, and the structural
+half of the report is what names what is missing:
 
 - a declared table the database has not created yet is compared against no
   rows, so every declared row counts as an insert beside the `tables_added`
   finding;
-- a column the declaration names and the table does not carry yet is compared
-  as absent, so the rows that will need its value are reported beside the
-  `columns_added` finding.
+- a column the declaration names and the table does not carry yet is left out
+  of the row comparison, and the `columns_added` finding reports it. No live
+  row holds a value for that column, so applying takes nothing away, and a run
+  whose rows are otherwise in place stays clean at `--severity destructive`.
+
+The comparison reads each declared table, so the role the check connects with
+needs `SELECT` on those tables as well as the catalog access the structural
+half needs. `--ignore tables=...` is what excludes a table from it, and it
+excludes the table from the structural half too.
 
 [Reference data](../../versioned/reference-data/) declares the rows and
 reconciles them.
