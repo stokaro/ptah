@@ -8,12 +8,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"oras.land/oras-go/v2/content/memory"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/datamigrate"
+	"ptah.run/internal/schemaartifact"
+	"ptah.run/internal/schemaload"
 	"ptah.run/migration/safety"
 )
 
@@ -228,6 +231,59 @@ func TestInspect_DesiredReplacesTheRootParse(t *testing.T) {
 	// was authored in, so the row file resolves without it.
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
 		Desired: desired,
+		Live:    liveSchema(c, conn),
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(summary.Tables, qt.DeepEquals, []datamigrate.TableDrift{
+		{Table: "regions", Inserts: 0, Updates: 1, Deletes: 0},
+	})
+}
+
+// TestInspect_ReadsTheRowsTheDeclarationCarries drives the published-artifact
+// path: `ptah schema drift --schema-file oci://...` resolves a declaration that
+// carries its rows and no path at all, because an artifact travels without the
+// working copy that published it.
+//
+// The declaration comes out of a real push and pull rather than being written
+// by hand, so the test compares against what the artifact decoder produces
+// instead of against one reader's idea of it.
+func TestInspect_ReadsTheRowsTheDeclarationCarries(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czech Republic"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, `
+- code: US
+  name: United States
+- code: CZ
+  name: Czechia
+`)
+	published := parseFixture(c, root)
+	c.Assert(schemaload.ReadManagedRows(published), qt.IsNil)
+
+	store := memory.New()
+	_, err := schemaartifact.PushTo(ctx, store, published, schemaartifact.PushOptions{Tags: []string{"stable"}})
+	c.Assert(err, qt.IsNil)
+	pulled, err := schemaartifact.PullFrom(ctx, store, "stable")
+	c.Assert(err, qt.IsNil)
+	// What the artifact carries and what it does not: the declared rows, and no
+	// path into the working copy that published them. What the declaration
+	// records resolves against whatever directory the process happens to run
+	// in, so a reader that resolves it answers for a file nobody published.
+	c.Assert(pulled.Database.ManagedData, qt.HasLen, 1)
+	declaration := pulled.Database.ManagedData[0]
+	c.Assert(declaration.Rows, qt.HasLen, 2)
+	c.Assert(filepath.Join(declaration.SourceDir, declaration.File), qt.Not(qt.Equals), filepath.Join(root, "regions.yaml"))
+
+	// RootDir is empty because the run that reads an artifact has no root, which
+	// is what makes reading a file the wrong answer here.
+	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
+		Desired: pulled.Database,
 		Live:    liveSchema(c, conn),
 	})
 
