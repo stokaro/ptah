@@ -53,6 +53,10 @@ type Options struct {
 	// which is what a caller that means to write a migration wants — there a
 	// table the annotation names and the database lacks is an error, not a
 	// column of insert counts.
+	//
+	// Supplying it also saves a read: the columns of each declared table are
+	// decided from this schema, and a caller that leaves it nil pays one
+	// introspection covering every declared schema.
 	Live *catalog.Database
 	// Dialect selects the SQL dialect for literal and identifier rendering. When
 	// empty the dialect reported by the connection is used, matching how the
@@ -104,8 +108,10 @@ type Options struct {
 //
 // When no managed table has any changes, both returned strings are empty and
 // the caller writes nothing. A missing row-data file, a row missing a key
-// column, or an unrenderable value surfaces as an error naming the offending
-// input.
+// column, an unrenderable value, and a declared column the live table does not
+// carry each surface as an error naming the offending input: a migration body
+// writes every column the declaration names, so one the database cannot take is
+// refused rather than rendered from whatever a read of it returns.
 //
 // Two generate-time safety gates guard the change set once it is computed but
 // before any SQL is returned, so they apply equally to a dry run and to a
