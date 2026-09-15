@@ -368,13 +368,13 @@ func (m *Migrator) getDirtyRevisionSQL() string {
 			return fmt.Sprintf(`SELECT TOP (1) %s
 FROM %s
 				WHERE %s AND %s
-				ORDER BY %s, version`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, m.atlasRevisionRowPredicate(), m.atlasVersionNumberExpression())
+				ORDER BY %s, version`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicateFor(m.connectionDialect()), m.atlasRevisionRowPredicate(), m.atlasVersionNumberExpression())
 		}
 		return fmt.Sprintf(`SELECT %s
 FROM %s
 WHERE %s AND %s
 ORDER BY %s
-LIMIT 1`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, m.atlasRevisionRowPredicate(), m.atlasVersionNumberExpression()+", version")
+%s`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicateFor(m.connectionDialect()), m.atlasRevisionRowPredicate(), m.atlasVersionNumberExpression()+", version", revisionFirstRowClause(m.connectionDialect()))
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
@@ -382,11 +382,73 @@ FROM %s
 WHERE state <> ? OR applied <> total OR %s
 ORDER BY version`, m.qualifiedMigrationsTable(), revisionProgressInvalidPredicate)
 	}
-	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+	return fmt.Sprintf(`SELECT version, description, state, applied, total, %s, %s, execution_time_ms, checksum, applied_at
 FROM %s
 WHERE state <> ? OR applied <> total OR %s
 ORDER BY version
-LIMIT 1`, m.qualifiedMigrationsTable(), revisionProgressInvalidPredicate)
+%s`,
+		revisionTextColumn(m.connectionDialect(), "error"),
+		revisionTextColumn(m.connectionDialect(), "error_stmt"),
+		m.qualifiedMigrationsTable(),
+		revisionProgressInvalidPredicate,
+		revisionFirstRowClause(m.connectionDialect()),
+	)
+}
+
+// revisionFirstRowClause limits a revision read to its first row.
+//
+// Oracle has no LIMIT. Measured on Oracle Free 23.26.3.0.0, `ORDER BY version
+// LIMIT 1` answers ORA-03049, while `FETCH FIRST 1 ROWS ONLY` is accepted. SQL
+// Server takes neither and selects TOP (1) in a branch of its own.
+func revisionFirstRowClause(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "FETCH FIRST 1 ROWS ONLY"
+	}
+	return "LIMIT 1"
+}
+
+// emptyStringIsNull reports whether the target stores a zero-length string as
+// NULL, and keeps revision text in a CLOB.
+//
+// Oracle is that target, and both halves change how a revision row is read. A
+// column Ptah wrote as an empty string comes back NULL, which cannot be scanned
+// into a string, and comparing a column with an empty string is never true.
+// The CLOB refuses the usual fold as well. Measured on Oracle Free 23.26.3.0.0
+// (stokaro/ptah#3298):
+//
+//	COALESCE(error, '')  ORA-00932: expression ('') is of data type CHAR,
+//	                     which is incompatible with expected data type CLOB
+func emptyStringIsNull(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.Oracle
+}
+
+// revisionTextColumn projects a nullable text column of the revision table.
+// Where the fold is possible it happens in SQL; on Oracle the column is read as
+// it is, and revisionText turns its NULL into an empty string.
+func revisionTextColumn(dialect, column string) string {
+	if emptyStringIsNull(dialect) {
+		return column
+	}
+	return "COALESCE(" + column + ", '')"
+}
+
+// revisionText holds the text columns of a revision row as they are scanned,
+// so a NULL that stands for an empty string reads as one. See
+// emptyStringIsNull.
+type revisionText struct {
+	description     sql.NullString
+	failure         sql.NullString
+	failedStatement sql.NullString
+	checksum        sql.NullString
+	operatorVersion sql.NullString
+}
+
+func (t revisionText) assignTo(revision *MigrationRevision) {
+	revision.Description = t.description.String
+	revision.Error = t.failure.String
+	revision.ErrorStatement = t.failedStatement.String
+	revision.Checksum = t.checksum.String
+	revision.OperatorVersion = t.operatorVersion.String
 }
 
 func (m *Migrator) getRevisionSQL() string {
@@ -409,7 +471,7 @@ WHERE %s AND %s
 ORDER BY %s, version`,
 			m.atlasRevisionProjection(),
 			m.qualifiedMigrationsTable(),
-			atlasAppliedRevisionPredicate,
+			atlasAppliedRevisionPredicateFor(m.connectionDialect()),
 			m.atlasRevisionRowPredicate(),
 			m.atlasVersionNumberExpression(),
 		)
@@ -442,16 +504,19 @@ ORDER BY version`, m.ptahRevisionProjection(), m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) atlasRevisionProjection() string {
-	return "version, description, type, applied, total, COALESCE(error, ''), " +
-		"COALESCE(error_stmt, ''), execution_time, hash, executed_at, partial_hashes, " +
-		"COALESCE(operator_version, '')"
+	dialect := m.connectionDialect()
+	return "version, description, type, applied, total, " + revisionTextColumn(dialect, "error") + ", " +
+		revisionTextColumn(dialect, "error_stmt") + ", execution_time, hash, executed_at, partial_hashes, " +
+		revisionTextColumn(dialect, "operator_version")
 }
 
 func (m *Migrator) ptahRevisionProjection() string {
 	if m.legacyRevisionTable {
 		return "version, description, 'applied', 1, 1, '', '', 0, '', applied_at"
 	}
-	return "version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at"
+	dialect := m.connectionDialect()
+	return "version, description, state, applied, total, " + revisionTextColumn(dialect, "error") + ", " +
+		revisionTextColumn(dialect, "error_stmt") + ", execution_time_ms, checksum, applied_at"
 }
 
 func (m *Migrator) getRevisionsForUpdateSQL() string {
@@ -705,9 +770,37 @@ func atlasExactIdentityRowPredicateFor(dialect string) string {
 const (
 	revisionProgressInvalidPredicate = "(applied < 0 OR total < 0 OR applied > total)"
 	atlasDownRevisionPredicate       = "COALESCE(operator_version, '') = '" + ptahDownOperatorVersion + "'"
-	atlasDirtyRevisionPredicate      = "(" + revisionProgressInvalidPredicate + " OR applied <> total OR COALESCE(error, '') <> '' OR " + atlasDownRevisionPredicate + ")"
-	atlasAppliedRevisionPredicate    = "NOT " + revisionProgressInvalidPredicate + " AND applied = total AND COALESCE(error, '') = '' AND NOT (" + atlasDownRevisionPredicate + ")"
 )
+
+// atlasDirtyRevisionPredicateFor selects the Atlas rows a run must not pass:
+// progress that does not add up, an unfinished body, a recorded error, or a
+// rollback Ptah began.
+func atlasDirtyRevisionPredicateFor(dialect string) string {
+	recorded, _ := atlasRevisionErrorTests(dialect)
+	return "(" + revisionProgressInvalidPredicate + " OR applied <> total OR " + recorded + " OR " + atlasDownRevisionPredicate + ")"
+}
+
+// atlasAppliedRevisionPredicateFor selects the Atlas rows that record a
+// finished migration, the complement of atlasDirtyRevisionPredicateFor.
+func atlasAppliedRevisionPredicateFor(dialect string) string {
+	_, absent := atlasRevisionErrorTests(dialect)
+	return "NOT " + revisionProgressInvalidPredicate + " AND applied = total AND " + absent + " AND NOT (" + atlasDownRevisionPredicate + ")"
+}
+
+// atlasRevisionErrorTests answers whether an Atlas row's error column carries
+// text, as the condition that it does and the condition that it does not.
+//
+// Both come from one function because the dirty and the applied predicates are
+// complements, and two spellings chosen apart would let a row be both or
+// neither. Where emptyStringIsNull holds, the column is compared by its length,
+// because an empty string is NULL there and the CLOB refuses the COALESCE
+// fold. The NULL length of a NULL column folds to zero.
+func atlasRevisionErrorTests(dialect string) (recorded, absent string) {
+	if emptyStringIsNull(dialect) {
+		return "COALESCE(LENGTH(error), 0) > 0", "COALESCE(LENGTH(error), 0) = 0"
+	}
+	return "COALESCE(error, '') <> ''", "COALESCE(error, '') = ''"
+}
 
 // atlasMetadataVersionNullGuard maps Atlas metadata and repeatable version
 // tokens to NULL so the remaining numeric tokens can be cast safely. See
@@ -826,10 +919,18 @@ func (m *Migrator) atlasDistinctRevisionIdentityCount(ctx context.Context, ident
 		"SELECT COUNT(DISTINCT version) FROM (SELECT version FROM %s WHERE 1 = 0",
 		m.qualifiedMigrationsTable(),
 	)
-	for _, version := range identities {
-		fmt.Fprintf(&query, " UNION ALL SELECT %s", atlasRevisionStringLiteral(m.connectionDialect(), version))
+	// Oracle refuses AS before a derived table's alias: measured on Oracle Free
+	// 23.26.3.0.0 it answers ORA-03048, and the same query without AS is
+	// accepted. Oracle 21 also takes no SELECT without FROM, so every literal
+	// row selects from dual.
+	rowSource, aliasKeyword := "", " AS"
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.Oracle {
+		rowSource, aliasKeyword = " FROM dual", ""
 	}
-	query.WriteString(") AS ptah_revision_identities")
+	for _, version := range identities {
+		fmt.Fprintf(&query, " UNION ALL SELECT %s%s", atlasRevisionStringLiteral(m.connectionDialect(), version), rowSource)
+	}
+	query.WriteString(")" + aliasKeyword + " ptah_revision_identities")
 	var distinct int
 	if err := m.conn.QueryRowContext(ctx, query.String()).Scan(&distinct); err != nil {
 		return 0, fmt.Errorf("failed to verify exact Atlas revision identities: %w", err)
@@ -917,6 +1018,10 @@ func atlasVersionNumberExpressionFor(dialect string) string {
 	switch dialect {
 	case "mysql", "mariadb":
 		return "CAST(" + atlasMetadataVersionNullGuard + " AS SIGNED)"
+	case platform.Oracle:
+		// Oracle has no BIGINT: measured on Oracle Free 23.26.3.0.0,
+		// `CAST('12' AS BIGINT)` answers ORA-00902, invalid datatype.
+		return "CAST(" + atlasMetadataVersionNullGuard + " AS NUMBER(19))"
 	default:
 		return "CAST(" + atlasMetadataVersionNullGuard + " AS BIGINT)"
 	}
@@ -1003,6 +1108,26 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     partial_hashes JSONB NULL,
     operator_version VARCHAR NOT NULL
 )`, qualifiedTable)
+	case platform.Oracle:
+		// The Oracle spelling of the same columns, for the reasons the native
+		// table has one: see ptahRevisionsTableDDL. Measured on Oracle Free
+		// 23.26.3.0.0, the generic statement below answers ORA-03062, missing
+		// comma or right parenthesis. partial_hashes is a CLOB, which takes the
+		// []byte JSON document atlasJSONValue binds (stokaro/ptah#3298).
+		return oracleCreateTableIfAbsent(fmt.Sprintf(`CREATE TABLE %s (
+    version VARCHAR2(255) PRIMARY KEY,
+    description CLOB NULL,
+    type NUMBER(19) DEFAULT 2 NOT NULL,
+    applied NUMBER(19) DEFAULT 0 NOT NULL,
+    total NUMBER(19) DEFAULT 0 NOT NULL,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time NUMBER(19) NOT NULL,
+    error CLOB NULL,
+    error_stmt CLOB NULL,
+    hash VARCHAR2(255) NULL,
+    partial_hashes CLOB NULL,
+    operator_version VARCHAR2(255) NULL
+)`, qualifiedTable))
 	case platform.ClickHouse:
 		// The engine is named here for the same reason the native DDL names
 		// one: ClickHouse gives a table no engine unless asked, and whether an
@@ -1173,20 +1298,22 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	var executionTimeMs int64
 	var appliedAt any
 	var storedState string
+	var text revisionText
 	if err := row.Scan(
 		&revision.Version,
-		&revision.Description,
+		&text.description,
 		&storedState,
 		&revision.Applied,
 		&revision.Total,
-		&revision.Error,
-		&revision.ErrorStatement,
+		&text.failure,
+		&text.failedStatement,
 		&executionTimeMs,
-		&revision.Checksum,
+		&text.checksum,
 		&appliedAt,
 	); err != nil {
 		return MigrationRevision{}, err
 	}
+	text.assignTo(&revision)
 	if err := validateRevisionProgress(revision, "read revision metadata"); err != nil {
 		return MigrationRevision{}, err
 	}
@@ -1210,22 +1337,24 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	var executionTime int64
 	var executedAt any
 	var partialHashes any
+	var text revisionText
 	if err := row.Scan(
 		&version,
-		&revision.Description,
+		&text.description,
 		&revision.AtlasType,
 		&revision.Applied,
 		&revision.Total,
-		&revision.Error,
-		&revision.ErrorStatement,
+		&text.failure,
+		&text.failedStatement,
 		&executionTime,
-		&revision.Checksum,
+		&text.checksum,
 		&executedAt,
 		&partialHashes,
-		&revision.OperatorVersion,
+		&text.operatorVersion,
 	); err != nil {
 		return MigrationRevision{}, err
 	}
+	text.assignTo(&revision)
 	revision.AtlasVersion = version
 	revision.hasAtlasVersion = true
 	parsedVersion, err := m.atlasRuntimeVersion(version)

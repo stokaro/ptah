@@ -88,19 +88,25 @@ func ClassOf(dialect string) Class {
 	case platform.MySQL, platform.MariaDB:
 		return ImplicitCommit
 
-	// Measured on Oracle 23.26.2.0.0 and 21.3.0.0.0 alike: a CREATE TABLE
-	// issued inside an explicit transaction is still in user_tables after the
-	// ROLLBACK, because Oracle commits the transaction in progress before
-	// every schema statement. That is the same contract MySQL has, reached the
-	// same way, so a migration body here survives a failed revision write
-	// (stokaro/ptah#1875).
-	case platform.Oracle:
-		return ImplicitCommit
-
 	// Proven live by TestRevisionCompletionFailure_ClickHouseNoTransactionLive.
 	// The ClickHouse writer's BeginTransaction returns a transaction whose
 	// Commit and Rollback are no-ops.
 	case platform.ClickHouse:
+		return NoTransaction
+
+	// Oracle commits the transaction in progress before every schema
+	// statement: measured on 23.26.2.0.0 and 21.3.0.0.0, a CREATE TABLE issued
+	// inside an explicit transaction is still in user_tables after the
+	// ROLLBACK (stokaro/ptah#1875). So the Oracle writer opens no transaction at
+	// all. Its BeginTransaction returns one whose Commit and Rollback are
+	// no-ops, as the ClickHouse writer's does, and every statement the migrator
+	// sends -- body and revision write alike -- commits on its own. That is
+	// this class rather than ImplicitCommit, because nothing stays open for a
+	// failure to roll back: TestOracleMigratorKeepsEveryStatementItRanLive
+	// finds the INSERT that ran before a failing statement still there.
+	// ImplicitCommit would select the MySQL-family progress witness, whose
+	// InnoDB and sql_mode preflight Oracle cannot answer (stokaro/ptah#3298).
+	case platform.Oracle:
 		return NoTransaction
 
 	default:

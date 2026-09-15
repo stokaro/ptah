@@ -47,6 +47,23 @@ func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {
 			wantArgs:         []any{"public", "schema_migrations"},
 		},
 		{
+			name:             "oracle connection schema",
+			dialect:          platform.Oracle,
+			connectionSchema: "PTAH_USER",
+			table:            "schema_migrations",
+			wantQuery:        "SELECT COUNT(*)\nFROM all_tables\nWHERE owner = ? AND table_name = ?",
+			wantArgs:         []any{"PTAH_USER", "schema_migrations"},
+		},
+		{
+			name:             "oracle configured schema",
+			dialect:          platform.Oracle,
+			configuredSchema: "REVISIONS",
+			connectionSchema: "PTAH_USER",
+			table:            "schema_migrations",
+			wantQuery:        "SELECT COUNT(*)\nFROM all_tables\nWHERE owner = ? AND table_name = ?",
+			wantArgs:         []any{"REVISIONS", "schema_migrations"},
+		},
+		{
 			name:             "sqlite attached schema",
 			dialect:          platform.SQLite,
 			configuredSchema: "aux",

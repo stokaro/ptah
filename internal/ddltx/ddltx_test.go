@@ -71,6 +71,7 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 		{name: "mariadb", dialect: platform.MariaDB, want: ddltx.ImplicitCommit},
 		{name: "clickhouse", dialect: platform.ClickHouse, want: ddltx.NoTransaction},
 		{name: "clickhouse alias ch", dialect: "ch", want: ddltx.NoTransaction},
+		{name: "oracle", dialect: platform.Oracle, want: ddltx.NoTransaction},
 	}
 
 	for _, test := range tests {
