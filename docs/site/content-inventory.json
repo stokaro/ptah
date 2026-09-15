@@ -1185,10 +1185,11 @@
         "/databases/overview/",
         "/databases/support-matrix/",
         "/reference/configuration/",
-        "/reference/extension-variables/"
+        "/reference/extension-variables/",
+        "/versioned/reference-data/"
       ],
-      "visibleWords": 2878,
-      "sourceBytes": 19088
+      "visibleWords": 3002,
+      "sourceBytes": 19804
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlserver.md",
@@ -6598,6 +6599,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/databases/sqlite/",
         "/direct/compare-and-drift/",
         "/operate/seed-data/"
       ],
@@ -6611,13 +6613,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-<<<<<<< HEAD
-      "visibleWords": 1474,
-      "sourceBytes": 10334
-=======
-      "visibleWords": 1452,
-      "sourceBytes": 10223
->>>>>>> a7e38be53 (fix(datadiff): a declared moment and the moment a driver returns are one value)
+      "visibleWords": 1573,
+      "sourceBytes": 10963
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

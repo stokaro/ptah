@@ -185,6 +185,13 @@ children-first. Two reference tables joined by a foreign key are therefore
 applied in one run, against the constraint the same plan created a few
 statements earlier.
 
+On SQLite, a plan that also rebuilds a table carries the rows inside the
+rebuild's `PRAGMA foreign_keys` pair, ahead of the pragma that turns enforcement
+back on. The rows then run with enforcement suspended, like the rebuild, and the
+foreign-key check the apply runs before it commits refuses the whole plan when a
+row names a parent that does not exist. See
+[SQLite](../../databases/sqlite/#what-renders-natively).
+
 Severity is assigned by what the statement does to the rows, not by what a SQL
 analyzer makes of it:
 
