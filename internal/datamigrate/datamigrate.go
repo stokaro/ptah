@@ -249,6 +249,15 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 		if err != nil {
 			return inspection{}, err
 		}
+		// orderByDependency below puts a table after the tables it references.
+		// A row that references a row of its own table is ordered here, inside
+		// the table: parents first to write, children first to remove
+		// (stokaro/ptah#3266). composeByPhase reverses the whole delete phase,
+		// so these arrive in the order it expects.
+		references := selfReferences(db, md)
+		diff.Inserts = dataorder.Rows(diff.Inserts, md.Keys, references)
+		diff.Deletes = dataorder.Rows(diff.Deletes, md.Keys, references)
+		slices.Reverse(diff.Deletes)
 		if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
 			// No drift for this table; it contributes nothing in either direction.
 			continue
@@ -329,6 +338,19 @@ func mergeByTable(changes []tableChange) []tableChange {
 		merged = append(merged, change)
 	}
 	return merged
+}
+
+// selfReferences names the declaration's columns that reference its own table.
+func selfReferences(db *schemamodel.Database, md schemamodel.ManagedData) []string {
+	if db == nil {
+		return nil
+	}
+	for _, table := range db.Tables {
+		if table.StructName == md.StructName || table.Name == md.Table {
+			return dataorder.SelfReferences(db, table)
+		}
+	}
+	return nil
 }
 
 // computeTable runs the read-and-diff half of the pipeline for a single managed
