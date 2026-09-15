@@ -276,31 +276,21 @@ func pairRoutineOverloads(
 
 // matchRecordedRoutine finds the unused recorded routine whose signature equals
 // the declared one's, or -1.
+//
+// Only the PostgreSQL reader captures identity arguments, so on every other
+// dialect [catalog.Function.Signature] is the declared parameters. That is why
+// the caller consults a signature at all only where a name is overloaded: the
+// two sides are then compared on the same kind of string, which is the best
+// available and is still better than keeping one entry per name.
 func matchRecordedRoutine(declared schemamodel.Function, recorded []catalog.Function, used []bool) int {
 	want := normalizeRoutineSignature(declared.Parameters)
 	for index, candidate := range recorded {
 		if used[index] {
 			continue
 		}
-		if normalizeRoutineSignature(recordedRoutineSignature(candidate)) == want {
+		if normalizeRoutineSignature(candidate.Signature()) == want {
 			return index
 		}
 	}
 	return -1
-}
-
-// recordedRoutineSignature returns the argument list to compare a recorded
-// routine on.
-//
-// IdentityArguments is the catalog's own answer and is preferred; only the
-// PostgreSQL reader fills it, so every other dialect falls back to the declared
-// parameters. That fallback is why the caller consults a signature at all only
-// where a name is overloaded: on a dialect with no identity arguments the two
-// sides are compared on the same kind of string, which is the best available
-// and is still better than keeping one entry per name.
-func recordedRoutineSignature(function catalog.Function) string {
-	if function.IdentityArguments != nil {
-		return *function.IdentityArguments
-	}
-	return function.Parameters
 }

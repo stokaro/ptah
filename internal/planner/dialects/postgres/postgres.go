@@ -1709,7 +1709,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
-	// without affecting policies or triggers that reference the function.
+	// without affecting policies or triggers that reference the function. A
+	// change the server refuses to replace is a drop and a create instead; see
+	// replacementIsRefused.
 	result = p.modifyExistingFunctions(result, diff)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
@@ -2211,11 +2213,44 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.Sch
 			continue
 		}
 
+		if replacementIsRefused(fnDiff) {
+			// Not IF EXISTS: the routine was just read from the database, so a
+			// drop that matches nothing means the signature is wrong, and
+			// saying so here is clearer than the 42P13 the create would answer.
+			// Not CASCADE either: a view, policy or trigger that uses the
+			// routine makes the server refuse the drop, which stops the plan
+			// rather than removing an object nobody asked to remove.
+			result = append(result, ast.NewDropFunction(target.Name).
+				SetKind(target.Kind).
+				SetParameters(fnDiff.CurrentSignature).
+				SetComment(fmt.Sprintf(
+					"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
+					target.Name,
+				)))
+		}
+
 		functionNode := modelast.FromFunction(target)
 		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
 		result = append(result, functionNode)
 	}
 	return result
+}
+
+// replacementIsRefused reports whether PostgreSQL refuses this modification
+// through CREATE OR REPLACE, so the routine has to be dropped before the new
+// definition is created.
+//
+// A return type is part of what a replacement may not change. The server
+// answers `cannot change return type of existing function` (SQLSTATE 42P13),
+// and a plan made of the replacement alone could be applied in neither
+// direction (stokaro/ptah#3288).
+//
+// The rule is keyed on the change rather than applied to every modification,
+// because a drop is not free: it fails on any routine a view, policy or trigger
+// uses, where a replacement keeps those objects in place.
+func replacementIsRefused(fnDiff difftypes.FunctionDiff) bool {
+	_, changed := fnDiff.Changes["returns"]
+	return changed
 }
 
 // summarizeFunctionChanges produces a deterministic one-line summary of the

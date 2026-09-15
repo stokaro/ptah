@@ -1205,6 +1205,19 @@ type Function struct {
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (f Function) QualifiedName() string { return QualifyTableName(f.Schema, f.Name) }
 
+// Signature returns the argument list that selects this routine among the
+// overloads of its name, the list a DROP or ALTER addresses it by.
+//
+// It is IdentityArguments when a reader captured it, and Parameters otherwise.
+// Only the PostgreSQL reader captures an identity, so on every other dialect the
+// answer is the declaration parameters as the catalog reports them.
+func (f Function) Signature() string {
+	if f.IdentityArguments != nil {
+		return *f.IdentityArguments
+	}
+	return f.Parameters
+}
+
 // View represents a database view read from the database.
 type View struct {
 	Name        string `json:"name"`         // View name

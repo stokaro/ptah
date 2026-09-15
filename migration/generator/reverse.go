@@ -154,7 +154,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// merge into one addition list without losing which was which.
 		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
-		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, prior),
+		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, dbSchema, dialect),
 		// A removed procedure comes back as an addition, and the planner reads
 		// its kind off the declaration -- which is why the reverse of a removal
 		// needs no kind of its own. The reverse of an ADDITION does: nothing
