@@ -225,12 +225,40 @@ counterparts, and the three `_EXIT_CODE` variables pointing at that run.
 | `comment` | `true` | Whether to write a sticky PR comment. |
 | `lint` | `true` | Whether to run `ptah migrations lint`. |
 | `lint-fail-on` | `error` | Lint failure threshold: `error`, `any`, or `none`. |
+| `lint-git-base` | empty | Base Git ref for lint, passed through as `--git-base`: only the migrations the pull request adds are linted. Needs `fetch-depth: 0`. Empty lints the whole directory. |
+| `lint-latest` | empty | Lint only the newest N migrations, passed through as `--latest`. Ignored when `lint-git-base` is set. |
 | `allow-destructive` | `false` | Allows destructive plans after review. |
 | `output-dir` | temporary | Directory for generated reports. |
 
 The outputs `plan-path`, `safety-path`, `lint-path`, their captured stderr
 paths, and the `destructive` verdict (`true`, `false`, or `unknown`) let later
 workflow steps consume the generated reports.
+
+### Lint the changeset, not all of history
+
+The action lints the whole migration directory unless told otherwise. On a
+repository with history that reports migrations which shipped long ago and
+cannot be edited, and with the default `lint-fail-on: error` the gate is then
+permanently red. An immutable history is not a changeset.
+
+A pull request has a changeset, so compare against its base; a push has none, so
+lint the newest migration. A shallow checkout does not fetch the base ref, and
+the lint then fails with `bad revision <base>...HEAD` rather than linting
+nothing, which is why the checkout asks for history:
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+
+- uses: stokaro/ptah-action@v1
+  with:
+    db-url: ${{ secrets.DATABASE_URL }}
+    lint-git-base: ${{ github.event_name == 'pull_request' && github.base_ref || '' }}
+    lint-latest: ${{ github.event_name == 'pull_request' && '' || '1' }}
+```
+
+`lint-git-base` wins when both are set.
 
 ### Database, permissions, and pinning
 

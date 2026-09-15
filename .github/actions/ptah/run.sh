@@ -98,6 +98,19 @@ if [[ "${INPUT_LINT:-true}" == "true" ]]; then
 	if [[ -n "${INPUT_DIALECT:-}" ]]; then
 		lint_args+=(--dialect "$INPUT_DIALECT")
 	fi
+	# Scope the lint to a changeset when the caller named one. Without this the
+	# action lints the whole directory on every run, which on a repository with
+	# history means reporting migrations that shipped long ago and cannot be
+	# edited -- an immutable history is not a changeset, and with the default
+	# fail-on the gate is then permanently red (stokaro/ptah-action#6).
+	#
+	# --git-base wins over --latest: a pull request has a real changeset, and
+	# the count is the fallback for a build that has none.
+	if [[ -n "${INPUT_LINT_GIT_BASE:-}" ]]; then
+		lint_args+=(--git-base "$INPUT_LINT_GIT_BASE")
+	elif [[ -n "${INPUT_LINT_LATEST:-}" ]]; then
+		lint_args+=(--latest "$INPUT_LINT_LATEST")
+	fi
 	"$ptah_bin" "${lint_args[@]}" >"$lint_path" 2>"$lint_error_path"
 	lint_status="$?"
 else

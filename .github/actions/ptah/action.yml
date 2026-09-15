@@ -75,6 +75,21 @@ inputs:
     description: "Lint failure threshold: error, any, or none."
     required: false
     default: "error"
+  lint-git-base:
+    description: >-
+      Base Git ref for lint, passed through as --git-base: only the migrations
+      the pull request adds are linted. Needs a checkout with history
+      (fetch-depth: 0); a shallow one does not fetch the base ref and the lint
+      fails with `bad revision <base>...HEAD`. Empty lints the whole directory.
+    required: false
+    default: ""
+  lint-latest:
+    description: >-
+      Lint only the newest N migrations, passed through as --latest. A whole
+      number. Use it where there is no changeset to compare against, such as a
+      push build. Ignored when lint-git-base is set.
+    required: false
+    default: ""
   allow-destructive:
     description: Allow destructive migration plans.
     required: false
@@ -161,6 +176,8 @@ runs:
         INPUT_SCHEMAS: ${{ inputs.schemas }}
         INPUT_LINT: ${{ inputs.lint }}
         INPUT_LINT_FAIL_ON: ${{ inputs.lint-fail-on }}
+        INPUT_LINT_GIT_BASE: ${{ inputs.lint-git-base }}
+        INPUT_LINT_LATEST: ${{ inputs.lint-latest }}
         INPUT_ALLOW_DESTRUCTIVE: ${{ inputs.allow-destructive }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_GENERATE: ${{ inputs.generate }}
