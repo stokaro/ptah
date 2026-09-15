@@ -16,7 +16,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 
@@ -25,6 +24,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dataorder"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -401,41 +401,15 @@ func findManagedTable(dbSchema *catalog.Database, wantSchema, defaultSchema, tab
 
 // orderByDependency reorders diffs in place so a table appears before every
 // table that declares a foreign key to it, matching the schema's dependency
-// graph. db.Tables is already topologically sorted parents-first, so its index
-// gives the insert order (the reverse gives the delete order). Managed tables
-// with no schema-object definition — and any left after a circular dependency —
-// keep a stable alphabetical order after the known ones, so output stays
-// deterministic.
+// graph. The rank comes from dataorder, which the plan stage reads too, because
+// a row's order against the rows it references is one rule and not two. Managed
+// tables with no schema-object definition — and any left after a circular
+// dependency — keep a stable alphabetical order after the known ones, so output
+// stays deterministic.
 func orderByDependency(db *schemamodel.Database, diffs []*datadiff.DataDiff) {
-	// Index the dependency-sorted tables by their fully-qualified name, and also
-	// by bare name where that name is unambiguous across the schema. The bare
-	// index is a fallback for when a //ptah:schema:data annotation omits the
-	// schema attribute while its //ptah:schema:table definition sets one (or
-	// vice versa); without it the qualified lookup would miss and FK ordering
-	// would silently degrade to alphabetical for that table. A bare name shared
-	// by tables in different schemas is left out of the fallback so it can never
-	// resolve to the wrong table.
-	pos := make(map[string]int, len(db.Tables))
-	barePos := make(map[string]int, len(db.Tables))
-	bareCount := make(map[string]int, len(db.Tables))
-	for i, t := range db.Tables {
-		pos[t.QualifiedName()] = i
-		barePos[t.Name] = i
-		bareCount[t.Name]++
-	}
-	rank := func(d *datadiff.DataDiff) int {
-		if i, ok := pos[qualifiedName(d.Schema, d.Table)]; ok {
-			return i
-		}
-		if bareCount[d.Table] == 1 {
-			if i, ok := barePos[d.Table]; ok {
-				return i
-			}
-		}
-		return math.MaxInt
-	}
+	ranker := dataorder.New(db)
 	slices.SortStableFunc(diffs, func(a, b *datadiff.DataDiff) int {
-		if c := cmp.Compare(rank(a), rank(b)); c != 0 {
+		if c := cmp.Compare(ranker.Rank(a.Schema, a.Table), ranker.Rank(b.Schema, b.Table)); c != 0 {
 			return c
 		}
 		return cmp.Compare(qualifiedName(a.Schema, a.Table), qualifiedName(b.Schema, b.Table))
