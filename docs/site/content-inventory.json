@@ -1454,8 +1454,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 890,
-      "sourceBytes": 9611
+      "visibleWords": 1055,
+      "sourceBytes": 11026
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -6611,13 +6611,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-<<<<<<< HEAD
-      "visibleWords": 1474,
-      "sourceBytes": 10334
-=======
-      "visibleWords": 1452,
-      "sourceBytes": 10223
->>>>>>> a7e38be53 (fix(datadiff): a declared moment and the moment a driver returns are one value)
+      "visibleWords": 1509,
+      "sourceBytes": 10545
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",
