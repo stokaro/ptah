@@ -79,7 +79,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.15.4
+          version: v2.18.1
           args: check
 
       - uses: anchore/sbom-action/download-syft@v0.24.2
@@ -88,7 +88,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.15.4
+          version: v2.18.1
           args: release --snapshot --clean --skip=sign,docker
 
   release-check-gate:
@@ -224,7 +224,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.15.4
+          version: v2.18.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
