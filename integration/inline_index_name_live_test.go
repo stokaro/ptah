@@ -62,7 +62,12 @@ func TestInlineIndexNameLive(t *testing.T) {
 			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(c, row.engine))
 			c.Assert(err, qt.IsNil)
-			defer dbschema.CloseAndWarn(conn)
+			// Closed through Cleanup rather than a defer, so the drop below --
+			// registered later and therefore run first -- still has a
+			// connection. Closed by a defer, the drop reaches a closed
+			// connection and the table stays in a database every other live
+			// test shares.
+			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 			suffix := fmt.Sprintf("%d", time.Now().UnixNano()%100000000)
 			table := "ptah_iix_" + suffix
@@ -72,7 +77,12 @@ func TestInlineIndexNameLive(t *testing.T) {
 			_, execErr := conn.ExecContext(t.Context(), ddl)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("the engine refused %s", ddl))
 			c.Cleanup(func() {
-				_, _ = conn.ExecContext(context.Background(), "DROP TABLE "+table)
+				// t.Context() is canceled by the time a cleanup runs, and the
+				// drop is asserted rather than discarded: a table left behind
+				// is a plan against the live database that wants to drop it,
+				// which fails a test that never created it.
+				_, dropErr := conn.ExecContext(context.Background(), "DROP TABLE "+table)
+				c.Check(dropErr, qt.IsNil, qt.Commentf("%s stays in the shared database", table))
 			})
 
 			// The engine took it, so Ptah has to read it, and read the index
