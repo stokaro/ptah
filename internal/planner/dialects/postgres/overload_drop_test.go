@@ -47,7 +47,7 @@ func TestRemoveFunctions_ADroppedOverloadNamesItsArguments(t *testing.T) {
 		// The signature travels WITH the removal, rather than needing a
 		// parallel list beside this one (stokaro/ptah#2315).
 		FunctionsRemoved: difftypes.FunctionChanges{
-			{Function: schemamodel.Function{Name: "f"}, Signature: "a text"},
+			{Function: schemamodel.Function{Name: "f"}, Signature: new("a text")},
 		},
 	})
 
@@ -61,7 +61,7 @@ func TestRemoveFunctions_ADroppedProcedureNamesItsArguments(t *testing.T) {
 
 	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
 		ProceduresRemoved: difftypes.FunctionChanges{
-			{Function: schemamodel.Function{Name: "p"}, Signature: "a integer"},
+			{Function: schemamodel.Function{Name: "p"}, Signature: new("a integer")},
 		},
 	})
 
@@ -82,4 +82,38 @@ func TestRemoveFunctions_ARoutineWithNoSignatureIsStillDropped(t *testing.T) {
 
 	c.Assert(sql, qt.Contains, `DROP FUNCTION IF EXISTS "solo"`)
 	c.Assert(sql, qt.Not(qt.Contains), "()")
+}
+
+// TestRemoveFunctions_ADroppedZeroArgumentOverloadNamesItsEmptyList is the
+// overload a bare name cannot select either.
+//
+// `scalar()` and `scalar(n integer)` are two routines of one name, and the
+// server answers `DROP FUNCTION IF EXISTS scalar` about the first exactly as it
+// answers it about the second: `function name "scalar" is not unique`. So an
+// empty argument list is carried like any other list rather than read as the
+// absence of one.
+func TestRemoveFunctions_ADroppedZeroArgumentOverloadNamesItsEmptyList(t *testing.T) {
+	c := qt.New(t)
+
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
+		FunctionsRemoved: difftypes.FunctionChanges{
+			{Function: schemamodel.Function{Name: "scalar"}, Signature: new("")},
+		},
+	})
+
+	c.Assert(sql, qt.Contains, `DROP FUNCTION IF EXISTS "scalar"()`)
+}
+
+// TestRemoveFunctions_ADroppedZeroArgumentProcedureNamesItsEmptyList is the
+// same for the other routine kind, which overloads on the same terms.
+func TestRemoveFunctions_ADroppedZeroArgumentProcedureNamesItsEmptyList(t *testing.T) {
+	c := qt.New(t)
+
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
+		ProceduresRemoved: difftypes.FunctionChanges{
+			{Function: schemamodel.Function{Name: "bump"}, Signature: new("")},
+		},
+	})
+
+	c.Assert(sql, qt.Contains, `DROP PROCEDURE IF EXISTS "bump"()`)
 }

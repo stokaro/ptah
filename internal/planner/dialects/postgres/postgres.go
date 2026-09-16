@@ -2220,13 +2220,19 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.Sch
 			// Not CASCADE either: a view, policy or trigger that uses the
 			// routine makes the server refuse the drop, which stops the plan
 			// rather than removing an object nobody asked to remove.
-			result = append(result, ast.NewDropFunction(target.Name).
+			drop := ast.NewDropFunction(target.Name).
 				SetKind(target.Kind).
-				SetParameters(fnDiff.CurrentSignature).
 				SetComment(fmt.Sprintf(
 					"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
 					target.Name,
-				)))
+				))
+			// An empty list is still a list: the routine that takes no
+			// arguments is dropped as `f()`, and only a change that recorded
+			// no identity at all leaves the statement naming the routine.
+			if fnDiff.CurrentSignature != nil {
+				drop.SetParameters(*fnDiff.CurrentSignature)
+			}
+			result = append(result, drop)
 		}
 
 		functionNode := modelast.FromFunction(target)
@@ -2275,8 +2281,11 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 		dropFunctionNode := ast.NewDropFunction(removal.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function")
-		if removal.Signature != "" {
-			dropFunctionNode = dropFunctionNode.SetParameters(removal.Signature)
+		// An empty list addresses the overload that takes no arguments, so it
+		// is carried like any other; only a removal that recorded no identity
+		// leaves the statement naming the routine.
+		if removal.Signature != nil {
+			dropFunctionNode = dropFunctionNode.SetParameters(*removal.Signature)
 		}
 		result = append(result, dropFunctionNode)
 	}
@@ -2289,9 +2298,10 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this procedure")
-		// A procedure overloads too, and the same ambiguity refusal applies.
-		if removal.Signature != "" {
-			dropProcedureNode = dropProcedureNode.SetParameters(removal.Signature)
+		// A procedure overloads too, and the same ambiguity refusal applies,
+		// including for the one that takes no arguments.
+		if removal.Signature != nil {
+			dropProcedureNode = dropProcedureNode.SetParameters(*removal.Signature)
 		}
 		result = append(result, dropProcedureNode)
 	}

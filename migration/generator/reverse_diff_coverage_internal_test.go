@@ -567,24 +567,25 @@ func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 		}}}, &schemamodel.Database{}, nil)
 
 	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
-		[]difftypes.RoutineRemoval{{Name: "f", Signature: "a text"}})
+		[]difftypes.RoutineRemoval{{Name: "f", Signature: new("a text")}})
 }
 
-// TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName is the
-// control: an empty signature is the answer the bare list already gave, and it
-// drops correctly wherever the name is unique.
+// TestReverseSchemaDiff_ARoutineDeclaringNoParametersDropsByItsEmptyList is the
+// control on the other shape of an argument list.
 //
-// What makes it empty is an addition that declares no parameters, rather than a
-// lookup that finds nothing (stokaro/ptah#2315): the same answer, reached
-// without depending on the schema still being there.
-func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testing.T) {
+// The rollback drops the routine the addition created, and that routine takes
+// no arguments, so the list that addresses it is empty rather than absent:
+// `DROP FUNCTION gone()`. What makes it empty is the declaration itself, rather
+// than a lookup that finds nothing (stokaro/ptah#2315), so the answer does not
+// depend on the schema still being there.
+func TestReverseSchemaDiff_ARoutineDeclaringNoParametersDropsByItsEmptyList(t *testing.T) {
 	c := qt.New(t)
 
 	reversed := reverseSchemaDiffWithSchema(
 		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "gone"}}}}, &schemamodel.Database{}, nil)
 
 	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
-		[]difftypes.RoutineRemoval{{Name: "gone", Signature: ""}})
+		[]difftypes.RoutineRemoval{{Name: "gone", Signature: new("")}})
 }
 
 // TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary is the

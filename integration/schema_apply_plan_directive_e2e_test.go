@@ -167,8 +167,9 @@ func TestSchemaApplyPlanDirectiveTxModeE2E_HappyPath(t *testing.T) {
 // ordinary CREATE INDEX, so only the refusal can leave the index absent.
 //
 // The concurrent row is the control for the happy path's directive row: with
-// neither a header nor a flag, the concurrent index is refused, so that row
-// cannot pass because CONCURRENTLY was appliable under the default mode.
+// neither a header nor a flag, the transaction preflight refuses the concurrent
+// index before anything runs, so that row cannot pass because CONCURRENTLY was
+// appliable under the default mode.
 func TestSchemaApplyPlanDirectiveTxModeE2E_FailurePath(t *testing.T) {
 	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
@@ -195,7 +196,9 @@ func TestSchemaApplyPlanDirectiveTxModeE2E_FailurePath(t *testing.T) {
 				name: "without a directive or a flag the concurrent index is refused",
 				env:  planDirectiveConcurrentEnv,
 			},
-			wantOut: `(?s).*the concurrent-index diff policy requires --tx-mode none for schema apply.*`,
+			wantOut: `(?s).*the planned changes cannot run inside a transaction: ` +
+				`statement 1 of 1: CREATE or DROP INDEX CONCURRENTLY is refused inside a ` +
+				`transaction block; rerun with --tx-mode none.*`,
 		},
 	}
 

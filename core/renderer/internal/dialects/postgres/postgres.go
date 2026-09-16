@@ -2501,17 +2501,23 @@ func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
 	//
-	// An empty parameter list drops the argument list entirely rather than
-	// rendering `()`. The two are different targets: `f()` names the
+	// A node that carries no argument list is dropped by its bare name rather
+	// than with `()`. The two are different targets: `f()` names the
 	// zero-argument overload specifically, so a drop of a routine that takes
 	// arguments matched nothing and -- with IF EXISTS in front of it -- reported
 	// success having removed nothing. PostgreSQL 10 and later accept the bare
 	// name and refuse it only when it is ambiguous, which is a louder failure
 	// than the silent one it replaces (stokaro/ptah#1722).
-	if node.Parameters == "" {
+	//
+	// An EMPTY argument list is the other case, and it renders `()`. That is
+	// how a routine taking no arguments is addressed where its name is
+	// overloaded; the bare name is refused there with `function name "f" is not
+	// unique`, and IF EXISTS does not help, because the refusal is about
+	// ambiguity rather than existence.
+	if node.Parameters == nil {
 		parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 	} else {
-		parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+		parts = append(parts, r.escapeFunctionSignature(node.Name, *node.Parameters))
 	}
 
 	if node.Cascade {

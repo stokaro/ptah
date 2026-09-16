@@ -48,7 +48,7 @@ func TestPlanner_FunctionReturnTypeChange_DropsTheRoutineBeforeCreatingIt(t *tes
 	sql := renderFunctionModification(c, difftypes.FunctionDiff{
 		FunctionName:     "billing.total",
 		Changes:          map[string]string{"returns": "integer -> bigint"},
-		CurrentSignature: "n integer",
+		CurrentSignature: new("n integer"),
 		Desired:          totalFunction("n integer", "bigint"),
 	})
 
@@ -73,7 +73,7 @@ func TestPlanner_FunctionReturnTypeChange_DropsByTheCurrentSignature(t *testing.
 			"parameters": "n integer -> n bigint",
 			"returns":    "integer -> bigint",
 		},
-		CurrentSignature: "n integer",
+		CurrentSignature: new("n integer"),
 		Desired:          totalFunction("n bigint", "bigint"),
 	})
 
@@ -90,10 +90,28 @@ func TestPlanner_FunctionBodyChange_ReplacesWithoutDropping(t *testing.T) {
 	sql := renderFunctionModification(c, difftypes.FunctionDiff{
 		FunctionName:     "billing.total",
 		Changes:          map[string]string{"body": "SELECT 0 -> SELECT 1"},
-		CurrentSignature: "n integer",
+		CurrentSignature: new("n integer"),
 		Desired:          totalFunction("n integer", "integer"),
 	})
 
 	c.Assert(sql, qt.Contains, `CREATE OR REPLACE FUNCTION "billing"."total"(n integer) RETURNS integer`)
 	c.Assert(sql, qt.Not(qt.Contains), "DROP FUNCTION")
+}
+
+// A rebuilt routine that takes no arguments is dropped as `f()`.
+//
+// Both overloads are present when the drop runs, so the statement has to select
+// one of them. The empty list is what names the routine being rebuilt; the bare
+// name is refused with `function name "total" is not unique`.
+func TestPlanner_FunctionReturnTypeChange_DropsAZeroArgumentRoutineByItsEmptyList(t *testing.T) {
+	c := qt.New(t)
+
+	sql := renderFunctionModification(c, difftypes.FunctionDiff{
+		FunctionName:     "billing.total",
+		Changes:          map[string]string{"returns": "integer -> bigint"},
+		CurrentSignature: new(""),
+		Desired:          totalFunction("", "bigint"),
+	})
+
+	c.Assert(sql, qt.Contains, `DROP FUNCTION "billing"."total"()`)
 }
