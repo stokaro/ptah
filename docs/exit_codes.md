@@ -53,6 +53,14 @@ signal status. Where its transaction rolls back, as on PostgreSQL, the
 interrupted migration changed nothing, and a later `ptah migrations up` refuses
 to continue past the failed row.
 
+A signal that arrives once the work is done does not change the status. `ptah
+migrations up` whose last migration committed before the interrupt exits `0`,
+against a database it fully migrated: there was nothing left for the signal to
+stop, and reporting the run as interrupted would send an operator looking for a
+migration that never failed. A command that ends *because* it was interrupted
+keeps the signal status -- `ptah schema serve` returns from its own shutdown and
+exits `130`.
+
 ## Diagnostic Prefix
 
 A *process-level diagnostic* is the single line a surface prints when a command
