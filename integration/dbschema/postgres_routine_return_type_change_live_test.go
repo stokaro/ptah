@@ -47,15 +47,36 @@ function "scalar" {
 	return description
 }
 
+// returnTypeConnection opens the connection one test uses and closes it after
+// every cleanup that test registers.
+//
+// A deferred close would not: a deferred call runs when the test function
+// returns, which is before any t.Cleanup, so the schema drop registered by
+// returnTypeSchema would reach a closed pool. Registering the close first puts
+// it last, because cleanups run in reverse order of registration.
+func returnTypeConnection(c *qt.C, dbURL string) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
+
 // returnTypeSchema creates an empty schema for one test and removes it when the
 // test ends.
+//
+// The drop is asserted rather than discarded. The server is shared, so a drop
+// that silently failed left the schema for the next test in the job to plan a
+// drop for, and its own context is gone by then, which is why this one runs on
+// a fresh context.
 func returnTypeSchema(c *qt.C, conn *dbschema.DatabaseConnection, prefix string) string {
 	c.Helper()
 	schemaName := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	_, err := conn.ExecContext(c.Context(), `CREATE SCHEMA "`+schemaName+`"`)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
-		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
+		_, err := conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
+		c.Check(err, qt.IsNil)
 	})
 	return schemaName
 }
@@ -128,9 +149,7 @@ func TestPostgresLiveRoutineReturnTypeChangeApplies(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
 
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	conn := returnTypeConnection(c, dbURL)
 
 	schemaName := returnTypeSchema(c, conn, "ptah_retchange")
 	applyDeclaration(c, conn, returnTypeDocument(c, schemaName, "integer"))
@@ -158,9 +177,7 @@ func TestPostgresLiveRoutineReturnTypeRollbackApplies(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
 
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	conn := returnTypeConnection(c, dbURL)
 
 	schemaName := returnTypeSchema(c, conn, "ptah_retrollback")
 	applyDeclaration(c, conn, returnTypeDocument(c, schemaName, "integer"))
@@ -190,9 +207,7 @@ func TestPostgresLiveOverloadedRoutineReturnTypeChangeApplies(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
 
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	conn := returnTypeConnection(c, dbURL)
 
 	schemaName := returnTypeSchema(c, conn, "ptah_retoverload")
 	overloaded := func(returns string) *schemamodel.Database {

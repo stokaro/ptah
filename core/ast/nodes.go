@@ -2866,9 +2866,15 @@ type DropFunctionNode struct {
 	// DROP PROCEDURE and DROP FUNCTION are different statements, and a server
 	// refuses the wrong one by name.
 	Kind string
-	// Parameters contains the function parameter definitions for function signature matching
-	// This is needed because PostgreSQL allows function overloading
-	Parameters string
+	// Parameters is the argument list that addresses the routine, or nil when
+	// no producer established one.
+	//
+	// Nil and an empty list are different statements. `DROP FUNCTION f()` names
+	// the zero-argument overload of f, while the bare `DROP FUNCTION f` names
+	// whichever routine of that name the server can resolve and is refused when
+	// the name is overloaded. So a routine that takes no arguments is dropped
+	// with an empty list, and a node that knows no list is dropped by name.
+	Parameters *string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
 	// Cascade indicates whether to use CASCADE option (removes dependent objects)
@@ -2893,15 +2899,18 @@ func NewDropFunction(name string) *DropFunctionNode {
 	}
 }
 
-// SetParameters sets the function parameters for signature matching.
+// SetParameters sets the argument list that addresses the routine.
 //
-// This is important for PostgreSQL function overloading support.
+// This is important for PostgreSQL function overloading support. The empty
+// string is a list rather than the absence of one: it addresses the routine of
+// this name that takes no arguments, which is what a schema holding overloads
+// needs to say. A node whose list is never set is dropped by its bare name.
 //
 // Example:
 //
 //	dropFunc.SetParameters("tenant_id_param TEXT, user_id INTEGER")
 func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode {
-	n.Parameters = parameters
+	n.Parameters = &parameters
 	return n
 }
 
