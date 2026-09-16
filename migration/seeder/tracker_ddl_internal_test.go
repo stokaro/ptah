@@ -139,4 +139,20 @@ func TestSavepointStatements_SpellsWhatEachEngineTakes(t *testing.T) {
 			c.Assert(got.release, qt.Equals, tt.release)
 		})
 	}
+
+// TestTrackerDDL_SpannerAvoidsTheTypesTheEndpointLacks pins the statement
+// Spanner is sent.
+//
+// Its PostgreSQL interface has no bpchar and no TIMESTAMP, and the tracker used
+// both. The endpoint answered `Type <bpchar> is not supported. (SQLSTATE
+// P0001)`, which is where `ptah seed` stopped (stokaro/ptah#3325).
+func TestTrackerDDL_SpannerAvoidsTheTypesTheEndpointLacks(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := trackerDDL(platform.Spanner)
+
+	c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS schema_seeds")
+	c.Assert(ddl, qt.Contains, "checksum TEXT NOT NULL")
+	c.Assert(ddl, qt.Contains, "applied_at TIMESTAMPTZ NOT NULL")
+	c.Assert(ddl, qt.Not(qt.Contains), "CHAR(64)")
 }

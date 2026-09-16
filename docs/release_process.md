@@ -91,7 +91,17 @@ Ptah releases are produced by GoReleaser from annotated version tags.
    scripts/check-release-image-mirror.sh 0.1.2
    ```
 
-7. Verify the Homebrew install:
+7. Verify the versioned documentation. The tag's `Docs` run deploys it under
+   the tag object's own build version, and the deploy job waits for the public
+   site to serve that build before it finishes, so a green run is the answer;
+   these two commands are what it waited for:
+
+   ```bash
+   curl -s https://docs.ptah.run/versions.json
+   curl -o /dev/null -w '%{http_code}\n' https://docs.ptah.run/v0.1.2/
+   ```
+
+8. Verify the Homebrew install:
 
    ```bash
    brew update

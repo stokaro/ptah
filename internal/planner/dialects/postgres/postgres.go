@@ -2246,17 +2246,32 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.Sch
 // through CREATE OR REPLACE, so the routine has to be dropped before the new
 // definition is created.
 //
-// A return type is part of what a replacement may not change. The server
-// answers `cannot change return type of existing function` (SQLSTATE 42P13),
-// and a plan made of the replacement alone could be applied in neither
-// direction (stokaro/ptah#3288).
+// Two changes are refused, and the second is refused silently, which is worse.
+//
+//   - A return type. The server answers `cannot change return type of existing
+//     function` (SQLSTATE 42P13), so a plan made of the replacement alone could
+//     be applied in neither direction (stokaro/ptah#3288).
+//   - The parameter list. Renaming one is refused outright with
+//     `cannot change name of input parameter "n"` (42P13). Changing one's type
+//     is ACCEPTED and creates a second overload, so the database ends with both
+//     `scalar(integer)` and `scalar(bigint)` where the author declared one
+//     routine, and the next comparison finds a routine nobody wrote
+//     (stokaro/ptah#3327). Both were measured on PostgreSQL 18.
+//
+// Dropping by the signature the database holds now is what makes the second
+// case right: the drop names the old parameter list and the create names the
+// new one, so exactly one routine survives.
 //
 // The rule is keyed on the change rather than applied to every modification,
 // because a drop is not free: it fails on any routine a view, policy or trigger
 // uses, where a replacement keeps those objects in place.
 func replacementIsRefused(fnDiff difftypes.FunctionDiff) bool {
-	_, changed := fnDiff.Changes["returns"]
-	return changed
+	for _, key := range []string{"returns", "parameters"} {
+		if _, changed := fnDiff.Changes[key]; changed {
+			return true
+		}
+	}
+	return false
 }
 
 // summarizeFunctionChanges produces a deterministic one-line summary of the

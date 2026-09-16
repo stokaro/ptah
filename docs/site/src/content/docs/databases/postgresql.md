@@ -91,10 +91,15 @@ accepts that: a new body, language, security context, volatility, planner
 property, or setting. Views, policies, and triggers that call the function stay
 in place.
 
-A changed return type cannot be applied that way. PostgreSQL refuses it with
-`cannot change return type of existing function` (SQLSTATE 42P13), so Ptah
+A changed return type or parameter list cannot be applied that way, so Ptah
 plans `DROP FUNCTION` followed by the create, in the migration and in its
-rollback. The drop names the function's argument list, so an overloaded name
+rollback. PostgreSQL refuses a changed return type with `cannot change return
+type of existing function` and a renamed parameter with `cannot change name of
+input parameter` (both SQLSTATE 42P13). A changed parameter *type* it accepts,
+and creates a second overload: without the drop, a declaration of one routine
+leaves two behind.
+
+The drop names the function's argument list, so an overloaded name
 loses only the overload that changed. A function that takes no arguments is
 named with an empty list, `f()`, which is what selects it among the overloads
 of its name; the same holds for a function the schema stops declaring, and for

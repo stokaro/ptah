@@ -3887,13 +3887,32 @@ func (p *Parser) currentIsIndexKeyword() bool {
 // guarantee makes Ptah converge to a schema stricter than the DDL it was given,
 // report it in sync, and reject duplicate values the author allowed
 // (stokaro/ptah#2713).
+// currentStartsIdentifier reports whether the current token opens a name, in
+// any spelling [Parser.expectIdentifier] accepts: a bare word, a double-quoted
+// one, or a bracketed one. A caller reading an OPTIONAL name asks this first,
+// so the two cannot disagree about what a name looks like.
+func (p *Parser) currentStartsIdentifier() bool {
+	return p.current.Type == lexer.TokenIdentifier ||
+		isDoubleQuotedIdentifierToken(p.current) ||
+		p.current.MatchOperatorValue("[")
+}
+
 func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 	p.advance()
 	p.skipWhitespace()
-	// Check for optional index name after INDEX/KEY
-	if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
-		constraint.Name = p.current.Value
-		p.advance()
+	// The optional index name, in every spelling the engine writing this DDL
+	// allows. Reading only a bare identifier refused `INDEX "idx_b" (b)`, which
+	// CockroachDB accepts: the quoted name was left in front of the column
+	// list, and the reader answered `expected Operator, got String`
+	// (stokaro/ptah#3328).
+	if p.currentStartsIdentifier() {
+		name, err := p.expectIdentifier()
+		// The guard above is expectIdentifier's own condition, so this cannot
+		// fail; leaving the name empty rather than panicking keeps the element
+		// readable as the unnamed index it then is.
+		if err == nil {
+			constraint.Name = name
+		}
 		p.skipWhitespace()
 	}
 	// A plain KEY takes the same optional clause a UNIQUE one does, and reading
@@ -3980,12 +3999,30 @@ func (p *Parser) handleTableConstraintInclude(constraint *ast.ConstraintNode) er
 	return p.expect(lexer.TokenOperator, ")")
 }
 
+// isBareNumberToken reports whether the token is an unquoted number. The lexer
+// emits numbers as identifiers, so a caller that means "a name" has to ask.
+func isBareNumberToken(tok lexer.Token) bool {
+	if tok.Type != lexer.TokenIdentifier || tok.Value == "" {
+		return false
+	}
+	for _, r := range tok.Value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
 	p.skipWhitespace()
 	if p.current.MatchOperatorValue("(") {
 		return p.parseFunctionalKeyPart()
 	}
 
+	if isBareNumberToken(p.current) {
+		return ast.ConstraintColumn{}, fmt.Errorf(
+			"%w, and %q at position %d is a number", errConstraintColumnNotAName, p.current.Value, p.current.Start)
+	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
 		return ast.ConstraintColumn{}, fmt.Errorf("expected column name: %w", err)
@@ -5545,6 +5582,21 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 // caller sees is unchanged and only the branching is new.
 var errConstraintColumnListMissing = errors.New("expected '(' for constraint columns")
 
+// errConstraintColumnNotAName marks a column list whose part is a bare number.
+//
+// The lexer has no number token -- `32` arrives as an identifier, the same
+// class as `name` -- so a column list accepted anything. That is how
+// `key varchar(32)` parsed on the engines that read KEY as an index: as an
+// index named `varchar` over a column named `32`, with the column the author
+// wrote gone from the model and nothing reported. MySQL and MariaDB answer the
+// same DDL with `Error 1064`, so this refusal is the engine's own answer rather
+// than a policy of Ptah's (stokaro/ptah#3329).
+//
+// A quoted part is untouched: the lexer keeps the quotes in the token, so
+// “ `32` “ is not this, and neither is a prefix length, which is read after
+// the name.
+var errConstraintColumnNotAName = errors.New("a column list names columns")
+
 // describeIndexKeywordElement says what a token class and a byte offset cannot:
 // the element began with a word this dialect reads as a table-level index, so a
 // document that meant it as a column name is refused at the type rather than at
@@ -5565,7 +5617,7 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 	// an ordinary index, an access method the dialect does not have -- comes
 	// from a document that did declare an index, and saying otherwise would
 	// describe the author's intent wrongly.
-	if !errors.Is(err, errConstraintColumnListMissing) {
+	if !errors.Is(err, errConstraintColumnListMissing) && !errors.Is(err, errConstraintColumnNotAName) {
 		return err
 	}
 	return fmt.Errorf(

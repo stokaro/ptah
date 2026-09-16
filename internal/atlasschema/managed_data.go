@@ -195,7 +195,10 @@ func managedDataDiff(
 		// A table this plan is about to create holds nothing, and reading it
 		// would fail rather than answer. Every declared row is an insert then.
 		CatalogIsComplete: true,
-		Intent:            managedrows.Report,
+		// The schema stage of this plan runs before its data stage, so the
+		// comparison is against the table the plan produces rather than the one
+		// it starts from.
+		Intent: managedrows.Plan,
 	})
 	if err != nil {
 		return nil, err

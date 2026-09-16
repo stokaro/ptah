@@ -87,6 +87,11 @@ func TestMigrationsUpInterruptedDuringAMigrationE2E(t *testing.T) {
 
 		c.Assert(run.exitCode, qt.Equals, 130, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
 		c.Assert(run.stderr, qt.Contains, "interrupt received")
+		// The operator stopped the run, so that is what the run reports.
+		// Whichever call noticed the cancelation first answers in its own
+		// words, and those words are not the answer (docs/exit_codes.md).
+		c.Assert(run.stderr, qt.Contains, "error: canceled")
+		c.Assert(run.stderr, qt.Not(qt.Contains), "SQL execution failed")
 		c.Assert(run.stdout, qt.Not(qt.Contains), "Migrations completed successfully")
 		c.Assert(run.afterSignal < interruptPromptness, qt.IsTrue, qt.Commentf("exited %s after the signal", run.afterSignal))
 		c.Assert(fixture.revisions(c, ctx), qt.DeepEquals, []string{"1 applied 1/1", "2 failed 0/2"})
@@ -132,6 +137,11 @@ func TestMigrationsDownInterruptedDuringARollbackE2E(t *testing.T) {
 
 		c.Assert(run.exitCode, qt.Equals, 130, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
 		c.Assert(run.stderr, qt.Contains, "interrupt received")
+		// The operator stopped the run, so that is what the run reports.
+		// Whichever call noticed the cancelation first answers in its own
+		// words, and those words are not the answer (docs/exit_codes.md).
+		c.Assert(run.stderr, qt.Contains, "error: canceled")
+		c.Assert(run.stderr, qt.Not(qt.Contains), "SQL execution failed")
 		c.Assert(run.stdout, qt.Not(qt.Contains), "Migration rollback completed successfully")
 		c.Assert(run.afterSignal < interruptPromptness, qt.IsTrue, qt.Commentf("exited %s after the signal", run.afterSignal))
 		c.Assert(fixture.revisions(c, ctx), qt.DeepEquals, []string{"1 applied 1/1", "2 failed:down 0/2"})
@@ -265,14 +275,28 @@ type interruptedRun struct {
 	afterSignal time.Duration
 }
 
-// runInterruptedDuringSleep starts the built binary, waits until the fixture
+// runInterruptedDuringSleep starts the native binary, waits until the fixture
 // database shows the migration body sleeping, sends SIGINT, and waits for the
 // process to exit.
 func runInterruptedDuringSleep(c *qt.C, ctx context.Context, f interruptFixture, args ...string) interruptedRun {
 	c.Helper()
+	return runTargetInterruptedDuringSleep(c, ctx, f, clirun.Ptah, args...)
+}
+
+// runTargetInterruptedDuringSleep is the same interrupt for either shipped
+// binary. The compatibility surface is interrupted exactly here too, and one
+// implementation is what keeps the two answers comparable.
+func runTargetInterruptedDuringSleep(
+	c *qt.C,
+	ctx context.Context,
+	f interruptFixture,
+	target clirun.Target,
+	args ...string,
+) interruptedRun {
+	c.Helper()
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, clirun.Build(c, clirun.Ptah), args...)
+	cmd := exec.CommandContext(ctx, clirun.Build(c, target), args...)
 	cmd.Dir = f.workDir
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

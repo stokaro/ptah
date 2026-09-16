@@ -304,26 +304,54 @@ func TestIndexKeywordColumnNameIsRefusedWithItsReason_FailurePath(t *testing.T) 
 	}
 }
 
-// TestCockroachDBQuotedIndexNameIsReadAsAnIndex_FailurePath pins which reading
-// a CockroachDB INDEX element with a double-quoted name gets.
+// TestQuotedInlineIndexNameIsRead_HappyPath pins that an inline index keeps its
+// name in every spelling the engine writes it in.
 //
-// A quoted name followed by a column list opens the list the same way a bare
-// name does, so `INDEX "idx_b" (b)` is read as an index. The table-constraint
-// reader takes no quoted index name, so the document is refused, and the
-// refusal names the index reading. Read as a column instead, the same document
-// fails at the quoted name as if it were a column type, which describes an
-// element the author never wrote.
-func TestCockroachDBQuotedIndexNameIsReadAsAnIndex_FailurePath(t *testing.T) {
-	c := qt.New(t)
+// Reading only a bare word left a quoted name in front of the column list, and
+// the element was refused with `expected Operator, got String` -- for DDL the
+// engine accepts. Measured on the fleet: CockroachDB takes
+// `INDEX "idx_b" (b)`, `INDEX idx_b (b)` and `INDEX (b)`, and SQL Server takes
+// `INDEX [idx_b] (b)` (stokaro/ptah#3328).
+func TestQuotedInlineIndexNameIsRead_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		element string
+		want    []string
+	}{
+		{
+			name:    "cockroachdb reads a double-quoted name",
+			dialect: platform.CockroachDB,
+			element: `INDEX "idx_b" (b)`,
+			want:    []string{`"idx_b"`},
+		},
+		{
+			name:    "cockroachdb reads a bare name",
+			dialect: platform.CockroachDB,
+			element: "INDEX idx_b (b)",
+			want:    []string{"idx_b"},
+		},
+		{
+			name:    "sqlserver reads a bracketed name",
+			dialect: platform.SQLServer,
+			element: "INDEX [idx_b] (b)",
+			want:    []string{"[idx_b]"},
+		},
+		{
+			name:    "mysql reads a backticked name",
+			dialect: platform.MySQL,
+			element: "KEY `idx_b` (b)",
+			want:    []string{"`idx_b`"},
+		},
+	}
 
-	statements, err := parser.NewParser(
-		inlineIndexDocument(`INDEX "idx_b" (b)`),
-		parser.WithDialect(platform.CockroachDB),
-	).Parse()
-
-	c.Assert(err, qt.ErrorMatches,
-		`(?s)a table element opening with INDEX at position \d+ declares a table-level index on cockroachdb .*`)
-	c.Assert(statements, qt.IsNil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := parsedIndexNames(c, inlineIndexDocument(tt.element), parser.WithDialect(tt.dialect))
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
 }
 
 // TestGenuineIndexFailureKeepsItsOwnReason_FailurePath is the control that keeps

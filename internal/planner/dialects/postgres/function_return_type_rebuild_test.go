@@ -115,3 +115,52 @@ func TestPlanner_FunctionReturnTypeChange_DropsAZeroArgumentRoutineByItsEmptyLis
 
 	c.Assert(sql, qt.Contains, `DROP FUNCTION "billing"."total"()`)
 }
+
+// A parameter change alone rebuilds the routine too, for two reasons the server
+// gives separately: a rename is refused with `cannot change name of input
+// parameter` (42P13), and a type change is ACCEPTED and leaves a second
+// overload behind, so the declaration of one routine ends with two
+// (stokaro/ptah#3327).
+func TestPlanner_FunctionParameterChange_DropsTheRoutineBeforeCreatingIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes map[string]string
+		current string
+		desired schemamodel.Function
+		want    string
+	}{
+		{
+			name:    "a renamed parameter",
+			changes: map[string]string{"parameters": "n integer -> m integer"},
+			current: "n integer",
+			desired: totalFunction("m integer", "integer"),
+			want: `(?s).*DROP FUNCTION "billing"\."total"\(n integer\).*` +
+				`CREATE OR REPLACE FUNCTION "billing"\."total"\(m integer\) RETURNS integer.*`,
+		},
+		{
+			name:    "a retyped parameter",
+			changes: map[string]string{"parameters": "n integer -> n bigint"},
+			current: "n integer",
+			desired: totalFunction("n bigint", "integer"),
+			want: `(?s).*DROP FUNCTION "billing"\."total"\(n integer\).*` +
+				`CREATE OR REPLACE FUNCTION "billing"\."total"\(n bigint\) RETURNS integer.*`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql := renderFunctionModification(c, difftypes.FunctionDiff{
+				FunctionName:     "billing.total",
+				Changes:          tt.changes,
+				CurrentSignature: new(tt.current),
+				Desired:          tt.desired,
+			})
+
+			c.Assert(sql, qt.Matches, tt.want)
+			c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
+			c.Assert(sql, qt.Not(qt.Contains), "CASCADE")
+		})
+	}
+}

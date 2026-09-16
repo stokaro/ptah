@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -475,5 +476,97 @@ func TestNormalizeCommandError_ADeadlineIsNotACancellation(t *testing.T) {
 		fmt.Errorf("provider: %w", context.DeadlineExceeded), 2)
 
 	c.Assert(err, qt.ErrorMatches, "provider: context deadline exceeded")
+	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
+}
+
+// TestConfiguredCommand_ACanceledVerbReportsTheCancellation covers the sentence
+// an operator actually reads.
+//
+// A verb's failure is printed by the wrapper [cmdutil.ConfigureCommand]
+// installs, which returns it under an exit code; by the time the surface
+// boundary normalizes it, the driver's sentence is already on stderr. Measured
+// on an interrupted `ptah migrations up` against PostgreSQL: `error: error
+// running migrations: failed to apply migration 2: failed to execute migration
+// SQL: SQL execution failed: context canceled` (stokaro/ptah#3315).
+func TestConfiguredCommand_ACanceledVerbReportsTheCancellation(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "up", RunE: func(*cobra.Command, []string) error {
+		return fmt.Errorf("failed to execute migration SQL: %w", context.Canceled)
+	}}
+	cmdutil.ConfigureCommand(cmd)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+
+	c.Assert(stderr.String(), qt.Equals, "error: canceled\n")
+	c.Assert(err, qt.ErrorIs, cmdutil.ErrCanceled)
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+}
+
+// TestConfiguredCommand_ACancellationDoesNotMaskAVerbsOwnFailure is the control:
+// the wrapper reports what the run failed on wherever the cancellation is not
+// what it failed on.
+func TestConfiguredCommand_ACancellationDoesNotMaskAVerbsOwnFailure(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "up", RunE: func(*cobra.Command, []string) error {
+		return errors.New("syntax error at or near NOT")
+	}}
+	cmdutil.ConfigureCommand(cmd)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+
+	c.Assert(stderr.String(), qt.Equals, "error: syntax error at or near NOT\n")
+	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
+}
+
+// TestFail_ACanceledCommandReportsTheCancellation covers the other site that
+// prints a process-level diagnostic. A verb that reports its own failure
+// through Fail owes the operator the same sentence.
+func TestFail_ACanceledCommandReportsTheCancellation(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "up"}
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", context.Canceled))
+
+	c.Assert(stderr.String(), qt.Equals, "error: canceled\n")
+	c.Assert(err, qt.ErrorIs, cmdutil.ErrCanceled)
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+}
+
+// TestFail_ACancellationDoesNotMaskAUsageError is that site's control. Fail
+// carries usage errors, which are the failures most likely to arrive while a
+// context happens to be canceled.
+func TestFail_ACancellationDoesNotMaskAUsageError(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "up"}
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmdutil.Fail(cmd, errors.New("--db-url is required"))
+
+	c.Assert(stderr.String(), qt.Equals, "error: --db-url is required\n")
 	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
 }

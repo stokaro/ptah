@@ -113,8 +113,8 @@ environment and the table is absent, and leaves an existing table in place. It
 holds the same columns on every engine: `seed_path`, `env`, `checksum` and
 `applied_at`.
 
-SQL Server and Oracle do not accept the `CREATE TABLE IF NOT EXISTS` statement
-the other engines get, so each has its own:
+SQL Server, Oracle and Spanner do not take the statement the other engines get,
+so each has its own:
 
 - On SQL Server the statement is guarded with `IF OBJECT_ID(...) IS NULL`, and
   `applied_at` is `DATETIME2`. In T-SQL, `TIMESTAMP` is a row version the
@@ -122,6 +122,9 @@ the other engines get, so each has its own:
 - On Oracle the table is created from a PL/SQL block that ignores `ORA-00955`
   (name already used). The same block runs on Oracle 21, which has no
   `IF NOT EXISTS`, and on Oracle 23.
+- On Spanner the statement is the portable one with two types changed:
+  `checksum` is `TEXT` and `applied_at` is `TIMESTAMPTZ`. Its PostgreSQL
+  interface has neither `CHAR(64)`, which arrives as `bpchar`, nor `TIMESTAMP`.
 
 ## Protect production-like environments
 

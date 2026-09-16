@@ -82,14 +82,14 @@ func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
 		case code:
 			return err
 		case unconfiguredErrorCode:
-			printDiagnostic(cmd, err)
+			err = printDiagnostic(cmd, err)
 		}
 		return exitcode.New(code, err)
 	}
 	if exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
 		return err
 	}
-	printDiagnostic(cmd, err)
+	err = printDiagnostic(cmd, err)
 	return exitcode.New(fallback, err)
 }
 
@@ -166,9 +166,18 @@ func AdoptErrorPrefixPolicy(target, source *cobra.Command) func() {
 	}
 }
 
-// printDiagnostic writes err to cmd's stderr under the surface's prefix.
-func printDiagnostic(cmd *cobra.Command, err error) {
+// printDiagnostic writes err to cmd's stderr under the surface's prefix and
+// returns the error it printed, which a caller carries on with.
+//
+// A cancellation is recognized here rather than at the surface boundary alone,
+// because the diagnostic is written wherever the failure is first noticed:
+// [WrapRunE] prints the verb's failure and returns it under an exit code, so by
+// the time [NormalizeCommandError] sees it the sentence an operator reads is
+// already out. See [asCancellation] for what it replaces and why.
+func printDiagnostic(cmd *cobra.Command, err error) error {
+	err = asCancellation(cmd.Context(), err)
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", ErrorPrefix(cmd), err)
+	return err
 }
 
 // ErrorCodePolicy reports the process exit code the nearest configured
@@ -215,7 +224,7 @@ func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []s
 		if err == nil || exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
 			return err
 		}
-		printDiagnostic(cmd, err)
+		err = printDiagnostic(cmd, err)
 		return exitcode.New(nativeCommandErrorCode, err)
 	}
 }
@@ -235,7 +244,7 @@ func asCancellation(ctx context.Context, err error) error {
 	if err == nil || ctx == nil || ctx.Err() == nil {
 		return err
 	}
-	if !errors.Is(err, context.Canceled) {
+	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrCanceled) {
 		return err
 	}
 	return cancellation{cause: err}
@@ -259,7 +268,7 @@ func (c cancellation) Unwrap() []error { return []error{ErrCanceled, c.cause} }
 // error. Commands that set SilenceErrors must route their usage failures
 // through this so the message still reaches the user.
 func Fail(cmd *cobra.Command, err error) error {
-	printDiagnostic(cmd, err)
+	err = printDiagnostic(cmd, err)
 	return exitcode.New(nativeCommandErrorCode, err)
 }
 

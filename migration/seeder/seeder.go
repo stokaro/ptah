@@ -445,6 +445,21 @@ BEGIN
         applied_at DATETIME2 NOT NULL
     )
 END`
+	case platform.Spanner:
+		// Spanner's PostgreSQL interface has neither of the two types the
+		// portable statement uses. CHAR(64) arrives as bpchar and the endpoint
+		// answers `Type <bpchar> is not supported. (SQLSTATE P0001)`, which is
+		// where `ptah seed` stopped, before it read a seed file; TIMESTAMP is
+		// refused next, which is why the migrator's revision table carries
+		// TIMESTAMPTZ there too. Measured on the emulator: this statement is
+		// accepted, running it twice is a no-op, and a row written through it
+		// reads back (stokaro/ptah#3325).
+		return `CREATE TABLE IF NOT EXISTS schema_seeds (
+    seed_path VARCHAR(512) PRIMARY KEY,
+    env VARCHAR(128) NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL
+)`
 	case platform.Oracle:
 		return `BEGIN
     EXECUTE IMMEDIATE 'CREATE TABLE schema_seeds (

@@ -166,7 +166,14 @@ explicitly opts out with -- +ptah no_transaction. Use --tx-mode=all to wrap the
 whole pending up batch in one transaction on supported dialects, or
 --tx-mode=none to run without migration transaction wrapping.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return migrateUpCommand(cmd, &opts)
+			if err := migrateUpCommand(cmd, &opts); err != nil {
+				return err
+			}
+			// The work is finite and it is done, so an interrupt arriving
+			// between here and the process exit stopped nothing. See
+			// cmdutil.ReportWorkFinished.
+			cmdutil.ReportWorkFinished(cmd.Context())
+			return nil
 		},
 	}
 	registerFlags(cmd, &opts)
