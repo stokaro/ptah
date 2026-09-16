@@ -22,8 +22,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -128,7 +126,7 @@ type Options struct {
 // schemamodel.ManagedData); an empty schema targets the connection's default
 // schema. The schema qualifies both the live-row read and the generated DML.
 func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (upSQL, downSQL string, err error) {
-	inspected, err := inspect(ctx, conn, opts, renderRows)
+	inspected, err := inspect(ctx, conn, opts, managedrows.Write)
 	if err != nil {
 		return "", "", err
 	}
@@ -206,7 +204,7 @@ func (s *Summary) HasChanges() bool {
 // and a managed table [Options.Live] carries but the database cannot read are
 // errors naming the input.
 func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (*Summary, error) {
-	inspected, err := inspect(ctx, conn, opts, countRows)
+	inspected, err := inspect(ctx, conn, opts, managedrows.Report)
 	if err != nil {
 		return nil, err
 	}
@@ -226,25 +224,7 @@ type inspection struct {
 	changes []tableChange
 }
 
-// intent is what the caller will do with the rows, which is what decides how
-// much of each row is read and whether a declaration the database cannot
-// satisfy is an error or a difference to report.
-//
-// A count answers a question about the database and has to answer it for every
-// state the database can be in; a migration body writes to the database, so a
-// declaration it cannot render is refused before any SQL is produced.
-type intent int
-
-const (
-	// countRows reads what [Inspect] needs: enough of each row to tell an
-	// insert from an update from a delete.
-	countRows intent = iota
-	// renderRows reads what [Generate] needs: every column its up and its down
-	// will write, and a refusal where the database cannot take one of them.
-	renderRows
-)
-
-func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options, want intent) (inspection, error) {
+func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options, want managedrows.Intent) (inspection, error) {
 	if conn == nil {
 		return inspection{}, errors.New("datamigrate: a database connection is required")
 	}
@@ -276,20 +256,27 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 
 	result := inspection{desired: db, diffs: make([]*datadiff.DataDiff, 0, len(managed))}
 	for _, md := range managed {
-		diff, err := computeTable(ctx, conn, opts, md, columnCatalog, want)
+		desired, err := desiredRows(opts.RootDir, md)
 		if err != nil {
 			return inspection{}, err
 		}
-		// orderByDependency below puts a table after the tables it references.
-		// A row that references a row of its own table is ordered here, inside
-		// the table: parents first to write, children first to remove
-		// (stokaro/ptah#3266). composeByPhase reverses the whole delete phase,
-		// so these arrive in the order it expects.
-		references, columnTypes := declarationShape(db, md)
-		diff.ColumnTypes = columnTypes
-		diff.Inserts = dataorder.Rows(diff.Inserts, md.Keys, references)
-		diff.Deletes = dataorder.Rows(diff.Deletes, md.Keys, references)
-		slices.Reverse(diff.Deletes)
+		// One comparison, shared with the data stage of `ptah schema plan`, so
+		// a rendered migration and a planned statement cannot disagree about
+		// which live table a declaration names, which of its columns are read,
+		// or which rows differ (stokaro/ptah#3276). It orders the rows inside
+		// this one table -- parents first to write, children first to remove --
+		// and orderByDependency below orders the tables against each other.
+		diff, err := managedrows.Compare(ctx, conn, managedrows.Request{
+			Desired:           db,
+			Declaration:       md,
+			Rows:              desired,
+			Live:              columnCatalog,
+			CatalogIsComplete: opts.Live != nil,
+			Intent:            want,
+		})
+		if err != nil {
+			return inspection{}, err
+		}
 		if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
 			// No drift for this table; it contributes nothing in either direction.
 			continue
@@ -372,77 +359,6 @@ func mergeByTable(changes []tableChange) []tableChange {
 	return merged
 }
 
-// declarationShape reads the table a declaration belongs to: the columns that
-// reference that same table, and the type each column declares.
-func declarationShape(db *schemamodel.Database, md schemamodel.ManagedData) (references []string, columnTypes map[string]string) {
-	if db == nil {
-		return nil, nil
-	}
-	for _, table := range db.Tables {
-		if table.StructName == md.StructName || table.Name == md.Table {
-			return dataorder.SelfReferences(db, table), dataorder.ColumnTypes(db, table)
-		}
-	}
-	return nil, nil
-}
-
-// computeTable runs the read-and-diff half of the pipeline for a single managed
-// table: load desired rows, read the live rows for the appropriate column
-// projection, and compute the row-level diff. Rendering happens later, in
-// composeByPhase, once every table's diff is known and can be ordered by
-// dependency.
-func computeTable(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	opts Options,
-	md schemamodel.ManagedData,
-	columnCatalog *catalog.Database,
-	want intent,
-) (*datadiff.DataDiff, error) {
-	desired, err := desiredRows(opts.RootDir, md)
-	if err != nil {
-		return nil, err
-	}
-
-	if !readableLiveTable(opts.Live, conn, md) {
-		return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, nil)
-	}
-
-	columns, desired, err := readColumns(
-		conn.Info().Dialect, conn.Info().IdentifierSemantics, managedTable(columnCatalog, conn, md), md, desired, want,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	live, err := dbschema.ReadTableRows(ctx, conn, md.Schema, md.Table, columns)
-	if err != nil {
-		return nil, err
-	}
-
-	return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
-}
-
-// managedTable locates the declared table in the catalog the column decisions
-// are made against, and answers nil where that catalog cannot speak for it.
-//
-// A reader that cannot scope to the declared schema reads its own instead — a
-// SQLite table in an ATTACHed database is the measured case — so a declaration
-// the catalog does not carry is not evidence that the database lacks the table.
-// Nothing about its columns can be decided then, and the read goes out as the
-// declaration wrote it for the database to answer.
-func managedTable(
-	columnCatalog *catalog.Database,
-	conn *dbschema.DatabaseConnection,
-	md schemamodel.ManagedData,
-) *catalog.Table {
-	table, found := findManagedTable(columnCatalog, md.Schema, conn.Info().Schema, md.Table)
-	if !found {
-		return nil
-	}
-	return &table
-}
-
 // readColumnCatalog returns the introspected schema the column decisions are
 // made against: which columns a declared table carries, and what the database will
 // accept an explicit value for.
@@ -496,251 +412,6 @@ func desiredRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, 
 	return schemamodel.LoadManagedRows(rootDir, md)
 }
 
-// readableLiveTable answers whether the live table can be read for the row
-// comparison.
-//
-// A caller that supplied no live schema always reads: it is saying it has no
-// second opinion, so the database answers for itself and an unreadable table is
-// an error naming it. With a live schema supplied, a table it does not carry
-// and a table missing one of the key columns both answer false, and the
-// comparison then runs against no live rows at all — every declared row is an
-// insert. The key columns are what a row is matched on, so a read without one
-// of them could not tell an insert from an update.
-//
-// Table identity is [findManagedTable]'s, the same match the column read
-// resolves the table with, so a schema-qualified annotation and a reader that
-// blanks the default schema agree here and there.
-func readableLiveTable(
-	live *catalog.Database,
-	conn *dbschema.DatabaseConnection,
-	md schemamodel.ManagedData,
-) bool {
-	if live == nil {
-		return true
-	}
-	table, found := findManagedTable(live, md.Schema, conn.Info().Schema, md.Table)
-	if !found {
-		return false
-	}
-	present := liveColumnNames(table)
-	for _, key := range md.Keys {
-		if _, ok := present[key]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// liveColumnNames indexes a live table's columns by the exact name a read would
-// quote. The match is exact because dbschema.ReadTableRows quotes what it is
-// given, so a name that differs here is a name the database would refuse.
-func liveColumnNames(table catalog.Table) map[string]struct{} {
-	names := make(map[string]struct{}, len(table.Columns))
-	for _, column := range table.Columns {
-		names[column.Name] = struct{}{}
-	}
-	return names
-}
-
-// readColumns selects which live columns to read for a managed table's diff,
-// and returns the desired rows the diff compares them against.
-//
-// With desired rows present, Ptah reconciles only the managed columns: the union
-// of the desired rows' columns and the keys. A column the live table does not
-// carry is what the two intents answer differently about, because they are about
-// to do different things with it — see [projectOntoLive] and
-// [refuseUndeclaredColumns].
-//
-// With an empty desired set, every live row becomes a DELETE. Counting them
-// needs the keys and nothing else. Rendering the reversible down that re-inserts
-// each deleted row needs every column it will write, so that projection widens to
-// the table's full non-generated column set (see [insertableColumns]); an empty
-// desired set against an empty table stays a clean no-op because the read
-// returns no rows either way.
-func readColumns(
-	dialect string,
-	names identifier.Semantics,
-	liveTable *catalog.Table,
-	md schemamodel.ManagedData,
-	desired []map[string]any,
-	want intent,
-) ([]string, []map[string]any, error) {
-	qualified := qualifiedName(md.Schema, md.Table)
-	if len(desired) == 0 {
-		if want == countRows {
-			return managedrows.Columns(nil, md.Keys), desired, nil
-		}
-		if liveTable == nil {
-			return nil, nil, fmt.Errorf(
-				"datamigrate: cannot read the columns of managed table %q: it was not found in the live schema; create the table or remove the annotation",
-				qualified)
-		}
-		columns, err := insertableColumns(dialect, qualified, *liveTable, md.Keys)
-		return columns, desired, err
-	}
-
-	columns := managedrows.Columns(desired, md.Keys)
-	if liveTable == nil {
-		return columns, desired, nil
-	}
-	if want == renderRows {
-		return columns, desired, refuseUndeclaredColumns(qualified, columns, *liveTable)
-	}
-	// A column the declaration names and the table has not gained yet is
-	// structural drift, and the structural comparison reports it. The count
-	// covers the columns both sides carry: the live row holds no value for the
-	// missing one, so no live value is at stake, and counting each row as an
-	// overwrite would misstate what applying costs. The desired rows narrow with
-	// the columns, so the comparison runs over one column set.
-	narrowed := managedrows.ProjectOntoLive(columns, liveTable, names)
-	if len(narrowed) == len(columns) {
-		return narrowed, desired, nil
-	}
-	return narrowed, projectRows(desired, narrowed), nil
-}
-
-// refuseUndeclaredColumns refuses to render a migration for a table that does
-// not carry every declared column.
-//
-// The reader quotes the column names it is given, and a database that cannot
-// resolve one either refuses the read or answers with something invented:
-// SQLite returns the quoted name as a string literal, which would put that
-// literal into the rollback as the value the row is restored to. A count can
-// leave the column out and still answer; a migration body cannot write a column
-// the table does not have, so it says which columns are missing instead.
-func refuseUndeclaredColumns(qualified string, columns []string, liveTable catalog.Table) error {
-	present := liveColumnNames(liveTable)
-	var missing []string
-	for _, column := range columns {
-		if _, ok := present[column]; !ok {
-			missing = append(missing, column)
-		}
-	}
-	if len(missing) == 0 {
-		return nil
-	}
-	slices.Sort(missing)
-	return fmt.Errorf(
-		"datamigrate: managed table %q does not have declared column(s) %s; migrate the schema first or remove the column(s) from the row data",
-		qualified, quoteAll(missing))
-}
-
-// projectRows returns the desired rows carrying only the given columns, so the
-// comparison runs over the same column set on both sides. It copies rather than
-// deleting in place because the rows belong to the caller's declaration.
-func projectRows(rows []map[string]any, columns []string) []map[string]any {
-	keep := make(map[string]struct{}, len(columns))
-	for _, column := range columns {
-		keep[column] = struct{}{}
-	}
-	projected := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		narrowed := make(map[string]any, len(row))
-		for column, value := range row {
-			if _, ok := keep[column]; ok {
-				narrowed[column] = value
-			}
-		}
-		projected = append(projected, narrowed)
-	}
-	return projected
-}
-
-// insertableColumns returns the sorted set of columns to read and re-insert for
-// an empty-desired full delete: every column the database will accept in an
-// explicit INSERT, so the reversible down restores complete rows.
-//
-// Two column classes are dropped because the database rejects or ignores an
-// explicit value for them:
-//   - generated/computed columns (GeneratedKind set) are excluded and recompute
-//     from the re-inserted base columns on rollback;
-//   - identity columns that reject explicit inserts (SQL Server IDENTITY,
-//     PostgreSQL and Oracle GENERATED ALWAYS AS IDENTITY — see
-//     [rejectsExplicitInsert])
-//     cannot be restored to their original value, so rather than emit a migration
-//     whose down fails at apply time (or silently re-inserts a different value),
-//     the whole empty-desired case is refused, naming the offending column(s).
-//
-// Auto-increment/serial columns that DO accept explicit inserts (MySQL
-// AUTO_INCREMENT, SQLite AUTOINCREMENT, PostgreSQL SERIAL, and PostgreSQL and
-// Oracle GENERATED BY DEFAULT AS IDENTITY) are kept, so re-inserting them
-// preserves the original identity
-// values. Every key column must survive both filters, since a key drives the
-// DELETE predicate and the rollback INSERT; a key that is generated, absent, or
-// reject-on-insert is an error.
-func insertableColumns(dialect, qualified string, dbTable catalog.Table, keys []string) ([]string, error) {
-	present := make(map[string]struct{}, len(dbTable.Columns))
-	cols := make([]string, 0, len(dbTable.Columns))
-	var rejected []string
-	for _, col := range dbTable.Columns {
-		if col.GeneratedKind != "" {
-			continue
-		}
-		if rejectsExplicitInsert(dialect, col) {
-			rejected = append(rejected, col.Name)
-			continue
-		}
-		present[col.Name] = struct{}{}
-		cols = append(cols, col.Name)
-	}
-
-	if len(rejected) > 0 {
-		slices.Sort(rejected)
-		return nil, fmt.Errorf(
-			"datamigrate: cannot generate a reversible full delete for table %q: column(s) %s reject explicit inserts (identity/auto-generated) and cannot be restored on rollback; keep at least one desired row or remove the annotation",
-			qualified, quoteAll(rejected))
-	}
-
-	for _, k := range keys {
-		if _, ok := present[k]; !ok {
-			return nil, fmt.Errorf(
-				"datamigrate: key column %q of managed table %q is not a writable, non-generated column; a reversible full delete needs every key column",
-				k, qualified)
-		}
-	}
-
-	slices.Sort(cols)
-	return cols, nil
-}
-
-// rejectsExplicitInsert reports whether the database rejects an explicit value
-// for col in an INSERT, so re-inserting it on rollback would fail at apply time.
-// It is true for SQL Server IDENTITY columns and for PostgreSQL and Oracle
-// GENERATED ALWAYS AS IDENTITY columns, and deliberately false for
-// auto-increment/serial columns that accept explicit inserts (MySQL
-// AUTO_INCREMENT, SQLite AUTOINCREMENT, PostgreSQL SERIAL, and GENERATED BY
-// DEFAULT AS IDENTITY on PostgreSQL and Oracle), so those round-trip with their
-// original values preserved.
-func rejectsExplicitInsert(dialect string, col catalog.Column) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.SQLServer:
-		// The SQL Server reader sets IsAutoIncrement only for IDENTITY columns,
-		// which reject explicit inserts unless SET IDENTITY_INSERT is toggled on.
-		return col.IsAutoIncrement
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return strings.EqualFold(col.IdentityGeneration, "ALWAYS")
-	case platform.Oracle:
-		// IsAutoIncrement is not enough on Oracle: it is set for BY DEFAULT
-		// identities too, and those accept an explicit value. GENERATED ALWAYS
-		// refuses one with ORA-32795, so the generation mode decides.
-		return strings.EqualFold(col.IdentityGeneration, "ALWAYS")
-	default:
-		// MySQL/MariaDB AUTO_INCREMENT, SQLite AUTOINCREMENT, and ClickHouse accept
-		// explicit inserts, so re-inserting preserves the original value.
-		return false
-	}
-}
-
-// quoteAll renders names as a comma-separated list of double-quoted identifiers
-// for an error message (for example `"a", "b"`).
-func quoteAll(names []string) string {
-	quoted := make([]string, len(names))
-	for i, name := range names {
-		quoted[i] = fmt.Sprintf("%q", name)
-	}
-	return strings.Join(quoted, ", ")
-}
-
 // schemaScope returns the schema allow-list to introspect for a managed table:
 // the table's declared schema, or the connection's default schema when the
 // annotation omits it. Readers that support schema scoping narrow to it; readers
@@ -754,45 +425,6 @@ func schemaScope(managedSchema, defaultSchema string) []string {
 		return []string{s}
 	}
 	return nil
-}
-
-// findManagedTable locates the introspected table for a managed annotation. A
-// declared schema requires a schema match — either the introspected schema
-// literally, or a blank introspected schema when the declared schema is the
-// connection's default, since readers blank the schema of default-schema tables
-// (PostgreSQL public, SQLite main). An omitted declared schema matches a
-// uniquely-named table, or otherwise the one in the default schema.
-func findManagedTable(dbSchema *catalog.Database, wantSchema, defaultSchema, table string) (catalog.Table, bool) {
-	wantSchema = strings.TrimSpace(wantSchema)
-	defaultSchema = strings.TrimSpace(defaultSchema)
-
-	var candidates []catalog.Table
-	for _, t := range dbSchema.Tables {
-		if t.Name == table {
-			candidates = append(candidates, t)
-		}
-	}
-
-	if wantSchema != "" {
-		for _, t := range candidates {
-			ts := strings.TrimSpace(t.Schema)
-			if ts == wantSchema || (ts == "" && wantSchema == defaultSchema) {
-				return t, true
-			}
-		}
-		return catalog.Table{}, false
-	}
-
-	if len(candidates) == 1 {
-		return candidates[0], true
-	}
-	for _, t := range candidates {
-		ts := strings.TrimSpace(t.Schema)
-		if ts == "" || ts == defaultSchema {
-			return t, true
-		}
-	}
-	return catalog.Table{}, false
 }
 
 // orderByDependency reorders diffs in place so a table appears before every
@@ -982,8 +614,8 @@ func checkDestructive(changes []tableChange, opts Options) error {
 func rowFindings(inserts, updates, deletes int) []safety.Finding {
 	var findings []safety.Finding
 	addFinding(&findings, "data_rows_inserted", inserts, safety.Safe)
-	addFinding(&findings, "data_rows_updated", updates, safety.Destructive)
-	addFinding(&findings, "data_rows_deleted", deletes, safety.Destructive)
+	addFinding(&findings, "data_rows_updated", updates, managedrows.ReportUpdateSeverity)
+	addFinding(&findings, "data_rows_deleted", deletes, managedrows.ReportUpdateSeverity)
 	return findings
 }
 

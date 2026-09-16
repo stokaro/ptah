@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -87,8 +86,7 @@ func managedDataStatements(
 	})
 	phases := make([][]dataStatement, len(dataPhases))
 	for _, declaration := range declarations {
-		selfReferences, columnTypes := managedDataShape(desired, declaration)
-		declared, err := managedDataDiff(ctx, conn, declaration, current, selfReferences, columnTypes, projectRoot)
+		declared, err := managedDataDiff(ctx, conn, declaration, desired, current, projectRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -105,27 +103,6 @@ func managedDataStatements(
 		statements = append(statements, phases[phase]...)
 	}
 	return statements, nil
-}
-
-// managedDataShape reads what the table a declaration belongs to says about its
-// rows: the columns that reference the same table, and each column's declared
-// type.
-//
-// A declaration carries a struct name and a table name; the fields that declare
-// the foreign keys and the types belong to the table, so the table has to be
-// found before the columns can be. A declaration whose table the desired state
-// does not define has no references to read, so the rows keep their key order,
-// and no types, so each value renders from its Go value alone.
-func managedDataShape(
-	desired *schemamodel.Database,
-	declaration schemamodel.ManagedData,
-) (selfReferences []string, columnTypes map[string]string) {
-	for _, table := range desired.Tables {
-		if table.StructName == declaration.StructName || table.Name == declaration.Table {
-			return dataorder.SelfReferences(desired, table), dataorder.ColumnTypes(desired, table)
-		}
-	}
-	return nil, nil
 }
 
 // declaredRows reads the rows a declaration still names, bounded by the project
@@ -155,13 +132,20 @@ func declaredRows(
 	return schemamodel.LoadManagedRowValues("", declaration)
 }
 
+// managedDataDiff reconciles one declaration against the database and renders
+// the statements that close the difference.
+//
+// The comparison is managedrows.Compare, which the migration body reads too, so
+// a plan and a migration cannot disagree about which live table a declaration
+// names, which of its columns are read, or which rows differ
+// (stokaro/ptah#3276). What is left here is what a plan does with the answer:
+// render the statements and rate them.
 func managedDataDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	declaration schemamodel.ManagedData,
+	desired *schemamodel.Database,
 	current *catalog.Database,
-	selfReferences []string,
-	columnTypes map[string]string,
 	projectRoot string,
 ) ([]dataStatement, error) {
 	qualified := managedDataTableName(declaration)
@@ -194,46 +178,32 @@ func managedDataDiff(
 		}
 		declaration.Rows = rows
 	}
-	if len(declaration.Keys) == 0 {
-		return nil, fmt.Errorf("managed data for table %s declares no key column", qualified)
-	}
-	desiredRows, err := managedDesiredRows(declaration)
+	// The declared scalars resolve the way the YAML resolver resolves them,
+	// which is what the row report and the migration body resolve them with. A
+	// second resolver here read a timestamp back as its source text, so a
+	// declared moment never paired with the moment a driver returns and the two
+	// stages answered differently about one converged row (stokaro/ptah#3276).
+	rows, err := schemamodel.ResolveManagedRows(declaration)
 	if err != nil {
 		return nil, err
 	}
-	// A table this plan is about to create holds nothing, and reading it would
-	// fail rather than answer. Every declared row is an insert then.
-	liveRows := []map[string]any(nil)
-	if liveTable := managedrows.LiveTable(current, declaration.Schema, declaration.Table, conn.Info().IdentifierSemantics); liveTable != nil {
-		// Only the columns the table already has. The plan may be about to add
-		// one the declaration names, and asking the server for it before the
-		// DDL runs stops the whole reconciliation with 42703
-		// (stokaro/ptah#3260); the value still reaches the plan, as the INSERT
-		// or UPDATE of a column the live row does not carry.
-		columns := managedrows.ProjectOntoLive(
-			managedrows.Columns(desiredRows, declaration.Keys), liveTable, conn.Info().IdentifierSemantics,
-		)
-		liveRows, err = dbschema.ReadTableRows(ctx, conn, declaration.Schema, declaration.Table, columns)
-		if err != nil {
-			return nil, fmt.Errorf("read managed rows of %s: %w", qualified, err)
-		}
-	}
-	diff, err := datadiff.Compute(declaration.Schema, declaration.Table, declaration.Keys, desiredRows, liveRows)
+	diff, err := managedrows.Compare(ctx, conn, managedrows.Request{
+		Desired:     desired,
+		Declaration: declaration,
+		Rows:        rows,
+		Live:        current,
+		// A table this plan is about to create holds nothing, and reading it
+		// would fail rather than answer. Every declared row is an insert then.
+		CatalogIsComplete: true,
+		Intent:            managedrows.Report,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("compare managed rows of %s: %w", qualified, err)
+		return nil, err
 	}
-	// The table order above puts a table after the tables it references. A row
-	// can reference a row of its own table -- a category tree, an org chart --
-	// and that order is inside one table, so it is decided here: parents first
-	// to write, children first to remove (stokaro/ptah#3266).
-	diff.Inserts = dataorder.Rows(diff.Inserts, declaration.Keys, selfReferences)
-	diff.Deletes = dataorder.Rows(diff.Deletes, declaration.Keys, selfReferences)
-	slices.Reverse(diff.Deletes)
 	// The statements come from the renderer as a list. Its script form cannot
 	// be cut back into statements at line breaks: a declared value may carry a
 	// newline, which is legal inside a literal and is the byte the script joins
 	// statements with (stokaro/ptah#3278).
-	diff.ColumnTypes = columnTypes
 	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("render managed rows of %s: %w", qualified, err)
@@ -268,67 +238,12 @@ func classifyDataStatements(up []string, qualified string) []dataStatement {
 			declared.reason = fmt.Sprintf("removes a row from %s that the declaration no longer holds", qualified)
 		case strings.HasPrefix(strings.ToUpper(trimmed), "UPDATE"):
 			declared.phase = phaseUpdate
-			declared.severity = safety.Warning
+			declared.severity = managedrows.PlanUpdateSeverity
 			declared.reason = fmt.Sprintf("overwrites managed columns of a row in %s", qualified)
 		}
 		statements = append(statements, declared)
 	}
 	return statements
-}
-
-// managedDesiredRows converts declared values into the Go values the diff
-// compares and the renderer writes.
-//
-// The tag decides: a value declared as `007` is the integer 7 in an integer
-// column, and one declared as "007" is the three characters. Carrying the tag
-// this far is what keeps those apart.
-func managedDesiredRows(declaration schemamodel.ManagedData) ([]map[string]any, error) {
-	rows := make([]map[string]any, 0, len(declaration.Rows))
-	for index, declared := range declaration.Rows {
-		row := make(map[string]any, len(declared))
-		for column, value := range declared {
-			converted, err := managedValue(value)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"managed data for table %s, row %d, column %q: %w",
-					managedDataTableName(declaration), index+1, column, err,
-				)
-			}
-			row[column] = converted
-		}
-		rows = append(rows, row)
-	}
-	return rows, nil
-}
-
-func managedValue(value schemamodel.ManagedValue) (any, error) {
-	if value.Null {
-		return nil, nil
-	}
-	switch value.Tag {
-	case "str", "timestamp", "":
-		return value.Text, nil
-	case "int":
-		parsed, err := strconv.ParseInt(value.Text, 0, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%q is tagged as an integer and is not one", value.Text)
-		}
-		return parsed, nil
-	case "float":
-		parsed, err := strconv.ParseFloat(value.Text, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%q is tagged as a float and is not one", value.Text)
-		}
-		return parsed, nil
-	case "bool":
-		parsed, err := strconv.ParseBool(value.Text)
-		if err != nil {
-			return nil, fmt.Errorf("%q is tagged as a boolean and is not one", value.Text)
-		}
-		return parsed, nil
-	default:
-		return nil, fmt.Errorf("value carries the unsupported YAML tag %q", value.Tag)
-	}
 }
 
 // managedDataColumns is what is read back from the database: the key columns
