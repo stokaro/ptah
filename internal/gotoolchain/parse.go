@@ -21,7 +21,7 @@ func ParseManifest(root, path string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	manifest := Manifest{Path: path, Inputs: make(map[string]Input)}
+	manifest := Manifest{Path: path, Inputs: make(map[string]Input), Resolvers: make(map[string]ResolverStep)}
 	for line := range strings.SplitSeq(string(body), "\n") {
 		if strings.Contains(strings.ToLower(line), setupGo) {
 			manifest.Mentions++
@@ -46,6 +46,9 @@ func walk(node *yaml.Node, manifest *Manifest) {
 		if uses, _ := field(node, "uses"); uses != nil && strings.Contains(strings.ToLower(uses.Value), setupGo) {
 			manifest.Steps = append(manifest.Steps, readStep(node, uses, manifest.Path))
 		}
+		if id, key := field(node, "id"); id != nil && id.Kind == yaml.ScalarNode {
+			manifest.Resolvers[id.Value] = readResolver(node, id, key, manifest.Path)
+		}
 	}
 	for _, child := range node.Content {
 		walk(child, manifest)
@@ -64,6 +67,26 @@ func readStep(step, uses *yaml.Node, path string) SetupGoStep {
 	}
 	if file, _ := field(with, "go-version-file"); file != nil {
 		found.HasVersionFile, found.VersionFile, found.VersionFileLine = true, file.Value, file.Line
+	}
+	return found
+}
+
+// readResolver reads a step another step can name, keeping the two things a
+// reference to its output can be judged against: where its values come from,
+// and the script it turns them into outputs with.
+func readResolver(step, id, key *yaml.Node, path string) ResolverStep {
+	found := ResolverStep{File: path, ID: id.Value, Line: key.Line}
+	if env, _ := field(step, "env"); env != nil && env.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(env.Content); i += 2 {
+			found.Env = append(found.Env, EnvEntry{
+				Name:  env.Content[i].Value,
+				Value: env.Content[i+1].Value,
+				Line:  env.Content[i+1].Line,
+			})
+		}
+	}
+	if run, _ := field(step, "run"); run != nil {
+		found.HasRun, found.Run, found.RunLine = true, run.Value, run.Line
 	}
 	return found
 }

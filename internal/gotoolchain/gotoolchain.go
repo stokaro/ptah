@@ -105,6 +105,10 @@ type Manifest struct {
 	// Mentions counts the lines naming actions/setup-go@ at all, which is the
 	// census the step enumeration is checked against.
 	Mentions int
+	// Resolvers are the steps carrying an `id`, by id. A setup-go step in a
+	// composite action may read a value another step resolved, and judging
+	// that reference means reading the step that wrote it.
+	Resolvers map[string]ResolverStep
 }
 
 // Input is one composite-action input declaration.
@@ -114,4 +118,28 @@ type Input struct {
 	HasDefault   bool
 	DefaultLine  int
 	DeclaredLine int
+}
+
+// ResolverStep is a step whose output another step reads.
+//
+// Env is the part of it this gate reads for meaning. A step's script is shell,
+// and a gate that parsed shell would be guessing at what the script decides;
+// what the step derives from is declared in the env block, which YAML carries
+// and a reader can check. Run is read as text, for what it must NOT contain.
+type ResolverStep struct {
+	File string
+	ID   string
+	Line int
+	Env  []EnvEntry
+
+	Run     string
+	RunLine int
+	HasRun  bool
+}
+
+// EnvEntry is one environment variable a step declares.
+type EnvEntry struct {
+	Name  string
+	Value string
+	Line  int
 }
