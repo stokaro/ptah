@@ -105,7 +105,7 @@ func atlasRevisionVersionList(c *qt.C, conn *dbschema.DatabaseConnection) []stri
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
 
-	versions := []string{}
+	var versions []string
 	for rows.Next() {
 		var version string
 		c.Assert(rows.Scan(&version), qt.IsNil)
