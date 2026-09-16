@@ -5,9 +5,12 @@ package migrator
 // cannot be observed independently through the exported migration API.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/dbschema"
 )
 
 func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
@@ -790,12 +793,26 @@ func TestMigrationHasSQLExecutor(t *testing.T) {
 	c.Assert(opaqueMigration.hasSQLExecutor(MigrationDirectionDown), qt.IsFalse)
 }
 
-func TestMigrationHasStatementInterceptor(t *testing.T) {
+func TestMigrationInterceptorFor(t *testing.T) {
 	c := qt.New(t)
-	migration := &Migration{upHasStatementInterceptor: true}
+	installed := refusingInterceptor{}
+	migration := &Migration{upInterceptor: installed}
 
-	c.Assert(migration.hasStatementInterceptor(MigrationDirectionUp), qt.IsTrue)
-	c.Assert(migration.hasStatementInterceptor(MigrationDirectionDown), qt.IsFalse)
+	c.Assert(migration.interceptorFor(MigrationDirectionUp), qt.Equals, StatementInterceptor(installed))
+	c.Assert(migration.interceptorFor(MigrationDirectionDown), qt.IsNil)
+}
+
+// refusingInterceptor is an interceptor that cannot say what it would take
+// over. The guard treats it as claiming everything, which is what the direction
+// of the unknown demands.
+type refusingInterceptor struct{}
+
+func (refusingInterceptor) ValidateDirectives(map[string]string) error { return nil }
+
+func (refusingInterceptor) ExecuteStatement(
+	context.Context, *dbschema.DatabaseConnection, string, map[string]string,
+) (bool, error) {
+	return false, nil
 }
 
 func TestMySQLCreateTableLike_Present(t *testing.T) {

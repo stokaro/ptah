@@ -18,6 +18,43 @@ import (
 	"ptah.run/migration/migrator"
 )
 
+// issue887ClaimingInterceptor answers what it would take over, which is the
+// half of the contract [migrator.StatementClaimer] adds. It claims a statement
+// when claim is a substring of it, and claims nothing when claim is empty.
+type issue887ClaimingInterceptor struct {
+	claim string
+	// took records that the interceptor executed a statement itself, not that
+	// it was consulted. The migrator asks about every statement and runs the
+	// ones it declines, so "was it called" and "did it take over" are different
+	// questions and only the second is the one the guard is about.
+	took bool
+}
+
+func (*issue887ClaimingInterceptor) ValidateDirectives(map[string]string) error { return nil }
+
+func (i *issue887ClaimingInterceptor) ExecuteStatement(
+	_ context.Context,
+	_ *dbschema.DatabaseConnection,
+	statement string,
+	_ map[string]string,
+) (bool, error) {
+	claimed := i.claims(statement)
+	i.took = i.took || claimed
+	return claimed, nil
+}
+
+func (i *issue887ClaimingInterceptor) ClaimsStatement(
+	_ *dbschema.DatabaseConnection,
+	statement string,
+	_ map[string]string,
+) bool {
+	return i.claims(statement)
+}
+
+func (i *issue887ClaimingInterceptor) claims(statement string) bool {
+	return i.claim != "" && strings.Contains(statement, i.claim)
+}
+
 type issue887StatementInterceptor struct {
 	called bool
 }
@@ -500,6 +537,59 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(interceptor.called, qt.IsFalse)
 		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+	})
+
+	// An interceptor that can say what it would take over is refused only for
+	// the statements it would take. `ptah migrations up` installs an online-DDL
+	// interceptor on every run, so refusing on its presence made every MySQL
+	// migration unrunnable in the default mode, bodies with no ALTER included
+	// (stokaro/ptah#3359).
+	t.Run("an interceptor that claims nothing", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+
+		names := issue887Names(dialect + "_claimsnone")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		upSQL := fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable)
+		downSQL := fmt.Sprintf("DROP TABLE %s", names.createdTable)
+		interceptor := &issue887ClaimingInterceptor{}
+		migration := issue887InterceptedMigration(c, upSQL, downSQL, interceptor)
+
+		c.Assert(issue887Migrator(conn, names, migration).MigrateUp(ctx), qt.IsNil)
+		c.Assert(interceptor.took, qt.IsFalse)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+	})
+
+	// The refusal the guard exists for, now naming the statement rather than
+	// the whole body: only this one would leave the transaction witness.
+	t.Run("an interceptor that claims a statement", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+
+		names := issue887Names(dialect + "_claimsone")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		upSQL := fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY);\nALTER TABLE %s ADD COLUMN note TEXT",
+			names.createdTable, names.createdTable,
+		)
+		downSQL := fmt.Sprintf("DROP TABLE %s", names.createdTable)
+		interceptor := &issue887ClaimingInterceptor{claim: "ALTER TABLE"}
+		migration := issue887InterceptedMigration(c, upSQL, downSQL, interceptor)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run tx-mode file statement 2 because a statement interceptor would execute it outside.*`)
+		c.Assert(interceptor.took, qt.IsFalse)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 	})
 
 	t.Run("nested SQL", func(t *testing.T) {
