@@ -529,8 +529,8 @@
         "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 6413,
-      "sourceBytes": 44591
+      "visibleWords": 6447,
+      "sourceBytes": 44802
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
@@ -6506,8 +6506,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1689,
-      "sourceBytes": 14564
+      "visibleWords": 1766,
+      "sourceBytes": 14983
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

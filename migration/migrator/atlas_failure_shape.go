@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/revisiontext"
 )
 
 // atlasFailureError is what the Atlas revision table's `error` column records
@@ -42,7 +43,7 @@ func atlasFailureError(failure error) string {
 		}
 		innermost = unwrapped
 	}
-	return strings.TrimSpace(innermost.Error())
+	return revisiontext.ValidUTF8(strings.TrimSpace(innermost.Error()))
 }
 
 // atlasFailureStatement is what the `error_stmt` column records: the failing
@@ -64,11 +65,11 @@ func atlasFailureError(failure error) string {
 func atlasFailureStatement(sqlText, dialect string, failedIndex int, stmt string) string {
 	statements := sqlutil.SplitSourceStatements(sqlText, dialect)
 	if failedIndex < 1 || failedIndex > len(statements) {
-		return stmt
+		return revisiontext.ValidUTF8(stmt)
 	}
 	source := strings.TrimSpace(statements[failedIndex-1].Text)
 	if source == "" {
-		return stmt
+		return revisiontext.ValidUTF8(stmt)
 	}
-	return source
+	return revisiontext.ValidUTF8(source)
 }
