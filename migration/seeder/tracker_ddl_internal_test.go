@@ -139,6 +139,7 @@ func TestSavepointStatements_SpellsWhatEachEngineTakes(t *testing.T) {
 			c.Assert(got.release, qt.Equals, tt.release)
 		})
 	}
+}
 
 // TestTrackerDDL_SpannerAvoidsTheTypesTheEndpointLacks pins the statement
 // Spanner is sent.
