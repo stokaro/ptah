@@ -164,3 +164,49 @@ func sqliteConnectionAt(c *qt.C, path string) *dbschema.DatabaseConnection {
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	return conn
 }
+
+// TestMigrationStatusKeepsTheCheckpointBoundaryAfterTheBootstrap is
+// stokaro/ptah#3356: the document contradicted itself once the checkpoint was
+// applied. Its aggregate reported nothing pending, and its records reported the
+// two migrations the checkpoint replaces as pending -- a reader that plans from
+// the records replays DDL the snapshot already created.
+//
+// Applying the checkpoint is what the bootstrap did, and nothing about the
+// migrations below it changed except that the checkpoint covering them is now
+// recorded.
+func TestMigrationStatusKeepsTheCheckpointBoundaryAfterTheBootstrap(t *testing.T) {
+	c := qt.New(t)
+	conn := sqliteConnection(c, "status-checkpoint-applied.sqlite")
+	mig, err := migrator.NewFSMigrator(conn, checkpointBoundaryFS())
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+	c.Assert(status.HasPendingChanges, qt.IsFalse)
+	c.Assert(status.Migrations[0].State, qt.Equals, migrator.MigrationStateCheckpointCovered)
+	c.Assert(status.Migrations[1].State, qt.Equals, migrator.MigrationStateApplied)
+	c.Assert(status.Migrations[2].State, qt.Equals, migrator.MigrationStateApplied)
+	// The field a reader uses to tell covered from missing answers for the
+	// checkpoint that covers them, which is the one the database applied.
+	c.Assert(status.CheckpointVersion, qt.Equals, int64(2))
+}
+
+// checkpointBoundaryFS is one migration below a checkpoint, the checkpoint, and
+// one above it.
+func checkpointBoundaryFS() fstest.MapFS {
+	return fstest.MapFS{
+		"0000000001_first.up.sql":   {Data: []byte("CREATE TABLE first (id INTEGER PRIMARY KEY);\n")},
+		"0000000001_first.down.sql": {Data: []byte("DROP TABLE first;\n")},
+		"0000000002_snapshot.checkpoint.up.sql": {
+			Data: []byte("CREATE TABLE first (id INTEGER PRIMARY KEY);\nCREATE TABLE second (id INTEGER PRIMARY KEY);\n"),
+		},
+		"0000000002_snapshot.checkpoint.down.sql": {
+			Data: []byte("DROP TABLE second;\nDROP TABLE first;\n"),
+		},
+		"0000000003_third.up.sql":   {Data: []byte("CREATE TABLE third (id INTEGER PRIMARY KEY);\n")},
+		"0000000003_third.down.sql": {Data: []byte("DROP TABLE third;\n")},
+	}
+}
