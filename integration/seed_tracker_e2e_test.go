@@ -61,6 +61,20 @@ func TestSeedCreatesItsTrackerOnOracleE2E(t *testing.T) {
 	assertSeedCreatesItsTracker(c, e2eRepoRoot(t), dbURL, oracleDropTableIfExists)
 }
 
+// TestSeedCreatesItsTrackerOnSpannerE2E is stokaro/ptah#3325. The portable
+// tracker statement declares checksum CHAR(64) and applied_at TIMESTAMP, and
+// Spanner's PostgreSQL interface has neither: the endpoint answers
+// `Type <bpchar> is not supported. (SQLSTATE P0001)`, so `ptah seed` stopped
+// before it read a seed file.
+//
+// Spanner takes DROP TABLE IF EXISTS, so it shares the portable spelling here.
+func TestSeedCreatesItsTrackerOnSpannerE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+
+	assertSeedCreatesItsTracker(c, e2eRepoRoot(t), dbURL, sqlServerDropTableIfExists)
+}
+
 // assertSeedCreatesItsTracker runs `ptah seed` twice against a database with no
 // tracker table. The first run creates the tracker and records the seed. The
 // second run finds both and skips the seed, so the tracker statement runs once
