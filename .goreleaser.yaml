@@ -206,8 +206,12 @@ dockers_v2:
 # stokaro/ptah/ptah`, keeps working across the change: Homebrew resolves a
 # token through `tap_migrations.json` in the cask loader exactly as it does in
 # the formula loader, so the tap maps `ptah` to this cask and the front door is
-# unchanged. Casks are macOS-only, so the Linux half of that command needs its
-# own answer; stokaro/ptah#3332 carries it.
+# unchanged.
+#
+# It works on Linux as well. GoReleaser renders `on_linux` URLs beside the
+# macOS ones, and Homebrew installs a cask that requires no macOS wherever it
+# runs: measured on Homebrew 4.6.20 in the `homebrew/brew` image, which
+# downloaded the v0.5.0 Linux archive and linked all three binaries.
 homebrew_casks:
   - name: ptah
     ids:
