@@ -108,7 +108,14 @@ be rolled back and the migration process will stop.
 ⚠️  WARNING: This operation can result in data loss! Make sure you have backups
 before running down migrations in production.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return migrateDownCommand(cmd, &opts)
+			if err := migrateDownCommand(cmd, &opts); err != nil {
+				return err
+			}
+			// The work is finite and it is done, so an interrupt arriving
+			// between here and the process exit stopped nothing. See
+			// cmdutil.ReportWorkFinished.
+			cmdutil.ReportWorkFinished(cmd.Context())
+			return nil
 		},
 	}
 	registerFlags(cmd, &opts)

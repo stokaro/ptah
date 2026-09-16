@@ -114,15 +114,24 @@ func runCommand(cmd *cobra.Command, args ...string) int {
 	// before the exit. See withInterruptCancel.
 	ctx, interrupted, release := withInterruptCancel(context.Background(), cmd.ErrOrStderr())
 	defer release()
+	ctx, workFinished := cmdutil.WithWorkReport(ctx)
 
 	code := RunContext(ctx, cmd, args...)
-	if sig := interrupted(); sig != nil {
-		// An interrupted command reports the interrupt, not whatever error the
-		// cancelation happened to surface as. What that status is belongs to
-		// the surface: see interruptExitCode.
-		return interruptExitCode(cmd, sig)
+	sig := interrupted()
+	if sig == nil {
+		return code
 	}
-	return code
+	// A verb that reported its work finished had nothing left for the signal to
+	// stop, so the status it earned stands: `ptah migrations up` whose last
+	// migration committed before the signal exits 0 against a database it fully
+	// migrated. Anything else -- a failure, or a command that ends because it
+	// was stopped -- reports the interrupt, not whatever error the cancelation
+	// happened to surface as. What that status is belongs to the surface: see
+	// interruptExitCode.
+	if code == 0 && workFinished() {
+		return code
+	}
+	return interruptExitCode(cmd, sig)
 }
 
 func executeWithRecovery(cmd *cobra.Command) (err error) {
