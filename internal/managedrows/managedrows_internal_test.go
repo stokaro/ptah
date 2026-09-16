@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 )
 
 func TestRejectsExplicitInsert(t *testing.T) {
@@ -171,4 +172,59 @@ func TestInsertableColumns_FailurePath(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, tt.wantErr)
 		})
 	}
+}
+
+// The three intents part over a column the declaration names and the live table
+// has not gained yet: a report narrows it away, a migration body refuses it, and
+// a plan keeps it, because the schema stage of that same plan adds the column
+// before the data statements run (stokaro/ptah#3339).
+//
+// Which of the two outcomes reaches an operator is not observable through
+// Compare without a server, and integration/declared_rows_live_test.go is where
+// the widened declaration is applied for real.
+
+// widenedDeclaration is the declaration and the live table the three tests below
+// share: the table carries the key and one column, and the row declares a value
+// for a second column as well.
+func widenedDeclaration() (catalog.Table, schemamodel.ManagedData, []map[string]any) {
+	table := catalog.Table{Name: "settings", Columns: []catalog.Column{{Name: "code"}, {Name: "label"}}}
+	declaration := schemamodel.ManagedData{Table: "settings", Keys: []string{"code"}}
+	rows := []map[string]any{{"code": "one", "label": "Retention window", "note": "added with the column"}}
+	return table, declaration, rows
+}
+
+func TestReadBack_APlanKeepsTheColumnItsSchemaStageAdds(t *testing.T) {
+	c := qt.New(t)
+	table, declaration, rows := widenedDeclaration()
+
+	columns, compared, err := readBack(
+		"postgres", identifier.ForDialect("postgres"), &table, declaration, rows, Plan, "settings")
+
+	c.Assert(err, qt.IsNil)
+	// Read what the table has: the column is not there to select yet.
+	c.Assert(columns, qt.DeepEquals, []string{"code", "label"})
+	// Compare what the declaration says, so the value reaches a statement.
+	c.Assert(compared, qt.DeepEquals, rows)
+}
+
+func TestReadBack_AReportNarrowsToWhatTheTableCarries(t *testing.T) {
+	c := qt.New(t)
+	table, declaration, rows := widenedDeclaration()
+
+	columns, compared, err := readBack(
+		"postgres", identifier.ForDialect("postgres"), &table, declaration, rows, Report, "settings")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.DeepEquals, []string{"code", "label"})
+	c.Assert(compared, qt.DeepEquals, []map[string]any{{"code": "one", "label": "Retention window"}})
+}
+
+func TestReadBack_AMigrationBodyRefusesTheColumnItCannotWrite(t *testing.T) {
+	c := qt.New(t)
+	table, declaration, rows := widenedDeclaration()
+
+	_, _, err := readBack(
+		"postgres", identifier.ForDialect("postgres"), &table, declaration, rows, Write, "settings")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*note.*`)
 }

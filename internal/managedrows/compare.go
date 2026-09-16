@@ -31,6 +31,11 @@ const (
 	// Write reads every column a reversible up and down will write, and refuses
 	// a declaration the live table cannot take.
 	Write
+	// Plan compares against the table the plan is about to produce. Its schema
+	// stage runs before its data stage, so a column the live table has not
+	// gained yet is a column the data statements will write to, and the value
+	// declared for it is a difference rather than drift to narrow away.
+	Plan
 )
 
 // PlanUpdateSeverity and ReportUpdateSeverity are what the two callers charge
@@ -192,7 +197,7 @@ func readBack(
 	qualified string,
 ) ([]string, []map[string]any, error) {
 	if len(desired) == 0 {
-		if intent == Report {
+		if intent != Write {
 			return Columns(nil, declaration.Keys), desired, nil
 		}
 		if liveTable == nil {
@@ -209,8 +214,16 @@ func readBack(
 		return columns, desired, nil
 	}
 	narrowed := ProjectOntoLive(columns, liveTable, names)
-	if intent == Write {
+	switch intent {
+	case Write:
 		return columns, desired, refuseUndeclaredColumns(qualified, columns, narrowed)
+	case Plan:
+		// The read stays narrow, because the column is not there to read yet;
+		// the comparison keeps it, because the schema stage adds it before the
+		// data statements run. Narrowing the declared rows here instead leaves
+		// the value out of every statement, and a widened declaration converges
+		// on a row whose new column the plan never wrote.
+		return narrowed, desired, nil
 	}
 	// A column the declaration names and the table has not gained yet is
 	// structural drift, and the structural comparison reports it. The count
