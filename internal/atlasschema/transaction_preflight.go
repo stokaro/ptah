@@ -56,9 +56,27 @@ func PreflightApplyTransaction(
 	if !result.RequiresAutocommit() {
 		return nil
 	}
-	finding := result.Findings[0]
-	return fmt.Errorf(
+	return &TransactionPreflightError{Finding: result.Findings[0], Total: len(prepared)}
+}
+
+// TransactionPreflightError is the refusal [PreflightApplyTransaction] returns.
+//
+// It carries the finding rather than only its sentence, because the
+// compatibility surface refuses the same plan in Atlas's terms: a concurrent
+// index there is a diff policy the project configured in atlas.hcl, and naming
+// the flag without naming the setting sends the reader to the wrong file. The
+// recognition stays here; only the sentence differs.
+type TransactionPreflightError struct {
+	// Finding is the first statement the analysis refused.
+	Finding txrequire.Finding
+	// Total is how many executable statements the plan carried, which is what
+	// makes "statement 2 of 2" answerable.
+	Total int
+}
+
+func (e *TransactionPreflightError) Error() string {
+	return fmt.Sprintf(
 		"the planned changes cannot run inside a transaction: statement %d of %d: %s; "+
 			"rerun with --tx-mode none, which commits each statement as it runs\nSQL: %s",
-		finding.Statement.Index+1, len(prepared), finding.Message, finding.Statement.SQL)
+		e.Finding.Statement.Index+1, e.Total, e.Finding.Message, e.Finding.Statement.SQL)
 }
