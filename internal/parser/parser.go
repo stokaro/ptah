@@ -3887,13 +3887,32 @@ func (p *Parser) currentIsIndexKeyword() bool {
 // guarantee makes Ptah converge to a schema stricter than the DDL it was given,
 // report it in sync, and reject duplicate values the author allowed
 // (stokaro/ptah#2713).
+// currentStartsIdentifier reports whether the current token opens a name, in
+// any spelling [Parser.expectIdentifier] accepts: a bare word, a double-quoted
+// one, or a bracketed one. A caller reading an OPTIONAL name asks this first,
+// so the two cannot disagree about what a name looks like.
+func (p *Parser) currentStartsIdentifier() bool {
+	return p.current.Type == lexer.TokenIdentifier ||
+		isDoubleQuotedIdentifierToken(p.current) ||
+		p.current.MatchOperatorValue("[")
+}
+
 func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 	p.advance()
 	p.skipWhitespace()
-	// Check for optional index name after INDEX/KEY
-	if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
-		constraint.Name = p.current.Value
-		p.advance()
+	// The optional index name, in every spelling the engine writing this DDL
+	// allows. Reading only a bare identifier refused `INDEX "idx_b" (b)`, which
+	// CockroachDB accepts: the quoted name was left in front of the column
+	// list, and the reader answered `expected Operator, got String`
+	// (stokaro/ptah#3328).
+	if p.currentStartsIdentifier() {
+		name, err := p.expectIdentifier()
+		// The guard above is expectIdentifier's own condition, so this cannot
+		// fail; leaving the name empty rather than panicking keeps the element
+		// readable as the unnamed index it then is.
+		if err == nil {
+			constraint.Name = name
+		}
 		p.skipWhitespace()
 	}
 	// A plain KEY takes the same optional clause a UNIQUE one does, and reading
