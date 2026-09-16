@@ -952,15 +952,16 @@
       "outboundLinks": [
         "/databases/postgresql/",
         "/databases/support-matrix/",
-        "/reference/capabilities/"
+        "/reference/capabilities/",
+        "/versioned/apply/"
       ],
       "inboundLinks": [
         "/databases/postgresql/",
         "/databases/support-matrix/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1236,
-      "sourceBytes": 9292
+      "visibleWords": 1310,
+      "sourceBytes": 9791
     },
     {
       "path": "docs/site/src/content/docs/databases/mysql.md",
@@ -6161,6 +6162,7 @@
         "/atlas/docs-coverage/",
         "/atlas/migrate-commands/",
         "/concepts/migration-directory/",
+        "/databases/distributed/",
         "/databases/oracle/",
         "/databases/postgresql/",
         "/faq/",
@@ -6171,8 +6173,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5198,
-      "sourceBytes": 38369
+      "visibleWords": 5263,
+      "sourceBytes": 38782
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

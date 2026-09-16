@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/ddltx"
 	"ptah.run/migration/migrator"
 )
 
@@ -122,15 +123,13 @@ func TestSpannerVersionedMigrationPathLive_HappyPath(t *testing.T) {
 // body the server refuses, and asserts what the revision table holds
 // afterwards.
 //
-// It is here because the repository describes this target twice and the two
-// descriptions do not agree. internal/ddltx classifies Spanner as
-// transactional, whose contract is that the body and the revision that records
-// it roll back together; the capability preset answers false for
-// DDLInsideTransaction, which routes the apply through a transaction object
-// whose Commit and Rollback do nothing. Only a server says which of the two
-// the product implements, and what it says is below: a body that fails partway
-// keeps every statement that already ran, and the revision row is the dirty
-// record an operator has to act on.
+// The capability preset answers false for DDLInsideTransaction, which routes
+// the apply through a transaction object whose Commit and Rollback do nothing.
+// Only a server says what that leaves behind, and what it says is below: a body
+// that fails partway keeps every statement that already ran, and the revision
+// row is the dirty record an operator has to act on. The survival assertion is
+// read out of internal/ddltx rather than written as a literal, so the class and
+// the server cannot disagree without this test saying so.
 func TestSpannerVersionedMigrationPathLive_FailurePath(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.Spanner)
 	c := qt.New(t)
@@ -159,10 +158,14 @@ func TestSpannerVersionedMigrationPathLive_FailurePath(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 
 	// The statement that ran before the refusal is still there. That is the
-	// measurement: the migrator's transactional apply path rolled back, and on
-	// this endpoint the rollback undid nothing, because the DDL was never
-	// inside a transaction to begin with.
-	c.Assert(spannerTableExists(c, conn, subjectTable), qt.IsTrue)
+	// measurement: the migrator's apply path rolled back, and on this endpoint
+	// the rollback undid nothing, because the DDL was never inside a
+	// transaction to begin with.
+	c.Assert(
+		spannerTableExists(c, conn, subjectTable),
+		qt.Equals,
+		ddltx.AllStatementsDurable(ddltx.ClassOf(conn.Info().Dialect)),
+	)
 
 	revisions, err := m.GetRevisions(ctx)
 	c.Assert(err, qt.IsNil)
@@ -177,6 +180,57 @@ func TestSpannerVersionedMigrationPathLive_FailurePath(t *testing.T) {
 	currentVersion, err := m.GetCurrentVersion(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(currentVersion, qt.Equals, int64(0))
+}
+
+// TestSpannerMigratorKeepsEveryStatementItRanLive pins what a failed body
+// leaves behind on Spanner, which is the DDL transaction class internal/ddltx
+// assigns.
+//
+// The second statement fails. The table the first one created is still there
+// afterwards, and the revision row says one statement of two was applied, so a
+// retry resumes at the statement that failed rather than at the body's first
+// one. That is the NoTransaction contract: the preset refuses DDL inside an
+// explicit transaction, so the migrator applies the body through a transaction
+// whose Commit and Rollback do nothing and each statement commits as it runs.
+// Under the Transactional contract the CREATE would have rolled back with the
+// body and the prefix would be zero (stokaro/ptah#3320).
+func TestSpannerMigratorKeepsEveryStatementItRanLive(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	revisionTable, subjectTable := spannerObjectNames()
+	defer dropSpannerTables(c, conn, subjectTable, revisionTable)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"durable prefix",
+		`CREATE TABLE "`+subjectTable+`" ("id" bigint PRIMARY KEY);`+"\n"+
+			`ALTER TABLE "`+subjectTable+`" ADD COLUMN "amount" money;`,
+		`DROP TABLE "`+subjectTable+`"`,
+	)
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+		WithMigrationsTable("", revisionTable)
+
+	err = m.MigrateUp(ctx)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*Type <money> is not supported.*`)
+	// The class is read from the package rather than restated, so a class that
+	// stopped matching this endpoint fails here with the server's own answer.
+	class := ddltx.ClassOf(conn.Info().Dialect)
+	c.Assert(spannerTableExists(c, conn, subjectTable), qt.Equals, ddltx.AllStatementsDurable(class))
+
+	revisions, err := m.GetRevisions(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(1))
+	c.Assert(revisions[0].Applied, qt.Equals, 1)
+	c.Assert(revisions[0].Total, qt.Equals, 2)
+	c.Assert(revisions[0].Dirty, qt.IsTrue)
 }
 
 // spannerTableExists asks the catalog whether one table is there, through the

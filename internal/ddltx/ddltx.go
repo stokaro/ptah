@@ -77,10 +77,10 @@ func ClassOf(dialect string) Class {
 
 	// Not yet driven live for revision completion. These three reach the
 	// database through the same transactional migrator path PostgreSQL takes:
-	// dbschema routes CockroachDB, YugabyteDB and Spanner onto the PostgreSQL
-	// driver, and SQL Server has its own writer with a real transaction. Their
+	// dbschema routes CockroachDB and YugabyteDB onto the PostgreSQL driver,
+	// and SQL Server has its own writer with a real transaction. Their
 	// contract is therefore the one the code implements, not a measurement.
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.SQLServer:
+	case platform.CockroachDB, platform.YugabyteDB, platform.SQLServer:
 		return Transactional
 
 	// Proven live by TestRevisionCompletionFailure_MySQLImplicitCommitLive and
@@ -107,6 +107,22 @@ func ClassOf(dialect string) Class {
 	// ImplicitCommit would select the MySQL-family progress witness, whose
 	// InnoDB and sql_mode preflight Oracle cannot answer (stokaro/ptah#3298).
 	case platform.Oracle:
+		return NoTransaction
+
+	// Spanner's PostgreSQL interface refuses a schema statement inside an
+	// explicit transaction: measured on the Cloud Spanner emulator behind
+	// PGAdapter, every wrapped statement answers `DDL statements are only
+	// allowed outside explicit transactions`, SQLSTATE 25000
+	// (stokaro/ptah#1793). Its preset answers false for
+	// capability.DDLInsideTransaction, and internal/sqliterebuild turns that
+	// into a transaction whose Commit and Rollback do nothing, on every
+	// migrator apply and rollback. So every statement -- body and revision
+	// write alike -- commits on its own, which is this class rather than
+	// Transactional: a rollback here undoes nothing, so a body that fails
+	// partway keeps the statements that already ran.
+	// TestSpannerMigratorKeepsEveryStatementItRanLive measures that against the
+	// emulator (stokaro/ptah#3320).
+	case platform.Spanner:
 		return NoTransaction
 
 	default:
