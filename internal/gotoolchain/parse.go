@@ -71,9 +71,9 @@ func readStep(step, uses *yaml.Node, path string) SetupGoStep {
 	return found
 }
 
-// readResolver reads a step another step can name, keeping the two things a
-// reference to its output can be judged against: where its values come from,
-// and the script it turns them into outputs with.
+// readResolver reads a step another step can name, keeping what a reference to
+// its output is judged against: where its values come from, and the script it
+// turns them into outputs with.
 func readResolver(step, id, key *yaml.Node, path string) ResolverStep {
 	found := ResolverStep{File: path, ID: id.Value, Line: key.Line}
 	if env, _ := field(step, "env"); env != nil && env.Kind == yaml.MappingNode {
