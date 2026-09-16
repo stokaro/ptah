@@ -224,7 +224,8 @@ what CI builds with and moves on every patch release. Never write a
 never raise `go` to clear a standard-library advisory -- raise `toolchain`.
 `scripts/check-go-toolchain-single-source.sh` enforces the single source; the
 one exemption, `.github/actions/ptah/action.yml`, forwards its caller's inputs
-and says why.
+-- directly, or through the step that resolves them for a caller with no module
+to read -- and says why.
 
 ## Compatibility Policy
 
