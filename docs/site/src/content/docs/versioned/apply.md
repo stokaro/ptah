@@ -677,6 +677,12 @@ skips is only ever the prefix that really survived:
   commits before every schema statement, so each statement commits as it runs,
   as under `none`, and `applied` counts the statements that ran before the one
   that failed. Oracle does not support `all`.
+- Under `file` on Spanner, Ptah opens no transaction around the body. Spanner's
+  PostgreSQL interface refuses a schema statement inside an explicit
+  transaction, so the migrator applies the body unwrapped and each statement
+  commits as it runs, as under `none`. `applied` counts the statements that ran
+  before the one that failed, and those statements stay in the database.
+  Spanner does not support `all`.
 - Under `file` on MySQL and MariaDB, the server may commit the open transaction
   around DDL, so part of a failed body can survive its final rollback. Ptah does
   not infer that prefix from SQL keywords. Before and after each statement it

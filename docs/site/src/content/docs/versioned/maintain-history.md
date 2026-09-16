@@ -190,6 +190,13 @@ example on this page is `direction=up`; for `direction=down` see
 where `--resume-from` runs the remaining *down* statements and a finished
 rollback removes the revision instead of marking it applied.
 
+The statement is recorded as it was written. Where one carries bytes that are
+not valid UTF-8, such as a binary value written as a text literal, each of those
+bytes is recorded as a `\xFF` escape. The revision table stores this text as
+UTF-8, and MySQL and MariaDB refuse a value that is not, so the escape keeps the
+server the only thing that decides whether a statement runs. The rest of the
+statement is unchanged.
+
 An interruption during a `no_transaction` statement is more ambiguous. Before
 each SQL-backed statement, Ptah durably records the last known completed
 statement and marks the next statement's outcome as unknown. After success, it

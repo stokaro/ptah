@@ -1,10 +1,10 @@
-package datamigrate
+package managedrows
 
-// White-box testing required: insertableColumns, rejectsExplicitInsert, and
-// findManagedTable encode dialect-specific insert semantics (identity and
-// auto-increment behavior, default-schema matching) that cannot be exercised
-// through the exported Generate API without live PostgreSQL and SQL Server
-// databases, which the unit suite does not provision.
+// White-box testing required: insertableColumns and rejectsExplicitInsert
+// encode dialect-specific insert semantics (identity and auto-increment
+// behavior) that cannot be exercised through the exported Compare API without
+// live PostgreSQL and SQL Server databases, which the unit suite does not
+// provision.
 
 import (
 	"testing"
@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
 )
 
 func TestRejectsExplicitInsert(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRejectsExplicitInsert(t *testing.T) {
 	}
 }
 
-func TestInsertableColumns_Success(t *testing.T) {
+func TestInsertableColumns_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
@@ -80,20 +81,33 @@ func TestInsertableColumns_Success(t *testing.T) {
 			keys:     []string{"code"},
 			wantCols: []string{"code", "n"},
 		},
+		// Oracle folds the bare name the renderer wrote, so a declaration that
+		// spells its key in lower case names the column the catalog reports as
+		// CODE. Matched exactly, the table reads as one that lost its key and
+		// the reversible full delete is refused (stokaro/ptah#3321). The
+		// matched key is read under the declaration's own spelling, because
+		// that is the name the comparison indexes each live row by.
+		{
+			name:     "oracle reads a folded key under the declared spelling",
+			dialect:  "oracle",
+			columns:  []catalog.Column{{Name: "CODE"}, {Name: "LABEL"}},
+			keys:     []string{"code"},
+			wantCols: []string{"LABEL", "code"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			table := catalog.Table{Name: "t", Columns: tt.columns}
-			cols, err := insertableColumns(tt.dialect, "t", table, tt.keys)
+			cols, err := insertableColumns(tt.dialect, identifier.ForDialect(tt.dialect), "t", table, tt.keys)
 			c.Assert(err, qt.IsNil)
 			c.Assert(cols, qt.DeepEquals, tt.wantCols)
 		})
 	}
 }
 
-func TestInsertableColumns_Refusals(t *testing.T) {
+func TestInsertableColumns_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
@@ -136,92 +150,25 @@ func TestInsertableColumns_Refusals(t *testing.T) {
 			keys:    []string{"id"},
 			wantErr: `key column "id"`,
 		},
+		// The control for the Oracle row in the happy path: PostgreSQL keeps
+		// case, so a key spelled in another case is another column there.
+		{
+			name:    "postgres keeps case, so a folded key is missing",
+			dialect: "postgres",
+			columns: []catalog.Column{{Name: "CODE"}, {Name: "LABEL"}},
+			keys:    []string{"code"},
+			wantErr: `key column "code"`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			table := catalog.Table{Name: "t", Columns: tt.columns}
-			cols, err := insertableColumns(tt.dialect, "t", table, tt.keys)
+			cols, err := insertableColumns(tt.dialect, identifier.ForDialect(tt.dialect), "t", table, tt.keys)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(cols, qt.IsNil)
 			c.Assert(err.Error(), qt.Contains, tt.wantErr)
-		})
-	}
-}
-
-func TestFindManagedTable(t *testing.T) {
-	tests := []struct {
-		name          string
-		tables        []catalog.Table
-		wantSchema    string
-		defaultSchema string
-		table         string
-		wantFound     bool
-		wantGotSchema string
-	}{
-		{
-			name:          "explicit default schema matches blanked introspected schema",
-			tables:        []catalog.Table{{Name: "regions", Schema: ""}},
-			wantSchema:    "main",
-			defaultSchema: "main",
-			table:         "regions",
-			wantFound:     true,
-			wantGotSchema: "",
-		},
-		{
-			name:          "explicit non-default schema exact match",
-			tables:        []catalog.Table{{Name: "regions", Schema: "reference"}},
-			wantSchema:    "reference",
-			defaultSchema: "main",
-			table:         "regions",
-			wantFound:     true,
-			wantGotSchema: "reference",
-		},
-		{
-			name:          "explicit schema with no match not found",
-			tables:        []catalog.Table{{Name: "regions", Schema: "other"}},
-			wantSchema:    "reference",
-			defaultSchema: "main",
-			table:         "regions",
-			wantFound:     false,
-			wantGotSchema: "",
-		},
-		{
-			name:          "omitted schema unique bare match",
-			tables:        []catalog.Table{{Name: "regions", Schema: ""}},
-			wantSchema:    "",
-			defaultSchema: "main",
-			table:         "regions",
-			wantFound:     true,
-			wantGotSchema: "",
-		},
-		{
-			name:          "omitted schema prefers default among duplicates",
-			tables:        []catalog.Table{{Name: "regions", Schema: "other"}, {Name: "regions", Schema: "public"}},
-			wantSchema:    "",
-			defaultSchema: "public",
-			table:         "regions",
-			wantFound:     true,
-			wantGotSchema: "public",
-		},
-		{
-			name:          "table not present",
-			tables:        []catalog.Table{{Name: "regions", Schema: ""}},
-			wantSchema:    "",
-			defaultSchema: "main",
-			table:         "missing",
-			wantFound:     false,
-			wantGotSchema: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, found := findManagedTable(&catalog.Database{Tables: tt.tables}, tt.wantSchema, tt.defaultSchema, tt.table)
-			c.Assert(found, qt.Equals, tt.wantFound)
-			c.Assert(got.Schema, qt.Equals, tt.wantGotSchema)
 		})
 	}
 }

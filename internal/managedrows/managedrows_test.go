@@ -14,6 +14,8 @@ var postgresNames = identifier.ForDialect("postgres")
 
 var oracleNames = identifier.ForDialect("oracle")
 
+var sqliteNames = identifier.ForDialect("sqlite")
+
 func liveSettings() *catalog.Database {
 	return &catalog.Database{Tables: []catalog.Table{{
 		Name:   "settings",
@@ -112,6 +114,25 @@ func TestLiveTable_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(managedrows.LiveTable(liveOracleSettings(), "ptah_user", "settings", oracleNames), qt.IsNotNil)
 	})
+
+	t.Run("a declared default schema matches a schema the reader blanked", func(t *testing.T) {
+		// Readers blank the schema of default-schema tables, so a declaration
+		// that spells the default out names the same table.
+		c := qt.New(t)
+		blanked := &catalog.Database{Tables: []catalog.Table{{Name: "settings"}}}
+		c.Assert(managedrows.LiveTable(blanked, "main", "settings", sqliteNames), qt.IsNotNil)
+	})
+
+	t.Run("an omitted schema prefers the table in the default schema", func(t *testing.T) {
+		c := qt.New(t)
+		shared := &catalog.Database{Tables: []catalog.Table{
+			{Name: "settings", Schema: "reference"},
+			{Name: "settings", Schema: "public"},
+		}}
+		got := managedrows.LiveTable(shared, "", "settings", postgresNames)
+		c.Assert(got, qt.IsNotNil)
+		c.Assert(got.Schema, qt.Equals, "public")
+	})
 }
 
 func TestLiveTable_FailurePath(t *testing.T) {
@@ -133,5 +154,24 @@ func TestLiveTable_FailurePath(t *testing.T) {
 	t.Run("postgres keeps case, so an upper-case table is another table", func(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(managedrows.LiveTable(liveOracleSettings(), "", "settings", postgresNames), qt.IsNil)
+	})
+
+	t.Run("a bare name two other schemas share resolves to neither", func(t *testing.T) {
+		// The reference-data page promises this: with no declared schema and no
+		// candidate in the default one, there is no answer to pick.
+		c := qt.New(t)
+		shared := &catalog.Database{Tables: []catalog.Table{
+			{Name: "settings", Schema: "reference"},
+			{Name: "settings", Schema: "staging"},
+		}}
+		c.Assert(managedrows.LiveTable(shared, "", "settings", postgresNames), qt.IsNil)
+	})
+
+	t.Run("a schema the reader blanked is not every declared schema", func(t *testing.T) {
+		// A blank introspected schema is the default schema left out, so it
+		// answers the declaration naming that default and no other.
+		c := qt.New(t)
+		blanked := &catalog.Database{Tables: []catalog.Table{{Name: "settings"}}}
+		c.Assert(managedrows.LiveTable(blanked, "reference", "settings", postgresNames), qt.IsNil)
 	})
 }

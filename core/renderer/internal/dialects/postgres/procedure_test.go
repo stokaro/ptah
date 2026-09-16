@@ -111,3 +111,42 @@ func TestPostgreSQLRenderer_Procedure_NamesTheSkipOnATargetWithout(t *testing.T)
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE OR REPLACE PROCEDURE")
 	c.Assert(sql, qt.Contains, "procedure bump is not supported by this target; skipped.")
 }
+
+// TestPostgreSQLRenderer_DropsAZeroArgumentRoutineWithAnEmptyList is the other
+// half of TestPostgreSQLRenderer_Procedure_DropsWithoutAnEmptySignature.
+//
+// A node carrying no argument list is dropped by its bare name, and a node
+// carrying an empty one is dropped as `f()`, the routine of that name taking no
+// arguments. PostgreSQL needs the second where the name is overloaded: it
+// answers the bare name with `function name "f" is not unique`, and IF EXISTS
+// does not help, because the refusal is about ambiguity rather than existence.
+func TestPostgreSQLRenderer_DropsAZeroArgumentRoutineWithAnEmptyList(t *testing.T) {
+	tests := []struct {
+		name string
+		node ast.Node
+		want string
+	}{
+		{
+			name: "a function taking no arguments",
+			node: ast.NewDropFunction("scalar").SetIfExists().SetParameters(""),
+			want: `DROP FUNCTION IF EXISTS "scalar"();`,
+		},
+		{
+			name: "a procedure taking no arguments",
+			node: ast.NewDropFunction("bump").SetKind("procedure").SetIfExists().SetParameters(""),
+			want: `DROP PROCEDURE IF EXISTS "bump"();`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			renderer := postgres.New()
+
+			sql, err := renderer.Render(test.node)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, test.want)
+		})
+	}
+}

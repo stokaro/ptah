@@ -63,3 +63,50 @@ func TestDBConstraint_ColumnSlicesFallbackToLegacyFields(t *testing.T) {
 	c.Assert(composite.ColumnNamesOrDefault(), qt.DeepEquals, []string{"tenant_id", "owner_id"})
 	c.Assert(composite.ForeignColumnsOrDefault(), qt.DeepEquals, []string{"tenant_id", "id"})
 }
+
+// TestFunction_DropIdentityKeepsAnEmptyListApartFromNoList is the distinction a
+// DROP statement spells.
+//
+// `DROP FUNCTION f()` names the overload of f that takes no arguments, while
+// `DROP FUNCTION f` names whichever routine of that name the server can
+// resolve, and it refuses that where the name is overloaded. A reader that
+// captured an empty identity has therefore said something, and a reader that
+// captured none has not.
+func TestFunction_DropIdentityKeepsAnEmptyListApartFromNoList(t *testing.T) {
+	tests := []struct {
+		name     string
+		function catalog.Function
+		want     *string
+	}{
+		{
+			name: "the identity a reader captured",
+			function: catalog.Function{
+				Name: "f", IdentityArguments: new("n integer"), Parameters: "n integer DEFAULT 1",
+			},
+			want: new("n integer"),
+		},
+		{
+			name:     "an empty identity is a list",
+			function: catalog.Function{Name: "f", IdentityArguments: new("")},
+			want:     new(""),
+		},
+		{
+			name:     "no identity falls back to the recorded parameters",
+			function: catalog.Function{Name: "f", Parameters: "IN n integer"},
+			want:     new("IN n integer"),
+		},
+		{
+			name:     "a routine nothing recorded carries no list at all",
+			function: catalog.Function{Name: "f"},
+			want:     nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.function.DropIdentity(), qt.DeepEquals, test.want)
+		})
+	}
+}

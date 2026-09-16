@@ -104,6 +104,15 @@ answers such a name with the name itself, which would reach the rollback as the
 value each row is restored to. Apply the schema change first, or take the column
 out of the row file.
 
+Which live table a declaration names, and which of that table's columns it
+names, are decided under the engine's own identifier rules. Oracle folds a bare
+name, so a table created as `regions` is `REGIONS` in its catalog and a
+declaration written as `regions` with a `code` key names it and its `CODE`
+column. An engine that keeps case keeps it, so there `REGIONS` and `regions` are
+two tables. The same rules answer for `ptah schema drift`, `ptah schema compare`
+and the data stage of `ptah schema plan`, which read the declared rows through
+one comparison.
+
 ## Safety gates
 
 A data migration is applied through the ordinary migration path, where neither
@@ -172,6 +181,12 @@ Emptying a populated table's desired set generates a reversible full-table
 delete: `up` deletes every live row and `down` re-inserts it from the table's
 complete column set, read from the live schema so the rollback restores whole
 rows rather than the key columns alone.
+
+The re-inserted columns carry the spelling the catalog reports, except the key
+columns, which carry the spelling the declaration gave them, because that is the
+name each live row is matched on. The two differ only where the engine folds
+names and both spellings therefore reach the same column: an Oracle rollback of
+a `code`-keyed table reads `INSERT INTO regions (LABEL, code)`.
 
 Generated/computed columns are excluded from the re-insert because the
 database recomputes them and inserting an explicit value for them errors; on

@@ -21,6 +21,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/revisiontext"
 )
 
 const (
@@ -2044,6 +2045,7 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 	direction MigrationDirection,
 ) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
+	statement := revisiontext.ValidUTF8(event.Statement)
 	if m.revisionTableFormat.isAtlas() {
 		sqlText := migrationSQLForDirection(migration, direction)
 		return executeSQLOn(
@@ -2054,7 +2056,7 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 			event.Total,
 			time.Since(startedAt).Nanoseconds(),
 			unknownStatementOutcomeError,
-			event.Statement,
+			statement,
 			m.atlasDirtyPartialHashes(sqlText, direction, event.Index-1, event.Total),
 			atlasOperatorVersionForMigration(migration, direction),
 			migration.RevisionVersion(),
@@ -2068,7 +2070,7 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 		event.Index-1,
 		event.Total,
 		unknownStatementOutcomeError,
-		event.Statement,
+		statement,
 		time.Since(startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(migration, direction, event.Index-1),
 		migration.Version,
@@ -2215,8 +2217,8 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		encodeRevisionState(migrationStateFailed, direction),
 		applied,
 		total,
-		strings.TrimSpace(failure.Error()),
-		stmt,
+		revisiontext.ValidUTF8(strings.TrimSpace(failure.Error())),
+		revisiontext.ValidUTF8(stmt),
 		time.Since(startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(migration, direction, applied),
 		migration.Version,

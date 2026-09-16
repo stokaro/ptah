@@ -42,6 +42,14 @@ matching preset automatically.
   limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before
   rendering.
 
+Spanner refuses a schema statement inside an explicit transaction, so the
+migrator applies a migration body unwrapped and every statement commits as it
+runs. A body that fails partway keeps the statements that already ran, and the
+revision row records that prefix for the retry to resume from; `--tx-mode all`
+is refused. CockroachDB and YugabyteDB take the transactional path, where a
+failed body leaves nothing behind. See
+[Apply migrations](../../versioned/apply/) for what each target records.
+
 ## Coverage in continuous integration
 
 CockroachDB and YugabyteDB run in integration coverage against live
