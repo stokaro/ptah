@@ -916,7 +916,7 @@ func TestFunctionChanges_TheWireShapeIsUnchanged(t *testing.T) {
 					Name: "bump", Parameters: "a integer", Returns: "integer",
 					Language: "sql", Body: "SELECT a + 1",
 				},
-				Signature: "integer",
+				Signature: new("integer"),
 			}},
 			want: `["bump"]`,
 			why:  "a name list is what format_version 1 has always carried here",
@@ -948,14 +948,14 @@ func TestFunctionChanges_TheSignatureIsNotTheParameters(t *testing.T) {
 
 	changes := difftypes.FunctionChanges{{
 		Function:  schemamodel.Function{Name: "bump", Parameters: "a integer DEFAULT 1"},
-		Signature: "integer",
+		Signature: new("integer"),
 	}}
 
 	c.Assert(changes[0].Parameters, qt.Equals, "a integer DEFAULT 1",
 		qt.Commentf("what the author wrote, which a CREATE renders"))
-	c.Assert(changes[0].Signature, qt.Equals, "integer",
+	c.Assert(changes[0].Signature, qt.DeepEquals, new("integer"),
 		qt.Commentf("what identifies the overload, which a DROP addresses"))
 	c.Assert(changes.Removals(), qt.DeepEquals,
-		[]difftypes.RoutineRemoval{{Name: "bump", Signature: "integer"}},
+		[]difftypes.RoutineRemoval{{Name: "bump", Signature: new("integer")}},
 		qt.Commentf("and this is the shape the parallel list used to hold"))
 }

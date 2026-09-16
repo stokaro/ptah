@@ -1143,8 +1143,8 @@
         "/direct/inspect/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6283,
-      "sourceBytes": 44608
+      "visibleWords": 6322,
+      "sourceBytes": 44816
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -6615,8 +6615,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1944,
-      "sourceBytes": 13064
+      "visibleWords": 2052,
+      "sourceBytes": 13814
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

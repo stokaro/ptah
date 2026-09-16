@@ -33,7 +33,7 @@ func TestFunctionDefinitionsWithDialect_CarriesTheCatalogIdentity(t *testing.T) 
 	)
 
 	c.Assert(diff.Changes["returns"], qt.Equals, "integer -> bigint")
-	c.Assert(diff.CurrentSignature, qt.Equals, "n integer")
+	c.Assert(diff.CurrentSignature, qt.DeepEquals, new("n integer"))
 }
 
 // A reader that supplies no identity leaves the recorded parameters, as the
@@ -48,5 +48,30 @@ func TestFunctionDefinitionsWithDialect_CarriesTheRecordedParametersWithoutAnIde
 	)
 
 	c.Assert(diff.Changes["returns"], qt.Equals, "integer -> bigint")
-	c.Assert(diff.CurrentSignature, qt.Equals, "IN n integer")
+	c.Assert(diff.CurrentSignature, qt.DeepEquals, new("IN n integer"))
+}
+
+// A routine that takes no arguments carries an empty identity rather than none,
+// which is what joins the comparison to the statement the planner writes.
+//
+// The planner drops such a routine as `f()`. An identity of nil would leave the
+// statement naming the routine, and the server refuses that wherever the name
+// is overloaded.
+func TestFunctionDefinitionsWithDialect_AZeroArgumentRoutineCarriesAnEmptyIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	diff := compare.FunctionDefinitionsWithDialect(
+		schemamodel.Function{Name: "scalar", Returns: "bigint", Language: "sql", Body: "SELECT 1"},
+		catalog.Function{
+			Name:              "scalar",
+			IdentityArguments: new(""),
+			Returns:           "integer",
+			Language:          "sql",
+			Body:              "SELECT 1",
+		},
+		platform.Postgres,
+	)
+
+	c.Assert(diff.Changes["returns"], qt.Equals, "integer -> bigint")
+	c.Assert(diff.CurrentSignature, qt.DeepEquals, new(""))
 }

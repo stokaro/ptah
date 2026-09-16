@@ -289,9 +289,14 @@ func (r RoleChanges) Names() []string {
 type RoutineChange struct {
 	schemamodel.Function
 
-	// Signature is the argument list this routine is addressed by, empty when
-	// the routine is not overloaded and the reader supplied none.
-	Signature string
+	// Signature is the argument list this routine is addressed by, nil when no
+	// producer established one.
+	//
+	// Nil and an empty list are different, and the statement spells them
+	// differently: an empty list addresses the routine of this name that takes
+	// no arguments, and nil leaves the DROP naming the routine alone. See
+	// [ptah.run/catalog.Function.DropIdentity].
+	Signature *string
 }
 
 // FunctionChanges is a set of routines one change applies to, carrying each
@@ -886,9 +891,11 @@ type ConstraintAdditionInfo struct {
 type RoutineRemoval struct {
 	// Name is the qualified routine name.
 	Name string `json:"name"`
-	// Signature is the argument list, empty when the routine is not overloaded
-	// and the reader supplied none.
-	Signature string `json:"signature,omitempty"`
+	// Signature is the argument list, nil when no producer established one.
+	// An empty list is not the same answer: it addresses the routine of this
+	// name that takes no arguments, which a schema holding overloads needs to
+	// say. See [ptah.run/catalog.Function.DropIdentity].
+	Signature *string `json:"signature,omitempty"`
 }
 
 // SchemaDiff represents comprehensive differences between two database schemas.
@@ -2083,11 +2090,12 @@ type FunctionDiff struct {
 	// It is the catalog's identity list where the reader supplies one, and the
 	// recorded parameters otherwise. Desired.Parameters is not a substitute,
 	// because it describes the routine the change creates rather than the one
-	// the database holds. Empty means a routine without arguments, or a
-	// producer that recorded no identity.
+	// the database holds. An empty list means a routine that takes no
+	// arguments, which the DROP writes as `f()`; nil means no producer recorded
+	// an identity, and the DROP names the routine alone.
 	//
 	// It stays off the wire, like Desired.
-	CurrentSignature string `json:"-"`
+	CurrentSignature *string `json:"-"`
 }
 
 // DomainDiff represents changes to a PostgreSQL domain type.

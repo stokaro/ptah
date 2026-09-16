@@ -320,7 +320,7 @@ func FunctionsWithSemantics(
 			// about ambiguity rather than existence (stokaro/ptah#2296).
 			removal := difftypes.RoutineRemoval{
 				Name:      databaseNames[identity],
-				Signature: routine.Signature(),
+				Signature: routine.DropIdentity(),
 			}
 			if identity.Kind() == objectidentity.KindProcedure {
 				diff.ProceduresRemoved = append(diff.ProceduresRemoved, routineFromRemoval(removal))
@@ -716,7 +716,7 @@ func FunctionDefinitionsWithDialect(
 		// Also captured before the folding, for the same reason: a planner that
 		// has to drop this routine addresses it by what the catalog holds, not
 		// by the spelling the comparison converges on (stokaro/ptah#3288).
-		CurrentSignature: dbFunction.Signature(),
+		CurrentSignature: dbFunction.DropIdentity(),
 	}
 
 	// Defense-in-depth: canonicalize a local copy. The annotation parser at
@@ -1172,7 +1172,7 @@ func reportedRoutine(reported catalog.Function) difftypes.RoutineChange {
 			Body:       reported.Body,
 			Comment:    reported.Comment,
 		},
-		Signature: reported.Signature(),
+		Signature: reported.DropIdentity(),
 	}
 }
 

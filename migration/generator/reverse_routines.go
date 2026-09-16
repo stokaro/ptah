@@ -39,8 +39,10 @@ func reverseRoutinesOfKind(added difftypes.FunctionChanges, isKind func(difftype
 		}
 		// The declaration's parameters are the signature a rollback drops by:
 		// the routine being dropped is the one this addition created, so what
-		// it was created with is what identifies it.
-		routine.Signature = routine.Parameters
+		// it was created with is what identifies it. A declaration that takes
+		// no arguments identifies the routine with an empty list, which is not
+		// the same statement as dropping it by name.
+		routine.Signature = new(routine.Parameters)
 		removals = append(removals, routine)
 	}
 	return removals
@@ -107,11 +109,26 @@ func reverseFunctionDiffs(
 // catalog still holds. When the arguments changed, the routine is the
 // declaration, and its parameters are the list -- the same answer the reversal
 // of an addition gives in [reverseRoutinesOfKind].
-func forwardRoutineSignature(functionDiff difftypes.FunctionDiff) string {
+func forwardRoutineSignature(functionDiff difftypes.FunctionDiff) *string {
 	if _, changed := functionDiff.Changes["parameters"]; changed {
-		return functionDiff.Desired.Parameters
+		return new(functionDiff.Desired.Parameters)
 	}
 	return functionDiff.CurrentSignature
+}
+
+// sameDropIdentity reports whether two drop identities address the same
+// routine.
+//
+// Nil is not an empty list. A change that recorded no identity matches a
+// catalog record that carries none either, rather than matching the routine
+// that takes no arguments: those are the two answers
+// [catalog.Function.DropIdentity] keeps apart, and a lookup that folded them
+// would restore the wrong overload.
+func sameDropIdentity(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 // priorFunction is the function the pre-change database held, as a declaration
@@ -127,12 +144,12 @@ func forwardRoutineSignature(functionDiff difftypes.FunctionDiff) string {
 // rewrote the wrong routine, and a rebuild dropped `f(n integer)` and never
 // created it again (stokaro/ptah#3288). The comparison records the signature
 // from this same catalog record, so the two agree by construction.
-func priorFunction(current *catalog.Database, dialect, name, signature string) schemamodel.Function {
+func priorFunction(current *catalog.Database, dialect, name string, signature *string) schemamodel.Function {
 	if current == nil {
 		return schemamodel.Function{}
 	}
 	for _, function := range current.Functions {
-		if function.QualifiedName() == name && function.Signature() == signature {
+		if function.QualifiedName() == name && sameDropIdentity(function.DropIdentity(), signature) {
 			// One routine through the conversion every other prior object
 			// takes, so the restored declaration is spelled the same way.
 			single := &catalog.Database{Functions: []catalog.Function{function}}

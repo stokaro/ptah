@@ -1208,14 +1208,39 @@ func (f Function) QualifiedName() string { return QualifyTableName(f.Schema, f.N
 // Signature returns the argument list that selects this routine among the
 // overloads of its name, the list a DROP or ALTER addresses it by.
 //
+// It flattens [Function.DropIdentity] for a caller that compares the text and
+// has no use for the difference between a routine that takes no arguments and
+// one nothing established an identity for. A caller that writes a statement
+// needs that difference and asks DropIdentity.
+func (f Function) Signature() string {
+	if identity := f.DropIdentity(); identity != nil {
+		return *identity
+	}
+	return ""
+}
+
+// DropIdentity returns the argument list that addresses this routine in a DROP
+// or ALTER statement, or nil when nothing established one.
+//
 // It is IdentityArguments when a reader captured it, and Parameters otherwise.
 // Only the PostgreSQL reader captures an identity, so on every other dialect the
 // answer is the declaration parameters as the catalog reports them.
-func (f Function) Signature() string {
+//
+// Nil and an empty list are different answers, and a statement spells them
+// differently. An empty list is the identity of a routine that takes no
+// arguments, and `DROP FUNCTION f()` names that routine exactly; nil means
+// nothing said, so only the bare name can be written. PostgreSQL refuses a bare
+// name whenever it is overloaded, with `function name "f" is not unique`, so a
+// zero-argument overload reached through the flattened answer could not be
+// dropped at all.
+func (f Function) DropIdentity() *string {
 	if f.IdentityArguments != nil {
-		return *f.IdentityArguments
+		return f.IdentityArguments
 	}
-	return f.Parameters
+	if f.Parameters == "" {
+		return nil
+	}
+	return &f.Parameters
 }
 
 // View represents a database view read from the database.

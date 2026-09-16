@@ -358,3 +358,16 @@ v0.5.0 ptah.run/migration/dbtest
 # break because RenderVisitor embeds ast.Visitor (stokaro/ptah#3197).
 v0.5.0 ptah.run/core/ast
 v0.5.0 ptah.run/core/renderer
+
+# A routine's drop identity travels as a pointer rather than a string:
+# core/ast.DropFunctionNode.Parameters, and difftypes.RoutineChange.Signature,
+# RoutineRemoval.Signature and FunctionDiff.CurrentSignature. The empty string
+# had to mean both "this routine takes no arguments" and "nothing recorded an
+# identity", and a statement spells those differently -- `DROP FUNCTION f()`
+# and `DROP FUNCTION f`. PostgreSQL refuses the bare name whenever it is
+# overloaded, so a zero-argument overload could not be dropped at all.
+# catalog.Function.DropIdentity is the one rule that produces the answer, and
+# Signature stays as its flattened form for callers that compare text.
+# core/ast carries the same change and is already approved at this baseline
+# above.
+v0.5.0 ptah.run/migration/schemadiff/difftypes

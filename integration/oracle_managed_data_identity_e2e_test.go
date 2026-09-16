@@ -95,8 +95,11 @@ func TestOracleManagedDataFullDeleteIdentityE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "")
 		c.Assert(stdout, qt.Contains, "Wrote data migration version 1")
 		down := readOracleMigrationFile(c, migrationsDir, "0000000001_identity.down.sql")
-		c.Assert(down, qt.Contains, fmt.Sprintf(`INSERT INTO %q ("CODE", "ID") VALUES ('US', '1');`, table))
-		c.Assert(down, qt.Contains, fmt.Sprintf(`INSERT INTO %q ("CODE", "ID") VALUES ('CZ', '2');`, table))
+		// The rollback names the table and its columns the way the DDL
+		// renderer names them: a plain name goes bare, and Oracle folds it to
+		// upper case, so the INSERT addresses the table the CREATE made.
+		c.Assert(down, qt.Contains, fmt.Sprintf(`INSERT INTO %s (CODE, ID) VALUES ('US', '1');`, table))
+		c.Assert(down, qt.Contains, fmt.Sprintf(`INSERT INTO %s (CODE, ID) VALUES ('CZ', '2');`, table))
 
 		for _, statement := range oracleMigrationStatements(readOracleMigrationFile(c, migrationsDir, "0000000001_identity.up.sql")) {
 			c.Assert(conn.SchemaWriter().ExecuteSQL(ctx, statement), qt.IsNil)
