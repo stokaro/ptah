@@ -640,5 +640,11 @@ func TestCompatCommandDirectExecutionRefreshesContextAcrossRootReuse(t *testing.
 
 	err = cmd.ExecuteContext(canceledContext)
 
-	c.Assert(err, qt.ErrorMatches, `connect to --url: failed to ping database: context canceled`)
+	// The second run reads the context it was given: the first one succeeded
+	// against the same URL, so only the cancellation can stop this one. What it
+	// reports is the cancellation, because that is what the operator did, and
+	// the sentence whichever call noticed it answered with stays reachable
+	// through the cause (docs/exit_codes.md).
+	c.Assert(err, qt.ErrorMatches, `canceled`)
+	c.Assert(err, qt.ErrorIs, context.Canceled)
 }
