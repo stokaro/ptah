@@ -336,8 +336,9 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 		}
 	}()
 
+	savepoint := savepointStatements(conn.Info().Dialect)
 	if opts.Idempotent {
-		if err := txConn.Writer().ExecuteSQL(ctx, "SAVEPOINT ptah_seed_file"); err != nil {
+		if err := txConn.Writer().ExecuteSQL(ctx, savepoint.create); err != nil {
 			return fmt.Errorf("create seed savepoint %s: %w", seed.Filename, err)
 		}
 	}
@@ -346,11 +347,11 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 		if !opts.Idempotent || !IsConflictError(err) {
 			return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
 		}
-		if rbErr := txConn.Writer().ExecuteSQL(ctx, "ROLLBACK TO SAVEPOINT ptah_seed_file"); rbErr != nil {
+		if rbErr := txConn.Writer().ExecuteSQL(ctx, savepoint.rollback); rbErr != nil {
 			return fmt.Errorf("rollback idempotent seed %s: %w", seed.Filename, rbErr)
 		}
-	} else if opts.Idempotent {
-		if err := txConn.Writer().ExecuteSQL(ctx, "RELEASE SAVEPOINT ptah_seed_file"); err != nil {
+	} else if opts.Idempotent && savepoint.release != "" {
+		if err := txConn.Writer().ExecuteSQL(ctx, savepoint.release); err != nil {
 			return fmt.Errorf("release seed savepoint %s: %w", seed.Filename, err)
 		}
 	}
@@ -604,6 +605,55 @@ func isProtectedEnv(env string, protected []string) bool {
 
 func normalizeEnv(env string) string {
 	return strings.ToLower(strings.TrimSpace(env))
+}
+
+// seedSavepoint is how one engine brackets a single seed file, so a duplicate
+// row can be rolled back without losing the files already applied in the same
+// transaction.
+//
+// release is empty where the engine has no statement for it, which is not the
+// same as not needing one: the savepoint simply lives until the transaction
+// ends.
+type seedSavepoint struct {
+	create   string
+	rollback string
+	release  string
+}
+
+// savepointStatements names those statements for a dialect.
+//
+// Two engines do not take the portable spelling, and `ptah seed --idempotent`
+// failed on the first seed file for both. Measured (stokaro/ptah#3330):
+//
+//   - SQL Server answers SAVEPOINT with `Could not find stored procedure
+//     'SAVEPOINT'` (2812), ROLLBACK TO SAVEPOINT with Msg 156 and RELEASE
+//     SAVEPOINT with Msg 102. Its own spelling is SAVE TRANSACTION and
+//     ROLLBACK TRANSACTION, and it has no release.
+//   - Oracle takes SAVEPOINT and ROLLBACK TO SAVEPOINT and answers RELEASE
+//     SAVEPOINT with ORA-00900, invalid SQL statement.
+//
+// ClickHouse is refused earlier, by name, because it has neither transactions
+// nor savepoints.
+func savepointStatements(dialect string) seedSavepoint {
+	const name = "ptah_seed_file"
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
+		return seedSavepoint{
+			create:   "SAVE TRANSACTION " + name,
+			rollback: "ROLLBACK TRANSACTION " + name,
+		}
+	case platform.Oracle:
+		return seedSavepoint{
+			create:   "SAVEPOINT " + name,
+			rollback: "ROLLBACK TO SAVEPOINT " + name,
+		}
+	default:
+		return seedSavepoint{
+			create:   "SAVEPOINT " + name,
+			rollback: "ROLLBACK TO SAVEPOINT " + name,
+			release:  "RELEASE SAVEPOINT " + name,
+		}
+	}
 }
 
 // IsConflictError reports whether err looks like a duplicate-key conflict —
