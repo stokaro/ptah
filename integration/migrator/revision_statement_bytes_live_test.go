@@ -161,3 +161,39 @@ func TestRevisionStatementBytes_MySQLRecordsARefusedStatement(t *testing.T) {
 func TestRevisionStatementBytes_MariaDBRecordsARefusedStatement(t *testing.T) {
 	runStatementBytesRecordsFailure(t, mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB), "mariadb")
 }
+
+// runStatementBytesAtlasRecordsFailure drives the failure over the
+// Atlas-shaped revision table. Its error_stmt column carries the same character
+// set as the native one, and it records the statement from the migration
+// source, so the terminating semicolon is part of what it stores.
+func runStatementBytesAtlasRecordsFailure(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+	c := qt.New(t)
+
+	names := newStatementBytesNames(dialect)
+	conn := statementBytesConnection(t, dbURL, names)
+	mig := statementBytesMigrator(conn, names, refusedStatementBody(names)).
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	err := mig.MigrateUp(t.Context())
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, names.absent)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "Error 1366")
+
+	revisions, err := mig.GetRevisions(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(
+		revisions[0].ErrorStatement,
+		qt.Equals,
+		fmt.Sprintf(`INSERT INTO %s (id, payload) VALUES (1, '\xFF');`, names.absent),
+	)
+}
+
+func TestRevisionStatementBytes_MySQLAtlasFormatRecordsARefusedStatement(t *testing.T) {
+	runStatementBytesAtlasRecordsFailure(t, mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL), "mysql")
+}
+
+func TestRevisionStatementBytes_MariaDBAtlasFormatRecordsARefusedStatement(t *testing.T) {
+	runStatementBytesAtlasRecordsFailure(t, mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB), "mariadb")
+}
