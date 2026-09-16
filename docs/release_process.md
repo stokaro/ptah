@@ -32,10 +32,10 @@ Ptah releases are produced by GoReleaser from annotated version tags.
   Docker Hub is an organization, and a `dckr_pat_` token belongs to a person
   who is a member of it. The token needs write access to `stokaro/ptah`;
   delete is not used.
-- GoReleaser `v2.15.4`. The GitHub Actions workflow pins this version because
-  issue #174 requires a Homebrew formula install command
-  (`brew install stokaro/ptah/ptah`), while newer GoReleaser releases treat
-  formula publishing as deprecated in favor of casks.
+- GoReleaser publishes Homebrew as a cask. `brew install stokaro/ptah/ptah`,
+  the command issue #174 requires, keeps working because the tap maps the `ptah`
+  token to the cask in `tap_migrations.json`, which Homebrew reads in the cask
+  loader as well as the formula loader.
 - The release workflow must pass on the release commit before tagging.
 
 ## Cut A Release
