@@ -3106,30 +3106,37 @@ func (e *migrationTransactionRolledBackError) Unwrap() error {
 }
 
 func migrationFailureAfterRollback(version int64, failure, rollbackErr error) error {
-	if rollbackErr != nil && !rollbackAlreadyPerformed(failure, rollbackErr) {
+	if rollbackErr != nil && !cancellationEndedTheTransaction(failure) {
 		return fmt.Errorf("%w; additionally failed to roll back migration transaction: %v", failure, rollbackErr)
 	}
 	return &migrationTransactionRolledBackError{version: version, cause: failure}
 }
 
-// rollbackAlreadyPerformed reports whether the rollback this code attempted had
-// been performed by database/sql before the attempt.
+// cancellationEndedTheTransaction reports whether a failed rollback still
+// leaves the migration transaction rolled back.
 //
-// A transaction begun with a context is rolled back by database/sql itself when
-// that context is canceled -- the guarantee is stated on sql.DB.BeginTx -- so
-// the rollback attempted afterwards answers sql.ErrTxDone. The transaction is
-// rolled back, and the migration changed nothing.
+// Every path that reaches [migrationFailureAfterRollback] is a failure undoing
+// what it started, and none of them issues a COMMIT. So once the failure is the
+// cancellation, the transaction ends rolled back however the rollback answered:
+// database/sql rolls back a transaction whose context is canceled and reports
+// sql.ErrTxDone on the attempt that follows, and where the cancellation tore
+// the connection down first, the server rolls back what that connection held.
+// Both answers come from one interrupted `ptah-compat migrate apply`: `sql:
+// transaction has already been committed or rolled back` on one machine and
+// `conn closed` on another, for the same interrupt at the same statement.
 //
-// Recording the outcome as unknown instead is what leaves an operator with a
-// dirty revision row for a migration that did not run, and under the Atlas
-// revision format that row survives the discard an ordinary rolled-back failure
-// gets, so the next run refuses to continue past it.
+// Reading either as an unknown outcome records a dirty revision for a migration
+// that changed nothing, and under the Atlas revision format that row survives
+// the discard an ordinary rolled-back failure gets, so the next run refuses to
+// continue past it.
 //
-// Both conditions are required, and the cancellation is the one that makes this
-// safe: sql.ErrTxDone on its own says the transaction was committed OR rolled
-// back, and a commit is the outcome nobody may guess at.
-func rollbackAlreadyPerformed(failure, rollbackErr error) bool {
-	return errors.Is(rollbackErr, sql.ErrTxDone) && errors.Is(failure, context.Canceled)
+// The cancellation is what makes this safe, and it is the whole condition. A
+// rollback error on an ordinary failure says the transaction was committed OR
+// rolled back, and a commit is the outcome nobody may guess at. What a
+// dialect commits implicitly is answered before this, by the progress the
+// revision recorded: a discard requires that no statement reported any.
+func cancellationEndedTheTransaction(failure error) bool {
+	return errors.Is(failure, context.Canceled)
 }
 
 func migrationTransactionRollbackVersion(err error) (int64, bool) {
