@@ -220,16 +220,25 @@ docker_manifests:
       - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
       - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
 
-# Issue #174 requires `brew install stokaro/ptah/ptah`, which is still a
-# Homebrew formula flow. GoReleaser's newer homebrew_casks replacement does not
-# satisfy that command contract, so the release workflow pins GoReleaser 2.15.4
-# while formula publishing remains required.
-brews:
+# Homebrew publishes Ptah's binaries as a cask. GoReleaser hard-deprecates
+# `brews` in 2.16, and `check` refuses a configuration that carries one.
+#
+# The install command stokaro/ptah#174 requires, `brew install
+# stokaro/ptah/ptah`, keeps working across the change: Homebrew resolves a
+# token through `tap_migrations.json` in the cask loader exactly as it does in
+# the formula loader, so the tap maps `ptah` to this cask and the front door is
+# unchanged. Casks are macOS-only, so the Linux half of that command needs its
+# own answer; stokaro/ptah#3332 carries it.
+homebrew_casks:
   - name: ptah
     ids:
       - ptah
       - ptah-ls
       - ptah-compat
+    binaries:
+      - ptah
+      - ptah-compat
+      - ptah-ls
     repository:
       owner: stokaro
       name: homebrew-ptah
@@ -241,30 +250,26 @@ brews:
     # A missing token is a configuration error rather than a reason to ship one
     # fewer channel. The release workflow refuses it in a step of its own,
     # before anything is built, so this field never has to decide -- and it
-    # refuses there rather than here because GoReleaser reaches the formula
-    # only after the release assets and the images are already pushed, and a
+    # refuses there rather than here because GoReleaser reaches the cask only
+    # after the release assets and the images are already pushed, and a
     # half-published release is the expensive way to learn the secret is gone.
     #
     # Snapshots are unaffected: `--snapshot` implies `--skip=publish`, so the
     # publish phase -- this upload, and the `.Env.HOMEBREW_TAP_TOKEN` lookup
-    # above with it -- does not run at all. Measured on v2.15.4 with the
-    # variable explicitly unset: the run writes dist/homebrew/Formula/ptah.rb
-    # and succeeds.
+    # above with it -- does not run at all.
     skip_upload: false
-    directory: Formula
-    # Not conflicts_with. Homebrew loads the named formula to evaluate a
-    # conflict, and `brew install <tap>/<formula>` trusts only the formula it
-    # was given, so a conflict pointing at ptah-edge made the front door fail
-    # the moment this file first reached the tap:
+    directory: Casks
+    # Not a conflict stanza. Homebrew loads the named cask to evaluate a
+    # conflict, and `brew install <tap>/<token>` trusts only the token it was
+    # given, so a conflict pointing at ptah-edge made the front door fail the
+    # moment this file first reached the tap:
     #
     #   Error: stokaro/ptah/ptah: Refusing to load formula stokaro/ptah/ptah-edge
     #          from untrusted tap stokaro/ptah.
     #
     # Measured on Homebrew 6.0.20 against the published v0.3.0 formula, and it
     # broke both directions at once. A caveat is a string and loads nothing, so
-    # it carries the same warning without that cost. It does not prevent the
-    # state the conflict prevented; that trade is the wrong way round when the
-    # price is every first-time install.
+    # it carries the same warning without that cost.
     caveats: |-
       ptah-edge installs the same three binaries from master. Install only one of
       the two: brew uninstall ptah-edge before installing this one.
@@ -274,8 +279,7 @@ brews:
     # root command's own Short by TestFormulaDescription in internal/cli/root, so the two
     # cannot drift -- a description is a claim that was true when it was typed.
     description: "Ptah manages database change across schemas and persistent inference state"
-    license: MIT
-    commit_msg_template: "Brew formula update for {{ .ProjectName }} {{ .Tag }}"
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} {{ .Tag }}"
 
 changelog:
   sort: asc
