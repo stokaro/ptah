@@ -3980,12 +3980,30 @@ func (p *Parser) handleTableConstraintInclude(constraint *ast.ConstraintNode) er
 	return p.expect(lexer.TokenOperator, ")")
 }
 
+// isBareNumberToken reports whether the token is an unquoted number. The lexer
+// emits numbers as identifiers, so a caller that means "a name" has to ask.
+func isBareNumberToken(tok lexer.Token) bool {
+	if tok.Type != lexer.TokenIdentifier || tok.Value == "" {
+		return false
+	}
+	for _, r := range tok.Value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
 	p.skipWhitespace()
 	if p.current.MatchOperatorValue("(") {
 		return p.parseFunctionalKeyPart()
 	}
 
+	if isBareNumberToken(p.current) {
+		return ast.ConstraintColumn{}, fmt.Errorf(
+			"%w, and %q at position %d is a number", errConstraintColumnNotAName, p.current.Value, p.current.Start)
+	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
 		return ast.ConstraintColumn{}, fmt.Errorf("expected column name: %w", err)
@@ -5545,6 +5563,21 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 // caller sees is unchanged and only the branching is new.
 var errConstraintColumnListMissing = errors.New("expected '(' for constraint columns")
 
+// errConstraintColumnNotAName marks a column list whose part is a bare number.
+//
+// The lexer has no number token -- `32` arrives as an identifier, the same
+// class as `name` -- so a column list accepted anything. That is how
+// `key varchar(32)` parsed on the engines that read KEY as an index: as an
+// index named `varchar` over a column named `32`, with the column the author
+// wrote gone from the model and nothing reported. MySQL and MariaDB answer the
+// same DDL with `Error 1064`, so this refusal is the engine's own answer rather
+// than a policy of Ptah's (stokaro/ptah#3329).
+//
+// A quoted part is untouched: the lexer keeps the quotes in the token, so
+// “ `32` “ is not this, and neither is a prefix length, which is read after
+// the name.
+var errConstraintColumnNotAName = errors.New("a column list names columns")
+
 // describeIndexKeywordElement says what a token class and a byte offset cannot:
 // the element began with a word this dialect reads as a table-level index, so a
 // document that meant it as a column name is refused at the type rather than at
@@ -5565,7 +5598,7 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 	// an ordinary index, an access method the dialect does not have -- comes
 	// from a document that did declare an index, and saying otherwise would
 	// describe the author's intent wrongly.
-	if !errors.Is(err, errConstraintColumnListMissing) {
+	if !errors.Is(err, errConstraintColumnListMissing) && !errors.Is(err, errConstraintColumnNotAName) {
 		return err
 	}
 	return fmt.Errorf(

@@ -184,8 +184,11 @@ SQL:
   column list follows it, directly or after a name. SQL Server reads `index` as
   its own inline index and ClickHouse as a data-skipping index, and SQLite and
   Oracle reserve it. Read as an index on the other dialects, `key text` would be
-  refused, and `spatial nvarchar(32)` would become an index named after its
-  type with the column lost (stokaro/ptah#3089, stokaro/ptah#3299).
+  refused, and `spatial nvarchar(32)` has the shape of an index named after its
+  type over a column named `32` (stokaro/ptah#3089, stokaro/ptah#3299). An index
+  names columns, so a column list that is a number is refused, and the refusal
+  names the keyword. MySQL and MariaDB answer the same statement with
+  `Error 1064`.
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique

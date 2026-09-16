@@ -1002,8 +1002,8 @@
         "/databases/overview/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2366,
-      "sourceBytes": 14862
+      "visibleWords": 2400,
+      "sourceBytes": 15044
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -6617,8 +6617,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 2052,
-      "sourceBytes": 13814
+      "visibleWords": 2214,
+      "sourceBytes": 14757
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",
