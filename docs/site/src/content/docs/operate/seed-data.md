@@ -163,7 +163,10 @@ records its new checksum.
   duplicate-key errors on tables with primary or unique keys.
 - `--idempotent` treats a duplicate-key conflict as already-applied data,
   using a per-file savepoint, so `--force --idempotent` re-runs cleanly over
-  existing rows.
+  existing rows. The savepoint is spelled for the engine: SQL Server gets
+  `SAVE TRANSACTION` and `ROLLBACK TRANSACTION`, Oracle gets `SAVEPOINT` and
+  `ROLLBACK TO SAVEPOINT`, and neither has a statement that releases one. The
+  flag is refused on ClickHouse, which has neither transactions nor savepoints.
 
 ## Limitations
 

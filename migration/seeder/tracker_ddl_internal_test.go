@@ -84,3 +84,59 @@ func TestTrackerDDL_PortableDialectsKeepTheIfNotExistsGuard(t *testing.T) {
 		})
 	}
 }
+
+// TestSavepointStatements_SpellsWhatEachEngineTakes pins the statements that
+// bracket one seed file under --idempotent.
+//
+// The portable spelling reached every engine, and two refuse it. Measured:
+// SQL Server answers SAVEPOINT with `Could not find stored procedure
+// 'SAVEPOINT'` (2812) and RELEASE SAVEPOINT with Msg 102; Oracle answers
+// RELEASE SAVEPOINT with ORA-00900 (stokaro/ptah#3330).
+func TestSavepointStatements_SpellsWhatEachEngineTakes(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		create   string
+		rollback string
+		release  string
+	}{
+		{
+			name:     "sqlserver has its own pair and no release",
+			dialect:  platform.SQLServer,
+			create:   "SAVE TRANSACTION ptah_seed_file",
+			rollback: "ROLLBACK TRANSACTION ptah_seed_file",
+			release:  "",
+		},
+		{
+			name:     "oracle takes the portable pair and no release",
+			dialect:  platform.Oracle,
+			create:   "SAVEPOINT ptah_seed_file",
+			rollback: "ROLLBACK TO SAVEPOINT ptah_seed_file",
+			release:  "",
+		},
+		{
+			name:     "postgres takes all three",
+			dialect:  platform.Postgres,
+			create:   "SAVEPOINT ptah_seed_file",
+			rollback: "ROLLBACK TO SAVEPOINT ptah_seed_file",
+			release:  "RELEASE SAVEPOINT ptah_seed_file",
+		},
+		{
+			name:     "mysql takes all three",
+			dialect:  platform.MySQL,
+			create:   "SAVEPOINT ptah_seed_file",
+			rollback: "ROLLBACK TO SAVEPOINT ptah_seed_file",
+			release:  "RELEASE SAVEPOINT ptah_seed_file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := savepointStatements(tt.dialect)
+			c.Assert(got.create, qt.Equals, tt.create)
+			c.Assert(got.rollback, qt.Equals, tt.rollback)
+			c.Assert(got.release, qt.Equals, tt.release)
+		})
+	}
+}
