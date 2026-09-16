@@ -436,7 +436,7 @@ func TestGenerate_AnEmptyDeclarationStillRefusesAGeneratedKey(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches,
-		`datamigrate: key column "upper_code" of managed table "regions" is not a writable, non-generated column; a reversible full delete needs every key column`)
+		`key column "upper_code" of managed table "regions" is not a writable, non-generated column; a reversible full delete needs every key column`)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
 }
@@ -461,7 +461,7 @@ func TestGenerate_RefusesAColumnTheTableDoesNotHave(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches,
-		`datamigrate: managed table "regions" does not have declared column\(s\) "iso3"; migrate the schema first or remove the column\(s\) from the row data`)
+		`managed table "regions" does not have declared column\(s\) "iso3"; migrate the schema first or remove the column\(s\) from the row data`)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
 }
