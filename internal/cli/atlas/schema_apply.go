@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -627,7 +628,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// the real apply refuses turns a CI gate into a false green. The cheap
 	// local policy check keeps running first, so the error a user sees when
 	// both would fail does not depend on whether --dry-run was passed.
-	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
+	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// The dev database rehearses the exact ordered statements that would be
@@ -881,7 +882,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err := lintAtlasSchemaApplyPlan(opts, conn.Info().Dialect, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
+	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// The rehearsal runs on --dry-run too: a dry run is how an operator
@@ -1194,26 +1195,36 @@ func atlasSchemaApplyLintOptions(opts atlasSchemaApplyOptions, dialect string) a
 	}
 }
 
+// validateAtlasSchemaApplyDiffPolicy refuses a plan the transaction txMode
+// opens cannot carry, in the terms the compatibility surface answers in.
+//
+// The recognition is atlasschema.PreflightApplyTransaction, which native
+// `ptah schema apply` asks too: a substring scan for CONCURRENTLY saw one of
+// the two shapes PostgreSQL refuses and let the other one -- an enum value
+// added and used in the same plan -- reach the server, where it failed with a
+// bare 55P04 that named neither the statement nor the flag (stokaro/ptah#3326).
+//
+// Only the sentence is compat's own. A concurrent index here came from a diff
+// policy the project configured, so the refusal names that setting; every other
+// finding keeps the shared wording, which already names the statement and the
+// flag.
 func validateAtlasSchemaApplyDiffPolicy(
 	txMode migrator.MigrationTxMode,
-	conn *dbschema.DatabaseConnection,
+	info catalog.ServerInfo,
 	statements []string,
 ) error {
 	if len(statements) == 0 {
 		return nil
 	}
-	if conn.Info().Dialect != "postgres" && conn.Info().Dialect != "postgresql" {
-		return nil
+	err := atlasschema.PreflightApplyTransaction(info.Dialect, info.Capabilities, txMode, statements)
+	var refusal *atlasschema.TransactionPreflightError
+	if !errors.As(err, &refusal) {
+		return err
 	}
-	if txMode == migrator.MigrationTxModeNone {
-		return nil
+	if setting := concurrentIndexPolicySetting(refusal.Finding.Statement.SQL); setting != "" {
+		return fmt.Errorf("atlas.hcl %s requires --tx-mode none for schema apply", setting)
 	}
-	for _, statement := range statements {
-		if setting := concurrentIndexPolicySetting(statement); setting != "" {
-			return fmt.Errorf("atlas.hcl %s requires --tx-mode none for schema apply", setting)
-		}
-	}
-	return nil
+	return err
 }
 
 // concurrentIndexPolicySetting names the diff policy that produced a statement
