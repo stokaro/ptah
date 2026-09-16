@@ -1,6 +1,7 @@
 package ddltx_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -64,13 +65,13 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 		{name: "sqlite alias sqlite3", dialect: "sqlite3", want: ddltx.Transactional},
 		{name: "cockroachdb", dialect: platform.CockroachDB, want: ddltx.Transactional},
 		{name: "yugabytedb", dialect: platform.YugabyteDB, want: ddltx.Transactional},
-		{name: "spanner", dialect: platform.Spanner, want: ddltx.Transactional},
 		{name: "sqlserver", dialect: platform.SQLServer, want: ddltx.Transactional},
 		{name: "sqlserver alias mssql", dialect: "mssql", want: ddltx.Transactional},
 		{name: "mysql", dialect: platform.MySQL, want: ddltx.ImplicitCommit},
 		{name: "mariadb", dialect: platform.MariaDB, want: ddltx.ImplicitCommit},
 		{name: "clickhouse", dialect: platform.ClickHouse, want: ddltx.NoTransaction},
 		{name: "clickhouse alias ch", dialect: "ch", want: ddltx.NoTransaction},
+		{name: "spanner", dialect: platform.Spanner, want: ddltx.NoTransaction},
 		{name: "oracle", dialect: platform.Oracle, want: ddltx.NoTransaction},
 	}
 
@@ -80,6 +81,58 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, test.want)
 		})
 	}
+}
+
+// TestClassOf_GivesTheUnwrappedTargetsTheNoTransactionClass holds ClassOf to
+// the capability that decides how a body is applied.
+//
+// A target whose preset answers false for capability.DDLInsideTransaction is
+// handed a transaction whose Commit and Rollback do nothing, by
+// internal/sqliterebuild, on every migrator apply and rollback. Nothing it runs
+// can be undone afterwards, so [ddltx.NoTransaction] is the only contract
+// available to it. Nothing compared the two descriptions, which is how Spanner
+// came to be [ddltx.Transactional] while its own preset answers false
+// (stokaro/ptah#3320).
+//
+// The two dialects are named before the loop as a control on the corpus: a
+// preset that stopped answering false would leave this test iterating over
+// nothing, and a test that asserts nothing reports success.
+func TestClassOf_GivesTheUnwrappedTargetsTheNoTransactionClass(t *testing.T) {
+	c := qt.New(t)
+	unwrapped := dialectsRefusingDDLInsideATransaction()
+
+	c.Assert(unwrapped, qt.Contains, platform.ClickHouse)
+	c.Assert(unwrapped, qt.Contains, platform.Spanner)
+
+	for _, dialect := range unwrapped {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(ddltx.ClassOf(dialect), qt.Equals, ddltx.NoTransaction)
+		})
+	}
+}
+
+// TestClassOf_ReadsMoreThanTheCapability is the control for the test above, and
+// the reason that one states an implication rather than an equivalence.
+//
+// Oracle takes a schema statement inside an explicit transaction and is still
+// [ddltx.NoTransaction], because the Oracle writer opens no transaction at all
+// and the server commits before every schema statement. Read as an
+// equivalence, the rule would demand [ddltx.Transactional] here and undo
+// stokaro/ptah#3319.
+func TestClassOf_ReadsMoreThanTheCapability(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.ForDialect(platform.Oracle).Has(capability.DDLInsideTransaction), qt.IsTrue)
+	c.Assert(ddltx.ClassOf(platform.Oracle), qt.Equals, ddltx.NoTransaction)
+}
+
+// dialectsRefusingDDLInsideATransaction lists the dialects whose default preset
+// refuses a schema statement inside an explicit transaction.
+func dialectsRefusingDDLInsideATransaction() []string {
+	return slices.DeleteFunc(capability.DefaultDialects(), func(dialect string) bool {
+		return capability.ForDialect(dialect).Has(capability.DDLInsideTransaction)
+	})
 }
 
 func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
