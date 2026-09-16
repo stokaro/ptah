@@ -32,9 +32,10 @@ const (
 	// MigrationStateOutOfOrder is a pending migration below the current
 	// version. Whether it runs is the migrator's execution order to decide.
 	MigrationStateOutOfOrder = "out-of-order"
-	// MigrationStateCheckpointCovered is a migration below the checkpoint a
-	// fresh database bootstraps from: it will never run here, and its absence
-	// from the history is not a gap.
+	// MigrationStateCheckpointCovered is a migration below the checkpoint that
+	// covers it: it will never run here, and its absence from the history is
+	// not a gap. A bootstrap does not change that -- it records the checkpoint
+	// that covers them.
 	MigrationStateCheckpointCovered = "checkpoint-covered"
 )
 
@@ -86,7 +87,7 @@ func (m *Migrator) migrationRecords(
 	revisions []MigrationRevision,
 	pending []*Migration,
 	outOfOrder []int64,
-	bootstrap int64,
+	floor int64,
 	dirty *MigrationRevision,
 	mismatched map[string]struct{},
 ) []MigrationRecord {
@@ -115,7 +116,7 @@ func (m *Migrator) migrationRecords(
 			mismatched:     mismatched,
 			pending:        pendingKeys,
 			outOfOrder:     outOfOrder,
-			bootstrap:      bootstrap,
+			floor:          floor,
 			dirty:          dirty,
 		})
 		records = append(records, record)
@@ -131,7 +132,7 @@ type migrationStateSets struct {
 	mismatched     map[string]struct{}
 	pending        map[string]struct{}
 	outOfOrder     []int64
-	bootstrap      int64
+	floor          int64
 	dirty          *MigrationRevision
 }
 
@@ -151,7 +152,7 @@ func migrationState(migration *Migration, key string, sets migrationStateSets) s
 		}
 		return MigrationStatePending
 	}
-	if sets.bootstrap > 0 && migration.Version < sets.bootstrap {
+	if sets.floor > 0 && migration.Version < sets.floor {
 		return MigrationStateCheckpointCovered
 	}
 	return MigrationStatePending

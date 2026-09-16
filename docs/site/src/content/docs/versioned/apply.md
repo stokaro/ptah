@@ -248,9 +248,12 @@ dialect, and one state:
 | `dirty` | The version a failed or interrupted run left behind |
 | `pending` | Not applied |
 | `out-of-order` | Pending, below the current version |
-| `checkpoint-covered` | Below the checkpoint a fresh database bootstraps from, so it will never run here |
+| `checkpoint-covered` | Below the checkpoint that covers it, so it will never run here |
 
-`checkpoint_version` names that checkpoint when one applies.
+`checkpoint_version` names that checkpoint: the one a fresh database
+bootstraps from, or the newest one the database has applied. A migration below
+it reads as covered on both sides of the bootstrap, because applying the
+checkpoint is what the bootstrap does.
 
 Comparing `checksum` against `applied_checksum` is not the rule that decides
 `modified`, and a caller must not reimplement it: an Atlas history records a

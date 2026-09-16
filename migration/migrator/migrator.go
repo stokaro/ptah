@@ -76,9 +76,11 @@ type MigrationStatus struct {
 	// answers the questions a caller has to settle before it may execute
 	// anything.
 	Migrations []MigrationRecord `json:"migrations,omitempty"`
-	// CheckpointVersion is the checkpoint this database bootstraps from, and
-	// zero when none applies. A migration below it is covered rather than
-	// missing.
+	// CheckpointVersion is the checkpoint that covers the migrations below it:
+	// the one a fresh database bootstraps from, or the newest one this database
+	// has applied. It is zero when no checkpoint covers anything. A migration
+	// below it is covered rather than missing, and stays covered once the
+	// checkpoint is applied -- applying it is what the bootstrap did.
 	CheckpointVersion int64 `json:"checkpoint_version,omitempty"`
 }
 
@@ -1649,12 +1651,12 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	if err != nil {
 		return MigrationStatusSnapshot{}, err
 	}
-	// A checkpoint bootstraps a database that has applied nothing, so there is
-	// no version to report where one has.
-	bootstrapVersion := int64(0)
-	if bootstrap != nil {
-		bootstrapVersion = bootstrap.Version
-	}
+	// The floor, not the bootstrap. A checkpoint bootstraps a database that has
+	// applied nothing, so the bootstrap is nil the moment one has -- including
+	// the moment right after the bootstrap ran. What a reader needs is the
+	// checkpoint that COVERS the migrations below it, which checkpointFloor
+	// answers on both sides of that moment, and which the pending selection is
+	// already computed from (stokaro/ptah#3356).
 	status := &MigrationStatus{
 		ContractVersion:         StatusContractVersion,
 		CurrentVersion:          currentVersion,
@@ -1669,13 +1671,13 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 		TotalMigrations:         len(providerMigrations),
 		HasPendingChanges:       len(pendingMigrationList) > 0 || dirtyRevision != nil,
 		DirtyRevision:           dirtyRevision,
-		CheckpointVersion:       bootstrapVersion,
+		CheckpointVersion:       floor,
 		Migrations: m.migrationRecords(
 			providerMigrations,
 			revisions,
 			pendingMigrationList,
 			outOfOrderMigrations,
-			bootstrapVersion,
+			floor,
 			dirtyRevision,
 			classified.mismatchedKeys(),
 		),
