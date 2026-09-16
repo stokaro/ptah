@@ -141,15 +141,16 @@ signs:
     output: true
 
 release:
-  # A re-run of a tag must reach the Docker steps.
+  # A re-run of a tag must finish.
   #
-  # GoReleaser uploads the release assets before it builds and pushes images.
   # On a re-run every asset is already on the release, GitHub answers the
   # upload with `422 Validation Failed [Resource:ReleaseAsset
-  # Field:name Code:already_exists]`, and GoReleaser aborts -- so `dockers:`
-  # and `docker_manifests:` below never run at all. Measured on the four tag
-  # runs of 2026-08-27: all four failed on that upload, and the published
-  # image is still the one an earlier release pushed (stokaro/ptah#2362).
+  # Field:name Code:already_exists]`, and GoReleaser aborts. Measured on the
+  # four tag runs of 2026-08-27: each one pushed its images and manifest
+  # lists, then died on the first archive upload, leaving a release with no
+  # assets. Everything GoReleaser does after the upload -- the Homebrew
+  # channel included -- is out of reach for the same reason
+  # (stokaro/ptah#2362).
   #
   # This makes the 422 recoverable: GoReleaser deletes the asset that is in
   # the way and retries the upload. It costs an extra API call per collision
@@ -158,11 +159,11 @@ release:
 
 # Two registries carry the same images, and GHCR is the documented default.
 #
-# Docker Hub is a MIRROR rather than a move: every tag below names both hosts,
-# so one buildx build is tagged twice and pushed to each. The digests match
-# because the content does, which is what makes the pair verifiable after the
-# fact rather than merely intended -- `.github/workflows/release.yml` resolves
-# both manifests anonymously and fails when they differ.
+# Docker Hub is a MIRROR rather than a move: `images` names both hosts, so one
+# buildx build carries a tag for each and one push reaches both. The digests
+# match because the content does, which is what makes the pair verifiable after
+# the fact rather than merely intended -- `.github/workflows/release.yml`
+# resolves both manifests anonymously and fails when they differ.
 #
 # GHCR stays first in the documentation because Docker Hub rate-limits
 # anonymous pulls and GHCR does not (stokaro/ptah#2362).
@@ -172,53 +173,31 @@ release:
 # credential for each host is proven by a login step BEFORE anything is pushed,
 # so the ordinary failure -- a bad or expired token -- stops the run before the
 # first registry has the tag.
-dockers:
-  - id: ptah-linux-amd64
+#
+# A reader is given two tags per host, the version and `latest`, and each one
+# resolves to a manifest list covering both architectures. buildx cannot write
+# a manifest list without pushing it, so the list is the product of the push
+# rather than something assembled afterwards from per-architecture tags, and a
+# release publishes no `-amd64` or `-arm64` tag of its own.
+dockers_v2:
+  - id: ptah
     ids:
       - ptah
-    goos: linux
-    goarch: amd64
     dockerfile: Dockerfile
-    use: buildx
-    image_templates:
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
-      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
-    build_flag_templates:
-      - "--platform=linux/amd64"
-  - id: ptah-linux-arm64
-    ids:
-      - ptah
-    goos: linux
-    goarch: arm64
-    dockerfile: Dockerfile
-    use: buildx
-    image_templates:
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
-      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
-    build_flag_templates:
-      - "--platform=linux/arm64"
-
-# One manifest list per tag per registry, and each is built from that
-# registry's own per-architecture images. Pointing Docker Hub's manifest at
-# GHCR's images would publish a list whose members a Docker Hub pull cannot
-# resolve.
-docker_manifests:
-  - name_template: "ghcr.io/stokaro/ptah:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/stokaro/ptah:latest"
-    image_templates:
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
-      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
-  - name_template: "docker.io/stokaro/ptah:{{ .Version }}"
-    image_templates:
-      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
-      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
-  - name_template: "docker.io/stokaro/ptah:latest"
-    image_templates:
-      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
-      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
+    images:
+      - "ghcr.io/stokaro/ptah"
+      - "docker.io/stokaro/ptah"
+    tags:
+      - "{{ .Version }}"
+      # `latest` names a release, and a snapshot is not one. A snapshot build
+      # cannot write a manifest list either, so it builds one image per
+      # platform and suffixes each tag with it; an unconditional entry here
+      # would leave a `latest-amd64` on the machine that ran the snapshot,
+      # naming a release that does not exist. An empty tag is dropped.
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
 
 # Homebrew publishes Ptah's binaries as a cask. GoReleaser hard-deprecates
 # `brews` in 2.16, and `check` refuses a configuration that carries one.
@@ -227,8 +206,12 @@ docker_manifests:
 # stokaro/ptah/ptah`, keeps working across the change: Homebrew resolves a
 # token through `tap_migrations.json` in the cask loader exactly as it does in
 # the formula loader, so the tap maps `ptah` to this cask and the front door is
-# unchanged. Casks are macOS-only, so the Linux half of that command needs its
-# own answer; stokaro/ptah#3332 carries it.
+# unchanged.
+#
+# It works on Linux as well. GoReleaser renders `on_linux` URLs beside the
+# macOS ones, and Homebrew installs a cask that requires no macOS wherever it
+# runs: measured on Homebrew 4.6.20 in the `homebrew/brew` image, which
+# downloaded the v0.5.0 Linux archive and linked all three binaries.
 homebrew_casks:
   - name: ptah
     ids:
