@@ -907,7 +907,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.tag-deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -926,10 +926,25 @@ jobs:
             --candidate-versions "$CANDIDATE_VERSIONS" \
             --base-url https://docs.ptah.run/edge/
 
+      # Two deploys, because Pages keys a deployment by `pages_build_version`
+      # and actions/deploy-pages takes that from GITHUB_SHA alone. On master
+      # the commit is a build version of its own and the action is the whole
+      # answer. A tag points at a commit master has already deployed, so the
+      # action's deployment collides with one Pages has already served and
+      # reports the earlier one's success; scripts/deploy-pages-tag.sh creates
+      # the deployment under the tag object's id instead, and says why
+      # (stokaro/ptah#3082).
       - name: Deploy
         id: deployment
-        if: steps.freshness.outputs.allowed == 'true'
+        if: steps.freshness.outputs.allowed == 'true' && !startsWith(github.ref, 'refs/tags/v')
         uses: actions/deploy-pages@v5
+
+      - name: Deploy this tag under its own build version
+        id: tag-deployment
+        if: steps.freshness.outputs.allowed == 'true' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/deploy-pages-tag.sh
 
       # GitHub serializes the entire deploy job. Do not release that lock until
       # Pages serves this exact candidate; an older build that finishes later
