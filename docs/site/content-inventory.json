@@ -3842,8 +3842,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14338,
-      "sourceBytes": 99626
+      "visibleWords": 14340,
+      "sourceBytes": 99636
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -6615,8 +6615,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1944,
-      "sourceBytes": 13064
+      "visibleWords": 2052,
+      "sourceBytes": 13815
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

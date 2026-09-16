@@ -1319,9 +1319,9 @@ name, the fingerprints, and the migration SQL; Ptah writes its own sha256
 fingerprints there (Atlas parses the file but verifies its own
 base64 hashes, which have no local recipe), re-derives statement severity at
 read time, and refuses to save as `.plan.hcl` a plan computed with `--exclude`,
-or one whose desired state names a schema outside a pinned `--from` URL. The
-shape cannot record either, and without the second the stale-plan check would
-not read that schema.
+or one whose desired schema names a schema the pinned `--from` URL does not
+cover. The shape cannot record either, and without the second the stale-plan
+check would not read that schema.
 
 The `.FromHash` and `.ToHash` field names and their untagged standard-Base64
 representation were verified against Atlas's own reference; their values still

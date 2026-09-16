@@ -57,7 +57,7 @@ The project is the first `--root-dir`, or the working directory when only
 the schema because `ptah schema export` writes a row path back out of the
 directory it exports into, and both spellings stay readable as long as they stay
 inside the project. This is the boundary `file()` in `atlas.hcl` already has: a
-declaration is data, and a desired state is not always one the reader wrote.
+declaration is data, and a desired schema is not always one the reader wrote.
 
 The file itself is a top-level YAML list of column maps:
 
