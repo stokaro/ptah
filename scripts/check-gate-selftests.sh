@@ -388,7 +388,7 @@ run_node_selftest_case lib/docroutes.mjs \
 # has fixtures ABOVE, and an entry here would let the summary count it twice.
 adjacent=(
 	"check-docsync.sh	internal/docsync	each fail-closed refusal, and Replace asserted idempotent"
-	"check-go-toolchain-single-source.sh	internal/gotoolchain	every YAML spelling and both forwarding shapes, with controls"
+	"check-go-toolchain-single-source.sh	internal/gotoolchain	every YAML spelling and each accepted forwarding shape, with controls"
 	"check-renovate-regex.sh	internal/renovateregex	the backreference that stopped Renovate, and the group spelling that is the control for it"
 	"check-exported-docs.sh	internal/cmd/exporteddocs	each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
 )

@@ -73,14 +73,13 @@ func Run(root string) (Report, error) {
 	return report, nil
 }
 
-// forwardingSteps counts the setup-go steps that hand over an action input.
+// forwardingSteps counts the setup-go steps that hand over an action input,
+// whether the step forwards it or reads it back from the step that resolved it.
 func forwardingSteps(manifests map[string]Manifest) int {
 	steps := 0
 	for _, manifest := range manifests {
 		for _, step := range manifest.Steps {
-			_, version := forwardedName(step.Version)
-			_, file := forwardedName(step.VersionFile)
-			if version || file {
+			if derivesFromInput(step.Version) || derivesFromInput(step.VersionFile) {
 				steps++
 			}
 		}

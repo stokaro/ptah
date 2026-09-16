@@ -3,6 +3,7 @@ package gotoolchain_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -288,4 +289,159 @@ func TestReadModule_ReadsBothDirectives(t *testing.T) {
 	c.Assert(module.Go, qt.Equals, "1.26.5")
 	c.Assert(module.Toolchain, qt.Equals, "go1.26.6")
 	c.Assert(module.Toolchains, qt.Equals, 1)
+}
+
+// resolvingAction is the third accepted shape: the action's own inputs reach
+// setup-go through a step that resolves them, which is what a caller with no
+// module for setup-go to read needs. Nothing here names a version: the step
+// passes an input through, or falls back to a selector that names no release.
+const resolvingAction = `runs:
+  using: composite
+  steps:
+    - id: go-toolchain
+      shell: bash
+      env:
+        GO_VERSION: ${{ inputs.go-version }}
+        GO_VERSION_FILE: ${{ inputs.go-version-file }}
+      run: |
+        if [ -n "$GO_VERSION" ]; then
+          printf 'version=%s\n' "$GO_VERSION" >>"$GITHUB_OUTPUT"
+        elif [ -f "$GO_VERSION_FILE" ]; then
+          printf 'file=%s\n' "$GO_VERSION_FILE" >>"$GITHUB_OUTPUT"
+        else
+          printf 'version=stable\n' >>"$GITHUB_OUTPUT"
+        fi
+    - uses: actions/setup-go@v7
+      with:
+        go-version: ${{ steps.go-toolchain.outputs.version }}
+        go-version-file: ${{ steps.go-toolchain.outputs.file }}
+`
+
+// resolvingWorkflow is the same reference in a workflow, where the module is
+// right there to be read.
+const resolvingWorkflow = `jobs:
+  build:
+    steps:
+      - id: go-toolchain
+        shell: bash
+        env:
+          GO_VERSION: ${{ inputs.go-version }}
+          GO_VERSION_FILE: ${{ inputs.go-version-file }}
+        run: printf 'version=%s\n' "$GO_VERSION$GO_VERSION_FILE" >>"$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-toolchain.outputs.version }}
+          go-version-file: go.mod
+`
+
+// broken rewrites the accepted fixture and runs the step rules over the result.
+//
+// The anchor is asserted present: a rewrite whose anchor has drifted changes
+// nothing and the row then judges the unmodified manifest, which passes and
+// reports that a defect is refused.
+func broken(c *qt.C, anchor, replacement string) []gotoolchain.Finding {
+	c.Helper()
+	c.Assert(resolvingAction, qt.Contains, anchor,
+		qt.Commentf("the fixture does not carry this anchor, so the row would judge the unmodified manifest"))
+	return findings(c, ".github/actions/ptah/action.yml", strings.ReplaceAll(resolvingAction, anchor, replacement))
+}
+
+// TestCheckSteps_AcceptsAResolvedForward is the third shape, and the reason it
+// exists: setup-go fails outright on a go-version-file that is not there, so an
+// action running in a caller's workspace has to resolve what it hands over
+// before the step rather than end the run on the absence of a file the caller
+// never named.
+//
+// The forwarded names are still recorded by role, so the defaults rule judges
+// them exactly as it judges a direct forward: the step boundary moves where the
+// value is assembled, never what the action is contracted to read.
+func TestCheckSteps_AcceptsAResolvedForward(t *testing.T) {
+	c := qt.New(t)
+
+	forwarded := make(map[string][]string)
+	manifest := parse(c, ".github/actions/ptah/action.yml", resolvingAction)
+
+	c.Assert(gotoolchain.CheckSteps(manifest, forwarded), qt.HasLen, 0)
+	c.Assert(forwarded["version"], qt.DeepEquals, []string{".github/actions/ptah/action.yml:go-version"})
+	c.Assert(forwarded["file"], qt.DeepEquals, []string{".github/actions/ptah/action.yml:go-version-file"})
+}
+
+// TestCheckSteps_RefusesAResolvedForwardOutsideACompositeAction keeps the third
+// shape as narrow as the other two: a workflow has a module to read, and a step
+// output there hides which version a job builds with.
+func TestCheckSteps_RefusesAResolvedForwardOutsideACompositeAction(t *testing.T) {
+	c := qt.New(t)
+
+	found := findings(c, ".github/workflows/x.yml", resolvingWorkflow)
+
+	c.Assert(found, qt.HasLen, 1)
+	c.Assert(found[0].Message, qt.Contains, "only a composite action manifest may read a resolving step's output")
+}
+
+// TestCheckSteps_RefusesAResolvingStepThatIsNotItsInputs is what keeps the
+// third shape from becoming "an action manifest may say anything". The step is
+// read for what a reader can check in the manifest: where its values come from,
+// which input fills which role, and whether it names a version of its own.
+func TestCheckSteps_RefusesAResolvingStepThatIsNotItsInputs(t *testing.T) {
+	tests := []struct {
+		name        string
+		anchor      string
+		replacement string
+		wantHas     string
+	}{
+		{
+			name:        "the reference names no step in this manifest",
+			anchor:      "steps.go-toolchain.outputs.version",
+			replacement: "steps.absent.outputs.version",
+			wantHas:     "which this manifest does not declare",
+		},
+		{
+			name:        "the step reads something that is not an input",
+			anchor:      "GO_VERSION: ${{ inputs.go-version }}",
+			replacement: "GO_VERSION: ${{ env.GO_VERSION }}",
+			wantHas:     "is not one of this action's inputs",
+		},
+		{
+			name:        "the step reads a literal instead of an input",
+			anchor:      "GO_VERSION: ${{ inputs.go-version }}",
+			replacement: "GO_VERSION: 1.26.5",
+			wantHas:     "is not one of this action's inputs",
+		},
+		{
+			name:        "the step names no input for the module role",
+			anchor:      "        GO_VERSION_FILE: ${{ inputs.go-version-file }}\n",
+			replacement: "",
+			wantHas:     "declares no GO_VERSION_FILE",
+		},
+		{
+			// The whole gate, at one remove: a version restated where it can
+			// drift from go.mod is a version restated, and a step that resolves
+			// one is not a place it becomes acceptable.
+			name:        "the step names a version of its own",
+			anchor:      "printf 'version=stable\\n'",
+			replacement: "printf 'version=1.26.5\\n'",
+			wantHas:     "carries the version literal",
+		},
+		{
+			name:        "the step interpolates an expression into its script",
+			anchor:      "printf 'version=stable\\n'",
+			replacement: "printf 'version=${{ github.event.inputs.go }}\\n'",
+			wantHas:     "interpolates an expression into its script",
+		},
+		{
+			name:        "the step declares an input its script never reads",
+			anchor:      `"$GO_VERSION_FILE"`,
+			replacement: `"go.mod"`,
+			wantHas:     "never reads it",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			found := broken(c, test.anchor, test.replacement)
+			c.Assert(found, qt.HasLen, 1)
+			c.Assert(found[0].Message, qt.Contains, test.wantHas)
+		})
+	}
 }
