@@ -194,7 +194,7 @@ it, and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
 
 Name it instead, and the comparison neither creates nor drops it:
 
-```bash
+```bash illustration
 ptah schema drift --root-dir ./models --db-url "$DATABASE_URL" \
   --ignore-extension pg_trgm
 ```
