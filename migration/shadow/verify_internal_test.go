@@ -311,13 +311,13 @@ func TestVerifyMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
 }
 
-// A shadow database on the MySQL family is a different database by
-// construction, and its default schema is that database's name. The rows that
-// matter are the two sides of stokaro/ptah#3375: a different name alone must not
-// make the semantics disagree, and a real difference in how names compare still
-// must, on the same dialect.
-func TestSemanticsAgreeIgnoresTheDatabaseAMySQLConnectionSelected(t *testing.T) {
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+// On these engines a shadow database is a different database by construction,
+// and its default schema is that database's name. The rows that matter are the
+// two sides of stokaro/ptah#3375 and stokaro/ptah#3389: a different name alone
+// must not make the semantics disagree, and a real difference in how names
+// compare still must, on the same dialect.
+func TestSemanticsAgreeIgnoresTheDatabaseAConnectionSelected(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB, platform.ClickHouse} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -339,14 +339,22 @@ func TestSemanticsAgreeIgnoresTheDatabaseAMySQLConnectionSelected(t *testing.T) 
 }
 
 // Everywhere else the default schema is a static rule or a search_path someone
-// chose, so a difference there still disagrees.
-func TestSemanticsAgreeComparesTheDefaultSchemaOutsideTheMySQLFamily(t *testing.T) {
-	c := qt.New(t)
+// chose, so a difference there still disagrees. Oracle is in the table because
+// its default schema is the connected user, the shape ClickHouse's has, and is
+// compared here all the same: a shadow cannot reach this check on Oracle,
+// because devlock.SameRealm has no Oracle arm and refuses one first.
+func TestSemanticsAgreeComparesADefaultSchemaThatIsAnIdentifierRule(t *testing.T) {
+	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.Oracle} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 
-	target := identifier.ForDialect(platform.Postgres)
-	shadow := target.Clone()
-	shadow.DefaultSchema = "app"
+			target := identifier.ForDialect(dialect)
+			target.DefaultSchema = "app"
+			shadow := target.Clone()
+			shadow.DefaultSchema = "app_shadow"
 
-	c.Assert(semanticsAgree(platform.Postgres, target, target.Clone()), qt.IsTrue)
-	c.Assert(semanticsAgree(platform.Postgres, target, shadow), qt.IsFalse)
+			c.Assert(semanticsAgree(dialect, target, target.Clone()), qt.IsTrue)
+			c.Assert(semanticsAgree(dialect, target, shadow), qt.IsFalse)
+		})
+	}
 }

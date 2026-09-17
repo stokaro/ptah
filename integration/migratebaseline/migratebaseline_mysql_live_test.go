@@ -55,7 +55,7 @@ func TestVerifyBaselineMySQLFamilyAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 				}(name)
 			}
 
-			target, err := dbschema.ConnectToDatabase(ctx, mysqlFamilyDatabaseAddress(c, adminURL, targetName))
+			target, err := dbschema.ConnectToDatabase(ctx, addressNamingDatabase(c, adminURL, targetName))
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(target)
 			// The schema exists and no history does: the case baseline is for.
@@ -71,7 +71,7 @@ func TestVerifyBaselineMySQLFamilyAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 
 			info := target.Info()
 			options := shadow.BaselineVerifyOptions{
-				ShadowDatabaseURL: mysqlFamilyDatabaseAddress(c, adminURL, shadowName),
+				ShadowDatabaseURL: addressNamingDatabase(c, adminURL, shadowName),
 				TargetConn:        target,
 				MigrationsDir:     migrationsDir,
 				Version:           1,
@@ -118,13 +118,14 @@ func requireMySQLFamilyAdminConnection(
 	return adminURL, admin
 }
 
-// mysqlFamilyDatabaseAddress names another database on the server an address
+// addressNamingDatabase names another database on the server an address
 // reaches. The address is not always a URL: CI configures the MySQL family in
 // the driver's own form, user:pass@tcp(host:port)/db, which url.Parse refuses at
 // the parenthesis. The database is the last path segment in every accepted form
 // -- a URL, tcp(...), and unix(/socket/path)/db, whose slashes sit inside the
 // parentheses -- so the name is replaced there, and the query string is kept.
-func mysqlFamilyDatabaseAddress(c *qt.C, address, databaseName string) string {
+// A clickhouse:// URL is the plain first case.
+func addressNamingDatabase(c *qt.C, address, databaseName string) string {
 	c.Helper()
 
 	base, query, _ := strings.Cut(address, "?")
