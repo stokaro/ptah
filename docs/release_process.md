@@ -2,6 +2,27 @@
 
 Ptah releases are produced by GoReleaser from annotated version tags.
 
+## When A Release Is Owed
+
+A capability that only exists on `master` is a capability nobody downstream can
+ship against. `stokaro/ptah-operator` is the reader that makes this concrete: it
+names the Ptah build it executes by digest-pinned image and by `ptahVersion`,
+and it supports exactly the build its lifecycle matrix exercised. Pinning a
+development commit is what it does while no tag carries what it needs, and its
+own record says so as a limitation rather than as support.
+
+So a contract another repository executes against -- a machine-readable document
+it parses, a layer it reads out of an artifact, a verb it drives -- is finished
+when a release carries it, not when it merges. Cutting the tag is the last step
+of that work, and whoever needs it should say which contracts they are waiting
+on rather than which commit they pinned: a commit answers what runs today, and a
+version is what a user can install.
+
+Nothing here schedules a release. What this section settles is that "it is on
+master" is not an answer to "can the operator ship it", and that a downstream
+waiting on one is a reason to cut it rather than a note on its own backlog
+(stokaro/ptah#3344).
+
 ## Prerequisites
 
 - For Homebrew publishing: the `stokaro/homebrew-ptah` tap repository and a
