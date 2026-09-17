@@ -31,7 +31,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.18.1
+          version: v2.18.2
           args: check
 
       - uses: anchore/sbom-action/download-syft@v0.24.2
@@ -40,5 +40,5 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.18.1
+          version: v2.18.2
           args: release --snapshot --clean --skip=sign,docker
