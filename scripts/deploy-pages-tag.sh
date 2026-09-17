@@ -11,11 +11,26 @@
 # out. Measured on v0.5.0 in run 34220970258 (stokaro/ptah#3082).
 #
 # GITHUB_SHA cannot be overridden -- Actions refuses a workflow that assigns a
-# GITHUB_* variable -- so the lever left is to create the deployment here. The
-# annotated tag object's own id is the build version: a real object id, it
-# differs from the commit the tag points at, and it is the same on every re-run
-# of the same tag, so a re-run replaces its own deployment instead of creating a
-# second one.
+# GITHUB_* variable -- so the lever left is to create the deployment here, under
+# a build version of this tag's own.
+#
+# That version has to name a commit the repository holds. Measured against the
+# API with one artifact and four values: the annotated tag object's id and an
+# invented id are both refused with `404 Not Found`, and two real commits are
+# not. So the tag object cannot be the build version, and the commit the tag
+# points at is the one master already deployed -- which is the collision itself.
+#
+# The tag therefore deploys under a commit of its own: the tag's tree, the tag's
+# commit as its parent, and the tagger as author and committer with the tag's
+# own date. Nothing references it, so it appears in no history and in no
+# listing; it exists, which is what a build version has to do, and its parent is
+# the tag's commit, so it can never be the commit master deployed.
+#
+# Its id is not predicted here. The API renders the fields it is given its own
+# way -- the same inputs through `git commit-tree` hash to something else, which
+# is measured rather than assumed -- so a re-run of the tag creates another
+# commit and deploys again under it. That is what a re-run asks for; what must
+# not repeat is the collision with master, and that is decided by the parent.
 #
 # Everything else is what actions/deploy-pages does, in the order it does it:
 # find this run's artifact, mint an OIDC token, create the deployment, poll
@@ -32,20 +47,52 @@ readonly artifactName="github-pages"
 readonly deployTimeoutSeconds=480
 readonly pollIntervalSeconds=5
 
-# tagBuildVersion prints the object id of the annotated tag.
+# deploymentCommitFields prints what the tag's deployment commit is built from,
+# tab-separated: tree, parent, tagger name, tagger email, tagger date.
 #
-# A lightweight tag is refused rather than deployed: its id IS the commit id, so
-# it reproduces the collision this script exists to avoid, and it would do it
-# silently. docs/release_process.md creates annotated tags.
-tagBuildVersion() {
+# It is separate from the call that creates the commit so the rule it carries --
+# which inputs decide the id -- can be driven without a registry or a token, and
+# so a reader can see that every one of them comes from the tag.
+#
+# A lightweight tag is refused rather than deployed under the commit it names.
+# That commit is the one master already deployed, so the collision would come
+# back, silently; and a lightweight tag carries no tagger for the deployment to
+# be built from. docs/release_process.md creates annotated tags.
+deploymentCommitFields() {
 	local tag=$1 kind
 	kind="$(git cat-file -t "refs/tags/${tag}" 2>/dev/null || true)"
 	if [ "$kind" != tag ]; then
 		echo "deploy-pages-tag: ${tag} is not an annotated tag (git says '${kind:-nothing}')." >&2
-		echo "  Its build version would be the commit id, which is the one master already deployed." >&2
+		echo "  It carries no tagger, so its deployment would have to borrow the commit master already deployed." >&2
 		return 1
 	fi
-	git rev-parse "refs/tags/${tag}"
+	printf '%s\t%s\t%s\t%s\t%s\n' \
+		"$(git rev-parse "refs/tags/${tag}^{tree}")" \
+		"$(git rev-parse "refs/tags/${tag}^{commit}")" \
+		"$(git for-each-ref --format='%(taggername)' "refs/tags/${tag}")" \
+		"$(git for-each-ref --format='%(taggeremail:trim)' "refs/tags/${tag}")" \
+		"$(git for-each-ref --format='%(taggerdate:iso-strict)' "refs/tags/${tag}")"
+}
+
+# deploymentCommit creates the commit this tag deploys under and prints its id.
+#
+# Every field is the tag's, so the commit says which release it carries, and its
+# parent is the tag's commit, so it is never the id master deployed.
+deploymentCommit() {
+	local tag=$1 fields tree parent name email date
+	fields="$(deploymentCommitFields "$tag")" || return 1
+	IFS=$'\t' read -r tree parent name email date <<<"$fields"
+	gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" \
+		-f message="Pages deployment for ${tag}" \
+		-f tree="$tree" \
+		-f "parents[]=$parent" \
+		-f "author[name]=$name" \
+		-f "author[email]=$email" \
+		-f "author[date]=$date" \
+		-f "committer[name]=$name" \
+		-f "committer[email]=$email" \
+		-f "committer[date]=$date" \
+		--jq '.sha'
 }
 
 # runArtifactID prints the id of this run's Pages artifact, refusing anything
@@ -100,9 +147,13 @@ awaitDeployment() {
 	return 1
 }
 
-# selftest drives the one rule this script can be held to without a Pages
-# deployment: which object id a tag deploys under, and the refusal that keeps a
-# lightweight tag from reproducing the collision.
+# selftest drives the rule this script can be held to without a registry: which
+# commit a tag deploys under.
+#
+# The commit is built locally here from the same fields the API is given. The id
+# is not the one the API answers -- it renders the fields its own way -- and the
+# property under test is not the id: a commit whose parent is the tag's commit
+# is not that commit, whoever hashes it.
 selftest() {
 	local work status=0
 	work="$(mktemp -d)"
@@ -115,38 +166,50 @@ selftest() {
 # removed on both paths without a RETURN trap, which would outlive this
 # function and fire again in its caller.
 selftestIn() {
-	local work=$1 commit annotated lightweight
+	local work=$1 commit first lightweight
 
 	git -C "$work" init -q
 	git -C "$work" -c user.email=selftest@example.com -c user.name=selftest \
 		commit -q --allow-empty -m "the commit both tags point at"
 	commit="$(git -C "$work" rev-parse HEAD)"
-	git -C "$work" -c user.email=selftest@example.com -c user.name=selftest \
+	git -C "$work" -c user.email=tagger@example.com -c user.name=tagger \
 		tag -a v9.9.9 -m "an annotated tag"
 	git -C "$work" tag v9.9.8
 
-	echo "deploy-pages-tag-selftest: the build version a tag deploys under"
+	echo "deploy-pages-tag-selftest: the commit a tag deploys under"
 
-	annotated="$(cd "$work" && tagBuildVersion v9.9.9)"
-	if [ "$annotated" = "$commit" ]; then
-		echo "  an annotated tag deployed under the commit id, which is the collision" >&2
+	first="$(cd "$work" && buildDeploymentCommitLocally v9.9.9)"
+	if [ "$first" = "$commit" ]; then
+		echo "  the tag deployed under the commit it points at, which is the collision" >&2
 		return 1
 	fi
-	printf '  %-52s %s\n' "an annotated tag deploys under its own object id" "${annotated:0:12}"
+	printf '  %-52s %s\n' "an annotated tag deploys under a commit of its own" "${first:0:12}"
 
-	if [ "$annotated" != "$(cd "$work" && tagBuildVersion v9.9.9)" ]; then
-		echo "  the same tag answered two build versions, so a re-run would deploy twice" >&2
+	if [ "$(cd "$work" && git rev-parse "${first}^")" != "$commit" ]; then
+		echo "  the deployment commit does not descend from the tag, so it names another release" >&2
 		return 1
 	fi
-	printf '  %-52s %s\n' "and answers the same id on a re-run" "stable"
+	printf '  %-52s %s\n' "with the tag's own commit as its parent" "${commit:0:12}"
 
-	if lightweight="$(cd "$work" && tagBuildVersion v9.9.8 2>/dev/null)"; then
-		echo "  a lightweight tag was accepted, deploying under ${lightweight}" >&2
+	if lightweight="$(cd "$work" && deploymentCommitFields v9.9.8 2>/dev/null)"; then
+		echo "  a lightweight tag was accepted: ${lightweight}" >&2
 		return 1
 	fi
 	printf '  %-52s %s\n' "a lightweight tag is refused" "rejected"
 
 	echo "deploy-pages-tag-selftest: OK"
+}
+
+# buildDeploymentCommitLocally writes a deployment commit with git rather than
+# through the API, from the same fields, so the selftest can measure what they
+# produce without a token.
+buildDeploymentCommitLocally() {
+	local tag=$1 fields tree parent name email date
+	fields="$(deploymentCommitFields "$tag")" || return 1
+	IFS=$'\t' read -r tree parent name email date <<<"$fields"
+	GIT_AUTHOR_NAME="$name" GIT_AUTHOR_EMAIL="$email" GIT_AUTHOR_DATE="$date" \
+		GIT_COMMITTER_NAME="$name" GIT_COMMITTER_EMAIL="$email" GIT_COMMITTER_DATE="$date" \
+		git commit-tree "$tree" -p "$parent" -m "Pages deployment for ${tag}"
 }
 
 main() {
@@ -156,15 +219,22 @@ main() {
 	fi
 
 	local tag=${GITHUB_REF_NAME:?the tag to deploy} version artifact token created deploymentID pageURL
-	version="$(tagBuildVersion "$tag")"
+	version="$(deploymentCommit "$tag")"
 	artifact="$(runArtifactID)"
 	token="$(oidcToken)"
 	echo "deploy-pages-tag: deploying artifact ${artifact} for ${tag} under build version ${version}"
 
-	created="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/deployments" \
+	if ! created="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/deployments" \
 		-F artifact_id="$artifact" \
 		-f pages_build_version="$version" \
-		-f oidc_token="$token")"
+		-f oidc_token="$token" 2>&1)"; then
+		# What the API said, rather than gh's summary of it. A refused build
+		# version and a refused token are both "Not Found" to a reader who only
+		# sees the status.
+		echo "deploy-pages-tag: Pages refused the deployment for ${version}:" >&2
+		echo "  ${created}" >&2
+		return 1
+	fi
 	# The id is read the way actions/deploy-pages reads it, including the
 	# fallback to the build version -- the create response carried no id in the
 	# run that opened stokaro/ptah#3082. The fallback is safe here for the

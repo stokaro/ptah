@@ -902,7 +902,12 @@ jobs:
       group: docs-pages-deploy
       cancel-in-progress: false
     permissions:
-      contents: read
+      # contents: write is for the deployment commit a tag deploys under, and
+      # for nothing else: Pages keys a deployment by a commit the repository
+      # holds, the tag object is refused and the tag's own commit is the one
+      # master already deployed. scripts/deploy-pages-tag.sh creates it through
+      # the git data API, references it from nothing, and says why.
+      contents: write
       pages: write
       id-token: write
     environment:
