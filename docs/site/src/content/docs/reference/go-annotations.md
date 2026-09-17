@@ -111,6 +111,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
 | [`ptah:schema:data`](#ptahschemadata) | Reference/seed row data for a table | struct |
+| [`ptah:schema:notdescribed`](#ptahschemanotdescribed) | What this schema does not describe | struct |
 
 Placement is semantic, not cosmetic. A struct directive belongs in the doc
 comment of a Go struct declaration; a field directive belongs in the doc comment
@@ -443,6 +444,42 @@ Declares a PostgreSQL extension.
 | `name` | No | Extension name. |
 | `schema` | No | PostgreSQL installation schema. Empty means the target's default schema. |
 | `version` | No | Extension version. |
+
+### `//ptah:schema:notdescribed`
+
+Declares that this description does not describe an object family, or one named
+object in it, so its absence is not a removal.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `kind` | Yes | Object family, such as `extension`, `schema`, `role` or `sequence`. |
+| `name` | No | One object of that family. Omitted, the whole family is declined. |
+
+```go
+//ptah:schema:notdescribed kind="extension" name="pg_trgm"
+//ptah:schema:notdescribed kind="role"
+type _ struct{}
+```
+
+An object a schema declines is neither created nor dropped: the comparison
+treats the silence as a limit of the description rather than as a statement that
+the database should not have the object. An extension a bootstrap step installs
+is the usual case — declaring it instead hands Ptah the object, and that
+includes removing it.
+
+`kind` comes from a closed list, and one this build does not know is refused
+rather than ignored: a directive nothing understands reads as no directive at
+all, and the absence it was protecting becomes a removal.
+
+A serialized description says the same thing in its own grammar, as a directive
+in the leading comment header:
+
+```hcl illustration
+// ptah:not-described extension "pg_trgm"
+```
+
+The two produce one plan. Which one fits depends on where the description lives,
+not on what it means.
 
 ### `//ptah:schema:sequence`
 
