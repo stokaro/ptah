@@ -53,10 +53,14 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   Docker Hub is an organization, and a `dckr_pat_` token belongs to a person
   who is a member of it. The token needs write access to `stokaro/ptah`;
   delete is not used.
-- GoReleaser publishes Homebrew as a cask. `brew install stokaro/ptah/ptah`,
-  the command issue #174 requires, keeps working because the tap maps the `ptah`
-  token to the cask in `tap_migrations.json`, which Homebrew reads in the cask
-  loader as well as the formula loader.
+- GoReleaser publishes Homebrew as a cask, into `Casks/ptah.rb`. `brew install
+  stokaro/ptah/ptah`, the command issue #174 requires, reaches it only while the
+  tap holds no `Formula/ptah.rb`: Homebrew tries the formula loader first, and a
+  formula an earlier release generated answers the command with its own version.
+  `tap_migrations.json` is not the answer -- both loaders stop when the migrated
+  name equals the name they were given, so a tap cannot redirect a token to
+  itself. The generated formula is removed from the tap once, and
+  `Formula/ptah-edge.rb`, which is hand-written, stays.
 - The release workflow must pass on the release commit before tagging.
 
 ## Cut A Release
@@ -132,16 +136,17 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    ptah-compat migrate --help
    ```
 
-## The Tap Holds Two Formulas
+## The Tap Holds A Cask And A Formula
 
-`Formula/ptah.rb` is generated. GoReleaser renders it from the `brews:` section
-of `.goreleaser.yaml` and pushes it on every version tag, so it always names the
-newest release.
+`Casks/ptah.rb` is generated. GoReleaser renders it from the `homebrew_casks:`
+section of `.goreleaser.yaml` and pushes it on every version tag, so it always
+names the newest release, and `brew install stokaro/ptah/ptah` reaches it
+because no formula of that token stands in front of it.
 
 `Formula/ptah-edge.rb` is written by hand and lives only in the tap. It is a
 head-only formula that compiles the tip of `master` on the user's machine, which
-is the one thing a generated formula cannot be: GoReleaser's `brews:` block has
-no field for a Homebrew `head`, and a release run overwrites `ptah.rb` whole.
+is the one thing a generated artifact cannot be: GoReleaser has no field for a
+Homebrew `head`, and a release run overwrites what it generates whole.
 
 GoReleaser writes that one path and no other, so the hand-written file survives
 a release -- and nothing regenerates it either. **A change to how the release
@@ -152,7 +157,9 @@ in the formula, edge quietly stops being the edge of what ships.
 
 That coupling is checked, and the check lives in the tap because the file it
 guards does: `scripts/check-edge-matches-release.sh` there reads this
-repository's `.goreleaser.yaml` and requires the formula to still repeat it. The
+repository's `.goreleaser.yaml` and requires the formula to still repeat it. It
+reads the `builds:` section for those flags, so it is unaffected by which
+package section renders the release. The
 change that breaks it is made here, where nothing can see that file, so the
 check runs on a daily schedule as well as on every push to the tap -- a drift
 introduced by a change on this side surfaces within a day rather than at the
