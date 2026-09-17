@@ -4,7 +4,7 @@
 //
 // scripts/check-faq-tags.mjs holds this to the page: every anchor here must
 // exist on the built page, every question must carry at least one tag, and
-// every tag must be labelled and used.
+// every tag must be labeled and used.
 
 /** @type {Record<string, string[]>} */
 export const questionTags = {

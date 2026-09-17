@@ -147,13 +147,22 @@ const rest = rail.slice(LEAD);
         id: h.id,
         tags: tagsByAnchor[h.id] ?? [],
         nodes: runFrom(top(h), () => true),
-        // The question and its answer, lowercased once rather than per keystroke.
+        // The question, its answer and the labels of the tags it carries,
+        // lowercased once rather than per keystroke. The labels are in the
+        // haystack because the rail puts those words right above the field: a
+        // word a reader can see, typed into the field under it, has to reach
+        // the questions it names.
         haystack: '',
       }));
       if (questions.length === 0) return;
 
       for (const q of questions) {
-        q.haystack = q.nodes.map((n) => n.textContent).join(' ').toLowerCase();
+        q.haystack = [
+          ...q.nodes.map((n) => n.textContent),
+          ...q.tags.map((tag) => labels[tag] ?? tag),
+        ]
+          .join(' ')
+          .toLowerCase();
       }
 
       // The chips go at the end of the answer, and are recorded with the
@@ -181,6 +190,14 @@ const rest = rail.slice(LEAD);
           : group.nodes;
       }
 
+      // Whether the filter is hiding the anchor a link names. A question's run
+      // and a group's chrome each carry the flag, so this reads back exactly
+      // what render() wrote rather than inferring it from the document.
+      const filteredAway = (id) =>
+        questions.find((q) => q.id === id)?.nodes[0].hidden ??
+        groups.find((group) => group.id === id)?.chrome[0]?.hidden ??
+        false;
+
       // The contents rail lists the groups, so it follows the filter: a rail
       // still offering a group the page has hidden sends the reader nowhere.
       const railEntries = new Map();
@@ -196,6 +213,18 @@ const rest = rail.slice(LEAD);
       const railTags = [...this.querySelectorAll('[data-faq-tag]')];
       const total = Number(this.dataset.count) || questions.length;
       const active = new Set();
+
+      // What an empty result says, which depends on what the reader did. A term
+      // that found nothing under a tag may well be somewhere else on the page,
+      // and the way out is the tag; a term that found nothing with no tag
+      // picked has already searched the whole page, so naming tags there sends
+      // the reader after a selection they never made.
+      const emptyText = (typed, tagged) => {
+        if (typed === '') return 'No question carries those tags.';
+        return tagged
+          ? `No question matches "${typed}" in the tags you picked. Clear the tags to search the whole page, or try the site search.`
+          : `No question matches "${typed}". Try the site search, or open Troubleshooting.`;
+      };
 
       const render = () => {
         const term = field.value.trim().toLowerCase();
@@ -232,11 +261,7 @@ const rest = rail.slice(LEAD);
         countEl.textContent = filtered ? `${shown.length} of ${total}` : `${total} questions`;
         clearEl.hidden = !filtered;
         emptyEl.hidden = shown.length > 0;
-        if (shown.length === 0) {
-          emptyEl.textContent = term
-            ? `No question matches "${field.value.trim()}" in the tags you picked. Try the site search, or open Troubleshooting.`
-            : 'No question carries those tags.';
-        }
+        if (shown.length === 0) emptyEl.textContent = emptyText(field.value.trim(), active.size > 0);
       };
 
       const toggle = (tag) => {
@@ -267,18 +292,30 @@ const rest = rail.slice(LEAD);
       moreEl?.addEventListener('click', () => {
         const expanded = moreEl.getAttribute('aria-expanded') === 'true';
         moreEl.setAttribute('aria-expanded', String(!expanded));
-        for (const button of this.querySelectorAll('.faq-tag--rest')) button.hidden = expanded;
+        for (const button of this.querySelectorAll('.faq-tag--rest')) {
+          // A selected tag survives the fold. Folding away the only control
+          // that releases it leaves the page filtered by a facet nothing on
+          // screen explains, and the way out left is Clear, which also drops
+          // the other tags and the typed term.
+          button.hidden = expanded && !active.has(button.dataset.faqTag);
+        }
       });
 
       // A shared link names one question, and a filter that hid it would make
-      // the link look broken. Clearing on arrival keeps every anchor reachable.
+      // the link look broken, so arriving at a hidden anchor clears the filter
+      // and keeps every anchor reachable. An anchor the filter is still showing
+      // is navigation inside the result -- the contents rail offers those and
+      // nothing else -- and the filter survives it.
       const revealHash = () => {
         const id = decodeURIComponent(location.hash.replace(/^#/, ''));
-        if (!id || !document.getElementById(id)) return;
-        active.clear();
-        field.value = '';
-        render();
-        document.getElementById(id)?.scrollIntoView({ block: 'start' });
+        const target = id ? document.getElementById(id) : null;
+        if (!target) return;
+        if (filteredAway(id)) {
+          active.clear();
+          field.value = '';
+          render();
+        }
+        target.scrollIntoView({ block: 'start' });
       };
       window.addEventListener('hashchange', revealHash);
 

@@ -34,6 +34,8 @@
     "check:heading-anchors": "node scripts/check-heading-anchors.mjs",
     "check:heading-anchors:selftest": "node scripts/check-heading-anchors.mjs --selftest",
     "check:faq-groups": "node scripts/check-faq-groups.mjs",
+    "check:faq-page": "node scripts/check-faq-page.mjs",
+    "check:faq-page:selftest": "node scripts/check-faq-page.mjs --selftest",
     "check:faq-groups:selftest": "node scripts/check-faq-groups.mjs --selftest",
     "check:redirects": "node scripts/check-redirects.mjs",
     "check:redirects:selftest": "node scripts/check-redirects.mjs --selftest",

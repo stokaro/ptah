@@ -329,7 +329,7 @@
 }
 
 /* The word an answer commits to, drawn beside it rather than buried in the
- * first line. Colour carries the meaning, so the three read apart at a glance
+ * first line. Color carries the meaning, so the three read apart at a glance
  * without a second cue the palette does not have. */
 .faq-verdict {
 	display: inline-block;
