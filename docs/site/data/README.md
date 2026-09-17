@@ -22,6 +22,12 @@ the catalog changes — the schedule is what makes a missed notification late
 rather than permanent, because every run compares the two files instead of
 replaying an event.
 
+The commit it records is the one that last changed `support/ptah.json`, not
+whatever the operator's default branch points at. The difference is the whole
+cadence: the operator takes commits daily, and against its head the copy would
+be stale every day and every run would want a pull request rewriting one field.
+Against the catalog's own revision the copy is stale when the catalog moved.
+
 ### The credential it needs
 
 The refresh opens one pull request on the branch `automation/operator-compatibility`.
@@ -29,16 +35,33 @@ A pull request opened with `GITHUB_TOKEN` receives no checks, and a
 documentation change nothing checked is what this must not produce, so the
 workflow refuses to open one without a credential of its own.
 
-Configure a repository secret **`OPERATOR_COMPATIBILITY_TOKEN`**: a fine-grained
-personal access token or a GitHub App installation token scoped to
-`stokaro/ptah` alone, with
+Either of two shapes works, and the workflow prefers the first:
+
+- a **GitHub App**, as the variable `OPERATOR_COMPATIBILITY_APP_ID` with the
+  secret `OPERATOR_COMPATIBILITY_APP_KEY`. The token is minted per run and lives
+  an hour, and the job is capped well inside that;
+- a repository secret **`OPERATOR_COMPATIBILITY_TOKEN`**, a fine-grained
+  personal access token. It is a standing credential somebody has to rotate,
+  and an expired one fails the run at the push rather than at a presence check.
+
+Either way the access is `stokaro/ptah` alone, with
 
 - **Contents: read and write** — to push the automation branch;
 - **Pull requests: read and write** — to open and update the one pull request.
 
-Nothing more. It needs no access to `stokaro/ptah-operator`: that repository is
+Nothing more. Neither needs access to `stokaro/ptah-operator`: that repository is
 public and the refresh reads it through the ordinary API with this repository's
 own `GITHUB_TOKEN`.
+
+Until one is configured, a run that finds the catalog changed fails and says so.
+The copy can also be refreshed by hand — the workflow's own script does it:
+
+```sh
+gh api "repos/stokaro/ptah-operator/contents/support/ptah.json?ref=<commit>" \
+  --header 'Accept: application/vnd.github.raw+json' >/tmp/ptah.json
+node docs/site/scripts/refresh-compatibility.mjs \
+  --source-commit <commit> --relation ahead --catalog /tmp/ptah.json
+```
 
 The fast path, where the operator repository notifies this one, additionally
 needs a credential **in that repository** able to send a `repository_dispatch`

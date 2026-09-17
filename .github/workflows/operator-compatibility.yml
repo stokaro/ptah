@@ -78,7 +78,16 @@ jobs:
         run: |
           set -euo pipefail
           branch="$(gh api "repos/$SOURCE_REPOSITORY" --jq '.default_branch')"
-          head="$(gh api "repos/$SOURCE_REPOSITORY/commits/$branch" --jq '.sha')"
+
+          # The revision this copy records is a commit that CHANGED the catalog,
+          # not wherever the operator's branch happens to point. Recording the
+          # head makes the copy stale on every commit that repository takes, so
+          # every scheduled run wants a pull request, most of them rewriting one
+          # field. Scoped to the path, the copy is stale when the catalog moved
+          # and at no other time.
+          catalog_revision() {
+            gh api "repos/$SOURCE_REPOSITORY/commits?sha=$1&path=$SOURCE_PATH&per_page=1" --jq '.[0].sha // empty'
+          }
 
           # Both questions below are the same question -- does the default
           # branch contain this commit -- so they ask it once. The operator
@@ -91,17 +100,23 @@ jobs:
             esac
           }
 
-          incoming="$head"
+          at="$branch"
           if [ -n "$REQUESTED" ]; then
             # A dispatched commit is honored only when it is on the default
             # branch. A commit that is not is somebody's branch, and publishing
             # its catalog would publish a claim the operator has not accepted.
             if on_default_branch "$REQUESTED"; then
-              incoming="$REQUESTED"
+              at="$REQUESTED"
             else
               echo "$REQUESTED is not on $branch" >&2
               exit 1
             fi
+          fi
+
+          incoming="$(catalog_revision "$at")"
+          if [ -z "$incoming" ]; then
+            echo "$SOURCE_REPOSITORY has no commit touching $SOURCE_PATH at $at" >&2
+            exit 1
           fi
 
           recorded="$(node -e '
@@ -130,7 +145,7 @@ jobs:
           echo "commit=$incoming" >>"$GITHUB_OUTPUT"
           echo "relation=$relation" >>"$GITHUB_OUTPUT"
           echo "recorded_on_branch=$recorded_on_branch" >>"$GITHUB_OUTPUT"
-          echo "resolved $incoming, which is $relation of the recorded ${recorded:-nothing} (on $branch: $recorded_on_branch)"
+          echo "$SOURCE_PATH last changed at $incoming, which is $relation of the recorded ${recorded:-nothing} (on $branch: $recorded_on_branch)"
 
       - name: Fetch the catalog at that revision
         env:
@@ -173,28 +188,53 @@ jobs:
         if: steps.refresh.outputs.changed == 'true'
         run: node docs/site/scripts/check-compatibility.mjs
 
+      # An app token is minted per run and lives an hour, where a personal
+      # access token is a standing credential somebody has to rotate. Both are
+      # accepted because neither is configured here yet, and capability-matrix-request.yml
+      # already establishes the pair in this repository.
+      - name: Mint a GitHub App token
+        id: app-token
+        if: steps.refresh.outputs.changed == 'true' && vars.OPERATOR_COMPATIBILITY_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.OPERATOR_COMPATIBILITY_APP_ID }}
+          private-key: ${{ secrets.OPERATOR_COMPATIBILITY_APP_KEY }}
+
       # A pull request opened with GITHUB_TOKEN receives no checks, and a
       # documentation change nothing checked is exactly what this must not
       # produce. The workflow therefore refuses rather than opening one: the
       # missing credential is a configuration gap, not a reason to publish
       # unverified data.
-      - name: Require a credential whose pull request runs the checks
+      - name: Resolve the credential whose pull request runs the checks
+        id: credential
         if: steps.refresh.outputs.changed == 'true'
         env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           AUTOMATION_TOKEN: ${{ secrets.OPERATOR_COMPATIBILITY_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "$AUTOMATION_TOKEN" ]; then
-            echo "the compatibility copy is out of date and OPERATOR_COMPATIBILITY_TOKEN is not configured." >&2
-            echo "A pull request opened with GITHUB_TOKEN would receive no checks, so none is opened." >&2
-            echo "Configure the token described in docs/site/data/README.md, or refresh the copy by hand." >&2
-            exit 1
+          if [ -n "$APP_TOKEN" ]; then
+            echo "::add-mask::$APP_TOKEN"
+            echo "value=$APP_TOKEN" >>"$GITHUB_OUTPUT"
+            echo "opening the pull request as the app installation"
+            exit 0
           fi
+          if [ -n "$AUTOMATION_TOKEN" ]; then
+            echo "value=$AUTOMATION_TOKEN" >>"$GITHUB_OUTPUT"
+            echo "opening the pull request with OPERATOR_COMPATIBILITY_TOKEN"
+            exit 0
+          fi
+          echo "the compatibility copy is out of date and no credential of its own is configured." >&2
+          echo "A pull request opened with GITHUB_TOKEN would receive no checks, so none is opened." >&2
+          echo "Set OPERATOR_COMPATIBILITY_APP_ID with an OPERATOR_COMPATIBILITY_APP_KEY secret," >&2
+          echo "or an OPERATOR_COMPATIBILITY_TOKEN secret; docs/site/data/README.md says what each needs." >&2
+          echo "Refreshing the copy by hand is the other way out." >&2
+          exit 1
 
       - name: Open or update the one automation pull request
         if: steps.refresh.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.OPERATOR_COMPATIBILITY_TOKEN }}
+          GH_TOKEN: ${{ steps.credential.outputs.value }}
           COMMIT: ${{ steps.source.outputs.commit }}
         run: |
           set -euo pipefail
