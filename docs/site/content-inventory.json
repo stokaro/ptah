@@ -1523,8 +1523,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 2304,
-      "sourceBytes": 18696
+      "visibleWords": 2307,
+      "sourceBytes": 18718
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
