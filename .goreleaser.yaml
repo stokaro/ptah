@@ -203,10 +203,19 @@ dockers_v2:
 # `brews` in 2.16, and `check` refuses a configuration that carries one.
 #
 # The install command stokaro/ptah#174 requires, `brew install
-# stokaro/ptah/ptah`, keeps working across the change: Homebrew resolves a
-# token through `tap_migrations.json` in the cask loader exactly as it does in
-# the formula loader, so the tap maps `ptah` to this cask and the front door is
-# unchanged.
+# stokaro/ptah/ptah`, keeps working across the change only while the tap holds
+# no formula of that token. Homebrew tries the formula loader first, so a
+# generated `Formula/ptah.rb` left beside the cask answers the command with
+# whatever release wrote it: measured on the v0.6.0 release, where the tap
+# carried both and `brew info stokaro/ptah/ptah` reported stable 0.5.0 until the
+# formula was removed, after which the same token installed the 0.6.0 cask and
+# linked all three binaries.
+#
+# `tap_migrations.json` cannot do this. Both loaders read it, and both stop when
+# the migrated name equals the name they were given, so a tap cannot redirect a
+# token to itself. Removing the file the earlier release generated is what moves
+# the token, and it is a one-time edit in the tap rather than anything this
+# configuration can write.
 #
 # It works on Linux as well. GoReleaser renders `on_linux` URLs beside the
 # macOS ones, and Homebrew installs a cask that requires no macOS wherever it
