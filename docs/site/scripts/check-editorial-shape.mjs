@@ -14,12 +14,20 @@ const repoRoot = join(siteRoot, '..', '..');
 const inventoryPath = join(siteRoot, 'content-inventory.json');
 const waiverPath = join(scriptDir, 'data', 'editorial-waivers.json');
 
+// Above these a page gets a review finding rather than a refusal: length is a
+// signal that a page may be doing two jobs, not a defect by itself.
+//
+// `reference` is the highest because a lookup page earns its length differently
+// from a page somebody reads through. The annotation reference carries one
+// entry per directive and a reader arrives at exactly one of them, so the count
+// grows with the number of object families Ptah models and says nothing about
+// whether any entry is too long.
 const wordLimits = {
   landing: 1400,
   tutorial: 2500,
   'how-to': 4000,
   concept: 2500,
-  reference: 5000,
+  reference: 5500,
   troubleshooting: 3000,
   status: 5000,
   contributor: 5000,
