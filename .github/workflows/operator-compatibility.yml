@@ -80,16 +80,28 @@ jobs:
           branch="$(gh api "repos/$SOURCE_REPOSITORY" --jq '.default_branch')"
           head="$(gh api "repos/$SOURCE_REPOSITORY/commits/$branch" --jq '.sha')"
 
+          # Both questions below are the same question -- does the default
+          # branch contain this commit -- so they ask it once. The operator
+          # squash-merges, so a pull request's head is a real commit the branch
+          # never contains, and every caller here has to tell the two apart.
+          on_default_branch() {
+            case "$(gh api "repos/$SOURCE_REPOSITORY/compare/$1...$branch" --jq '.status')" in
+              identical|ahead) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
           incoming="$head"
           if [ -n "$REQUESTED" ]; then
             # A dispatched commit is honored only when it is on the default
             # branch. A commit that is not is somebody's branch, and publishing
             # its catalog would publish a claim the operator has not accepted.
-            relation_to_head="$(gh api "repos/$SOURCE_REPOSITORY/compare/$REQUESTED...$branch" --jq '.status')"
-            case "$relation_to_head" in
-              identical|ahead) incoming="$REQUESTED" ;;
-              *) echo "$REQUESTED is not on $branch (it is $relation_to_head of it)" >&2; exit 1 ;;
-            esac
+            if on_default_branch "$REQUESTED"; then
+              incoming="$REQUESTED"
+            else
+              echo "$REQUESTED is not on $branch" >&2
+              exit 1
+            fi
           fi
 
           recorded="$(node -e '
@@ -107,9 +119,18 @@ jobs:
             relation=identical
           fi
 
+          # A recorded commit the branch does not contain is a record to
+          # re-derive from rather than a rewritten history, and the relation
+          # alone cannot say which: both answer `diverged`.
+          recorded_on_branch=true
+          if [ -n "$recorded" ] && ! on_default_branch "$recorded"; then
+            recorded_on_branch=false
+          fi
+
           echo "commit=$incoming" >>"$GITHUB_OUTPUT"
           echo "relation=$relation" >>"$GITHUB_OUTPUT"
-          echo "resolved $incoming, which is $relation of the recorded ${recorded:-nothing}"
+          echo "recorded_on_branch=$recorded_on_branch" >>"$GITHUB_OUTPUT"
+          echo "resolved $incoming, which is $relation of the recorded ${recorded:-nothing} (on $branch: $recorded_on_branch)"
 
       - name: Fetch the catalog at that revision
         env:
@@ -131,6 +152,7 @@ jobs:
         env:
           COMMIT: ${{ steps.source.outputs.commit }}
           RELATION: ${{ steps.source.outputs.relation }}
+          RECORDED_ON_BRANCH: ${{ steps.source.outputs.recorded_on_branch }}
         run: |
           set -euo pipefail
           node docs/site/scripts/refresh-compatibility.mjs --selftest
@@ -138,6 +160,7 @@ jobs:
           node docs/site/scripts/refresh-compatibility.mjs \
             --source-commit "$COMMIT" \
             --relation "$RELATION" \
+            --recorded-on-default-branch "$RECORDED_ON_BRANCH" \
             --catalog "$RUNNER_TEMP/ptah.json"
           if git diff --quiet -- docs/site/data/operator-compatibility.json; then
             echo "changed=false" >>"$GITHUB_OUTPUT"

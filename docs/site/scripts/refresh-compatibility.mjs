@@ -32,11 +32,23 @@ export const SOURCE_PATH = 'support/ptah.json';
 //
 // `ahead` and `identical` mean the incoming commit is the recorded one or a
 // descendant of it. `behind` means the event is late and its catalog is older
-// than the one already published. `diverged` means the operator's history was
-// rewritten, which is not something automation should paper over.
+// than the one already published. `diverged` means neither commit reaches the
+// other.
 export const RELATIONS = ['ahead', 'behind', 'identical', 'diverged'];
 
-export function decide({ recordedCommit, incomingCommit, relation }) {
+// decide answers what to do with an incoming commit, given what is recorded.
+//
+// `recordedOnDefaultBranch` is what separates the two histories that both
+// compare as `diverged`. The operator squash-merges, so a pull request's head
+// commit stays a real object that the default branch never contains: recording
+// one leaves every later run comparing against a commit no descendant can
+// reach, and the copy is then frozen for as long as nobody notices. That is a
+// record to re-derive from, not a rewrite. A recorded commit the branch does
+// contain, diverging from the incoming one, is the rewrite, and it fails.
+//
+// The default is `undefined`, which is read as on the branch: a caller that
+// cannot answer gets the stricter of the two.
+export function decide({ recordedCommit, incomingCommit, relation, recordedOnDefaultBranch }) {
   if (!commitPattern.test(incomingCommit ?? '')) {
     return { act: false, reason: `incoming commit ${incomingCommit} is not an exact commit`, failure: true };
   }
@@ -48,6 +60,12 @@ export function decide({ recordedCommit, incomingCommit, relation }) {
   }
   if (recordedCommit === incomingCommit) {
     return { act: false, reason: 'the recorded commit is already this one' };
+  }
+  if (recordedOnDefaultBranch === false) {
+    return {
+      act: true,
+      reason: `the recorded ${recordedCommit} is not on the operator's default branch, so the copy is re-derived at ${incomingCommit}`,
+    };
   }
   if (!RELATIONS.includes(relation)) {
     return { act: false, reason: `the operator repository answered ${relation}`, failure: true };
@@ -61,7 +79,7 @@ export function decide({ recordedCommit, incomingCommit, relation }) {
   if (relation === 'diverged') {
     return {
       act: false,
-      reason: `${incomingCommit} and the recorded ${recordedCommit} have diverged; the operator history was rewritten`,
+      reason: `${incomingCommit} and the recorded ${recordedCommit} have diverged, and the branch contains the recorded one; the operator history was rewritten`,
       failure: true,
     };
   }
@@ -112,6 +130,22 @@ function selftest() {
   const rewritten = decide({ recordedCommit: newer, incomingCommit: older, relation: 'diverged' });
   if (rewritten.act || !rewritten.failure) throw new Error('a rewritten history was not a failure');
 
+  const onBranch = decide({
+    recordedCommit: newer, incomingCommit: older, relation: 'diverged', recordedOnDefaultBranch: true,
+  });
+  if (onBranch.act || !onBranch.failure) throw new Error('a rewrite stopped failing once the branch was named');
+
+  const squashed = decide({
+    recordedCommit: newer, incomingCommit: older, relation: 'diverged', recordedOnDefaultBranch: false,
+  });
+  if (!squashed.act) throw new Error('a recorded commit the branch does not contain was not re-derived');
+  if (squashed.failure) throw new Error('re-deriving from an unreachable record failed instead');
+
+  const lateOffBranch = decide({
+    recordedCommit: newer, incomingCommit: older, relation: 'behind', recordedOnDefaultBranch: false,
+  });
+  if (!lateOffBranch.act) throw new Error('an unreachable record was held back by the relation it cannot support');
+
   const nonsense = decide({ recordedCommit: older, incomingCommit: 'HEAD', relation: 'ahead' });
   if (nonsense.act || !nonsense.failure) throw new Error('a non-commit was accepted');
 
@@ -119,7 +153,7 @@ function selftest() {
   if (copy.generated !== true) throw new Error('the copy does not mark itself generated');
   if (copy.source.repository !== SOURCE_REPOSITORY) throw new Error('the copy names another repository');
 
-  console.log('refresh-compatibility.mjs --selftest: OK (first, repeat, forward, late, rewritten, non-commit)');
+  console.log('refresh-compatibility.mjs --selftest: OK (first, repeat, forward, late, rewritten, off-branch record, non-commit)');
 }
 
 function main() {
@@ -130,10 +164,15 @@ function main() {
   }
   const commit = value(arguments_, '--source-commit');
   const relation = value(arguments_, '--relation');
+  const recordedOnBranch = value(arguments_, '--recorded-on-default-branch');
   const catalogPath = value(arguments_, '--catalog');
   const retrieved = value(arguments_, '--retrieved') ?? new Date().toISOString().slice(0, 10);
   if (!commit || !catalogPath) {
-    console.error('usage: refresh-compatibility.mjs --source-commit <sha> --catalog <path> [--relation <r>] [--retrieved <date>]');
+    console.error('usage: refresh-compatibility.mjs --source-commit <sha> --catalog <path> [--relation <r>] [--recorded-on-default-branch true|false] [--retrieved <date>]');
+    process.exit(2);
+  }
+  if (recordedOnBranch !== undefined && recordedOnBranch !== 'true' && recordedOnBranch !== 'false') {
+    console.error(`refresh-compatibility.mjs: --recorded-on-default-branch ${recordedOnBranch} is not true or false`);
     process.exit(2);
   }
   if (!datePattern.test(retrieved)) {
@@ -143,7 +182,12 @@ function main() {
 
   const target = join(defaultRepoRoot, DATA_PATH);
   const recorded = existsSync(target) ? JSON.parse(readFileSync(target, 'utf8')).source?.commit ?? null : null;
-  const decision = decide({ recordedCommit: recorded, incomingCommit: commit, relation });
+  const decision = decide({
+    recordedCommit: recorded,
+    incomingCommit: commit,
+    relation,
+    recordedOnDefaultBranch: recordedOnBranch === undefined ? undefined : recordedOnBranch === 'true',
+  });
   if (!decision.act) {
     console.log(`refresh-compatibility.mjs: nothing to do; ${decision.reason}`);
     process.exit(decision.failure ? 1 : 0);
