@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -273,6 +274,33 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 			name:     "empty_statement_sql",
 			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab","statements":[{"sql":"  "}]}`,
 			want:     `invalid plan file .*: plan statement 1 has empty sql`,
+		},
+		{
+			// A plan whose rows fingerprint names no row sets would verify
+			// nothing about rows while claiming to (stokaro/ptah#3378).
+			name: "rows_fingerprint_without_row_sets",
+			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab",` +
+				`"rows_fingerprint":"sha256:` + strings.Repeat("a", 64) + `","statements":[{"sql":"SELECT 1"}]}`,
+			want: `invalid plan file .*: plan managed_rows and rows_fingerprint must be recorded together`,
+		},
+		{
+			name: "row_sets_without_rows_fingerprint",
+			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab",` +
+				`"managed_rows":[{"table":"regions","keys":["code"],"columns":["code","name"]}],"statements":[{"sql":"SELECT 1"}]}`,
+			want: `invalid plan file .*: plan managed_rows and rows_fingerprint must be recorded together`,
+		},
+		{
+			name: "rows_fingerprint_not_a_digest",
+			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab","rows_fingerprint":"abc",` +
+				`"managed_rows":[{"table":"regions","keys":["code"],"columns":["code","name"]}],"statements":[{"sql":"SELECT 1"}]}`,
+			want: `invalid plan file .*: plan rows_fingerprint is not a digest: .*`,
+		},
+		{
+			name: "row_set_without_keys",
+			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab",` +
+				`"rows_fingerprint":"sha256:` + strings.Repeat("a", 64) + `",` +
+				`"managed_rows":[{"table":"regions","keys":[],"columns":["code"]}],"statements":[{"sql":"SELECT 1"}]}`,
+			want: `invalid plan file .*: plan managed_rows entry 1 names no key column`,
 		},
 	}
 

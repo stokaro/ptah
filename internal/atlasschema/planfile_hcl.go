@@ -18,6 +18,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/zclconf/go-cty/cty"
 
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/migration/safety"
 )
@@ -194,6 +195,17 @@ func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
 				"(%s), so apply could not check them for changes before running the plan; write the native JSON plan "+
 				"format (--output <name>"+PlanFileSuffix+") or connect with a URL that covers those schemas",
 			strings.Join(plan.SchemasBeyondURL, ", "))
+	}
+	if format == PlanFormatHCL && len(plan.ManagedRows) > 0 {
+		tables := make([]string, 0, len(plan.ManagedRows))
+		for _, set := range plan.ManagedRows {
+			tables = append(tables, schemamodel.QualifyTableName(set.Schema, set.Table))
+		}
+		return fmt.Errorf(
+			"the Atlas .plan.hcl format has no field for the declared rows a plan reads (%s), so apply could not "+
+				"check them for changes before running the plan; write the native JSON plan format "+
+				"(--output <name>"+PlanFileSuffix+")",
+			strings.Join(tables, ", "))
 	}
 	return nil
 }

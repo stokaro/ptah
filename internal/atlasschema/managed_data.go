@@ -68,9 +68,9 @@ func managedDataStatements(
 	current *catalog.Database,
 	projectRoot string,
 	protected protectedtable.Set,
-) ([]dataStatement, error) {
+) ([]dataStatement, []PlanRowSet, error) {
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	ranker := dataorder.New(desired)
 	declarations := slices.Clone(desired.ManagedData)
@@ -88,10 +88,22 @@ func managedDataStatements(
 	})
 	phases := make([][]dataStatement, len(dataPhases))
 	var fenced []string
+	// covered names every row set this plan read, in the order it read them. A
+	// saved plan records it, so applying the plan can read the same rows again
+	// and refuse when they moved (stokaro/ptah#3378).
+	var covered []PlanRowSet
 	for _, declaration := range declarations {
-		declared, err := managedDataDiff(ctx, conn, declaration, desired, current, projectRoot)
+		declared, read, err := managedDataDiff(ctx, conn, declaration, desired, current, projectRoot)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if read.Performed {
+			covered = append(covered, PlanRowSet{
+				Schema:  declaration.Schema,
+				Table:   declaration.Table,
+				Keys:    slices.Clone(declaration.Keys),
+				Columns: read.Columns,
+			})
 		}
 		// A fenced table is read the same way the migration body reads it, and
 		// only where this plan would change it: an entry on a table the
@@ -109,7 +121,7 @@ func managedDataStatements(
 	}
 	if len(fenced) > 0 {
 		slices.Sort(fenced)
-		return nil, &ProtectedTableError{Tables: slices.Compact(fenced)}
+		return nil, nil, &ProtectedTableError{Tables: slices.Compact(fenced)}
 	}
 	// A deletion runs against the constraint from the other side: the row that
 	// references has to go before the row it references, so this phase alone
@@ -119,7 +131,7 @@ func managedDataStatements(
 	for _, phase := range dataPhases {
 		statements = append(statements, phases[phase]...)
 	}
-	return statements, nil
+	return statements, covered, nil
 }
 
 // ProtectedTableError reports that a plan would change a table the caller
@@ -192,7 +204,7 @@ func managedDataDiff(
 	desired *schemamodel.Database,
 	current *catalog.Database,
 	projectRoot string,
-) ([]dataStatement, error) {
+) ([]dataStatement, managedrows.Read, error) {
 	qualified := managedDataTableName(declaration)
 	if declaration.Rows == nil {
 		// The rows are read here because this is the function that cannot go on
@@ -206,14 +218,14 @@ func managedDataDiff(
 		// A declaration that names no file is the artifact case gone wrong: the
 		// layer was dropped on the way here, and there is nothing to resolve.
 		if declaration.File == "" {
-			return nil, fmt.Errorf(
+			return nil, managedrows.Read{}, fmt.Errorf(
 				"managed data for table %s was never read; a desired state that declares rows has to carry them",
 				qualified,
 			)
 		}
 		rows, err := declaredRows(declaration, qualified, projectRoot)
 		if err != nil {
-			return nil, err
+			return nil, managedrows.Read{}, err
 		}
 		// A file that declares no rows is an empty row set, not an unread one.
 		// The difference is the whole statement: nil means nobody read the file,
@@ -230,8 +242,9 @@ func managedDataDiff(
 	// stages answered differently about one converged row (stokaro/ptah#3276).
 	rows, err := schemamodel.ResolveManagedRows(declaration)
 	if err != nil {
-		return nil, err
+		return nil, managedrows.Read{}, err
 	}
+	var read managedrows.Read
 	diff, err := managedrows.Compare(ctx, conn, managedrows.Request{
 		Desired:     desired,
 		Declaration: declaration,
@@ -244,9 +257,10 @@ func managedDataDiff(
 		// comparison is against the table the plan produces rather than the one
 		// it starts from.
 		Intent: managedrows.Plan,
+		Read:   &read,
 	})
 	if err != nil {
-		return nil, err
+		return nil, managedrows.Read{}, err
 	}
 	// The statements come from the renderer as a list. Its script form cannot
 	// be cut back into statements at line breaks: a declared value may carry a
@@ -254,9 +268,9 @@ func managedDataDiff(
 	// statements with (stokaro/ptah#3278).
 	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect)
 	if err != nil {
-		return nil, fmt.Errorf("render managed rows of %s: %w", qualified, err)
+		return nil, managedrows.Read{}, fmt.Errorf("render managed rows of %s: %w", qualified, err)
 	}
-	return classifyDataStatements(up, qualified), nil
+	return classifyDataStatements(up, qualified), read, nil
 }
 
 // classifyDataStatements assigns the severity a reference-row change actually

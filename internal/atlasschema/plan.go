@@ -64,9 +64,29 @@ type PlanFile struct {
 	// than the one a schema-limited URL connects to. The fingerprint describes
 	// those schemas together with the URL's scope, and [VerifyPlanTarget] reads
 	// the same set, so a change in any schema the plan writes makes it stale.
-	SchemasBeyondURL []string        `json:"schemas_beyond_url,omitempty"`
-	Destructive      bool            `json:"destructive"`
-	Statements       []PlanStatement `json:"statements"`
+	SchemasBeyondURL []string `json:"schemas_beyond_url,omitempty"`
+	// ManagedRows names the declared row sets the plan read, and RowsFingerprint
+	// is the digest of the rows they held. FromFingerprint describes structure
+	// alone, and a row that moved after planning left it unchanged, so a plan
+	// computed against one value was applied over another (stokaro/ptah#3378).
+	// [VerifyPlanTarget] reads the same projection again and refuses a plan
+	// whose rows moved. A plan that declares no rows carries neither, and reads
+	// exactly as it did before.
+	ManagedRows     []PlanRowSet    `json:"managed_rows,omitempty"`
+	RowsFingerprint string          `json:"rows_fingerprint,omitempty"`
+	Destructive     bool            `json:"destructive"`
+	Statements      []PlanStatement `json:"statements"`
+}
+
+// PlanRowSet is one declared row set a plan read: the table, the key columns a
+// row is matched on, and the live columns that were read. The row values are
+// not recorded; RowsFingerprint stands for them, which keeps them out of a file
+// people review and store.
+type PlanRowSet struct {
+	Schema  string   `json:"schema,omitempty"`
+	Table   string   `json:"table"`
+	Keys    []string `json:"keys"`
+	Columns []string `json:"columns"`
 }
 
 // PlanFileOptions configures PreparePlanFile.
@@ -115,9 +135,19 @@ type PlanFileOptions struct {
 type StalePlanError struct {
 	PlanFingerprint     string
 	DatabaseFingerprint string
+	// Rows reports that the structure still matches and the declared rows the
+	// plan read do not. The fingerprints are then the rows fingerprints.
+	Rows bool
 }
 
 func (e *StalePlanError) Error() string {
+	if e.Rows {
+		return fmt.Sprintf(
+			"pre-planned migration is stale: the declared rows it reads no longer hold what the plan was computed "+
+				"against (plan %s, database %s); a row changed since the plan was computed, so re-run `schema plan` "+
+				"against the current database and review the fresh plan",
+			e.PlanFingerprint, e.DatabaseFingerprint)
+	}
 	return fmt.Sprintf(
 		"pre-planned migration is stale: the target database schema does not match the plan's source fingerprint "+
 			"(plan %s, database %s); the database changed since the plan was computed, so re-run `schema plan` "+
@@ -179,9 +209,13 @@ func PreparePlanFile(
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("fingerprint desired schema: %w", err)
 	}
+	rowsFingerprint, err := managedRowsFingerprint(ctx, conn, computation.rowSets)
+	if err != nil {
+		return PlanFile{}, err
+	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
-		name = defaultPlanName(fromFingerprint, toFingerprint)
+		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
 	statements, destructive := classifyPlanStatements(computation.statements, conn.Info().Dialect)
@@ -209,6 +243,8 @@ func PreparePlanFile(
 		ToFingerprint:    toFingerprint,
 		Exclude:          opts.Exclude,
 		SchemasBeyondURL: computation.schemasBeyondURL,
+		ManagedRows:      computation.rowSets,
+		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
 		Statements:       statements,
 	}, nil
@@ -494,6 +530,17 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 			DatabaseFingerprint: fingerprint,
 		}
 	}
+	rows, err := managedRowsFingerprint(ctx, conn, plan.ManagedRows)
+	if err != nil {
+		return err
+	}
+	if rows != plan.RowsFingerprint {
+		return &StalePlanError{
+			PlanFingerprint:     plan.RowsFingerprint,
+			DatabaseFingerprint: rows,
+			Rows:                true,
+		}
+	}
 	return nil
 }
 
@@ -528,9 +575,70 @@ func desiredSchemaFingerprint(desired *schemamodel.Database) (string, error) {
 	return digest.FromBytes(payload).String(), nil
 }
 
-func defaultPlanName(fromFingerprint, toFingerprint string) string {
-	sum := digest.FromString(fromFingerprint + "\n" + toFingerprint).Encoded()
+// defaultPlanName derives a plan's name from what it was computed between. The
+// rows fingerprint joins only when there is one, so a plan that declares no
+// rows keeps the name it always had.
+func defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint string) string {
+	source := fromFingerprint + "\n" + toFingerprint
+	if rowsFingerprint != "" {
+		source += "\n" + rowsFingerprint
+	}
+	sum := digest.FromString(source).Encoded()
 	return "plan_" + sum[:planNameHashLength]
+}
+
+// managedRowsFingerprint reads every row set again and digests what it holds.
+//
+// It is the one function both halves call: `schema plan` to record the digest,
+// and [VerifyPlanTarget] to recompute it. Each set reads exactly the columns
+// the comparison read, the rows are put in key order, and the whole list is
+// encoded as JSON, whose map keys are sorted, so two reads of unchanged rows
+// through one build agree byte for byte. No sets means no rows fingerprint.
+func managedRowsFingerprint(ctx context.Context, conn *dbschema.DatabaseConnection, sets []PlanRowSet) (string, error) {
+	if len(sets) == 0 {
+		return "", nil
+	}
+	type readSet struct {
+		PlanRowSet
+		Rows []map[string]any `json:"rows"`
+	}
+	read := make([]readSet, 0, len(sets))
+	for _, set := range sets {
+		qualified := schemamodel.QualifyTableName(set.Schema, set.Table)
+		rows, err := dbschema.ReadTableRows(ctx, conn, set.Schema, set.Table, set.Columns)
+		if err != nil {
+			return "", fmt.Errorf("fingerprint declared rows of %s: %w", qualified, err)
+		}
+		keyed := make([]string, len(rows))
+		for i, row := range rows {
+			values := make([]any, len(set.Keys))
+			for position, key := range set.Keys {
+				values[position] = row[key]
+			}
+			encoded, err := json.Marshal(values)
+			if err != nil {
+				return "", fmt.Errorf("fingerprint declared rows of %s: encode key: %w", qualified, err)
+			}
+			keyed[i] = string(encoded)
+		}
+		order := make([]int, len(rows))
+		for i := range order {
+			order[i] = i
+		}
+		slices.SortStableFunc(order, func(left, right int) int {
+			return strings.Compare(keyed[left], keyed[right])
+		})
+		sorted := make([]map[string]any, len(rows))
+		for i, index := range order {
+			sorted[i] = rows[index]
+		}
+		read = append(read, readSet{PlanRowSet: set, Rows: sorted})
+	}
+	payload, err := json.Marshal(read)
+	if err != nil {
+		return "", fmt.Errorf("fingerprint declared rows: %w", err)
+	}
+	return digest.FromBytes(payload).String(), nil
 }
 
 func validatePlanFile(plan PlanFile) error {
@@ -544,12 +652,42 @@ func validatePlanFile(plan PlanFile) error {
 	if strings.TrimSpace(plan.FromFingerprint) == "" {
 		return errors.New("plan from_fingerprint is required")
 	}
+	if err := validatePlanRowSets(plan); err != nil {
+		return err
+	}
 	if len(plan.Statements) == 0 {
 		return errors.New("plan contains no statements")
 	}
 	for i, statement := range plan.Statements {
 		if strings.TrimSpace(statement.SQL) == "" {
 			return fmt.Errorf("plan statement %d has empty sql", i+1)
+		}
+	}
+	return nil
+}
+
+// validatePlanRowSets refuses a plan whose rows fingerprint and row sets
+// disagree about whether rows were read. One without the other is a plan that
+// would verify nothing, or verify against a digest of nothing: an edited file,
+// not something `schema plan` writes.
+func validatePlanRowSets(plan PlanFile) error {
+	if (len(plan.ManagedRows) == 0) != (plan.RowsFingerprint == "") {
+		return errors.New("plan managed_rows and rows_fingerprint must be recorded together")
+	}
+	if plan.RowsFingerprint != "" {
+		if _, err := digest.Parse(plan.RowsFingerprint); err != nil {
+			return fmt.Errorf("plan rows_fingerprint is not a digest: %w", err)
+		}
+	}
+	for i, set := range plan.ManagedRows {
+		if strings.TrimSpace(set.Table) == "" {
+			return fmt.Errorf("plan managed_rows entry %d names no table", i+1)
+		}
+		if len(set.Keys) == 0 {
+			return fmt.Errorf("plan managed_rows entry %d names no key column", i+1)
+		}
+		if len(set.Columns) == 0 {
+			return fmt.Errorf("plan managed_rows entry %d names no column", i+1)
 		}
 	}
 	return nil
