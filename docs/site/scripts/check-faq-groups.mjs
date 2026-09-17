@@ -5,8 +5,8 @@
 // Each fails silently on its own. A question written outside any group renders
 // as prose the filter cannot reach and the contents rail cannot list. A
 // question nobody tagged is reachable only by reading the whole page, and a tag
-// entry naming a renamed anchor tags nothing. An unlabelled tag is a facet the
-// rail cannot name, and a labelled tag no question carries is a chip that
+// entry naming a renamed anchor tags nothing. An unlabeled tag is a facet the
+// rail cannot name, and a labeled tag no question carries is a chip that
 // filters to nothing. A symptom naming an anchor that was renamed routes
 // nowhere. A sidebar badge is a number nobody regenerates, so it drifts the
 // first time a question is added.
@@ -90,7 +90,7 @@ export function structureProblems({ groups, orphans }, symptoms, badge, aliases,
       if (!tagLabels[tag]) problems.push(`tag "${tag}": has no label, so the rail cannot name it`);
     }
     for (const tag of Object.keys(tagLabels)) {
-      if (!used.has(tag)) problems.push(`tag "${tag}": is labelled and carried by no question`);
+      if (!used.has(tag)) problems.push(`tag "${tag}": is labeled and carried by no question`);
     }
   }
   if (badge !== null && badge !== anchors.size) {
