@@ -44,6 +44,7 @@ const (
 	applyLockTimeoutFlag     = "lock-timeout"
 	applyIncludeFlag         = "include"
 	applyExcludeFlag         = "exclude"
+	applyProtectedTableFlag  = "protected-table"
 	applyPlanFlag            = "plan"
 	applyRequireApprovalFlag = "require-approval"
 )
@@ -62,6 +63,7 @@ type schemaApplyOptions struct {
 	schemas         string
 	include         []string
 	exclude         []string
+	protectedTables []string
 	planPath        string
 	requireApproval bool
 	allowedSigners  string
@@ -149,6 +151,8 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
+	flags.StringArrayVar(&opts.protectedTables, applyProtectedTableFlag, nil,
+		"Declared row set this apply refuses to change, by table or schema.table; repeat to add more. There is no override")
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")
 	flags.BoolVar(&opts.requireApproval, applyRequireApprovalFlag, false,
 		"Refuse to execute a --plan that does not carry a verified approval")
@@ -333,17 +337,18 @@ func runSchemaApplyOnLockedSession(
 	txMode migrator.MigrationTxMode,
 ) (applied bool, resultErr error) {
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ProjectRoot: schemaroot.Of(opts.rootDirs),
-		DevURL:      opts.devURL,
-		ToURLs:      opts.toURLs,
-		Desired:     desired,
-		Exclude:     opts.exclude,
-		Schemas:     dbcli.ParseSchemas(opts.schemas),
-		Include:     opts.include,
-		Policy:      nativeDiffPolicy(projectCfg),
-		TxMode:      txMode,
-		DryRun:      opts.dryRun,
-		Diagnostics: cmd.ErrOrStderr(),
+		ProjectRoot:     schemaroot.Of(opts.rootDirs),
+		DevURL:          opts.devURL,
+		ToURLs:          opts.toURLs,
+		Desired:         desired,
+		Exclude:         opts.exclude,
+		Schemas:         dbcli.ParseSchemas(opts.schemas),
+		Include:         opts.include,
+		Policy:          nativeDiffPolicy(projectCfg),
+		ProtectedTables: opts.protectedTables,
+		TxMode:          txMode,
+		DryRun:          opts.dryRun,
+		Diagnostics:     cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return false, err

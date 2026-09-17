@@ -259,6 +259,32 @@ tightens a constraint. That is true about the schema and false about the rows,
 and a plan whose deletions read as safe is a plan an approval policy waves
 through.
 
+### Fencing a table off
+
+`--protected-table` names a declared row set the plan or the apply must not
+change, and it repeats: `ptah schema apply --protected-table reference.regions`.
+An entry matches the way `ptah migrations data` reads it — by the bare name or
+the schema-qualified one, case-insensitively — because one predicate answers for
+both paths.
+
+The fence has no override here. A severity is a question put to a policy, and
+every mechanism that rates a statement can answer yes: an approval, a flag, a
+policy that permits destructive changes. A fenced table is the statement that no
+such yes exists for it, so a refusal a caller could wave through would be the
+severity it already has. Where the change is wanted, the fence is what changes:
+drop the entry, or write the rows as a migration with `ptah migrations data
+--allow-prod`, which is the path that asks a person.
+
+It refuses a change, not a run. A fenced table the declaration already agrees
+with plans nothing and passes, which is what lets an entry sit in a deployment's
+configuration permanently. The flag reads `PTAH_PROTECTED_TABLE`, so an
+unattended reconciler declares the fence in its environment rather than in a
+command line it does not write.
+
+The fence is read where the change is planned, on both paths. A plan file saved
+before the entry existed, and a data migration already written, are applied as
+written: the statements are there and the declaration is not.
+
 Convergence includes the rows. A rehearsal or a post-apply verification whose
 schema matches and whose reference table does not is not a verification of the
 desired schema.

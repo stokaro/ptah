@@ -36,6 +36,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/protectedtable"
 )
 
 const (
@@ -524,7 +525,8 @@ func recordSeed(ctx context.Context, conn *dbschema.DatabaseConnection, seed See
 }
 
 func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) error {
-	if opts.AllowProd || len(opts.ProtectedTables) == 0 {
+	protected := protectedtable.New(opts.ProtectedTables)
+	if opts.AllowProd || protected.Empty() {
 		return nil
 	}
 
@@ -532,18 +534,14 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 	if err != nil {
 		return err
 	}
-	protected := make(map[string]string, len(opts.ProtectedTables))
-	for _, table := range opts.ProtectedTables {
-		table = strings.TrimSpace(table)
-		if table != "" {
-			protected[strings.ToLower(table)] = table
-		}
-	}
 
 	var matches []string
 	for _, table := range existing {
-		if original, ok := protected[strings.ToLower(table)]; ok {
-			matches = append(matches, original)
+		// The target's own tables, so the question is whether one of them is
+		// fenced rather than whether a change touches it; the entry grammar is
+		// shared and the question is not.
+		if entry, fenced := protected.Entry("", table); fenced {
+			matches = append(matches, entry)
 		}
 	}
 	slices.Sort(matches)

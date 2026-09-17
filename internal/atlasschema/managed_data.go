@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/protectedtable"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -66,6 +67,7 @@ func managedDataStatements(
 	desired *schemamodel.Database,
 	current *catalog.Database,
 	projectRoot string,
+	protected protectedtable.Set,
 ) ([]dataStatement, error) {
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
 		return nil, nil
@@ -85,14 +87,29 @@ func managedDataStatements(
 		return managedDataTableName(left) < managedDataTableName(right)
 	})
 	phases := make([][]dataStatement, len(dataPhases))
+	var fenced []string
 	for _, declaration := range declarations {
 		declared, err := managedDataDiff(ctx, conn, declaration, desired, current, projectRoot)
 		if err != nil {
 			return nil, err
 		}
+		// A fenced table is read the same way the migration body reads it, and
+		// only where this plan would change it: an entry on a table the
+		// declaration already agrees with refuses nothing, which is what lets a
+		// fence sit in a configuration permanently.
+		if len(declared) > 0 {
+			if _, ok := protected.Entry(declaration.Schema, declaration.Table); ok {
+				fenced = append(fenced, managedDataTableName(declaration))
+				continue
+			}
+		}
 		for _, statement := range declared {
 			phases[statement.phase] = append(phases[statement.phase], statement)
 		}
+	}
+	if len(fenced) > 0 {
+		slices.Sort(fenced)
+		return nil, &ProtectedTableError{Tables: slices.Compact(fenced)}
 	}
 	// A deletion runs against the constraint from the other side: the row that
 	// references has to go before the row it references, so this phase alone
@@ -103,6 +120,34 @@ func managedDataStatements(
 		statements = append(statements, phases[phase]...)
 	}
 	return statements, nil
+}
+
+// ProtectedTableError reports that a plan would change a table the caller
+// fenced off with [ApplyOptions.ProtectedTables].
+//
+// It carries no override, and that is the point of it rather than an omission.
+// A severity is a question put to a policy, and every mechanism that rates a
+// statement can answer yes: an approval, a flag, a policy that permits
+// destructive changes. A fenced table is the statement that no such yes exists
+// for it, so a refusal a caller could wave through would be the severity it
+// already has (stokaro/ptah#3362).
+//
+// Where the change is wanted, the fence is what changes: the entry goes, or the
+// rows are written as a migration through `ptah migrations data`, which is the
+// path that asks a person for `--allow-prod`.
+type ProtectedTableError struct {
+	// Tables are the fenced tables this plan would change, qualified as the
+	// declaration names them and sorted.
+	Tables []string
+}
+
+func (e *ProtectedTableError) Error() string {
+	return fmt.Sprintf(
+		"refusing to change protected table(s) %s: a protected table is fenced off from the declarative path, "+
+			"which has no override; drop the entry to plan the change, or write the rows as a migration with "+
+			"`ptah migrations data --allow-prod`",
+		strings.Join(e.Tables, ", "),
+	)
 }
 
 // declaredRows reads the rows a declaration still names, bounded by the project

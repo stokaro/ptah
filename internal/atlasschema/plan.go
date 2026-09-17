@@ -84,6 +84,10 @@ type PlanFileOptions struct {
 	// rather than a container (stokaro/ptah#1635).
 	DevURL string
 	ToURLs []string
+	// ProtectedTables fences declared row sets off from this plan; see
+	// [ApplyOptions.ProtectedTables]. A plan is refused rather than saved,
+	// because a saved plan is applied later by whoever holds it.
+	ProtectedTables []string
 	// ProjectRoot bounds the files a desired state may make this process read;
 	// see [ApplyOptions.ProjectRoot].
 	ProjectRoot string
@@ -139,10 +143,11 @@ func PreparePlanFile(
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
-		ToURLs:    opts.ToURLs,
-		ToSources: opts.ToSources,
-		Exclude:   opts.Exclude,
-		Policy:    opts.Policy,
+		ToURLs:          opts.ToURLs,
+		ToSources:       opts.ToSources,
+		Exclude:         opts.Exclude,
+		Policy:          opts.Policy,
+		ProtectedTables: opts.ProtectedTables,
 		// Carried so the dev URL's schema decides which schema an unqualified
 		// desired-state file is loaded into, which is what `schema apply` does
 		// with the same value. A literal that drops it leaves the flag accepted,

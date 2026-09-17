@@ -1313,6 +1313,7 @@ Read the columns as follows.
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
+| `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
@@ -1507,6 +1508,7 @@ Read the columns as follows.
 | `--name` | `string` | — | `PTAH_NAME` | — |
 | `--output` | `string` | — | `PTAH_OUTPUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |

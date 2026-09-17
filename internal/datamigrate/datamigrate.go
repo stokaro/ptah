@@ -26,6 +26,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
+	"ptah.run/internal/protectedtable"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -535,27 +536,18 @@ func checkPolicy(changes []tableChange, opts Options) error {
 
 // checkProtected refuses to change any table named in opts.ProtectedTables
 // unless opts.AllowProd is set. Only tables that the migration would actually
-// change are examined. A protected entry matches a change case-insensitively by
-// either its bare table name or its schema-qualified "schema.table" form, so a
-// schema-qualified managed table can be protected by either spelling and a bare
-// entry protects the table in whatever schema it lives.
+// change are examined; which entry fences which table is
+// [protectedtable.Set.Entry], the one predicate the declarative planner asks
+// too.
 func checkProtected(changes []tableChange, opts Options) error {
-	if opts.AllowProd || len(opts.ProtectedTables) == 0 {
+	protected := protectedtable.New(opts.ProtectedTables)
+	if opts.AllowProd || protected.Empty() {
 		return nil
-	}
-
-	protected := make(map[string]struct{}, len(opts.ProtectedTables))
-	for _, table := range opts.ProtectedTables {
-		if table = strings.TrimSpace(table); table != "" {
-			protected[strings.ToLower(table)] = struct{}{}
-		}
 	}
 
 	var matched []string
 	for _, change := range changes {
-		_, bareHit := protected[strings.ToLower(change.table)]
-		_, qualifiedHit := protected[strings.ToLower(change.qualified())]
-		if bareHit || qualifiedHit {
+		if _, fenced := protected.Entry(change.schema, change.table); fenced {
 			matched = append(matched, change.qualified())
 		}
 	}
