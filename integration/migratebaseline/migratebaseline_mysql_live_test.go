@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,7 +55,7 @@ func TestVerifyBaselineMySQLFamilyAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 				}(name)
 			}
 
-			target, err := dbschema.ConnectToDatabase(ctx, baselineShadowDatabaseURL(c, adminURL, targetName))
+			target, err := dbschema.ConnectToDatabase(ctx, mysqlFamilyDatabaseAddress(c, adminURL, targetName))
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(target)
 			// The schema exists and no history does: the case baseline is for.
@@ -70,7 +71,7 @@ func TestVerifyBaselineMySQLFamilyAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 
 			info := target.Info()
 			options := shadow.BaselineVerifyOptions{
-				ShadowDatabaseURL: baselineShadowDatabaseURL(c, adminURL, shadowName),
+				ShadowDatabaseURL: mysqlFamilyDatabaseAddress(c, adminURL, shadowName),
 				TargetConn:        target,
 				MigrationsDir:     migrationsDir,
 				Version:           1,
@@ -115,6 +116,26 @@ func requireMySQLFamilyAdminConnection(
 		t.Skipf("test database is not available: %v", err)
 	}
 	return adminURL, admin
+}
+
+// mysqlFamilyDatabaseAddress names another database on the server an address
+// reaches. The address is not always a URL: CI configures the MySQL family in
+// the driver's own form, user:pass@tcp(host:port)/db, which url.Parse refuses at
+// the parenthesis. The database is the last path segment in every accepted form
+// -- a URL, tcp(...), and unix(/socket/path)/db, whose slashes sit inside the
+// parentheses -- so the name is replaced there, and the query string is kept.
+func mysqlFamilyDatabaseAddress(c *qt.C, address, databaseName string) string {
+	c.Helper()
+
+	base, query, _ := strings.Cut(address, "?")
+	separator := strings.LastIndex(base, "/")
+	c.Assert(separator > strings.LastIndex(base, "@"), qt.IsTrue,
+		qt.Commentf("the address names no database to replace: %s", address))
+	replaced := base[:separator+1] + databaseName
+	if query != "" {
+		replaced += "?" + query
+	}
+	return replaced
 }
 
 func quoteMySQLIdent(value string) string {
