@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -308,4 +309,44 @@ func TestVerifyMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &shadowErr)
 	c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
+}
+
+// A shadow database on the MySQL family is a different database by
+// construction, and its default schema is that database's name. The rows that
+// matter are the two sides of stokaro/ptah#3375: a different name alone must not
+// make the semantics disagree, and a real difference in how names compare still
+// must, on the same dialect.
+func TestSemanticsAgreeIgnoresTheDatabaseAMySQLConnectionSelected(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		c.Run(dialect, func(c *qt.C) {
+			target := identifier.ForDialect(dialect)
+			target.DefaultSchema = "orders"
+
+			shadow := target.Clone()
+			shadow.DefaultSchema = "orders_shadow"
+			c.Assert(semanticsAgree(dialect, target, shadow), qt.IsTrue)
+			c.Assert(shadow.DefaultSchema, qt.Equals, "orders_shadow",
+				qt.Commentf("the caller's value is not rewritten"))
+
+			folding := shadow.Clone()
+			folding.TableNames = identifier.ComparisonASCIIInsensitive
+			c.Assert(folding.TableNames, qt.Not(qt.Equals), target.TableNames)
+			c.Assert(semanticsAgree(dialect, target, folding), qt.IsFalse)
+		})
+	}
+}
+
+// Everywhere else the default schema is a static rule or a search_path someone
+// chose, so a difference there still disagrees.
+func TestSemanticsAgreeComparesTheDefaultSchemaOutsideTheMySQLFamily(t *testing.T) {
+	c := qt.New(t)
+
+	target := identifier.ForDialect(platform.Postgres)
+	shadow := target.Clone()
+	shadow.DefaultSchema = "app"
+
+	c.Assert(semanticsAgree(platform.Postgres, target, target.Clone()), qt.IsTrue)
+	c.Assert(semanticsAgree(platform.Postgres, target, shadow), qt.IsFalse)
 }

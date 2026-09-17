@@ -7,6 +7,7 @@ import (
 	"maps"
 
 	"ptah.run/config"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -347,7 +348,33 @@ func identifierSemanticsAgree(
 	if err != nil {
 		return false, err
 	}
-	return target.Equal(resolved.Normalize(dialect)), nil
+	return semanticsAgree(dialect, target, resolved.Normalize(dialect)), nil
+}
+
+// semanticsAgree reports whether a shadow database compares identifiers the way
+// the target does.
+//
+// On the MySQL family the default schema is not a rule about identifiers. It is
+// the database the connection selected, read from the URL path, so a shadow
+// database carries its own name there by construction. Comparing it made every
+// shadow disagree with every target: a shadow with another name failed this
+// check, and one with the same name failed the distinctness guard, which is
+// right to treat two hosts as possibly one server. `migrations baseline
+// --shadow-db` could not succeed on MySQL at all (stokaro/ptah#3375).
+//
+// So the shadow's default schema is taken as the target's before comparing, and
+// only there. What the check exists for -- how names fold and compare, the index
+// namespace, the names the catalog resolved -- is still compared in full, and a
+// replay that lands objects somewhere the target does not have them still fails
+// the schema comparison that follows. Elsewhere the default schema is a static
+// rule ("public", "main", "dbo") or a search_path someone chose, and a difference
+// there is a real one.
+func semanticsAgree(dialect string, target, shadow identifier.Semantics) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		shadow.DefaultSchema = target.DefaultSchema
+	}
+	return target.Equal(shadow)
 }
 
 func latestMigrationVersion(migrations []*migrator.Migration) int64 {
