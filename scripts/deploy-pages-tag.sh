@@ -15,9 +15,12 @@
 # a build version of this tag's own.
 #
 # That version has to name a commit the repository holds. Measured against the
-# API with one artifact and four values: the annotated tag object's id and an
-# invented id are both refused with `404 Not Found`, and two real commits are
-# not. So the tag object cannot be the build version, and the commit the tag
+# API with one artifact and five values, each with a deliberately invalid
+# `oidc_token` so nothing could deploy: the annotated tag object's id and an
+# invented id are both refused with `404 Not Found`, and three real commits are
+# not -- two on master, and the head of a squash-merged pull request, which is
+# on no branch and no tag. So the rule is that the repository holds the object,
+# not that a branch reaches it. The tag object fails it, and the commit the tag
 # points at is the one master already deployed -- which is the collision itself.
 #
 # The tag therefore deploys under a commit of its own: the tag's tree, the tag's
