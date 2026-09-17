@@ -215,6 +215,35 @@ func (o Options) loadCompositeContext(
 	return result, nil
 }
 
+// ResolveBeforeConnect resolves a desired source that needs no database, so a
+// caller can verify it before it opens the target.
+//
+// One OCI artifact is that source. What a reader must understand of an artifact
+// is declared by its layer media types, and a layer this build does not know
+// refuses the whole artifact rather than being read around -- ADR 0019 section
+// 3.2. The refusal belongs before a connection exists, and a caller that loaded
+// after connecting had already opened the database with whatever the
+// credentials allow, for an artifact it then declined (stokaro/ptah#3291).
+//
+// The dialect decides nothing here: the canonical HCL an artifact carries is
+// already the model. Everything else -- Go roots, SQL files, a command -- is
+// read against the target's dialect, so it answers (nil, false, nil) and the
+// caller loads it after connecting, as before.
+//
+// The artifact is resolved once. A caller that verified here and loaded again
+// after connecting would be applying whatever the tag names the second time.
+func ResolveBeforeConnect(ctx context.Context, opts Options) (*Result, bool, error) {
+	raw, ok := singleOCIReference(opts)
+	if !ok {
+		return nil, false, nil
+	}
+	result, err := opts.loadOCIResult(ctx, raw)
+	if err != nil {
+		return nil, true, err
+	}
+	return result, true, nil
+}
+
 func singleOCIReference(opts Options) (string, bool) {
 	if len(opts.RootDirs) != 0 || len(opts.Commands) != 0 || len(opts.SchemaFiles) != 1 {
 		return "", false
