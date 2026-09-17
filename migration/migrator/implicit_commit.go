@@ -43,15 +43,10 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			direction,
 		)
 	}
-	if migration.hasStatementInterceptor(direction) {
-		return fmt.Errorf(
-			"migration %d cannot run a statement interceptor for the %s direction in tx-mode file on a MySQL-family database; "+
-				"an interceptor can execute SQL outside Ptah's transaction witness, so use tx-mode none",
-			migration.Version,
-			direction,
-		)
-	}
 	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
+	if err := m.refuseInterceptedStatements(migration, direction, statements); err != nil {
+		return err
+	}
 	for i, statement := range statements {
 		tokens := significantSQLTokens(statement, m.connectionDialect())
 		if m.mysqlReferencesMigrationMetadata(tokens) {
@@ -224,11 +219,62 @@ func (m *Migration) hasSQLExecutor(direction MigrationDirection) bool {
 	return m.upSQLFunc != nil
 }
 
-func (m *Migration) hasStatementInterceptor(direction MigrationDirection) bool {
+func (m *Migration) interceptorFor(direction MigrationDirection) StatementInterceptor {
 	if direction == MigrationDirectionDown {
-		return m.downHasStatementInterceptor
+		return m.downInterceptor
 	}
-	return m.upHasStatementInterceptor
+	return m.upInterceptor
+}
+
+// refuseInterceptedStatements refuses a tx-mode file body on a MySQL-family
+// database when its interceptor would take a statement over.
+//
+// The interceptor is the problem only when it acts. It executes through a tool
+// of its own, outside the transaction Ptah opened, so a rollback cannot undo
+// what it did and the witness would claim otherwise. An interceptor that would
+// take nothing over leaves the body exactly as it would be without one.
+//
+// Refusing on the interceptor's presence instead made every migration on this
+// family unrunnable in the default mode, including bodies with no ALTER in
+// them, because `ptah migrations up` installs an online-DDL interceptor on
+// every run whether or not anything routes through it (stokaro/ptah#3359).
+//
+// An interceptor that cannot answer is refused as before: a caller that does
+// not know what it would do may not assume it does nothing.
+func (m *Migrator) refuseInterceptedStatements(
+	migration *Migration,
+	direction MigrationDirection,
+	statements []string,
+) error {
+	interceptor := migration.interceptorFor(direction)
+	if interceptor == nil {
+		return nil
+	}
+	claimer, answers := interceptor.(StatementClaimer)
+	if !answers {
+		return fmt.Errorf(
+			"migration %d cannot run a statement interceptor for the %s direction in tx-mode file on a MySQL-family database; "+
+				"an interceptor can execute SQL outside Ptah's transaction witness, so use tx-mode none",
+			migration.Version,
+			direction,
+		)
+	}
+	directives, err := observedFileDirectives(m.conn, migrationSQLForDirection(migration, direction), statementExecutionHooks{interceptor: interceptor})
+	if err != nil {
+		return err
+	}
+	for i, statement := range statements {
+		if !claimer.ClaimsStatement(m.conn, statement, directives) {
+			continue
+		}
+		return fmt.Errorf(
+			"migration %d cannot run tx-mode file statement %d because a statement interceptor would execute it "+
+				"outside Ptah's transaction witness on a MySQL-family database; use tx-mode none for this migration",
+			migration.Version,
+			i+1,
+		)
+	}
+	return nil
 }
 
 func mysqlExecutableComment(tokens []lexer.Token) bool {

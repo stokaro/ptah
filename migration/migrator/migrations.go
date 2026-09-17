@@ -66,6 +66,22 @@ type StatementInterceptor interface {
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
 }
 
+// StatementClaimer is the optional half of [StatementInterceptor]: an
+// interceptor that can say, without executing anything, whether it would take
+// over a given statement.
+//
+// It exists so a caller can refuse the migrations an interceptor would touch
+// instead of every migration one was installed for. `ptah migrations up`
+// installs an online-DDL interceptor on every run, and without this the
+// MySQL-family transaction guard refused bodies with no ALTER in them at all
+// (stokaro/ptah#3359).
+//
+// An interceptor that does not implement it is treated as claiming every
+// statement, because a caller cannot know what it would do.
+type StatementClaimer interface {
+	ClaimsStatement(conn *dbschema.DatabaseConnection, statement string, directives map[string]string) bool
+}
+
 // StatementValidator rejects unsafe or unsupported migration statements
 // without taking over their execution. Every statement in a migration file is
 // validated before the first statement runs.
@@ -252,14 +268,17 @@ const (
 type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrationExecutionMode) error
 
 type sqlMigrationFile struct {
-	fn                   sqlMigrationFunc
-	sql                  string
-	sourcePath           string
-	timeouts             migrationfile.Timeouts
-	txMode               migrationfile.FileTxMode
-	txModeSource         migrationfile.FileTxModeSource
-	txModeErr            error
-	statementIntercepted bool
+	fn           sqlMigrationFunc
+	sql          string
+	sourcePath   string
+	timeouts     migrationfile.Timeouts
+	txMode       migrationfile.FileTxMode
+	txModeSource migrationfile.FileTxModeSource
+	txModeErr    error
+	// interceptor is the one installed for this migration, kept rather than
+	// reduced to a flag: whether it would take over a statement of this body
+	// is a question only it can answer, and the answer differs per statement.
+	interceptor StatementInterceptor
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []migrationfile.AtlasTxtarCheckFile
@@ -402,13 +421,13 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 			return executeMigrationFileSQL(ctx, conn, filename, sql, hooks, mode)
 		},
-		sql:                  sql,
-		sourcePath:           filename,
-		timeouts:             timeouts,
-		txMode:               txMode.Mode,
-		txModeSource:         txMode.Source,
-		txModeErr:            txMode.Err,
-		statementIntercepted: hooks.interceptor != nil,
+		sql:          sql,
+		sourcePath:   filename,
+		timeouts:     timeouts,
+		txMode:       txMode.Mode,
+		txModeSource: txMode.Source,
+		txModeErr:    txMode.Err,
+		interceptor:  hooks.interceptor,
 	}, nil
 }
 
@@ -485,21 +504,21 @@ type Migration struct {
 	UpTxMode migrationfile.FileTxMode
 	// DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
 	// global transaction-mode flag, so the zero value behaves like file.
-	DownTxMode                  migrationfile.FileTxMode
-	upParsedTxMode              migrationfile.FileTxMode
-	downParsedTxMode            migrationfile.FileTxMode
-	upTxModeFromSQL             bool
-	downTxModeFromSQL           bool
-	upTxModeSource              migrationfile.FileTxModeSource
-	downTxModeSource            migrationfile.FileTxModeSource
-	upTxModeErr                 error
-	downTxModeErr               error
-	upSourcePath                string
-	downSourcePath              string
-	upSQLFunc                   sqlMigrationFunc
-	downSQLFunc                 sqlMigrationFunc
-	upHasStatementInterceptor   bool
-	downHasStatementInterceptor bool
+	DownTxMode        migrationfile.FileTxMode
+	upParsedTxMode    migrationfile.FileTxMode
+	downParsedTxMode  migrationfile.FileTxMode
+	upTxModeFromSQL   bool
+	downTxModeFromSQL bool
+	upTxModeSource    migrationfile.FileTxModeSource
+	downTxModeSource  migrationfile.FileTxModeSource
+	upTxModeErr       error
+	downTxModeErr     error
+	upSourcePath      string
+	downSourcePath    string
+	upSQLFunc         sqlMigrationFunc
+	downSQLFunc       sqlMigrationFunc
+	upInterceptor     StatementInterceptor
+	downInterceptor   StatementInterceptor
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.

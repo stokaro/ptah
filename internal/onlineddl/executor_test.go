@@ -730,3 +730,77 @@ func TestExecuteStatement_RunsRealFakePTOSCBinaryWithoutPasswordArgv(t *testing.
 	c.Assert(ok, qt.IsTrue)
 	requireCredentialFileRemoved(t, defaultsFile)
 }
+
+// ClaimsStatement answers "would you take this over" with the same head of the
+// decision ExecuteStatement uses, so the two cannot drift. The row threshold is
+// deliberately outside it: asking the question must not query the server, so a
+// configured executor claims an eligible ALTER without measuring the table.
+func TestClaimsStatement(t *testing.T) {
+	t.Parallel()
+
+	postgres := fakeConn{info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://app@db/shop"}}
+	const alter = "ALTER TABLE shop.orders ADD COLUMN note TEXT"
+
+	tests := []struct {
+		name       string
+		cfg        Config
+		conn       fakeConn
+		statement  string
+		directives map[string]string
+		want       bool
+	}{
+		{
+			name:      "nothing configured and no directive",
+			conn:      mysqlConn(),
+			statement: alter,
+			want:      false,
+		},
+		{
+			name:       "a directive names a tool",
+			conn:       mysqlConn(),
+			statement:  alter,
+			directives: map[string]string{DirectiveTool: ToolGhost},
+			want:       true,
+		},
+		{
+			name:       "a directive switches routing off",
+			cfg:        Config{Tool: ToolPTOSC, ThresholdRows: 10},
+			conn:       mysqlConn(),
+			statement:  alter,
+			directives: map[string]string{DirectiveTool: DirectiveNone},
+			want:       false,
+		},
+		{
+			name:      "configured, and the statement is eligible",
+			cfg:       Config{Tool: ToolPTOSC, ThresholdRows: 10},
+			conn:      mysqlConn(),
+			statement: alter,
+			want:      true,
+		},
+		{
+			name:      "configured, and the statement is not an ALTER",
+			cfg:       Config{Tool: ToolPTOSC, ThresholdRows: 10},
+			conn:      mysqlConn(),
+			statement: "INSERT INTO shop.orders (id) VALUES (1)",
+			want:      false,
+		},
+		{
+			name:      "configured, and the server is not MySQL",
+			cfg:       Config{Tool: ToolPTOSC, ThresholdRows: 10},
+			conn:      postgres,
+			statement: alter,
+			want:      false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			var ran []invocation
+			executor := testExecutor(test.cfg, &ran, nil, 0, nil)
+
+			c.Assert(executor.claimsStatement(test.conn, test.statement, test.directives), qt.Equals, test.want)
+			c.Assert(ran, qt.HasLen, 0)
+		})
+	}
+}

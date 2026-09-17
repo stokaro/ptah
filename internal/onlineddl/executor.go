@@ -122,10 +122,42 @@ func (e *Executor) ExecuteStatement(ctx context.Context, conn *dbschema.Database
 	return e.executeStatement(ctx, conn, stmt, directives)
 }
 
-func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string, directives map[string]string) (bool, error) {
+// ClaimsStatement implements migrator.StatementClaimer: it reports whether this
+// executor could take the statement over, without running anything and without
+// asking the server.
+//
+// It answers the three questions [Executor.executeStatement] answers before it
+// touches the database -- a directive that switches routing off, a dialect
+// outside the MySQL family, and a statement that is not an ALTER TABLE -- and
+// then whether anything would route at all. It stops short of the row
+// threshold, which is a query: a caller asking "would you act?" before a
+// migration runs gets a yes wherever routing is configured and the statement is
+// eligible, which is conservative in the direction that matters.
+//
+// The questions are not restated here. Sharing the head of the decision is what
+// keeps this answer from drifting away from what the executor does
+// (stokaro/ptah#3359).
+func (e *Executor) ClaimsStatement(conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) bool {
+	return e.claimsStatement(conn, stmt, directives)
+}
+
+func (e *Executor) claimsStatement(conn Conn, stmt string, directives map[string]string) bool {
+	if _, eligible := e.eligibleTarget(conn, stmt, directives); !eligible {
+		return false
+	}
+	if _, configured := directives[DirectiveTool]; configured {
+		return true
+	}
+	return e.cfg.Enabled()
+}
+
+// eligibleTarget answers the part of the routing decision that needs neither
+// the server nor a tool on PATH: whether this statement is one an online-DDL
+// tool could be asked to run at all.
+func (e *Executor) eligibleTarget(conn Conn, stmt string, directives map[string]string) (AlterTarget, bool) {
 	directiveTool, hasDirective := directives[DirectiveTool]
 	if hasDirective && directiveTool == DirectiveNone {
-		return false, nil
+		return AlterTarget{}, false
 	}
 
 	info := conn.Info()
@@ -134,10 +166,14 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 			e.logger.Warn("online_ddl_tool directive ignored: online-DDL tools support only the MySQL family",
 				"dialect", info.Dialect)
 		}
-		return false, nil
+		return AlterTarget{}, false
 	}
 
-	target, ok := ParseAlterTable(stmt)
+	return ParseAlterTable(stmt)
+}
+
+func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string, directives map[string]string) (bool, error) {
+	target, ok := e.eligibleTarget(conn, stmt, directives)
 	if !ok {
 		return false, nil
 	}
@@ -160,7 +196,7 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 		return false, nil
 	}
 
-	dsn, err := ParseDatabaseURL(info.URL)
+	dsn, err := ParseDatabaseURL(conn.Info().URL)
 	if err != nil {
 		return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
 	}
