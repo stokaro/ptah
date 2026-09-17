@@ -347,7 +347,7 @@ func identifierSemanticsAgree(
 	if err != nil {
 		return false, err
 	}
-	return target.Equal(resolved.Normalize(dialect)), nil
+	return target.AgreeOn(dialect, resolved.Normalize(dialect)), nil
 }
 
 func latestMigrationVersion(migrations []*migrator.Migration) int64 {

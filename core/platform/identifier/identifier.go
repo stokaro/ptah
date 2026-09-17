@@ -275,6 +275,59 @@ func (s Semantics) Equal(other Semantics) bool {
 		slices.Equal(s.ResolvedNames, other.ResolvedNames)
 }
 
+// DefaultSchemaNamesTheDatabase reports whether a dialect's default schema is
+// the name of the database a connection selected, rather than a namespace
+// inside it.
+//
+// The distinction decides what a difference in [Semantics.DefaultSchema]
+// means. On PostgreSQL two connections to two databases both answer `public`,
+// so a difference there is a real difference in scope. On the engines below a
+// database IS the namespace, so two databases always differ in that field and
+// the difference says nothing about how either one folds an identifier.
+//
+// MySQL, MariaDB and ClickHouse take the value from the connected database in
+// `dbschema.DatabaseConnection`, which is the authority for each. Oracle has
+// the same shape for a different reason -- a schema there is a user -- and is
+// listed for it. SQLite answers a constant, so it cannot differ and the answer
+// does not matter; PostgreSQL and SQL Server name a namespace within a
+// database and a difference is a real one.
+func DefaultSchemaNamesTheDatabase(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.Oracle:
+		return true
+	default:
+		return false
+	}
+}
+
+// AgreeOn reports whether two semantics values fold and compare identifiers the
+// same way on dialect.
+//
+// It is [Semantics.Equal] except where the default schema names the database
+// rather than a rule: two databases on such an engine always carry different
+// values there, and comparing them refuses every pair a caller could ever hand
+// it. A shadow database is a different database by construction, so the shadow
+// checks in migration/shadow refused every shadow on MySQL and MariaDB while
+// the same check on PostgreSQL passed (stokaro/ptah#3375).
+//
+// The question this answers is whether the two sides would resolve the same
+// name to the same object. The comparison modes, the index namespace and the
+// resolved equivalence classes carry that; the name of the database a
+// connection happened to select does not.
+func (s Semantics) AgreeOn(dialect string, other Semantics) bool {
+	if !DefaultSchemaNamesTheDatabase(dialect) {
+		return s.Equal(other)
+	}
+	// Copies, so a caller reusing either side afterwards does not read a
+	// semantics value with no default schema at all. Only a string field is
+	// cleared, so the shallow copy shares ResolvedNames without either side
+	// being able to see the other's change.
+	left, right := s, other
+	left.DefaultSchema = ""
+	right.DefaultSchema = ""
+	return left.Equal(right)
+}
+
 // Normalize returns a deep copy of s when it is complete and internally
 // consistent, and the conservative [ForDialect] rules for dialect otherwise.
 // Complete means: IndexNamespace and all three comparison fields hold
