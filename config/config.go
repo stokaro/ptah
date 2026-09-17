@@ -15,11 +15,17 @@ import (
 // These options control how schema differences are calculated and what elements
 // should be ignored during comparison.
 type CompareOptions struct {
-	// IgnoredExtensions is a list of PostgreSQL extension names that should be
-	// ignored during schema migrations. These extensions will:
-	// - Never be deleted, even if missing from the target schema
-	// - Be excluded from schema diff calculations
-	// - Be treated as if they don't exist for comparison purposes
+	// IgnoredExtensions names PostgreSQL extensions the comparison must not
+	// plan a removal for. An entry says the desired description does not
+	// describe that extension, so the database carrying one is not a
+	// difference.
+	//
+	// It says nothing about creation. An extension a description DECLARES is
+	// created whether or not this list names it, because a declaration is a
+	// request and this list answers a different question. The comparison
+	// carries the entries as [ptah.run/core/coverage] records, which is the
+	// same thing a `ptah:not-described extension` directive in a serialized
+	// description says, so the two spellings of the request produce one plan.
 	//
 	// Common extensions to ignore include:
 	// - plpgsql: Default procedural language, usually pre-installed
@@ -358,6 +364,10 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 // *CompareOptions panics: a caller holding an optional options pointer must
 // check for nil first, and [DefaultCompareOptions] is the starting point when
 // no configuration was supplied.
+//
+// It reports membership and nothing more. What the comparison does with the
+// answer is [CompareOptions.IgnoredExtensions]: a removal is withheld, and a
+// declared extension is still created.
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
 	return slices.Contains(c.IgnoredExtensions, extensionName)
 }

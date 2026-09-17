@@ -46,6 +46,14 @@ type Note struct {
 }
 `
 
+// declaredExtensionEntity declares an extension the database does not carry.
+// btree_gin rather than pg_trgm so the declared-and-created case and the
+// carried-and-left-alone case are two extensions and cannot be confused.
+const declaredExtensionEntity = `
+//ptah:schema:extension name="btree_gin" if_not_exists="false"
+type _ struct{}
+`
+
 // TestMigrationsPlanIgnoreExtensionE2E measures the plan three ways against one
 // database: without the flag, with it, and with the project-config key that is
 // meant to say the same thing.
@@ -138,6 +146,32 @@ func TestMigrationsPlanIgnoreExtensionE2E(t *testing.T) {
 		c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
 		c.Assert(got.Stdout, qt.Not(qt.Contains), "DROP EXTENSION")
 		c.Assert(got.Stdout, qt.Contains, `CREATE TABLE "notes"`)
+	})
+
+	// The half the two spellings of this request used to disagree on. An
+	// extension the declaration DOES carry is created whether or not the flag
+	// names it: the flag says what not to remove, and a declaration is not a
+	// removal. Through the binary because the filter that got this wrong lived
+	// below the CLI and nothing above it could see the difference.
+	t.Run("an extension the declaration carries is still created", func(t *testing.T) {
+		c := qt.New(t)
+
+		declaring := filepath.Join(workDir, "declaring")
+		c.Assert(os.MkdirAll(declaring, 0o750), qt.IsNil)
+		c.Assert(os.WriteFile(
+			filepath.Join(declaring, "schema.go"),
+			[]byte(ignoreExtensionEntities+declaredExtensionEntity),
+			0o600,
+		), qt.IsNil)
+
+		got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir},
+			"migrations", "plan", "--db-url", scopedURL, "--root-dir", declaring,
+			"--ignore-extension", "pg_trgm")
+
+		c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+		c.Assert(got.Stdout, qt.Contains, `CREATE EXTENSION`)
+		c.Assert(got.Stdout, qt.Contains, "btree_gin")
+		c.Assert(got.Stdout, qt.Not(qt.Contains), "DROP EXTENSION")
 	})
 
 	// The destructive gate is what a continuous-integration job reads, and the

@@ -22,7 +22,9 @@ import (
 // # Extension Ignore Functionality
 //
 // The function supports ignoring specific extensions through the opts parameter:
-//   - Ignored extensions are filtered out before comparison
+//   - Ignored extensions enter the comparison as coverage records on the
+//     desired side, which is what a `ptah:not-described extension` directive in
+//     a serialized description says
 //   - Ignored extensions will never be marked for removal
 //   - Ignored extensions can still be created if defined in the target schema
 //   - If opts is nil, default options are used (ignores "plpgsql")
@@ -30,9 +32,11 @@ import (
 // # Comparison Process
 //
 // The function performs comparison in three phases:
-//  1. **Extension Filtering**: Removes ignored extensions from consideration
+//  1. **Coverage**: Records the ignored extensions as objects the desired
+//     description does not describe
 //  2. **Extension Discovery**: Creates lookup maps for efficient extension comparison
-//  3. **Extension Diff Analysis**: Identifies added, removed, and moved extensions
+//  3. **Extension Diff Analysis**: Identifies added, removed, and moved
+//     extensions, then withholds the changes coverage does not authorize
 //
 // # PostgreSQL Extension Considerations
 //
@@ -113,30 +117,38 @@ func ExtensionsWithSemantics(
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
 	}
+	// An ignored extension is one the desired description does not describe, so
+	// it enters the comparison as a coverage record rather than as a second
+	// filter. The two used to be separate and they disagreed: the filter cut
+	// the DESIRED side too, so an extension a description declared and the
+	// options ignored was never created, and nothing said so -- while the
+	// documented contract promised the opposite and the directive spelling of
+	// the same request honored it (stokaro/ptah#3373).
+	//
+	// Folded here rather than at every caller because every caller of every
+	// entry point would have to fold it, and the first one that forgot would
+	// bring the disagreement back.
+	cov.Desired = cov.Desired.With(ignoredExtensionRecords(opts.IgnoredExtensions)...)
 
 	// Initialize slices to ensure they're never nil
 	diff.ExtensionsAdded = make(difftypes.ExtensionChanges, 0)
 	diff.ExtensionsRemoved = make(difftypes.ExtensionChanges, 0)
 	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
-	// Create maps for quick lookup, filtering out ignored extensions
+	// Both sides enter whole. What an ignored extension changes is which
+	// PLANNED change survives the coverage gate below, not which object the
+	// comparison can see.
 	genExtensions := make(map[string]schemamodel.Extension)
 	for _, extension := range desired.Extensions {
-		if !opts.IsExtensionIgnored(extension.Name) {
-			genExtensions[extension.Name] = extension
-		}
+		genExtensions[extension.Name] = extension
 	}
 
-	// Create map of database extensions for efficient lookup, filtering out ignored extensions
 	dbExtensions := make(map[string]catalog.Extension)
 	for _, extension := range database.Extensions {
-		if !opts.IsExtensionIgnored(extension.Name) {
-			dbExtensions[extension.Name] = extension
-		}
+		dbExtensions[extension.Name] = extension
 	}
 
 	// Find added extensions (exist in generated schema but not in database)
-	// Note: Ignored extensions are already filtered out, so they won't appear here
 	for extensionName := range genExtensions {
 		databaseExtension, exists := dbExtensions[extensionName]
 		if !exists {
@@ -210,6 +222,27 @@ func ExtensionsWithSemantics(
 	sort.Slice(diff.ExtensionsModified, func(i, j int) bool {
 		return diff.ExtensionsModified[i].Name < diff.ExtensionsModified[j].Name
 	})
+}
+
+// ignoredExtensionRecords turns the configured ignore list into coverage
+// records.
+//
+// The reason is [coverage.SuppressedByPolicy] and the provenance is
+// [coverage.Configured], because that is what the list is: a policy the run was
+// told about, by a flag, a project config key, or a library caller building
+// options. A reader meeting the record in a diagnostic learns why the removal
+// was withheld rather than that something declined to look.
+func ignoredExtensionRecords(names []string) []coverage.Object {
+	records := make([]coverage.Object, 0, len(names))
+	for _, name := range names {
+		records = append(records, coverage.Object{
+			Kind:       coverage.Extension,
+			Name:       name,
+			Reason:     coverage.SuppressedByPolicy,
+			Provenance: coverage.Configured,
+		})
+	}
+	return records
 }
 
 func effectiveExtensionSchema(schema string, semantics identifier.Semantics) string {
