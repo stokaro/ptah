@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -48,6 +49,11 @@ type ApplyOptions struct {
 	// Atlas-style include selectors.
 	Include []string
 	Policy  DiffPolicy
+	// ProtectedTables fences declared row sets off from this plan: a plan that
+	// would change one is refused rather than rated, and there is no override
+	// on this path. See [protectedtable] for which entry fences which table,
+	// and managedDataStatements for why the refusal has no yes.
+	ProtectedTables []string
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
 	DevURL string
@@ -122,8 +128,11 @@ type ApplyRuntimeOptions struct {
 	// Atlas-style include selectors.
 	Include []string
 	Policy  DiffPolicy
-	TxMode  migrator.MigrationTxMode
-	DryRun  bool
+	// ProtectedTables fences declared row sets off from this apply; see
+	// [ApplyOptions.ProtectedTables].
+	ProtectedTables []string
+	TxMode          migrator.MigrationTxMode
+	DryRun          bool
 	// ProjectEnv expands env:// desired-state references in ToURLs.
 	ProjectEnv atlassource.ProjectEnv
 	// PreparedTo is the command-bound desired source prepared before target
@@ -397,7 +406,9 @@ func computeApplyPlan(
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
 	// here would report an empty plan for a change its author made.
-	computation.dataStatements, err = managedDataStatements(ctx, conn, desired, current, opts.ProjectRoot)
+	computation.dataStatements, err = managedDataStatements(
+		ctx, conn, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables),
+	)
 	if err != nil {
 		return applyComputation{}, err
 	}
@@ -728,6 +739,7 @@ func PrepareApply(
 		Schemas:                   opts.Schemas,
 		Include:                   opts.Include,
 		Policy:                    opts.Policy,
+		ProtectedTables:           opts.ProtectedTables,
 		DevURL:                    opts.DevURL,
 		ProjectEnv:                opts.ProjectEnv,
 		PreparedTo:                opts.PreparedTo,

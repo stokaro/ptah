@@ -24,6 +24,7 @@ const (
 	planSchemaFileFlag = "schema-file"
 	planDevURLFlag     = "dev-url"
 	planExcludeFlag    = "exclude"
+	planProtectedTable = "protected-table"
 	planNameFlag       = "name"
 	planOutputFlag     = "output"
 	planSaveFlag       = "save"
@@ -31,19 +32,20 @@ const (
 )
 
 type schemaPlanOptions struct {
-	dbURL          string
-	rootDirs       []string
-	schemaFiles    []string
-	devURL         string
-	exclude        []string
-	name           string
-	output         string
-	save           bool
-	dryRun         bool
-	plainHTTP      bool
-	connectTimeout string
-	configPath     string
-	envName        string
+	dbURL           string
+	rootDirs        []string
+	schemaFiles     []string
+	devURL          string
+	exclude         []string
+	protectedTables []string
+	name            string
+	output          string
+	save            bool
+	dryRun          bool
+	plainHTTP       bool
+	connectTimeout  string
+	configPath      string
+	envName         string
 }
 
 func newSchemaPlanCommand() *cobra.Command {
@@ -74,6 +76,8 @@ document without saving it.`,
 	flags.StringArrayVar(&opts.schemaFiles, planSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringVar(&opts.devURL, planDevURLFlag, "", "Dev database URL; must match the target dialect when set")
 	flags.StringArrayVar(&opts.exclude, planExcludeFlag, nil, "Schema objects to exclude from planning (Atlas-style selectors)")
+	flags.StringArrayVar(&opts.protectedTables, planProtectedTable, nil,
+		"Declared row set this plan refuses to change, by table or schema.table; repeat to add more. There is no override")
 	flags.StringVar(&opts.name, planNameFlag, "", "Plan name recorded in the plan file")
 	flags.StringVar(&opts.output, planOutputFlag, "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.save, planSaveFlag, false, "Save the plan to a local plan file")
@@ -173,13 +177,14 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	}
 
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
-		ProjectRoot: schemaroot.Of(opts.rootDirs),
-		Name:        opts.name,
-		DevURL:      opts.devURL,
-		Desired:     desired,
-		Exclude:     opts.exclude,
-		Policy:      policy,
-		Diagnostics: cmd.ErrOrStderr(),
+		ProjectRoot:     schemaroot.Of(opts.rootDirs),
+		Name:            opts.name,
+		DevURL:          opts.devURL,
+		Desired:         desired,
+		Exclude:         opts.exclude,
+		Policy:          policy,
+		ProtectedTables: opts.protectedTables,
+		Diagnostics:     cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
