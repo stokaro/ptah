@@ -317,10 +317,10 @@ func TestVerifyMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 // make the semantics disagree, and a real difference in how names compare still
 // must, on the same dialect.
 func TestSemanticsAgreeIgnoresTheDatabaseAMySQLConnectionSelected(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
 			target := identifier.ForDialect(dialect)
 			target.DefaultSchema = "orders"
 
