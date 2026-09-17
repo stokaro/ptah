@@ -484,6 +484,16 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name: "ptah:schema:notdescribed",
+		Description: "Declares that this description does not describe an object family, " +
+			"or one named object in it, so its absence is not a removal.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("kind", "Object family, such as extension, schema, role or sequence.", valueString, true, false),
+			attr("name", "One object of that family. Omitted, the whole family is declined.", valueString, false, false),
+		},
+	},
+	{
 		Name:        "ptah:schema:function",
 		Description: "Declares a database function.",
 		Scopes:      []Scope{ScopeStruct},

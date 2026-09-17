@@ -222,13 +222,21 @@ a directive in its leading comment header:
 schema "public" {}
 ```
 
-The two are neighboring statements rather than one. The directive limits what
-the **description** claims, so a removal is withheld and a declaration is still
-honored, and it travels with the document: push the schema to a registry and
-whoever pulls it reads the same limit. The flag says this **run** manages the
-extension in neither direction, whatever either side says, and it is the only
-way for a schema built from Go annotations, which carry no directive of this
-kind and no comment header to put one in.
+A schema built from Go annotations says it with an annotation instead, because
+it is not a document and has no header to carry a directive:
+
+```go illustration
+//ptah:schema:notdescribed kind="extension" name="pg_trgm"
+type _ struct{}
+```
+
+The two are neighboring statements rather than one. The directive and the
+annotation limit what the **description** claims, so a removal is withheld and a
+declaration is still honored, and the limit travels with the schema: push it to
+a registry and whoever pulls it reads the same one. The flag says this **run**
+manages the extension in neither direction, whatever either side says, which is
+what a reader who received their schema as third-party software needs and cannot
+get by editing it.
 
 Dropping the name makes the directive cover every extension:
 `// ptah:not-described extension`. [What a document says it does not

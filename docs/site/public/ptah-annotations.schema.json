@@ -1047,6 +1047,37 @@
       ],
       "type": "object"
     },
+    "ptah.schema.notdescribed": {
+      "additionalProperties": false,
+      "description": "Declares that this description does not describe an object family, or one named object in it, so its absence is not a removal.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "description": "Object family, such as extension, schema, role or sequence.",
+              "type": "string"
+            },
+            "name": {
+              "description": "One object of that family. Omitted, the whole family is declined.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:notdescribed"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.procedure": {
       "additionalProperties": false,
       "description": "Declares a stored procedure: a routine that returns nothing and is invoked with CALL.",
@@ -1788,6 +1819,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.extension"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.notdescribed"
     },
     {
       "$ref": "#/$defs/ptah.schema.function"

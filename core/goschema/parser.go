@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	ptahast "ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/goschema/internal/parseutils"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -493,6 +494,53 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	return nil
 }
 
+// parseNotDescribedComment records an object family, or one object in it, that
+// this description declines to describe.
+//
+// A Go schema is not a serialized document, so it carries no leading comment
+// header for the `ptah:not-described` directive that an HCL or SQL description
+// uses. This is the same statement in the grammar Go annotations already have,
+// and it lands in the same [coverage.Set] the comparator reads, so the two
+// spellings produce one plan (stokaro/ptah#3377).
+//
+// `kind` is required and comes from the closed list [coverage.ParseKind] holds;
+// an unknown one is refused rather than ignored, because ignoring it turns the
+// absence it was protecting into a removal. `name` is optional: without it the
+// whole family is declined, which is what a bare directive means in the
+// serialized grammar too.
+//
+// The provenance is [coverage.Declared] because a person wrote it, and the
+// reason is left unspecified: the annotation carries no room for one, and
+// guessing would put a sentence in a diagnostic that the author never said.
+func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:notdescribed", kv["kind"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	kind, err := coverage.ParseKind(kv["kind"])
+	if err != nil {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: "ptah:schema:notdescribed",
+			Attribute: "kind",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("%s on %s at %s", err, ctx.directive, ctx.location),
+		}
+	}
+
+	s.notDescribed = append(s.notDescribed, coverage.Object{
+		Kind:       kind,
+		Name:       kv["name"],
+		Provenance: coverage.Declared,
+	})
+	return nil
+}
+
 func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
@@ -623,6 +671,7 @@ type schemaParseState struct {
 	defaultPrivileges     []schemamodel.DefaultPrivilege
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
+	notDescribed          []coverage.Object
 }
 
 type structDeclaration struct {
@@ -743,6 +792,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:grant":               (*schemaParseState).parseGrantComment,
 	"ptah:schema:defaultprivilege":    (*schemaParseState).parseDefaultPrivilegeComment,
 	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
+	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -922,6 +972,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		Grants:               state.grants,
 		DefaultPrivileges:    state.defaultPrivileges,
 		ManagedData:          state.managedData,
+		NotDescribed:         coverage.Set{}.With(state.notDescribed...),
 		Dependencies:         make(map[string][]string),
 	}
 	schemamodel.NormalizeTableScopedNames(&result)
