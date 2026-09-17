@@ -211,6 +211,31 @@ ignore_extensions:
 Both spellings add to Ptah's own list rather than replacing it, so `plpgsql`
 stays ignored. A flag on the command line wins over the file.
 
+#### Or say it in the schema itself
+
+A serialized desired schema — HCL, or SQL — can carry the statement instead, as
+a directive in its leading comment header:
+
+```hcl illustration
+// ptah:not-described extension "pg_trgm"
+
+schema "public" {}
+```
+
+The two are different statements, and which one fits depends on what is true.
+The directive says the **description** does not describe that extension, and it
+travels with the document: push the schema to a registry and whoever pulls it
+reads the same limit. The flag says this **run** must leave the extension alone,
+whatever the description claims, and it is the only way for a schema built from
+Go annotations, which carry no directive of this kind and no comment header to
+put one in.
+
+Dropping the name makes the directive cover every extension:
+`// ptah:not-described extension`. [What a document says it does not
+describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe)
+is the wider subject; coverage governs schemas, roles and several other object
+kinds the same way.
+
 ### Reference rows are part of the check
 
 A desired schema that declares reference rows — a `//ptah:schema:data`

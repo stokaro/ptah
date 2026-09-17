@@ -582,6 +582,7 @@
         "/atlas/overview/",
         "/atlas/project-config/",
         "/direct/apply/",
+        "/direct/compare-and-drift/",
         "/direct/inspect/",
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
@@ -1496,6 +1497,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/atlas/schema-commands/",
         "/direct/apply/",
         "/operate/troubleshooting/",
         "/reference/configuration/",
@@ -1521,8 +1523,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 2152,
-      "sourceBytes": 17641
+      "visibleWords": 2304,
+      "sourceBytes": 18696
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
