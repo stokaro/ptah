@@ -329,6 +329,27 @@ compare the Go annotations selected by `--root-dir` with the target database.
 The shadow replay is the format-neutral proof that the migration directory
 reproduces the adopted schema.
 
+:::caution[A MySQL shadow needs global privileges]
+Ptah empties the shadow database before replaying into it, and on MySQL and
+MariaDB it refuses to empty one unless the connected account holds `SELECT`,
+`DROP`, `ALTER`, `ALTER ROUTINE`, `EVENT`, `LOCK TABLES`, `PROCESS`,
+`SHOW VIEW`, `SHOW_ROUTINE` and `TRIGGER` **globally** — `ON *.*`, not
+`ON shadow_db.*`. The refusal names the privileges:
+
+```text illustration
+error: baseline shadow check failed: drop all objects: mysql: refusing to clean
+database "app_shadow": global SELECT, DROP, ALTER, ALTER ROUTINE, EVENT,
+LOCK TABLES, PROCESS, SHOW_ROUTINE, and TRIGGER privileges are required to
+prove complete metadata visibility and protect destructive DDL
+```
+
+A schema-scoped grant lets an account create and use the database and still
+leaves it unable to see every object in it, and emptying a database whose
+contents cannot all be seen is the destructive step this refuses. Point
+`--shadow-db` at an account that holds them, which need not be the one
+`--db-url` uses: the shadow is disposable and the target is not.
+:::
+
 ## 5. Verify the adoption
 
 ```console
