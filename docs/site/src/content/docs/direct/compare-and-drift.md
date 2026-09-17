@@ -222,13 +222,13 @@ a directive in its leading comment header:
 schema "public" {}
 ```
 
-The two are different statements, and which one fits depends on what is true.
-The directive says the **description** does not describe that extension, and it
-travels with the document: push the schema to a registry and whoever pulls it
-reads the same limit. The flag says this **run** must leave the extension alone,
-whatever the description claims, and it is the only way for a schema built from
-Go annotations, which carry no directive of this kind and no comment header to
-put one in.
+The two are neighboring statements rather than one. The directive limits what
+the **description** claims, so a removal is withheld and a declaration is still
+honored, and it travels with the document: push the schema to a registry and
+whoever pulls it reads the same limit. The flag says this **run** manages the
+extension in neither direction, whatever either side says, and it is the only
+way for a schema built from Go annotations, which carry no directive of this
+kind and no comment header to put one in.
 
 Dropping the name makes the directive cover every extension:
 `// ptah:not-described extension`. [What a document says it does not

@@ -15,17 +15,17 @@ import (
 // These options control how schema differences are calculated and what elements
 // should be ignored during comparison.
 type CompareOptions struct {
-	// IgnoredExtensions names PostgreSQL extensions the comparison must not
-	// plan a removal for. An entry says the desired description does not
-	// describe that extension, so the database carrying one is not a
-	// difference.
+	// IgnoredExtensions names PostgreSQL extensions the comparison plans
+	// nothing for. An entry says neither side is authoritative about that
+	// extension: the database carrying one is not a removal, and a description
+	// declaring one is not a creation.
 	//
-	// It says nothing about creation. An extension a description DECLARES is
-	// created whether or not this list names it, because a declaration is a
-	// request and this list answers a different question. The comparison
-	// carries the entries as [ptah.run/core/coverage] records, which is the
-	// same thing a `ptah:not-described extension` directive in a serialized
-	// description says, so the two spellings of the request produce one plan.
+	// The comparison carries the entries as [ptah.run/core/coverage] records on
+	// both sides, which is the one place that question is answered. A
+	// `ptah:not-described extension` directive in a serialized description is
+	// the neighboring statement and a narrower one: it limits what the
+	// DESCRIPTION claims, so a removal is withheld and a declaration is still
+	// honored.
 	//
 	// Common extensions to ignore include:
 	// - plpgsql: Default procedural language, usually pre-installed
@@ -366,8 +366,8 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 // no configuration was supplied.
 //
 // It reports membership and nothing more. What the comparison does with the
-// answer is [CompareOptions.IgnoredExtensions]: a removal is withheld, and a
-// declared extension is still created.
+// answer is [CompareOptions.IgnoredExtensions]: neither a removal nor a
+// creation is planned.
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
 	return slices.Contains(c.IgnoredExtensions, extensionName)
 }

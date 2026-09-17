@@ -43,7 +43,7 @@ hands Ptah the object, and that includes removing it.
 ## Key Behaviors
 
 When an extension is ignored:
-- ✅ **Can be created** during migrations if defined in target schema
+- 🚫 **Never created** either, even when the target schema declares it
 - ❌ **Never deleted** even if missing from target schema  
 - 🚫 **Excluded from diff calculations** (treated as if it doesn't exist)
 - 🔍 **Filtered out** before schema comparison

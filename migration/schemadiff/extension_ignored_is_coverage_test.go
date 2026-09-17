@@ -12,14 +12,16 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// An ignored extension and one a description declines to describe are the same
-// request, and they now produce the same plan.
+// An ignored extension is one nothing is planned for, in either direction.
 //
-// They did not. The ignore list was a filter applied before the comparison, so
-// it cut the DESIRED side as well: an extension a description declared and the
-// options ignored was never created, and nothing reported the omission. The
-// directive spelling of the same request created it, and CompareOptions
-// documented the directive's behavior for the list (stokaro/ptah#3373).
+// The list used to be a filter of its own, applied before the comparison and 80
+// lines from the coverage gate that answers the same question. Two answers to
+// one question drift, and the prose had already drifted: the comparator's own
+// doc block said an ignored extension "can still be created if defined in the
+// target schema", which the filter had never done (stokaro/ptah#3373).
+//
+// The list is coverage records on both sides now. What it means is unchanged
+// and now stated once: neither side is authoritative about the object.
 
 // ignoredExtensionName is the extension every case below is about.
 const ignoredExtensionName = "pg_trgm"
@@ -55,11 +57,11 @@ func TestIgnoredExtension_RemovalIsPlannedWithoutTheList(t *testing.T) {
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 1, qt.Commentf("removed: %#v", diff.ExtensionsRemoved))
 }
 
-// TestIgnoredExtension_DeclaredIsStillCreated is the half the two spellings
-// disagreed on. An extension the description declares is created whether or not
-// the list names it: the list says what not to REMOVE, and a declaration is not
-// a removal.
-func TestIgnoredExtension_DeclaredIsStillCreated(t *testing.T) {
+// TestIgnoredExtension_AdditionIsWithheldToo is the other direction, and the
+// one a `schema diff` from a hand-authored file to a live PostgreSQL database
+// meets on every run: the file describes no plpgsql, every server has one, and
+// the list is what keeps CREATE EXTENSION "plpgsql" out of the answer.
+func TestIgnoredExtension_AdditionIsWithheldToo(t *testing.T) {
 	c := qt.New(t)
 	desired := &schemamodel.Database{
 		Extensions: []schemamodel.Extension{{Name: ignoredExtensionName, Schema: "public"}},
@@ -68,6 +70,21 @@ func TestIgnoredExtension_DeclaredIsStillCreated(t *testing.T) {
 
 	diff := schemadiff.CompareWithOptions(desired, database,
 		config.WithAdditionalIgnoredExtensions(ignoredExtensionName))
+
+	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0, qt.Commentf("added: %#v", diff.ExtensionsAdded))
+}
+
+// TestIgnoredExtension_AdditionIsPlannedWithoutTheList is its control. Without
+// it, a comparison that planned no addition at all would satisfy the case above
+// just as well.
+func TestIgnoredExtension_AdditionIsPlannedWithoutTheList(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: ignoredExtensionName, Schema: "public"}},
+	}
+	database := &catalog.Database{}
+
+	diff := schemadiff.CompareWithOptions(desired, database, config.DefaultCompareOptions())
 
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 1, qt.Commentf("added: %#v", diff.ExtensionsAdded))
 	c.Assert(diff.ExtensionsAdded[0].Name, qt.Equals, ignoredExtensionName)
