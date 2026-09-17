@@ -89,6 +89,8 @@ repository alone.`,
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	dbcli.RegisterProjectEnvFlag(flags)
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
+	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
+		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 
 	cmdutil.ConfigureCommand(cmd)
@@ -474,8 +476,16 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
+	if err != nil {
+		return err
+	}
+
 	generateOpts := generator.GenerateMigrationOptions{
-		Generated:         desired,
+		Generated: desired,
+		CompareOptions: dbcli.CompareOptionsIgnoringExtensions(
+			cmd, ignoreExtensions, projectCfg, nil,
+		),
 		DatabaseURL:       targetURL,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,

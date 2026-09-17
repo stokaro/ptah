@@ -169,13 +169,47 @@ Once the database gains the column — through a migration or a direct apply —
 the check passes at either threshold. The next section reconciles it and runs
 the check again.
 
-Two more flags shape the check:
+Three more flags shape the check:
 
 - `--ignore` excludes scopes from the check, for example
   `--ignore tables=audit_log`. An excluded table's declared reference rows are
   excluded with it.
+- `--ignore-extension` names a database extension the comparison leaves alone,
+  and is repeatable. See [An extension the schema does not
+  describe](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
+
+### An extension the schema does not describe
+
+An extension a bootstrap step installs, and the desired schema deliberately
+does not declare, reads as removed: the comparison sees an object the database
+has and the declaration does not, and plans `DROP EXTENSION`. That statement is
+destructive, so `--check-destructive` fails on it and a drift gate reports it on
+every run.
+
+Declaring the extension is not the way out. Declaring it hands Ptah the object,
+and that includes removing it; dropping one cascades into everything built on
+it, and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
+
+Name it instead, and the comparison neither creates nor drops it:
+
+```bash
+ptah schema drift --root-dir ./models --db-url "$DATABASE_URL" \
+  --ignore-extension pg_trgm
+```
+
+The same flag is on `ptah schema compare`, `ptah migrations plan` and
+`ptah migrations generate`, and the list can live in `ptah.yaml` instead, which
+is where it belongs when every invocation would repeat it:
+
+```yaml
+ignore_extensions:
+  - pg_trgm
+```
+
+Both spellings add to Ptah's own list rather than replacing it, so `plpgsql`
+stays ignored. A flag on the command line wins over the file.
 
 ### Reference rows are part of the check
 

@@ -907,7 +907,7 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 9,
+          "steps": 10,
           "expectations": 8
         },
         {

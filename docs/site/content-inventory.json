@@ -1521,8 +1521,8 @@
         "/testing/overview/",
         "/versioned/reference-data/"
       ],
-      "visibleWords": 1962,
-      "sourceBytes": 16267
+      "visibleWords": 2152,
+      "sourceBytes": 17628
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -3939,8 +3939,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8788,
-      "sourceBytes": 86774
+      "visibleWords": 8812,
+      "sourceBytes": 87094
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

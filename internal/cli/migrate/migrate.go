@@ -54,6 +54,7 @@ type options struct {
 	plainHTTP        bool
 	connectTimeout   string
 	schemas          string
+	ignoreExtensions []string
 }
 
 func NewMigrateCommand() *cobra.Command {
@@ -93,6 +94,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
@@ -203,7 +205,8 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, nil)
+	compareOpts := dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, nil)
+	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, compareOpts)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
