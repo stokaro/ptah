@@ -19,16 +19,20 @@ type yamlDocument struct {
 }
 
 type yamlSettings struct {
-	URL            *string            `yaml:"url"`
-	Dev            *string            `yaml:"dev"`
-	Schemas        *[]string          `yaml:"schemas"`
-	Exclude        *[]string          `yaml:"exclude"`
-	Migration      yamlMigration      `yaml:"migration"`
-	Lint           yamlLint           `yaml:"lint"`
-	Migrate        yamlMigrateConfig  `yaml:"migrate"`
-	OnlineDDL      yamlOnlineDDL      `yaml:"online_ddl"`
-	Diff           yamlDiff           `yaml:"diff"`
-	ExternalSchema yamlExternalSchema `yaml:"external_schema"`
+	URL     *string   `yaml:"url"`
+	Dev     *string   `yaml:"dev"`
+	Schemas *[]string `yaml:"schemas"`
+	Exclude *[]string `yaml:"exclude"`
+	// IgnoreExtensions names database extensions the comparison must leave
+	// alone. It is a pointer so an explicit empty list is distinguishable from
+	// an unset value.
+	IgnoreExtensions *[]string          `yaml:"ignore_extensions"`
+	Migration        yamlMigration      `yaml:"migration"`
+	Lint             yamlLint           `yaml:"lint"`
+	Migrate          yamlMigrateConfig  `yaml:"migrate"`
+	OnlineDDL        yamlOnlineDDL      `yaml:"online_ddl"`
+	Diff             yamlDiff           `yaml:"diff"`
+	ExternalSchema   yamlExternalSchema `yaml:"external_schema"`
 }
 
 // yamlExternalSchema is the ptah.yaml external_schema block: program is an
@@ -322,6 +326,10 @@ func (c yamlSettings) projectConfig() (Config, error) {
 	if c.Exclude != nil {
 		cfg.Exclude = slices.Clone(*c.Exclude)
 		cfg.presence.mark(fieldExclude)
+	}
+	if c.IgnoreExtensions != nil {
+		cfg.IgnoredExtensions = slices.Clone(*c.IgnoreExtensions)
+		cfg.presence.mark(fieldIgnoredExtensions)
 	}
 	if c.Lint.DisabledRules != nil {
 		cfg.Lint.DisabledRules = slices.Clone(*c.Lint.DisabledRules)

@@ -52,6 +52,12 @@ type CompareOptions struct {
 	// also a privilege the structural read alone does not need, which is why
 	// the caller asks for it rather than getting it by default.
 	ManagedData bool
+	// IgnoredExtensions names database extensions the comparison leaves alone,
+	// added to Ptah's own defaults rather than replacing them. Resolve it with
+	// [ptah.run/internal/cli/internal/dbcli.CompareOptionsIgnoringExtensions],
+	// which answers for both the flag and the project config; the zero value
+	// keeps the defaults.
+	IgnoredExtensions []string
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -119,6 +125,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 
 	info := conn.Info()
 	compareOpts := config.DefaultCompareOptions()
+	compareOpts.IgnoredExtensions = append(compareOpts.IgnoredExtensions, opts.IgnoredExtensions...)
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		conn,

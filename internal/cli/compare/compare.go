@@ -45,16 +45,17 @@ const (
 )
 
 type options struct {
-	rootDirs       []string
-	schemaFiles    []string
-	schemaCmd      string
-	schemaFormat   string
-	dbURL          string
-	devURL         string
-	exitOnDiff     bool
-	connectTimeout string
-	schemas        string
-	plainHTTP      bool
+	rootDirs         []string
+	schemaFiles      []string
+	schemaCmd        string
+	schemaFormat     string
+	dbURL            string
+	devURL           string
+	exitOnDiff       bool
+	connectTimeout   string
+	schemas          string
+	plainHTTP        bool
+	ignoreExtensions []string
 }
 
 func NewCompareCommand() *cobra.Command {
@@ -90,6 +91,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 }
 
 func compareCommand(cmd *cobra.Command, opts *options) error {
@@ -189,6 +191,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	compareOpts = dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, compareOpts)
 	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, compareOpts)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)

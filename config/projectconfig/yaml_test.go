@@ -93,7 +93,7 @@ func TestParsePtahProjectConfigRejectsUnknownKeys(t *testing.T) {
 urll: postgres://typo/db
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "urll"; supported keys are url, dev, schemas, exclude, migration, lint, migrate, online_ddl, diff, external_schema, env`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "urll"; supported keys are url, dev, schemas, exclude, ignore_extensions, migration, lint, migrate, online_ddl, diff, external_schema, env`)
 	// The decoder reports rejected keys against the Go type it decodes into.
 	// That name is not a thing the user can look up or act on, so no
 	// diagnostic may carry it.

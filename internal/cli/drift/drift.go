@@ -45,6 +45,7 @@ func NewDriftCommand() *cobra.Command {
 	var format string
 	var severity string
 	var ignored []string
+	var ignoreExtensions []string
 	var useExitCode bool
 	var connectTimeoutRaw string
 	var schemasRaw string
@@ -71,6 +72,7 @@ func NewDriftCommand() *cobra.Command {
 				schemasRaw:        schemasRaw,
 				configPath:        configPath,
 				plainHTTP:         plainHTTP,
+				ignoreExtensions:  ignoreExtensions,
 			})
 		},
 	}
@@ -92,6 +94,7 @@ func NewDriftCommand() *cobra.Command {
 		"Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
 	)
 	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
+	dbcli.RegisterIgnoreExtensionFlag(cmd.Flags(), &ignoreExtensions)
 	dbcli.RegisterProjectEnvFlag(cmd.Flags())
 	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &plainHTTP)
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
@@ -114,6 +117,7 @@ type runOptions struct {
 	schemasRaw        string
 	configPath        string
 	plainHTTP         bool
+	ignoreExtensions  []string
 }
 
 type driftReport struct {
@@ -206,6 +210,9 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		PlainHTTP:       opts.plainHTTP,
 		Vars:            declaredVars,
 		ManagedData:     true,
+		IgnoredExtensions: dbcli.CompareOptionsIgnoringExtensions(
+			cmd, opts.ignoreExtensions, projectCfg, nil,
+		).IgnoredExtensions,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())

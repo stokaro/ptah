@@ -766,6 +766,7 @@ Read the columns as follows.
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--name` | `string` | `migration` | `PTAH_NAME` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
@@ -863,6 +864,7 @@ Read the columns as follows.
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
@@ -1349,6 +1351,7 @@ Read the columns as follows.
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
+| `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
@@ -1394,6 +1397,7 @@ Read the columns as follows.
 | `--exit-code` | `bool` | `true` | `PTAH_EXIT_CODE` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--ignore` | `stringArray` | `[]` | `PTAH_IGNORE` | — |
+| `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |

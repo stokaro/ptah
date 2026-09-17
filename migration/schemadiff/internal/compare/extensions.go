@@ -22,17 +22,24 @@ import (
 // # Extension Ignore Functionality
 //
 // The function supports ignoring specific extensions through the opts parameter:
-//   - Ignored extensions are filtered out before comparison
+//   - Ignored extensions enter the comparison as coverage records on both
+//     sides, so neither side is authoritative about them
 //   - Ignored extensions will never be marked for removal
-//   - Ignored extensions can still be created if defined in the target schema
+//   - Ignored extensions will never be marked for creation either. The older
+//     spelling of this line said they "can still be created if defined in the
+//     target schema", which nothing ever did: a `schema diff` from a
+//     hand-authored file to a live PostgreSQL database would emit CREATE
+//     EXTENSION "plpgsql" on every run
 //   - If opts is nil, default options are used (ignores "plpgsql")
 //
 // # Comparison Process
 //
 // The function performs comparison in three phases:
-//  1. **Extension Filtering**: Removes ignored extensions from consideration
+//  1. **Coverage**: Records the ignored extensions as objects the desired
+//     description does not describe
 //  2. **Extension Discovery**: Creates lookup maps for efficient extension comparison
-//  3. **Extension Diff Analysis**: Identifies added, removed, and moved extensions
+//  3. **Extension Diff Analysis**: Identifies added, removed, and moved
+//     extensions, then withholds the changes coverage does not authorize
 //
 // # PostgreSQL Extension Considerations
 //
@@ -113,30 +120,41 @@ func ExtensionsWithSemantics(
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
 	}
+	// An ignored extension enters the comparison as a coverage record rather
+	// than as a filter of its own. It goes on BOTH sides, which is what the
+	// list has always meant: neither side is authoritative about the object, so
+	// nothing is planned for it in either direction -- the words
+	// [ptah.run/core/coverage] uses for a record it holds.
+	//
+	// Recording it on the desired side alone would withhold the removal and
+	// leave the addition, and the addition is the half a `schema diff` from a
+	// hand-authored file to a live PostgreSQL database meets: the file
+	// describes no plpgsql, every server has one, and CREATE EXTENSION
+	// "plpgsql" is not a statement anybody asked for (stokaro/ptah#3373).
+	//
+	// Folded here rather than at every caller because every caller of every
+	// entry point would have to fold it, and the first one that forgot would
+	// bring back the two filters this replaced.
 
 	// Initialize slices to ensure they're never nil
 	diff.ExtensionsAdded = make(difftypes.ExtensionChanges, 0)
 	diff.ExtensionsRemoved = make(difftypes.ExtensionChanges, 0)
 	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
-	// Create maps for quick lookup, filtering out ignored extensions
+	// Both sides enter whole. What an ignored extension changes is which
+	// PLANNED change survives the coverage gate below, not which object the
+	// comparison can see.
 	genExtensions := make(map[string]schemamodel.Extension)
 	for _, extension := range desired.Extensions {
-		if !opts.IsExtensionIgnored(extension.Name) {
-			genExtensions[extension.Name] = extension
-		}
+		genExtensions[extension.Name] = extension
 	}
 
-	// Create map of database extensions for efficient lookup, filtering out ignored extensions
 	dbExtensions := make(map[string]catalog.Extension)
 	for _, extension := range database.Extensions {
-		if !opts.IsExtensionIgnored(extension.Name) {
-			dbExtensions[extension.Name] = extension
-		}
+		dbExtensions[extension.Name] = extension
 	}
 
 	// Find added extensions (exist in generated schema but not in database)
-	// Note: Ignored extensions are already filtered out, so they won't appear here
 	for extensionName := range genExtensions {
 		databaseExtension, exists := dbExtensions[extensionName]
 		if !exists {
@@ -186,6 +204,18 @@ func ExtensionsWithSemantics(
 		diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionFromCatalog(databaseExtension))
 	}
 
+	// An ignored extension leaves both lists before the coverage gate sees
+	// them. That order is the whole point: a change coverage withholds is
+	// UNDECIDED and gets reported, because neither side could answer for the
+	// object -- while an ignored one is DECIDED, by whoever configured the run,
+	// and a diagnostic about it would be Ptah asking a question it was already
+	// given the answer to.
+	//
+	// One filter, after the diff rather than before it, so the names the two
+	// sides carry are still compared and only the planned change is dropped.
+	diff.ExtensionsAdded = withoutIgnoredExtensions(diff.ExtensionsAdded, opts)
+	diff.ExtensionsRemoved = withoutIgnoredExtensions(diff.ExtensionsRemoved, opts)
+
 	// A description that does not describe extensions is not a description of a
 	// database with no extensions, and a read that did not look for them is not
 	// a database that has none. Both directions are dropped here rather than at
@@ -209,6 +239,18 @@ func ExtensionsWithSemantics(
 	sortExtensions(diff.ExtensionsRemoved)
 	sort.Slice(diff.ExtensionsModified, func(i, j int) bool {
 		return diff.ExtensionsModified[i].Name < diff.ExtensionsModified[j].Name
+	})
+}
+
+// withoutIgnoredExtensions drops the planned changes the configured ignore list
+// covers, preserving the input's nil-versus-empty shape for the reason `keep`
+// gives.
+func withoutIgnoredExtensions(
+	planned difftypes.ExtensionChanges,
+	opts *config.CompareOptions,
+) difftypes.ExtensionChanges {
+	return keep(planned, func(change schemamodel.Extension) bool {
+		return !opts.IsExtensionIgnored(change.Name)
 	})
 }
 

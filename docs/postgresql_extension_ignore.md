@@ -10,11 +10,40 @@ Some PostgreSQL extensions (like `plpgsql`) are installed by default in database
 - **Default behavior**: `plpgsql` is ignored by default
 - **Programmatic API**: Clean Go API for library usage
 - **Three ways to set the list**: keep the defaults, replace them, or add to them
+- **Reachable from the CLI**: `--ignore-extension` and the `ignore_extensions`
+  key in `ptah.yaml`
+
+## CLI Usage
+
+The commands that compare a desired schema with a live database take a
+repeatable `--ignore-extension`: `ptah migrations plan`,
+`ptah migrations generate`, `ptah schema compare` and `ptah schema drift`.
+
+```bash
+ptah migrations plan --root-dir ./models --db-url "$DATABASE_URL" \
+  --ignore-extension pg_trgm
+```
+
+The list can live in `ptah.yaml` instead, which is where it belongs when every
+invocation would repeat it:
+
+```yaml
+ignore_extensions:
+  - pg_trgm
+```
+
+Both add to the defaults rather than replacing them, which matches
+`WithAdditionalIgnoredExtensions` below; `plpgsql` stays ignored either way. A
+flag on the command line wins over the file, and `PTAH_IGNORE_EXTENSION` binds
+the flag as it does every other native flag.
+
+This is what an extension a bootstrap step creates needs: declaring it instead
+hands Ptah the object, and that includes removing it.
 
 ## Key Behaviors
 
 When an extension is ignored:
-- ✅ **Can be created** during migrations if defined in target schema
+- 🚫 **Never created** either, even when the target schema declares it
 - ❌ **Never deleted** even if missing from target schema  
 - 🚫 **Excluded from diff calculations** (treated as if it doesn't exist)
 - 🔍 **Filtered out** before schema comparison

@@ -169,13 +169,72 @@ Once the database gains the column — through a migration or a direct apply —
 the check passes at either threshold. The next section reconciles it and runs
 the check again.
 
-Two more flags shape the check:
+Three more flags shape the check:
 
 - `--ignore` excludes scopes from the check, for example
   `--ignore tables=audit_log`. An excluded table's declared reference rows are
   excluded with it.
+- `--ignore-extension` names a database extension the comparison leaves alone,
+  and is repeatable. See [An extension the schema does not
+  describe](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
+
+### An extension the schema does not describe
+
+An extension a bootstrap step installs, and the desired schema deliberately
+does not declare, reads as removed: the comparison sees an object the database
+has and the declaration does not, and plans `DROP EXTENSION`. That statement is
+destructive, so `--check-destructive` fails on it and a drift gate reports it on
+every run.
+
+Declaring the extension is not the way out. Declaring it hands Ptah the object,
+and that includes removing it; dropping one cascades into everything built on
+it, and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
+
+Name it instead, and the comparison neither creates nor drops it:
+
+```bash illustration
+ptah schema drift --root-dir ./models --db-url "$DATABASE_URL" \
+  --ignore-extension pg_trgm
+```
+
+The same flag is on `ptah schema compare`, `ptah migrations plan` and
+`ptah migrations generate`, and the list can live in `ptah.yaml` instead, which
+is where it belongs when every invocation would repeat it:
+
+```yaml
+ignore_extensions:
+  - pg_trgm
+```
+
+Both spellings add to Ptah's own list rather than replacing it, so `plpgsql`
+stays ignored. A flag on the command line wins over the file.
+
+#### Or say it in the schema itself
+
+A serialized desired schema — HCL, or SQL — can carry the statement instead, as
+a directive in its leading comment header:
+
+```hcl illustration
+// ptah:not-described extension "pg_trgm"
+
+schema "public" {}
+```
+
+The two are neighboring statements rather than one. The directive limits what
+the **description** claims, so a removal is withheld and a declaration is still
+honored, and it travels with the document: push the schema to a registry and
+whoever pulls it reads the same limit. The flag says this **run** manages the
+extension in neither direction, whatever either side says, and it is the only
+way for a schema built from Go annotations, which carry no directive of this
+kind and no comment header to put one in.
+
+Dropping the name makes the directive cover every extension:
+`// ptah:not-described extension`. [What a document says it does not
+describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe)
+is the wider subject; coverage governs schemas, roles and several other object
+kinds the same way.
 
 ### Reference rows are part of the check
 

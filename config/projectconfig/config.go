@@ -82,6 +82,10 @@ type Config struct {
 	Schemas []string
 	// Exclude lists schema patterns excluded by project config.
 	Exclude []string
+	// IgnoredExtensions names database extensions the comparison must leave
+	// alone. It appends to Ptah's own default list rather than replacing it,
+	// so plpgsql stays ignored whatever a project writes here.
+	IgnoredExtensions []string
 	// Schema holds Atlas declarative schema settings.
 	Schema SchemaConfig
 	// Migration holds migration-directory and runtime settings.
@@ -247,6 +251,7 @@ const (
 	fieldSchemaSources             configField = "schema.sources"
 	fieldSchemas                   configField = "database.schemas"
 	fieldExclude                   configField = "database.exclude"
+	fieldIgnoredExtensions         configField = "database.ignore_extensions"
 	fieldMigrationDir              configField = "migration.dir"
 	fieldMigrationFormat           configField = "migration.format"
 	fieldMigrationRevisionsSchema  configField = "migration.revisions_schema"
@@ -512,6 +517,16 @@ func (c Config) SchemasValue() Value[[]string] {
 	return Value[[]string]{
 		Value:   slices.Clone(c.Schemas),
 		Present: c.presence.has(fieldSchemas) || len(c.Schemas) > 0,
+	}
+}
+
+// IgnoredExtensionsValue returns the extensions the comparison must leave alone,
+// with presence. The list adds to Ptah's defaults, so an empty present value
+// asks for the defaults alone rather than for managing every extension.
+func (c Config) IgnoredExtensionsValue() Value[[]string] {
+	return Value[[]string]{
+		Value:   slices.Clone(c.IgnoredExtensions),
+		Present: c.presence.has(fieldIgnoredExtensions) || len(c.IgnoredExtensions) > 0,
 	}
 }
 
@@ -928,6 +943,13 @@ func Merge(base, override Config) Config {
 		base.Schemas,
 		override.Schemas,
 		fieldSchemas,
+		override.presence,
+		&result.presence,
+	)
+	result.IgnoredExtensions = mergeStringSliceValue(
+		base.IgnoredExtensions,
+		override.IgnoredExtensions,
+		fieldIgnoredExtensions,
 		override.presence,
 		&result.presence,
 	)
