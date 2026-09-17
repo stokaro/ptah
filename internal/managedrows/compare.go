@@ -87,6 +87,22 @@ type Request struct {
 	CatalogIsComplete bool
 	// Intent is what the caller will do with the diff.
 	Intent Intent
+	// Read, when set, receives what the comparison read from the database.
+	//
+	// A caller that has to recognize later whether those rows moved reads them
+	// again, and it has to read the same projection or it would call every row
+	// changed and every plan stale. Handing back the columns this call chose is
+	// what keeps that second read from being a second decision about them.
+	Read *Read
+}
+
+// Read is what one comparison read: the live columns, and whether the table
+// was read at all. A table the catalog says holds nothing to compare -- one the
+// plan is about to create, or one missing a key column -- is not read, and
+// Performed stays false.
+type Read struct {
+	Columns   []string
+	Performed bool
 }
 
 // Compare answers what stands between a declaration and the rows the database
@@ -132,6 +148,9 @@ func Compare(
 		live, err = dbschema.ReadTableRows(ctx, conn, declaration.Schema, declaration.Table, columns)
 		if err != nil {
 			return nil, fmt.Errorf("read declared rows of %s: %w", qualified, err)
+		}
+		if req.Read != nil {
+			*req.Read = Read{Columns: slices.Clone(columns), Performed: true}
 		}
 	}
 

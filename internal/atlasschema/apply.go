@@ -249,6 +249,11 @@ type applyComputation struct {
 	// plan records it, and [VerifyPlanTarget] reads it together with the URL's
 	// scope, so the verification read covers every schema the planning read did.
 	schemasBeyondURL []string
+	// rowSets names the declared row sets the data stage read. A saved plan
+	// records them and a digest of the rows they held, and [VerifyPlanTarget]
+	// reads them again, so a row that moved after planning makes the plan stale
+	// the way a moved column does.
+	rowSets []PlanRowSet
 }
 
 // PreflightApplyTarget validates the target state before an apply lock is
@@ -406,7 +411,7 @@ func computeApplyPlan(
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
 	// here would report an empty plan for a change its author made.
-	computation.dataStatements, err = managedDataStatements(
+	computation.dataStatements, computation.rowSets, err = managedDataStatements(
 		ctx, conn, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables),
 	)
 	if err != nil {

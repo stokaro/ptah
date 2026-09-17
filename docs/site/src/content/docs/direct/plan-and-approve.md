@@ -127,6 +127,16 @@ outside a pinned URL, the plan also records `schemas_beyond_url`, and applying
 the plan reads those schemas as well. A change in any schema the plan writes
 then makes the plan stale.
 
+`from_fingerprint` describes structure, not rows. When the desired schema
+declares reference rows and the plan reads a table that holds them, the plan
+also records `managed_rows` -- each table, its key columns and the managed
+columns it read -- and `rows_fingerprint`, a digest of the rows those columns
+held. Applying the plan reads the same columns again, so a declared row that
+changed after the plan was computed makes the plan stale too, and a column the
+declaration does not manage does not. The row values themselves are not written
+into the plan file. A plan that declares no rows carries neither field, and the
+Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
+
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script
 around this workflow has to treat a missing plan file as a normal outcome.

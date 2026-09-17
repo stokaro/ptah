@@ -297,6 +297,19 @@ func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 			want:   `the Atlas \.plan\.hcl format has no field for the schemas a plan reads beyond its connection URL's scope \(audit, extra\).*write the native JSON plan format.*`,
 		},
 		{
+			// The rows a plan read are what makes it stale when they move. A
+			// .plan.hcl has nowhere to record them, so verification would
+			// accept it over any row value (stokaro/ptah#3378).
+			name: "managed_rows",
+			mutate: func(plan *atlasschema.PlanFile) {
+				plan.ManagedRows = []atlasschema.PlanRowSet{{
+					Schema: "ref", Table: "regions", Keys: []string{"code"}, Columns: []string{"code", "name"},
+				}}
+				plan.RowsFingerprint = "sha256:" + strings.Repeat("a", 64)
+			},
+			want: `the Atlas \.plan\.hcl format has no field for the declared rows a plan reads \(ref\.regions\).*write the native JSON plan format.*`,
+		},
+		{
 			name: "heredoc_delimiter_line",
 			mutate: func(plan *atlasschema.PlanFile) {
 				plan.Statements[0].SQL = "CREATE TABLE x (\nSQL\n)"
