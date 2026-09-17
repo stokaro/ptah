@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
@@ -150,6 +151,25 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	declaredVars, err := dbcli.DeclaredVars(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	loadOptions := schemaload.Options{
+		RootDirs:        opts.rootDirs,
+		SchemaFiles:     opts.schemaFiles,
+		ProjectEnv:      schemaSourceEnv,
+		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+		PlainHTTP:       opts.plainHTTP,
+		Vars:            declaredVars,
+	}
+	// An artifact is accepted or refused before the target is opened; see
+	// [schemaload.ResolveBeforeConnect].
+	resolved, isArtifact, err := schemaload.ResolveBeforeConnect(cmd.Context(), loadOptions)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
@@ -158,22 +178,15 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	declaredVars, err := dbcli.DeclaredVars(cmd)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-
-	desired, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:        opts.rootDirs,
-		SchemaFiles:     opts.schemaFiles,
-		ProjectEnv:      schemaSourceEnv,
-		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
-		Dialect:         conn.Info().Dialect,
-		PlainHTTP:       opts.plainHTTP,
-		Vars:            declaredVars,
-	})
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
+	var desired *schemamodel.Database
+	if isArtifact {
+		desired = resolved.Database
+	} else {
+		loadOptions.Dialect = conn.Info().Dialect
+		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{

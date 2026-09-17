@@ -463,7 +463,15 @@ difference. A column absent from a row was not declared, and a column written as
 
 A reader that does not know the managed-data media type refuses the artifact
 instead of reading the schema layer and deploying a database without the rows
-its author declared.
+its author declared. The media type is what an artifact says its reader must
+understand: a build too old for a layer refuses the whole artifact rather than
+reading around it, which is the same rule a new layer added later will be read
+under.
+
+`ptah schema apply` and `ptah schema plan` resolve an artifact before they open
+the target, so that refusal lands before a database connection exists. A reader
+that verified after connecting would have opened the database with whatever the
+credentials allow, for an artifact it then declined.
 
 That canonical HCL includes API export metadata authored in YAML, HCL, or Go:
 `api_name`, `openapi_name`, `graphql_name`, and `proto_name` on tables and

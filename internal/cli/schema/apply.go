@@ -274,6 +274,34 @@ func runSchemaApplyWithLockSession(
 		return cmdutil.Fail(cmd, err)
 	}
 
+	var desired *schemamodel.Database
+	loadOptions := schemaload.Options{
+		RootDirs:        opts.rootDirs,
+		SchemaFiles:     opts.schemaFiles,
+		ProjectEnv:      schemaSourceEnv,
+		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+		PlainHTTP:       opts.plainHTTP,
+	}
+	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
+		declaredVars, varsErr := dbcli.DeclaredVars(cmd)
+		if varsErr != nil {
+			return cmdutil.Fail(cmd, varsErr)
+		}
+		loadOptions.Vars = declaredVars
+	}
+	// What an artifact needs of its reader is decided before the target is
+	// opened. A layer this build does not know refuses the whole artifact, and
+	// a refusal after connecting has already opened the database with whatever
+	// the credentials allow (ADR 0019, stokaro/ptah#3291). Everything else
+	// reads against the target's dialect and is loaded below.
+	resolved, isArtifact, err := schemaload.ResolveBeforeConnect(cmd.Context(), loadOptions)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if isArtifact {
+		desired = resolved.Database
+	}
+
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
@@ -282,21 +310,9 @@ func runSchemaApplyWithLockSession(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	var desired *schemamodel.Database
-	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
-		declaredVars, varsErr := dbcli.DeclaredVars(cmd)
-		if varsErr != nil {
-			return cmdutil.Fail(cmd, varsErr)
-		}
-		desired, err = schemaload.LoadContext(cmd.Context(), schemaload.Options{
-			RootDirs:        opts.rootDirs,
-			SchemaFiles:     opts.schemaFiles,
-			ProjectEnv:      schemaSourceEnv,
-			EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
-			Dialect:         conn.Info().Dialect,
-			PlainHTTP:       opts.plainHTTP,
-			Vars:            declaredVars,
-		})
+	if desired == nil && (len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0) {
+		loadOptions.Dialect = conn.Info().Dialect
+		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
