@@ -199,8 +199,9 @@ The database marks above identify the engines Ptah supports and nothing more.
 Each belongs to its owner, and none of those owners endorses or sponsors Ptah.
 [NOTICE](NOTICE) says where each file came from and under which license.
 
-For questions and bug reports, open an issue in
-[stokaro/ptah](https://github.com/stokaro/ptah/issues).
+Ask questions and share ideas in
+[Discussions](https://github.com/stokaro/ptah/discussions); report bugs and
+request features in the [issue tracker](https://github.com/stokaro/ptah/issues).
 [CONTRIBUTING.md](CONTRIBUTING.md) covers what makes a report actionable and
 what a change has to pass, and participation is covered by the
 [Code of Conduct](CODE_OF_CONDUCT.md). Commercial enquiries go to

@@ -1,0 +1,68 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the [documentation](https://docs.ptah.run/) and the existing
+        discussions first. The [FAQ](https://docs.ptah.run/edge/faq/) and the
+        [troubleshooting page](https://docs.ptah.run/edge/operate/troubleshooting/)
+        answer the questions that come up most.
+
+        A result that contradicts the documentation is a bug, not a question:
+        open a [bug report](https://github.com/stokaro/ptah/issues/new?template=bug_report.yml)
+        so it gets tracked. Questions about the Kubernetes operator belong in
+        [stokaro/ptah-operator](https://github.com/stokaro/ptah-operator).
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which binary
+      description: >-
+        `ptah` and `ptah-compat` present different command surfaces on purpose,
+        so the answer often depends on which one you run.
+      options:
+        - ptah
+        - ptah-compat
+        - Go library
+        - ptah-ls
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Ptah version
+      description: Output of `ptah version`, if you have it installed.
+      placeholder: "ptah 0.4.0 (abc1234)"
+    validations:
+      required: false
+
+  - type: input
+    id: engine
+    attributes:
+      label: Database engine and server version
+      description: Leave empty if the question needs no database.
+      placeholder: "PostgreSQL 17.2, MySQL 8.4.3, SQLite 3.45"
+    validations:
+      required: false
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: >-
+        What you are trying to do, and where you got stuck. The task is often
+        more useful than the flag you think you need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: >-
+        Commands, schema or config excerpts, and the output you got. Redact
+        credentials.
+      render: shell
+    validations:
+      required: false

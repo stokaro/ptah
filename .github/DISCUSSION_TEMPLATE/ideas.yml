@@ -1,0 +1,30 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas is for a need that is still taking shape: a use case, a workflow
+        that feels harder than it should, or a direction you would like Ptah to
+        take. When you already know the task and the outcome you need, a
+        [feature request](https://github.com/stokaro/ptah/issues/new?template=feature_request.yml)
+        is the faster route, because it gets labeled and planned.
+
+        An idea that settles into a concrete request moves to an issue, with a
+        link back here.
+
+  - type: textarea
+    id: need
+    attributes:
+      label: The need
+      description: >-
+        What you are trying to do and why it matters. Describe the task rather
+        than the flag you imagine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround, the manual step, or the other tool you use.
+    validations:
+      required: false
