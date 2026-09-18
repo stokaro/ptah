@@ -5,12 +5,12 @@
   "source": {
     "repository": "stokaro/ptah-operator",
     "path": "support/ptah.json",
-    "commit": "f799dd17cd7e55a4fd84c4aac81cb0741bb7df35",
+    "commit": "9b001b3b174f60b2e8ee422fb18e440c14d4bf32",
     "retrieved": "2026-09-18"
   },
   "catalog": {
     "schemaVersion": 1,
-    "lastVerified": "2026-09-15",
+    "lastVerified": "2026-09-18",
     "axis": "Operator version to the Ptah build the operator executes, identified by the digest-pinned executorImage and the ptahVersion bound beside it. It is not the Ptah CLI a person used to build the OCI artifact. The runner is not a third axis: it is built from the operator source this row names, and the exact protocol both halves speak is in runnerProtocolVersion.",
     "releases": [
       {
@@ -31,14 +31,11 @@
             "ptahDescribe": "v0.7.0",
             "runnerProtocolVersion": 5,
             "evidence": "kubernetes-e2e",
-            "scope": "The complete OCI resolution and verification, observation, planning, approval, apply, failure-recovery and convergence lifecycle against PostgreSQL and MySQL, on every supported Kubernetes minor, for both artifact formats this operator reads: application/vnd.stokaro.ptah.schema.v1 for a declared schema, and application/vnd.stokaro.ptah.migrations.v1 for a versioned migration directory, whose history read, approval gate and applied sequence run against PostgreSQL."
+            "scope": "The complete OCI resolution and verification, observation, planning, approval, apply, failure-recovery and convergence lifecycle against PostgreSQL and MySQL, on every supported Kubernetes minor, for both artifact formats this operator reads: application/vnd.stokaro.ptah.schema.v1 for a declared schema, whose declared rows converge on both engines, and application/vnd.stokaro.ptah.migrations.v1 for a versioned migration directory, whose history read, approval gate and applied sequence run against PostgreSQL and MySQL."
           }
         ],
         "limitations": [
-          "The pinned build moved to the v0.7.0 release. It carries the two data-plane fixes the rows below were blocked on -- `migrations baseline --shadow-db` accepts a MySQL-family shadow database of its own name (stokaro/ptah#3376), and a saved plan goes stale when a declared row it read moves (stokaro/ptah#3379) -- and one addition this operator does not use, a `--ignore-extension` flag on the commands that compare schemas (stokaro/ptah#3373). No lifecycle has yet carried it, so the scope above was measured against 8fbb315cf and holds for this pin only once a run repeats it.",
-          "The reference-data lifecycle is wired into the suite and has not yet completed a run, so nothing here is claimed about declared rows. Every lifecycle job that reached this phase failed earlier, in the migrations phase, and a run that failed is evidence for nothing. What is measured about declared rows is measured outside Kubernetes: the same fixtures pushed to a registry, pulled back, and planned, with the publishing working copy deleted first. This line gains the claim when a lifecycle run carries it.",
-          "The migration lifecycle has never applied a sequence to MySQL, so nothing here is claimed about versioned migrations on that engine. The operator named no transaction mode until the field this release adds, and Ptah refuses tx-mode file on a MySQL-family database whenever a statement interceptor is installed, which stokaro/ptah#3359 shows is every migration -- so the run stops before a statement executes and records nothing. What is measured is one row that names transactionMode: none and reaches applied history; the rows that name nothing continue to run on the default, and they continue to fail, because that is the mode a user gets by writing nothing. This line gains the engine when they pass.",
-          "The suite builds the executor image from the verified commit rather than pulling the image the release published, so what the matrix measures is the code v0.6.1 carries and not the bytes ghcr.io/stokaro/ptah:0.6.1 serves. A reader who installs the published image runs the same source at a different build.",
+          "The suite builds the executor image from the verified commit rather than pulling the image the release published, so what the matrix measures is the code v0.7.0 carries and not the bytes ghcr.io/stokaro/ptah:0.7.0 serves. A reader who installs the published image runs the same source at a different build.",
           "The migration machine contracts -- `migrations status --json` carrying contract_version and a per-migration record, and `migrations up --json` carrying an outcome -- reached Ptah after v0.3.0-201. A build older than the verified commit resolves and verifies a migration artifact and then refuses its own history document, so the versioned workflow needs at least this commit rather than any build that has the commands.",
           "The verified scope is the operator's database support window, PostgreSQL 17.x and MySQL 8.4.x LTS. Other engines Ptah addresses are unverified here, whatever the Ptah build.",
           "The published verified set is a repository document. It is not compiled into the manager, and nothing compares a running executor's ptahVersion against it, so a combination outside this set is outside what the matrix measured rather than something the operator refuses. What is refused before a database is mutated is a change of any execution component between the plan and the apply -- Ptah, the executor and runner images, the protocol version, the controller image and revision -- checked before the Job is created. What is refused after a Job has run is a runner speaking another protocol version, which is a rejected result frame rather than a prevented mutation. Pinning both the executor image and its ptahVersion at install is a requirement on whoever installs, not a check at runtime."
