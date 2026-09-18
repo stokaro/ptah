@@ -205,4 +205,4 @@ request features in the [issue tracker](https://github.com/stokaro/ptah/issues).
 [CONTRIBUTING.md](CONTRIBUTING.md) covers what makes a report actionable and
 what a change has to pass, and participation is covered by the
 [Code of Conduct](CODE_OF_CONDUCT.md). Commercial enquiries go to
-`ask@stokaro.com`.
+`ask <at> stokaro.com`.
