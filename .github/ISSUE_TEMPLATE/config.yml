@@ -3,8 +3,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: Question about using Ptah
-    url: https://docs.ptah.run/
-    about: The documentation covers the workflows, the dialect capabilities, and the troubleshooting paths. Open a question issue if it does not answer yours.
+    url: https://github.com/stokaro/ptah/discussions/categories/q-a
+    about: Ask in Discussions, where an answer stays findable for the next reader. The documentation at docs.ptah.run covers the workflows and the troubleshooting paths.
+  - name: An idea that is still taking shape
+    url: https://github.com/stokaro/ptah/discussions/categories/ideas
+    about: A use case or a direction you want to discuss before it becomes a concrete feature request.
   - name: Ptah Operator (Kubernetes)
     url: https://github.com/stokaro/ptah-operator/issues
     about: The operator is a separate project with its own issues and releases. An operator report filed here has to be moved before anyone can act on it.

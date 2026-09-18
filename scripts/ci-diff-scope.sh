@@ -87,6 +87,7 @@ is_inert_path() {
 	docs/*) return 0 ;;
 	*.md) return 0 ;;
 	.github/ISSUE_TEMPLATE/*) return 0 ;;
+	.github/DISCUSSION_TEMPLATE/*) return 0 ;;
 	.github/PULL_REQUEST_TEMPLATE*) return 0 ;;
 	.github/FUNDING.yml) return 0 ;;
 	LICENSE | LICENSE.*) return 0 ;;
@@ -289,6 +290,7 @@ selftest() {
 	assert 'an empty diff runs the contour' true ''
 	assert 'go.mod runs the contour' true 'go.mod'
 	assert 'an issue template does not' false '.github/ISSUE_TEMPLATE/bug.yml'
+	assert 'a discussion form does not' false '.github/DISCUSSION_TEMPLATE/q-a.yml'
 	assert '.gitattributes runs the contour because it controls checkout bytes' true '.gitattributes'
 	assert '.gitignore runs the contour because freshness checks enumerate untracked files' true '.gitignore'
 	assert 'the architecture ratchet baseline runs its checker' true 'docs/architecture_boundaries.json'

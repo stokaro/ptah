@@ -11,6 +11,13 @@ copy drifts the moment the first one moves.
 
 ## Before you open an issue
 
+A question about how to do something belongs in
+[Discussions](https://github.com/stokaro/ptah/discussions/categories/q-a), and so
+does an idea that is not yet a concrete request. The tracker is for bugs,
+feature requests, and documentation defects, where each item gets a label and an
+owner. A discussion that turns out to be a bug moves to an issue, with a link
+back.
+
 Search the existing issues first. Ptah is pre-GA and moves quickly, so a
 surprising behavior is often already recorded, sometimes with the measurement
 that explains it.

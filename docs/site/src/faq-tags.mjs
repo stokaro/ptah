@@ -81,6 +81,7 @@ export const questionTags = {
   "backfill-then-cutover": ["inference"],
   "is-there-an-operator": ["kubernetes", "getting-started"],
   "operator-and-versioned-migrations": ["kubernetes", "migrations"],
+  "where-to-ask": ["support", "community"],
   "how-to-contribute": ["community"],
   "reporting-a-bug": ["community", "troubleshooting"],
   "feature-suggestion": ["community"],

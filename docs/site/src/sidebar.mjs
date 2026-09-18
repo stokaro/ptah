@@ -335,6 +335,6 @@ export const sidebar = [
     ],
   },
   { slug: 'operate/troubleshooting' },
-  { slug: 'faq', badge: { text: '80', variant: 'default' } },
+  { slug: 'faq', badge: { text: '81', variant: 'default' } },
   { slug: 'reference/glossary' },
 ];

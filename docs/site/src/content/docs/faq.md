@@ -28,6 +28,7 @@ searchAliases:
   - "which license"
   - "commercial support"
   - "report a bug"
+  - "ask a question"
 overlaps: []
 disposition: keep
 faqVerdicts: true
@@ -83,6 +84,13 @@ generation needs no production access.
 
 ## Project, license, support {#g-project}
 
+### I have a question the documentation does not answer. Where do I ask? {#where-to-ask}
+
+In [GitHub Discussions](https://github.com/stokaro/ptah/discussions/categories/q-a).
+An answer there stays findable for the next reader, and the reply that solved
+the question is marked as the answer. Keep the issue tracker for bugs and
+feature requests; a question that turns out to be a bug moves there.
+
 ### I want to contribute. Where do I start? {#how-to-contribute}
 
 Start with
@@ -105,6 +113,9 @@ Describe the task and the outcome you need rather than the flag you have in
 mind, because the need often already has a spelling. Ptah is pre-GA and the
 surface still moves, so a suggestion that names a workflow is easier to place
 than one that names an option.
+An idea that is still taking shape can start in
+[Ideas](https://github.com/stokaro/ptah/discussions/categories/ideas) and move
+to an issue once the need is concrete.
 
 ### What license is Ptah under? {#what-license}
 
