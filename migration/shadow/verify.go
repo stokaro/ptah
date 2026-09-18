@@ -354,13 +354,14 @@ func identifierSemanticsAgree(
 // semanticsAgree reports whether a shadow database compares identifiers the way
 // the target does.
 //
-// On the MySQL family the default schema is not a rule about identifiers. It is
-// the database the connection selected, read from the URL path, so a shadow
-// database carries its own name there by construction. Comparing it made every
-// shadow disagree with every target: a shadow with another name failed this
-// check, and one with the same name failed the distinctness guard, which is
-// right to treat two hosts as possibly one server. `migrations baseline
-// --shadow-db` could not succeed on MySQL at all (stokaro/ptah#3375).
+// On the MySQL family and on ClickHouse the default schema is not a rule about
+// identifiers. It is the database the connection selected, read from the URL
+// path, so a shadow database carries its own name there by construction.
+// Comparing it refuses every shadow such a target can have: one named
+// differently fails this check, and one named the same fails the distinctness
+// guard, which is right to treat two hosts as possibly one server. That leaves
+// `migrations baseline --shadow-db` no shadow it accepts on these engines
+// (stokaro/ptah#3375, stokaro/ptah#3389).
 //
 // So the shadow's default schema is taken as the target's before comparing, and
 // only there. What the check exists for -- how names fold and compare, the index
@@ -369,9 +370,15 @@ func identifierSemanticsAgree(
 // the schema comparison that follows. Elsewhere the default schema is a static
 // rule ("public", "main", "dbo") or a search_path someone chose, and a difference
 // there is a real one.
+//
+// Oracle's default schema is the connected user, which is the same shape, and it
+// is deliberately absent: devlock.SameRealm has no Oracle arm, so the realm
+// comparison ahead of this one refuses an Oracle shadow as an unsupported
+// dialect and nothing can reach the case. Shadow support for Oracle is its own
+// question.
 func semanticsAgree(dialect string, target, shadow identifier.Semantics) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
 		shadow.DefaultSchema = target.DefaultSchema
 	}
 	return target.Equal(shadow)
