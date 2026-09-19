@@ -456,9 +456,14 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	if status.CurrentVersion <= targetVersion {
-		observeNoopDown(runtime, conn.Info().Dialect, status.CurrentVersion, targetVersion)
-		emit.Printf("✅ Database is already at or below target version %d!\n", targetVersion)
-		return nil
+		return finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
+			migrator:       mig,
+			runtime:        runtime,
+			emit:           emit,
+			dialect:        conn.Info().Dialect,
+			currentVersion: status.CurrentVersion,
+			targetVersion:  targetVersion,
+		})
 	}
 
 	// Get applied migrations from the database
@@ -470,16 +475,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// Calculate which migrations will be rolled back
 	migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
 
-	emit.Printf("Migrations to roll back: %d\n", len(migrationsToRollback))
-
-	if opts.verbose {
-		emit.Printf("Will roll back from version %d to %d\n", status.CurrentVersion, targetVersion)
-		if len(migrationsToRollback) > 0 {
-			emit.Printf("Specific migrations to rollback: %v\n", migrationsToRollback)
-		}
-	}
-
-	emit.Println()
+	emitRollbackPlan(emit, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
 
 	// --plan takes the dev database for itself: it builds the target schema
 	// there to derive the plan from. Verifying a file-based rollback on it
@@ -556,6 +552,52 @@ func versionsAboveTarget(appliedMigrations []int64, targetVersion int64) []int64
 		}
 	}
 	return versions
+}
+
+// emitRollbackPlan prints what the rollback selected, and under --verbose the
+// versions it selected and the span they cover.
+func emitRollbackPlan(
+	emit cliobs.Emitter,
+	opts *options,
+	currentVersion, targetVersion int64,
+	versions []int64,
+) {
+	emit.Printf("Migrations to roll back: %d\n", len(versions))
+	if opts.verbose {
+		emit.Printf("Will roll back from version %d to %d\n", currentVersion, targetVersion)
+		if len(versions) > 0 {
+			emit.Printf("Specific migrations to rollback: %v\n", versions)
+		}
+	}
+	emit.Println()
+}
+
+// downNoopInputs is what the run with nothing to roll back needs to finish.
+type downNoopInputs struct {
+	migrator       *migrator.Migrator
+	runtime        *cliobs.Runtime
+	emit           cliobs.Emitter
+	dialect        string
+	currentVersion int64
+	targetVersion  int64
+}
+
+// finishDownAtOrBelowTarget answers the run whose database is already at or
+// below the version it was asked for.
+//
+// It verifies applied checksums first. The rollback path does that before it
+// rolls anything back, and this is the branch that never reaches it, so an
+// applied migration whose file no longer accounts for its recorded checksum
+// would otherwise leave here reported as success (stokaro/ptah#3438). The
+// question goes to the migrator rather than to a second reading of the status,
+// so both branches refuse on the same rule.
+func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) error {
+	if _, err := in.migrator.VerifyAppliedChecksums(ctx); err != nil {
+		return err
+	}
+	observeNoopDown(in.runtime, in.dialect, in.currentVersion, in.targetVersion)
+	in.emit.Printf("✅ Database is already at or below target version %d!\n", in.targetVersion)
+	return nil
 }
 
 func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, targetVersion int64) {
