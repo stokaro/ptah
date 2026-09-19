@@ -313,9 +313,11 @@ migration is `modified`, since that is the state a deployment must not run
 into. It exits `0` once neither holds.
 
 `ptah migrations up` and `ptah migrations down` refuse while a migration is
-`modified`, including the run that has nothing else to do. A checksum mismatch
-is reported before anything is applied, and the remedy is to restore the file
-or to add a new migration carrying the change.
+`modified`, including the run that has nothing else to do. The mismatch is
+reported before anything is applied, and it stays until the file carries the
+bytes the revision row recorded. So the recovery has an order: put those bytes
+back, then carry the change you wanted in a new migration. A new migration on
+its own cannot run, because the refusal precedes it.
 
 ## The evidence a run leaves
 

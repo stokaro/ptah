@@ -418,8 +418,9 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 				record.Version, record.Description, record.AppliedChecksum, record.Checksum,
 			)
 		}
-		emit.Println("\nThe file changed after the database applied it. Restore the file, " +
-			"or add a new migration carrying the change; applying refuses while this stands.")
+		emit.Println("\nThe file changed after the database applied it. Applying refuses until " +
+			"the file carries the bytes that ran, so put those back first; the change you " +
+			"wanted belongs in a new migration after that.")
 		return nil
 	}
 
