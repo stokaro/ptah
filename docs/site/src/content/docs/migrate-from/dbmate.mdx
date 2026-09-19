@@ -164,11 +164,12 @@ Expected output on standard output:
 CREATE UNIQUE INDEX users_email_idx ON users (email);
 ```
 
-dbmate scopes the option to one direction and Ptah scopes it to the migration,
-so a file asking for it in either direction becomes a migration that runs
-outside a transaction in both. Running a statement inside a transaction its
-author ruled out is the failure worth avoiding; the reverse costs an atomic
-boundary nobody asked for.
+dbmate scopes the option to one direction and so does Ptah, so each side keeps
+what it asked for. A file that disables the transaction only on the way up
+converts to an up file carrying the directive and a down file that still runs
+inside one, which is what a multi-statement rollback wants: a failure partway
+through it rolls the whole thing back rather than leaving half the change
+behind.
 
 Options the importer does not recognize are dropped from the SQL, as dbmate's
 own directives are, and are not guessed at.

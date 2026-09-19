@@ -64,14 +64,16 @@ func TestGooseParse(t *testing.T) {
 	c.Assert(normalized[0].UpSQL, qt.Contains, "CREATE INDEX idx_users ON users (id);")
 	c.Assert(normalized[0].UpSQL, qt.Not(qt.Contains), "+goose")
 	c.Assert(normalized[0].DownSQL, qt.Contains, "DROP TABLE users;")
-	c.Assert(normalized[0].NoTransaction, qt.IsFalse)
+	c.Assert(normalized[0].UpNoTransaction, qt.IsFalse)
+	c.Assert(normalized[0].DownNoTransaction, qt.IsFalse)
 
 	// Second migration: NO TRANSACTION becomes typed metadata, with no down section.
 	c.Assert(normalized[1].Version, qt.Equals, int64(20230102))
 	c.Assert(normalized[1].UpSQL, qt.Contains, "CREATE INDEX CONCURRENTLY idx2 ON users (id);")
 	c.Assert(normalized[1].UpSQL, qt.Not(qt.Contains), "+goose")
 	c.Assert(normalized[1].DownSQL, qt.Equals, "")
-	c.Assert(normalized[1].NoTransaction, qt.IsTrue)
+	c.Assert(normalized[1].UpNoTransaction, qt.IsTrue)
+	c.Assert(normalized[1].DownNoTransaction, qt.IsTrue)
 }
 
 // TestGooseParseStatementBlockKeepsBodyVerbatim guards against a `-- +goose`
@@ -139,7 +141,9 @@ $$ LANGUAGE plpgsql;`
 	migrations, err := parseMigrations(t, parser, fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
+	// Goose's directive covers the file, so both directions carry it.
+	c.Assert(migrations[0].UpNoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].DownNoTransaction, qt.IsTrue)
 	c.Assert(migrations[0].UpSQL, qt.Equals, wantUp)
 	c.Assert(migrations[0].DownSQL, qt.Equals, "DROP FUNCTION f();")
 
@@ -210,7 +214,8 @@ func TestGooseParseNoTransactionRequiresExactMarker(t *testing.T) {
 			migrations, err := parseMigrations(t, parser, fstest.MapFS{"1_marker.sql": {Data: []byte(sql)}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(migrations, qt.HasLen, 1)
-			c.Assert(migrations[0].NoTransaction, qt.Equals, tt.noTransaction)
+			c.Assert(migrations[0].UpNoTransaction, qt.Equals, tt.noTransaction)
+			c.Assert(migrations[0].DownNoTransaction, qt.Equals, tt.noTransaction)
 			c.Assert(migrations[0].UpSQL, qt.Equals, tt.wantSQL)
 		})
 	}

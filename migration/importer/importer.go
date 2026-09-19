@@ -20,15 +20,20 @@ import (
 // normalized to Ptah's up/down model. Version is the source tool's numeric
 // version (integer counter or timestamp); it is preserved so ordering and
 // collisions are detectable. DownSQL is empty when the source has no rollback.
-// NoTransaction reports a source-level whole-migration directive that applies
-// to both directions and must be translated to Ptah's native file directives.
+// UpNoTransaction and DownNoTransaction report a source directive saying that
+// direction cannot run inside a transaction, to be translated into Ptah's
+// native file directive. They are separate because Ptah reads the directive
+// per direction -- CreateMigrationFromSQL parses UpTxMode and DownTxMode
+// independently -- and so does dbmate. A source whose directive covers the
+// whole file, as Goose's does, sets both.
 type SourceMigration struct {
-	Version       int64
-	Name          string
-	UpSQL         string
-	DownSQL       string
-	Repeatable    bool
-	NoTransaction bool
+	Version           int64
+	Name              string
+	UpSQL             string
+	DownSQL           string
+	Repeatable        bool
+	UpNoTransaction   bool
+	DownNoTransaction bool
 }
 
 // Parser reads a specific source tool's migration directory.

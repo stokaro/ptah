@@ -92,20 +92,22 @@ func TestSupportedToolsIncludeDbmate(t *testing.T) {
 // to survive that: a converted migration that lost it runs inside a
 // transaction and fails on a server that refuses it there.
 //
-// dbmate scopes the option to one direction and Ptah scopes no_transaction to
-// the migration, so the rows cover a file asking for it on either side and one
-// asking for nothing at all.
+// dbmate scopes the option to one direction and so does Ptah, so each row says
+// what each direction should carry. The asymmetric rows are the ones that
+// matter: widening one direction's option to both would take the transaction
+// away from a direction that never asked for that.
 func TestDbmateImportKeepsTransactionFalse(t *testing.T) {
 	tests := []struct {
-		name          string
-		up            string
-		down          string
-		wantDirective bool
+		name     string
+		up       string
+		down     string
+		wantUp   bool
+		wantDown bool
 	}{
-		{name: "both directions", up: "-- migrate:up transaction:false", down: "-- migrate:down transaction:false", wantDirective: true},
-		{name: "up only", up: "-- migrate:up transaction:false", down: "-- migrate:down", wantDirective: true},
-		{name: "down only", up: "-- migrate:up", down: "-- migrate:down transaction:false", wantDirective: true},
-		{name: "neither", up: "-- migrate:up", down: "-- migrate:down", wantDirective: false},
+		{name: "both directions", up: "-- migrate:up transaction:false", down: "-- migrate:down transaction:false", wantUp: true, wantDown: true},
+		{name: "up only", up: "-- migrate:up transaction:false", down: "-- migrate:down", wantUp: true, wantDown: false},
+		{name: "down only", up: "-- migrate:up", down: "-- migrate:down transaction:false", wantUp: false, wantDown: true},
+		{name: "neither", up: "-- migrate:up", down: "-- migrate:down", wantUp: false, wantDown: false},
 	}
 
 	for _, test := range tests {
@@ -119,12 +121,15 @@ func TestDbmateImportKeepsTransactionFalse(t *testing.T) {
 				fstest.MapFS{"20240215093000_index.sql": {Data: []byte(source)}}, nil, outDir, importer.Options{})
 			c.Assert(err, qt.IsNil)
 
-			for _, direction := range []string{"up", "down"} {
+			for _, direction := range []struct {
+				name string
+				want bool
+			}{{name: "up", want: test.wantUp}, {name: "down", want: test.wantDown}} {
 				body, err := os.ReadFile(filepath.Join(outDir,
-					"0000000001_v20240215093000_index."+direction+".sql"))
+					"0000000001_v20240215093000_index."+direction.name+".sql"))
 				c.Assert(err, qt.IsNil)
-				c.Assert(strings.Contains(string(body), "-- +ptah no_transaction"), qt.Equals, test.wantDirective,
-					qt.Commentf("%s direction, body %q", direction, string(body)))
+				c.Assert(strings.Contains(string(body), "-- +ptah no_transaction"), qt.Equals, direction.want,
+					qt.Commentf("%s direction, body %q", direction.name, string(body)))
 			}
 		})
 	}

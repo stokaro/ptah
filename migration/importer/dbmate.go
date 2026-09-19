@@ -76,7 +76,7 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 			return nil, fmt.Errorf("invalid dbmate version in %q: %w", entry.Name(), err)
 		}
 		result.consume(entry.Name())
-		up, down, noTransaction := splitDbmateSQL(string(content))
+		up, down, upNoTransaction, downNoTransaction := splitDbmateSQL(string(content))
 		if strings.TrimSpace(up) == "" {
 			return nil, fmt.Errorf("dbmate migration %q has an empty up section", entry.Name())
 		}
@@ -85,12 +85,13 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 			Name:    match[2],
 			UpSQL:   up,
 			DownSQL: down,
-			// dbmate scopes transaction:false to one direction and Ptah scopes
-			// no_transaction to the migration, so either direction asking for
-			// it decides. Running a statement inside a transaction its author
-			// ruled out is the failure that matters; the reverse costs an
-			// atomic boundary the author did not ask for.
-			NoTransaction: noTransaction,
+			// dbmate scopes transaction:false to one direction and so does
+			// Ptah, so each side carries its own. Widening one direction's
+			// option to both would take the transaction away from a
+			// multi-statement direction that never asked, and a failure
+			// partway through it would leave half the change behind.
+			UpNoTransaction:   upNoTransaction,
+			DownNoTransaction: downNoTransaction,
 		})
 	}
 	if len(migrations) == 0 {
@@ -101,7 +102,7 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 }
 
 // splitDbmateSQL splits a dbmate migration file into its up and down SQL, and
-// reports whether either direction asked not to run inside a transaction.
+// reports for each direction whether it asked not to run inside a transaction.
 //
 // Directive lines are matched whole and dropped entirely, so trailing options
 // such as "-- migrate:up transaction:false" never leak into the executable
@@ -114,14 +115,17 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 //
 // Content before the first directive and content under directives other than
 // up/down is ignored.
-func splitDbmateSQL(content string) (up, down string, noTransaction bool) {
+func splitDbmateSQL(content string) (up, down string, upNoTransaction, downNoTransaction bool) {
 	var upBuilder, downBuilder strings.Builder
 	section := ""
 	for line := range strings.SplitSeq(content, "\n") {
 		if name, options, ok := dbmateDirective(line); ok {
 			section = name
-			if (name == "up" || name == "down") && dbmateDisablesTransaction(options) {
-				noTransaction = true
+			switch {
+			case name == "up" && dbmateDisablesTransaction(options):
+				upNoTransaction = true
+			case name == "down" && dbmateDisablesTransaction(options):
+				downNoTransaction = true
 			}
 			continue
 		}
@@ -134,7 +138,7 @@ func splitDbmateSQL(content string) (up, down string, noTransaction bool) {
 			downBuilder.WriteByte('\n')
 		}
 	}
-	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String()), noTransaction
+	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String()), upNoTransaction, downNoTransaction
 }
 
 // dbmateDisablesTransaction reports whether a directive's options carry
