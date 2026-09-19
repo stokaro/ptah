@@ -92,6 +92,14 @@ export const sidebar = [
     ],
   },
   {
+    label: 'Migrate from another tool',
+    collapsed: true,
+    items: [
+      { slug: 'migrate-from/overview', label: 'Overview' },
+      { slug: 'migrate-from/golang-migrate' },
+    ],
+  },
+  {
     label: 'Direct schema changes',
     collapsed: true,
     items: [

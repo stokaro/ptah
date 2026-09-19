@@ -1,0 +1,264 @@
+---
+title: "Migrate from golang-migrate"
+description: Convert a golang-migrate directory to Ptah's format, seal it, and apply it to SQLite.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I convert my golang-migrate directory to Ptah and keep applying it?
+goal: Convert a golang-migrate directory, including a migration with no down file, and apply it.
+sourceOfTruth:
+  - internal/cli/migrations
+  - migration/migrationfile
+generated: false
+searchAliases:
+  - golang-migrate import
+  - convert golang-migrate
+overlaps:
+  - /versioned/import/
+  - /versioned/apply/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+golang-migrate directories are pairs of `NNN_name.up.sql` and `.down.sql` files.
+Ptah reads that layout directly. This page converts one, including the case a
+real directory always has and a clean example never does: a migration whose
+down file was never written.
+
+You will build the source directory, preview the conversion, run it, read what
+Ptah wrote for the missing rollback, and apply the result to a disposable
+SQLite database.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
+- A terminal and about five minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Convert the directory
+
+### Build the golang-migrate directory
+
+The second migration has an up file and no down file. That is the wart this
+page is about, so create it exactly as shown.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-golang-migrate/legacy
+cd ptah-from-golang-migrate
+cat > legacy/000001_create_users.up.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+cat > legacy/000001_create_users.down.sql <<'SQL'
+DROP TABLE users;
+SQL
+cat > legacy/000002_add_users_email_index.up.sql <<'SQL'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-golang-migrate/legacy | Out-Null
+Set-Location ptah-from-golang-migrate
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content legacy/000001_create_users.up.sql
+@'
+DROP TABLE users;
+'@ | Set-Content legacy/000001_create_users.down.sql
+@'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+'@ | Set-Content legacy/000002_add_users_email_index.up.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Preview the conversion
+
+`--dry-run` writes nothing and prints the files the import would produce.
+
+```console
+ptah migrations import --from golang-migrate --source-dir ./legacy --migrations-dir ./migrations --dry-run
+```
+
+Expected output on standard output:
+
+```text
+Dry run: would write 4 migration file(s) to ./migrations
+  0000000001_create_users.up.sql
+  0000000001_create_users.down.sql
+  0000000002_add_users_email_index.up.sql
+  0000000002_add_users_email_index.down.sql
+```
+
+Four files from three. Ptah's format pairs every version, so the second
+migration gets a down file whether or not the source had one.
+
+`--from` is optional here: the source tool is detected from the directory
+layout. Pass it when you want the run to fail rather than guess.
+
+### Run the import
+
+```console
+ptah migrations import --from golang-migrate --source-dir ./legacy --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 4 migration file(s) to ./migrations
+Wrote ./migrations/ptah.sum
+  0000000001_create_users.up.sql
+  0000000001_create_users.down.sql
+  0000000002_add_users_email_index.up.sql
+  0000000002_add_users_email_index.down.sql
+```
+
+The version numbers are widened to ten digits and the source directory is left
+untouched, so this step is safe to repeat and safe to abandon.
+
+`ptah.sum` is written by the import. Ptah checksums every migration it applies,
+and the sum file is what later commands compare against.
+
+### Read the rollback Ptah wrote for you
+
+The second migration had no down file. Ptah wrote one rather than leaving the
+pair incomplete:
+
+```console
+cat migrations/0000000002_add_users_email_index.down.sql
+```
+
+Expected output on standard output:
+
+```text
+-- No rollback was provided by the source migration.
+```
+
+That is the honest conversion of a migration that never had a rollback: a real
+file with no statements in it. The last section of this page shows what that
+costs, and this is the file to edit if you want a working rollback.
+
+## Apply the result
+
+### Validate the sealed directory
+
+```console
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+Editing a converted file without re-hashing fails here, before anything reaches
+a database.
+
+### Apply the converted directory
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current version: 0
+Total migrations: 2
+Pending migrations: 2
+```
+
+Progress records on standard error carry timestamps and correlation IDs, so
+this page does not copy those volatile fields.
+
+### Verify the recorded state
+
+```console
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 2
+Total Migrations: 2
+Applied Migrations: 2
+Pending Migrations: 0
+```
+
+Both migrations are recorded as applied, and the directory the revision table
+describes is the converted one.
+
+## What the missing rollback costs
+
+### Roll back past the empty rollback
+
+```console
+ptah migrations down --db-url sqlite://app.db --migrations-dir ./migrations --target 1 --confirm
+```
+
+Expected output includes, on standard output:
+
+```text
+Migrations to roll back: 1
+
+✅ Migration rollback completed successfully!
+Database is now at version: 1
+```
+
+The rollback succeeded, and the index it was supposed to remove is still there,
+because the file Ptah generated has no statement in it. The revision table and
+the database now disagree.
+
+### Watch the next apply fail
+
+Rolling forward again re-runs the second migration against a database that
+still has its index:
+
+```console exits=2
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard error:
+
+```text
+error: error running migrations: failed to apply migration 2: failed to execute migration SQL: sqlite: SQL execution failed: SQL logic error: index users_email_idx already exists (1)
+SQL: CREATE UNIQUE INDEX users_email_idx ON users (email)
+```
+
+This is the cost of the missing down file, and it is why the generated
+rollback is worth writing before the directory reaches an environment you
+cannot rebuild. Write the `DROP INDEX` into
+`migrations/0000000002_add_users_email_index.down.sql`, re-run `ptah migrations
+hash --dir ./migrations`, and the pair becomes reversible.
+
+## Where this leaves you
+
+The `legacy/` directory is no longer read by anything. Keep it in version
+control until the converted directory has been applied everywhere that matters,
+then delete it in a commit of its own.
+
+If a database already has golang-migrate's `schema_migrations` table with rows
+in it, do not run `ptah migrations up` against it. Record the history as
+already applied first: see
+[Adopt an existing database](../../start/adopt-an-existing-database/).
+
+[Import an existing migration directory](../../versioned/import/) covers the
+other source tools and the format table.

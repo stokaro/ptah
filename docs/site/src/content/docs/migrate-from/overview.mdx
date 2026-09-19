@@ -1,0 +1,62 @@
+---
+title: Migrate from another tool
+description: Convert a migration directory written by another tool, or keep running the commands you have through the Atlas-compatible binary.
+type: landing
+audience:
+  - new-user
+  - database-engineer
+readerQuestion: I already use another migration tool. How do I move to Ptah without rewriting my history?
+goal: Open the page for the tool in hand, and know what the move costs before starting.
+sourceOfTruth:
+  - internal/cli/migrations
+  - internal/cli/atlas
+generated: false
+searchAliases:
+  - switch to Ptah
+  - convert migrations
+overlaps:
+  - /versioned/import/
+  - /atlas/adoption/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Nothing here asks you to rewrite applied history. Each page starts from a
+directory the other tool wrote, converts it, and shows the state afterwards.
+Every command on every page runs in this repository's continuous integration
+against the version of Ptah the page was published with.
+
+## Pick the tool you are coming from
+
+<CardGrid>
+  <LinkCard title="golang-migrate" href="../golang-migrate/" description="Convert NNN_name.up.sql and .down.sql pairs, including a migration whose down file was never written." />
+</CardGrid>
+
+More tools are being added here one at a time. Until a tool has its own page,
+[Import an existing migration directory](../../versioned/import/) covers the
+conversion and carries the format table for every source Ptah reads.
+
+## Two different moves
+
+Converting a directory and keeping your commands are separate decisions, and
+you do not have to make both.
+
+**Convert the directory.** `ptah migrations import` reads the other tool's
+layout and writes Ptah's, sealed with `ptah.sum`. The source directory is left
+untouched. This is what the pages above walk through.
+
+**Keep the commands.** If you run Atlas today, `ptah-compat` is a drop-in for
+the Atlas CLI: the `atlas.hcl` you have and the commands you run keep working,
+with no conversion at all. [Migrate from Atlas](../../atlas/adoption/) is the
+path for that, in reversible stages.
+
+## What a conversion does not do
+
+A converted directory is a set of files. It says nothing about the databases
+that already ran the old tool, and applying it to one of them would replay
+migrations those databases already have.
+
+Record that history as applied first. [Adopt an existing
+database](../../start/adopt-an-existing-database/) is the procedure, and it is
+the step people skip.

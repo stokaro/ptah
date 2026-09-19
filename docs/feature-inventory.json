@@ -918,6 +918,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 9,
+          "expectations": 8
+        },
+        {
+          "shell": "powershell",
+          "steps": 9,
+          "expectations": 8
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
       "shells": [
         {
