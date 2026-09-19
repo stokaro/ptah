@@ -113,6 +113,73 @@ func TestSchemaApplyRefusesEmptyLockTimeoutOnUnlockedDialect(t *testing.T) {
 	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
 }
 
+// TestSchemaApplyDryRunRefusesLockTimeoutOnUnlockedDialect covers the preview.
+// A dry run against a dialect that locks still acquires the lock and still
+// waits out --lock-timeout, because the flag is read before the plan is built,
+// so a target with no lock owes the same refusal whether or not the run would
+// have written.
+func TestSchemaApplyDryRunRefusesLockTimeoutOnUnlockedDialect(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--schema-file", schemaPath,
+		"--lock-timeout", "5s",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.ErrorMatches, fmtLockRefusal("sqlite"), qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "Planned schema changes:")
+}
+
+// TestSchemaApplyDryRunWithoutLockTimeoutStillPreviews is the control for the
+// refusal above: the preview a lockless target gives is unchanged when nobody
+// asks for a lock.
+func TestSchemaApplyDryRunWithoutLockTimeoutStillPreviews(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--schema-file", schemaPath,
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+}
+
+// TestSchemaApplyDockerURLReportsTheConnectionRefusal keeps the lock decision
+// off a URL that names no target. `docker://sqlite/dev` asks Ptah to start a
+// dev database, and --db-url has no arm for the scheme, so the operator has to
+// read that rather than advice about a flag on a database they never named.
+func TestSchemaApplyDockerURLReportsTheConnectionRefusal(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+
+	out, err := runSchema("", "apply",
+		"--db-url", "docker://sqlite/dev",
+		"--schema-file", schemaPath,
+		"--lock-timeout", "5s",
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`connect to --db-url: unsupported database dialect: docker`, qt.Commentf("%s", out))
+}
+
 // TestSchemaApplyPlanFileRefusesLockTimeoutOnUnlockedDialect covers the second
 // apply path. A pre-approved plan executes SQL the same way, so it owes the
 // same refusal, and it takes its own branch through the command.

@@ -225,3 +225,52 @@ func TestEnsureApplyLockSupported_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyLockSupported_HappyPath names the dialects whose servers give Ptah a
+// session advisory lock, through the predicate a caller asks before connecting.
+func TestApplyLockSupported_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "postgres", dialect: "postgres"},
+		{name: "postgres alias", dialect: "postgresql"},
+		{name: "yugabytedb", dialect: "yugabytedb"},
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+		{name: "sqlserver", dialect: "sqlserver"},
+		{name: "sqlserver alias", dialect: "mssql"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.ApplyLockSupported(test.dialect), qt.IsTrue)
+		})
+	}
+}
+
+// TestApplyLockSupported_FailurePath covers every connectable dialect outside
+// that set, Oracle included: the refusal and the note both key on this answer,
+// so a dialect missing from here would be told it has a lock.
+func TestApplyLockSupported_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "sqlite", dialect: "sqlite"},
+		{name: "clickhouse", dialect: "clickhouse"},
+		{name: "cockroachdb", dialect: "cockroachdb"},
+		{name: "spanner", dialect: "spanner"},
+		{name: "oracle", dialect: "oracle"},
+		{name: "unknown", dialect: "frobnicate"},
+		{name: "empty", dialect: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.ApplyLockSupported(test.dialect), qt.IsFalse)
+		})
+	}
+}

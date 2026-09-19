@@ -131,6 +131,11 @@ func TestSchemaPlanDryRunPrintsDocumentWithoutSaving(t *testing.T) {
 // atlasschema.PreparePlanFile, so the saved plan files must be byte-identical.
 func TestSchemaPlanMatchesAtlasSchemaPlan(t *testing.T) {
 	c := qt.New(t)
+	// The compat tree binds PTAH_LOCK_TIMEOUT to `schema plan --lock-timeout`,
+	// which is declared for compatibility and refused when set. A machine that
+	// exports the variable for its own runs would measure its environment here
+	// instead of the two plan documents.
+	t.Setenv("PTAH_LOCK_TIMEOUT", "")
 	dir := t.TempDir()
 	nativeDB := filepath.Join(dir, "native.db")
 	atlasDB := filepath.Join(dir, "atlas.db")

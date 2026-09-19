@@ -120,20 +120,21 @@ Atlas-format migration directory replayed on the required --dev-url dev
 database).
 
 Safety semantics: a session advisory lock serializes concurrent applies
-against one target (--lock-timeout bounds the wait, and a dialect that takes
-no such lock refuses the flag rather than applying unlocked with it); when
---dev-url is set the
-exact ordered plan is rehearsed on the dev database first and a failed
-rehearsal refuses the apply with the target unchanged; the plan must be
-confirmed interactively unless --auto-approve is set; --dry-run prints the
-plan without applying. With --edit the planned SQL opens in $VISUAL or
-$EDITOR before confirmation, and the edited SQL is what gets applied. With
---plan <path>, a pre-approved plan file saved by "ptah schema plan" is
-executed instead of re-planning, after verifying the database still matches
-the plan's source fingerprint. --schemas and --include positively select what
-both comparison sides see; --exclude subtracts from the result. An --include
-selection that matches neither the target nor the desired schema refuses the
-apply rather than reporting a synced schema for work that did not happen.`,
+against one target (--lock-timeout bounds the wait, and the command refuses a
+typed --lock-timeout against a dialect that takes no such lock rather than
+applying unlocked with it); when --dev-url is set the exact ordered plan is
+rehearsed on the dev database first and a failed rehearsal refuses the apply
+with the target unchanged; the plan must be confirmed interactively unless
+--auto-approve is set; --dry-run prints the plan without applying, and asks
+for the same lock, so it is refused on the same targets. With --edit the
+planned SQL opens in $VISUAL or $EDITOR before confirmation, and the edited
+SQL is what gets applied. With --plan <path>, a pre-approved plan file saved
+by "ptah schema plan" is executed instead of re-planning, after verifying the
+database still matches the plan's source fingerprint. --schemas and --include
+positively select what both comparison sides see; --exclude subtracts from the
+result. An --include selection that matches neither the target nor the desired
+schema refuses the apply rather than reporting a synced schema for work that
+did not happen.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaApply(cmd, opts)
@@ -150,7 +151,7 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags.BoolVar(&opts.edit, applyEditFlag, false, "Open the planned SQL in $VISUAL or $EDITOR before confirmation")
 	flags.StringVar(&opts.txMode, applyTxModeFlag, "", "Transaction mode: all, file, or none (default file)")
 	flags.StringVar(&opts.lockTimeout, applyLockTimeoutFlag, "",
-		"Timeout for acquiring the schema apply lock, such as 10s (empty waits indefinitely); refused on a dialect that takes no lock")
+		"Timeout for acquiring the schema apply lock, such as 10s (empty waits indefinitely); refused when passed here against a dialect that takes no lock")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
@@ -234,7 +235,7 @@ func runSchemaApplyWithLockSession(
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-		if err := ensureSchemaApplyLockSupported(cmd, dialect); err != nil {
+		if err := decideSchemaApplyLockRequest(cmd, opts.dbURL, dialect); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
@@ -629,30 +630,61 @@ func warnSchemaApplyLockRelease(cmd *cobra.Command, err error) {
 	}
 }
 
-// ensureSchemaApplyLockSupported refuses a --lock-timeout the target cannot
-// honor. A dialect with no session advisory lock applies unlocked, so a bound
-// on a wait that never happens is an instruction with nowhere to go, and
-// taking it silently is what stokaro/ptah#3411 reports.
+// decideSchemaApplyLockRequest answers a lock timeout aimed at a target whose
+// dialect has no session advisory lock. A typed --lock-timeout is refused; a
+// value that reached the flag from PTAH_LOCK_TIMEOUT gets a note on stderr and
+// the apply goes on unlocked. A dialect that locks takes either spelling.
 //
-// The caller resolves the dialect from --db-url, so the refusal lands before
-// the connection and before either apply path loads a desired schema. Nothing
-// about the target can change the answer: a dialect either has the lock or it
-// does not.
+// A bound on a wait the target never makes is an instruction with nowhere to
+// go, and taking it silently is what stokaro/ptah#3411 reports. The caller
+// resolves the dialect from --db-url, so the refusal lands before the
+// connection and before either apply path loads a desired schema. Nothing about
+// the target can change the answer: a dialect either has the lock or it does
+// not.
 //
-// Presence decides, not the value. A timeout reaches the flag from the command
-// line or from PTAH_LOCK_TIMEOUT, and both are somebody configuring a bound
-// that this target drops; `--lock-timeout ""` asks for an unbounded wait, which
-// is equally a wait this target never makes. Reading the string instead would
-// take that last spelling in silence. The refusal names whichever of the two
-// carried the value, so the operator can find it.
-func ensureSchemaApplyLockSupported(cmd *cobra.Command, dialect string) error {
-	flags := cmd.Flags()
-	if !flags.Changed(applyLockTimeoutFlag) {
+// Only the command line refuses, because PTAH_LOCK_TIMEOUT is not this
+// command's variable. `ptah migrations up` and `ptah migrations down` register
+// a --lock-timeout of their own, which the same binding fills, and there it
+// bounds each migration's statement lock rather than a wait for a session
+// advisory lock. An operator who exports the variable for a versioned workflow
+// has said nothing about this apply, and "remove PTAH_LOCK_TIMEOUT" would tell
+// them to break the configuration it does belong to. A typed --lock-timeout is
+// addressed to this command and to nothing else, which is the reading
+// [cmdflags.SetOnCommandLine] exists for.
+//
+// Presence decides, not the value: `--lock-timeout ""` asks for an unbounded
+// wait, which is equally a wait this target never makes, so reading the string
+// would take that spelling in silence.
+func decideSchemaApplyLockRequest(cmd *cobra.Command, dbURL, dialect string) error {
+	// A docker:// URL names a dev engine Ptah would start, not a target that
+	// exists. DialectFromURL reads the engine out of it, ConnectToDatabase has
+	// no arm for the scheme, and an operator who passed one to --db-url has to
+	// read that refusal rather than one about a lock on a database they never
+	// named.
+	if atlasurl.IsDockerURL(dbURL) {
 		return nil
 	}
-	request := "--" + applyLockTimeoutFlag
+	flags := cmd.Flags()
 	if envName, fromEnv := cmdflags.AppliedEnvName(flags, applyLockTimeoutFlag); fromEnv {
-		request = envName
+		noteSchemaApplyLockIgnored(cmd, envName, dialect)
+		return nil
 	}
-	return atlasschema.EnsureApplyLockSupported(request, dialect)
+	if !cmdflags.SetOnCommandLine(flags, applyLockTimeoutFlag) {
+		return nil
+	}
+	return atlasschema.EnsureApplyLockSupported("--"+applyLockTimeoutFlag, dialect)
+}
+
+// noteSchemaApplyLockIgnored reports an environment-set lock timeout that this
+// target drops. The variable is shared with the versioned commands, so the note
+// says which spelling refuses instead of leaving the operator to find out by
+// typing it.
+func noteSchemaApplyLockIgnored(cmd *cobra.Command, envName, dialect string) {
+	if atlasschema.ApplyLockSupported(dialect) {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"note: %s is ignored here: dialect %q has no schema apply lock, so this apply runs unlocked. "+
+			"The variable also sets --%s on \"ptah migrations up\", so only a typed --%s refuses\n",
+		envName, dialect, applyLockTimeoutFlag, applyLockTimeoutFlag)
 }

@@ -185,14 +185,69 @@ func TestNewRootCommand_MalformedPTAHDryRunAppliesNothing(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
-// TestNewRootCommand_PTAHLockTimeoutRefusesUnlockedDialectByName measures the
-// spelling a refusal reports. `ptah schema apply` refuses a lock timeout on a
-// dialect with no advisory lock, and the value reaches that flag from
-// PTAH_LOCK_TIMEOUT as readily as from the command line. An operator sent after
-// a --lock-timeout they never typed has nothing to remove.
-func TestNewRootCommand_PTAHLockTimeoutRefusesUnlockedDialectByName(t *testing.T) {
+// TestNewRootCommand_PTAHLockTimeoutAppliesOnUnlockedDialectWithNote pins the
+// half of the refusal that must not fire. `ptah migrations up` and `ptah
+// migrations down` bind PTAH_LOCK_TIMEOUT to a --lock-timeout of their own,
+// where it bounds each migration's statement lock, so an operator who exports
+// the variable for a versioned workflow has configured nothing about this
+// apply. Refusing here would tell them to remove a setting another command
+// needs. The note is how the dropped request stays visible.
+func TestNewRootCommand_PTAHLockTimeoutAppliesOnUnlockedDialectWithNote(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_LOCK_TIMEOUT", "5s")
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath,
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+
+	stdout, stderr, err := executeRootCommand(
+		"schema", "apply",
+		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
+		"--schema-file", schemaPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "Schema apply completed successfully.")
+	c.Assert(stderr, qt.Contains,
+		`note: PTAH_LOCK_TIMEOUT is ignored here: dialect "sqlite" has no schema apply lock, `+
+			`so this apply runs unlocked. The variable also sets --lock-timeout on `+
+			`"ptah migrations up", so only a typed --lock-timeout refuses`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.IsNil)
+}
+
+// TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking is the second half
+// of the same measurement, on the command the variable does belong to: the
+// exported value configures a versioned run rather than refusing it.
+func TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "5s")
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	dbPath := filepath.Join(dir, "versioned.db")
+
+	stdout, stderr, err := executeRootCommand(
+		"migrations", "up",
+		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
+		"--migrations-dir", migrationsDir,
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "DRY RUN MODE")
+	c.Assert(stderr, qt.Not(qt.Contains), "schema apply lock")
+}
+
+// TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect is the refusal seen
+// through the tree that installs the environment binding: a flag the operator
+// typed still refuses there, so scoping the rule to the command line did not
+// scope it away.
+func TestNewRootCommand_TypedLockTimeoutRefusesUnlockedDialect(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "")
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath,
@@ -203,36 +258,41 @@ func TestNewRootCommand_PTAHLockTimeoutRefusesUnlockedDialectByName(t *testing.T
 		"schema", "apply",
 		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
 		"--schema-file", schemaPath,
+		"--lock-timeout", "5s",
 		"--auto-approve",
 	)
 
 	c.Assert(err, qt.ErrorMatches,
-		`PTAH_LOCK_TIMEOUT requested a schema apply lock, and dialect "sqlite" has none: `+
+		`--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: `+
 			`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. `+
-			`Remove PTAH_LOCK_TIMEOUT to apply without a lock`)
+			`Remove --lock-timeout to apply without a lock`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
-// TestNewRootCommand_NoPTAHLockTimeoutStillAppliesOnUnlockedDialect is the
-// control for the refusal above: without the variable the same apply runs.
-func TestNewRootCommand_NoPTAHLockTimeoutStillAppliesOnUnlockedDialect(t *testing.T) {
+// TestNewRootCommand_NoLockTimeoutAppliesSilentlyOnUnlockedDialect is the
+// control for both: with neither spelling set, the apply runs and says nothing
+// about a lock. The variable is cleared because a machine that exports it would
+// otherwise measure its own environment.
+func TestNewRootCommand_NoLockTimeoutAppliesSilentlyOnUnlockedDialect(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "")
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath,
 		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	dbPath := filepath.Join(dir, "target.db")
 
-	stdout, _, err := executeRootCommand(
+	stdout, stderr, err := executeRootCommand(
 		"schema", "apply",
 		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
 		"--schema-file", schemaPath,
 		"--auto-approve",
 	)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
+	c.Assert(err, qt.IsNil, qt.Commentf("%s\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "Schema apply completed successfully.")
+	c.Assert(stderr, qt.Not(qt.Contains), "schema apply lock")
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.IsNil)
 }

@@ -56,10 +56,21 @@ func (e *UnsupportedApplyLockError) Error() string {
 		e.Request, e.Dialect, strings.Join(dblock.SupportedDialects(), ", "), e.Request)
 }
 
+// ApplyLockSupported reports whether a target of this dialect gives Ptah a
+// session advisory lock for a schema apply. It answers from a dialect name
+// alone, so a caller decides before opening a connection, and the set it reads
+// is [ApplyLock.Supported]'s.
+//
+// A caller that refuses the request wants [EnsureApplyLockSupported], whose
+// error also names the dialects that do lock.
+func ApplyLockSupported(dialect string) bool {
+	return dblock.Supported(dialect)
+}
+
 // EnsureApplyLockSupported refuses a schema apply lock the target cannot take.
 // It returns an [UnsupportedApplyLockError] when dialect has no session
 // advisory lock, and nil otherwise; the dialect set it reads is
-// [ApplyLock.Supported]'s.
+// [ApplyLockSupported]'s.
 //
 // It answers from a dialect name alone, so a caller resolves it from the target
 // URL and refuses before connecting: a lock request that is going to be refused
@@ -69,7 +80,7 @@ func (e *UnsupportedApplyLockError) Error() string {
 // only side that can tell a value it was given from a default it chose. Call
 // this only for a request the operator made.
 func EnsureApplyLockSupported(request, dialect string) error {
-	if dblock.Supported(dialect) {
+	if ApplyLockSupported(dialect) {
 		return nil
 	}
 	return &UnsupportedApplyLockError{Request: request, Dialect: dialect}
