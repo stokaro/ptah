@@ -154,12 +154,16 @@ function selftest() {
     {
       label: 'documentation-only change',
       paths: ['docs/site/src/content/docs/concepts/desired-schema-and-sources.md'],
-      groups: ['inventory', 'site', 'style'],
+      // quickstart is selected for every page, not only the ones that opt in.
+      // A path filter cannot read `quickstart: true` out of frontmatter, so the
+      // scope names the tree that contains every page the opt-in can reach and
+      // the runner decides which of them to execute.
+      groups: ['inventory', 'quickstart', 'site', 'style'],
     },
     {
       label: 'generated command-reference change',
       paths: ['docs/site/src/content/docs/reference/command-flags.md'],
-      groups: ['generated', 'inventory', 'site', 'style'],
+      groups: ['generated', 'inventory', 'quickstart', 'site', 'style'],
     },
     {
       label: 'example change',
