@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 140,
-    "authored": 137,
+    "pages": 141,
+    "authored": 138,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 7
+      "tutorial": 8
     }
   },
   "pages": [
@@ -1624,6 +1624,7 @@
       ],
       "inboundLinks": [
         "/",
+        "/migrate-from/flyway/",
         "/schema/overview/",
         "/start/choose-a-workflow/"
       ],
@@ -3162,6 +3163,51 @@
       "sourceBytes": 6862
     },
     {
+      "path": "docs/site/src/content/docs/migrate-from/flyway.mdx",
+      "route": "/migrate-from/flyway/",
+      "title": "Migrate from Flyway",
+      "description": "Convert a Flyway directory, and learn what a repeatable migration becomes when the destination has no reapply.",
+      "sidebarPath": "Migrate from another tool",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I convert my Flyway migrations to Ptah, and what happens to my repeatable scripts?",
+      "goal": "Convert a Flyway directory and see what a repeatable migration costs afterwards.",
+      "sourceOfTruth": [
+        "internal/cli/migrations",
+        "migration/importer"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "flyway import",
+        "convert flyway migrations"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/import/",
+        "/migrate-from/golang-migrate/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/overview/",
+        "/start/adopt-an-existing-database/",
+        "/start/install/",
+        "/versioned/import/"
+      ],
+      "inboundLinks": [
+        "/migrate-from/overview/"
+      ],
+      "visibleWords": 539,
+      "sourceBytes": 7358
+    },
+    {
       "path": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
       "route": "/migrate-from/golang-migrate/",
       "title": "Migrate from golang-migrate",
@@ -3286,6 +3332,7 @@
       "outboundLinks": [
         "/atlas/adoption/",
         "/migrate-from/dbmate/",
+        "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/start/adopt-an-existing-database/",
@@ -3293,7 +3340,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 249,
-      "sourceBytes": 2800
+      "sourceBytes": 2947
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -5702,6 +5749,7 @@
         "/direct/inspect/",
         "/faq/",
         "/migrate-from/dbmate/",
+        "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/migrate-from/overview/",
@@ -5873,6 +5921,7 @@
         "/faq/",
         "/inference/quick-start/",
         "/migrate-from/dbmate/",
+        "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/schema/document/",
@@ -6524,6 +6573,7 @@
         "/concepts/migration-directory/",
         "/faq/",
         "/migrate-from/dbmate/",
+        "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/migrate-from/overview/",

@@ -1,0 +1,286 @@
+---
+title: "Migrate from Flyway"
+description: Convert a Flyway directory, and learn what a repeatable migration becomes when the destination has no reapply.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I convert my Flyway migrations to Ptah, and what happens to my repeatable scripts?
+goal: Convert a Flyway directory and see what a repeatable migration costs afterwards.
+sourceOfTruth:
+  - internal/cli/migrations
+  - migration/importer
+generated: false
+searchAliases:
+  - flyway import
+  - convert flyway migrations
+overlaps:
+  - /versioned/import/
+  - /migrate-from/golang-migrate/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Flyway names a file by what it is: `V` for a versioned migration, `U` for its
+undo script, `R` for a repeatable that re-runs whenever its body changes. The
+first two convert cleanly. The third cannot, because Ptah's format has no
+reapply semantics to convert it into, and this page is mostly about what that
+means for you.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
+- A terminal and about eight minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Convert the directory
+
+### Build the Flyway directory
+
+One versioned migration, one with a dotted version and an undo script, and one
+repeatable.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-flyway/legacy
+cd ptah-from-flyway
+cat > legacy/V1__create_users.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+cat > legacy/V1.1__add_email_index.sql <<'SQL'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+SQL
+cat > legacy/U1.1__add_email_index.sql <<'SQL'
+DROP INDEX users_email_idx;
+SQL
+cat > legacy/R__user_count_view.sql <<'SQL'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total FROM users;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-flyway/legacy | Out-Null
+Set-Location ptah-from-flyway
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content legacy/V1__create_users.sql
+@'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+'@ | Set-Content legacy/V1.1__add_email_index.sql
+@'
+DROP INDEX users_email_idx;
+'@ | Set-Content legacy/U1.1__add_email_index.sql
+@'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total FROM users;
+'@ | Set-Content legacy/R__user_count_view.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Run the import
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 6 migration file(s) to ./migrations
+Wrote ./migrations/ptah.sum
+  0000000001_v1_create_users.up.sql
+  0000000001_v1_create_users.down.sql
+  0000000002_v1_1_add_email_index.up.sql
+  0000000002_v1_1_add_email_index.down.sql
+  0000000003_repeatable_user_count_view.up.sql
+  0000000003_repeatable_user_count_view.down.sql
+```
+
+Four files became six, and every name changed. Read them before going on.
+
+## What Flyway's file kinds became
+
+**`V1.1__` flattened to version 2.** Dotted versions have no place in Ptah's
+ten-digit version slots, so the order is kept and the original spelling moves
+into the description: `v1_1_add_email_index`.
+
+**`U1.1__` became the down file of migration 2.** An undo script is a rollback,
+which is exactly what Ptah's down file is, so this one converts without losing
+anything.
+
+**`R__` became version 3, ordered after every versioned migration.** That is
+the conversion that changes meaning, and the rest of this page is about it.
+
+## Apply the result
+
+### Validate the sealed directory
+
+```console
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+### Apply the converted directory
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current version: 0
+Total migrations: 3
+Pending migrations: 3
+```
+
+Progress records on standard error carry timestamps and correlation IDs, so
+this page does not copy those volatile fields.
+
+### Verify the recorded state
+
+```console
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 3
+Total Migrations: 3
+Applied Migrations: 3
+Pending Migrations: 0
+```
+
+## What the repeatable costs now
+
+In Flyway, editing `R__user_count_view.sql` and redeploying re-runs it. Try the
+same thing here.
+
+### The edit is refused
+
+Change the view the way you would have in Flyway:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000003_repeatable_user_count_view.up.sql <<'SQL'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total, MIN(id) AS first_id FROM users;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total, MIN(id) AS first_id FROM users;
+'@ | Set-Content migrations/0000000003_repeatable_user_count_view.up.sql
+```
+
+</TabItem>
+</Tabs>
+
+```console exits=1
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard error:
+
+```text
+migration directory does not match ptah.sum:
+  changed: 0000000003_repeatable_user_count_view.up.sql
+```
+
+Ptah checksums every migration, and an applied one is not meant to change.
+
+### Re-hashing does not bring the behavior back
+
+```console
+ptah migrations hash --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote ./migrations/ptah.sum
+6 migration file(s) hashed
+```
+
+The directory is sealed again, so the next apply has nothing to object to:
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current version: 3
+Total migrations: 3
+Pending migrations: 0
+```
+
+Version 3 is already applied, so nothing runs and the view in the database
+still has its original definition. **This is the contract a Flyway repeatable
+loses.** Editing and redeploying is no longer how you change that view.
+
+What replaces it: a new migration each time the definition changes, which is
+how every other object in a versioned directory is already handled. If the
+object is one you would rather declare than migrate, a view is also something
+[direct schema changes](../../direct/overview/) converge for you.
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-flyway
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-flyway
+```
+
+</TabItem>
+</Tabs>
+
+## Where this leaves you
+
+Flyway's callbacks, placeholders and `flyway.conf` have no destination in a
+migration directory and are not converted. Read them once before deleting the
+source directory; a placeholder in particular may be carrying an environment
+difference the converted SQL now hard-codes.
+
+If a database already has Flyway's `flyway_schema_history` table, do not run
+`ptah migrations up` against it. Record the history as already applied first:
+see [Adopt an existing database](../../start/adopt-an-existing-database/).
+
+[Import an existing migration directory](../../versioned/import/) covers the
+other source tools and the format table.
