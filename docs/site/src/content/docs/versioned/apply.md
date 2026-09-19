@@ -307,9 +307,17 @@ Comparing `checksum` against `applied_checksum` is not the rule that decides
 running hash over every preceding file, so the two strings differ for reasons
 that are not an edit. `state` is that rule's own answer.
 
-Set `--exit-code` in CI when pending migrations should fail the job: the
-command then exits `1` while pending work exists and `0` once the database is
-up to date.
+Set `--exit-code` in CI when a database that is not up to date should fail the
+job: the command exits `1` while pending work exists, and also while any
+migration is `modified`, since that is the state a deployment must not run
+into. It exits `0` once neither holds.
+
+`ptah migrations up` and `ptah migrations down` refuse while a migration is
+`modified`, including the run that has nothing else to do. The mismatch is
+reported before anything is applied, and it stays until the file carries the
+bytes the revision row recorded. So the recovery has an order: put those bytes
+back, then carry the change you wanted in a new migration. A new migration on
+its own cannot run, because the refusal precedes it.
 
 ## The evidence a run leaves
 

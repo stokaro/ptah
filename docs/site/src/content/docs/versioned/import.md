@@ -123,15 +123,18 @@ an ordinary one-time migration ordered after every versioned file, because the
 destination format has no reapply semantics to convert it into.
 
 That changes what editing the file means. The converted file is checksummed
-like every other migration, so `ptah migrations validate` refuses the directory
-once you edit it, and re-hashing does not bring the reapply back: the migration
-is already applied, so its new body never runs.
+like every other migration: `ptah migrations validate` refuses the directory
+once you edit it, and re-hashing only seals the files to each other. The
+database separately recorded the checksum of what ran, so `ptah migrations up`
+refuses with a checksum mismatch until the file is back, and the edited body
+never runs.
 
-Add a new versioned migration carrying the change, or re-import the source
-directory if that directory is still the source of truth. `ptah migrations
-repair` is not the route here — it edits recorded state, and nothing has gone
-wrong. [Migrate from Flyway](../../migrate-from/flyway/) runs the whole
-sequence.
+The recovery has an order. Put the file back as it was first, because the
+refusal precedes every migration in the directory, and then carry the change in
+a new versioned migration. Re-importing the source directory is the other way
+back, where that directory is still the source of truth. `ptah migrations
+repair` is not the route — it edits recorded state, and nothing has gone wrong.
+[Migrate from Flyway](../../migrate-from/flyway/) runs the whole sequence.
 
 The Atlas-compatible `migrate import` verb of the `ptah-compat` binary places a
 converted repeatable on a reserved version slot above every versioned migration

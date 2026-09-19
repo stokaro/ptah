@@ -572,6 +572,18 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// before that lock exists. Returning here would report success for a run
 	// that never reached the version the operator named.
 	if !status.HasPendingChanges && toVersion == 0 {
+		// An applied migration whose file no longer accounts for the checksum
+		// the database recorded is neither a pending change nor a dirty
+		// revision, so both fields above are silent about it and this shortcut
+		// answers "up to date" over an edited history (stokaro/ptah#3438). The
+		// question is asked through the migrator, which is the same rule
+		// MigrateUp applies on the path that reaches it, rather than a second
+		// reading of the same revision rows. The read is unlocked because the
+		// decision it guards is: the status above is unlocked too, so a lock
+		// here would claim more than the shortcut can.
+		if _, err := mig.VerifyAppliedChecksums(cmd.Context()); err != nil {
+			return err
+		}
 		emitPlanOutput()
 		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
 			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},

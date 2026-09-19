@@ -3264,8 +3264,8 @@
         "/migrate-from/overview/",
         "/versioned/import/"
       ],
-      "visibleWords": 539,
-      "sourceBytes": 7358
+      "visibleWords": 631,
+      "sourceBytes": 7973
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
@@ -4389,8 +4389,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3681,
-      "sourceBytes": 26525
+      "visibleWords": 3705,
+      "sourceBytes": 26666
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -6527,8 +6527,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5647,
-      "sourceBytes": 41540
+      "visibleWords": 5745,
+      "sourceBytes": 42082
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -6695,8 +6695,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 691,
-      "sourceBytes": 6502
+      "visibleWords": 736,
+      "sourceBytes": 6763
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

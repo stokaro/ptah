@@ -952,12 +952,12 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 10,
+          "steps": 11,
           "expectations": 7
         },
         {
           "shell": "powershell",
-          "steps": 10,
+          "steps": 11,
           "expectations": 7
         }
       ]

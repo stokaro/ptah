@@ -214,7 +214,7 @@ migration directory does not match ptah.sum:
 
 Ptah checksums every migration, and an applied one is not meant to change.
 
-### Re-hashing does not bring the behavior back
+### Re-hashing seals the directory and changes nothing else
 
 ```console
 ptah migrations hash --dir ./migrations
@@ -227,28 +227,41 @@ Wrote ./migrations/ptah.sum
 6 migration file(s) hashed
 ```
 
-The directory is sealed again, so the next apply has nothing to object to:
+Sealing describes the files to each other. The database separately recorded
+the checksum of what version 3 was when it ran, and that record is untouched:
 
 ```console
-ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
 ```
 
 Expected output includes, on standard output:
 
 ```text
-Current version: 3
-Total migrations: 3
-Pending migrations: 0
+Status: ❌ Modified migration detected
 ```
 
-Version 3 is already applied, so nothing runs and the view in the database
-still has its original definition. **This is the contract a Flyway repeatable
-loses.** Editing and redeploying is no longer how you change that view.
+So the apply refuses rather than doing nothing:
 
-What replaces it: a new migration each time the definition changes, which is
-how every other object in a versioned directory is already handled. If the
-object is one you would rather declare than migrate, a view is also something
-[direct schema changes](../../direct/overview/) converge for you.
+```console exits=2
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+The refusal names version 3 and both checksums: `stored` is what ran, `current`
+is what the file says now. **This is the contract a Flyway repeatable loses.**
+Editing and redeploying is not how you change that view here. It does not
+re-run the view, and it stops the whole directory from applying until the file
+carries the bytes the database recorded.
+
+Getting out of this state has an order: put the file back as it was, which
+clears the refusal, and then add a new migration carrying the change. A new
+migration on its own cannot run, because the refusal precedes every migration
+in the directory.
+
+That new migration each time the definition changes is what replaces the
+repeatable, and it is how every other object in a versioned directory is
+already handled. If the object is one you would rather declare than migrate, a
+view is also something [direct schema changes](../../direct/overview/) converge
+for you.
 
 ## Clean up
 
