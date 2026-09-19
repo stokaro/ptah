@@ -214,7 +214,7 @@ migration directory does not match ptah.sum:
 
 Ptah checksums every migration, and an applied one is not meant to change.
 
-### Re-hashing does not bring the behavior back
+### Re-hashing seals the directory and changes nothing else
 
 ```console
 ptah migrations hash --dir ./migrations
@@ -227,7 +227,49 @@ Wrote ./migrations/ptah.sum
 6 migration file(s) hashed
 ```
 
-The directory is sealed again, so the next apply has nothing to object to:
+The directory is sealed again, and the apply still refuses. Sealing describes
+the files to each other; the database separately recorded the checksum of what
+version 3 was when it ran, and no amount of re-hashing changes that record:
+
+```console exits=2
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output on standard error:
+
+```text
+error: migration 3 checksum mismatch: stored bc5538c61cc2d5467558001f0d3f41e3d5b2ee0ca0ae0ca561fee0d1f6022dba, current 76e5e4a17de8e1980c83ec9e5d03e954948201d9cbe17e76e23df690aa3c32a3
+```
+
+`stored` is what ran, `current` is what the file says now. **This is the
+contract a Flyway repeatable loses.** Editing and redeploying is not how you
+change that view here: it does not re-run the view, and it stops the directory
+from applying at all until the file is back.
+
+### Putting the file back
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000003_repeatable_user_count_view.up.sql <<'SQL'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total FROM users;
+SQL
+ptah migrations hash --dir ./migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE VIEW user_count AS SELECT COUNT(*) AS total FROM users;
+'@ | Set-Content migrations/0000000003_repeatable_user_count_view.up.sql
+ptah migrations hash --dir ./migrations
+```
+
+</TabItem>
+</Tabs>
 
 ```console
 ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
@@ -241,9 +283,8 @@ Total migrations: 3
 Pending migrations: 0
 ```
 
-Version 3 is already applied, so nothing runs and the view in the database
-still has its original definition. **This is the contract a Flyway repeatable
-loses.** Editing and redeploying is no longer how you change that view.
+The file matches what ran, so the apply has nothing to object to and nothing to
+do.
 
 What replaces it: a new migration each time the definition changes, which is
 how every other object in a versioned directory is already handled. If the

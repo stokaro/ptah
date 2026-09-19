@@ -123,9 +123,11 @@ an ordinary one-time migration ordered after every versioned file, because the
 destination format has no reapply semantics to convert it into.
 
 That changes what editing the file means. The converted file is checksummed
-like every other migration, so `ptah migrations validate` refuses the directory
-once you edit it, and re-hashing does not bring the reapply back: the migration
-is already applied, so its new body never runs.
+like every other migration: `ptah migrations validate` refuses the directory
+once you edit it, and re-hashing only seals the files to each other. The
+database separately recorded the checksum of what ran, so `ptah migrations up`
+refuses with a checksum mismatch until the file is back, and the edited body
+never runs.
 
 Add a new versioned migration carrying the change, or re-import the source
 directory if that directory is still the source of truth. `ptah migrations
