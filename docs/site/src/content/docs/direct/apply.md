@@ -113,12 +113,12 @@ comparison sides.
 ## Locking and `--lock-timeout`
 
 A session advisory lock stops two applies from planning against one database at
-the same time, and `--lock-timeout` bounds how long the apply waits for it.
-PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server give Ptah such a lock.
-SQLite, ClickHouse, CockroachDB and Spanner do not, so an apply against one of
-them runs unlocked.
+the same time, and `--lock-timeout` bounds how long the apply waits for it. Not
+every engine gives Ptah such a lock, and an apply against one that does not runs
+unlocked.
 
-Asking a target that cannot lock for a lock timeout is refused:
+Asking a target that cannot lock for a lock timeout is refused. The refusal
+names the engines that do lock, so this page carries no second copy of the list:
 
 ```console exits=2
 ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --lock-timeout 5s --auto-approve
@@ -132,8 +132,16 @@ error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has no
 
 The refusal comes before the connection, so nothing is planned and nothing is
 applied. Remove the flag to apply unlocked, which is what such a target does
-anyway. `PTAH_LOCK_TIMEOUT` sets the same flag and is refused the same way,
-naming itself in the message so the setting can be found.
+anyway. `--dry-run` is refused on the same targets: a dry run against an engine
+that does lock acquires the lock and waits out the timeout, so the flag means
+the same thing there.
+
+`PTAH_LOCK_TIMEOUT` fills the same flag, and a value that arrives that way
+writes a note to standard error and applies unlocked instead of refusing. The
+variable is shared: `ptah migrations up` and `ptah migrations down` read it as
+their own `--lock-timeout`, which is the per-migration statement lock timeout,
+so exporting it for a versioned workflow configures nothing about this apply.
+Type the flag to get the refusal.
 
 `ptah-compat schema apply` keeps the Atlas behavior instead: it accepts the
 flag, writes a note to standard error, and applies unlocked.
