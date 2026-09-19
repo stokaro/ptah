@@ -1981,8 +1981,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [],
-      "visibleWords": 4540,
-      "sourceBytes": 34701
+      "visibleWords": 4591,
+      "sourceBytes": 34982
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -3202,7 +3202,8 @@
         "/versioned/import/"
       ],
       "inboundLinks": [
-        "/migrate-from/overview/"
+        "/migrate-from/overview/",
+        "/versioned/import/"
       ],
       "visibleWords": 539,
       "sourceBytes": 7358
@@ -3334,10 +3335,11 @@
         "/versioned/import/"
       ],
       "inboundLinks": [
-        "/migrate-from/overview/"
+        "/migrate-from/overview/",
+        "/versioned/import/"
       ],
-      "visibleWords": 438,
-      "sourceBytes": 7808
+      "visibleWords": 573,
+      "sourceBytes": 9939
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
@@ -6609,6 +6611,8 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/migrate-from/flyway/",
+        "/migrate-from/liquibase/",
         "/start/adopt-an-existing-database/",
         "/versioned/apply/",
         "/versioned/checkpoints/",
@@ -6628,8 +6632,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 612,
-      "sourceBytes": 6257
+      "visibleWords": 678,
+      "sourceBytes": 6428
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

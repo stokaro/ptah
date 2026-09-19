@@ -23,7 +23,7 @@ quickstart: true
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 What decides whether a Liquibase changeset converts is not the file format. It
-is whether the changeset carries SQL.
+is what the changeset carries.
 
 A changeset that carries SQL converts, whether you wrote it as formatted SQL or
 as `<sql>` inside XML. A changeset that carries a typed change — `<createTable>`,
@@ -31,7 +31,13 @@ as `<sql>` inside XML. A changeset that carries a typed change — `<createTable
 no SQL to carry over, and Ptah refuses it by name rather than generating SQL it
 would have to guess the dialect for.
 
-This page converts both kinds and reads the refusal.
+Carrying SQL is necessary and not sufficient. `context`, `contexts`, `labels`
+and `preConditions` decide at run time whether a changeset applies, and a
+migration directory cannot express that, so a changeset carrying one is refused
+as well. Importing it would turn a conditional history into an unconditional
+one, which is a worse outcome than a refusal.
+
+This page converts what converts and reads both refusals.
 
 ## What you need
 
@@ -224,6 +230,58 @@ That is also the honest reason for the refusal: a typed change is
 database-independent, and turning it into SQL means choosing a dialect. Ptah
 will not choose one on your behalf inside an import.
 
+### A changeset carrying a selector is refused too
+
+The changeset below carries SQL, so the rule above stops short of deciding it.
+`context="staging"` is what makes the difference.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p conditional/legacy
+cat > conditional/legacy/changelog.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice" context="staging">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql>
+  </changeSet>
+</databaseChangeLog>
+XML
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory conditional/legacy | Out-Null
+@'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice" context="staging">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql>
+  </changeSet>
+</databaseChangeLog>
+'@ | Set-Content conditional/legacy/changelog.xml
+```
+
+</TabItem>
+</Tabs>
+
+```console exits=2
+ptah migrations import --from liquibase --source-dir ./conditional/legacy --migrations-dir ./conditional/migrations
+```
+
+Expected output on standard error:
+
+```text
+error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" is conditional on context; a migration directory has no equivalent, so importing it would turn a conditional history into an unconditional one -- split the changelog or import it by hand
+```
+
+`contexts`, `labels` and `preConditions` are refused the same way. Split the
+changelog per environment in Liquibase first, where the selector still means
+something, and convert each result separately.
+
 ## Apply the result
 
 ### Validate the sealed directory
@@ -292,10 +350,12 @@ Remove-Item -Recurse -Force ptah-from-liquibase
 
 ## Where this leaves you
 
-Contexts, labels and preconditions have no destination in a migration directory
-and are not converted. Read them before deleting the changelog: a context in
-particular may be the reason a changeset ran in one environment and not
-another, which the converted directory no longer expresses.
+Contexts, labels and preconditions have no destination in a migration
+directory, which is why a changeset carrying one is refused rather than
+imported without it. Deciding what they meant is work that belongs in
+Liquibase: a context is usually the reason a changeset ran in one environment
+and not another, and once the changelog is split along that line each half
+converts.
 
 If a database already has Liquibase's `DATABASECHANGELOG` table, do not run
 `ptah migrations up` against it. Record the history as already applied first:

@@ -105,9 +105,9 @@ func liquibaseMigrationFrom(fileName string, changeset liquibaseChangeSet) (Sour
 	name := liquibaseChangesetName(changeset.author, changeset.id)
 	if len(changeset.selectors) > 0 {
 		return SourceMigration{}, fmt.Errorf(
-			"liquibase changeset %s in %q carries %s, which decide whether the changeset runs; "+
-				"a migration directory has no equivalent, so importing it would turn a conditional "+
-				"history into an unconditional one -- split the changelog or import it by hand",
+			"liquibase changeset %s in %q is conditional on %s; a migration directory has no "+
+				"equivalent, so importing it would turn a conditional history into an "+
+				"unconditional one -- split the changelog or import it by hand",
 			name, fileName, strings.Join(changeset.selectors, ", "))
 	}
 	if len(changeset.unsupported) > 0 {
