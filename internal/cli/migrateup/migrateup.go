@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
@@ -200,7 +201,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
-	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
+		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
@@ -444,6 +446,16 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("database URL is required")
 	}
 
+	lockRequest := migratelock.Request{
+		Cmd:        cmd,
+		FlagName:   migrationLockTimeoutFlag,
+		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
+		DBURL:      dbURL,
+	}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return err
+	}
+
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
@@ -494,6 +506,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// Before any migrator call: reading the status initializes the revision
+	// table, and a decision taken after the first write answers nothing.
+	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
+
 	lintPolicy, err := migrationlintgate.LoadPolicy(migrationsFS, conn.Info().Dialect)
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)

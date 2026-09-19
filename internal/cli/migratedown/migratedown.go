@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
@@ -142,7 +143,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
 	flags.BoolVar(&opts.skipConfirm, confirmFlag, false, "Skip confirmation prompt (use with caution!)")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
-	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
+		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.StringVar(&opts.preDownHook, preDownHookFlag, "", "Shell command to run before rolling back migrations; aborts unless it exits 0")
@@ -220,6 +222,52 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	return opts
 }
 
+// rollbackSettingValues carries the flag strings one rollback parses, so the
+// four parsers are one call at the call site rather than four error checks.
+type rollbackSettingValues struct {
+	lockTimeout          string
+	statementTimeout     string
+	execOrder            string
+	migrationLockTimeout string
+	connectTimeout       string
+}
+
+// parsedRollbackSettings is what those strings mean to the migrator.
+type parsedRollbackSettings struct {
+	timeouts             migrationfile.Timeouts
+	execOrder            migrator.ExecOrder
+	migrationLockTimeout time.Duration
+	connectTimeout       time.Duration
+}
+
+// parseRollbackSettings turns the flag strings into migrator values, refusing
+// on the first one that does not parse. `migrations up` reads the same
+// vocabulary through parseMigrationSettings.
+func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings, error) {
+	timeouts, err := migrateflags.ParseMigrationTimeouts(values.lockTimeout, values.statementTimeout)
+	if err != nil {
+		return parsedRollbackSettings{}, err
+	}
+	execOrder, err := migrateflags.ParseExecOrder(values.execOrder)
+	if err != nil {
+		return parsedRollbackSettings{}, err
+	}
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(values.migrationLockTimeout)
+	if err != nil {
+		return parsedRollbackSettings{}, err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(values.connectTimeout)
+	if err != nil {
+		return parsedRollbackSettings{}, err
+	}
+	return parsedRollbackSettings{
+		timeouts:             timeouts,
+		execOrder:            execOrder,
+		migrationLockTimeout: migrationLockTimeout,
+		connectTimeout:       connectTimeout,
+	}, nil
+}
+
 func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -235,14 +283,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	targetVersionValue := resolvedOpts.target
 	dirFormatValue := resolvedOpts.dirFormat
 	atlasEnv := resolvedOpts.atlasEnv
-	execOrderValue := resolvedOpts.execOrder
-	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
-	lockTimeout := resolvedOpts.lockTimeout
-	statementTimeout := resolvedOpts.statementTimeout
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
 	revisionFormatValue := resolvedOpts.revisionTableFormat
-	connectTimeoutValue := resolvedOpts.connectTimeout
 
 	runtime, err := startObservability(cmd, opts)
 	if err != nil {
@@ -253,6 +296,16 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
+	}
+
+	lockRequest := migratelock.Request{
+		Cmd:        cmd,
+		FlagName:   migrationLockTimeoutFlag,
+		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
+		DBURL:      dbURL,
+	}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return err
 	}
 
 	if migrationsDir == "" {
@@ -315,31 +368,30 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		emit.Printf("Connecting to database: %s\n", dburldisplay.Format(dbURL))
 	}
 
-	timeouts, err := migrateflags.ParseMigrationTimeouts(lockTimeout, statementTimeout)
-	if err != nil {
-		return err
-	}
-	execOrder, err := migrateflags.ParseExecOrder(execOrderValue)
-	if err != nil {
-		return err
-	}
-	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(migrationLockTimeoutValue)
-	if err != nil {
-		return err
-	}
-
-	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
+	settings, err := parseRollbackSettings(rollbackSettingValues{
+		lockTimeout:          resolvedOpts.lockTimeout,
+		statementTimeout:     resolvedOpts.statementTimeout,
+		execOrder:            resolvedOpts.execOrder,
+		migrationLockTimeout: resolvedOpts.migrationLockTimeout,
+		connectTimeout:       resolvedOpts.connectTimeout,
+	})
 	if err != nil {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), settings.connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// Before any migrator call: reading the status initializes the revision
+	// table, and a decision taken after the first write answers nothing.
+	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
 
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
@@ -388,9 +440,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
 		WithSkipChecks(resolvedOpts.skipChecks).
-		WithDefaultTimeouts(timeouts).
-		WithExecOrder(execOrder).
-		WithMigrationLockTimeout(migrationLockTimeout).
+		WithDefaultTimeouts(settings.timeouts).
+		WithExecOrder(settings.execOrder).
+		WithMigrationLockTimeout(settings.migrationLockTimeout).
 		WithLogger(runtime.Logger()).
 		WithObserver(runtime.Observer())
 
@@ -446,7 +498,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		targetVersion:    targetVersion,
 		dirFormat:        dirFormat,
 		atlasEnv:         atlasEnv,
-		connectTimeout:   connectTimeout,
+		connectTimeout:   settings.connectTimeout,
 		skipChecks:       resolvedOpts.skipChecks,
 	}, emit); err != nil {
 		return err
@@ -468,7 +520,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		resolvedOpts, opts, mig, preflightHook, conn, rollbackInputs{
 			migrationsFS: migrationsFS, migrationsDir: migrationsDir,
 			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: atlasEnv,
-			connectTimeout: connectTimeout, migrationsSchema: migrationsSchema,
+			connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
 			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
 		}), emit); err != nil {
 		return fmt.Errorf("error running down migrations: %w", err)

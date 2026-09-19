@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
@@ -92,7 +93,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
+		"refused against a dialect that takes no such lock")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
@@ -112,10 +114,20 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
+	// `migrations baseline` reads no project config, so the request reaches it
+	// from the command line or PTAH_MIGRATION_LOCK_TIMEOUT only.
+	lockRequest := migratelock.Request{
+		Cmd:      cmd,
+		FlagName: lockTimeoutFlag,
+		DBURL:    opts.dbURL,
+	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 			return err
 		}
+	}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return err
 	}
 	if opts.migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
@@ -176,6 +188,12 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// Before the migrator is built, so no revision row is written under a lock
+	// the operator asked for and the target never took.
+	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
 
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 	mig := migrator.NewMigrator(conn, provider).

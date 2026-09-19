@@ -179,6 +179,53 @@ Expected output on standard output:
 ✅ Database is already up to date!
 ```
 
+## Locking and `--migration-lock-timeout`
+
+A session advisory lock keeps two runners from advancing one migration history
+at the same time, and `--migration-lock-timeout` bounds how long a run waits for
+it. Not every engine gives Ptah such a lock, and a run against one that does not
+proceeds unlocked.
+
+A lock timeout aimed at a target that cannot lock is refused. The message itself
+names the engines that do lock, so no copy of that list lives here:
+
+```console exits=2
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --migration-lock-timeout 10s
+```
+
+Expected output on standard error:
+
+```text
+error: --migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. Remove --migration-lock-timeout to run without a lock
+```
+
+Nothing is applied and the revision table is untouched. A URL that names its
+dialect is refused before the connection opens, which is why a `sqlite://`
+target that does not exist yet is left uncreated. A PostgreSQL-wire URL names no
+product: `postgres://` can reach CockroachDB or Spanner, and that target is
+decided once the server has named itself — after the connection, still before
+the first migration runs. Remove the flag to run unlocked, which is what such a
+target does anyway.
+
+`ptah migrations down` and `ptah migrations baseline` answer the same way: all
+three take the same lock on the same history.
+
+Every spelling refuses. `PTAH_MIGRATION_LOCK_TIMEOUT` fills the flag on each of
+those commands, and `migration.migration_lock_timeout` in
+[the project config](../../reference/configuration/) fills it on `up` and
+`down`; all of them name this one lock, so a value arriving from any of them
+asks for a lock the target cannot give. The message says which spelling carried
+the value.
+
+`ptah migrations checkpoint` registers the same flag for a different lock: the
+one its replay takes on the **shadow** database, not on a target. A checkpoint
+writes files rather than advancing a history, so a shadow database that cannot
+lock earns a note on standard error and the replay goes ahead.
+
+`ptah-compat migrate down --lock-timeout` reaches the same command and is not
+refused. That surface answers to the Atlas contract, and what the Atlas CLI does
+with a lock timeout on a dialect that cannot lock is not measured here.
+
 ## Check status
 
 ```console
@@ -496,7 +543,10 @@ and pipelines share a directory:
   versions as out-of-order.
 - **Timeouts and locks**: `--statement-timeout`, `--lock-timeout`, and
   `--migration-lock-timeout` bound long DDL and the session-level advisory
-  lock that keeps two migrators from racing. A migration that resolves to
+  lock that keeps two migrators from racing. A target whose dialect has no such
+  advisory lock refuses `--migration-lock-timeout`; see
+  [Locking and `--migration-lock-timeout`](#locking-and---migration-lock-timeout).
+  A migration that resolves to
   `none` cannot use statement or lock timeouts. Ptah rejects the combination
   before executing SQL or changing the revision row. A file-level `file`
   override under global `none` restores the transaction and may use timeouts.

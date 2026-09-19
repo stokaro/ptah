@@ -21,6 +21,54 @@ const envPrefix = "PTAH"
 
 const defaultSliceAnnotation = "ptah.cmdadapter.default-slice"
 
+const forwardedAnnotation = "ptah.cmdadapter.forwarded"
+
+// Forwarded reports whether cmd is running under a forwarding adapter rather
+// than from its own surface's command line.
+//
+// A native rule about what the operator typed cannot read pflag here. The
+// adapter re-executes the native command with arguments it mapped from the
+// calling surface's own spelling, so a flag the adapter supplied and a flag the
+// operator wrote are the same `Changed` bit. A native rule that must not reach
+// the compatibility surface asks this, and the rule's declaration says why it
+// stops there.
+//
+// It answers for a whole forwarded execution: the marker is set on the target
+// before it runs and removed afterwards, and a native command reached directly
+// never carries it.
+func Forwarded(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if _, marked := current.Annotations[forwardedAnnotation]; marked {
+			return true
+		}
+	}
+	return false
+}
+
+// markForwarded marks target as running under an adapter and returns a function
+// that restores target's previous annotations exactly, including dropping a map
+// this call allocated. A target is free to outlive one forwarded execution, so
+// a marker left behind would make a later direct run read as forwarded.
+func markForwarded(target *cobra.Command) func() {
+	allocated := target.Annotations == nil
+	previous, configured := target.Annotations[forwardedAnnotation]
+	if allocated {
+		target.Annotations = make(map[string]string)
+	}
+	target.Annotations[forwardedAnnotation] = "true"
+	return func() {
+		if configured {
+			target.Annotations[forwardedAnnotation] = previous
+			return
+		}
+		if allocated {
+			target.Annotations = nil
+			return
+		}
+		delete(target.Annotations, forwardedAnnotation)
+	}
+}
+
 // ArgMapper rewrites command arguments and returns the context for one
 // forwarded target execution. Resources retained by the mapped execution must
 // be registered with cleanup.
@@ -184,6 +232,8 @@ func newForwardCommandWithArgsMapper(
 			// another surface.
 			restorePrefix := cmdutil.AdoptErrorPrefixPolicy(target, cmd)
 			defer restorePrefix()
+			restoreForwarded := markForwarded(target)
+			defer restoreForwarded()
 			return target.Execute()
 		},
 	}
