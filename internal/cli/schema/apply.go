@@ -120,7 +120,9 @@ Atlas-format migration directory replayed on the required --dev-url dev
 database).
 
 Safety semantics: a session advisory lock serializes concurrent applies
-against one target (--lock-timeout bounds the wait); when --dev-url is set the
+against one target (--lock-timeout bounds the wait, and a dialect that takes
+no such lock refuses the flag rather than applying unlocked with it); when
+--dev-url is set the
 exact ordered plan is rehearsed on the dev database first and a failed
 rehearsal refuses the apply with the target unchanged; the plan must be
 confirmed interactively unless --auto-approve is set; --dry-run prints the
@@ -147,7 +149,8 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags.BoolVar(&opts.autoApprove, applyAutoApproveFlag, false, "Skip interactive approval")
 	flags.BoolVar(&opts.edit, applyEditFlag, false, "Open the planned SQL in $VISUAL or $EDITOR before confirmation")
 	flags.StringVar(&opts.txMode, applyTxModeFlag, "", "Transaction mode: all, file, or none (default file)")
-	flags.StringVar(&opts.lockTimeout, applyLockTimeoutFlag, "", "Timeout for acquiring the schema apply lock, such as 10s (empty waits indefinitely)")
+	flags.StringVar(&opts.lockTimeout, applyLockTimeoutFlag, "",
+		"Timeout for acquiring the schema apply lock, such as 10s (empty waits indefinitely); refused on a dialect that takes no lock")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
