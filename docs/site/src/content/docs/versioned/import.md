@@ -109,8 +109,8 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. |
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
-| Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`); XML, YAML, and JSON changelogs are rejected with a message. |
-| dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); directive options such as `transaction:false` are dropped from the SQL. |
+| Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL; a changeset that carries a typed change or a selector is refused by name. |
+| dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); a directive keeps its options out of the SQL, and `transaction:false` on one direction becomes `-- +ptah no_transaction` on that direction alone. |
 
 This is native Ptah-format import, distinct from the Atlas-compatible
 `migrate import` verb of the `ptah-compat` binary, which writes an Atlas-format directory with
@@ -119,28 +119,24 @@ This is native Ptah-format import, distinct from the Atlas-compatible
 ### A repeatable becomes a one-time migration
 
 Flyway's `R__name.sql` re-runs whenever its body changes. Import converts it to
-an ordinary one-time migration on a reserved slot ordered after every versioned
-file, because the destination format has no reapply semantics to convert it
-into.
+an ordinary one-time migration ordered after every versioned file, because the
+destination format has no reapply semantics to convert it into.
 
-That changes what editing the file means. Ptah checksums every applied
-migration, so editing a converted repeatable and re-hashing the directory is
-refused on the next apply — before anything runs, and with nothing written:
+That changes what editing the file means. The converted file is checksummed
+like every other migration, so `ptah migrations validate` refuses the directory
+once you edit it, and re-hashing does not bring the reapply back: the migration
+is already applied, so its new body never runs.
 
-```text
-migration 9223372036854775807 checksum mismatch: stored …, current …:
-"view" was a Flyway repeatable, and importing it made it a one-time migration,
-so editing it is refused the way editing any applied migration is.
-Add a new versioned migration with the change, or re-import the source directory.
-```
+Add a new versioned migration carrying the change, or re-import the source
+directory if that directory is still the source of truth. `ptah migrations
+repair` is not the route here — it edits recorded state, and nothing has gone
+wrong. [Migrate from Flyway](../../migrate-from/flyway/) runs the whole
+sequence.
 
-The two remedies the message names are the whole answer. Adding a versioned
-migration is the ordinary loop; re-importing is for a source directory that is
-still the source of truth. `ptah migrations repair` is not the route here — it
-edits recorded state, and nothing has gone wrong.
-
-The checksum itself is unchanged for every other migration: editing an applied
-versioned file is refused exactly as before.
+The Atlas-compatible `migrate import` verb of the `ptah-compat` binary places a
+converted repeatable on a reserved version slot above every versioned migration
+instead, because an Atlas directory takes each migration's version from the
+file name.
 
 ## After the import
 
@@ -168,9 +164,12 @@ error: refusing to overwrite existing migration file "0000000001_create_users.up
 Point `--migrations-dir` at an empty directory, or remove the partial result
 and rerun.
 
-**Unsupported changelog formats are rejected loudly.** Liquibase XML, YAML,
-and JSON changelogs fail with a message naming the limitation; convert them
-to formatted SQL first.
+**A Liquibase changeset with nothing to convert is rejected by name.** A typed
+change such as `<createTable>` carries no SQL, and `context`, `contexts`,
+`labels` and `preConditions` decide at run time whether a changeset applies,
+which a migration directory cannot express. The message names the changeset,
+the file and the construct.
+[Migrate from Liquibase](../../migrate-from/liquibase/) works through both.
 
 ## Next steps
 

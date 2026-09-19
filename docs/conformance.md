@@ -583,7 +583,13 @@ order remains execution order. Atlas CE v1.3.0 validated and applied that
 11-file shape in order. A malformed or headerless member fails the whole import
 before destination creation, so the mixed layout cannot partially import. A
 directory containing only numbered SQL names keeps the established one-file
-conversion. Liquibase XML, YAML, and JSON changelogs remain unsupported.
+conversion.
+
+Liquibase XML, YAML and JSON changelogs are read as well, as of
+stokaro/ptah#1629; re-measured 2026-09-19 on a single-changeset XML changelog,
+which imported to `1_alice_1.sql` plus `atlas.sum` at exit 0. A changeset
+carrying a typed change or a selector is refused by name rather than
+half-converted.
 
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 

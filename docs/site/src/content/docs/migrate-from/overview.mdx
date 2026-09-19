@@ -34,6 +34,8 @@ against the version of Ptah the page was published with.
   <LinkCard title="Goose" href="../goose/" description="Convert annotated single files, including a statement block and a migration that must run outside a transaction." />
   <LinkCard title="dbmate" href="../dbmate/" description="Convert timestamped single files, and read what the conversion did to their version numbers." />
   <LinkCard title="Flyway" href="../flyway/" description="Convert versioned, undo and repeatable scripts, and learn what a repeatable becomes." />
+  <LinkCard title="Liquibase" href="../liquibase/" description="Convert the changesets that carry SQL, and read the refusal that names the ones that do not." />
+  <LinkCard title="Atlas" href="../atlas/" description="Keep the atlas.hcl, the directory and the commands, and run them through ptah-compat." />
 </CardGrid>
 
 More tools are being added here one at a time. Until a tool has its own page,
@@ -49,10 +51,11 @@ you do not have to make both.
 layout and writes Ptah's, sealed with `ptah.sum`. The source directory is left
 untouched. This is what the pages above walk through.
 
-**Keep the commands.** If you run Atlas today, `ptah-compat` is a drop-in for
-the Atlas CLI: the `atlas.hcl` you have and the commands you run keep working,
-with no conversion at all. [Migrate from Atlas](../../atlas/adoption/) is the
-path for that, in reversible stages.
+**Keep the commands.** If you run Atlas today, `ptah-compat` reads the
+`atlas.hcl` you have and answers the commands you already run, with no
+conversion at all. [Run an Atlas project on ptah-compat](../atlas/) is the
+first mile, command by command; [Migrate from Atlas](../../atlas/adoption/)
+carries on from there for readers who want to go native.
 
 ## What a conversion does not do
 

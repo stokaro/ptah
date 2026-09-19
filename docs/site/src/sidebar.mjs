@@ -100,6 +100,8 @@ export const sidebar = [
       { slug: 'migrate-from/goose' },
       { slug: 'migrate-from/dbmate' },
       { slug: 'migrate-from/flyway' },
+      { slug: 'migrate-from/liquibase' },
+      { slug: 'migrate-from/atlas', label: 'Atlas' },
     ],
   },
   {

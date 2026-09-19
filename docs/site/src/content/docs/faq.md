@@ -206,10 +206,13 @@ desired-schema workflow.
 
 ### My Liquibase changelog was rejected on import. What is supported? {#liquibase-changelog-format}
 
-Formatted-SQL changelogs (`--changeset` / `--rollback`) import; XML, YAML, and
-JSON changelogs are refused with a message rather than half-converted. Convert
-the changelog to formatted SQL, or leave that history where it is and adopt the
-database with baseline instead.
+The file format is not what decides it. A changeset that carries SQL imports,
+whether you wrote it as formatted SQL or as `<sql>` inside XML, YAML or JSON.
+A changeset that carries a typed change such as `<createTable>` has no SQL to
+convert, and one carrying `context`, `contexts`, `labels` or `preConditions` is
+conditional in a way a migration directory cannot express; both are refused by
+name rather than half-converted. Rewrite those changesets in Liquibase first,
+or leave that history where it is and adopt the database with baseline instead.
 
 - [Import from another tool](../versioned/import/)
 

@@ -1,0 +1,365 @@
+---
+title: "Migrate from Liquibase"
+description: Convert a Liquibase changelog, and learn which of your changesets carry SQL and which do not.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I convert my Liquibase changelog to Ptah, and what happens to my XML?
+goal: Convert a changelog and read the refusal that tells you which changesets cannot convert.
+sourceOfTruth:
+  - internal/cli/migrations
+  - migration/importer
+generated: false
+searchAliases:
+  - liquibase import
+  - convert liquibase changelog
+overlaps:
+  - /versioned/import/
+  - /migrate-from/flyway/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+What decides whether a Liquibase changeset converts is not the file format. It
+is what the changeset carries.
+
+A changeset that carries SQL converts, whether you wrote it as formatted SQL or
+as `<sql>` inside XML. A changeset that carries a typed change — `<createTable>`,
+`<addColumn>`, and the rest of Liquibase's database-independent vocabulary — has
+no SQL to carry over, and Ptah refuses it by name rather than generating SQL it
+would have to guess the dialect for.
+
+Carrying SQL is necessary and not sufficient. `context`, `contexts`, `labels`
+and `preConditions` decide at run time whether a changeset applies, and a
+migration directory cannot express that, so a changeset carrying one is refused
+as well. Importing it would turn a conditional history into an unconditional
+one, which is a worse outcome than a refusal.
+
+This page converts what converts and reads both refusals.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
+- A terminal and about eight minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Convert a formatted-SQL changelog
+
+### Build the changelog
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-liquibase/legacy
+cd ptah-from-liquibase
+cat > legacy/001-users.sql <<'SQL'
+--liquibase formatted sql
+
+--changeset alice:1
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+--rollback DROP TABLE users;
+
+--changeset alice:2
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+--rollback DROP INDEX users_email_idx;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-liquibase/legacy | Out-Null
+Set-Location ptah-from-liquibase
+@'
+--liquibase formatted sql
+
+--changeset alice:1
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+--rollback DROP TABLE users;
+
+--changeset alice:2
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+--rollback DROP INDEX users_email_idx;
+'@ | Set-Content legacy/001-users.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Run the import
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 4 migration file(s) to ./migrations
+Wrote ./migrations/ptah.sum
+  0000000001_alice_1.up.sql
+  0000000001_alice_1.down.sql
+  0000000002_alice_2.up.sql
+  0000000002_alice_2.down.sql
+```
+
+Each changeset became a migration, named from its author and id. The
+`--rollback` line became the down file, which is what it already was.
+
+## What an XML changelog does
+
+### A changeset carrying SQL converts
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p xml/legacy
+cat > xml/legacy/changelog.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);</sql>
+    <rollback>DROP TABLE users;</rollback>
+  </changeSet>
+</databaseChangeLog>
+XML
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory xml/legacy | Out-Null
+@'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);</sql>
+    <rollback>DROP TABLE users;</rollback>
+  </changeSet>
+</databaseChangeLog>
+'@ | Set-Content xml/legacy/changelog.xml
+```
+
+</TabItem>
+</Tabs>
+
+```console
+ptah migrations import --from liquibase --source-dir ./xml/legacy --migrations-dir ./xml/migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 2 migration file(s) to ./xml/migrations
+Wrote ./xml/migrations/ptah.sum
+  0000000001_alice_1.up.sql
+  0000000001_alice_1.down.sql
+```
+
+XML is read. Nothing about the format stops the conversion.
+
+### A changeset carrying a typed change is refused, by name
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p typed/legacy
+cat > typed/legacy/changelog.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice">
+    <createTable tableName="users">
+      <column name="id" type="int"/>
+    </createTable>
+  </changeSet>
+</databaseChangeLog>
+XML
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory typed/legacy | Out-Null
+@'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice">
+    <createTable tableName="users">
+      <column name="id" type="int"/>
+    </createTable>
+  </changeSet>
+</databaseChangeLog>
+'@ | Set-Content typed/legacy/changelog.xml
+```
+
+</TabItem>
+</Tabs>
+
+```console exits=2
+ptah migrations import --from liquibase --source-dir ./typed/legacy --migrations-dir ./typed/migrations
+```
+
+Expected output on standard error:
+
+```text
+error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" uses <createTable>, which is not SQL text and which Ptah does not generate per dialect; rewrite it as a `sql` change or import it by hand
+```
+
+The message names the changeset, the file and the element, so a changelog with
+one offender tells you which one on the first run. Work through them by
+rewriting each as a `sql` change in Liquibase first, where you can still run
+`liquibase update-sql` to see what it would have generated, and convert once
+they all carry SQL.
+
+That is also the honest reason for the refusal: a typed change is
+database-independent, and turning it into SQL means choosing a dialect. Ptah
+will not choose one on your behalf inside an import.
+
+### A changeset carrying a selector is refused too
+
+The changeset below carries SQL, so the rule above stops short of deciding it.
+`context="staging"` is what makes the difference.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p conditional/legacy
+cat > conditional/legacy/changelog.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice" context="staging">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql>
+  </changeSet>
+</databaseChangeLog>
+XML
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory conditional/legacy | Out-Null
+@'
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <changeSet id="1" author="alice" context="staging">
+    <sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql>
+  </changeSet>
+</databaseChangeLog>
+'@ | Set-Content conditional/legacy/changelog.xml
+```
+
+</TabItem>
+</Tabs>
+
+```console exits=2
+ptah migrations import --from liquibase --source-dir ./conditional/legacy --migrations-dir ./conditional/migrations
+```
+
+Expected output on standard error:
+
+```text
+error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" is conditional on context; a migration directory has no equivalent, so importing it would turn a conditional history into an unconditional one -- split the changelog or import it by hand
+```
+
+`contexts`, `labels` and `preConditions` are refused the same way. Split the
+changelog per environment in Liquibase first, where the selector still means
+something, and convert each result separately.
+
+## Apply the result
+
+### Validate the sealed directory
+
+```console
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+### Apply the converted directory
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Total migrations: 2
+Pending migrations: 2
+```
+
+Progress records on standard error carry timestamps and correlation IDs, so
+this page does not copy those volatile fields.
+
+### Verify the recorded state
+
+```console
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 2
+Total Migrations: 2
+Applied Migrations: 2
+Pending Migrations: 0
+```
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-liquibase
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-liquibase
+```
+
+</TabItem>
+</Tabs>
+
+## Where this leaves you
+
+Contexts, labels and preconditions have no destination in a migration
+directory, which is why a changeset carrying one is refused rather than
+imported without it. Deciding what they meant is work that belongs in
+Liquibase: a context is usually the reason a changeset ran in one environment
+and not another, and once the changelog is split along that line each half
+converts.
+
+If a database already has Liquibase's `DATABASECHANGELOG` table, do not run
+`ptah migrations up` against it. Record the history as already applied first:
+see [Adopt an existing database](../../start/adopt-an-existing-database/).
+
+[Import an existing migration directory](../../versioned/import/) covers the
+other source tools and the format table.

@@ -918,6 +918,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/atlas.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 13,
+          "expectations": 8
+        },
+        {
+          "shell": "powershell",
+          "steps": 13,
+          "expectations": 8
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/migrate-from/dbmate.mdx",
       "shells": [
         {
@@ -973,6 +988,21 @@
         {
           "shell": "powershell",
           "steps": 9,
+          "expectations": 7
+        }
+      ]
+    },
+    {
+      "page": "docs/site/src/content/docs/migrate-from/liquibase.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 12,
+          "expectations": 7
+        },
+        {
+          "shell": "powershell",
+          "steps": 12,
           "expectations": 7
         }
       ]
