@@ -218,6 +218,31 @@ func TestNewRootCommand_PTAHLockTimeoutAppliesOnUnlockedDialectWithNote(t *testi
 	c.Assert(statErr, qt.IsNil)
 }
 
+// TestNewRootCommand_PTAHLockTimeoutSaysNothingOnALockingDialect keeps the note
+// off a target that does take the lock. The address has no server, so the run
+// reaches the connection and fails there, which is the part worth asserting: a
+// note printed for every exported variable would say the lock was dropped on a
+// database that would have taken it.
+func TestNewRootCommand_PTAHLockTimeoutSaysNothingOnALockingDialect(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "5s")
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath,
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	_, stderr, err := executeRootCommand(
+		"schema", "apply",
+		"--db-url", "postgres://ptah@127.0.0.1:1/db?sslmode=disable",
+		"--schema-file", schemaPath,
+		"--connect-timeout", "2s",
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)connect to --db-url:.*`)
+	c.Assert(stderr, qt.Not(qt.Contains), "PTAH_LOCK_TIMEOUT is ignored")
+}
+
 // TestNewRootCommand_PTAHLockTimeoutKeepsMigrationsUpWorking is the second half
 // of the same measurement, on the command the variable does belong to: the
 // exported value configures a versioned run rather than refusing it.
