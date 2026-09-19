@@ -271,7 +271,7 @@ func TestLiquibaseChangelog_RefusesUnconvertibleConstructs(t *testing.T) {
 			content: `<databaseChangeLog><changeSet id="a" author="alice">` +
 				`<preConditions><dbms type="postgresql"/></preConditions>` +
 				`<sql>SELECT 1;</sql></changeSet></databaseChangeLog>`,
-			message: `carries preConditions, which decide whether the changeset runs`,
+			message: `is conditional on preConditions`,
 		},
 		{
 			name: "document preConditions",
@@ -279,21 +279,31 @@ func TestLiquibaseChangelog_RefusesUnconvertibleConstructs(t *testing.T) {
 			content: `{"databaseChangeLog":[{"changeSet":{"id":"a","author":"alice",` +
 				`"preConditions":[{"dbms":{"type":"postgresql"}}],` +
 				`"changes":[{"sql":{"sql":"SELECT 1;"}}]}}]}`,
-			message: `carries preConditions, which decide whether the changeset runs`,
+			message: `is conditional on preConditions`,
 		},
 		{
 			name: "xml contexts",
 			file: "changelog.xml",
 			content: `<databaseChangeLog><changeSet id="a" author="alice" contexts="prod">` +
 				`<sql>SELECT 1;</sql></changeSet></databaseChangeLog>`,
-			message: `carries contexts, which decide whether the changeset runs`,
+			message: `is conditional on contexts`,
+		},
+		{
+			// The singular attribute, which is the spelling the XML examples in
+			// the documentation use. It names the selector differently from
+			// "contexts" and reaches the same refusal.
+			name: "xml context",
+			file: "changelog.xml",
+			content: `<databaseChangeLog><changeSet id="a" author="alice" context="staging">` +
+				`<sql>SELECT 1;</sql></changeSet></databaseChangeLog>`,
+			message: `is conditional on context`,
 		},
 		{
 			name: "document labels",
 			file: "changelog.yaml",
 			content: "databaseChangeLog:\n" +
 				"  - changeSet: {id: a, author: alice, labels: nightly, changes: [{sql: {sql: \"SELECT 1;\"}}]}\n",
-			message: `carries labels, which decide whether the changeset runs`,
+			message: `is conditional on labels`,
 		},
 		{
 			name:    "top-level element",
@@ -330,7 +340,7 @@ func TestLiquibaseChangelog_SelectorsAreNamedBeforeChangeTypes(t *testing.T) {
 	err := parseLiquibaseChangelogError(c, "changelog.xml", changelog)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "carries contexts")
+	c.Assert(err.Error(), qt.Contains, "is conditional on contexts")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "createTable")
 }
 
