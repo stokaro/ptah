@@ -933,6 +933,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/flyway.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 10,
+          "expectations": 7
+        },
+        {
+          "shell": "powershell",
+          "steps": 10,
+          "expectations": 7
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
       "shells": [
         {

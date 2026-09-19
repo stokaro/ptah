@@ -76,6 +76,7 @@
   "/inference/troubleshooting/",
   "/install/",
   "/migrate-from/dbmate/",
+  "/migrate-from/flyway/",
   "/migrate-from/golang-migrate/",
   "/migrate-from/goose/",
   "/migrate-from/overview/",

@@ -99,6 +99,7 @@ export const sidebar = [
       { slug: 'migrate-from/golang-migrate' },
       { slug: 'migrate-from/goose' },
       { slug: 'migrate-from/dbmate' },
+      { slug: 'migrate-from/flyway' },
     ],
   },
   {
