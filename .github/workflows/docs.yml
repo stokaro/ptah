@@ -157,7 +157,15 @@ jobs:
               - 'dbschema/**'
               - 'internal/quickstart/**'
               - 'migration/**'
-              - 'docs/site/src/content/docs/start/**'
+              # Every page, not the directory the quick starts happened to live
+              # in. A page opts in with `quickstart: true` in its frontmatter,
+              # which a path filter cannot read, so the filter that named one
+              # directory silently stopped covering the opted-in pages written
+              # outside it -- and a job that does not run reports exactly what a
+              # job that passed reports. Discovery still happens in
+              # internal/quickstart, which holds its own floors; this only
+              # decides whether the run is asked for.
+              - 'docs/site/src/content/docs/**'
               - 'scripts/check-quickstart.sh'
               - 'go.mod'
               - 'go.sum'
