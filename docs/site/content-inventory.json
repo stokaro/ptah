@@ -3158,8 +3158,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 527,
-      "sourceBytes": 6802
+      "visibleWords": 541,
+      "sourceBytes": 6862
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",

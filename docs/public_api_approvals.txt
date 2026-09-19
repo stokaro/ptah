@@ -371,3 +371,12 @@ v0.5.0 ptah.run/core/renderer
 # core/ast carries the same change and is already approved at this baseline
 # above.
 v0.5.0 ptah.run/migration/schemadiff/difftypes
+
+# A dbmate migration scopes `transaction:false` to one direction, and so does
+# Ptah's `-- +ptah no_transaction`. SourceMigration.NoTransaction could only
+# say "both directions", so an importer honoring it took the transaction away
+# from a direction that never asked for it. The field is replaced by
+# UpNoTransaction and DownNoTransaction, which carry what the source file
+# actually said. There is no faithful single-Boolean spelling to keep beside
+# them, so the old field goes rather than becoming a lossy alias.
+v0.7.0 ptah.run/migration/importer
