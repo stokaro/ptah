@@ -127,7 +127,7 @@ ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --lock-tim
 Expected output on standard error:
 
 ```text
-error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none:
+error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. Remove --lock-timeout to apply without a lock
 ```
 
 The refusal comes before the connection, so nothing is planned and nothing is

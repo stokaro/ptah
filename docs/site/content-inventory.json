@@ -232,8 +232,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8379,
-      "sourceBytes": 59000
+      "visibleWords": 8378,
+      "sourceBytes": 58988
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -1458,8 +1458,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 1156,
-      "sourceBytes": 11667
+      "visibleWords": 1303,
+      "sourceBytes": 12915
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
