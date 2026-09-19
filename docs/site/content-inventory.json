@@ -6695,8 +6695,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 678,
-      "sourceBytes": 6428
+      "visibleWords": 691,
+      "sourceBytes": 6502
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

@@ -110,7 +110,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
 | Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL; a changeset that carries a typed change or a selector is refused by name. |
-| dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); directive options such as `transaction:false` are dropped from the SQL. |
+| dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); a directive keeps its options out of the SQL, and `transaction:false` on one direction becomes `-- +ptah no_transaction` on that direction alone. |
 
 This is native Ptah-format import, distinct from the Atlas-compatible
 `migrate import` verb of the `ptah-compat` binary, which writes an Atlas-format directory with
