@@ -1,0 +1,298 @@
+---
+title: "Migrate from Goose"
+description: Convert a Goose directory to Ptah's format, including statement blocks and NO TRANSACTION, and apply it.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I convert my Goose migrations to Ptah without breaking a statement block?
+goal: Convert a Goose directory whose annotations carry meaning, and apply it.
+sourceOfTruth:
+  - internal/cli/migrations
+  - migration/migrationfile
+generated: false
+searchAliases:
+  - goose import
+  - convert goose migrations
+overlaps:
+  - /versioned/import/
+  - /migrate-from/golang-migrate/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A Goose migration is one file with `-- +goose Up` and `-- +goose Down`
+sections. Two of its annotations carry meaning that would be lost by reading
+the SQL alone: `StatementBegin` and `StatementEnd` wrap a body with internal
+semicolons, and `NO TRANSACTION` says the migration must not run inside one.
+
+This page converts a directory using both, and shows what each became.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
+- A terminal and about five minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Convert the directory
+
+### Build the Goose directory
+
+Three migrations: a plain one, a trigger inside a statement block, and an index
+that must run outside a transaction.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-goose/legacy
+cd ptah-from-goose
+cat > legacy/00001_create_users.sql <<'SQL'
+-- +goose Up
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+
+-- +goose Down
+DROP TABLE users;
+SQL
+cat > legacy/00002_touch_trigger.sql <<'SQL'
+-- +goose Up
+-- +goose StatementBegin
+CREATE TRIGGER users_touch AFTER UPDATE ON users
+BEGIN
+  UPDATE users SET email = email WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TRIGGER users_touch;
+-- +goose StatementEnd
+SQL
+cat > legacy/00003_email_index.sql <<'SQL'
+-- +goose NO TRANSACTION
+-- +goose Up
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+
+-- +goose Down
+DROP INDEX users_email_idx;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-goose/legacy | Out-Null
+Set-Location ptah-from-goose
+@'
+-- +goose Up
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+
+-- +goose Down
+DROP TABLE users;
+'@ | Set-Content legacy/00001_create_users.sql
+@'
+-- +goose Up
+-- +goose StatementBegin
+CREATE TRIGGER users_touch AFTER UPDATE ON users
+BEGIN
+  UPDATE users SET email = email WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TRIGGER users_touch;
+-- +goose StatementEnd
+'@ | Set-Content legacy/00002_touch_trigger.sql
+@'
+-- +goose NO TRANSACTION
+-- +goose Up
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+
+-- +goose Down
+DROP INDEX users_email_idx;
+'@ | Set-Content legacy/00003_email_index.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Preview the conversion
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations --dry-run
+```
+
+Expected output on standard output:
+
+```text
+Dry run: would write 6 migration file(s) to ./migrations
+  0000000001_create_users.up.sql
+  0000000001_create_users.down.sql
+  0000000002_touch_trigger.up.sql
+  0000000002_touch_trigger.down.sql
+  0000000003_email_index.up.sql
+  0000000003_email_index.down.sql
+```
+
+One Goose file becomes a pair, because Ptah keeps each direction in a file of
+its own. `--from goose` is not passed here: the tool is detected from the
+directory layout. Pass it when you want a wrong guess to fail rather than
+proceed.
+
+### Run the import
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 6 migration file(s) to ./migrations
+Wrote ./migrations/ptah.sum
+  0000000001_create_users.up.sql
+  0000000001_create_users.down.sql
+  0000000002_touch_trigger.up.sql
+  0000000002_touch_trigger.down.sql
+  0000000003_email_index.up.sql
+  0000000003_email_index.down.sql
+```
+
+The source directory is left untouched, so this step is safe to repeat and safe
+to abandon.
+
+## What the annotations became
+
+### A statement block keeps its body
+
+```console
+cat migrations/0000000002_touch_trigger.up.sql
+```
+
+Expected output on standard output:
+
+```text
+CREATE TRIGGER users_touch AFTER UPDATE ON users
+BEGIN
+  UPDATE users SET email = email WHERE id = NEW.id;
+END;
+```
+
+The wrapper is gone and the body is whole. That is the conversion working: the
+semicolons inside `BEGIN ... END` are the reason Goose needed the wrapper, and
+a converter that split on them would have produced three fragments that fail
+at apply time rather than at import time.
+
+### `NO TRANSACTION` becomes a Ptah directive
+
+```console
+cat migrations/0000000003_email_index.up.sql
+```
+
+Expected output on standard output:
+
+```text
+-- +ptah no_transaction
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+```
+
+The down file carries the same directive. Goose puts `NO TRANSACTION` on the
+whole file, so both directions inherit it.
+
+This one matters more than it looks: it is how `CREATE INDEX CONCURRENTLY` and
+its relatives survive the move. A migration that silently lost the directive
+would run inside a transaction and fail on an engine that refuses it there.
+
+## Apply the result
+
+### Validate the sealed directory
+
+```console
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+### Apply the converted directory
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current version: 0
+Total migrations: 3
+Pending migrations: 3
+```
+
+Reaching version 3 is the proof the statement block survived: a trigger body
+split at its internal semicolons does not reach the database as one statement,
+and the apply would have stopped at migration 2.
+
+Progress records on standard error carry timestamps and correlation IDs, so
+this page does not copy those volatile fields.
+
+### Verify the recorded state
+
+```console
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 3
+Total Migrations: 3
+Applied Migrations: 3
+Pending Migrations: 0
+```
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-goose
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-goose
+```
+
+</TabItem>
+</Tabs>
+
+## Where this leaves you
+
+Goose also supports migrations written in Go. Those have no destination in a
+SQL migration directory, and the import does not invent one: convert them by
+hand, or keep them in Goose until they are retired.
+
+If a database already has Goose's `goose_db_version` table with rows in it, do
+not run `ptah migrations up` against it. Record the history as already applied
+first: see [Adopt an existing database](../../start/adopt-an-existing-database/).
+
+[Import an existing migration directory](../../versioned/import/) covers the
+other source tools and the format table.

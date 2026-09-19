@@ -933,6 +933,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/goose.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 9,
+          "expectations": 7
+        },
+        {
+          "shell": "powershell",
+          "steps": 9,
+          "expectations": 7
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
       "shells": [
         {
