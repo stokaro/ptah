@@ -130,11 +130,15 @@ Expected output on standard error:
 error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. Remove --lock-timeout to apply without a lock
 ```
 
-The refusal comes before the connection, so nothing is planned and nothing is
-applied. Remove the flag to apply unlocked, which is what such a target does
-anyway. `--dry-run` is refused on the same targets: a dry run against an engine
-that does lock acquires the lock and waits out the timeout, so the flag means
-the same thing there.
+Nothing is planned and nothing is applied. A URL that names its dialect is
+refused before the connection opens, which is why the `sqlite://app.db` above
+leaves no file behind. A PostgreSQL-wire URL names no product: `postgres://` can
+reach a server that is not PostgreSQL, and that target is decided once the
+server has named itself — after the connection, still before the plan. Remove
+the flag to apply unlocked, which is what such a target does anyway.
+`--dry-run` is refused on the same targets: a dry run against an engine that
+does lock acquires the lock and waits out the timeout, so the flag means the
+same thing there.
 
 `PTAH_LOCK_TIMEOUT` fills the same flag, and a value that arrives that way
 writes a note to standard error and applies unlocked instead of refusing. The
@@ -143,8 +147,10 @@ their own `--lock-timeout`, which is the per-migration statement lock timeout,
 so exporting it for a versioned workflow configures nothing about this apply.
 Type the flag to get the refusal.
 
-`ptah-compat schema apply` keeps the Atlas behavior instead: it accepts the
-flag, writes a note to standard error, and applies unlocked.
+The compatibility surface takes the other side: `ptah-compat schema apply`
+accepts the flag, writes a note to standard error, and applies unlocked. That
+carries no claim about the Atlas CLI — what it does with `--lock-timeout` on a
+dialect that cannot lock is not measured here.
 
 ## Preview the plan
 

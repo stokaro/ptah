@@ -317,6 +317,10 @@ func runSchemaApplyWithLockSession(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	if desired == nil && (len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0) {
 		loadOptions.Dialect = conn.Info().Dialect
 		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
@@ -484,6 +488,10 @@ func runSchemaApplyPlanFileWithLockSession(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	// Fingerprint verification and execution share the session that owns the
 	// lock, so no pooled connection can continue after that lock is lost.
 	applied := false
@@ -636,11 +644,14 @@ func warnSchemaApplyLockRelease(cmd *cobra.Command, err error) {
 // the apply goes on unlocked. A dialect that locks takes either spelling.
 //
 // A bound on a wait the target never makes is an instruction with nowhere to
-// go, and taking it silently is what stokaro/ptah#3411 reports. The caller
-// resolves the dialect from --db-url, so the refusal lands before the
-// connection and before either apply path loads a desired schema. Nothing about
-// the target can change the answer: a dialect either has the lock or it does
-// not.
+// go, and taking it silently is what stokaro/ptah#3411 reports.
+//
+// The caller decides twice, because the dialect a URL names is not always the
+// one it reaches. From --db-url the answer lands before the connection, which
+// is what lets a sqlite:// refusal arrive without creating the file. From the
+// connected dialect it lands after, which is the only place a PostgreSQL-wire
+// server can be told apart from PostgreSQL; see
+// [decideSchemaApplyLockForConnection].
 //
 // Only the command line refuses, because PTAH_LOCK_TIMEOUT is not this
 // command's variable. `ptah migrations up` and `ptah migrations down` register
@@ -673,6 +684,30 @@ func decideSchemaApplyLockRequest(cmd *cobra.Command, dbURL, dialect string) err
 		return nil
 	}
 	return atlasschema.EnsureApplyLockSupported("--"+applyLockTimeoutFlag, dialect)
+}
+
+// decideSchemaApplyLockForConnection repeats the decision against the dialect
+// the server reported, which is the authoritative one.
+//
+// A PostgreSQL-wire URL does not name its product. [dbschema.ConnectToDatabase]
+// reads the server's own banner and answers cockroachdb, yugabytedb or spanner
+// for a server that names itself, so `postgres://` reaches a target that may
+// have no session advisory lock. Deciding from the URL alone applies unlocked
+// under an explicit --lock-timeout, against CockroachDB and Spanner.
+//
+// It runs only where the server disagrees with the URL, so the note an
+// environment-set timeout earns is written once rather than per decision. A URL
+// whose dialect did not resolve was never decided, so it is decided here.
+func decideSchemaApplyLockForConnection(
+	cmd *cobra.Command,
+	dbURL string,
+	conn *dbschema.DatabaseConnection,
+) error {
+	connected := conn.Info().Dialect
+	if urlDialect, err := atlasurl.DialectFromURL(dbURL); err == nil && urlDialect == connected {
+		return nil
+	}
+	return decideSchemaApplyLockRequest(cmd, dbURL, connected)
 }
 
 // noteSchemaApplyLockIgnored reports an environment-set lock timeout that this
