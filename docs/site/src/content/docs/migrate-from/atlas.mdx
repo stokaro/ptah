@@ -270,7 +270,7 @@ no-op.
 
 | What your pipeline uses | What runs here |
 | --- | --- |
-| A hosted registry holding migration directories and schemas | An OCI registry you already run. `ptah oci` carries `login`, `inspect`, `fetch`, `copy`, `tag`, `tags`, `resolve`, `referrers`, `reindex`, `verify` and `capabilities`, including the air-gapped path. |
+| A hosted registry holding migration directories and schemas | An OCI registry you already run. `ptah oci` logs in, inspects, fetches, copies and verifies artifacts and the metadata attached to them, and an `oci-layout://` directory stands in where there is no registry to reach. |
 | A hosted lint report | `ptah migrations lint --format` writes `sarif`, `gitlab`, `github-actions` or `json`, and `--attach` puts the canonical JSON report on the migration artifact so it travels with what it describes. |
 | Registry-mediated plan approval | `ptah-compat schema plan` computes the plan and saves a `.plan.hcl` locally; `ptah schema approve` signs one and `ptah schema verify-approval` checks the signature against the signers you allow. There is no identity service to run, and [plan and approve](../../direct/plan-and-approve/) walks it. |
 | Schema and migration testing | `ptah-compat schema test` and `ptah-compat migrate test` read `.test.hcl`, and `ptah schema test` is the native path. |
