@@ -76,7 +76,7 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 			return nil, fmt.Errorf("invalid dbmate version in %q: %w", entry.Name(), err)
 		}
 		result.consume(entry.Name())
-		up, down := splitDbmateSQL(string(content))
+		up, down, noTransaction := splitDbmateSQL(string(content))
 		if strings.TrimSpace(up) == "" {
 			return nil, fmt.Errorf("dbmate migration %q has an empty up section", entry.Name())
 		}
@@ -85,6 +85,12 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 			Name:    match[2],
 			UpSQL:   up,
 			DownSQL: down,
+			// dbmate scopes transaction:false to one direction and Ptah scopes
+			// no_transaction to the migration, so either direction asking for
+			// it decides. Running a statement inside a transaction its author
+			// ruled out is the failure that matters; the reverse costs an
+			// atomic boundary the author did not ask for.
+			NoTransaction: noTransaction,
 		})
 	}
 	if len(migrations) == 0 {
@@ -94,17 +100,28 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 	return result, nil
 }
 
-// splitDbmateSQL splits a dbmate migration file into its up and down SQL.
+// splitDbmateSQL splits a dbmate migration file into its up and down SQL, and
+// reports whether either direction asked not to run inside a transaction.
+//
 // Directive lines are matched whole and dropped entirely, so trailing options
 // such as "-- migrate:up transaction:false" never leak into the executable
-// SQL. Content before the first directive and content under directives other
-// than up/down is ignored.
-func splitDbmateSQL(content string) (up, down string) {
+// SQL. Dropping the option from the SQL is right; dropping what it meant is
+// not, and that is what this used to do: `transaction:false` is how a dbmate
+// author says a statement cannot run inside a transaction, which is what
+// CREATE INDEX CONCURRENTLY and its relatives require. A converted migration
+// that lost it runs inside one and fails on a server that refuses it there.
+//
+// Content before the first directive and content under directives other than
+// up/down is ignored.
+func splitDbmateSQL(content string) (up, down string, noTransaction bool) {
 	var upBuilder, downBuilder strings.Builder
 	section := ""
 	for line := range strings.SplitSeq(content, "\n") {
-		if name, ok := dbmateDirective(line); ok {
+		if name, options, ok := dbmateDirective(line); ok {
 			section = name
+			if (name == "up" || name == "down") && dbmateDisablesTransaction(options) {
+				noTransaction = true
+			}
 			continue
 		}
 		switch section {
@@ -116,14 +133,27 @@ func splitDbmateSQL(content string) (up, down string) {
 			downBuilder.WriteByte('\n')
 		}
 	}
-	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String())
+	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String()), noTransaction
+}
+
+// dbmateDisablesTransaction reports whether a directive's options carry
+// dbmate's transaction:false. The options are whitespace-separated key:value
+// pairs; only this one has a destination in Ptah's format today, and an option
+// nobody recognizes is left alone rather than guessed at.
+func dbmateDisablesTransaction(options string) bool {
+	for field := range strings.FieldsSeq(strings.ToLower(options)) {
+		if field == "transaction:false" {
+			return true
+		}
+	}
+	return false
 }
 
 // dbmateHasUpDirective reports whether content contains a `-- migrate:up`
 // directive, marking the file as a dbmate migration.
 func dbmateHasUpDirective(content string) bool {
 	for line := range strings.SplitSeq(content, "\n") {
-		if name, ok := dbmateDirective(line); ok && name == "up" {
+		if name, _, ok := dbmateDirective(line); ok && name == "up" {
 			return true
 		}
 	}
@@ -131,19 +161,20 @@ func dbmateHasUpDirective(content string) bool {
 }
 
 // dbmateDirective reports whether line is a dbmate "-- migrate:<name>"
-// directive and returns the lowercased directive name. Any options after the
-// name (such as "transaction:false") are part of the directive line, not
-// executable SQL.
-func dbmateDirective(line string) (string, bool) {
+// directive and returns the lowercased directive name with the options that
+// followed it. Any options after the name (such as "transaction:false") are
+// part of the directive line, not executable SQL, and the caller decides what
+// they mean.
+func dbmateDirective(line string) (name, options string, ok bool) {
 	trimmed := strings.TrimSpace(line)
 	const prefix = "-- migrate:"
 	if !strings.HasPrefix(strings.ToLower(trimmed), prefix) {
-		return "", false
+		return "", "", false
 	}
 	rest := strings.TrimSpace(trimmed[len(prefix):])
-	name := rest
+	name = rest
 	if idx := strings.IndexAny(rest, " \t"); idx >= 0 {
-		name = rest[:idx]
+		name, options = rest[:idx], strings.TrimSpace(rest[idx:])
 	}
-	return strings.ToLower(name), true
+	return strings.ToLower(name), options, true
 }
