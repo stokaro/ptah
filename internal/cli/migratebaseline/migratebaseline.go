@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
@@ -112,8 +113,18 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
+	// `migrations baseline` reads no project config, so the request reaches it
+	// from the command line or PTAH_MIGRATION_LOCK_TIMEOUT only.
+	lockRequest := migratelock.Request{
+		Cmd:      cmd,
+		FlagName: lockTimeoutFlag,
+		DBURL:    opts.dbURL,
+	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return err
+		}
+		if err := lockRequest.Decide(dialect); err != nil {
 			return err
 		}
 	}
@@ -176,6 +187,13 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// The server names the product the URL does not, and the decision is worth
+	// nothing after a revision row is written, so it lands before the migrator
+	// is built.
+	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
 
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 	mig := migrator.NewMigrator(conn, provider).

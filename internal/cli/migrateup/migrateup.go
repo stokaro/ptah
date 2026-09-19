@@ -20,11 +20,13 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
@@ -444,6 +446,18 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("database URL is required")
 	}
 
+	lockRequest := migratelock.Request{
+		Cmd:        cmd,
+		FlagName:   migrationLockTimeoutFlag,
+		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
+		DBURL:      dbURL,
+	}
+	if dialect, dialectErr := atlasurl.DialectFromURL(dbURL); dialectErr == nil {
+		if err := lockRequest.Decide(dialect); err != nil {
+			return err
+		}
+	}
+
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
@@ -494,6 +508,14 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// The server names the product the URL does not, and the decision is worth
+	// nothing after the first migration runs, so it lands before any migrator
+	// call: reading the status initializes the revision table.
+	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+		return err
+	}
+
 	lintPolicy, err := migrationlintgate.LoadPolicy(migrationsFS, conn.Info().Dialect)
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
