@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 142,
-    "authored": 139,
+    "pages": 143,
+    "authored": 140,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 9
+      "tutorial": 10
     }
   },
   "pages": [
@@ -60,6 +60,7 @@
       "inboundLinks": [
         "/atlas/overview/",
         "/faq/",
+        "/migrate-from/atlas/",
         "/migrate-from/overview/",
         "/reference/configuration/"
       ],
@@ -231,6 +232,7 @@
         "/atlas/overview/",
         "/atlas/retained-divergences/",
         "/atlas/strict-ce-mode/",
+        "/migrate-from/atlas/",
         "/operate/troubleshooting/"
       ],
       "visibleWords": 8380,
@@ -269,7 +271,8 @@
         "/",
         "/atlas/docs-coverage/",
         "/atlas/feature-matrix/",
-        "/faq/"
+        "/faq/",
+        "/migrate-from/atlas/"
       ],
       "visibleWords": 548,
       "sourceBytes": 4499
@@ -430,6 +433,7 @@
         "/concepts/migration-directory/",
         "/direct/apply/",
         "/faq/",
+        "/migrate-from/atlas/",
         "/reference/atlas-commands/",
         "/reference/overview/",
         "/schema/hcl/",
@@ -528,6 +532,7 @@
         "/atlas/overview/",
         "/atlas/schema-commands/",
         "/atlas/strict-ce-mode/",
+        "/migrate-from/atlas/",
         "/reference/atlas-commands/"
       ],
       "visibleWords": 6447,
@@ -640,6 +645,7 @@
       "inboundLinks": [
         "/atlas/overview/",
         "/atlas/schema-commands/",
+        "/migrate-from/atlas/",
         "/reference/extension-variables/"
       ],
       "visibleWords": 416,
@@ -1675,6 +1681,7 @@
         "/direct/apply/",
         "/direct/overview/",
         "/faq/",
+        "/migrate-from/atlas/",
         "/reference/native-commands/",
         "/start/quick-start-direct/"
       ],
@@ -3118,6 +3125,58 @@
       "sourceBytes": 11119
     },
     {
+      "path": "docs/site/src/content/docs/migrate-from/atlas.mdx",
+      "route": "/migrate-from/atlas/",
+      "title": "Run an Atlas project on ptah-compat",
+      "description": "Point the Atlas-compatible binary at the atlas.hcl and migration directory you already have, and check that nothing moved.",
+      "sidebarPath": "Migrate from another tool",
+      "sidebarLabel": "Atlas",
+      "type": "tutorial",
+      "audience": [
+        "new-user",
+        "database-engineer"
+      ],
+      "readerQuestion": "What exactly do I run to put my Atlas project on Ptah, and how do I know nothing broke?",
+      "goal": "Run an Atlas project's own commands through ptah-compat and read what the database says afterwards.",
+      "sourceOfTruth": [
+        "internal/cli/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "atlas cli replacement",
+        "ptah-compat first steps"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/atlas/adoption/",
+        "/atlas/overview/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/adoption/",
+        "/atlas/feature-matrix/",
+        "/atlas/license-boundary/",
+        "/atlas/overview/",
+        "/atlas/retained-divergences/",
+        "/atlas/strict-ce-mode/",
+        "/direct/plan-and-approve/",
+        "/operate/oci-registry/",
+        "/reference/lint-rules/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/migrate-from/overview/"
+      ],
+      "visibleWords": 1035,
+      "sourceBytes": 11180
+    },
+    {
       "path": "docs/site/src/content/docs/migrate-from/dbmate.mdx",
       "route": "/migrate-from/dbmate/",
       "title": "Migrate from dbmate",
@@ -3377,6 +3436,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/adoption/",
+        "/migrate-from/atlas/",
         "/migrate-from/dbmate/",
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
@@ -3386,8 +3446,8 @@
         "/versioned/import/"
       ],
       "inboundLinks": [],
-      "visibleWords": 249,
-      "sourceBytes": 3108
+      "visibleWords": 259,
+      "sourceBytes": 3332
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -3907,6 +3967,7 @@
         "/atlas/overview/",
         "/concepts/migration-directory/",
         "/faq/",
+        "/migrate-from/atlas/",
         "/operate/deliver/",
         "/operate/kubernetes-operator/",
         "/operate/overview/",
@@ -4546,6 +4607,7 @@
         "/atlas/migrate-commands/",
         "/atlas/schema-commands/",
         "/databases/postgresql/",
+        "/migrate-from/atlas/",
         "/reference/atlas-commands/",
         "/schema/security/",
         "/testing/overview/",
@@ -5968,6 +6030,7 @@
         "/extend/editor-and-shell/",
         "/faq/",
         "/inference/quick-start/",
+        "/migrate-from/atlas/",
         "/migrate-from/dbmate/",
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
@@ -6632,8 +6695,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 678,
-      "sourceBytes": 6428
+      "visibleWords": 691,
+      "sourceBytes": 6502
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

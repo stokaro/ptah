@@ -21,4 +21,10 @@
 // it in a fresh working directory with a sentinel between steps so each step's
 // two streams can be told apart. One process, so `cd` and the rest of the shell
 // state behave as they do for a reader working through the page by hand.
+//
+// Options.PtahDir goes in front of PATH for that process, so every program a
+// page spells resolves to the tree under test rather than to whatever the
+// machine happens to have installed. The caller decides which programs the
+// directory holds; the pages need `ptah` and `ptah-compat`, since the
+// Atlas-compatible surface has pages of its own.
 package quickstart

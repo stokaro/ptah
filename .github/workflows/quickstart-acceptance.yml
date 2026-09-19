@@ -49,10 +49,10 @@ jobs:
           cache-dependency-path: go.sum
 
       # One entry point, the same one a contributor runs locally. The runner
-      # builds ./cmd/ptah itself and puts it in front of PATH, so the `ptah` the
-      # pages spell is this tree's binary; building it in this file instead would
-      # need the .exe suffix in a shell conditional per job, and internal/exeext
-      # already carries that fact once.
+      # builds the published programs itself and puts them in front of PATH, so
+      # the `ptah` and `ptah-compat` the pages spell are this tree's binaries;
+      # building them in this file instead would need the .exe suffix in a shell
+      # conditional per job, and internal/exeext already carries that fact once.
       #
       # `shell: bash` on the Windows leg is Git Bash driving the runner. The
       # steps it runs there are the page's PowerShell tab: the shell that

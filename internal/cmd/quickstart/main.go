@@ -158,7 +158,7 @@ func newRunCommand() *cobra.Command {
 	}
 	options.bind(cmd)
 	cmd.Flags().StringVar(&options.ptah, "ptah", "",
-		"Path to a ptah binary to put on PATH; empty builds ./cmd/ptah from this tree")
+		"Directory-defining path to a ptah binary to put on PATH; empty builds the published programs from this tree")
 	cmd.Flags().BoolVar(&options.keep, "keep", false, "Leave each throwaway working directory behind")
 	return cmd
 }
@@ -184,7 +184,7 @@ func run(ctx context.Context, cmd *cobra.Command, options *options) error {
 	defer cleanup()
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "quickstart: %d page(s), %s steps, ptah from %s\n", len(pages), shell, ptahDir)
+	fmt.Fprintf(out, "quickstart: %d page(s), %s steps, binaries from %s\n", len(pages), shell, ptahDir)
 
 	failed := 0
 	for _, page := range pages {
@@ -204,10 +204,16 @@ func run(ctx context.Context, cmd *cobra.Command, options *options) error {
 	return nil
 }
 
-// resolvePtah returns the directory to put in front of PATH, so the `ptah` the
-// pages spell is this tree's binary.
+// publishedPrograms are the programs a page may spell. Both are built into the
+// same directory, because a page about the Atlas-compatible surface runs
+// `ptah-compat` beside `ptah` and a PATH carrying only one of them turns that
+// page's central claim into "command not found".
+var publishedPrograms = []string{"ptah", "ptah-compat"}
+
+// resolvePtah returns the directory to put in front of PATH, so the programs
+// the pages spell are this tree's binaries.
 //
-// Building it here rather than in the workflow keeps the .exe suffix in one
+// Building them here rather than in the workflow keeps the .exe suffix in one
 // place -- internal/exeext -- instead of in a shell conditional per job.
 func resolvePtah(ctx context.Context, given string) (dir string, cleanup func(), err error) {
 	if given != "" {
@@ -218,7 +224,20 @@ func resolvePtah(ctx context.Context, given string) (dir string, cleanup func(),
 		if _, statErr := os.Stat(absolute); statErr != nil {
 			return "", nil, fmt.Errorf("--ptah %s: %w", given, statErr)
 		}
-		return filepath.Dir(absolute), func() {}, nil
+		// Every program a page can spell has to come out of this one directory.
+		// Checking only the file named leaves the others to be resolved from the
+		// rest of PATH, where an installed build of some other version answers
+		// and the run reports a green that measured a binary nobody chose.
+		directory := filepath.Dir(absolute)
+		for _, program := range publishedPrograms {
+			companion := filepath.Join(directory, program+exeext.Suffix)
+			if _, statErr := os.Stat(companion); statErr != nil {
+				return "", nil, fmt.Errorf(
+					"--ptah %s: the pages also run %s, which is not in %s: %w",
+					given, program+exeext.Suffix, directory, statErr)
+			}
+		}
+		return directory, func() {}, nil
 	}
 
 	tempDir, err := os.MkdirTemp("", "ptah-quickstart-bin-")
@@ -227,12 +246,14 @@ func resolvePtah(ctx context.Context, given string) (dir string, cleanup func(),
 	}
 	cleanup = func() { _ = os.RemoveAll(tempDir) }
 
-	target := filepath.Join(tempDir, "ptah"+exeext.Suffix)
-	build := exec.CommandContext(ctx, "go", "build", "-o", target, "./cmd/ptah")
-	build.Stdout, build.Stderr = os.Stderr, os.Stderr
-	if buildErr := build.Run(); buildErr != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("building ./cmd/ptah: %w", buildErr)
+	for _, program := range publishedPrograms {
+		target := filepath.Join(tempDir, program+exeext.Suffix)
+		build := exec.CommandContext(ctx, "go", "build", "-o", target, "./cmd/"+program)
+		build.Stdout, build.Stderr = os.Stderr, os.Stderr
+		if buildErr := build.Run(); buildErr != nil {
+			cleanup()
+			return "", nil, fmt.Errorf("building ./cmd/%s: %w", program, buildErr)
+		}
 	}
 	return tempDir, cleanup, nil
 }
