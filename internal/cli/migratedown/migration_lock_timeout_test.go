@@ -127,6 +127,39 @@ func TestMigrateDownWithoutMigrationLockTimeoutStillRollsBack(t *testing.T) {
 	c.Assert(tableCensus(c, dbPath), qt.Not(qt.Contains), "orders")
 }
 
+// TestMigrateDownRefusesProjectConfigMigrationLockTimeout covers the third
+// spelling on the destructive verb. A project file configures the run as much
+// as a flag does, and the refusal names the key rather than a flag the operator
+// never typed.
+//
+// It is the field constant that this pins. `migration.migration_lock_timeout`
+// and `migration.lock_timeout` are neighbors in projectconfig, they mean
+// different locks, and reading the wrong one leaves the rollback applying
+// unlocked under a configuration that asked for a lock.
+func TestMigrateDownRefusesProjectConfigMigrationLockTimeout(t *testing.T) {
+	t.Setenv("PTAH_MIGRATION_LOCK_TIMEOUT", "")
+	c := qt.New(t)
+	migrationsDir := writeDownMigrations(c)
+	work := t.TempDir()
+	dbPath := filepath.Join(work, "config-rollback.db")
+	seedAppliedMigrations(c, dbPath, migrationsDir)
+	configPath := filepath.Join(work, "ptah.yaml")
+	c.Assert(os.WriteFile(configPath,
+		[]byte("migration:\n  migration_lock_timeout: 10s\n"), 0o600), qt.IsNil)
+
+	out, err := runDownThroughRoot(
+		"--config", configPath,
+		"--db-url", "sqlite://"+dbPath,
+		"--migrations-dir", migrationsDir,
+		"--target", "0",
+		"--confirm",
+	)
+
+	c.Assert(err, qt.ErrorMatches, fmtMigrationLockRefusal("migration.migration_lock_timeout", "sqlite"),
+		qt.Commentf("%s", out))
+	c.Assert(downCurrentVersion(c, dbPath), qt.Equals, int64(2))
+}
+
 // TestMigrateDownKeepsMigrationLockTimeoutOnLockingDialect is the second
 // control: the refusal must not fire where the lock exists, so the run reaches
 // the connection and fails there instead.
