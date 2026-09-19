@@ -93,7 +93,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output with detailed migration information")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Output status in JSON format")
-	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false, "Exit with 1 when pending migrations are available")
+	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false,
+		"Exit with 1 when the database is not up to date with the migration directory")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.BoolVar(
 		&opts.verifySum,
@@ -307,7 +308,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.exitOnPending {
-		return pendingMigrationsExitCode(status)
+		return notUpToDateExitCode(status)
 	}
 	return nil
 }
@@ -337,11 +338,37 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 	}
 }
 
-func pendingMigrationsExitCode(status *migrator.MigrationStatus) error {
+// notUpToDateExitCode answers the --exit-code question: is this database up to
+// date with the directory in front of it.
+//
+// A modified migration is the second reason it is not, and it is reported
+// first because nothing may apply anything while one exists. It is not a
+// pending change, so HasPendingChanges alone would hand a deployment gate a
+// zero over an edited history (stokaro/ptah#3438).
+func notUpToDateExitCode(status *migrator.MigrationStatus) error {
+	if len(modifiedMigrations(status)) > 0 {
+		return exitcode.New(1, errors.New("modified migrations detected"))
+	}
 	if status.HasPendingChanges {
 		return exitcode.New(1, errors.New("pending migrations available"))
 	}
 	return nil
+}
+
+// modifiedMigrations returns the records whose file no longer accounts for the
+// checksum the database recorded, in directory order.
+//
+// The verdict is the migrator's, computed once per status read by the same
+// classifier the apply paths verify through; this only selects the records
+// carrying it.
+func modifiedMigrations(status *migrator.MigrationStatus) []migrator.MigrationRecord {
+	var modified []migrator.MigrationRecord
+	for _, record := range status.Migrations {
+		if record.State == migrator.MigrationStateModified {
+			modified = append(modified, record)
+		}
+	}
+	return modified
 }
 
 func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
@@ -380,6 +407,19 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
 		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision))
+		return nil
+	}
+
+	if modified := modifiedMigrations(status); len(modified) > 0 {
+		emit.Println("Status: ❌ Modified migration detected")
+		for _, record := range modified {
+			emit.Printf(
+				"Modified Migration: version=%d description=%s recorded=%s current=%s\n",
+				record.Version, record.Description, record.AppliedChecksum, record.Checksum,
+			)
+		}
+		emit.Println("\nThe file changed after the database applied it. Restore the file, " +
+			"or add a new migration carrying the change; applying refuses while this stands.")
 		return nil
 	}
 
