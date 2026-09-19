@@ -233,7 +233,7 @@
         "/operate/troubleshooting/"
       ],
       "visibleWords": 8379,
-      "sourceBytes": 59000
+      "sourceBytes": 59002
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -587,8 +587,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12699,
-      "sourceBytes": 93341
+      "visibleWords": 12716,
+      "sourceBytes": 93460
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -1452,14 +1452,15 @@
         "/direct/plan-and-approve/",
         "/faq/",
         "/operate/deliver/",
+        "/reference/atlas-commands/",
         "/schema/lineage/",
         "/schema/security/",
         "/schema/serve/",
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 1156,
-      "sourceBytes": 11667
+      "visibleWords": 1389,
+      "sourceBytes": 13397
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -3829,6 +3830,7 @@
         "/atlas/retained-divergences/",
         "/atlas/schema-commands/",
         "/concepts/database-urls-and-dev-databases/",
+        "/direct/apply/",
         "/reference/configuration/",
         "/reference/extension-variables/",
         "/reference/lint-rules/",
@@ -3846,8 +3848,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14340,
-      "sourceBytes": 99636
+      "visibleWords": 14356,
+      "sourceBytes": 99737
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

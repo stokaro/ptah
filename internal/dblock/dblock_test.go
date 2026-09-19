@@ -39,6 +39,34 @@ func TestSupported(t *testing.T) {
 	}
 }
 
+// TestSupportedDialects_HappyPath drives the two readers of one declaration
+// against each other. The list names the alternatives a refusal offers, and
+// Supported answers whether this target is one of them; a second copy of the
+// set would agree on the day it was written and stop agreeing when an engine
+// is added to the first.
+func TestSupportedDialects_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	dialects := dblock.SupportedDialects()
+
+	c.Assert(dialects, qt.Not(qt.HasLen), 0)
+	for _, dialect := range dialects {
+		c.Assert(dblock.Supported(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
+	}
+}
+
+// TestSupportedDialects_ReturnsACopy pins the contract a caller sorting or
+// filtering the list depends on.
+func TestSupportedDialects_ReturnsACopy(t *testing.T) {
+	c := qt.New(t)
+	first := dblock.SupportedDialects()
+
+	first[0] = "not-a-dialect"
+
+	c.Assert(dblock.SupportedDialects(), qt.Not(qt.DeepEquals), first)
+	c.Assert(dblock.Supported(dblock.SupportedDialects()[0]), qt.IsTrue)
+}
+
 func TestAcquire_HappyPath(t *testing.T) {
 	t.Run("sqlite acquires a no-op lock", func(t *testing.T) {
 		c := qt.New(t)

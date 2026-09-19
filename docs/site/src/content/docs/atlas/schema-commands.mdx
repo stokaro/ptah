@@ -1214,9 +1214,10 @@ the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
 database locks.
 
-SQLite, ClickHouse, CockroachDB, and Spanner have no advisory-lock semantics:
-the apply proceeds without a lock, and an explicitly passed `--lock-timeout`
-prints a note on stderr.
+Every other dialect has no advisory-lock semantics: the apply proceeds without
+a lock, and an explicitly passed `--lock-timeout` prints a note on stderr. The
+native `ptah schema apply` refuses a typed `--lock-timeout` on those dialects
+instead — see [Apply a desired schema](../../direct/apply/).
 
 `--lock-name` replaces the lock name for the run. Two runs serialize only when
 they name the same lock, so this is how a Ptah apply coordinates with another

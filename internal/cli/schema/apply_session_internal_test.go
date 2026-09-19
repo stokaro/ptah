@@ -25,10 +25,6 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 )
 
-type supportedApplyLock struct{}
-
-func (supportedApplyLock) Supported() bool { return true }
-
 type redirectApplySession struct {
 	target    *dbschema.DatabaseConnection
 	root      *dbschema.DatabaseConnection
@@ -42,13 +38,13 @@ func (r *redirectApplySession) run(
 	root *dbschema.DatabaseConnection,
 	_ string,
 	_ time.Duration,
-	use func(*dbschema.DatabaseConnection, schemaApplyLock) error,
+	use func(*dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error) {
 	r.root = root
 	r.callCount++
 	callbackErr := r.target.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		r.session = session
-		return use(session, supportedApplyLock{})
+		return use(session)
 	})
 	return errors.Join(callbackErr, r.terminal), nil
 }
@@ -134,14 +130,13 @@ func TestSchemaApplyAcquisitionFailureKeepsDiagnosticAndExitCode(t *testing.T) {
 		_ *dbschema.DatabaseConnection,
 		name string,
 		timeout time.Duration,
-		use func(*dbschema.DatabaseConnection, schemaApplyLock) error,
+		use func(*dbschema.DatabaseConnection) error,
 	) (runErr, releaseErr error) {
 		return withSchemaApplyLockSession(ctx, nil, name, timeout, func(
 			session *dbschema.DatabaseConnection,
-			lock schemaApplyLock,
 		) error {
 			callbackCount++
-			return use(session, lock)
+			return use(session)
 		})
 	}
 

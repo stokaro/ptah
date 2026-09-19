@@ -365,3 +365,49 @@ func TestDatabaseIdentity_ReadsAWindowsAddressEverywhereThisPackageParsesOne(t *
 		})
 	}
 }
+
+// TestIsDockerURL_HappyPath names the URLs that ask Ptah to start a dev
+// database. The engine, the port and the trailing path vary and none of them
+// changes the answer.
+func TestIsDockerURL_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+	}{
+		{name: "sqlite", rawURL: "docker://sqlite/dev"},
+		{name: "postgres", rawURL: "docker://postgres/16/dev"},
+		{name: "mysql with tag", rawURL: "docker://mysql/8/dev"},
+		{name: "no path", rawURL: "docker://postgres"},
+		{name: "surrounding space", rawURL: "  docker://postgres/16/dev  "},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.IsDockerURL(test.rawURL), qt.IsTrue)
+		})
+	}
+}
+
+// TestIsDockerURL_FailurePath covers the URLs a target may legitimately carry,
+// including the SQLite spellings whose opaque form has no host at all.
+func TestIsDockerURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+	}{
+		{name: "empty", rawURL: ""},
+		{name: "postgres", rawURL: "postgres://user@localhost:5432/db"},
+		{name: "sqlite path", rawURL: "sqlite://app.db"},
+		{name: "sqlite opaque", rawURL: "sqlite:file:app.db"},
+		{name: "a host named docker", rawURL: "postgres://user@docker:5432/db"},
+		{name: "scheme prefix only", rawURL: "dockerish://postgres/dev"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.IsDockerURL(test.rawURL), qt.IsFalse)
+		})
+	}
+}

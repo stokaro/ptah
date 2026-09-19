@@ -1258,10 +1258,11 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
 serializes concurrent schema applies against one target. The lock is acquired
 before target inspection and planning, held through simulation, confirmation,
 and execution, and released on every exit path. Empty waits indefinitely, an
-elapsed timeout fails before the target is inspected, and dialects without
-advisory locks (SQLite, ClickHouse, CockroachDB, Spanner) proceed unlocked with
-a stderr note. PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server take a
-real lock.
+elapsed timeout fails before the target is inspected. PostgreSQL, YugabyteDB,
+MySQL, MariaDB, and SQL Server take a real lock; every other dialect proceeds
+unlocked with a stderr note. The native `ptah schema apply` refuses a typed
+`--lock-timeout` on those dialects rather than noting it — see
+[Apply a desired schema](../../direct/apply/).
 
 **`--lock-name`** replaces the lock name for the run (`ptah_schema_apply` by
 default). Runs serialize only against other runs naming the same lock, which is

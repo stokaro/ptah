@@ -40,6 +40,52 @@ func IsLockTimeout(err error) bool {
 	return dblock.IsTimeout(err)
 }
 
+// UnsupportedApplyLockError reports that a caller asked for a schema apply
+// lock on a target whose dialect has none. Request is the spelling the caller
+// used, such as a flag name, and appears at the front of the message so the
+// operator reads back what they passed.
+type UnsupportedApplyLockError struct {
+	Request string
+	Dialect string
+}
+
+func (e *UnsupportedApplyLockError) Error() string {
+	return fmt.Sprintf(
+		"%s requested a schema apply lock, and dialect %q has none: "+
+			"only %s take a session advisory lock. Remove %s to apply without a lock",
+		e.Request, e.Dialect, strings.Join(dblock.SupportedDialects(), ", "), e.Request)
+}
+
+// ApplyLockSupported reports whether a target of this dialect gives Ptah a
+// session advisory lock for a schema apply. It answers from a dialect name
+// alone, so a caller decides before opening a connection, and the set it reads
+// is [ApplyLock.Supported]'s.
+//
+// A caller that refuses the request wants [EnsureApplyLockSupported], whose
+// error also names the dialects that do lock.
+func ApplyLockSupported(dialect string) bool {
+	return dblock.Supported(dialect)
+}
+
+// EnsureApplyLockSupported refuses a schema apply lock the target cannot take.
+// It returns an [UnsupportedApplyLockError] when dialect has no session
+// advisory lock, and nil otherwise; the dialect set it reads is
+// [ApplyLockSupported]'s.
+//
+// It answers from a dialect name alone, so a caller resolves it from the target
+// URL and refuses before connecting: a lock request that is going to be refused
+// must not first open the database and inspect it.
+//
+// Deciding that the caller asked for a lock belongs to the caller, which is the
+// only side that can tell a value it was given from a default it chose. Call
+// this only for a request the operator made.
+func EnsureApplyLockSupported(request, dialect string) error {
+	if ApplyLockSupported(dialect) {
+		return nil
+	}
+	return &UnsupportedApplyLockError{Request: request, Dialect: dialect}
+}
+
 // ApplyLock is a held schema apply lock. On dialects without advisory-lock
 // semantics it is an explicit no-op reported by [ApplyLock.Supported], so the
 // caller can surface the capability decision instead of failing.
@@ -125,13 +171,10 @@ func EffectiveApplyLockName(name string) string {
 }
 
 // Supported reports whether the lock is backed by a real database lock. It
-// answers with [dblock.Supported], which is the single source of truth for the
-// list: PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server take a real
-// session advisory lock, and every other dialect (SQLite, ClickHouse,
-// CockroachDB, and Spanner) proceeds unlocked. Restating the list here rather
-// than deferring to that function is how it drifted before, so any change to
-// dblock.Supported must be repeated in this comment and in the two reference
-// pages that carry the same list.
+// answers with [dblock.Supported], and [dblock.SupportedDialects] names the
+// dialects that do, so no copy of the list lives here; a copy written here is
+// one a new engine leaves behind. The reference pages that name the dialects in
+// prose have no such reader and are updated by hand.
 func (l *ApplyLock) Supported() bool {
 	return l != nil && l.lock.Supported()
 }

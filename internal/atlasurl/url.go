@@ -21,6 +21,9 @@ import (
 	"ptah.run/core/platform"
 )
 
+// dockerScheme is the URL scheme that asks Ptah to start a dev database.
+const dockerScheme = "docker"
+
 var defaultPorts = map[string]string{
 	platform.Postgres:    "5432",
 	platform.CockroachDB: "26257",
@@ -93,6 +96,22 @@ func IsWindowsPath(rest string) bool {
 	return rest[2] == '\\' || rest[2] == '/'
 }
 
+// IsDockerURL reports whether rawURL is a `docker://` URL, the spelling that
+// asks Ptah to start a dev database rather than naming one that exists.
+//
+// [DialectFromURL] answers such a URL with the engine it would start, which is
+// the right answer for a dev URL and the wrong one for a target: no database is
+// there, and `--db-url` has no arm for the scheme. A caller deciding something
+// about a target asks this first, so the recognition of the scheme stays in one
+// place rather than in each caller's prefix test.
+func IsDockerURL(rawURL string) bool {
+	parsed, err := Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == dockerScheme
+}
+
 func DialectFromURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
@@ -102,7 +121,7 @@ func DialectFromURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
 	}
-	if parsed.Scheme == "docker" {
+	if parsed.Scheme == dockerScheme {
 		return dialectFromDockerURL(parsed)
 	}
 	// Every spelling platform.NormalizeDialect accepts, rather than a list
