@@ -75,6 +75,7 @@
   "/inference/strategies/production-rollout/",
   "/inference/troubleshooting/",
   "/install/",
+  "/migrate-from/atlas/",
   "/migrate-from/dbmate/",
   "/migrate-from/flyway/",
   "/migrate-from/golang-migrate/",

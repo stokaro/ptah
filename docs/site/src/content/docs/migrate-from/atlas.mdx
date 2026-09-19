@@ -1,0 +1,362 @@
+---
+title: "Run an Atlas project on ptah-compat"
+description: Point the Atlas-compatible binary at the atlas.hcl and migration directory you already have, and check that nothing moved.
+type: tutorial
+audience:
+  - new-user
+  - database-engineer
+readerQuestion: What exactly do I run to put my Atlas project on Ptah, and how do I know nothing broke?
+goal: Run an Atlas project's own commands through ptah-compat and read what the database says afterwards.
+sourceOfTruth:
+  - internal/cli/atlas
+  - internal/atlascompatpolicy
+generated: false
+searchAliases:
+  - atlas cli replacement
+  - ptah-compat first steps
+overlaps:
+  - /atlas/adoption/
+  - /atlas/overview/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You have an `atlas.hcl`, a migration directory whose history is applied in real
+databases, and CI steps that call Atlas verbs. One thing changes: which binary
+runs them. The project file stays, the directory stays, `atlas.sum` stays, and
+the commands stay. At the end you are on `ptah-compat`, which is a place to
+stop rather than a staging area to escape from.
+
+The two halves of the move are not equally provable, and the page treats them
+differently. Everything in Atlas's community edition has an Atlas-compatible
+command path here, and every command below runs in this repository's
+continuous integration on Linux, macOS and Windows. Capabilities Atlas gates
+behind a paid tier are answered by different machinery, described rather than
+executed, in [What the gated capabilities become](#what-the-gated-capabilities-become).
+
+## What you need
+
+- `ptah-compat` and `ptah` on your `PATH`. [Install Ptah](../../start/install/)
+  ships both.
+- A terminal and about ten minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Run the commands you already run
+
+### Build a project with history
+
+The fixture is an `atlas.hcl` with one env and a directory holding two applied
+migrations, which is the smallest shape that can prove anything.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-atlas/migrations
+cd ptah-from-atlas
+cat > atlas.hcl <<'HCL'
+env "local" {
+  url = "sqlite://app.db"
+  migration {
+    dir = "file://migrations"
+  }
+}
+HCL
+cat > migrations/20240101000000_create_users.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+cat > migrations/20240102000000_add_email_index.sql <<'SQL'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-atlas/migrations | Out-Null
+Set-Location ptah-from-atlas
+@'
+env "local" {
+  url = "sqlite://app.db"
+  migration {
+    dir = "file://migrations"
+  }
+}
+'@ | Set-Content atlas.hcl
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content migrations/20240101000000_create_users.sql
+@'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+'@ | Set-Content migrations/20240102000000_add_email_index.sql
+```
+
+</TabItem>
+</Tabs>
+
+Your own directory already carries `atlas.sum`. This one does not yet, so seal
+it the way the directory was sealed in the first place:
+
+```console
+ptah-compat migrate hash --env local
+```
+
+### Read the directory back
+
+```console
+ptah-compat migrate validate --env local
+```
+
+A sealed directory validates silently and exits zero. That is Atlas's contract
+for this verb and it is kept here, so a pipeline step that asserts on empty
+output keeps passing.
+
+```console
+ptah-compat migrate status --env local
+```
+
+Expected output on standard output:
+
+```text
+Migration Status: PENDING
+  -- Current Version: No migration applied yet
+  -- Next Version:    20240101000000
+  -- Executed Files:  0
+  -- Pending Files:   2
+```
+
+No flag named the database. `--env local` selected the env block, and the
+`url` and `migration { dir }` in `atlas.hcl` answered the rest.
+
+### Apply
+
+```console
+ptah-compat migrate apply --env local
+```
+
+Expected output on standard output:
+
+```text
+Migrating to version 20240102000000 from 2 pending migrations.
+Migration complete. Current version: 20240102000000
+```
+
+```console
+ptah-compat migrate status --env local
+```
+
+Expected output on standard output:
+
+```text
+Migration Status: OK
+  -- Current Version: 20240102000000
+  -- Next Version:    Already at latest version
+  -- Executed Files:  2
+  -- Pending Files:   0
+```
+
+The revisions landed in `atlas_schema_revisions`, the table Atlas writes, in
+the layout Atlas writes it. Nothing converted the history on the way in.
+
+### The integrity gate is the same gate
+
+Editing an applied migration is the mistake the checksum file exists to catch.
+Make it:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/20240102000000_add_email_index.sql <<'SQL'
+CREATE UNIQUE INDEX users_email_idx ON users (email, id);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE UNIQUE INDEX users_email_idx ON users (email, id);
+'@ | Set-Content migrations/20240102000000_add_email_index.sql
+```
+
+</TabItem>
+</Tabs>
+
+```console exits=1
+ptah-compat migrate validate --env local
+```
+
+Expected output on standard output:
+
+```text
+You have a checksum error in your migration directory.
+
+	L3: 20240102000000_add_email_index.sql was edited
+
+Please check your migration files and run 'atlas migrate hash' to re-hash the contents
+```
+
+Expected output on standard error:
+
+```text
+Error: checksum mismatch
+```
+
+The remedy names the `atlas` binary because the whole message is Atlas's, byte
+for byte. A CI job that greps this text keeps working, which is the point of
+matching it rather than improving it.
+
+Put the file back:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/20240102000000_add_email_index.sql <<'SQL'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+'@ | Set-Content migrations/20240102000000_add_email_index.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Lint the same directory
+
+```console
+ptah-compat migrate lint --env local --dev-url "sqlite://dev.db" --latest 1
+```
+
+Expected output includes, on standard output:
+
+```text
+Analyzing changes from version 20240101000000 to 20240102000000 (1 migration in total):
+  -- analyzing version 20240102000000
+```
+
+The finding it prints for this fixture is a unique index built over rows that
+already exist. Ptah's rule catalog is its own and is larger than the
+Atlas-compatible surface needs; [migration lint rules](../../reference/lint-rules/)
+enumerates it.
+
+## What the gated capabilities become
+
+Atlas keeps part of its product behind a paid tier, and a pipeline that depends
+on one of those parts is the reason this move needs thinking about rather than
+scheduling. The answer is usually better than expected: the capability exists
+here, behind different machinery, and behind no tier. What it is not is the
+same machinery, so each one is a change to your pipeline rather than a
+no-op.
+
+| What your pipeline uses | What runs here |
+| --- | --- |
+| A hosted registry holding migration directories and schemas | An OCI registry you already run. `ptah oci` carries `login`, `inspect`, `fetch`, `copy`, `tag`, `tags`, `resolve`, `referrers`, `reindex`, `verify` and `capabilities`, including the air-gapped path. |
+| A hosted lint report | `ptah migrations lint --format` writes `sarif`, `gitlab`, `github-actions` or `json`, and `--attach` puts the canonical JSON report on the migration artifact so it travels with what it describes. |
+| Registry-mediated plan approval | `ptah-compat schema plan` computes the plan and saves a `.plan.hcl` locally; `ptah schema approve` signs one and `ptah schema verify-approval` checks the signature against the signers you allow. There is no identity service to run, and [plan and approve](../../direct/plan-and-approve/) walks it. |
+| Schema and migration testing | `ptah-compat schema test` and `ptah-compat migrate test` read `.test.hcl`, and `ptah schema test` is the native path. |
+
+`ptah-compat schema plan` has no working `approve`, `push`, `pull`, `list` or
+`rm`: those sub-verbs address a remote registry and answer that they are not
+implemented. The local plan file plus the native signature is the whole
+replacement, and it is a different shape rather than a smaller one.
+
+[Atlas feature matrix](../../atlas/feature-matrix/) is the row-by-row reference
+for everything above, and [OCI registry](../../operate/oci-registry/) documents
+the registry side in full.
+
+## Ask what native Ptah would take over
+
+Nothing so far required native Ptah, and nothing below changes the project.
+`ptah project adopt --check` reads the same `atlas.hcl` and reports what a
+native Ptah would make of every construct in it.
+
+```console
+ptah project adopt --check
+```
+
+Expected output includes, on standard output:
+
+```text
+exact (2):
+  database url
+  migration dir
+```
+
+Add `--preflight` and the same command reads the revision history the database
+holds, which is the half a verdict about a file cannot cover:
+
+```console exits=2
+ptah project adopt --check --preflight
+```
+
+Expected output includes, on standard output:
+
+```text
+  ✓ every recorded revision finished
+  ✓ every recorded revision names a migration this directory contains
+  ✓ no recorded checksum contradicts the migration it names
+```
+
+The non-zero status is the useful part. The file is native-ready and the
+database still holds its history in the Atlas-compatible layout, so one
+decision remains before a native writer could take over — and you do not have
+to make it. Staying on `ptah-compat` is a supported end state.
+[Migrate from Atlas](../../atlas/adoption/) is the page for readers who want to
+go further, and it covers that decision in reversible stages.
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-atlas
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-atlas
+```
+
+</TabItem>
+</Tabs>
+
+## Where this leaves you
+
+Your commands, your project file and your history are where they were, and the
+binary in front of them is `ptah-compat`. What that binary covers is measured
+rather than asserted: [Atlas compatibility](../../atlas/overview/) is the
+summary, [feature matrix](../../atlas/feature-matrix/) the per-capability
+table, and [retained divergences](../../atlas/retained-divergences/) the list
+of places Ptah deliberately does not reproduce a behavior, each with the reason.
+
+Two settings are worth knowing before you rely on the move. `ptah-compat`
+keeps every capability Ptah models, which means it accepts some input the
+community binary refuses; [strict CE mode](../../atlas/strict-ce-mode/) is the
+switch that narrows it to a community-edition-only policy for conformance runs.
+And [license boundary](../../atlas/license-boundary/) states how the
+compatibility work is done and what it does not touch.
