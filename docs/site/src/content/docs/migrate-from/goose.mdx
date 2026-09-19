@@ -263,6 +263,27 @@ Applied Migrations: 3
 Pending Migrations: 0
 ```
 
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-goose
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-goose
+```
+
+</TabItem>
+</Tabs>
+
 ## Where this leaves you
 
 Goose also supports migrations written in Go. Those have no destination in a

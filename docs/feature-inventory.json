@@ -937,12 +937,12 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 8,
+          "steps": 9,
           "expectations": 7
         },
         {
           "shell": "powershell",
-          "steps": 8,
+          "steps": 9,
           "expectations": 7
         }
       ]

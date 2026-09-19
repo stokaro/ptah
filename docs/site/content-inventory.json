@@ -3200,8 +3200,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 511,
-      "sourceBytes": 7071
+      "visibleWords": 513,
+      "sourceBytes": 7313
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
