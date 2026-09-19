@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 141,
-    "authored": 138,
+    "pages": 142,
+    "authored": 139,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 8
+      "tutorial": 9
     }
   },
   "pages": [
@@ -3296,6 +3296,50 @@
       "sourceBytes": 7313
     },
     {
+      "path": "docs/site/src/content/docs/migrate-from/liquibase.mdx",
+      "route": "/migrate-from/liquibase/",
+      "title": "Migrate from Liquibase",
+      "description": "Convert a Liquibase changelog, and learn which of your changesets carry SQL and which do not.",
+      "sidebarPath": "Migrate from another tool",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I convert my Liquibase changelog to Ptah, and what happens to my XML?",
+      "goal": "Convert a changelog and read the refusal that tells you which changesets cannot convert.",
+      "sourceOfTruth": [
+        "internal/cli/migrations",
+        "migration/importer"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "liquibase import",
+        "convert liquibase changelog"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/import/",
+        "/migrate-from/flyway/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/start/adopt-an-existing-database/",
+        "/start/install/",
+        "/versioned/import/"
+      ],
+      "inboundLinks": [
+        "/migrate-from/overview/"
+      ],
+      "visibleWords": 438,
+      "sourceBytes": 7808
+    },
+    {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
       "route": "/migrate-from/overview/",
       "title": "Migrate from another tool",
@@ -3335,12 +3379,13 @@
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
+        "/migrate-from/liquibase/",
         "/start/adopt-an-existing-database/",
         "/versioned/import/"
       ],
       "inboundLinks": [],
       "visibleWords": 249,
-      "sourceBytes": 2947
+      "sourceBytes": 3108
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -5752,6 +5797,7 @@
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
+        "/migrate-from/liquibase/",
         "/migrate-from/overview/",
         "/schema/document/",
         "/schema/protobuf/",
@@ -5924,6 +5970,7 @@
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
+        "/migrate-from/liquibase/",
         "/schema/document/",
         "/schema/lineage/",
         "/schema/security/",
@@ -6576,6 +6623,7 @@
         "/migrate-from/flyway/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
+        "/migrate-from/liquibase/",
         "/migrate-from/overview/",
         "/versioned/overview/",
         "/versioned/rollback/"

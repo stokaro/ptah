@@ -978,6 +978,21 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/liquibase.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 10,
+          "expectations": 6
+        },
+        {
+          "shell": "powershell",
+          "steps": 10,
+          "expectations": 6
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
       "shells": [
         {
