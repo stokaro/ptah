@@ -149,10 +149,10 @@ $$ LANGUAGE plpgsql;`
 	c.Assert(result.Files, qt.HasLen, 2)
 	up, err := os.ReadFile(filepath.Join(out, "0000000001_fn.up.sql"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(up), qt.Equals, "-- +ptah no_transaction\n"+wantUp)
+	c.Assert(string(up), qt.Equals, "-- +ptah no_transaction\n"+wantUp+"\n")
 	down, err := os.ReadFile(filepath.Join(out, "0000000001_fn.down.sql"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(down), qt.Equals, "-- +ptah no_transaction\nDROP FUNCTION f();")
+	c.Assert(string(down), qt.Equals, "-- +ptah no_transaction\nDROP FUNCTION f();\n")
 }
 
 func TestGooseParseNoTransactionRequiresExactMarker(t *testing.T) {
@@ -281,7 +281,7 @@ func TestGooseImportEndToEnd(t *testing.T) {
 	up, readErr := os.ReadFile(filepath.Join(out, "0020230102_up_only.up.sql"))
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(up), qt.Equals,
-		"-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx2 ON users (id);")
+		"-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx2 ON users (id);\n")
 	down, readErr := os.ReadFile(filepath.Join(out, "0020230102_up_only.down.sql"))
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(down), qt.Equals,

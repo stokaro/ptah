@@ -125,8 +125,8 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 			downSQL = addImportedNoTransactionDirective(downSQL)
 		}
 		planned = append(planned,
-			plannedFile{upName, []byte(upSQL)},
-			plannedFile{downName, []byte(downSQL)},
+			plannedFile{upName, []byte(terminatedSQL(upSQL))},
+			plannedFile{downName, []byte(terminatedSQL(downSQL))},
 		)
 		result.Files = append(result.Files, upName, downName)
 	}
@@ -172,6 +172,27 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 	}
 	result.SumFile = sumName
 	return result, nil
+}
+
+// terminatedSQL gives a migration body the line terminator a text file's last
+// line has.
+//
+// Where the body comes from decides whether it already has one. golang-migrate
+// and Flyway hand over whole files, which end with a newline because an editor
+// wrote them. Goose and dbmate hand over a section carved out of a larger file,
+// and the section ends wherever its last statement did -- at `END;` for a
+// statement block, with nothing after it. Written verbatim that is a file git
+// reports as "\ No newline at end of file", and one that every line-oriented
+// reader has to special-case: `cat` of it runs into whatever comes next.
+//
+// Nothing is collapsed. A body that already ends with one newline or several
+// keeps exactly what it had, so this changes only the files that were missing
+// a terminator.
+func terminatedSQL(body string) string {
+	if body == "" || strings.HasSuffix(body, "\n") {
+		return body
+	}
+	return body + "\n"
 }
 
 func addImportedNoTransactionDirective(sql string) string {

@@ -3,6 +3,7 @@ package importer_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -132,4 +133,60 @@ func TestImportUnknownToolViaDetect(t *testing.T) {
 	c := qt.New(t)
 	_, err := importer.Import(fstest.MapFS{"x.txt": {Data: []byte("hi")}}, nil, t.TempDir(), importer.Options{DryRun: true})
 	c.Assert(err, qt.ErrorMatches, `could not detect the source migration tool.*`)
+}
+
+// A migration file is a text file, and a text file's last line has a
+// terminator. The importers differ in what they hand Emit: golang-migrate and
+// Flyway pass whole files, which already end with a newline, while Goose and
+// dbmate pass a section carved out of one, which ends wherever its last
+// statement did. Without a terminator at the emit boundary the second pair
+// writes files git reports as "\ No newline at end of file", and every
+// line-oriented reader of them has to special-case the last line.
+//
+// The rows are the two shapes that reach Emit, driven through the public
+// import path rather than through the helper, so a body that stops gaining its
+// newline reddens here.
+func TestImportTerminatesEveryWrittenFileWithANewline(t *testing.T) {
+	tests := []struct {
+		name   string
+		file   string
+		source string
+	}{
+		{
+			name: "goose section ending at a statement block",
+			file: "1_trigger.sql",
+			source: "-- +goose Up\n" +
+				"-- +goose StatementBegin\n" +
+				"CREATE TRIGGER t AFTER UPDATE ON users\nBEGIN\n  SELECT 1;\nEND;\n" +
+				"-- +goose StatementEnd\n" +
+				"\n-- +goose Down\n-- +goose StatementBegin\nDROP TRIGGER t;\n-- +goose StatementEnd\n",
+		},
+		{
+			name:   "dbmate section ending at a statement",
+			file:   "20240101000000_users.sql",
+			source: "-- migrate:up\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n-- migrate:down\nDROP TABLE users;",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			out := t.TempDir()
+			result, err := importer.Import(
+				fstest.MapFS{test.file: {Data: []byte(test.source)}}, nil, out, importer.Options{})
+			c.Assert(err, qt.IsNil)
+			c.Assert(len(result.Files) > 0, qt.IsTrue,
+				qt.Commentf("the fixture produced no files, so the assertion below measures nothing"))
+
+			for _, name := range result.Files {
+				body, err := os.ReadFile(filepath.Join(out, name))
+				c.Assert(err, qt.IsNil)
+				c.Assert(strings.HasSuffix(string(body), "\n"), qt.IsTrue,
+					qt.Commentf("%s does not end with a newline", name))
+				c.Assert(strings.HasSuffix(string(body), "\n\n"), qt.IsFalse,
+					qt.Commentf("%s gained a blank line at the end", name))
+			}
+		})
+	}
 }
