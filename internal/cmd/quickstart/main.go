@@ -224,7 +224,20 @@ func resolvePtah(ctx context.Context, given string) (dir string, cleanup func(),
 		if _, statErr := os.Stat(absolute); statErr != nil {
 			return "", nil, fmt.Errorf("--ptah %s: %w", given, statErr)
 		}
-		return filepath.Dir(absolute), func() {}, nil
+		// Every program a page can spell has to come out of this one directory.
+		// Checking only the file named leaves the others to be resolved from the
+		// rest of PATH, where an installed build of some other version answers
+		// and the run reports a green that measured a binary nobody chose.
+		directory := filepath.Dir(absolute)
+		for _, program := range publishedPrograms {
+			companion := filepath.Join(directory, program+exeext.Suffix)
+			if _, statErr := os.Stat(companion); statErr != nil {
+				return "", nil, fmt.Errorf(
+					"--ptah %s: the pages also run %s, which is not in %s: %w",
+					given, program+exeext.Suffix, directory, statErr)
+			}
+		}
+		return directory, func() {}, nil
 	}
 
 	tempDir, err := os.MkdirTemp("", "ptah-quickstart-bin-")
