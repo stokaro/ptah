@@ -249,6 +249,27 @@ cannot rebuild. Write the `DROP INDEX` into
 `migrations/0000000002_add_users_email_index.down.sql`, re-run `ptah migrations
 hash --dir ./migrations`, and the pair becomes reversible.
 
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-golang-migrate
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-golang-migrate
+```
+
+</TabItem>
+</Tabs>
+
 ## Where this leaves you
 
 The `legacy/` directory is no longer read by anything. Keep it in version

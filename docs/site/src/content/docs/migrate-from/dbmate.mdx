@@ -222,6 +222,27 @@ Pending Migrations: 0
 The recorded versions are `1` and `2`, not the timestamps. That is the record
 the converted directory and this database now share.
 
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-dbmate
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-dbmate
+```
+
+</TabItem>
+</Tabs>
+
 ## Where this leaves you
 
 dbmate also maintains `db/schema.sql`, a dump of the current schema. It has no

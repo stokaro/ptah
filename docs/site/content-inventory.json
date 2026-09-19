@@ -3158,8 +3158,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 525,
-      "sourceBytes": 6558
+      "visibleWords": 527,
+      "sourceBytes": 6802
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
@@ -3202,8 +3202,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 624,
-      "sourceBytes": 7489
+      "visibleWords": 626,
+      "sourceBytes": 7749
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/goose.mdx",
