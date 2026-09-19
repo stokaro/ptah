@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,19 +51,31 @@ func IsTimeout(err error) bool {
 	return errors.As(err, &target)
 }
 
+// supportedDialects are the dialects whose servers give Ptah a session-scoped
+// advisory lock. It is one declaration because two readers need the same
+// answer to different questions: [Supported] asks whether this target locks,
+// and [SupportedDialects] asks which targets do, so a caller refusing a lock
+// request can name the alternatives. Written twice, the second copy stops
+// agreeing the moment an engine is added to the first.
+var supportedDialects = []string{
+	platform.Postgres,
+	platform.YugabyteDB,
+	platform.MySQL,
+	platform.MariaDB,
+	platform.SQLServer,
+}
+
 // Supported reports whether dialect has session-scoped advisory-lock
 // semantics. [Acquire] returns a no-op lock on unsupported dialects.
 func Supported(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres,
-		platform.YugabyteDB,
-		platform.MySQL,
-		platform.MariaDB,
-		platform.SQLServer:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(supportedDialects, platform.NormalizeDialect(dialect))
+}
+
+// SupportedDialects returns the canonical dialect names whose targets take a
+// session advisory lock, in declaration order. The returned slice is a copy,
+// so a caller may sort or filter it.
+func SupportedDialects() []string {
+	return slices.Clone(supportedDialects)
 }
 
 // Lock is a held session-scoped advisory lock. The zero value is the no-op

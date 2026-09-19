@@ -238,6 +238,21 @@ func SetOnCommandLine(flags *pflag.FlagSet, name string) bool {
 	return flag.Changed && !envApplied(flag)
 }
 
+// AppliedEnvName returns the environment variable whose value the named flag
+// carries, and false when the value came from the command line, from the flag's
+// default, or from a flag this set does not have.
+//
+// A refusal about a flag names the spelling that produced the value. An
+// operator who set PTAH_LOCK_TIMEOUT in a CI job and reads a message about
+// --lock-timeout goes looking through a command line that never carried it.
+func AppliedEnvName(flags *pflag.FlagSet, name string) (string, bool) {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return "", false
+	}
+	return appliedEnvName(flag)
+}
+
 // MutuallyExclusiveOnCommandLine returns cobra's own flag-group diagnostic when
 // more than one of names appeared on the command line, and nil otherwise.
 //

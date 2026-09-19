@@ -110,6 +110,34 @@ bounds the session advisory lock that serializes concurrent applies,
 `$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both
 comparison sides.
 
+## Locking and `--lock-timeout`
+
+A session advisory lock stops two applies from planning against one database at
+the same time, and `--lock-timeout` bounds how long the apply waits for it.
+PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server give Ptah such a lock.
+SQLite, ClickHouse, CockroachDB and Spanner do not, so an apply against one of
+them runs unlocked.
+
+Asking a target that cannot lock for a lock timeout is refused:
+
+```console exits=2
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --lock-timeout 5s --auto-approve
+```
+
+Expected output on standard error:
+
+```text
+error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none:
+```
+
+The refusal comes before the connection, so nothing is planned and nothing is
+applied. Remove the flag to apply unlocked, which is what such a target does
+anyway. `PTAH_LOCK_TIMEOUT` sets the same flag and is refused the same way,
+naming itself in the message so the setting can be found.
+
+`ptah-compat schema apply` keeps the Atlas behavior instead: it accepts the
+flag, writes a note to standard error, and applies unlocked.
+
 ## Preview the plan
 
 `--dry-run` prints the planned SQL and stops:

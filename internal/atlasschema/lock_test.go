@@ -145,3 +145,83 @@ func TestIsLockTimeout(t *testing.T) {
 	c.Assert(atlasschema.IsLockTimeout(fmt.Errorf("other error")), qt.IsFalse)
 	c.Assert(atlasschema.IsLockTimeout(nil), qt.IsFalse)
 }
+
+func TestEnsureApplyLockSupported_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "postgres", dialect: "postgres"},
+		{name: "postgres alias", dialect: "postgresql"},
+		{name: "yugabytedb", dialect: "yugabytedb"},
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+		{name: "sqlserver", dialect: "sqlserver"},
+		{name: "sqlserver alias", dialect: "mssql"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.EnsureApplyLockSupported("--lock-timeout", test.dialect), qt.IsNil)
+		})
+	}
+}
+
+func TestEnsureApplyLockSupported_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		request string
+		dialect string
+		wantErr string
+	}{
+		{
+			name: "sqlite", request: "--lock-timeout", dialect: "sqlite",
+			wantErr: `--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove --lock-timeout to apply without a lock`,
+		},
+		{
+			name: "clickhouse", request: "--lock-timeout", dialect: "clickhouse",
+			wantErr: `--lock-timeout requested a schema apply lock, and dialect "clickhouse" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove --lock-timeout to apply without a lock`,
+		},
+		{
+			name: "cockroachdb", request: "--lock-timeout", dialect: "cockroachdb",
+			wantErr: `--lock-timeout requested a schema apply lock, and dialect "cockroachdb" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove --lock-timeout to apply without a lock`,
+		},
+		{
+			name: "spanner", request: "--lock-timeout", dialect: "spanner",
+			wantErr: `--lock-timeout requested a schema apply lock, and dialect "spanner" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove --lock-timeout to apply without a lock`,
+		},
+		{
+			name: "oracle", request: "--lock-timeout", dialect: "oracle",
+			wantErr: `--lock-timeout requested a schema apply lock, and dialect "oracle" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove --lock-timeout to apply without a lock`,
+		},
+		{
+			name: "environment variable names itself", request: "PTAH_LOCK_TIMEOUT", dialect: "sqlite",
+			wantErr: `PTAH_LOCK_TIMEOUT requested a schema apply lock, and dialect "sqlite" has none: ` +
+				`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. ` +
+				`Remove PTAH_LOCK_TIMEOUT to apply without a lock`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := atlasschema.EnsureApplyLockSupported(test.request, test.dialect)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			var unsupported *atlasschema.UnsupportedApplyLockError
+			c.Assert(err, qt.ErrorAs, &unsupported)
+			c.Assert(unsupported.Dialect, qt.Equals, test.dialect)
+			c.Assert(unsupported.Request, qt.Equals, test.request)
+		})
+	}
+}

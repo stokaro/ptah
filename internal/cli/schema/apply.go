@@ -74,16 +74,16 @@ type schemaApplyOptions struct {
 	envName         string
 }
 
-type schemaApplyLock interface {
-	Supported() bool
-}
-
+// schemaApplyLockSession runs one apply with the lock held. The callback is
+// handed the pinned session and nothing else: whether that session carries a
+// real database lock is settled from --db-url before the connection is opened,
+// so no caller reads the lock back here.
 type schemaApplyLockSession func(
 	context.Context,
 	*dbschema.DatabaseConnection,
 	string,
 	time.Duration,
-	func(*dbschema.DatabaseConnection, schemaApplyLock) error,
+	func(*dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error)
 
 func withSchemaApplyLockSession(
@@ -91,15 +91,15 @@ func withSchemaApplyLockSession(
 	conn *dbschema.DatabaseConnection,
 	name string,
 	timeout time.Duration,
-	use func(*dbschema.DatabaseConnection, schemaApplyLock) error,
+	use func(*dbschema.DatabaseConnection) error,
 ) (runErr, releaseErr error) {
 	return atlasschema.WithApplyLockSession(
 		ctx,
 		conn,
 		name,
 		timeout,
-		func(session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
-			return use(session, lock)
+		func(session *dbschema.DatabaseConnection, _ *atlasschema.ApplyLock) error {
+			return use(session)
 		},
 	)
 }
@@ -231,6 +231,9 @@ func runSchemaApplyWithLockSession(
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		if err := ensureSchemaApplyLockSupported(cmd, dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if strings.TrimSpace(opts.planPath) != "" {
 		return runSchemaApplyPlanFileWithLockSession(cmd, opts, lockSession)
@@ -327,8 +330,7 @@ func runSchemaApplyWithLockSession(
 		conn,
 		"",
 		lockTimeout,
-		func(session *dbschema.DatabaseConnection, lock schemaApplyLock) error {
-			noteSchemaApplyLockUnsupported(cmd, opts.lockTimeout, lock, session.Info().Dialect)
+		func(session *dbschema.DatabaseConnection) error {
 			var applyErr error
 			applied, applyErr = runSchemaApplyOnLockedSession(cmd, opts, session, desired, projectCfg, txMode)
 			return applyErr
@@ -486,8 +488,7 @@ func runSchemaApplyPlanFileWithLockSession(
 		conn,
 		"",
 		lockTimeout,
-		func(session *dbschema.DatabaseConnection, lock schemaApplyLock) error {
-			noteSchemaApplyLockUnsupported(cmd, opts.lockTimeout, lock, session.Info().Dialect)
+		func(session *dbschema.DatabaseConnection) error {
 			var applyErr error
 			applied, applyErr = runSchemaApplyPlanFileOnLockedSession(cmd, opts, session, plan, txMode)
 			return applyErr
@@ -625,19 +626,30 @@ func warnSchemaApplyLockRelease(cmd *cobra.Command, err error) {
 	}
 }
 
-// noteSchemaApplyLockUnsupported surfaces the capability decision for
-// dialects without advisory-lock semantics: an explicitly requested
-// --lock-timeout is ignored and the apply proceeds without a database lock.
-func noteSchemaApplyLockUnsupported(
-	cmd *cobra.Command,
-	requestedTimeout string,
-	lock schemaApplyLock,
-	dialect string,
-) {
-	if strings.TrimSpace(requestedTimeout) == "" || lock.Supported() {
-		return
+// ensureSchemaApplyLockSupported refuses a --lock-timeout the target cannot
+// honor. A dialect with no session advisory lock applies unlocked, so a bound
+// on a wait that never happens is an instruction with nowhere to go, and
+// taking it silently is what stokaro/ptah#3411 reports.
+//
+// The caller resolves the dialect from --db-url, so the refusal lands before
+// the connection and before either apply path loads a desired schema. Nothing
+// about the target can change the answer: a dialect either has the lock or it
+// does not.
+//
+// Presence decides, not the value. A timeout reaches the flag from the command
+// line or from PTAH_LOCK_TIMEOUT, and both are somebody configuring a bound
+// that this target drops; `--lock-timeout ""` asks for an unbounded wait, which
+// is equally a wait this target never makes. Reading the string instead would
+// take that last spelling in silence. The refusal names whichever of the two
+// carried the value, so the operator can find it.
+func ensureSchemaApplyLockSupported(cmd *cobra.Command, dialect string) error {
+	flags := cmd.Flags()
+	if !flags.Changed(applyLockTimeoutFlag) {
+		return nil
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"note: schema apply locking is not supported for dialect %q; --%s is ignored and the apply proceeds without a database lock\n",
-		dialect, applyLockTimeoutFlag)
+	request := "--" + applyLockTimeoutFlag
+	if envName, fromEnv := cmdflags.AppliedEnvName(flags, applyLockTimeoutFlag); fromEnv {
+		request = envName
+	}
+	return atlasschema.EnsureApplyLockSupported(request, dialect)
 }

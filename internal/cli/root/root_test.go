@@ -185,6 +185,58 @@ func TestNewRootCommand_MalformedPTAHDryRunAppliesNothing(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
+// TestNewRootCommand_PTAHLockTimeoutRefusesUnlockedDialectByName measures the
+// spelling a refusal reports. `ptah schema apply` refuses a lock timeout on a
+// dialect with no advisory lock, and the value reaches that flag from
+// PTAH_LOCK_TIMEOUT as readily as from the command line. An operator sent after
+// a --lock-timeout they never typed has nothing to remove.
+func TestNewRootCommand_PTAHLockTimeoutRefusesUnlockedDialectByName(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_LOCK_TIMEOUT", "5s")
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath,
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+
+	_, _, err := executeRootCommand(
+		"schema", "apply",
+		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
+		"--schema-file", schemaPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`PTAH_LOCK_TIMEOUT requested a schema apply lock, and dialect "sqlite" has none: `+
+			`only postgres, yugabytedb, mysql, mariadb, sqlserver take a session advisory lock. `+
+			`Remove PTAH_LOCK_TIMEOUT to apply without a lock`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+}
+
+// TestNewRootCommand_NoPTAHLockTimeoutStillAppliesOnUnlockedDialect is the
+// control for the refusal above: without the variable the same apply runs.
+func TestNewRootCommand_NoPTAHLockTimeoutStillAppliesOnUnlockedDialect(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath,
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+
+	stdout, _, err := executeRootCommand(
+		"schema", "apply",
+		"--db-url", atlasurl.SQLiteURLFromPath(dbPath),
+		"--schema-file", schemaPath,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
+	c.Assert(stdout, qt.Contains, "Schema apply completed successfully.")
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.IsNil)
+}
+
 func TestNewRootCommand_PTAHAutoApproveDoesNotBypassDropAllConfirmation(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_AUTO_APPROVE", "true")
