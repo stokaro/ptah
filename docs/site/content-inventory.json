@@ -3173,8 +3173,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 1015,
-      "sourceBytes": 11031
+      "visibleWords": 1035,
+      "sourceBytes": 11180
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/dbmate.mdx",
