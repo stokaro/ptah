@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 139,
-    "authored": 136,
+    "pages": 140,
+    "authored": 137,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 6
+      "tutorial": 7
     }
   },
   "pages": [
@@ -1517,6 +1517,7 @@
         "/direct/overview/",
         "/direct/plan-and-approve/",
         "/faq/",
+        "/migrate-from/dbmate/",
         "/schema/serve/",
         "/schema/stats/",
         "/schema/validate-and-format/",
@@ -3116,6 +3117,51 @@
       "sourceBytes": 11119
     },
     {
+      "path": "docs/site/src/content/docs/migrate-from/dbmate.mdx",
+      "route": "/migrate-from/dbmate/",
+      "title": "Migrate from dbmate",
+      "description": "Convert a dbmate directory to Ptah's format, and read what happened to its timestamp versions.",
+      "sidebarPath": "Migrate from another tool",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I convert my dbmate migrations to Ptah, and what happens to their version numbers?",
+      "goal": "Convert a dbmate directory and understand the version numbers the conversion produced.",
+      "sourceOfTruth": [
+        "internal/cli/migrations",
+        "migration/importer"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "dbmate import",
+        "convert dbmate migrations"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/import/",
+        "/migrate-from/goose/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/compare-and-drift/",
+        "/start/adopt-an-existing-database/",
+        "/start/install/",
+        "/versioned/import/"
+      ],
+      "inboundLinks": [
+        "/migrate-from/overview/"
+      ],
+      "visibleWords": 541,
+      "sourceBytes": 6862
+    },
+    {
       "path": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
       "route": "/migrate-from/golang-migrate/",
       "title": "Migrate from golang-migrate",
@@ -3156,8 +3202,8 @@
       "inboundLinks": [
         "/migrate-from/overview/"
       ],
-      "visibleWords": 624,
-      "sourceBytes": 7489
+      "visibleWords": 626,
+      "sourceBytes": 7749
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/goose.mdx",
@@ -3239,6 +3285,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/adoption/",
+        "/migrate-from/dbmate/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/start/adopt-an-existing-database/",
@@ -3246,7 +3293,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 249,
-      "sourceBytes": 2645
+      "sourceBytes": 2800
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -5654,6 +5701,7 @@
         "/concepts/desired-schema-and-sources/",
         "/direct/inspect/",
         "/faq/",
+        "/migrate-from/dbmate/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/migrate-from/overview/",
@@ -5824,6 +5872,7 @@
         "/extend/editor-and-shell/",
         "/faq/",
         "/inference/quick-start/",
+        "/migrate-from/dbmate/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/schema/document/",
@@ -6474,6 +6523,7 @@
         "/atlas/migrate-commands/",
         "/concepts/migration-directory/",
         "/faq/",
+        "/migrate-from/dbmate/",
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/migrate-from/overview/",

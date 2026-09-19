@@ -1,0 +1,256 @@
+---
+title: "Migrate from dbmate"
+description: Convert a dbmate directory to Ptah's format, and read what happened to its timestamp versions.
+type: tutorial
+audience:
+  - new-user
+readerQuestion: How do I convert my dbmate migrations to Ptah, and what happens to their version numbers?
+goal: Convert a dbmate directory and understand the version numbers the conversion produced.
+sourceOfTruth:
+  - internal/cli/migrations
+  - migration/importer
+generated: false
+searchAliases:
+  - dbmate import
+  - convert dbmate migrations
+overlaps:
+  - /versioned/import/
+  - /migrate-from/goose/
+disposition: keep
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A dbmate migration is one file with `-- migrate:up` and `-- migrate:down`
+sections, named with a fourteen-digit timestamp. The conversion does not keep those
+timestamps as version numbers, and it does keep `transaction:false`. Both are
+worth knowing before you run it.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
+- A terminal and about five minutes.
+
+No database server, Docker, or Go toolchain is required.
+
+## Convert the directory
+
+### Build the dbmate directory
+
+The second migration disables the transaction, which is what a
+`CREATE INDEX CONCURRENTLY` needs on PostgreSQL. SQLite does not care, and the
+directive is the point here rather than the engine.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir -p ptah-from-dbmate/legacy
+cd ptah-from-dbmate
+cat > legacy/20240101120000_create_users.sql <<'SQL'
+-- migrate:up
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+
+-- migrate:down
+DROP TABLE users;
+SQL
+cat > legacy/20240215093000_email_index.sql <<'SQL'
+-- migrate:up transaction:false
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+
+-- migrate:down transaction:false
+DROP INDEX users_email_idx;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-from-dbmate/legacy | Out-Null
+Set-Location ptah-from-dbmate
+@'
+-- migrate:up
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+
+-- migrate:down
+DROP TABLE users;
+'@ | Set-Content legacy/20240101120000_create_users.sql
+@'
+-- migrate:up transaction:false
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+
+-- migrate:down transaction:false
+DROP INDEX users_email_idx;
+'@ | Set-Content legacy/20240215093000_email_index.sql
+```
+
+</TabItem>
+</Tabs>
+
+### Preview the conversion
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations --dry-run
+```
+
+Expected output on standard output:
+
+```text
+Dry run: would write 4 migration file(s) to ./migrations
+  0000000001_v20240101120000_create_users.up.sql
+  0000000001_v20240101120000_create_users.down.sql
+  0000000002_v20240215093000_email_index.up.sql
+  0000000002_v20240215093000_email_index.down.sql
+```
+
+Read those names before running anything. This is the part of a dbmate
+conversion that surprises people.
+
+### Run the import
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+Wrote 4 migration file(s) to ./migrations
+Wrote ./migrations/ptah.sum
+  0000000001_v20240101120000_create_users.up.sql
+  0000000001_v20240101120000_create_users.down.sql
+  0000000002_v20240215093000_email_index.up.sql
+  0000000002_v20240215093000_email_index.down.sql
+```
+
+## What the conversion changed
+
+### The timestamps are not the version numbers
+
+`20240101120000` became version `1`, and `20240215093000` became version `2`.
+The original timestamp is kept, in the description: `v20240101120000_create_users`.
+
+The order is preserved, which is what a migration directory needs. What is not
+preserved is the number a database already recorded.
+
+**This matters for a database dbmate has already migrated.** Its
+`schema_migrations` table holds the timestamps, and the converted directory
+counts from one, so the two do not line up on any row. Applying the converted
+directory to such a database would replay every migration it already has.
+[Adopt an existing database](../../start/adopt-an-existing-database/) is the
+procedure for recording the history as already applied; do that before the
+first `ptah migrations up` against anything that is not empty.
+
+A fresh database has no such problem, which is what this page uses.
+
+### `transaction:false` survives
+
+```console
+cat migrations/0000000002_v20240215093000_email_index.up.sql
+```
+
+Expected output on standard output:
+
+```text
+-- +ptah no_transaction
+CREATE UNIQUE INDEX users_email_idx ON users (email);
+```
+
+dbmate scopes the option to one direction and so does Ptah, so each side keeps
+what it asked for. A file that disables the transaction only on the way up
+converts to an up file carrying the directive and a down file that still runs
+inside one, which is what a multi-statement rollback wants: a failure partway
+through it rolls the whole thing back rather than leaving half the change
+behind.
+
+Options the importer does not recognize are dropped from the SQL, as dbmate's
+own directives are, and are not guessed at.
+
+## Apply the result
+
+### Validate the sealed directory
+
+```console
+ptah migrations validate --dir ./migrations
+```
+
+Expected output on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+### Apply the converted directory
+
+```console
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current version: 0
+Total migrations: 2
+Pending migrations: 2
+```
+
+Progress records on standard error carry timestamps and correlation IDs, so
+this page does not copy those volatile fields.
+
+### Verify the recorded state
+
+```console
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 2
+Total Migrations: 2
+Applied Migrations: 2
+Pending Migrations: 0
+```
+
+The recorded versions are `1` and `2`, not the timestamps. That is the record
+the converted directory and this database now share.
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-from-dbmate
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-from-dbmate
+```
+
+</TabItem>
+</Tabs>
+
+## Where this leaves you
+
+dbmate also maintains `db/schema.sql`, a dump of the current schema. It has no
+destination in a migration directory, and the import does not read it. It is
+not useless: Ptah reads a `.sql` file as a desired-schema source, so it can
+become the input to [compare and drift](../../direct/compare-and-drift/)
+rather than something to delete.
+
+[Import an existing migration directory](../../versioned/import/) covers the
+other source tools and the format table.

@@ -120,8 +120,10 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 			downSQL = emptyDownSQL
 		}
 		upSQL := migration.UpSQL
-		if migration.NoTransaction {
+		if migration.UpNoTransaction {
 			upSQL = addImportedNoTransactionDirective(upSQL)
+		}
+		if migration.DownNoTransaction {
 			downSQL = addImportedNoTransactionDirective(downSQL)
 		}
 		planned = append(planned,

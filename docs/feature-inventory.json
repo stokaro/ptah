@@ -918,16 +918,31 @@
       ]
     },
     {
+      "page": "docs/site/src/content/docs/migrate-from/dbmate.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 8,
+          "expectations": 6
+        },
+        {
+          "shell": "powershell",
+          "steps": 8,
+          "expectations": 6
+        }
+      ]
+    },
+    {
       "page": "docs/site/src/content/docs/migrate-from/golang-migrate.mdx",
       "shells": [
         {
           "shell": "bash",
-          "steps": 9,
+          "steps": 10,
           "expectations": 8
         },
         {
           "shell": "powershell",
-          "steps": 9,
+          "steps": 10,
           "expectations": 8
         }
       ]

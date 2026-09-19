@@ -1,6 +1,7 @@
 package quickstart_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -102,6 +103,44 @@ func TestRenderScript_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(script, qt.Equals, "")
+		})
+	}
+}
+
+// A step the page declared with `exits=` leaves its status in $LASTEXITCODE,
+// and the next step inherits it unless the script clears it. A PowerShell step
+// built only from cmdlets never sets the variable, so the zero-exit check that
+// follows it reads the earlier step's status and ends a passing run with it.
+//
+// Bash has no equivalent: every step there is a command, and `set -e` reads
+// that command's own status.
+func TestRenderScript_ClearsADeclaredExitStatusForTheNextStep(t *testing.T) {
+	tests := []struct {
+		name     string
+		shell    quickstart.Shell
+		exitCode int
+		want     string
+		present  bool
+	}{
+		{name: "powershell after a declared failure", shell: quickstart.PowerShell, exitCode: 2, want: "$global:LASTEXITCODE = 0\n", present: true},
+		{name: "powershell after a normal step", shell: quickstart.PowerShell, exitCode: 0, want: "$global:LASTEXITCODE = 0\n", present: false},
+		{name: "bash after a declared failure", shell: quickstart.Bash, exitCode: 2, want: "LASTEXITCODE", present: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			program := &quickstart.Program{
+				Shell: test.shell,
+				Actions: []quickstart.Action{
+					{Kind: quickstart.ActionStep, Body: "ptah version", ExitCode: test.exitCode},
+				},
+			}
+			script, err := quickstart.RenderScript(program)
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Contains(script, test.want), qt.Equals, test.present,
+				qt.Commentf("script:\n%s", script))
 		})
 	}
 }

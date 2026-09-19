@@ -137,6 +137,14 @@ func writePowerShellExitCheck(out *strings.Builder, action Action) {
 		return
 	}
 	fmt.Fprintf(out, "if ($LASTEXITCODE -ne %d) { exit 1 }\n", action.ExitCode)
+	// The declared status has been read, and leaving it behind makes the next
+	// step inherit it. A step that runs only cmdlets -- Set-Location and
+	// Remove-Item in a cleanup section, say -- never sets $LASTEXITCODE, so the
+	// zero-exit check above would read THIS step's status as that one's and end
+	// a passing run with this step's code. Measured on windows-latest: a page
+	// whose `exits=2` step was followed by a cmdlet-only cleanup reported the
+	// cleanup as "the step did not finish" with nothing written.
+	out.WriteString("$global:LASTEXITCODE = 0\n")
 }
 
 func powerShellFile(out *strings.Builder, action Action) error {

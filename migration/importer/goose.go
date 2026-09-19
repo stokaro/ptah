@@ -98,11 +98,14 @@ func (p gooseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 			return nil, fmt.Errorf("goose migration %q has an empty up section", entry.Name())
 		}
 		migrations = append(migrations, SourceMigration{
-			Version:       version,
-			Name:          match[2],
-			UpSQL:         up,
-			DownSQL:       down,
-			NoTransaction: noTransaction,
+			Version: version,
+			Name:    match[2],
+			UpSQL:   up,
+			DownSQL: down,
+			// Goose puts NO TRANSACTION on the file rather than on a
+			// section, so it reaches both directions.
+			UpNoTransaction:   noTransaction,
+			DownNoTransaction: noTransaction,
 		})
 	}
 	if len(migrations) == 0 {

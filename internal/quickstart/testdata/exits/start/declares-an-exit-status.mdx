@@ -4,6 +4,8 @@ description: Three shell-neutral steps, the middle one declaring the status it m
 quickstart: true
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## A step that must succeed
 
 ```console
@@ -26,3 +28,26 @@ The run continues past a step whose declared status was met:
 ```console
 ptah version
 ```
+
+## A step that runs no program at all
+
+The step above is a native command, which sets $LASTEXITCODE and hides the
+question this one asks: a PowerShell step built only from cmdlets never sets it,
+so it inherits whatever the declared-exit step left there.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd .
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location .
+```
+
+</TabItem>
+</Tabs>

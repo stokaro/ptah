@@ -1,6 +1,9 @@
 package importer_test
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -81,4 +84,53 @@ func TestDbmateImportWritesPtahLayout(t *testing.T) {
 func TestSupportedToolsIncludeDbmate(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(importer.SupportedTools(), qt.Contains, "dbmate")
+}
+
+// `transaction:false` is how a dbmate author says a statement cannot run
+// inside a transaction, which is what CREATE INDEX CONCURRENTLY requires. The
+// option is dropped from the executable SQL, correctly, and what it meant has
+// to survive that: a converted migration that lost it runs inside a
+// transaction and fails on a server that refuses it there.
+//
+// dbmate scopes the option to one direction and so does Ptah, so each row says
+// what each direction should carry. The asymmetric rows are the ones that
+// matter: widening one direction's option to both would take the transaction
+// away from a direction that never asked for that.
+func TestDbmateImportKeepsTransactionFalse(t *testing.T) {
+	tests := []struct {
+		name     string
+		up       string
+		down     string
+		wantUp   bool
+		wantDown bool
+	}{
+		{name: "both directions", up: "-- migrate:up transaction:false", down: "-- migrate:down transaction:false", wantUp: true, wantDown: true},
+		{name: "up only", up: "-- migrate:up transaction:false", down: "-- migrate:down", wantUp: true, wantDown: false},
+		{name: "down only", up: "-- migrate:up", down: "-- migrate:down transaction:false", wantUp: false, wantDown: true},
+		{name: "neither", up: "-- migrate:up", down: "-- migrate:down", wantUp: false, wantDown: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			source := test.up + "\nCREATE UNIQUE INDEX i ON users (email);\n" +
+				test.down + "\nDROP INDEX i;\n"
+			outDir := t.TempDir()
+			_, err := importer.Import(
+				fstest.MapFS{"20240215093000_index.sql": {Data: []byte(source)}}, nil, outDir, importer.Options{})
+			c.Assert(err, qt.IsNil)
+
+			for _, direction := range []struct {
+				name string
+				want bool
+			}{{name: "up", want: test.wantUp}, {name: "down", want: test.wantDown}} {
+				body, err := os.ReadFile(filepath.Join(outDir,
+					"0000000001_v20240215093000_index."+direction.name+".sql"))
+				c.Assert(err, qt.IsNil)
+				c.Assert(strings.Contains(string(body), "-- +ptah no_transaction"), qt.Equals, direction.want,
+					qt.Commentf("%s direction, body %q", direction.name, string(body)))
+			}
+		})
+	}
 }
