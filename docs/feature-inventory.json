@@ -982,13 +982,13 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 7,
-          "expectations": 5
+          "steps": 8,
+          "expectations": 6
         },
         {
           "shell": "powershell",
-          "steps": 7,
-          "expectations": 5
+          "steps": 8,
+          "expectations": 6
         }
       ]
     },

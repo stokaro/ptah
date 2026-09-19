@@ -40,6 +40,10 @@ func TestMigrateDownRefusesMigrationLockTimeoutBeforeConnecting(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			// The sqlite row names a relative path, so the run is held in a
+			// directory of its own: a build that stopped refusing would write
+			// the database into the package source tree.
+			t.Chdir(t.TempDir())
 			migrationsDir := writeDownMigrations(c)
 
 			out, err := runDown(

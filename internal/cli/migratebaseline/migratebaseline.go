@@ -93,7 +93,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
+		"refused against a dialect that takes no such lock")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
@@ -124,9 +125,9 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 			return err
 		}
-		if err := lockRequest.Decide(dialect); err != nil {
-			return err
-		}
+	}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return err
 	}
 	if opts.migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
@@ -188,9 +189,8 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// The server names the product the URL does not, and the decision is worth
-	// nothing after a revision row is written, so it lands before the migrator
-	// is built.
+	// Before the migrator is built, so no revision row is written under a lock
+	// the operator asked for and the target never took.
 	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
 		return err
 	}

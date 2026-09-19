@@ -20,7 +20,6 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -202,7 +201,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
-	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
+		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
@@ -452,10 +452,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
 		DBURL:      dbURL,
 	}
-	if dialect, dialectErr := atlasurl.DialectFromURL(dbURL); dialectErr == nil {
-		if err := lockRequest.Decide(dialect); err != nil {
-			return err
-		}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return err
 	}
 
 	if migrationsDir == "" {
@@ -509,9 +507,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// The server names the product the URL does not, and the decision is worth
-	// nothing after the first migration runs, so it lands before any migrator
-	// call: reading the status initializes the revision table.
+	// Before any migrator call: reading the status initializes the revision
+	// table, and a decision taken after the first write answers nothing.
 	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
 		return err
 	}

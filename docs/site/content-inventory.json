@@ -232,8 +232,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8379,
-      "sourceBytes": 59002
+      "visibleWords": 8380,
+      "sourceBytes": 59011
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -6178,8 +6178,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5295,
-      "sourceBytes": 38963
+      "visibleWords": 5647,
+      "sourceBytes": 41540
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

@@ -151,6 +151,21 @@ func (r Request) Decide(dialect string) error {
 	return Ensure(request, dialect)
 }
 
+// DecideFromURL decides from the dialect [Request.DBURL] names, which is the
+// answer a caller can have before it opens anything. It is what refuses a
+// `sqlite://` target without creating the file.
+//
+// A URL Ptah cannot classify makes no claim here, and the connector answers it
+// with a refusal of its own; a URL that resolves to a dialect the server then
+// contradicts is answered by [Request.DecideConnected].
+func (r Request) DecideFromURL() error {
+	dialect, err := atlasurl.DialectFromURL(r.DBURL)
+	if err != nil {
+		return nil
+	}
+	return r.Decide(dialect)
+}
+
 // DecideConnected repeats the decision against the dialect the server reported,
 // which is the authoritative one.
 //
