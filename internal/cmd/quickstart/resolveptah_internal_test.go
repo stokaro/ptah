@@ -15,15 +15,16 @@ import (
 	"ptah.run/internal/exeext"
 )
 
-// writePrograms creates an empty file for each named program in a fresh
-// directory and returns the path of the first one, which is what a caller
-// would pass to --ptah.
+// writePrograms creates a file for each named program in a fresh directory and
+// returns the path of the first one, which is what a caller would pass to
+// --ptah. The files are never executed -- resolvePtah only asks whether they
+// are there -- so they carry no executable bit.
 func writePrograms(c *qt.C, programs ...string) string {
 	c.Helper()
 	directory := c.TempDir()
 	for _, program := range programs {
 		path := filepath.Join(directory, program+exeext.Suffix)
-		c.Assert(os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700), qt.IsNil) //nolint:gosec // G306 -- a stand-in for an executable, in a temporary directory
+		c.Assert(os.WriteFile(path, []byte("stand-in\n"), 0o600), qt.IsNil)
 	}
 	return filepath.Join(directory, programs[0]+exeext.Suffix)
 }
