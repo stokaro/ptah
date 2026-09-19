@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 138,
-    "authored": 135,
+    "pages": 139,
+    "authored": 136,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 5
+      "tutorial": 6
     }
   },
   "pages": [
@@ -3160,6 +3160,50 @@
       "sourceBytes": 7489
     },
     {
+      "path": "docs/site/src/content/docs/migrate-from/goose.mdx",
+      "route": "/migrate-from/goose/",
+      "title": "Migrate from Goose",
+      "description": "Convert a Goose directory to Ptah's format, including statement blocks and NO TRANSACTION, and apply it.",
+      "sidebarPath": "Migrate from another tool",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I convert my Goose migrations to Ptah without breaking a statement block?",
+      "goal": "Convert a Goose directory whose annotations carry meaning, and apply it.",
+      "sourceOfTruth": [
+        "internal/cli/migrations",
+        "migration/migrationfile"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "goose import",
+        "convert goose migrations"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/import/",
+        "/migrate-from/golang-migrate/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/start/adopt-an-existing-database/",
+        "/start/install/",
+        "/versioned/import/"
+      ],
+      "inboundLinks": [
+        "/migrate-from/overview/"
+      ],
+      "visibleWords": 511,
+      "sourceBytes": 7071
+    },
+    {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
       "route": "/migrate-from/overview/",
       "title": "Migrate from another tool",
@@ -3196,12 +3240,13 @@
       "outboundLinks": [
         "/atlas/adoption/",
         "/migrate-from/golang-migrate/",
+        "/migrate-from/goose/",
         "/start/adopt-an-existing-database/",
         "/versioned/import/"
       ],
       "inboundLinks": [],
       "visibleWords": 249,
-      "sourceBytes": 2472
+      "sourceBytes": 2645
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -5610,6 +5655,7 @@
         "/direct/inspect/",
         "/faq/",
         "/migrate-from/golang-migrate/",
+        "/migrate-from/goose/",
         "/migrate-from/overview/",
         "/schema/document/",
         "/schema/protobuf/",
@@ -5779,6 +5825,7 @@
         "/faq/",
         "/inference/quick-start/",
         "/migrate-from/golang-migrate/",
+        "/migrate-from/goose/",
         "/schema/document/",
         "/schema/lineage/",
         "/schema/security/",
@@ -6428,6 +6475,7 @@
         "/concepts/migration-directory/",
         "/faq/",
         "/migrate-from/golang-migrate/",
+        "/migrate-from/goose/",
         "/migrate-from/overview/",
         "/versioned/overview/",
         "/versioned/rollback/"

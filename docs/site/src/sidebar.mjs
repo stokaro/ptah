@@ -97,6 +97,7 @@ export const sidebar = [
     items: [
       { slug: 'migrate-from/overview', label: 'Overview' },
       { slug: 'migrate-from/golang-migrate' },
+      { slug: 'migrate-from/goose' },
     ],
   },
   {

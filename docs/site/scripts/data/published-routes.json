@@ -76,6 +76,7 @@
   "/inference/troubleshooting/",
   "/install/",
   "/migrate-from/golang-migrate/",
+  "/migrate-from/goose/",
   "/migrate-from/overview/",
   "/operate/ai-agent-changes/",
   "/operate/ai-agent-connect/",
