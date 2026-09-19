@@ -30,11 +30,13 @@ the commands stay. At the end you are on `ptah-compat`, which is a place to
 stop rather than a staging area to escape from.
 
 The two halves of the move are not equally provable, and the page treats them
-differently. Everything in Atlas's community edition has an Atlas-compatible
-command path here, and every command below runs in this repository's
-continuous integration on Linux, macOS and Windows. Capabilities Atlas gates
-behind a paid tier are answered by different machinery, described rather than
-executed, in [What the gated capabilities become](#what-the-gated-capabilities-become).
+differently. The community-edition surface is what `ptah-compat` targets, and
+what it covers is measured rather than asserted: the
+[feature matrix](../../atlas/feature-matrix/) answers it per capability, and
+every command below runs in this repository's continuous integration on Linux,
+macOS and Windows. Capabilities Atlas gates behind a paid tier are answered by
+different machinery, described rather than executed, in
+[What the gated capabilities become](#what-the-gated-capabilities-become).
 
 ## What you need
 
@@ -48,8 +50,9 @@ No database server, Docker, or Go toolchain is required.
 
 ### Build a project with history
 
-The fixture is an `atlas.hcl` with one env and a directory holding two applied
-migrations, which is the smallest shape that can prove anything.
+The fixture is an `atlas.hcl` with one env and a directory holding two
+migrations, which is the smallest shape that can prove anything. Yours is
+larger; nothing below cares how much larger.
 
 <Tabs syncKey="shell">
 <TabItem label="Bash">
@@ -354,9 +357,9 @@ summary, [feature matrix](../../atlas/feature-matrix/) the per-capability
 table, and [retained divergences](../../atlas/retained-divergences/) the list
 of places Ptah deliberately does not reproduce a behavior, each with the reason.
 
-Two settings are worth knowing before you rely on the move. `ptah-compat`
-keeps every capability Ptah models, which means it accepts some input the
-community binary refuses; [strict CE mode](../../atlas/strict-ce-mode/) is the
-switch that narrows it to a community-edition-only policy for conformance runs.
-And [license boundary](../../atlas/license-boundary/) states how the
-compatibility work is done and what it does not touch.
+`ptah-compat` keeps every capability Ptah models, which means it accepts some
+input the community binary refuses. [Strict CE mode](../../atlas/strict-ce-mode/)
+is the switch that narrows it to a community-edition-only policy for
+conformance runs, and it is worth knowing about before you rely on the move.
+[License boundary](../../atlas/license-boundary/) states how the compatibility
+work is done and what it does not touch.
