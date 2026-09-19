@@ -105,11 +105,12 @@ func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
 //
 // Directive lines are matched whole and dropped entirely, so trailing options
 // such as "-- migrate:up transaction:false" never leak into the executable
-// SQL. Dropping the option from the SQL is right; dropping what it meant is
-// not, and that is what this used to do: `transaction:false` is how a dbmate
-// author says a statement cannot run inside a transaction, which is what
-// CREATE INDEX CONCURRENTLY and its relatives require. A converted migration
-// that lost it runs inside one and fails on a server that refuses it there.
+// SQL. Dropping the option from the SQL is right, and dropping what it meant
+// is the part worth guarding: `transaction:false` is how a dbmate author says
+// a statement cannot run inside a transaction, which is what CREATE INDEX
+// CONCURRENTLY and its relatives require. Without the flag this returns, a
+// converted migration runs inside a transaction and fails on a server that
+// refuses it there.
 //
 // Content before the first directive and content under directives other than
 // up/down is ignored.
