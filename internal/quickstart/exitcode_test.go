@@ -36,7 +36,7 @@ func TestExtract_ReadsADeclaredExitStatus_HappyPath(t *testing.T) {
 				codes = append(codes, action.ExitCode)
 			}
 
-			c.Assert(codes, qt.DeepEquals, []int{0, 1, 0})
+			c.Assert(codes, qt.DeepEquals, []int{0, 1, 0, 0})
 		})
 	}
 }
