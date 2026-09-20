@@ -330,10 +330,17 @@ A missing one has no file to compare, so nothing can say what it did or roll it
 back. Two situations reach it and they read the same to the database: a file
 removed from the directory, where restoring it is the way back, and an older
 release running in front of a database a newer one migrated, where the release
-holding the file is. Ptah does not guess which, and the revision-format scope
-matters here: the refusal is raised for a native revision history, while an
-Atlas-format one is reshaped by compatibility features that produce the same
-shape legitimately (stokaro/ptah#3442).
+holding the file is. Ptah does not guess which.
+
+**Which of the two refuses depends on the revision format.** A native history
+refuses, because nothing writes a row there without a file. An Atlas-format
+history does not: it is a history the Atlas community binary also writes, that
+binary applies such a directory rather than refusing it, and retiring a
+migration file while its recorded history stays readable is something Ptah
+supports on purpose for converted directories. So on an Atlas history the state
+is reported and the apply proceeds. `missing_migrations` and the
+`migrations status` report carry it either way, and `--exit-code` treats it as
+not up to date either way; only the refusal is scoped.
 
 ## The evidence a run leaves
 

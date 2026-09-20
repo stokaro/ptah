@@ -175,6 +175,15 @@ directory whose only migration was deleted, an ungated `migrate status`
 announced "Database is up to date"
 ([#974](https://github.com/stokaro/ptah/issues/974)).
 
+A recorded revision the directory holds no file for is the case none of those
+gates can see: the checksum file describes the directory to itself, and this is
+the directory disagreeing with the database. `ptah migrations up` and
+`ptah migrations down` refuse it on a native revision history, and
+`ptah migrations status` reports it on either. On an Atlas-format history the
+apply proceeds, matching the community binary, which applies such a directory
+at exit 0 and reports `Migration Status: OK`
+([#3442](https://github.com/stokaro/ptah/issues/3442)).
+
 The verbs that **write** are on that list for a reason of their own. A gate that
 fired only on the reading verbs would still let `migrate new` append a file to a
 tampered directory and re-hash it on the way out, so the tampering would end up
