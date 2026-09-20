@@ -78,6 +78,17 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"recording that. Run 'ptah migrations repair --version 2' to record it applied.",
 		},
 		{
+			name: "every down statement committed",
+			revision: migrator.MigrationRevision{
+				Version:   2,
+				Applied:   3,
+				Total:     3,
+				Direction: migrator.MigrationDirectionDown,
+			},
+			want: "Every down statement of this rollback committed and the run stopped before " +
+				"removing the revision. Run 'ptah migrations repair --version 2' to finish it.",
+		},
+		{
 			name:     "some statements ran",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 1, Total: 3},
 			want: "This migration stopped after 1 of 3 statements. Run 'ptah migrations repair " +

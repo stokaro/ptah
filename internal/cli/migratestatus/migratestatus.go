@@ -491,12 +491,16 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // statement after it may have committed as well without recording that, which
 // no sentence written off that count alone can be right about.
 //
-// `--resume-from` is offered only where a statement is left to run. A row that
-// committed every statement and stopped before recording it has none, and the
-// command refuses the offset past the end; a plain repair is what records it.
+// `--resume-from` is offered only where a statement is left to run. A body that
+// committed every statement and stopped before recording that has none, and the
+// command refuses the offset past the end, so a completed body is read before
+// the direction split rather than inside each side of it.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 	if revision.StatementOutcomeUnknown() {
 		return unknownStatementOutcomeHint(revision)
+	}
+	if revision.Applied == revision.Total && revision.Total > 0 {
+		return completedBodyHint(revision)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(
@@ -504,13 +508,6 @@ func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 				"to run the remaining down statements and remove the revision.",
 			revision.Version,
 			revision.Applied+1,
-		)
-	}
-	if revision.Applied == revision.Total && revision.Total > 0 {
-		return fmt.Sprintf(
-			"Every statement of this migration committed and the run stopped before recording "+
-				"that. Run 'ptah migrations repair --version %d' to record it applied.",
-			revision.Version,
 		)
 	}
 	if revision.Applied == 0 {
@@ -524,6 +521,26 @@ func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 		revision.Total,
 		revision.Version,
 		revision.Applied+1,
+	)
+}
+
+// completedBodyHint names what ends a revision whose body ran to its last
+// statement and stopped before the run could record that. A plain repair is the
+// answer in both directions and the outcome it reaches is the opposite one:
+// recording the migration applied for an up body, removing the revision for a
+// rollback that un-applied it.
+func completedBodyHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"Every down statement of this rollback committed and the run stopped before removing "+
+				"the revision. Run 'ptah migrations repair --version %d' to finish it.",
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"Every statement of this migration committed and the run stopped before recording that. "+
+			"Run 'ptah migrations repair --version %d' to record it applied.",
+		revision.Version,
 	)
 }
 
