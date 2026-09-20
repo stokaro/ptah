@@ -263,6 +263,11 @@ jobs:
           node docs/site/scripts/check-style.mjs
           node docs/site/scripts/check-terminology.mjs --selftest
           node docs/site/scripts/check-terminology.mjs
+          # A translated README is not a site page, so the site build never sees
+          # it. This is the job that sees every documentation change, which is
+          # where the check that holds a translation to its source belongs.
+          node docs/site/scripts/check-translations.mjs --selftest
+          node docs/site/scripts/check-translations.mjs
           node docs/site/scripts/check-limitations.mjs --selftest
           node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/check-implementation-chronology.mjs --selftest
