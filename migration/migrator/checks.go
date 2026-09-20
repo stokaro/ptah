@@ -315,8 +315,16 @@ func runCheckAssertion(
 
 // validateCheckAssertionStatically proves an assertion is well-formed from its
 // text alone: a single read-only SELECT that does not advance a SQL Server
-// sequence. It needs a dialect and a server version string, never a query, so
-// it is the whole of what can be decided about a check without a database.
+// sequence, and does not write a file. It needs a dialect and a server version
+// string, never a query, so it is the whole of what can be decided about a
+// check without a database.
+//
+// Beginning with SELECT is not by itself enough, and the dialect rules below
+// are the constructs where it is not. What they have in common is an effect the
+// transaction around the statement does not own, so no isolation level and no
+// read-only session takes it back: a SQL Server sequence advances, and a
+// MySQL-family INTO OUTFILE writes a file on the server. Reading the assertion
+// is the only thing standing in front of either.
 //
 // Both callers go through here so there is exactly one implementation of "is
 // this assertion well-formed": [runCheckAssertion] on the evaluation path, and
@@ -328,6 +336,10 @@ func validateCheckAssertionStatically(assertion, dialect, serverVersion string) 
 	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
 		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
 		return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+	}
+	if implicitCommitDialect(dialect) &&
+		mysqlUnwitnessedFilesystemWrite(significantSQLTokens(assertion, dialect)) {
+		return fmt.Errorf("check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE")
 	}
 	return nil
 }
