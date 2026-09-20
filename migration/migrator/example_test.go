@@ -434,3 +434,35 @@ func ExampleNewFSMigrator_errorHandling() {
 	// Output:
 	// Failed to create migrator: incomplete migrations found (missing up or down files): [1]
 }
+
+// ExampleVerifyChecks evaluates release requirements against a database that is
+// already running. Nothing is applied and nothing is written: the checks are
+// read-only assertions about the data a release was supposed to leave behind,
+// and each one gets an answer whether or not an earlier one failed.
+func ExampleVerifyChecks() {
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	ctx := context.Background()
+	must.Must(conn.ExecContext(ctx, `CREATE TABLE users (id INTEGER PRIMARY KEY, tier TEXT)`))
+	must.Must(conn.ExecContext(ctx, `INSERT INTO users (id, tier) VALUES (1, 'pro'), (2, NULL)`))
+
+	report, err := migrator.VerifyChecks(ctx, conn, []migrator.Check{
+		{Name: "rows arrived", Assert: "SELECT COUNT(*) = 2 FROM users"},
+		{Name: "backfill covered every row", Assert: "SELECT COUNT(*) = 0 FROM users WHERE tier IS NULL"},
+	})
+	if err != nil {
+		fmt.Println("verification could not run:", err)
+		return
+	}
+
+	for _, result := range report.Results {
+		fmt.Printf("%s: %s\n", result.Status, result.Name)
+	}
+	fmt.Println("verdict:", report.Verdict())
+
+	// Output:
+	// verified: rows arrived
+	// failed: backfill covered every row
+	// verdict: failed
+}
