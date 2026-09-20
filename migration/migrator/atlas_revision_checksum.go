@@ -87,6 +87,45 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	return false, classified.mismatches[0]
 }
 
+// verifyBeforeApply is the applied-checksum verification as an apply asks it:
+// the rule, and the one refusal an apply may proceed over.
+//
+// The three apply paths share it so the tolerance cannot be written into two of
+// them and forgotten in the third.
+func (m *Migrator) verifyBeforeApply(ctx context.Context, migrations []*Migration) (bool, error) {
+	reconcile, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil && !m.AppliesOverMissingMigration(err) {
+		return false, err
+	}
+	return reconcile, nil
+}
+
+// AppliesOverMissingMigration reports whether an apply this migrator runs may
+// proceed over the refusal err carries.
+//
+// Only a revision this directory holds no file for, and only on an Atlas-format
+// history. Such a history is one the Atlas community binary also writes, and
+// measured against the pinned v1.3.0 on a directory whose applied file was
+// deleted and re-hashed, `migrate apply` writes `No migration files to execute`
+// and exits 0 while `migrate status` reports OK. Refusing would stop a pipeline
+// that binary runs, and would take away the retired-history reading Ptah
+// supports on purpose for converted directories (stokaro/ptah#3442).
+//
+// It is asked beside the apply rather than inside the verification, and it is
+// exported because the answer has one home: [Migrator.VerifyAppliedChecksums]
+// is also the adoption verifier, which answers whether native Ptah may take a
+// history over, and after such a takeover the history is native -- so a row
+// with no file is decisive there whatever format it is in today. A caller that
+// runs the verification itself before applying asks this about the error it
+// gets rather than deciding again.
+//
+// Any other error is never tolerated: this reports false for a checksum
+// mismatch, for a failure to read the revisions, and for nil.
+func (m *Migrator) AppliesOverMissingMigration(err error) bool {
+	var missing *MissingMigrationError
+	return errors.As(err, &missing) && m.revisionTableFormat.isAtlas()
+}
+
 // appliedChecksumClassification is one pass of the applied-checksum rule over
 // every migration, rather than the first answer that rule produces.
 //
@@ -196,22 +235,20 @@ func (m *Migrator) classifyAppliedChecksums(
 // agree on, while the version is an ordering number a converted directory may
 // assign far from it.
 //
-// The rule is asked of a native revision history only. An Atlas-format history
-// is reshaped by compatibility features this package cannot see the marks of --
-// a surviving Flyway `B` file squashes the migrations it supersedes, and the
-// rows they wrote stay recorded as ordinary applied rows carrying no baseline
-// type, while the file that replaced them can hold any ordering number. What
-// makes that legitimate lives in internal/cli/atlas, so deciding it here would
-// refuse an intact directory. stokaro/ptah#3442 carries the Atlas half.
+// This reports the fact and nothing more;
+// [Migrator.verifyAppliedMigrationChecksums] decides where it is a refusal, and
+// a directory converted from another tool's layout is covered by that decision
+// rather than by an exemption here. Such a directory is always an Atlas
+// revision history, where the shape is legitimate often enough that nothing
+// refuses on it: a surviving Flyway `B` file squashes the migrations it
+// supersedes, and retiring a Flyway file while its history stays readable is a
+// capability with machinery of its own (stokaro/ptah#3442).
 func (m *Migrator) missingAppliedRevisions(
 	migrations []*Migration,
 	revisions []MigrationRevision,
 ) []MigrationRevision {
 	provider, ok := m.migrationProvider.(WholeHistoryProvider)
 	if !ok || !provider.DescribesWholeHistory() {
-		return nil
-	}
-	if m.revisionTableFormat.isAtlas() {
 		return nil
 	}
 	held := make(map[string]struct{}, len(migrations))

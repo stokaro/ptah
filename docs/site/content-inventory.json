@@ -6527,8 +6527,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5904,
-      "sourceBytes": 42999
+      "visibleWords": 6020,
+      "sourceBytes": 43677
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -6760,8 +6760,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5002,
-      "sourceBytes": 34875
+      "visibleWords": 5085,
+      "sourceBytes": 35428
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

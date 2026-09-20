@@ -1946,7 +1946,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		currentVersionKeySet = true
 	}
 
-	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	reconcileChecksums, err := m.verifyBeforeApply(ctx, migrations)
 	if err != nil {
 		return err
 	}
@@ -2260,7 +2260,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 
 	migrations := m.migrationProvider.Migrations()
 	migrationMap := migrationsByVersion(migrations)
-	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	reconcileChecksums, err := m.verifyBeforeApply(ctx, migrations)
 	if err != nil {
 		return err
 	}
@@ -2369,7 +2369,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
-	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	reconcileChecksums, err := m.verifyBeforeApply(ctx, migrations)
 	if err != nil {
 		return err
 	}
