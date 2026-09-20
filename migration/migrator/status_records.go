@@ -32,6 +32,11 @@ const (
 	// MigrationStateOutOfOrder is a pending migration below the current
 	// version. Whether it runs is the migrator's execution order to decide.
 	MigrationStateOutOfOrder = "out-of-order"
+	// MigrationStateMissing is a revision recorded as applied that the
+	// directory holds no file for. It never appears in the per-directory list,
+	// which has no entry to carry it; [MigrationStatus.MissingMigrations] is
+	// where it is reported.
+	MigrationStateMissing = "missing"
 	// MigrationStateCheckpointCovered is a migration below the checkpoint that
 	// covers it: it will never run here, and its absence from the history is
 	// not a gap. A bootstrap does not change that -- it records the checkpoint
@@ -73,6 +78,25 @@ type MigrationRecord struct {
 	TransactionMode string `json:"transaction_mode,omitempty"`
 	// State is one of the MigrationState constants.
 	State string `json:"state"`
+}
+
+// missingMigrationRecords projects the applied revisions no file accounts for
+// into the same per-migration shape as the directory's own records.
+//
+// Checksum stays empty: there is no file to hash, and that emptiness beside a
+// non-empty AppliedChecksum is the whole finding.
+func missingMigrationRecords(revisions []MigrationRevision) []MigrationRecord {
+	records := make([]MigrationRecord, 0, len(revisions))
+	for _, revision := range revisions {
+		records = append(records, MigrationRecord{
+			Version:         revision.Version,
+			VersionKey:      revision.RevisionVersion(),
+			Description:     revision.Description,
+			AppliedChecksum: revision.Checksum,
+			State:           MigrationStateMissing,
+		})
+	}
+	return records
 }
 
 // migrationRecords projects the directory and the revision rows into the

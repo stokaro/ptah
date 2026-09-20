@@ -176,6 +176,50 @@ func (e *ChecksumMismatchError) Error() string {
 		e.Description)
 }
 
+// MissingMigrationError reports that the database recorded a migration as
+// applied and the migration directory holds no file for it.
+//
+// It is not a checksum mismatch: there is nothing to hash, so nothing can say
+// what ran, replay it, or roll it back. A revision below a checkpoint or a
+// baseline is not reported here, because those boundaries are what make an
+// absent file the intended shape.
+//
+// The two shapes that reach it read the same to the database and want different
+// answers from the operator: a file deleted from the directory, where restoring
+// it is the way back, and a deployment of an older release against a database a
+// newer one migrated, where the release with the file is. The message names
+// neither, because the rows cannot tell them apart.
+type MissingMigrationError struct {
+	// Version is the recorded version, and RevisionKey the exact revision
+	// identity, which is a decimal spelling for a native directory and an
+	// opaque token for an Atlas repeatable migration.
+	Version     int64
+	RevisionKey string
+	Description string
+	// Stored is the checksum the revision row recorded, and is empty on a row
+	// written before Ptah recorded one.
+	Stored string
+}
+
+func (e *MissingMigrationError) Error() string {
+	return fmt.Sprintf(
+		"migration %s is recorded as applied and this directory has no file for it: %q; "+
+			"nothing here can say what it did or roll it back, so run against a directory "+
+			"that has the file",
+		e.RevisionKey, e.Description)
+}
+
+// newMissingMigrationError describes one applied revision the directory cannot
+// account for.
+func newMissingMigrationError(revision MigrationRevision) *MissingMigrationError {
+	return &MissingMigrationError{
+		Version:     revision.Version,
+		RevisionKey: revision.RevisionVersion(),
+		Description: revision.Description,
+		Stored:      normalizeAtlasRevisionHash(revision.Checksum),
+	}
+}
+
 // ConvertedFlywayRepeatableVersion is the reserved slot every Flyway repeatable
 // lands on when a directory is imported: the top of int64, because the source
 // tool applies repeatables after every versioned file.
