@@ -53,6 +53,14 @@ func editAppliedUpFileAndReseal(c *qt.C, dir string) {
 	path := filepath.Join(dir, "0000000001_init.up.sql")
 	edited := "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT);\n"
 	c.Assert(os.WriteFile(path, []byte(edited), 0o600), qt.IsNil)
+	resealWidgets(c, dir)
+}
+
+// resealWidgets rewrites ptah.sum over whatever the directory holds now, so a
+// test that changed it measures the recorded-revision rule rather than the
+// sealed-directory gate in front of it.
+func resealWidgets(c *qt.C, dir string) {
+	c.Helper()
 	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 }

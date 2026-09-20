@@ -48,6 +48,36 @@ func TestMigrateStatusReport_HappyPath(t *testing.T) {
 	})
 }
 
+// A revision with no file is reported on its own line, and before the modified
+// one: there is no file to compare, so nothing can say what that migration did
+// (stokaro/ptah#3441).
+
+func TestMigrateStatusMissingReport_FailurePath(t *testing.T) {
+	t.Run("an applied migration was deleted", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeStatusMigrations(c)
+		dbPath := filepath.Join(c.TempDir(), "deleted.db")
+		applyStatusMigrations(c, dir, dbPath)
+		deleteAppliedMigration(c, dir)
+
+		out, err := runStatus(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--exit-code")
+
+		c.Assert(err, qt.ErrorMatches, "applied migrations with no file detected")
+		c.Assert(out, qt.Contains, "Status: ❌ Applied migration with no file")
+		c.Assert(out, qt.Contains, "Missing Migration: version=1 description=Init")
+		c.Assert(out, qt.Not(qt.Contains), "Database is up to date")
+	})
+}
+
+// deleteAppliedMigration removes both files of the migration the database
+// applied, leaving a directory that holds nothing at all.
+func deleteAppliedMigration(c *qt.C, dir string) {
+	c.Helper()
+	for _, name := range []string{"0000000001_init.up.sql", "0000000001_init.down.sql"} {
+		c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)
+	}
+}
+
 func writeStatusMigrations(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()

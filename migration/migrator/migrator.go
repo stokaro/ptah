@@ -76,6 +76,16 @@ type MigrationStatus struct {
 	// answers the questions a caller has to settle before it may execute
 	// anything.
 	Migrations []MigrationRecord `json:"migrations,omitempty"`
+	// MissingMigrations are the revisions the database records as applied that
+	// the directory holds no file for, in recorded order. Each carries the
+	// state "missing" and an empty Checksum, because there is no file to hash.
+	//
+	// They are reported separately because Migrations answers "what does this
+	// directory hold"; a row with no file is not an entry in that list, and
+	// folding it in would change what the list means. A revision below a
+	// checkpoint or a baseline is absent from here: those boundaries are what
+	// make a missing file the intended shape.
+	MissingMigrations []MigrationRecord `json:"missing_migrations,omitempty"`
 	// CheckpointVersion is the checkpoint that covers the migrations below it:
 	// the one a fresh database bootstraps from, or the newest one this database
 	// has applied. It is zero when no checkpoint covers anything. A migration
@@ -1681,6 +1691,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 			dirtyRevision,
 			classified.mismatchedKeys(),
 		),
+		MissingMigrations: missingMigrationRecords(classified.missing),
 	}
 	span.SetAttributes(
 		attr("migration.current_version", status.CurrentVersion),

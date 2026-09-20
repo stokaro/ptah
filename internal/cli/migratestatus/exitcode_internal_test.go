@@ -63,3 +63,19 @@ func TestMigrateStatusExitCode_AppliedOnly(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 }
+
+// TestMigrateStatusExitCode_Missing covers the state that has no entry in the
+// per-directory list at all: the revision names a migration the directory does
+// not hold, so nothing in Migrations can carry it.
+func TestMigrateStatusExitCode_Missing(t *testing.T) {
+	c := qt.New(t)
+
+	err := notUpToDateExitCode(&migrator.MigrationStatus{
+		Migrations:        []migrator.MigrationRecord{{Version: 1, State: migrator.MigrationStateApplied}},
+		MissingMigrations: []migrator.MigrationRecord{{Version: 2, State: migrator.MigrationStateMissing}},
+	})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, "applied migrations with no file detected")
+}

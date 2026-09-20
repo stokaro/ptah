@@ -29,11 +29,20 @@ type ownedAtlasSumContribution struct {
 // hash accepted for a history the Atlas community binary wrote, say, which a
 // per-file content hash never reproduces.
 //
-// A non-nil error whose type is *ChecksumMismatchError names the first applied
-// revision no file accounts for. The bool reports that at least one row matched
-// a provable applied-history projection rather than the current full-directory
-// entry: those rows verify, and a writer that proceeds reconciles them. Nothing
-// here writes, so a caller in a preflight sees the fact without acting on it.
+// Two error types name a row this directory cannot vouch for, and a caller
+// matching only one of them handles half the question:
+//
+//   - *MissingMigrationError, for the first applied revision the directory
+//     holds no file for. It is reported before any hash is compared, because
+//     there is nothing to compare;
+//   - *ChecksumMismatchError, for the first applied revision whose file no
+//     longer accounts for what the row recorded.
+//
+// Any other non-nil error is a failure to ask the question rather than an
+// answer to it. The bool reports that at least one row matched a provable
+// applied-history projection rather than the current full-directory entry:
+// those rows verify, and a writer that proceeds reconciles them. Nothing here
+// writes, so a caller in a preflight sees the fact without acting on it.
 //
 // Callers wanting the guarantee that a preflight cannot alter what it inspects
 // should put the connection in dry-run mode first: this calls Initialize, which
@@ -63,6 +72,12 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	if err != nil {
 		return false, err
 	}
+	// Before the mismatches: a revision with no file cannot be compared at all,
+	// so no projection explains it and reporting a hash difference elsewhere
+	// first would name the smaller problem.
+	if len(classified.missing) > 0 {
+		return false, newMissingMigrationError(classified.missing[0])
+	}
 	if len(classified.mismatches) == 0 {
 		return classified.needsReconcile, nil
 	}
@@ -89,6 +104,10 @@ type appliedChecksumClassification struct {
 	// coherentProjection reports that the mismatches are explained by a
 	// coherent historical projection, which makes them not mismatches at all.
 	coherentProjection bool
+	// missing are the applied revisions the directory holds no migration for,
+	// in recorded order. They are a different failure from a mismatch: there is
+	// no file to compare, so no projection can explain them.
+	missing []MigrationRevision
 }
 
 func (c appliedChecksumClassification) mismatchedKeys() map[string]struct{} {
@@ -116,7 +135,9 @@ func (m *Migrator) classifyAppliedChecksums(
 		return appliedChecksumClassification{}, err
 	}
 
-	classified := appliedChecksumClassification{}
+	classified := appliedChecksumClassification{
+		missing: m.missingAppliedRevisions(migrations, revisions),
+	}
 	for _, migration := range migrations {
 		if migration.isAtlasRepeatable() {
 			continue
@@ -152,6 +173,56 @@ func (m *Migrator) classifyAppliedChecksums(
 		)
 	}
 	return classified, nil
+}
+
+// missingAppliedRevisions returns the applied revisions the migration directory
+// holds no file for, in recorded order.
+//
+// The absence is the whole finding: the history records a migration the
+// directory cannot show, so nothing can say what it did, replay it, or roll it
+// back.
+//
+// There is no exemption for a checkpoint, and none is needed. A checkpoint
+// bootstraps a database that has applied nothing and records its own revision
+// alone, writing no row for any version it covers, so a directory pruned down
+// to the checkpoint leaves nothing here to be absent. `migrations baseline`
+// records the directory's own migrations. Neither produces a row without a
+// file, which is what lets this ask the plain question.
+//
+// Identity is the revision key rather than the numeric version, because the two
+// answer different questions: the key is the exact token the row and the file
+// agree on, while the version is an ordering number a converted directory may
+// assign far from it.
+//
+// The rule is asked of a native revision history only. An Atlas-format history
+// is reshaped by compatibility features this package cannot see the marks of --
+// a surviving Flyway `B` file squashes the migrations it supersedes, and the
+// rows they wrote stay recorded as ordinary applied rows carrying no baseline
+// type, while the file that replaced them can hold any ordering number. What
+// makes that legitimate lives in internal/cli/atlas, so deciding it here would
+// refuse an intact directory. stokaro/ptah#3442 carries the Atlas half.
+func (m *Migrator) missingAppliedRevisions(
+	migrations []*Migration,
+	revisions []MigrationRevision,
+) []MigrationRevision {
+	if m.revisionTableFormat.isAtlas() {
+		return nil
+	}
+	held := make(map[string]struct{}, len(migrations))
+	for _, migration := range migrations {
+		held[migration.RevisionVersion()] = struct{}{}
+	}
+	var missing []MigrationRevision
+	for _, revision := range revisions {
+		if revision.State != migrationStateApplied {
+			continue
+		}
+		if _, ok := held[revision.RevisionVersion()]; ok {
+			continue
+		}
+		missing = append(missing, revision)
+	}
+	return missing
 }
 
 func appliedRevisionsByKey(revisions []MigrationRevision) map[string]MigrationRevision {

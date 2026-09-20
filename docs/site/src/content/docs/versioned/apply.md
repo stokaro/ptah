@@ -297,6 +297,11 @@ dialect, and one state:
 | `out-of-order` | Pending, below the current version |
 | `checkpoint-covered` | Below the checkpoint that covers it, so it will never run here |
 
+A seventh state, `missing`, never appears in that array: it belongs to a
+revision the database recorded and the directory holds no file for, and there is
+no entry to carry it. Those are listed in `missing_migrations`, in recorded
+order, each with an empty `checksum` because there is nothing to hash.
+
 `checkpoint_version` names that checkpoint: the one a fresh database
 bootstraps from, or the newest one the database has applied. A migration below
 it reads as covered on both sides of the bootstrap, because applying the
@@ -308,16 +313,27 @@ running hash over every preceding file, so the two strings differ for reasons
 that are not an edit. `state` is that rule's own answer.
 
 Set `--exit-code` in CI when a database that is not up to date should fail the
-job: the command exits `1` while pending work exists, and also while any
-migration is `modified`, since that is the state a deployment must not run
-into. It exits `0` once neither holds.
+job: the command exits `1` while pending work exists, while any migration is
+`modified`, and while `missing_migrations` is non-empty. Those last two are
+states a deployment must not run into. It exits `0` once none holds.
 
-`ptah migrations up` and `ptah migrations down` refuse while a migration is
-`modified`, including the run that has nothing else to do. The mismatch is
-reported before anything is applied, and it stays until the file carries the
-bytes the revision row recorded. So the recovery has an order: put those bytes
-back, then carry the change you wanted in a new migration. A new migration on
-its own cannot run, because the refusal precedes it.
+`ptah migrations up` and `ptah migrations down` refuse in both of them,
+including the run that has nothing else to do, and refuse before anything is
+applied.
+
+A `modified` migration stays refused until the file carries the bytes the
+revision row recorded, so the recovery has an order: put those bytes back, then
+carry the change you wanted in a new migration. A new migration on its own
+cannot run, because the refusal precedes it.
+
+A missing one has no file to compare, so nothing can say what it did or roll it
+back. Two situations reach it and they read the same to the database: a file
+removed from the directory, where restoring it is the way back, and an older
+release running in front of a database a newer one migrated, where the release
+holding the file is. Ptah does not guess which, and the revision-format scope
+matters here: the refusal is raised for a native revision history, while an
+Atlas-format one is reshaped by compatibility features that produce the same
+shape legitimately (stokaro/ptah#3442).
 
 ## The evidence a run leaves
 
