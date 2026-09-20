@@ -12,10 +12,10 @@ import (
 )
 
 // A dirty revision with applied=0 means "nothing is in the database" only where
-// a failed body rolls back with the write that records it. Where each statement
-// commits on its own there is no checkpoint to write, so the same row is what a
-// committed body leaves when the revision write fails, and the repair that
-// records it applied is the documented recovery (stokaro/ptah#3452, #999).
+// the count is a witness. Where every statement is durable the moment it runs
+// the migrator writes no witness, so the same row is what a committed body
+// leaves when the revision write fails, and the repair that records it applied
+// is the documented recovery (stokaro/ptah#3452, #999).
 func TestRevisionProvesNothingRan(t *testing.T) {
 	zeroProgress := &MigrationRevision{
 		Version:   1,
@@ -36,7 +36,11 @@ func TestRevisionProvesNothingRan(t *testing.T) {
 		{name: "clickhouse commits each statement", dialect: "clickhouse", revision: zeroProgress, want: false},
 		{name: "oracle commits each statement", dialect: "oracle", revision: zeroProgress, want: false},
 		{name: "spanner commits each statement", dialect: "spanner", revision: zeroProgress, want: false},
-		{name: "mysql commits before ddl", dialect: "mysql", revision: zeroProgress, want: false},
+		// MySQL keeps its DDL and loses its DML on a rollback, so the class
+		// carries a per-statement witness and zero there is that witness
+		// speaking, not the absence of one.
+		{name: "mysql records a witness", dialect: "mysql", revision: zeroProgress, want: true},
+		{name: "mariadb records a witness", dialect: "mariadb", revision: zeroProgress, want: true},
 		{
 			name:     "an unclassified dialect is read as rolling back",
 			dialect:  "",

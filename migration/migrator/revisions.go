@@ -3082,18 +3082,22 @@ func (m *Migrator) validateRepairMigrationSQL(
 //
 // isZeroProgressUpFailure is the row half: applied is zero, the run was an up
 // run, and the outcome of no statement is in doubt. The class is the other
-// half, and both are needed. Where a statement commits on its own, nothing
-// writes a per-statement checkpoint, so a body that ran and then lost the write
-// that records the migration reads exactly like a body that never started --
-// and there the repair that records it applied is the documented recovery, not
-// a mistake. Where the body rolls back with that write, applied=0 leaves
-// nothing behind, and recording it would claim a schema the database does not
-// have.
+// half, and both are needed, because whether zero can be trusted is what
+// differs by class. [ddltx.AllStatementsDurable] is that question: only where
+// every statement is durable the moment it runs does the migrator write no
+// per-statement witness, and a body that ran and then lost the write recording
+// it leaves the same row as a body that never started. There the repair that
+// records it applied is the documented recovery rather than a mistake.
+//
+// Everywhere else the count is a witness. A MySQL-family body keeps its DDL
+// and loses its DML on a rollback, which is why that class carries a witness
+// statement by statement and is not exempt here: zero there means the
+// transaction took the body back with it.
 func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return false
 	}
-	return !ddltx.BodySurvivesRevisionCompletionFailure(ddltx.ClassOf(dialect))
+	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
 }
 
 func (m *Migrator) repairUpMigration(

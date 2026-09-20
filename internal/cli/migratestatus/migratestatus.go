@@ -495,17 +495,18 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // answered from the count alone.
 //
 // `--resume-from` is offered only where a statement is left to run. A body that
-// committed every statement and stopped before recording that has none, and the
-// command refuses the offset past the end, so a completed body is read before
-// the direction split rather than inside each side of it.
+// committed every statement and stopped before recording that has none, and so
+// does a body with no statements at all, and the command refuses the offset
+// past the end either way. Both are read before the direction split rather than
+// inside each side of it.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision, dialect string) string {
 	if revision.StatementOutcomeUnknown() {
 		return unknownStatementOutcomeHint(revision)
 	}
-	if revision.Applied == revision.Total && revision.Total > 0 {
+	if revision.Applied == revision.Total {
 		return completedBodyHint(revision)
 	}
-	if revision.Applied == 0 && ddltx.BodySurvivesRevisionCompletionFailure(ddltx.ClassOf(dialect)) {
+	if revision.Applied == 0 && ddltx.AllStatementsDurable(ddltx.ClassOf(dialect)) {
 		return uncheckpointedHint(revision, dialect)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
@@ -550,27 +551,35 @@ func completedBodyHint(revision *migrator.MigrationRevision) string {
 	)
 }
 
-// uncheckpointedHint names what ends a dirty row on a dialect that writes no
-// per-statement checkpoint. Zero progress says only that nothing was recorded
-// there, so the operator reads the database, and the hint names the command for
-// each state they can find. Which states those are depends on the direction,
-// and naming the wrong ones is worse than naming none: 'migrations up
-// --allow-dirty' is refused outright over a row a rollback left.
+// uncheckpointedHint names what ends a dirty row on a dialect where every
+// statement is durable the moment it runs and the migrator therefore writes no
+// per-statement witness. Zero progress says only that nothing was recorded, so
+// the body may have run in full, in part, or not at all, and no verb decides
+// between those on its own: a repair records a body that may be half there, and
+// a rerun repeats what already committed. The operator finishes the body and
+// the hint names the record.
+//
+// Which record that is depends on the direction, and naming the wrong one is
+// worse than naming none: 'migrations up --allow-dirty' is refused outright
+// over a row a rollback left.
 func uncheckpointedHint(revision *migrator.MigrationRevision, dialect string) string {
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(
-			"On %s a statement commits on its own, so nothing records how far this rollback got. "+
-				"Inspect the database: if the migration is still there, run 'ptah migrations repair "+
-				"--version %d' to record it applied; if the rollback finished, run 'ptah migrations "+
-				"set --version <previous>' to move the boundary back.",
+			"On %s a statement commits on its own, so nothing records how far this rollback got: "+
+				"it may have run in full, in part, or not at all. Inspect the database and finish "+
+				"the rollback by hand, then run 'ptah migrations set --version <previous>' to move "+
+				"the boundary back -- or, if you restore what it reverted instead, 'ptah migrations "+
+				"repair --version %d --force' to record the migration applied.",
 			dialect,
 			revision.Version,
 		)
 	}
 	return fmt.Sprintf(
-		"On %s a statement commits on its own, so nothing records how far this run got. Inspect "+
-			"the database: if the migration is there, run 'ptah migrations repair --version %d' to "+
-			"record it applied; if it is not, run 'ptah migrations up --allow-dirty' to apply it.",
+		"On %s a statement commits on its own, so nothing records how far this run got: it may "+
+			"have run in full, in part, or not at all. Inspect the database and apply whatever is "+
+			"missing, then run 'ptah migrations repair --version %d' to record it applied. "+
+			"'ptah migrations up --allow-dirty' is safe only once you have confirmed no statement "+
+			"of it ran.",
 		dialect,
 		revision.Version,
 	)

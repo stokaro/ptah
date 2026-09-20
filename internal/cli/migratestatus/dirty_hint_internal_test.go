@@ -78,9 +78,10 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				Total:   3,
 			},
 			want: "On clickhouse a statement commits on its own, so nothing records how far " +
-				"this run got. Inspect the database: if the migration is there, run 'ptah " +
-				"migrations repair --version 2' to record it applied; if it is not, run 'ptah " +
-				"migrations up --allow-dirty' to apply it.",
+				"this run got: it may have run in full, in part, or not at all. Inspect the " +
+				"database and apply whatever is missing, then run 'ptah migrations repair " +
+				"--version 2' to record it applied. 'ptah migrations up --allow-dirty' is safe " +
+				"only once you have confirmed no statement of it ran.",
 		},
 		{
 			name:    "no rollback progress recorded where statements commit on their own",
@@ -92,10 +93,25 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				Direction: migrator.MigrationDirectionDown,
 			},
 			want: "On clickhouse a statement commits on its own, so nothing records how far " +
-				"this rollback got. Inspect the database: if the migration is still there, run " +
-				"'ptah migrations repair --version 2' to record it applied; if the rollback " +
-				"finished, run 'ptah migrations set --version <previous>' to move the boundary " +
-				"back.",
+				"this rollback got: it may have run in full, in part, or not at all. Inspect the " +
+				"database and finish the rollback by hand, then run 'ptah migrations set " +
+				"--version <previous>' to move the boundary back -- or, if you restore what it " +
+				"reverted instead, 'ptah migrations repair --version 2 --force' to record the " +
+				"migration applied.",
+		},
+		{
+			name:     "nothing ran on a dialect that records a witness",
+			dialect:  "mysql",
+			revision: migrator.MigrationRevision{Version: 2, Applied: 0, Total: 3},
+			want: "No statement of this migration reached the database. " +
+				"Run 'ptah migrations up --allow-dirty' to apply it.",
+		},
+		{
+			name:     "a rollback with no statements",
+			dialect:  "postgres",
+			revision: migrator.MigrationRevision{Version: 2, Applied: 0, Total: 0, Direction: migrator.MigrationDirectionDown},
+			want: "Every down statement of this rollback committed and the run stopped before " +
+				"removing the revision. Run 'ptah migrations repair --version 2' to finish it.",
 		},
 		{
 			name:     "nothing ran",
