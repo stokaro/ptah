@@ -610,7 +610,7 @@ What a page change needs, beyond passing the gates:
   other languages near the top. Japanese gives the reading `Ptah（プタハ）`
   once, then uses `Ptah`; German and French use `Ptah` throughout. Translate
   prose and accessibility text; keep commands and addresses byte for byte.
-  English documentation links must say that they lead to English content.
+  Use concise translated link labels without parenthetical language notices.
   Section 17 of the style guide gives the rules. Review translation meaning
   against the English source; the gate checks structure and preserved bytes.
 - **Support pages stay separate**: `support-matrix.md` is generated,

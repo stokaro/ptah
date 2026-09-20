@@ -1205,8 +1205,8 @@ The link text is prose and is not read.
 **Every file links to all other available languages within its first 12 lines.** A reader who cannot read
 the page they landed on needs the way out to be the first thing they find, and
 a translation nothing points at is a page nobody reaches. Use the native labels
-English, 日本語, Deutsch and Français. Mark links to untranslated documentation
-as English and keep their existing destinations.
+English, 日本語, Deutsch and Français. Use concise translated link labels
+without parenthetical language notices and keep their existing destinations.
 
 **Give the Japanese product name its reading once.** German and French use
 `Ptah` throughout, without a pronunciation gloss. In Japanese the first mention is

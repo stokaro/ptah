@@ -16,7 +16,7 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="Lizenz: MIT"></a>
 </p>
 
-<p align="center"><a href="#installation">Installation</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Schnellstart (Englisch)</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Inferenzmigrationen (Englisch)</a> · <a href="https://docs.ptah.run/edge/">Dokumentation (Englisch)</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Datenbankunterstützung (Englisch)</a></p>
+<p align="center"><a href="#installation">Installation</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Schnellstart</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Inferenzmigrationen</a> · <a href="https://docs.ptah.run/edge/">Dokumentation</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Datenbankunterstützung</a></p>
 
 <p align="center">
   <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a>
@@ -67,7 +67,7 @@ selbst. Die aktive Generation bleibt bis zur Prüfung und Umschaltung unverände
 <p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="Die aktive Inferenzgeneration beantwortet weiterhin Abfragen, während Ptah einen Kandidaten vorbereitet, befüllt, aktualisiert, indiziert und prüft. Die Umschaltung aktiviert den geprüften Kandidaten. Ein Rollback kann die aufbewahrte Vorgängergeneration wiederherstellen; ihre Entfernung erfolgt separat und ist destruktiv." width="1000"></p>
 
 Die [Anleitung zu Inferenzmigrationen](https://docs.ptah.run/edge/inference/overview/)
-(Englisch) behandelt Spezifikation, Übernahme gleichzeitiger Änderungen,
+behandelt Spezifikation, Übernahme gleichzeitiger Änderungen,
 Auswertung, Freigaben, Rollback und Entfernung alter Generationen.
 
 > [!NOTE]
@@ -91,7 +91,7 @@ irm https://ptah.run/install.ps1 | iex
 ```
 
 Die [Installationsanleitung](https://docs.ptah.run/edge/start/install/)
-(Englisch) erklärt feste Versionsauswahl, Signaturprüfung, Download ohne
+erklärt feste Versionsauswahl, Signaturprüfung, Download ohne
 Ausführung und den Build aus dem Quellcode.
 
 ## Ptah mit SQLite ausprobieren
@@ -144,8 +144,7 @@ Damit eignet er sich als CI-Prüfung. Entfernen Sie anschließend `app.db` und
 Einen vollständigen Ablauf mit erwarteter Ausgabe und Prüfung bieten die
 [Einführung in direkte Schemaänderungen](https://docs.ptah.run/edge/start/quick-start-direct/)
 und die
-[Einführung in versionierte Migrationen](https://docs.ptah.run/edge/start/quick-start-migrations/)
-(beide auf Englisch).
+[Einführung in versionierte Migrationen](https://docs.ptah.run/edge/start/quick-start-migrations/).
 
 ## Den Ablauf für Schemaänderungen wählen
 
@@ -157,7 +156,7 @@ und die
 Schemaquellen können SQL, YAML, HCL, DBML, Go-Annotationen, externe Ladeprogramme
 oder eine laufende Datenbank sein. Der Funktionsumfang hängt vom Datenbankmotor
 ab. Prüfen Sie die [Supportmatrix](https://docs.ptah.run/edge/databases/support-matrix/)
-(Englisch) und `ptah db capabilities --db-url <url>` für das konkrete Ziel.
+und `ptah db capabilities --db-url <url>` für das konkrete Ziel.
 
 ## Dokumentation erkunden
 
@@ -186,15 +185,14 @@ Go-Projekte können die dokumentierten Pakete einbetten, annotierte Structs als
 Schemaquellen verwenden und `ptah-ls` für Editor-Unterstützung nutzen. Die
 Einstiegspunkte sind das [Verzeichnis der öffentlichen API](https://docs.ptah.run/edge/extend/public-api/),
 die [wiederverwendbaren Komponenten](https://docs.ptah.run/edge/extend/components/)
-und die [Go-Annotationen](https://docs.ptah.run/edge/schema/go-annotations/)
-(jeweils auf Englisch).
+und die [Go-Annotationen](https://docs.ptah.run/edge/schema/go-annotations/).
 
 Das separate Programm `ptah-compat` bietet Atlas-kompatible Befehle. Die native
 `ptah`-Befehlsstruktur verwendet keine Atlas-Befehlspfade. Ptah beansprucht keine
 vollständige Atlas-Parität. Die
 [Kompatibilitätsübersicht](https://docs.ptah.run/edge/atlas/overview/)
 und die [Konformitätsergebnisse](https://docs.ptah.run/edge/atlas/conformance/)
-(Englisch) beschreiben den gemessenen Umfang und die Unterschiede.
+beschreiben den gemessenen Umfang und die Unterschiede.
 
 ## Lizenz und Hilfe
 
@@ -202,7 +200,7 @@ Ptah ist eine unabhängige Clean-Room-Implementierung unter der
 [MIT-Lizenz](LICENSE). Sie verwendet keinen Atlas-Quellcode und ist weder mit
 Ariga verbunden noch von Ariga empfohlen. Die
 [Lizenzabgrenzung](https://docs.ptah.run/edge/atlas/license-boundary/)
-(Englisch) dokumentiert die Herkunftsregeln.
+dokumentiert die Herkunftsregeln.
 
 Die Datenbanklogos oben kennzeichnen ausschließlich die unterstützten
 Datenbankmotoren. Sie gehören ihren jeweiligen Eigentümern, die Ptah weder
