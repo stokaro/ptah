@@ -288,6 +288,19 @@ Read the columns as follows.
 
 </div>
 
+**`ptah db verify`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--checks` | `string` | — | `PTAH_CHECKS` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+
+</div>
+
 **`ptah inference abandon`**
 
 <div class="ptah-wide-table">

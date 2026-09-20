@@ -106,6 +106,12 @@
       "claimed_by": "docs/site/src/content/docs/direct/inspect.md"
     },
     {
+      "id": "cli-ptah-db-verify",
+      "kind": "native-verb",
+      "surface": "ptah db verify",
+      "claimed_by": null
+    },
+    {
       "id": "cli-ptah-help",
       "kind": "native-verb",
       "surface": "ptah help",
