@@ -55,12 +55,47 @@ const languages = {
   ja: { gloss: 'Ptah（プタハ）', reading: 'プタハ', label: '日本語' },
 };
 
+// The product name in Latin script. Every language writes it the same way --
+// the gloss introduces the reading once and this spelling carries the page
+// after it -- so it sits beside the table rather than inside it.
+const latinName = 'Ptah';
+
+/**
+ * The fence a line opens or closes, or null when the line is not a fence.
+ *
+ * `char` and `length` are the delimiter as written, and `info` is the language
+ * label after it. A four-backtick fence is how a page shows a triple-backtick
+ * block, so a reader that shortened every opener to three characters would end
+ * the outer block at the inner one and report the real closing delimiter as an
+ * unclosed block -- on two byte-identical files.
+ *
+ * One reader, because `fencedBlocks` and `proseOnly` have to agree on where
+ * code starts and stops. A second copy agrees when it is written and stops
+ * agreeing when the first is changed.
+ */
+function fenceMarker(line) {
+  const marker = /^(`{3,}|~{3,})(.*)$/.exec(line.trimStart());
+  if (marker === null) return null;
+  return { char: marker[1][0], length: marker[1].length, info: marker[2].trim() };
+}
+
+/**
+ * Whether a marker closes the fence that is open.
+ *
+ * The same character, at least as long, and carrying no label: a longer run
+ * closes a shorter one, a shorter run is content, and a run with a language
+ * after it opens a block rather than closing one.
+ */
+function closesFence(marker, fence) {
+  return marker !== null && marker.char === fence.char && marker.length >= fence.length && marker.info === '';
+}
+
 /**
  * The fenced blocks of a Markdown source, in order.
  *
- * Both fence characters are read. A block is its language label and its body;
- * indentation inside the body is kept, because a command indented differently
- * is a different command.
+ * Both fence characters are read, at the length the opener was written with. A
+ * block is its language label and its body; indentation inside the body is
+ * kept, because a command indented differently is a different command.
  *
  * An unclosed fence is returned as a block with `closed: false` rather than
  * dropped: a translation that lost a closing fence would otherwise swallow the
@@ -73,16 +108,15 @@ export function fencedBlocks(source) {
   let body = [];
 
   for (const line of source.split('\n')) {
-    const trimmed = line.trimStart();
+    const marker = fenceMarker(line);
     if (fence === null) {
-      const open = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
-      if (!open) continue;
-      fence = open[1][0].repeat(3);
-      language = open[2].trim();
+      if (marker === null) continue;
+      fence = marker;
+      language = marker.info;
       body = [];
       continue;
     }
-    if (trimmed.startsWith(fence) && trimmed.slice(fence.length).trim() === '') {
+    if (closesFence(marker, fence)) {
       blocks.push({ language, body: body.join('\n'), closed: true });
       fence = null;
       continue;
@@ -91,6 +125,81 @@ export function fencedBlocks(source) {
   }
   if (fence !== null) blocks.push({ language, body: body.join('\n'), closed: false });
   return blocks;
+}
+
+/**
+ * The source with everything that is not prose replaced by spaces.
+ *
+ * Offsets are preserved, so a position found here is a position in the
+ * original, and the line it falls on is the line a reader would edit.
+ *
+ * Prose is where a reader meets the product name in a sentence, and that is
+ * where the gloss belongs. A reader meets three of its regions some other way,
+ * and each is excluded for its own reason:
+ *
+ *   - code, fenced or inline. A span holds the token, not the name in a
+ *     sentence, and this gate requires a fenced block to hold the same bytes in
+ *     every language, so a gloss written there would be a defect in the block;
+ *   - an HTML attribute value. `alt` describes an image and `href` addresses a
+ *     file; neither is a sentence a reader reads in order. The logo `alt` is
+ *     the first line of the README, so counting it would demand the one
+ *     permitted gloss inside markup and leave the opening sentence unable to
+ *     carry it;
+ *   - a level-one heading, which names the product rather than saying anything
+ *     about it. `Ptah（プタハ）` as a title reads as a different product's name.
+ *
+ * check-style.mjs reads an attribute value as prose and is right to: a British
+ * spelling in alt text is a spelling a reader gets. The question here is where
+ * the name is introduced rather than which words are used, and the same bytes
+ * answer the two differently.
+ */
+function proseOnly(source) {
+  const blank = (text) => ' '.repeat(text.length);
+  const masked = [];
+  let fence = null;
+
+  for (const line of source.split('\n')) {
+    const marker = fenceMarker(line);
+    if (fence !== null) {
+      if (closesFence(marker, fence)) fence = null;
+      masked.push(blank(line));
+      continue;
+    }
+    if (marker !== null) {
+      fence = marker;
+      masked.push(blank(line));
+      continue;
+    }
+    if (/^\s*(?:#\s|<h1[\s>])/.test(line)) {
+      masked.push(blank(line));
+      continue;
+    }
+    masked.push(line.replace(/`[^`]*`/g, blank).replace(/[A-Za-z-]+\s*=\s*("[^"]*"|'[^']*')/g, blank));
+  }
+  return masked.join('\n');
+}
+
+/**
+ * Where `name` first stands on its own in `text`, or -1.
+ *
+ * A match with a letter or a digit against it is part of a longer word:
+ * `PtahSchema` is a Kubernetes kind, not a mention of the product.
+ */
+function standaloneMention(text, name) {
+  const wordCharacter = /[0-9A-Za-z]/;
+  let at = text.indexOf(name);
+  while (at !== -1) {
+    const before = at === 0 ? '' : text[at - 1];
+    const after = text[at + name.length] ?? '';
+    if (!wordCharacter.test(before) && !wordCharacter.test(after)) return at;
+    at = text.indexOf(name, at + name.length);
+  }
+  return -1;
+}
+
+/** The 1-based line an offset falls on. */
+function lineOf(text, offset) {
+  return text.slice(0, offset).split('\n').length;
 }
 
 /**
@@ -172,6 +281,24 @@ export function pairProblems({ sourcePath, sourceText, translationPath, translat
     problems.push(`${sourcePath}: carries ${JSON.stringify(declared.reading)}; the reading belongs in the translation`);
   }
 
+  // Counting is not ordering. A page that writes `Ptah` and only later
+  // `Ptah（プタハ）` satisfies both counts above while giving the reader the
+  // reading after they needed it, so the position is compared as well: the
+  // gloss has to be the first place the name stands on its own in prose.
+  const glossAt = translationText.indexOf(declared.gloss);
+  const mentionAt = standaloneMention(proseOnly(translationText), latinName);
+  if (glossAt !== -1 && mentionAt !== glossAt) {
+    say(
+      mentionAt !== -1 && mentionAt < glossAt
+        ? `writes ${JSON.stringify(latinName)} on line ${lineOf(translationText, mentionAt)} before ` +
+            `${JSON.stringify(declared.gloss)} on line ${lineOf(translationText, glossAt)}; the reading is ` +
+            'given at the first mention, so the gloss comes first and the Latin spelling follows it'
+        : `writes ${JSON.stringify(declared.gloss)} on line ${lineOf(translationText, glossAt)}, where a ` +
+            'reader does not meet it: a code block, an HTML attribute value and the title are not the first ' +
+            'mention, so the gloss belongs in the first sentence that names the product',
+    );
+  }
+
   return problems;
 }
 
@@ -227,7 +354,15 @@ function selftest() {
     translationPath: 'README.ja.md',
     language: 'ja',
   };
+  // The fixture opens the way both READMEs open, with the logo and the title
+  // above the first sentence. That shape is what the ordering rule has to
+  // accept, so the clean assertion below is made against it rather than
+  // against a page with nothing above its first sentence.
   const englishSource = [
+    '<p align="center"><img src="logo.svg" alt="The Ptah mark" width="72" height="72"></p>',
+    '',
+    '<h1 align="center">Ptah</h1>',
+    '',
     '[日本語](README.ja.md)',
     '',
     '```bash',
@@ -239,6 +374,10 @@ function selftest() {
     '```',
   ].join('\n');
   const japaneseSource = [
+    '<p align="center"><img src="logo.svg" alt="Ptah のマーク" width="72" height="72"></p>',
+    '',
+    '<h1 align="center">Ptah</h1>',
+    '',
     '[English](README.md)',
     '',
     'Ptah（プタハ）はスキーマを管理します。Ptah の使い方は次のとおりです。',
@@ -251,6 +390,7 @@ function selftest() {
     'Schema apply completed successfully.',
     '```',
   ].join('\n');
+  const japaneseProse = 'Ptah（プタハ）はスキーマを管理します。Ptah の使い方は次のとおりです。';
 
   const clean = pairProblems({ ...base, sourceText: englishSource, translationText: japaneseSource });
   for (const problem of clean) failures.push(`a correct pair produced a finding: ${problem}`);
@@ -300,6 +440,27 @@ function selftest() {
       needle: 'time(s); it belongs exactly once',
     },
     {
+      why: 'the gloss given after a bare mention',
+      translationText: japaneseSource.replace(
+        japaneseProse,
+        'Ptah はスキーマを管理します。Ptah（プタハ）の使い方は次のとおりです。',
+      ),
+      needle: 'the gloss comes first and the Latin spelling follows it',
+    },
+    {
+      why: 'the gloss written in the title rather than in a sentence',
+      translationText: japaneseSource
+        .replace('<h1 align="center">Ptah</h1>', '<h1 align="center">Ptah（プタハ）</h1>')
+        .replace('Ptah（プタハ）はスキーマを管理します。', 'Ptah はスキーマを管理します。'),
+      needle: 'the gloss belongs in the first sentence that names the product',
+    },
+    {
+      why: 'a four-backtick block whose inner sample differs',
+      sourceText: `${englishSource}\n\n\`\`\`\`markdown\n\`\`\`bash\nptah migrations up\n\`\`\`\n\`\`\`\``,
+      translationText: `${japaneseSource}\n\n\`\`\`\`markdown\n\`\`\`bash\nptah migrations down\n\`\`\`\n\`\`\`\``,
+      needle: 'fenced block 3 does not match',
+    },
+    {
       why: 'a language with no declared convention',
       language: 'zz',
       translationText: japaneseSource,
@@ -312,6 +473,50 @@ function selftest() {
       failures.push(`${why} was not reported (wanted ${JSON.stringify(needle)}, got ${JSON.stringify(found)})`);
     }
   }
+
+  // What the ordering rule does not count. Without these controls the rule
+  // could be satisfied by counting nothing at all: every mutant above moves
+  // the gloss rather than removing the mentions that precede it, so each one
+  // would still be reported by a rule that had gone blind.
+  const exemptions = [
+    {
+      why: 'the product name in the logo alt text',
+      translationText: japaneseSource.replace('<h1 align="center">Ptah</h1>', '<h1 align="center">概要</h1>'),
+    },
+    {
+      why: 'the product name in the document title',
+      translationText: japaneseSource.replace('alt="Ptah のマーク"', 'alt="プロジェクトのマーク"'),
+    },
+    {
+      why: 'a longer identifier that begins with the product name',
+      translationText: japaneseSource.replace(japaneseProse, `PtahSchema は宣言を表します。${japaneseProse}`),
+    },
+    {
+      why: 'the product name inside an inline code span',
+      translationText: japaneseSource.replace(japaneseProse, `\`Ptah\` は実行ファイル名です。${japaneseProse}`),
+    },
+    {
+      why: 'the product name inside a fenced block above the first sentence',
+      sourceText: `\`\`\`go\n// Ptah reads this struct.\n\`\`\`\n\n${englishSource}`,
+      translationText: `\`\`\`go\n// Ptah reads this struct.\n\`\`\`\n\n${japaneseSource}`,
+    },
+  ];
+  for (const { why, ...overrides } of exemptions) {
+    const found = pairProblems({ ...base, sourceText: englishSource, ...overrides });
+    for (const problem of found) failures.push(`${why} produced a finding: ${problem}`);
+  }
+
+  // A four-backtick fence is how a README shows a triple-backtick block. Both
+  // files carry it identically, so the pair is clean; a reader that shortened
+  // the opener would end the outer block at the inner one and report the real
+  // closing delimiter as an unclosed block.
+  const nestedFence = ['````markdown', '```bash', 'ptah migrations up', '```', '````'].join('\n');
+  const nested = pairProblems({
+    ...base,
+    sourceText: `${englishSource}\n\n${nestedFence}`,
+    translationText: `${japaneseSource}\n\n${nestedFence}`,
+  });
+  for (const problem of nested) failures.push(`a pair with a four-backtick block produced a finding: ${problem}`);
 
   // The source's own two obligations, asserted from the source side.
   const unlinked = pairProblems({
@@ -362,7 +567,9 @@ function selftest() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-translations.mjs --selftest: OK (${mutants.length + 5} assertions via pairProblems())`);
+  console.log(
+    `check-translations.mjs --selftest: OK (${mutants.length + exemptions.length + 6} assertions via pairProblems())`,
+  );
 }
 
 function main() {
