@@ -490,6 +490,10 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // before them: `applied` counts what is known to have committed, and the
 // statement after it may have committed as well without recording that, which
 // no sentence written off that count alone can be right about.
+//
+// `--resume-from` is offered only where a statement is left to run. A row that
+// committed every statement and stopped before recording it has none, and the
+// command refuses the offset past the end; a plain repair is what records it.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 	if revision.StatementOutcomeUnknown() {
 		return unknownStatementOutcomeHint(revision)
@@ -500,6 +504,13 @@ func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 				"to run the remaining down statements and remove the revision.",
 			revision.Version,
 			revision.Applied+1,
+		)
+	}
+	if revision.Applied == revision.Total && revision.Total > 0 {
+		return fmt.Sprintf(
+			"Every statement of this migration committed and the run stopped before recording "+
+				"that. Run 'ptah migrations repair --version %d' to record it applied.",
+			revision.Version,
 		)
 	}
 	if revision.Applied == 0 {

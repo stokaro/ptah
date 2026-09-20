@@ -72,6 +72,12 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"Run 'ptah migrations up --allow-dirty' to apply it.",
 		},
 		{
+			name:     "every statement committed",
+			revision: migrator.MigrationRevision{Version: 2, Applied: 3, Total: 3},
+			want: "Every statement of this migration committed and the run stopped before " +
+				"recording that. Run 'ptah migrations repair --version 2' to record it applied.",
+		},
+		{
 			name:     "some statements ran",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 1, Total: 3},
 			want: "This migration stopped after 1 of 3 statements. Run 'ptah migrations repair " +
