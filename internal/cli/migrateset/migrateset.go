@@ -57,6 +57,11 @@ migration SQL, in both directions: every migration through --version is
 recorded as applied (dirty rows are marked applied, missing rows are
 inserted), and revision rows above --version are removed.
 
+--version 0 names the state where no migration is applied. It removes every
+revision row and records none, which is what clears the row a rollback
+finished by hand leaves behind when the migration it reverted was the oldest
+one in the directory.
+
 This is a metadata-only operation for adopting Ptah on databases whose schema
 was changed outside the migration flow, or for resetting revision bookkeeping
 after a manual intervention. It never runs or reverts migration SQL; use
@@ -186,7 +191,7 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if opts.dryRun {
-		fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would set the revision boundary to version %d.\n", version)
+		writeSetDryRun(cmd.OutOrStdout(), version)
 		return nil
 	}
 	if err := writeSetResult(cmd.OutOrStdout(), result); err != nil {
@@ -204,16 +209,28 @@ func parseSetVersion(value string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("--%s %q is not a valid migration version: %w", versionFlag, value, err)
 	}
-	if version <= 0 {
-		return 0, fmt.Errorf("--%s must be greater than zero", versionFlag)
+	if version < 0 {
+		return 0, fmt.Errorf("--%s must not be negative", versionFlag)
 	}
 	return version, nil
 }
 
+// writeSetResult renders the change summary.
+//
+// Version 0 is reported as the state it names rather than as a boundary,
+// because the directory has no file for it: printing `Current version is 0`
+// would send a reader looking for a migration that does not exist.
 func writeSetResult(out io.Writer, result migrator.AtlasRevisionSetResult) error {
 	if len(result.Set) == 0 && len(result.Removed) == 0 {
+		if result.CurrentVersion == 0 {
+			_, err := fmt.Fprintln(out, "No migration is recorded as applied; no changes to be made.")
+			return err
+		}
 		_, err := fmt.Fprintf(out, "Revision state already at version %d; no changes to be made.\n", result.CurrentVersion)
 		return err
+	}
+	if result.CurrentVersion == 0 {
+		return writeClearedSetResult(out, result)
 	}
 	changes := make([]string, 0, 2)
 	if len(result.Set) > 0 {
@@ -239,6 +256,35 @@ func writeSetResult(out io.Writer, result migrator.AtlasRevisionSetResult) error
 		return fmt.Errorf("write migrations set terminator: %w", err)
 	}
 	return nil
+}
+
+// writeClearedSetResult renders a set to version 0, which only ever removes.
+// Nothing can be recorded applied below the first migration, so the summary
+// says what the database now holds instead of naming a version.
+func writeClearedSetResult(out io.Writer, result migrator.AtlasRevisionSetResult) error {
+	if _, err := fmt.Fprintf(out,
+		"No migration is recorded as applied (%d removed):\n\n", len(result.Removed)); err != nil {
+		return fmt.Errorf("write migrations set summary: %w", err)
+	}
+	for _, revision := range result.Removed {
+		if err := writeSetRevision(out, "-", revision); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return fmt.Errorf("write migrations set terminator: %w", err)
+	}
+	return nil
+}
+
+// writeSetDryRun says what the run would do, in the same terms the real run
+// reports it.
+func writeSetDryRun(out io.Writer, version int64) {
+	if version == 0 {
+		fmt.Fprintln(out, "Dry run: would remove every revision, leaving no migration recorded as applied.")
+		return
+	}
+	fmt.Fprintf(out, "Dry run: would set the revision boundary to version %d.\n", version)
 }
 
 func writeSetRevision(out io.Writer, action string, revision migrator.AtlasRevisionChange) error {

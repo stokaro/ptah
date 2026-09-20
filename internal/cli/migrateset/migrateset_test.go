@@ -198,3 +198,98 @@ func TestMigrationsSetAtlasFormatMatchesAtlasMigrateSet(t *testing.T) {
 		queryVersions(c, atlasDB, "atlas_schema_revisions"),
 	)
 }
+
+// Version 0 names the state where no migration is applied. It is the only
+// value that ends a rollback finished by hand when the migration it reverted
+// was the oldest one in the directory: --force would record that migration
+// applied, which is the opposite outcome (stokaro/ptah#3455).
+func TestMigrationsSetToZeroClearsEveryRevision(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writePtahMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+
+	out, err := runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version", "2")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	out, err = runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version", "0")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "No migration is recorded as applied (2 removed):")
+	c.Assert(out, qt.Contains, "- 1 (Users)")
+	c.Assert(out, qt.Contains, "- 2 (Orders)")
+	// The summary never names a version, because the directory has no file for
+	// version 0 and a reader would go looking for one.
+	c.Assert(out, qt.Not(qt.Contains), "Current version is 0")
+	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.HasLen, 0)
+}
+
+// The Atlas revision table is the format where the delete keeps the new head
+// row by name, and version 0 leaves no head to keep.
+func TestMigrationsSetToZeroClearsEveryAtlasRevision(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+
+	out, err := runSet(append(args, "--version", "2")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1", "2"})
+
+	out, err = runSet(append(args, "--version", "0")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "No migration is recorded as applied (2 removed):")
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.HasLen, 0)
+}
+
+func TestMigrationsSetToZeroIsIdempotent(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writePtahMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+
+	out, err := runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version", "0")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "No migration is recorded as applied; no changes to be made.")
+
+	out, err = runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version", "0")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "No migration is recorded as applied; no changes to be made.")
+	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.HasLen, 0)
+}
+
+func TestMigrationsSetToZeroDryRunChangesNothing(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writePtahMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+
+	out, err := runSet(
+		"--db-url", "sqlite://"+dbPath,
+		"--migrations-dir", migrationsDir,
+		"--version", "0",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains,
+		"Dry run: would remove every revision, leaving no migration recorded as applied.")
+	assertNoRevisionTable(c, dbPath)
+}
+
+// Zero is the floor, not the removal of the floor: a negative version names no
+// state at all and still stops before the database is touched.
+func TestMigrationsSetRejectsNegativeVersion(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writePtahMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+
+	out, err := runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version=-1")
+
+	c.Assert(err, qt.ErrorMatches, "--version must not be negative", qt.Commentf("%s", out))
+	assertNoRevisionTable(c, dbPath)
+}

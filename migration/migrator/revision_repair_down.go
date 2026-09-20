@@ -114,7 +114,8 @@ func rollbackChangedSchema(revision *MigrationRevision) bool {
 // statement to resume from.
 func rollbackRepairNeedsDirectionError(migration *Migration, revision *MigrationRevision) error {
 	const endings = "--force to record it applied if the schema it reverted was restored, " +
-		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand"
+		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand " +
+		"(version 0 where this is the oldest migration in the directory)"
 	if revision.Error == unknownStatementOutcomeError {
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the outcome of %q is unknown after an interruption; "+
