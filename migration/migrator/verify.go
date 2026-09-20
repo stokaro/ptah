@@ -162,10 +162,11 @@ func VerifyChecks(
 
 // verifyOneCheck opens one read-only session and evaluates one assertion in it.
 //
-// The returned error is the session's, not the assertion's: failing to open a
-// session, or failing to undo one, says nothing about the requirement and is
-// not an outcome to report. Everything the assertion itself can do -- run and
-// hold, run and not hold, or fail to run at all -- comes back in the result.
+// The returned error is the run's, not the assertion's: failing to open a
+// session, failing to undo one, or having the context end under a statement
+// says nothing about the requirement and is not an outcome to report.
+// Everything the assertion itself can do -- run and hold, run and not hold, or
+// fail to run at all -- comes back in the result.
 func verifyOneCheck(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -181,6 +182,15 @@ func verifyOneCheck(
 		func(queryer dbschema.IsolatedQueryer) error {
 			value, err := runCheckAssertion(ctx, queryer, dialect, serverVersion, check.Assert)
 			if err != nil {
+				if cause := context.Cause(ctx); cause != nil {
+					// The run ended, rather than the assertion answering. A
+					// cancelled or expired context says nothing about the
+					// requirement, and recording it as an outcome tells a
+					// caller the database was asked and answered. The driver's
+					// own error is kept beside the cause so a reader sees
+					// which statement was in flight.
+					return errors.Join(err, cause)
+				}
 				result.Status = VerifyStatusErrored
 				result.Err = err
 				assertionErr = err

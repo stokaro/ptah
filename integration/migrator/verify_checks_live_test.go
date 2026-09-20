@@ -101,3 +101,24 @@ func TestVerifyChecksSeparatesOutcomesOnLiveRowsLive(t *testing.T) {
 	c.Assert(report.Results[1].Err, qt.IsNil)
 	c.Assert(report.Verdict(), qt.Equals, migrator.VerifyVerdictFailed)
 }
+
+// A run whose context ends under a statement did not establish anything, and
+// saying "errored" about the requirement would tell a caller the database was
+// asked and answered. The deadline is what makes this measurable: the
+// assertion sleeps past it, so the statement is in flight when the context
+// ends (stokaro/ptah#3404).
+func TestVerifyChecksReportsACancelledRunAsCancelledLive(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), postgresTestURL(t))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	report, err := migrator.VerifyChecks(ctx, conn, []migrator.Check{
+		{Name: "outlives the deadline", Assert: "SELECT pg_sleep(30) IS NULL"},
+	})
+
+	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
+	c.Assert(report.Results, qt.HasLen, 0)
+}
