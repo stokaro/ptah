@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ptah.run/dbschema"
@@ -113,6 +114,15 @@ func (r VerifyReport) Verified() bool {
 // static proof is the whole of the protection, which is the same guarantee a
 // pre-migration check already carries on that dialect.
 //
+// What neither rule reaches is a routine that runs in a transaction of its own:
+// an Oracle function declared PRAGMA AUTONOMOUS_TRANSACTION can insert and
+// commit while a SELECT calls it, and nothing in a session undoes a transaction
+// that was never part of it. An ordinary writing routine is refused before that
+// matters -- PostgreSQL by the read-only transaction, Oracle by ORA-14551 for a
+// DML operation inside a query. So the guarantee is about what Ptah sends and
+// the session it sends it in; an assertion that calls a routine answers for
+// what the routine does.
+//
 // Each assertion is evaluated in a session of its own, so one that the server
 // refuses cannot decide the outcome of the next. Sharing a session would be
 // cheaper by a round trip per check and would report every assertion after the
@@ -153,9 +163,9 @@ func VerifyChecks(
 // verifyOneCheck opens one read-only session and evaluates one assertion in it.
 //
 // The returned error is the session's, not the assertion's: failing to open a
-// session says nothing about the requirement and is not an outcome to report.
-// Everything the assertion itself can do -- run and hold, run and not hold, or
-// fail to run at all -- comes back in the result.
+// session, or failing to undo one, says nothing about the requirement and is
+// not an outcome to report. Everything the assertion itself can do -- run and
+// hold, run and not hold, or fail to run at all -- comes back in the result.
 func verifyOneCheck(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -164,6 +174,7 @@ func verifyOneCheck(
 	check Check,
 ) (VerifyResult, error) {
 	result := VerifyResult{Name: check.Name, Assert: check.Assert}
+	var assertionErr error
 	sessionErr := conn.WithIsolatedQuerySession(
 		ctx,
 		checkTransactionOptions(dialect),
@@ -172,6 +183,7 @@ func verifyOneCheck(
 			if err != nil {
 				result.Status = VerifyStatusErrored
 				result.Err = err
+				assertionErr = err
 				// Returned so the session ends rather than commits over a
 				// statement the server refused; the outcome is already
 				// recorded, and the caller reports it rather than the wrapper.
@@ -185,8 +197,39 @@ func verifyOneCheck(
 			return nil
 		},
 	)
-	if sessionErr != nil && result.Status == "" {
-		return VerifyResult{}, sessionErr
+	if failure := sessionFailure(sessionErr, assertionErr); failure != nil {
+		return VerifyResult{}, failure
 	}
 	return result, nil
+}
+
+// sessionFailure returns what the session reported apart from the assertion
+// error the callback raised on purpose.
+//
+// The wrapper joins that error with a rollback or discard failure, so asking
+// whether the assertion error is in there answers yes while a second error
+// sits beside it. What is left after removing the assertion error is the
+// isolation failing -- the rollback that keeps the read from touching the
+// database, or the discard that keeps its session state out of the pool -- and
+// a report that says verified over one of those is a report about a database
+// nobody proved was left alone.
+func sessionFailure(sessionErr, assertionErr error) error {
+	if sessionErr == nil {
+		return nil
+	}
+	joined, isJoined := sessionErr.(interface{ Unwrap() []error })
+	if !isJoined {
+		if assertionErr != nil && errors.Is(sessionErr, assertionErr) {
+			return nil
+		}
+		return sessionErr
+	}
+	rest := make([]error, 0, 1)
+	for _, err := range joined.Unwrap() {
+		if assertionErr != nil && errors.Is(err, assertionErr) {
+			continue
+		}
+		rest = append(rest, err)
+	}
+	return errors.Join(rest...)
 }

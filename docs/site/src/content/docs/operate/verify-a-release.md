@@ -98,12 +98,28 @@ Two rules hold it to reading. Every assertion is proved to be a single `SELECT`
 from its text before any query is sent, and the session is opened read-only
 wherever the engine has such a mode. On PostgreSQL that second rule is what
 refuses a `SELECT` that writes by calling a function that writes — a shape no
-reading of the statement can catch. Where an engine has no read-only mode, the
-static proof is the whole of the protection, which is the guarantee a
-pre-migration check already carries there.
+reading of the statement can catch. On Oracle the driver cannot open a
+read-only transaction, so Ptah asks the server for one instead, which refuses a
+`SELECT ... FOR UPDATE` that would otherwise hold a row lock every writer waits
+on. Where an engine has no read-only mode, the static proof is the whole of the
+protection, which is the guarantee a pre-migration check already carries there.
 
 Each assertion is evaluated in its own session, so one the server refuses
 cannot decide the outcome of the next.
+
+### What a read-only session cannot reach
+
+A routine that runs in a transaction of its own is not undone with the session
+that called it, on any engine, because it was never part of it. Oracle is where
+that is reachable: a function declared `PRAGMA AUTONOMOUS_TRANSACTION` may
+insert and commit while a `SELECT` calls it, and the row is there afterwards.
+An ordinary Oracle function that writes is refused by the server before that
+matters — `ORA-14551`, a DML operation inside a query — so the shape that gets
+through is one an author wrote deliberately.
+
+So the promise is precise: Ptah sends nothing but a statement it proved is a
+read `SELECT`, and opens the strictest session the engine offers. An assertion
+that calls a routine to do the reading answers for what that routine does.
 
 ## Where this sits beside the other checks
 

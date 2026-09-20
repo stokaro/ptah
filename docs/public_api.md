@@ -418,7 +418,10 @@ that is already running and writes nothing to it, returning a `VerifyReport`
 with one `VerifyResult` per check in the order given. Each assertion is proved
 to be a single read-only `SELECT` before any query is sent and is evaluated in
 its own read-only session, so one the server refuses cannot decide the outcome
-of the next. A returned error means no session and no answers; an assertion
+of the next. The guarantee covers what Ptah sends and the session it sends it
+in: a routine the assertion calls that opens a transaction of its own is not
+undone with that session. A returned error means no session, no answers, or a
+session that could not be undone; an assertion
 that ran and did not hold, or could not run, is a status in the report rather
 than an error. `VerifyReport.Verdict` reduces a run to one word and never
 reports an empty run as verified.

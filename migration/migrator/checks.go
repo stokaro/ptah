@@ -259,10 +259,15 @@ func atlasCheckFileMode(source, dialect string) checkGroupMode {
 	}
 }
 
+// checkTransactionOptions names the dialects whose server enforces a read-only
+// session, so a statement that gets past the static rules is still refused by
+// something other than Ptah. Oracle is in the group through a translation its
+// driver needs: dbschema.WithIsolatedQuerySession turns the request into SET
+// TRANSACTION READ ONLY, which binds DML there.
 func checkTransactionOptions(dialect string) *sql.TxOptions {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.MySQL, platform.MariaDB:
+		platform.MySQL, platform.MariaDB, platform.Oracle:
 		return &sql.TxOptions{ReadOnly: true}
 	default:
 		return new(sql.TxOptions)
