@@ -4,6 +4,8 @@
 
 <p align="center">Open-source database change management for schemas and persistent inference state.</p>
 
+<p align="center"><strong>English</strong> · <a href="README.ja.md">日本語</a></p>
+
 <p align="center">
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-unit-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-unit-tests.yml?branch=master&label=tests&logo=github" alt="Status of the unit test workflow on the master branch"></a>
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-integration-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-integration-tests.yml?branch=master&label=integration&logo=github" alt="Status of the integration test workflow on the master branch"></a>

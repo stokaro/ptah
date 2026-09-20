@@ -963,11 +963,14 @@ in this guide is a review responsibility.
 | A file name Astro would re-spell | 12 | every route gate, through `docroutes` |
 | Site pages never link protected root docs | 12 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 12 | `check:exit-codes` |
-| Table cells under 350 characters | 10 | `check:style` |
+| Table cells under 350 display columns | 10 | `check:style` |
 | Table rows match the header's column count | 10 | `check:style` |
 | Two rows never state different verdicts for one capability | 10 | `check:style` |
 | No bare `--flag` outside a code span on site pages | 4, 8 | `check:style` |
-| Paragraphs under 900 rendered characters | 4 | `check:style` |
+| Paragraphs under 900 rendered display columns | 4 | `check:style` |
+| A translation's fenced blocks match its source's, in order | 17 | `check:translations` |
+| A translation and its source link to each other | 17 | `check:translations` |
+| The product name is glossed once per translated page | 17 | `check:translations` |
 | In-page and cross-page anchors resolve | 12 | `check:links` |
 | Command and flag reference filters work with the keyboard | 3, 13 | `check:accessibility` |
 | No page scrolls sideways at 390px or 1280px | 13 | `check:responsive` |
@@ -981,10 +984,18 @@ in this guide is a review responsibility.
 | No table is wider than its container at 1280px | 10, 13 | `check:responsive` |
 
 `check:style` governs every layer the guide covers — `docs/site`, `docs/*.md`,
-`examples/**`, `integration/*.md`, every package `README.md`, and `AGENTS.md` —
-not only the site. Package READMEs are discovered by walking the repository, so
-a new package cannot opt out by existing. This file is the one exemption: it
-necessarily contains the words it bans.
+`examples/**`, `integration/*.md`, every package `README.md` and its
+translations, and `AGENTS.md` — not only the site. Package READMEs are
+discovered by walking the repository, so a new package cannot opt out by
+existing. This file is the one exemption: it necessarily contains the words it
+bans.
+
+The two length ceilings are display columns rather than code points. A
+full-width character takes two columns in every renderer a reader meets and
+carries more of a sentence than a Latin letter does, so counting code points
+would let a Japanese paragraph run to about twice the wall an English one is
+refused at. Over text with no full-width character the two measures return the
+same number.
 
 Section 7 is a generated rendering of
 `docs/site/scripts/data/terminology.json`, and the registry is what both
@@ -1164,3 +1175,33 @@ best equivalent, and whether a screenshot shows the clearest state remain
 review responsibilities. `check:responsive` measures every page at 390px and
 1280px; `check:accessibility` separately runs axe and keyboard interaction on
 representative page shapes.
+
+## 17. Translated pages
+
+A translation is named `README.ja.md` beside the `README.md` it translates:
+the base name, the ISO 639-1 language tag, `.md`. `check:style` governs it the
+same way it governs the source, and `check:translations` holds it to the source.
+
+**Translate the prose. Leave everything else byte for byte.** A command, a
+flag, a schema, a block of expected output means the same thing in every
+language, and a difference there is a defect rather than a translation choice.
+`check:translations` compares the fenced blocks of the two files in order and
+reports the first that differs. Nothing checks the prose, which stays a reading
+responsibility; a gate that reported on the half it cannot read would teach a
+reader to trust it about the half it can.
+
+**The two files link to each other, near the top.** A reader who cannot read
+the page they landed on needs the way out to be the first thing they find, and
+a translation nothing points at is a page nobody reaches.
+
+**Give the product name its reading once.** In Japanese the first mention is
+`Ptah（プタハ）` and every mention after it is `Ptah`. The reading appears
+inside that first mention and nowhere else: a page that writes it again has
+started using the reading as the name, which is what this rule prevents.
+`check-translations.mjs` declares the spelling per language and holds all three
+counts — one gloss, one reading, and no reading in the English source.
+
+The worked example is run in one language and compared in the other.
+`scripts/check-readme-example.sh` executes the section `README.md` marks and
+requires the output it promises; the translation carries no marker, and the
+parity check is what says its blocks are the blocks that ran.

@@ -604,6 +604,13 @@ What a page change needs, beyond passing the gates:
   and `docs/site/scripts/check-inference-quick-start.sh`; against a remote
   Docker context the CLI must reach that host, so run it as
   `PTAH_DOCKER_CONTEXT=<context> PTAH_FIXTURE_HOST=<host> docs/site/scripts/check-inference-quick-start.sh`.
+- **A translation** is `README.ja.md` beside the `README.md` it translates, and
+  `check-translations.mjs` holds the two together: the fenced blocks match in
+  order, each file links to the other, and the product name carries its reading
+  once -- `Ptah（プタハ）` at the first mention, `Ptah` after it. Translate the
+  prose and leave the commands byte for byte; a flag that differs between the
+  two files is a defect. Section 17 of the style guide is the rule, and the
+  prose itself is review's, because no gate can read it.
 - **Support pages stay separate**: `support-matrix.md` is generated,
   `support-policy.md` is the promise, `support-evidence.md` is measurement.
   Never move generated counts onto the latter two.

@@ -14,7 +14,7 @@
 // The check has no npm dependencies on purpose: CI runs it from a bare checkout
 // for changes that touch no site page at all.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, extname, join, relative, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -165,7 +165,7 @@ const htmlEmptyAlt = /\balt\s*=\s*(?:""|''|\{\s*(?:""|'')\s*\})/i;
 //
 // check-responsive.mjs enforces the sharper limit on rendered height, which is
 // what a narrow column actually does to a long cell.
-const maxTableCellChars = 350;
+const maxTableCellColumns = 350;
 
 // docs/STYLE_GUIDE.md section 4 asks for paragraphs at or under four
 // sentences. This ceiling is the point past which a paragraph has stopped
@@ -178,7 +178,29 @@ const maxTableCellChars = 350;
 //
 // Counted on the rendered text, so a paragraph that is mostly `code spans` is
 // measured at what a reader has to wade through, not at its markdown length.
-const maxParagraphChars = 900;
+const maxParagraphColumns = 900;
+
+// Both ceilings are display columns rather than code points. A full-width
+// character takes two columns in every renderer a reader meets, and it carries
+// more of a sentence than a Latin letter does: counted as one each, a Japanese
+// paragraph would be allowed roughly twice the wall an English one is refused
+// at, and the rule would be loosest exactly where a reader can least skim. Over
+// text with no full-width character the two measures return the same number, so
+// nothing that passed before is measured differently now.
+//
+// The ranges are the East Asian Wide and Fullwidth blocks: Hangul jamo, the CJK
+// radicals and punctuation, kana, the CJK ideographs and their extensions,
+// Hangul syllables, the compatibility ideographs, and the fullwidth forms.
+const fullWidth =
+  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]|[\u{20000}-\u{3FFFD}]/u;
+
+function displayColumns(text) {
+  let columns = 0;
+  // Iterating the string yields code points, so a character outside the basic
+  // plane is measured once rather than as its two surrogates.
+  for (const character of text) columns += fullWidth.test(character) ? 2 : 1;
+  return columns;
+}
 
 function toPosix(value) {
   return value.split(sep).join('/');
@@ -202,7 +224,21 @@ function walk(dir, matches) {
 }
 
 const markdown = (name) => extname(name) === '.md' || extname(name) === '.mdx';
-const readme = (name) => name === 'README.md';
+
+// A README and its translations: README.md, README.ja.md, README.pt-BR.md. The
+// tag is matched rather than listed for the reason the walk exists at all -- a
+// file must not be able to opt out of the rules by existing. Matched on the
+// name alone, `README.old.md` is not a translation and is not governed here.
+//
+// A translated page meets the structural rules the same way its source does:
+// fences carry a language, a table's rows match its header, an image has alt
+// text, a flag is code. The prose rules are English deny-lists, so over
+// Japanese they report the English that is left in the file -- a heading nobody
+// translated, a filler adjective in a sentence half-rewritten -- and nothing
+// else. That is the right reach for them; they are spelling rules, not a
+// judgment about the language a page is written in.
+const readmeName = /^README(?:\.[a-z]{2}(?:-[A-Za-z]{2,4})?)?\.md$/;
+const readme = (name) => readmeName.test(name);
 
 // documentationFiles returns every file the style guide governs: the site, the
 // repository docs, the example and integration docs, every package README, and
@@ -348,11 +384,12 @@ function tableViolations(lines) {
     }
     for (const cell of cells) {
       const text = cell.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-      if (text.length > maxTableCellChars) {
+      const columns = displayColumns(text);
+      if (columns > maxTableCellColumns) {
         findings.push({
           line: index + 1,
           message:
-            `table cell is ${text.length} characters, over the ${maxTableCellChars} limit; ` +
+            `table cell is ${columns} columns, over the ${maxTableCellColumns} limit; ` +
             'give the row its own section with a heading (docs/STYLE_GUIDE.md section 10)',
         });
       }
@@ -383,11 +420,12 @@ function paragraphViolations(lines) {
       .join(' ')
       .replace(/`([^`]*)`/g, '$1')
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-    if (rendered.length > maxParagraphChars) {
+    const columns = displayColumns(rendered);
+    if (columns > maxParagraphColumns) {
       findings.push({
         line: start,
         message:
-          `paragraph is ${rendered.length} rendered characters, over the ${maxParagraphChars} limit; ` +
+          `paragraph is ${columns} rendered columns, over the ${maxParagraphColumns} limit; ` +
           'a list or a table reads better than a wall (docs/STYLE_GUIDE.md section 4)',
       });
     }
@@ -1159,6 +1197,41 @@ function selftest() {
 
   for (const finding of analyze(clean)) {
     failures.push(`clean fixture produced a finding at line ${finding.line}: ${finding.message}`);
+  }
+
+  // The length ceilings are display columns, so full-width text is refused at
+  // half the code-point count Latin text is. Both halves are asserted, and both
+  // fixtures sit under 900 code points: measured the old way the first one goes
+  // quiet, so a reversion to `.length` fails here rather than passing.
+  const sentence = '日本語の段落はこの規則が列で測るかどうかで扱いが変わります。';
+  const wall = sentence.repeat(18);
+  const short = sentence.repeat(14);
+  if (wall.length > maxParagraphColumns || short.length > maxParagraphColumns) {
+    failures.push('the full-width paragraph fixtures are no longer under the limit as code points');
+  }
+  if (!analyze(wall).some((finding) => finding.message.includes(`over the ${maxParagraphColumns} limit`))) {
+    failures.push(`a ${displayColumns(wall)}-column full-width paragraph was not reported as a wall`);
+  }
+  for (const finding of analyze(short)) {
+    failures.push(`a ${displayColumns(short)}-column full-width paragraph was reported: ${finding.message}`);
+  }
+
+  // The corpus rather than a rule. The walk matched the exact name README.md,
+  // so a translated README was prose a reader meets that no gate read. Assert
+  // the pattern both ways, and hold this repository's own translations above a
+  // floor: a pattern that stopped matching would leave them ungoverned while
+  // this checker reported the success it reports on a healthy tree.
+  for (const name of ['README.md', 'README.ja.md', 'README.pt-BR.md']) {
+    if (!readme(name)) failures.push(`the README pattern does not match ${name}`);
+  }
+  for (const name of ['README.old.md', 'AREADME.md', 'README.ja.mdx', 'README.japanese.md']) {
+    if (readme(name)) failures.push(`the README pattern matches ${name}, which is not a translation`);
+  }
+  const translated = documentationFiles().filter(
+    (file) => basename(file) !== 'README.md' && readme(basename(file)),
+  );
+  if (translated.length === 0) {
+    failures.push('no translated README is in the corpus; the pattern reaches none of this repository’s files');
   }
 
   // An unterminated fence would otherwise swallow the rest of the file and
