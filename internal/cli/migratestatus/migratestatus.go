@@ -486,12 +486,23 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // rollback already dropped -- so it points at the resume that finishes the
 // rollback instead, at the statement the revision says comes next.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
-	if revision.Direction != migrator.MigrationDirectionDown {
-		return "Run 'ptah migrations repair --version <version>' after fixing the database state."
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+
+				"to run the remaining down statements and remove the revision.",
+			revision.Version,
+			revision.Applied+1,
+		)
+	}
+	if revision.Applied == 0 {
+		return "No statement of this migration reached the database. " +
+			"Run 'ptah migrations up --allow-dirty' to apply it."
 	}
 	return fmt.Sprintf(
-		"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+
-			"to run the remaining down statements and remove the revision.",
+		"This migration stopped after %d of %d statements. Run 'ptah migrations repair --version %d "+
+			"--resume-from %d' to run the rest, or repair with --force once you have run them yourself.",
+		revision.Applied,
+		revision.Total,
 		revision.Version,
 		revision.Applied+1,
 	)

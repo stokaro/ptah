@@ -176,6 +176,28 @@ func (e *ChecksumMismatchError) Error() string {
 		e.Description)
 }
 
+// RepairNothingAppliedError reports that a repair was asked to record a
+// migration whose dirty revision shows no statement of it reached the database.
+//
+// It is the one dirty shape a repair must not sign off on its own. A rolled
+// back transaction and a run that never got its lock both leave this row, and
+// recording it applied would make the database report a version it does not
+// have, with nothing left that would ever apply it. Rerunning is what the state
+// wants, and [RepairMigrationOptions.Force] is how an operator who applied the
+// migration by hand says so instead.
+type RepairNothingAppliedError struct {
+	// Version is the migration the repair named.
+	Version int64
+}
+
+func (e *RepairNothingAppliedError) Error() string {
+	return fmt.Sprintf(
+		"migration %d recorded no applied statement, so there is nothing to finish: "+
+			"run 'ptah migrations up --allow-dirty' to apply it, or repair with --force to "+
+			"record it applied because you ran it yourself",
+		e.Version)
+}
+
 // MissingMigrationError reports that the database recorded a migration as
 // applied and the migration directory holds no file for it.
 //
@@ -3054,6 +3076,13 @@ func (m *Migrator) repairUpMigration(
 	}
 	if revision != nil && revision.Dirty && revision.Applied == revision.Total && revision.Total > 0 {
 		return m.repairCompletedUpMigration(ctx, migration, revision)
+	}
+	// What is left here would be recorded applied without running. That is the
+	// point of the verb where the operator has already applied the migration by
+	// hand, and a mistake where nothing ran at all, which the row says
+	// (stokaro/ptah#3452).
+	if revision != nil && revision.Dirty && revision.Applied == 0 && !opts.Force {
+		return &RepairNothingAppliedError{Version: migration.Version}
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
