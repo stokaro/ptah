@@ -183,5 +183,14 @@ Atlas のソースコードは使っておらず、Ariga との提携も推奨�
 方針は[ライセンス境界](https://docs.ptah.run/edge/atlas/license-boundary/)に記録して
 います。
 
-質問とバグ報告は
-[stokaro/ptah](https://github.com/stokaro/ptah/issues) の issue でお願いします。
+上に並ぶデータベースの名称は、Ptah が対応するエンジンを示すためだけのものです。各名称は
+それぞれの所有者に帰属し、いずれの所有者も Ptah を推奨・後援していません。各ファイルの
+出所と適用ライセンスは [NOTICE](NOTICE) に書かれています。
+
+質問とアイデアの共有は
+[Discussions](https://github.com/stokaro/ptah/discussions) で、バグ報告と機能要望は
+[issue トラッカー](https://github.com/stokaro/ptah/issues) でお願いします。
+報告を実行可能にする条件と、変更が通すべきものは
+[CONTRIBUTING.md](CONTRIBUTING.md) にあります。参加については
+[行動規範](CODE_OF_CONDUCT.md)が適用されます。商用のお問い合わせは
+`ask <at> stokaro.com` までお願いします。
