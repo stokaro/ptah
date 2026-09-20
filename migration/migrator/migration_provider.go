@@ -23,6 +23,23 @@ type MigrationProvider interface {
 	Migrations() []*Migration
 }
 
+// wholeHistoryProvider is implemented by a provider whose migrations are the
+// entire history a database applied from it, rather than a selection its caller
+// assembled.
+//
+// The rule that reports an applied revision with no file reads "nothing here
+// holds that migration" off the provider, and only a provider that IS the
+// directory can be read that way. A caller registering the one migration it
+// wants applied next -- which [RegisteredMigrationProvider] exists for, and
+// which the integration harness does per step -- would otherwise be reported
+// as having lost every migration it did not register (stokaro/ptah#3445).
+type wholeHistoryProvider interface {
+	// describesWholeHistory reports that this provider's migrations are all of
+	// them. A provider that cannot promise it says so by not implementing this
+	// interface, which is the safe answer: the rule is then not asked.
+	describesWholeHistory() bool
+}
+
 // RegisteredMigrationProvider is a simple in-memory implementation of MigrationProvider
 type RegisteredMigrationProvider struct {
 	mu         sync.Mutex
@@ -207,6 +224,10 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 }
 
 // Migrations returns the list of migrations loaded from the filesystem, sorted by version in ascending order.
+// describesWholeHistory reports that this provider's migrations are the
+// directory's own, which is every migration a database applied from it.
+func (p *FSMigrationProvider) describesWholeHistory() bool { return true }
+
 func (p *FSMigrationProvider) Migrations() []*Migration {
 	p.mu.Lock()
 	defer p.mu.Unlock()
