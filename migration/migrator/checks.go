@@ -315,16 +315,22 @@ func runCheckAssertion(
 
 // validateCheckAssertionStatically proves an assertion is well-formed from its
 // text alone: a single read-only SELECT that does not advance a SQL Server
-// sequence, and does not write a file. It needs a dialect and a server version
-// string, never a query, so it is the whole of what can be decided about a
-// check without a database.
+// sequence, does not advance an Oracle sequence, and does not write a file. It
+// needs a dialect and a server version string, never a query, so it is the
+// whole of what can be decided about a check without a database.
 //
 // Beginning with SELECT is not by itself enough, and the dialect rules below
 // are the constructs where it is not. What they have in common is an effect the
 // transaction around the statement does not own, so no isolation level and no
-// read-only session takes it back: a SQL Server sequence advances, and a
-// MySQL-family INTO OUTFILE writes a file on the server. Reading the assertion
-// is the only thing standing in front of either.
+// read-only session takes it back: a SQL Server or Oracle sequence advances,
+// and a MySQL-family INTO OUTFILE writes a file on the server. Reading the
+// assertion is the only thing standing in front of any of them.
+//
+// Every rule reads the effective SQL rather than the text as written, for the
+// reason the effective form exists: a MySQL-family executable comment carries
+// SQL the server runs and the lexer reports as one opaque token, so
+// `SELECT 'x' /*! INTO OUTFILE '/tmp/x' */` hides the clause from a scan of the
+// original. Expanding first is what makes one rule cover both spellings.
 //
 // Both callers go through here so there is exactly one implementation of "is
 // this assertion well-formed": [runCheckAssertion] on the evaluation path, and
@@ -333,12 +339,25 @@ func validateCheckAssertionStatically(assertion, dialect, serverVersion string) 
 	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
 		return err
 	}
-	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
-		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
-		return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+	effective, err := effectiveCheckSQL(assertion, dialect, serverVersion)
+	if err != nil {
+		return err
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
+		if containsIdentifierSequence(effective, dialect, "NEXT", "VALUE", "FOR") {
+			return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+		}
+	case platform.Oracle:
+		// Oracle has no read-only transaction in checkTransactionOptions and a
+		// NEXTVAL is not rolled back by one anywhere, so the text is the only
+		// place this can be refused.
+		if containsIdentifierSequence(effective, dialect, "NEXTVAL") {
+			return fmt.Errorf("check assertion must not advance an Oracle sequence with NEXTVAL")
+		}
 	}
 	if implicitCommitDialect(dialect) &&
-		mysqlUnwitnessedFilesystemWrite(significantSQLTokens(assertion, dialect)) {
+		mysqlUnwitnessedFilesystemWrite(significantSQLTokens(effective, dialect)) {
 		return fmt.Errorf("check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE")
 	}
 	return nil
