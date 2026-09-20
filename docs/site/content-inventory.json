@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 143,
-    "authored": 140,
+    "pages": 144,
+    "authored": 141,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -16,7 +16,7 @@
       "reference": 33,
       "status": 9,
       "troubleshooting": 5,
-      "tutorial": 10
+      "tutorial": 11
     }
   },
   "pages": [
@@ -4130,6 +4130,51 @@
       "sourceBytes": 9905
     },
     {
+      "path": "docs/site/src/content/docs/operate/zero-downtime-changes.mdx",
+      "route": "/operate/zero-downtime-changes/",
+      "title": "Change a schema without downtime",
+      "description": "Read what a migration will lock, rewrite it into the form that does not, and cap the wait so a busy table cannot be parked behind it.",
+      "sidebarPath": "Deliver and operate",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I change this table without taking the application down?",
+      "goal": "Turn a migration that would block a live table into one that does not, and know what the tool cannot decide for you.",
+      "sourceOfTruth": [
+        "internal/cli/lint",
+        "internal/cli/migrateup",
+        "internal/lintcatalog"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "zero downtime migration",
+        "online schema change",
+        "lock timeout"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/lint/",
+        "/versioned/apply/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/lint-rules/",
+        "/start/install/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 1033,
+      "sourceBytes": 9954
+    },
+    {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
       "route": "/reference/atlas-commands/",
       "title": "Atlas-compatible commands",
@@ -4608,6 +4653,7 @@
         "/atlas/schema-commands/",
         "/databases/postgresql/",
         "/migrate-from/atlas/",
+        "/operate/zero-downtime-changes/",
         "/reference/atlas-commands/",
         "/schema/security/",
         "/testing/overview/",
@@ -6036,6 +6082,7 @@
         "/migrate-from/golang-migrate/",
         "/migrate-from/goose/",
         "/migrate-from/liquibase/",
+        "/operate/zero-downtime-changes/",
         "/schema/document/",
         "/schema/lineage/",
         "/schema/security/",
@@ -6350,6 +6397,7 @@
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
         "/operate/deliver/",
+        "/operate/zero-downtime-changes/",
         "/schema/export/",
         "/schema/protobuf/",
         "/schema/validate-and-format/",
