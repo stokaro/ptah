@@ -6918,8 +6918,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 2090,
-      "sourceBytes": 16975
+      "visibleWords": 2178,
+      "sourceBytes": 17589
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",
@@ -7082,8 +7082,8 @@
         "/versioned/maintain-history/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1832,
-      "sourceBytes": 16298
+      "visibleWords": 1851,
+      "sourceBytes": 16417
     }
   ]
 }
