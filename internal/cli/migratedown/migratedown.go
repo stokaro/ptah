@@ -592,7 +592,8 @@ type downNoopInputs struct {
 // question goes to the migrator rather than to a second reading of the status,
 // so both branches refuse on the same rule.
 func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) error {
-	if _, err := in.migrator.VerifyAppliedChecksums(ctx); err != nil {
+	if _, err := in.migrator.VerifyAppliedChecksums(ctx); err != nil &&
+		!in.migrator.AppliesOverMissingMigration(err) {
 		return err
 	}
 	observeNoopDown(in.runtime, in.dialect, in.currentVersion, in.targetVersion)

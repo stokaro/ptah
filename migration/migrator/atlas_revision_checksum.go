@@ -75,16 +75,7 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	// Before the mismatches: a revision with no file cannot be compared at all,
 	// so no projection explains it and reporting a hash difference elsewhere
 	// first would name the smaller problem.
-	//
-	// Only a native history refuses. An Atlas-format one is a history the Atlas
-	// community binary also writes, and measured against the pinned v1.3.0 on a
-	// directory missing an applied file it applies at exit 0 with `No migration
-	// files to execute` and reports `Migration Status: OK`. Refusing here would
-	// stop a pipeline CE runs, and would take away the retired-history reading
-	// Ptah supports on purpose. The fact still reaches
-	// [MigrationStatus.MissingMigrations], where a reader can ask for it without
-	// a command deciding for them (stokaro/ptah#3442).
-	if len(classified.missing) > 0 && !m.revisionTableFormat.isAtlas() {
+	if len(classified.missing) > 0 {
 		return false, newMissingMigrationError(classified.missing[0])
 	}
 	if len(classified.mismatches) == 0 {
@@ -94,6 +85,45 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 		return true, nil
 	}
 	return false, classified.mismatches[0]
+}
+
+// verifyBeforeApply is the applied-checksum verification as an apply asks it:
+// the rule, and the one refusal an apply may proceed over.
+//
+// The three apply paths share it so the tolerance cannot be written into two of
+// them and forgotten in the third.
+func (m *Migrator) verifyBeforeApply(ctx context.Context, migrations []*Migration) (bool, error) {
+	reconcile, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil && !m.AppliesOverMissingMigration(err) {
+		return false, err
+	}
+	return reconcile, nil
+}
+
+// AppliesOverMissingMigration reports whether an apply this migrator runs may
+// proceed over the refusal err carries.
+//
+// Only a revision this directory holds no file for, and only on an Atlas-format
+// history. Such a history is one the Atlas community binary also writes, and
+// measured against the pinned v1.3.0 on a directory whose applied file was
+// deleted and re-hashed, `migrate apply` writes `No migration files to execute`
+// and exits 0 while `migrate status` reports OK. Refusing would stop a pipeline
+// that binary runs, and would take away the retired-history reading Ptah
+// supports on purpose for converted directories (stokaro/ptah#3442).
+//
+// It is asked beside the apply rather than inside the verification, and it is
+// exported because the answer has one home: [Migrator.VerifyAppliedChecksums]
+// is also the adoption verifier, which answers whether native Ptah may take a
+// history over, and after such a takeover the history is native -- so a row
+// with no file is decisive there whatever format it is in today. A caller that
+// runs the verification itself before applying asks this about the error it
+// gets rather than deciding again.
+//
+// Any other error is never tolerated: this reports false for a checksum
+// mismatch, for a failure to read the revisions, and for nil.
+func (m *Migrator) AppliesOverMissingMigration(err error) bool {
+	var missing *MissingMigrationError
+	return errors.As(err, &missing) && m.revisionTableFormat.isAtlas()
 }
 
 // appliedChecksumClassification is one pass of the applied-checksum rule over

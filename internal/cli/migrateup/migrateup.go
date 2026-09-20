@@ -581,7 +581,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		// reading of the same revision rows. The read is unlocked because the
 		// decision it guards is: the status above is unlocked too, so a lock
 		// here would claim more than the shortcut can.
-		if _, err := mig.VerifyAppliedChecksums(cmd.Context()); err != nil {
+		if _, err := mig.VerifyAppliedChecksums(cmd.Context()); err != nil &&
+			!mig.AppliesOverMissingMigration(err) {
 			return err
 		}
 		emitPlanOutput()

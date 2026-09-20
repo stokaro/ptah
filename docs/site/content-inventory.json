@@ -6527,8 +6527,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5979,
-      "sourceBytes": 43436
+      "visibleWords": 6020,
+      "sourceBytes": 43677
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

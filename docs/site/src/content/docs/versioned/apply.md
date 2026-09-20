@@ -340,7 +340,12 @@ migration file while its recorded history stays readable is something Ptah
 supports on purpose for converted directories. So on an Atlas history the state
 is reported and the apply proceeds. `missing_migrations` and the
 `migrations status` report carry it either way, and `--exit-code` treats it as
-not up to date either way; only the refusal is scoped.
+not up to date either way; only the apply is scoped.
+
+Adoption is not scoped, whatever the format. `ptah project adopt --check
+--preflight` refuses a history whose directory cannot account for it, because
+after a takeover the history is native and a row with no file has nothing to be
+read from.
 
 ## The evidence a run leaves
 
