@@ -487,17 +487,12 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // rollback instead, at the statement the revision says comes next.
 //
 // The other shapes are read off `applied`, and an interrupted statement is read
-// before them: it leaves applied=0 while the statement may have committed, so
-// the sentence that sends an operator to a rerun would be the wrong one there.
+// before them: `applied` counts what is known to have committed, and the
+// statement after it may have committed as well without recording that, which
+// no sentence written off that count alone can be right about.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 	if revision.StatementOutcomeUnknown() {
-		return fmt.Sprintf(
-			"The run was interrupted while a statement was executing, so whether it committed "+
-				"was never recorded. Inspect the database, then run 'ptah migrations repair "+
-				"--version %d' -- rerunning or resuming would repeat SQL that may already have "+
-				"committed.",
-			revision.Version,
-		)
+		return unknownStatementOutcomeHint(revision)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(
@@ -518,5 +513,35 @@ func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
 		revision.Total,
 		revision.Version,
 		revision.Applied+1,
+	)
+}
+
+// unknownStatementOutcomeHint names what ends a revision whose statement was
+// interrupted before its outcome could be recorded. One statement may have
+// committed and the rest of that body did not run, so no verb finishes it on
+// its own: the operator reconciles the database and then records the result.
+// Which record that is depends on the direction, because a repair that signs a
+// migration off is the wrong answer for a rollback that was reverting it.
+func unknownStatementOutcomeHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"The rollback was interrupted while down statement %d of %d was executing, so whether "+
+				"it committed was never recorded, and nothing after it ran. Inspect the database, "+
+				"then run 'ptah migrations repair --version %d --force' to record the migration "+
+				"applied if you restored what the rollback reverted, or 'ptah migrations set "+
+				"--version <previous>' if you finished the rollback by hand.",
+			revision.Applied+1,
+			revision.Total,
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"The run was interrupted while statement %d of %d was executing, so whether it committed "+
+			"was never recorded, and nothing after it ran. Inspect the database and apply what is "+
+			"missing, then run 'ptah migrations repair --version %d' to record the migration "+
+			"applied -- rerunning it could repeat the statement that committed.",
+		revision.Applied+1,
+		revision.Total,
+		revision.Version,
 	)
 }

@@ -32,10 +32,10 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				Total:   3,
 				Error:   "statement execution outcome is unknown after process interruption",
 			},
-			want: "The run was interrupted while a statement was executing, so whether it " +
-				"committed was never recorded. Inspect the database, then run 'ptah migrations " +
-				"repair --version 2' -- rerunning or resuming would repeat SQL that may already " +
-				"have committed.",
+			want: "The run was interrupted while statement 1 of 3 was executing, so whether it " +
+				"committed was never recorded, and nothing after it ran. Inspect the database and " +
+				"apply what is missing, then run 'ptah migrations repair --version 2' to record " +
+				"the migration applied -- rerunning it could repeat the statement that committed.",
 		},
 		{
 			name: "a rollback statement was in flight",
@@ -46,10 +46,24 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				Direction: migrator.MigrationDirectionDown,
 				Error:     "statement execution outcome is unknown after process interruption",
 			},
-			want: "The run was interrupted while a statement was executing, so whether it " +
-				"committed was never recorded. Inspect the database, then run 'ptah migrations " +
-				"repair --version 2' -- rerunning or resuming would repeat SQL that may already " +
-				"have committed.",
+			want: "The rollback was interrupted while down statement 1 of 3 was executing, so " +
+				"whether it committed was never recorded, and nothing after it ran. Inspect the " +
+				"database, then run 'ptah migrations repair --version 2 --force' to record the " +
+				"migration applied if you restored what the rollback reverted, or 'ptah migrations " +
+				"set --version <previous>' if you finished the rollback by hand.",
+		},
+		{
+			name: "a statement was in flight after two committed",
+			revision: migrator.MigrationRevision{
+				Version: 2,
+				Applied: 2,
+				Total:   3,
+				Error:   "statement execution outcome is unknown after process interruption",
+			},
+			want: "The run was interrupted while statement 3 of 3 was executing, so whether it " +
+				"committed was never recorded, and nothing after it ran. Inspect the database and " +
+				"apply what is missing, then run 'ptah migrations repair --version 2' to record " +
+				"the migration applied -- rerunning it could repeat the statement that committed.",
 		},
 		{
 			name:     "nothing ran",
