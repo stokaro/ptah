@@ -1198,8 +1198,18 @@ a translation nothing points at is a page nobody reaches.
 `Ptah（プタハ）` and every mention after it is `Ptah`. The reading appears
 inside that first mention and nowhere else: a page that writes it again has
 started using the reading as the name, which is what this rule prevents.
-`check-translations.mjs` declares the spelling per language and holds all three
-counts — one gloss, one reading, and no reading in the English source.
+`check-translations.mjs` declares the spelling per language and holds the
+counts — one gloss, one reading, and no reading in the English source — and the
+order: the gloss stands before the first place the Latin name appears on its
+own in prose.
+
+Prose is what a sentence carries, so the gate reads past three regions. A
+fenced block or an inline span holds a command rather than the name. An HTML
+attribute value describes an image. A level-one heading is the document's
+title, and a page whose first line is a logo with `alt="Ptah …"` above an
+`<h1>Ptah</h1>` would otherwise have to spend its one permitted gloss inside an
+image description. A `##` section heading stays inside the rule, and a longer
+identifier such as `PtahSchema` is not a mention of the name.
 
 The worked example is run in one language and compared in the other.
 `scripts/check-readme-example.sh` executes the section `README.md` marks and
