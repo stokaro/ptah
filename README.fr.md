@@ -16,7 +16,7 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="Licence : MIT"></a>
 </p>
 
-<p align="center"><a href="#installation">Installation</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Démarrage rapide (en anglais)</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Migrations d’inférence (en anglais)</a> · <a href="https://docs.ptah.run/edge/">Documentation (en anglais)</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Bases prises en charge (en anglais)</a></p>
+<p align="center"><a href="#installation">Installation</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Démarrage rapide</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Migrations d’inférence</a> · <a href="https://docs.ptah.run/edge/">Documentation</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Bases prises en charge</a></p>
 
 <p align="center">
   <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a>
@@ -67,7 +67,7 @@ La génération active reste intacte jusqu’à la vérification et à la bascul
 <p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="La génération d’inférence active continue de servir les requêtes pendant que Ptah prépare, remplit, synchronise, indexe et vérifie une candidate. La bascule active la candidate vérifiée. Un retour arrière peut rétablir la génération précédente conservée ; sa suppression est une opération distincte et destructive." width="1000"></p>
 
 Le [guide des migrations d’inférence](https://docs.ptah.run/edge/inference/overview/)
-(en anglais) couvre la spécification, le rattrapage des modifications concurrentes,
+couvre la spécification, le rattrapage des modifications concurrentes,
 l’évaluation, les approbations, le retour arrière et la suppression des anciennes
 générations.
 
@@ -92,7 +92,7 @@ irm https://ptah.run/install.ps1 | iex
 ```
 
 Le [guide d’installation](https://docs.ptah.run/edge/start/install/)
-(en anglais) couvre le choix d’une version précise, la vérification des
+couvre le choix d’une version précise, la vérification des
 signatures, le téléchargement sans exécution et la compilation des sources.
 
 ## Essayer Ptah avec SQLite
@@ -145,8 +145,7 @@ ce qui permet de l’utiliser comme contrôle en CI. Supprimez `app.db` et
 Pour un parcours complet avec sorties attendues et vérifications, suivez le
 [tutoriel des modifications directes du schéma](https://docs.ptah.run/edge/start/quick-start-direct/)
 ou le
-[tutoriel des migrations versionnées](https://docs.ptah.run/edge/start/quick-start-migrations/)
-(tous deux en anglais).
+[tutoriel des migrations versionnées](https://docs.ptah.run/edge/start/quick-start-migrations/).
 
 ## Choisir comment appliquer les changements de schéma
 
@@ -159,7 +158,7 @@ Les sources de schéma peuvent être du SQL, YAML, HCL, DBML, des annotations Go
 des chargeurs externes ou une base existante. Les fonctionnalités couvertes
 varient selon le moteur. Consultez la
 [matrice de support](https://docs.ptah.run/edge/databases/support-matrix/)
-(en anglais) et `ptah db capabilities --db-url <url>` pour la cible concernée.
+et `ptah db capabilities --db-url <url>` pour la cible concernée.
 
 ## Explorer la documentation
 
@@ -188,15 +187,14 @@ Les projets Go peuvent intégrer les paquets documentés, utiliser des structs
 annotées comme sources de schéma et exécuter `ptah-ls` pour l’assistance dans
 l’éditeur. Commencez par le [registre de l’API publique](https://docs.ptah.run/edge/extend/public-api/),
 les [composants réutilisables](https://docs.ptah.run/edge/extend/components/)
-ou les [annotations Go](https://docs.ptah.run/edge/schema/go-annotations/)
-(en anglais).
+ou les [annotations Go](https://docs.ptah.run/edge/schema/go-annotations/).
 
 Le binaire distinct `ptah-compat` expose des commandes compatibles avec Atlas.
 L’arborescence native de `ptah` n’utilise pas les chemins de commandes Atlas.
 Ptah ne revendique pas une parité complète avec Atlas.
 La [présentation de la compatibilité](https://docs.ptah.run/edge/atlas/overview/)
 et les [résultats de conformité](https://docs.ptah.run/edge/atlas/conformance/)
-(en anglais) précisent la couverture mesurée et les différences.
+précisent la couverture mesurée et les différences.
 
 ## Licence et aide
 
@@ -204,7 +202,7 @@ Ptah est une implémentation indépendante en salle blanche, publiée sous
 [licence MIT](LICENSE). Elle n’utilise pas le code source d’Atlas et n’est
 ni affiliée à Ariga ni approuvée par Ariga. La
 [politique de séparation des licences](https://docs.ptah.run/edge/atlas/license-boundary/)
-(en anglais) décrit les règles de provenance.
+décrit les règles de provenance.
 
 Les logos ci-dessus identifient uniquement les moteurs pris en charge par Ptah.
 Chacun appartient à son propriétaire, qui n’approuve ni ne parraine Ptah.
