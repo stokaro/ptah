@@ -8,6 +8,8 @@
 
 <p align="center">
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-unit-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-unit-tests.yml?branch=master&label=tests&logo=github" alt="master ブランチにおける単体テストワークフローの状態"></a>
+  <a href="https://github.com/stokaro/ptah/actions/workflows/go-integration-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-integration-tests.yml?branch=master&label=integration&logo=github" alt="master ブランチにおける統合テストワークフローの状態"></a>
+  <a href="https://github.com/stokaro/ptah/actions/workflows/capability-matrix.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/capability-matrix.yml?branch=master&label=databases&logo=github" alt="master ブランチにおける機能マトリクスワークフローの状態。宣言されたすべてのデータベースリリースラインを検査する"></a>
   <a href="https://github.com/stokaro/ptah/releases/latest"><img src="https://img.shields.io/github/v/release/stokaro/ptah?label=release&logo=github" alt="公開済みの最新リリースタグ"></a>
   <a href="https://pkg.go.dev/ptah.run"><img src="https://pkg.go.dev/badge/ptah.run.svg" alt="ptah.run の Go パッケージリファレンス"></a>
   <a href="https://github.com/stokaro/ptah/blob/master/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/stokaro/ptah?label=go&logo=go&logoColor=white" alt="go.mod が宣言する Go のバージョン"></a>
@@ -17,16 +19,25 @@
 <p align="center"><a href="#インストール">インストール</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">クイックスタート</a> · <a href="https://docs.ptah.run/edge/inference/overview/">推論マイグレーション</a> · <a href="https://docs.ptah.run/edge/">ドキュメント</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">データベース対応状況</a></p>
 
 <p align="center">
-  <a href="https://docs.ptah.run/edge/databases/postgresql/">PostgreSQL</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MySQL</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MariaDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/sqlite/">SQLite</a> ·
-  <a href="https://docs.ptah.run/edge/databases/sqlserver/">SQL Server</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">ClickHouse</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">CockroachDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">YugabyteDB</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Oracle</a> ·
-  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Spanner</a>
+  <a href="https://docs.ptah.run/edge/databases/postgresql/" title="PostgreSQL"><img src="docs/assets/engines/postgresql.svg" alt="PostgreSQL" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/mysql/" title="MySQL"><img src="docs/assets/engines/mysql.svg" alt="MySQL" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/mysql/" title="MariaDB"><img src="docs/assets/engines/mariadb.svg" alt="MariaDB" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/sqlite/" title="SQLite"><img src="docs/assets/engines/sqlite.svg" alt="SQLite" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/sqlserver/" title="SQL Server"><img src="docs/assets/engines/sqlserver.svg" alt="SQL Server" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/clickhouse/" title="ClickHouse"><img src="docs/assets/engines/clickhouse.svg" alt="ClickHouse" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="CockroachDB"><img src="docs/assets/engines/cockroachdb.svg" alt="CockroachDB" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="YugabyteDB"><img src="docs/assets/engines/yugabytedb.svg" alt="YugabyteDB" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/oracle/" title="Oracle"><img src="docs/assets/engines/oracle.svg" alt="Oracle" height="32" width="32"></a>
+  &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
 </p>
 
 Ptah はスキーマと永続的な推論状態の両方について、データベースの変更を管理します。
