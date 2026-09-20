@@ -12,7 +12,7 @@ import (
 // often the one they want to apply next. The rule that refuses an applied
 // revision with no file reads a provider's migrations as the whole history, and
 // that reading is only the file-system provider's contract: against a
-// registered one it refuses every run after the first (stokaro/ptah#3445).
+// registered one it refuses every run after the first (stokaro/ptah#3446).
 
 func TestMigrateUp_ARegisteredProviderIsNotTheWholeHistory(t *testing.T) {
 	c := qt.New(t)

@@ -32,7 +32,7 @@ type MigrationProvider interface {
 // history can be read that way. A caller registering the one migration it wants
 // applied next -- which [RegisteredMigrationProvider] exists for, and which the
 // integration harness does per step -- would otherwise be reported as having
-// lost every migration it did not register (stokaro/ptah#3445).
+// lost every migration it did not register (stokaro/ptah#3446).
 //
 // [FSMigrationProvider] answers yes: it is the directory. A registered provider
 // answers what its caller declared with
