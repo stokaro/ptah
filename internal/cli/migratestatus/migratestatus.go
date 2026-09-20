@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/ddltx"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -409,7 +410,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		if status.DirtyRevision.ErrorStatement != "" {
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
-		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision))
+		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision, conn.Info().Dialect))
 		return nil
 	}
 
@@ -485,14 +486,131 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // migration applied -- that would sign it off over a schema whose objects the
 // rollback already dropped -- so it points at the resume that finishes the
 // rollback instead, at the statement the revision says comes next.
-func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
-	if revision.Direction != migrator.MigrationDirectionDown {
-		return "Run 'ptah migrations repair --version <version>' after fixing the database state."
+//
+// The other shapes are read off `applied`, which is why the dialect is read
+// too. `applied` counts what is known to have committed, and an interrupted
+// statement may have committed as well without recording that; on a dialect
+// whose statements commit on their own, nothing writes a checkpoint at all, so
+// zero there says only that no progress was recorded. Neither shape can be
+// answered from the count alone.
+//
+// `--resume-from` is offered only where a statement is left to run. A body that
+// committed every statement and stopped before recording that has none, and so
+// does a body with no statements at all, and the command refuses the offset
+// past the end either way. Both are read before the direction split rather than
+// inside each side of it.
+func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision, dialect string) string {
+	if revision.StatementOutcomeUnknown() {
+		return unknownStatementOutcomeHint(revision)
+	}
+	if revision.Applied == revision.Total {
+		return completedBodyHint(revision)
+	}
+	if revision.Applied == 0 && ddltx.AllStatementsDurable(ddltx.ClassOf(dialect)) {
+		return uncheckpointedHint(revision, dialect)
+	}
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+
+				"to run the remaining down statements and remove the revision.",
+			revision.Version,
+			revision.Applied+1,
+		)
+	}
+	if revision.Applied == 0 {
+		return "No statement of this migration reached the database. " +
+			"Run 'ptah migrations up --allow-dirty' to apply it."
 	}
 	return fmt.Sprintf(
-		"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+
-			"to run the remaining down statements and remove the revision.",
+		"This migration stopped after %d of %d statements. Run 'ptah migrations repair --version %d "+
+			"--resume-from %d' to run the rest, or repair with --force once you have run them yourself.",
+		revision.Applied,
+		revision.Total,
 		revision.Version,
 		revision.Applied+1,
+	)
+}
+
+// completedBodyHint names what ends a revision whose body ran to its last
+// statement and stopped before the run could record that. A plain repair is the
+// answer in both directions and the outcome it reaches is the opposite one:
+// recording the migration applied for an up body, removing the revision for a
+// rollback that un-applied it.
+func completedBodyHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"Every down statement of this rollback committed and the run stopped before removing "+
+				"the revision. Run 'ptah migrations repair --version %d' to finish it.",
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"Every statement of this migration committed and the run stopped before recording that. "+
+			"Run 'ptah migrations repair --version %d' to record it applied.",
+		revision.Version,
+	)
+}
+
+// uncheckpointedHint names what ends a dirty row on a dialect where every
+// statement is durable the moment it runs and the migrator therefore writes no
+// per-statement witness. Zero progress says only that nothing was recorded, so
+// the body may have run in full, in part, or not at all, and no verb decides
+// between those on its own: a repair records a body that may be half there, and
+// a rerun repeats what already committed. The operator finishes the body and
+// the hint names the record.
+//
+// Which record that is depends on the direction, and naming the wrong one is
+// worse than naming none: 'migrations up --allow-dirty' is refused outright
+// over a row a rollback left.
+func uncheckpointedHint(revision *migrator.MigrationRevision, dialect string) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"On %s a statement commits on its own, so nothing records how far this rollback got: "+
+				"it may have run in full, in part, or not at all. Inspect the database and finish "+
+				"the rollback by hand, then run 'ptah migrations set --version <previous>' to move "+
+				"the boundary back -- or, if you restore what it reverted instead, 'ptah migrations "+
+				"repair --version %d --force' to record the migration applied.",
+			dialect,
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"On %s a statement commits on its own, so nothing records how far this run got: it may "+
+			"have run in full, in part, or not at all. Inspect the database and apply whatever is "+
+			"missing, then run 'ptah migrations repair --version %d' to record it applied. "+
+			"'ptah migrations up --allow-dirty' is safe only once you have confirmed no statement "+
+			"of it ran.",
+		dialect,
+		revision.Version,
+	)
+}
+
+// unknownStatementOutcomeHint names what ends a revision whose statement was
+// interrupted before its outcome could be recorded. One statement may have
+// committed and the rest of that body did not run, so no verb finishes it on
+// its own: the operator reconciles the database and then records the result.
+// Which record that is depends on the direction, because a repair that signs a
+// migration off is the wrong answer for a rollback that was reverting it.
+func unknownStatementOutcomeHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"The rollback was interrupted while down statement %d of %d was executing, so whether "+
+				"it committed was never recorded, and nothing after it ran. Inspect the database, "+
+				"then run 'ptah migrations repair --version %d --force' to record the migration "+
+				"applied if you restored what the rollback reverted, or 'ptah migrations set "+
+				"--version <previous>' if you finished the rollback by hand.",
+			revision.Applied+1,
+			revision.Total,
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"The run was interrupted while statement %d of %d was executing, so whether it committed "+
+			"was never recorded, and nothing after it ran. Inspect the database and apply what is "+
+			"missing, then run 'ptah migrations repair --version %d' to record the migration "+
+			"applied -- rerunning it could repeat the statement that committed.",
+		revision.Applied+1,
+		revision.Total,
+		revision.Version,
 	)
 }

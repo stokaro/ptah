@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/ddltx"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -115,6 +116,19 @@ func (r MigrationRevision) RevisionVersion() string {
 	return strconv.FormatInt(r.Version, 10)
 }
 
+// StatementOutcomeUnknown reports whether the run that left this revision was
+// interrupted while a statement was executing, so whether that statement
+// committed was never recorded.
+//
+// It separates a revision that says nothing reached the database from one that
+// cannot say: [MigrationRevision.Applied] reads 0 in both. An interrupted
+// statement may have committed, so rerunning the migration can repeat committed
+// SQL and resuming past it can skip SQL that never ran. Such a revision is
+// ended by hand -- inspect the database, then repair it.
+func (r MigrationRevision) StatementOutcomeUnknown() bool {
+	return r.Error == unknownStatementOutcomeError
+}
+
 // DirtyMigrationError reports that a previous migration run left a dirty row.
 type DirtyMigrationError struct {
 	Revision MigrationRevision
@@ -174,6 +188,33 @@ func (e *ChecksumMismatchError) Error() string {
 			"so editing it is refused the way editing any applied migration is. "+
 			"Add a new versioned migration with the change, or re-import the source directory",
 		e.Description)
+}
+
+// RepairNothingAppliedError reports that a repair was asked to record a
+// migration whose dirty revision shows no statement of it reached the database.
+//
+// It is the one dirty shape a repair must not sign off on its own. A rolled
+// back transaction and a run that never got its lock both leave this row, and
+// recording it applied would make the database report a version it does not
+// have, with nothing left that would ever apply it. Rerunning is what the state
+// wants, and [RepairMigrationOptions.Force] is how an operator who applied the
+// migration by hand says so instead.
+//
+// A row whose statement was interrupted reads applied=0 too and is not this
+// error: [MigrationRevision.StatementOutcomeUnknown] reports it, rerunning
+// could repeat committed SQL, and a plain repair after the operator inspects
+// the database is how that one ends.
+type RepairNothingAppliedError struct {
+	// Version is the migration the repair named.
+	Version int64
+}
+
+func (e *RepairNothingAppliedError) Error() string {
+	return fmt.Sprintf(
+		"migration %d recorded no applied statement, so there is nothing to finish: "+
+			"run 'ptah migrations up --allow-dirty' to apply it, or repair with --force to "+
+			"record it applied because you ran it yourself",
+		e.Version)
 }
 
 // MissingMigrationError reports that the database recorded a migration as
@@ -1578,7 +1619,7 @@ func isZeroProgressUpFailure(revision MigrationRevision) bool {
 	return revision.Direction == MigrationDirectionUp &&
 		revision.Applied == 0 &&
 		revision.Total > 0 &&
-		revision.Error != unknownStatementOutcomeError
+		!revision.StatementOutcomeUnknown()
 }
 
 func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) error {
@@ -3035,6 +3076,30 @@ func (m *Migrator) validateRepairMigrationSQL(
 	return nil
 }
 
+// revisionProvesNothingRan reports whether this dirty revision is evidence that
+// no statement of the migration reached the database, rather than evidence only
+// that none was recorded.
+//
+// isZeroProgressUpFailure is the row half: applied is zero, the run was an up
+// run, and the outcome of no statement is in doubt. The class is the other
+// half, and both are needed, because whether zero can be trusted is what
+// differs by class. [ddltx.AllStatementsDurable] is that question: only where
+// every statement is durable the moment it runs does the migrator write no
+// per-statement witness, and a body that ran and then lost the write recording
+// it leaves the same row as a body that never started. There the repair that
+// records it applied is the documented recovery rather than a mistake.
+//
+// Everywhere else the count is a witness. A MySQL-family body keeps its DDL
+// and loses its DML on a rollback, which is why that class carries a witness
+// statement by statement and is not exempt here: zero there means the
+// transaction took the body back with it.
+func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
+	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
+		return false
+	}
+	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
+}
+
 func (m *Migrator) repairUpMigration(
 	ctx context.Context,
 	migration *Migration,
@@ -3054,6 +3119,12 @@ func (m *Migrator) repairUpMigration(
 	}
 	if revision != nil && revision.Dirty && revision.Applied == revision.Total && revision.Total > 0 {
 		return m.repairCompletedUpMigration(ctx, migration, revision)
+	}
+	// What is left here would be recorded applied without running. That is the
+	// point of the verb where the operator has already applied the migration by
+	// hand, and a mistake where nothing ran at all (stokaro/ptah#3452).
+	if revisionProvesNothingRan(revision, m.connectionDialect()) && !opts.Force {
+		return &RepairNothingAppliedError{Version: migration.Version}
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
