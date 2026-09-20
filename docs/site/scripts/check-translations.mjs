@@ -533,12 +533,12 @@ function selftest() {
     },
     {
       why: 'an address the translation points at and the source does not',
-      translationText: `${japaneseSource}\n\n[対応表](https://docs.ptah.run/edge/databases/support-matrix/)`,
+      translationText: `${japaneseSource}\n\n[対応表](https://example.com/support-matrix/)`,
       needle: 'points at 2 address(es) and README.md points at 1',
     },
     {
       why: 'an address the source points at and the translation dropped',
-      sourceText: `${englishSource}\n\n[Support matrix](https://docs.ptah.run/edge/databases/support-matrix/)`,
+      sourceText: `${englishSource}\n\n[Support matrix](https://example.com/support-matrix/)`,
       needle: 'points at 1 address(es) and README.md points at 2',
     },
   ];
@@ -589,8 +589,8 @@ function selftest() {
     // demanding two byte-identical files, which is not a translation.
     {
       why: 'the link text translated while the address stays',
-      sourceText: `${englishSource}\n\n[Installation guide](https://docs.ptah.run/edge/start/install/)`,
-      translationText: `${japaneseSource}\n\n[インストールガイド](https://docs.ptah.run/edge/start/install/)`,
+      sourceText: `${englishSource}\n\n[Installation guide](https://example.com/install/)`,
+      translationText: `${japaneseSource}\n\n[インストールガイド](https://example.com/install/)`,
     },
     {
       why: 'an in-page anchor pointing at a translated heading',
