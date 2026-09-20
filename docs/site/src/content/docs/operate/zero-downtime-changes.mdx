@@ -226,8 +226,9 @@ the other half, where the statement does get its lock and then runs too long.
 
 Read `applied=` before reaching for anything else. A migration that stopped
 partway through several statements did change the database, and
-`ptah migrations repair` is the verb for recording what you then fix by hand;
-reaching for it here would record a migration as applied that never ran.
+`ptah migrations repair` is the verb for recording what you then fix by hand.
+On this row it refuses rather than recording a migration that never ran, and
+says the same thing the status hint does.
 
 ## Ask the linter what the change will cost
 

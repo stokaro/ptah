@@ -181,8 +181,17 @@ Status: ❌ Dirty migration state detected
 Dirty Migration: version=5 state=failed direction=up applied=1/2
 Error Statement: INSERT INTO missing_table (id) VALUES (1)
 
-Run 'ptah migrations repair --version <version>' after fixing the database state.
+This migration stopped after 1 of 2 statements. Run 'ptah migrations repair --version 5 --resume-from 2' to run the rest, or repair with --force once you have run them yourself.
 ```
+
+**The hint reads `applied`, because the three shapes want different verbs.**
+`applied=1/2` is the one above: the migration changed the database and the rest
+of it has to run or be run by hand. `applied=0/N` means no statement reached the
+database, which a transaction that rolled back and a run that never got its lock
+both leave, and there the answer is `ptah migrations up --allow-dirty` rather
+than a repair. Repair refuses that row instead of recording a migration that
+never ran, and `--force` is how an operator who applied it themselves overrides
+the refusal.
 
 `direction` says which body left the row dirty, and repair follows it. Every
 example on this page is `direction=up`; for `direction=down` see

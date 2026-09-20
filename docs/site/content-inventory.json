@@ -4171,8 +4171,8 @@
         "/testing/ci/"
       ],
       "inboundLinks": [],
-      "visibleWords": 1283,
-      "sourceBytes": 14400
+      "visibleWords": 1292,
+      "sourceBytes": 14446
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -4434,8 +4434,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3716,
-      "sourceBytes": 26727
+      "visibleWords": 3730,
+      "sourceBytes": 26809
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -6918,8 +6918,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1766,
-      "sourceBytes": 14983
+      "visibleWords": 1862,
+      "sourceBytes": 15647
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",
