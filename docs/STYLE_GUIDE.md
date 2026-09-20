@@ -969,6 +969,7 @@ in this guide is a review responsibility.
 | No bare `--flag` outside a code span on site pages | 4, 8 | `check:style` |
 | Paragraphs under 900 rendered display columns | 4 | `check:style` |
 | A translation's fenced blocks match its source's, in order | 17 | `check:translations` |
+| A translation's link, image and badge addresses match its source's, in order | 17 | `check:translations` |
 | A translation and its source link to each other | 17 | `check:translations` |
 | The product name is glossed once per translated page | 17 | `check:translations` |
 | In-page and cross-page anchors resolve | 12 | `check:links` |
@@ -1189,6 +1190,15 @@ language, and a difference there is a defect rather than a translation choice.
 reports the first that differs. Nothing checks the prose, which stays a reading
 responsibility; a gate that reported on the half it cannot read would teach a
 reader to trust it about the half it can.
+
+**An address is not prose either.** A badge URL, an engine page, an asset path
+and a guide link are the same string in every language, and none of them sits
+inside a fence -- a README writes them in a centered HTML header and in prose
+links, where the block rule cannot see them. So the gate compares the `src` and
+`href` of both files, and the destination of every Markdown link and image, in
+order. Two kinds are excluded because they are the two that should differ: the
+reciprocal language link, and an in-page anchor, whose heading is translated.
+The link text is prose and is not read.
 
 **The two files link to each other, near the top.** A reader who cannot read
 the page they landed on needs the way out to be the first thing they find, and

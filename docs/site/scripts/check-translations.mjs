@@ -213,6 +213,40 @@ function linksTo(source, target) {
 }
 
 /**
+ * Every address the page points at, in order: HTML `src` and `href`, and the
+ * destination of a Markdown link or image.
+ *
+ * An address is not prose. A badge URL, an engine page, an asset path and a
+ * guide link are the same string in every language, and the two files drift
+ * there the same way they drift in a command: the English page is edited and
+ * the translation keeps what it had. The fenced-block rule cannot see it,
+ * because none of those addresses is inside a fence -- a README writes them in
+ * a centered HTML header and in prose links.
+ *
+ * Two kinds are dropped, because they are the two that SHOULD differ:
+ *
+ *   - the reciprocal language link, which by definition names the other file;
+ *   - an in-page anchor, which addresses a heading, and a translated heading
+ *     has a translated anchor.
+ *
+ * The link TEXT is prose and is not read here. `[インストールガイド](url)` and
+ * `[installation guide](url)` are the same link.
+ */
+export function linkTargets(source, { exclude } = { exclude: '' }) {
+  const found = [];
+  // Alternation order matters: the HTML attribute is tried first so that a
+  // Markdown destination is never matched inside one.
+  const pattern = /\b(?:src|href)\s*=\s*"([^"]*)"|\]\(([^)\s]+)(?:\s+[^)]*)?\)/g;
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    const target = match[1] ?? match[2];
+    if (target === exclude || target.startsWith('#')) continue;
+    found.push(target);
+  }
+  return found;
+}
+
+/**
  * The findings for one source/translation pair.
  *
  * Takes the two sources rather than two paths so the selftest drives this
@@ -245,6 +279,29 @@ export function pairProblems({ sourcePath, sourceText, translationPath, translat
         `    ${sourcePath} (${want.language || 'no label'}):\n${indent(want.body)}\n` +
         `    ${translationPath} (${got.language || 'no label'}):\n${indent(got.body)}`,
     );
+  }
+
+  const sourceTargets = linkTargets(sourceText, { exclude: baseName(translationPath) });
+  const translationTargets = linkTargets(translationText, { exclude: baseName(sourcePath) });
+
+  if (sourceTargets.length !== translationTargets.length) {
+    say(
+      `points at ${translationTargets.length} address(es) and ${sourcePath} points at ` +
+        `${sourceTargets.length}; a link, an image and a badge address the same thing in every language`,
+    );
+  }
+
+  for (let index = 0; index < Math.min(sourceTargets.length, translationTargets.length); index += 1) {
+    if (sourceTargets[index] === translationTargets[index]) continue;
+    say(
+      `address ${index + 1} does not match ${sourcePath}\n` +
+        `    ${sourcePath}:        ${sourceTargets[index]}\n` +
+        `    ${translationPath}: ${translationTargets[index]}`,
+    );
+    // One report per pair. After the first difference the two lists are
+    // misaligned, and a finding per remaining address would bury the one a
+    // reader has to act on.
+    break;
   }
 
   if (!linksTo(translationText, baseName(sourcePath))) {
@@ -466,9 +523,36 @@ function selftest() {
       translationText: japaneseSource,
       needle: 'no entry in check-translations.mjs declares a naming convention',
     },
+    // The badge that drifted on master: the English page gained a label and
+    // the translation kept the one it had. No fence holds it, so the block
+    // rule reports nothing and both pages read correctly on their own.
+    {
+      why: 'an asset address the translation kept while the source moved on',
+      sourceText: englishSource.replace('src="logo.svg"', 'src="logo-v2.svg"'),
+      needle: 'address 1 does not match',
+    },
+    {
+      why: 'an address the translation points at and the source does not',
+      translationText: `${japaneseSource}\n\n[対応表](https://docs.ptah.run/edge/databases/support-matrix/)`,
+      needle: 'points at 2 address(es) and README.md points at 1',
+    },
+    {
+      why: 'an address the source points at and the translation dropped',
+      sourceText: `${englishSource}\n\n[Support matrix](https://docs.ptah.run/edge/databases/support-matrix/)`,
+      needle: 'points at 1 address(es) and README.md points at 2',
+    },
   ];
+  // Both sides are defaulted, so a row may override either one. Defaulting
+  // only the source made a row that mutates the source alone pass `undefined`
+  // as the translation and crash in the fence reader, which is a worse failure
+  // than the finding it was looking for.
   for (const { why, needle, ...overrides } of mutants) {
-    const found = pairProblems({ ...base, sourceText: englishSource, ...overrides });
+    const found = pairProblems({
+      ...base,
+      sourceText: englishSource,
+      translationText: japaneseSource,
+      ...overrides,
+    });
     if (!found.some((problem) => problem.includes(needle))) {
       failures.push(`${why} was not reported (wanted ${JSON.stringify(needle)}, got ${JSON.stringify(found)})`);
     }
@@ -500,9 +584,32 @@ function selftest() {
       sourceText: `\`\`\`go\n// Ptah reads this struct.\n\`\`\`\n\n${englishSource}`,
       translationText: `\`\`\`go\n// Ptah reads this struct.\n\`\`\`\n\n${japaneseSource}`,
     },
+    // What the address rule must not count. Each is a difference the two pages
+    // are SUPPOSED to have, and without these the rule could be satisfied by
+    // demanding two byte-identical files, which is not a translation.
+    {
+      why: 'the link text translated while the address stays',
+      sourceText: `${englishSource}\n\n[Installation guide](https://docs.ptah.run/edge/start/install/)`,
+      translationText: `${japaneseSource}\n\n[インストールガイド](https://docs.ptah.run/edge/start/install/)`,
+    },
+    {
+      why: 'an in-page anchor pointing at a translated heading',
+      sourceText: `${englishSource}\n\n[Install](#install)`,
+      translationText: `${japaneseSource}\n\n[インストール](#インストール)`,
+    },
+    {
+      why: 'the reciprocal language link, which names a different file by design',
+      sourceText: englishSource,
+      translationText: japaneseSource,
+    },
   ];
   for (const { why, ...overrides } of exemptions) {
-    const found = pairProblems({ ...base, sourceText: englishSource, ...overrides });
+    const found = pairProblems({
+      ...base,
+      sourceText: englishSource,
+      translationText: japaneseSource,
+      ...overrides,
+    });
     for (const problem of found) failures.push(`${why} produced a finding: ${problem}`);
   }
 
@@ -580,6 +687,7 @@ function main() {
 
   const problems = [];
   let compared = 0;
+  let addresses = 0;
   const found = pairs();
 
   for (const pair of found) {
@@ -592,6 +700,7 @@ function main() {
     }
     const translationText = readFileSync(join(repoRoot, pair.path), 'utf8');
     compared += fencedBlocks(sourceText).length;
+    addresses += linkTargets(sourceText, { exclude: baseName(pair.path) }).length;
     problems.push(
       ...pairProblems({
         sourcePath: pair.sourcePath,
@@ -603,10 +712,15 @@ function main() {
     );
   }
 
-  // A pair whose pages carry no fenced block at all compares nothing, and a
-  // fence reader that stopped matching looks exactly like that.
-  if (compared === 0) {
-    console.error('check-translations: found no fenced block to compare across any translated README');
+  // A pair whose pages carry no fenced block and no address compares nothing,
+  // and a reader that stopped matching looks exactly like that. Each half has
+  // its own floor: a page can legitimately have no code, and one that also had
+  // no link would leave both readers unexercised with no finding to show for
+  // it. Over this repository both are well above zero.
+  if (compared === 0 && addresses === 0) {
+    console.error(
+      'check-translations: found no fenced block and no address to compare across any translated README',
+    );
     process.exitCode = 1;
     return;
   }
@@ -617,7 +731,10 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-translations.mjs: OK (${found.length} translation(s), ${compared} fenced blocks compared)`);
+  console.log(
+    `check-translations.mjs: OK (${found.length} translation(s), ` +
+      `${compared} fenced blocks and ${addresses} addresses compared)`,
+  );
 }
 
 main();

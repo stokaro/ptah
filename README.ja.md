@@ -12,7 +12,7 @@
   <a href="https://github.com/stokaro/ptah/actions/workflows/capability-matrix.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/capability-matrix.yml?branch=master&label=databases&logo=github" alt="master ブランチにおける機能マトリクスワークフローの状態。宣言されたすべてのデータベースリリースラインを検査する"></a>
   <a href="https://github.com/stokaro/ptah/releases/latest"><img src="https://img.shields.io/github/v/release/stokaro/ptah?label=release&logo=github" alt="公開済みの最新リリースタグ"></a>
   <a href="https://pkg.go.dev/ptah.run"><img src="https://pkg.go.dev/badge/ptah.run.svg" alt="ptah.run の Go パッケージリファレンス"></a>
-  <a href="https://github.com/stokaro/ptah/blob/master/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/stokaro/ptah?label=go&logo=go&logoColor=white" alt="go.mod が宣言する Go のバージョン"></a>
+  <a href="https://github.com/stokaro/ptah/blob/master/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/stokaro/ptah?label=go%20%E2%89%A5&logo=go&logoColor=white" alt="このモジュールがコンパイル可能な最も低い Go のバージョン。go.mod が宣言する"></a>
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="MIT と表示されるライセンスバッジ"></a>
 </p>
 
