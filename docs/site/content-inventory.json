@@ -4434,8 +4434,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3730,
-      "sourceBytes": 26809
+      "visibleWords": 3734,
+      "sourceBytes": 26831
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -6918,8 +6918,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1862,
-      "sourceBytes": 15647
+      "visibleWords": 1941,
+      "sourceBytes": 16097
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

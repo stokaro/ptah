@@ -485,7 +485,20 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // migration applied -- that would sign it off over a schema whose objects the
 // rollback already dropped -- so it points at the resume that finishes the
 // rollback instead, at the statement the revision says comes next.
+//
+// The other shapes are read off `applied`, and an interrupted statement is read
+// before them: it leaves applied=0 while the statement may have committed, so
+// the sentence that sends an operator to a rerun would be the wrong one there.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
+	if revision.StatementOutcomeUnknown() {
+		return fmt.Sprintf(
+			"The run was interrupted while a statement was executing, so whether it committed "+
+				"was never recorded. Inspect the database, then run 'ptah migrations repair "+
+				"--version %d' -- rerunning or resuming would repeat SQL that may already have "+
+				"committed.",
+			revision.Version,
+		)
+	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(
 			"This rollback stopped partway. Run 'ptah migrations repair --version %d --resume-from %d' "+

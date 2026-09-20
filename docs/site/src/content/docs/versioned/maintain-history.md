@@ -184,7 +184,7 @@ Error Statement: INSERT INTO missing_table (id) VALUES (1)
 This migration stopped after 1 of 2 statements. Run 'ptah migrations repair --version 5 --resume-from 2' to run the rest, or repair with --force once you have run them yourself.
 ```
 
-**The hint reads `applied`, because the three shapes want different verbs.**
+**The hint reads the row, because each shape wants a different verb.**
 `applied=1/2` is the one above: the migration changed the database and the rest
 of it has to run or be run by hand. `applied=0/N` means no statement reached the
 database, which a transaction that rolled back and a run that never got its lock
@@ -192,6 +192,13 @@ both leave, and there the answer is `ptah migrations up --allow-dirty` rather
 than a repair. Repair refuses that row instead of recording a migration that
 never ran, and `--force` is how an operator who applied it themselves overrides
 the refusal.
+
+A run that died while a statement was executing reads `applied=0/N` too, and the
+hint reads the recorded failure to tell it apart. Whether that statement
+committed was never recorded, so a rerun can repeat it and a resume can skip it.
+`ptah migrations repair --resume-from` refuses that row for the same reason.
+What is left is to inspect the database and then repair the revision by version,
+which records it applied once you have made the schema match.
 
 `direction` says which body left the row dirty, and repair follows it. Every
 example on this page is `direction=up`; for `direction=down` see

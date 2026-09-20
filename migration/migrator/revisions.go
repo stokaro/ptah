@@ -115,6 +115,19 @@ func (r MigrationRevision) RevisionVersion() string {
 	return strconv.FormatInt(r.Version, 10)
 }
 
+// StatementOutcomeUnknown reports whether the run that left this revision was
+// interrupted while a statement was executing, so whether that statement
+// committed was never recorded.
+//
+// It separates a revision that says nothing reached the database from one that
+// cannot say: [MigrationRevision.Applied] reads 0 in both. An interrupted
+// statement may have committed, so rerunning the migration can repeat committed
+// SQL and resuming past it can skip SQL that never ran. Such a revision is
+// ended by hand -- inspect the database, then repair it.
+func (r MigrationRevision) StatementOutcomeUnknown() bool {
+	return r.Error == unknownStatementOutcomeError
+}
+
 // DirtyMigrationError reports that a previous migration run left a dirty row.
 type DirtyMigrationError struct {
 	Revision MigrationRevision
@@ -185,6 +198,11 @@ func (e *ChecksumMismatchError) Error() string {
 // have, with nothing left that would ever apply it. Rerunning is what the state
 // wants, and [RepairMigrationOptions.Force] is how an operator who applied the
 // migration by hand says so instead.
+//
+// A row whose statement was interrupted reads applied=0 too and is not this
+// error: [MigrationRevision.StatementOutcomeUnknown] reports it, rerunning
+// could repeat committed SQL, and a plain repair after the operator inspects
+// the database is how that one ends.
 type RepairNothingAppliedError struct {
 	// Version is the migration the repair named.
 	Version int64
@@ -1600,7 +1618,7 @@ func isZeroProgressUpFailure(revision MigrationRevision) bool {
 	return revision.Direction == MigrationDirectionUp &&
 		revision.Applied == 0 &&
 		revision.Total > 0 &&
-		revision.Error != unknownStatementOutcomeError
+		!revision.StatementOutcomeUnknown()
 }
 
 func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) error {
@@ -3080,8 +3098,11 @@ func (m *Migrator) repairUpMigration(
 	// What is left here would be recorded applied without running. That is the
 	// point of the verb where the operator has already applied the migration by
 	// hand, and a mistake where nothing ran at all, which the row says
-	// (stokaro/ptah#3452).
-	if revision != nil && revision.Dirty && revision.Applied == 0 && !opts.Force {
+	// (stokaro/ptah#3452). isZeroProgressUpFailure is the one reading of "the
+	// row says nothing ran", and it is what keeps an interrupted statement --
+	// applied=0 as well, outcome unrecorded -- on the repair path the operator
+	// needs for it.
+	if revision != nil && revision.Dirty && isZeroProgressUpFailure(*revision) && !opts.Force {
 		return &RepairNothingAppliedError{Version: migration.Version}
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {

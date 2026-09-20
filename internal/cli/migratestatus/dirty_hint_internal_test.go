@@ -15,13 +15,42 @@ import (
 
 // The hint has to read `applied` rather than print one remedy for every dirty
 // row: a migration that recorded nothing wants a retry, and pointing it at
-// repair records SQL that never ran (stokaro/ptah#3452).
+// repair records SQL that never ran (stokaro/ptah#3452). An interrupted
+// statement leaves applied=0 as well and wants neither, because the row cannot
+// say whether it committed.
 func TestDirtyRevisionRecoveryHint(t *testing.T) {
 	tests := []struct {
 		name     string
 		revision migrator.MigrationRevision
 		want     string
 	}{
+		{
+			name: "a statement was in flight",
+			revision: migrator.MigrationRevision{
+				Version: 2,
+				Applied: 0,
+				Total:   3,
+				Error:   "statement execution outcome is unknown after process interruption",
+			},
+			want: "The run was interrupted while a statement was executing, so whether it " +
+				"committed was never recorded. Inspect the database, then run 'ptah migrations " +
+				"repair --version 2' -- rerunning or resuming would repeat SQL that may already " +
+				"have committed.",
+		},
+		{
+			name: "a rollback statement was in flight",
+			revision: migrator.MigrationRevision{
+				Version:   2,
+				Applied:   0,
+				Total:     3,
+				Direction: migrator.MigrationDirectionDown,
+				Error:     "statement execution outcome is unknown after process interruption",
+			},
+			want: "The run was interrupted while a statement was executing, so whether it " +
+				"committed was never recorded. Inspect the database, then run 'ptah migrations " +
+				"repair --version 2' -- rerunning or resuming would repeat SQL that may already " +
+				"have committed.",
+		},
 		{
 			name:     "nothing ran",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 0, Total: 3},
