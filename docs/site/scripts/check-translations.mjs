@@ -8,10 +8,9 @@
 // expected output are the same bytes in every language, and a difference there
 // is a defect rather than a translation choice.
 //
-// So this gate compares the fenced blocks, requires the two files to link to
-// each other, and holds the product name to the convention the translation
-// declares: the reading is given once, at the first mention, and the Latin
-// spelling is used everywhere after it.
+// So this gate compares fenced blocks and addresses, requires each language
+// to link to all the others near the top, and checks the Japanese pronunciation
+// gloss. German and French use the Latin product name throughout.
 //
 // What it does NOT check is the prose. Nothing here can tell a good translation
 // from a bad one, and pretending otherwise would be the worse failure: a gate
@@ -39,9 +38,8 @@ const repoRoot = join(scriptDir, '..', '..', '..');
 // A README and the language tag of its translation: README.ja.md is `ja`.
 const translatedReadme = /(?:^|\/)README\.([a-z]{2}(?:-[A-Za-z]{2,4})?)\.md$/;
 
-// How each language introduces the product name. The rule is the same in every
-// language and the spelling is not, so the spelling is declared here and the
-// rule is written once below.
+// Native language labels and the optional pronunciation convention. Only
+// Japanese needs a gloss; German and French keep the Latin product name.
 //
 // `gloss` is the full first mention -- the Latin name and its reading. `reading`
 // is the reading on its own, which may appear only inside the gloss: a page that
@@ -53,6 +51,8 @@ const translatedReadme = /(?:^|\/)README\.([a-z]{2}(?:-[A-Za-z]{2,4})?)\.md$/;
 // it, so it is written in the target language rather than in English.
 const languages = {
   ja: { gloss: 'Ptah（プタハ）', reading: 'プタハ', label: '日本語' },
+  de: { label: 'Deutsch' },
+  fr: { label: 'Français' },
 };
 
 // The product name in Latin script. Every language writes it the same way --
@@ -241,6 +241,8 @@ export function linkTargets(source, { exclude } = { exclude: '' }) {
   while ((match = pattern.exec(source)) !== null) {
     const target = match[1] ?? match[2];
     if (target === exclude || target.startsWith('#')) continue;
+    // The complete language switch differs only in which member is plain text.
+    if (/^README(?:\.(?:ja|de|fr))?\.md$/.test(target)) continue;
     found.push(target);
   }
   return found;
@@ -319,6 +321,9 @@ export function pairProblems({ sourcePath, sourceText, translationPath, translat
     return problems;
   }
 
+  // Latin-script translations keep the product name without a pronunciation gloss.
+  if (!declared.gloss) return problems;
+
   const glosses = occurrences(translationText, declared.gloss);
   const readings = occurrences(translationText, declared.reading);
   if (glosses !== 1) {
@@ -357,6 +362,13 @@ export function pairProblems({ sourcePath, sourceText, translationPath, translat
   }
 
   return problems;
+}
+
+/** Every README offers every other available translation in its opening. */
+export function navigationProblems(text, path, siblings) {
+  return siblings.filter((other) => other !== path)
+    .filter((other) => !linksTo(text.split('\n').slice(0, 12).join('\n'), baseName(other)))
+    .map((other) => `${path}: opening language switch does not link to ${other}`);
 }
 
 function baseName(path) {
@@ -652,6 +664,28 @@ function selftest() {
   });
   for (const problem of htmlLinked) failures.push(`an HTML-linked pair produced a finding: ${problem}`);
 
+  // Latin-script translations need no Japanese reading, but keep every code
+  // and address rule. Exercise both locales and the four-way switch.
+  const siblings = ['README.md', 'README.ja.md', 'README.de.md', 'README.fr.md'];
+  for (const language of ['de', 'fr']) {
+    const translationPath = `README.${language}.md`;
+    const nav = (current) => siblings.filter((path) => path !== current)
+      .map((path) => `[${path}](${path})`).join(' · ');
+    const en = nav('README.md') + '\n\n```sh\nptah version\n```\n[Guide](https://example.com/guide/)';
+    const translated = nav(translationPath) + '\n\n```sh\nptah version\n```\n[Anleitung](https://example.com/guide/)';
+    const pair = { sourcePath: 'README.md', sourceText: en, translationPath, translationText: translated, language };
+    if (pairProblems(pair).length) failures.push(`${language}: complete translation was refused`);
+    for (const [before, after] of [['ptah version', 'ptah --version'], ['example.com/guide/', 'example.com/de/guide/']]) {
+      if (!pairProblems({ ...pair, translationText: translated.replace(before, after) }).length) {
+        failures.push(`${language}: drift in ${before} was accepted`);
+      }
+    }
+    if (navigationProblems(translated, translationPath, siblings).length) failures.push(`${language}: complete switch was refused`);
+    if (!navigationProblems(translated.replace('[README.ja.md](README.ja.md)', ''), translationPath, siblings).length) {
+      failures.push(`${language}: missing sibling navigation was accepted`);
+    }
+  }
+
   // The corpus refuses to be empty, which is the failure this gate is most
   // likely to reach: one renamed file and it would have nothing to compare.
   let refused = false;
@@ -675,7 +709,7 @@ function selftest() {
     return;
   }
   console.log(
-    `check-translations.mjs --selftest: OK (${mutants.length + exemptions.length + 6} assertions via pairProblems())`,
+    `check-translations.mjs --selftest: OK (${mutants.length + exemptions.length + 16} assertions via pairProblems())`,
   );
 }
 
@@ -689,6 +723,21 @@ function main() {
   let compared = 0;
   let addresses = 0;
   const found = pairs();
+  const groups = new Map();
+  for (const pair of found) {
+    const members = groups.get(pair.sourcePath) ?? [pair.sourcePath];
+    members.push(pair.path);
+    groups.set(pair.sourcePath, members);
+  }
+  for (const members of groups.values()) {
+    for (const path of members) {
+      try {
+        problems.push(...navigationProblems(readFileSync(join(repoRoot, path), 'utf8'), path, members));
+      } catch {
+        problems.push(`${path}: missing README in the language group`);
+      }
+    }
+  }
 
   for (const pair of found) {
     let sourceText;
