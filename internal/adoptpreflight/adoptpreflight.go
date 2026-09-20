@@ -559,6 +559,16 @@ func checksumFinding(ctx context.Context, opts Options, mig *migrator.Migrator) 
 		}
 	}
 	reconcile, err := mig.VerifyAppliedChecksums(ctx)
+	if missing, ok := errors.AsType[*migrator.MissingMigrationError](err); ok {
+		return Finding{
+			Dimension: DimensionChecksum,
+			Severity:  SeverityRefuse,
+			Summary: fmt.Sprintf("revision %s names a migration this directory does not hold",
+				missing.RevisionKey),
+			Detail: "there is no file to compare the recorded checksum with, so nothing can say what " +
+				"that migration did: adoption would be recording a history it cannot read",
+		}
+	}
 	if mismatch, ok := errors.AsType[*migrator.ChecksumMismatchError](err); ok {
 		return Finding{
 			Dimension: DimensionChecksum,

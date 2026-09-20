@@ -29,11 +29,20 @@ type ownedAtlasSumContribution struct {
 // hash accepted for a history the Atlas community binary wrote, say, which a
 // per-file content hash never reproduces.
 //
-// A non-nil error whose type is *ChecksumMismatchError names the first applied
-// revision no file accounts for. The bool reports that at least one row matched
-// a provable applied-history projection rather than the current full-directory
-// entry: those rows verify, and a writer that proceeds reconciles them. Nothing
-// here writes, so a caller in a preflight sees the fact without acting on it.
+// Two error types name a row this directory cannot vouch for, and a caller
+// matching only one of them handles half the question:
+//
+//   - *MissingMigrationError, for the first applied revision the directory
+//     holds no file for. It is reported before any hash is compared, because
+//     there is nothing to compare;
+//   - *ChecksumMismatchError, for the first applied revision whose file no
+//     longer accounts for what the row recorded.
+//
+// Any other non-nil error is a failure to ask the question rather than an
+// answer to it. The bool reports that at least one row matched a provable
+// applied-history projection rather than the current full-directory entry:
+// those rows verify, and a writer that proceeds reconciles them. Nothing here
+// writes, so a caller in a preflight sees the fact without acting on it.
 //
 // Callers wanting the guarantee that a preflight cannot alter what it inspects
 // should put the connection in dry-run mode first: this calls Initialize, which
