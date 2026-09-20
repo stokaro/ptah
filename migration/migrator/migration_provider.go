@@ -23,11 +23,40 @@ type MigrationProvider interface {
 	Migrations() []*Migration
 }
 
+// WholeHistoryProvider is implemented by a provider whose migrations are the
+// entire history a database applied from it, rather than a selection its caller
+// assembled.
+//
+// The rule that reports an applied revision with no file reads "nothing here
+// holds that migration" off the provider, and only a provider that is the whole
+// history can be read that way. A caller registering the one migration it wants
+// applied next -- which [RegisteredMigrationProvider] exists for, and which the
+// integration harness does per step -- would otherwise be reported as having
+// lost every migration it did not register (stokaro/ptah#3446).
+//
+// [FSMigrationProvider] answers yes: it is the directory. A registered provider
+// answers what its caller declared with
+// [RegisteredMigrationProvider.AsWholeHistory], defaulting to no, because it
+// cannot tell its two uses apart and only one of them can carry the rule.
+// An embedder's own provider implements this to get the same check; it is
+// exported for that reason, because a type outside this package has no other
+// way to make the promise.
+type WholeHistoryProvider interface {
+	MigrationProvider
+
+	// DescribesWholeHistory reports that this provider's migrations are all of
+	// them. A provider that cannot promise it answers false, or does not
+	// implement this interface at all. Either answer is the safe one: the rule
+	// is then not asked.
+	DescribesWholeHistory() bool
+}
+
 // RegisteredMigrationProvider is a simple in-memory implementation of MigrationProvider
 type RegisteredMigrationProvider struct {
-	mu         sync.Mutex
-	migrations []*Migration
-	sorted     bool
+	mu           sync.Mutex
+	migrations   []*Migration
+	sorted       bool
+	wholeHistory bool
 }
 
 // NewRegisteredMigrationProvider creates a new in-memory migration provider with the given migrations.
@@ -36,6 +65,36 @@ func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrati
 	return &RegisteredMigrationProvider{
 		migrations: slices.Clone(migrations),
 	}
+}
+
+// AsWholeHistory declares that the migrations registered here are every
+// migration a database applied from this provider, and returns the provider so
+// the call can be chained onto the constructor.
+//
+// It is opt-in because a registered provider cannot tell the two uses apart. An
+// application embedding its whole history registers all of it and wants a
+// database holding a revision none of them account for to be refused -- an
+// older binary in front of a database a newer release migrated is exactly that
+// shape. A caller registering the one migration it wants applied next, which is
+// equally what this type is for, would be refused on every run after the first
+// if the same rule were applied to it.
+//
+// Declaring it when it is not true turns an ordinary incremental apply into a
+// refusal. Declaring it when it is true is what turns the protection on.
+func (p *RegisteredMigrationProvider) AsWholeHistory() *RegisteredMigrationProvider {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.wholeHistory = true
+	return p
+}
+
+// DescribesWholeHistory reports whether
+// [RegisteredMigrationProvider.AsWholeHistory] declared these migrations to be
+// the complete history. A provider straight from the constructor answers false.
+func (p *RegisteredMigrationProvider) DescribesWholeHistory() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.wholeHistory
 }
 
 // Register adds a migration to the provider
@@ -205,6 +264,12 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	}
 	return p, nil
 }
+
+// DescribesWholeHistory reports that this provider's migrations are the
+// directory's own, which is every migration a database applied from it. It is
+// always true: this provider reads a directory, and the directory is the
+// history.
+func (p *FSMigrationProvider) DescribesWholeHistory() bool { return true }
 
 // Migrations returns the list of migrations loaded from the filesystem, sorted by version in ascending order.
 func (p *FSMigrationProvider) Migrations() []*Migration {

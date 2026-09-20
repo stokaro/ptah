@@ -382,6 +382,34 @@ func ExampleNewRegisteredMigrationProvider() {
 	// First migration: v20240101120000 - Create users table
 }
 
+// ExampleRegisteredMigrationProvider_AsWholeHistory declares an in-memory
+// provider to be an application's complete embedded history, which turns on the
+// check that refuses a database holding an applied revision this binary has no
+// migration for. A provider left undeclared carries whatever its caller
+// registered for one run, so the check stays off for it.
+func ExampleRegisteredMigrationProvider_AsWholeHistory() {
+	embedded := migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(20240101120000, "Create users table",
+			"CREATE TABLE users (id INTEGER PRIMARY KEY);", "DROP TABLE users;"),
+		migrator.CreateMigrationFromSQL(20240101130000, "Create orders table",
+			"CREATE TABLE orders (id INTEGER PRIMARY KEY);", "DROP TABLE orders;"),
+	).AsWholeHistory()
+
+	oneStep := migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(20240101140000, "Add totals table",
+			"CREATE TABLE totals (id INTEGER PRIMARY KEY);", "DROP TABLE totals;"),
+	)
+
+	fmt.Printf("embedded history: %d migrations, whole history %t\n",
+		len(embedded.Migrations()), embedded.DescribesWholeHistory())
+	fmt.Printf("one step: %d migrations, whole history %t\n",
+		len(oneStep.Migrations()), oneStep.DescribesWholeHistory())
+
+	// Output:
+	// embedded history: 2 migrations, whole history true
+	// one step: 1 migrations, whole history false
+}
+
 // ExampleNewFSMigrator_errorHandling shows the constructor refusing an
 // incomplete directory: a version missing its up or down half fails loading,
 // before anything touches a database.
