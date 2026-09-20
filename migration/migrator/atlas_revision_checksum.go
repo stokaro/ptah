@@ -182,7 +182,7 @@ func (m *Migrator) classifyAppliedChecksums(
 // directory cannot show, so nothing can say what it did, replay it, or roll it
 // back. It is only a finding where the provider is the directory, so a provider
 // that does not promise to be the whole history is not asked; see
-// [wholeHistoryProvider].
+// [WholeHistoryProvider].
 //
 // There is no exemption for a checkpoint, and none is needed. A checkpoint
 // bootstraps a database that has applied nothing and records its own revision
@@ -207,8 +207,8 @@ func (m *Migrator) missingAppliedRevisions(
 	migrations []*Migration,
 	revisions []MigrationRevision,
 ) []MigrationRevision {
-	provider, ok := m.migrationProvider.(wholeHistoryProvider)
-	if !ok || !provider.describesWholeHistory() {
+	provider, ok := m.migrationProvider.(WholeHistoryProvider)
+	if !ok || !provider.DescribesWholeHistory() {
 		return nil
 	}
 	if m.revisionTableFormat.isAtlas() {

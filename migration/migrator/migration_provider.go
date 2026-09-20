@@ -23,7 +23,7 @@ type MigrationProvider interface {
 	Migrations() []*Migration
 }
 
-// wholeHistoryProvider is implemented by a provider whose migrations are the
+// WholeHistoryProvider is implemented by a provider whose migrations are the
 // entire history a database applied from it, rather than a selection its caller
 // assembled.
 //
@@ -38,11 +38,17 @@ type MigrationProvider interface {
 // answers what its caller declared with
 // [RegisteredMigrationProvider.AsWholeHistory], defaulting to no, because it
 // cannot tell its two uses apart and only one of them can carry the rule.
-type wholeHistoryProvider interface {
-	// describesWholeHistory reports that this provider's migrations are all of
-	// them. A provider that cannot promise it says so by not implementing this
-	// interface, which is the safe answer: the rule is then not asked.
-	describesWholeHistory() bool
+// An embedder's own provider implements this to get the same check; it is
+// exported for that reason, because a type outside this package has no other
+// way to make the promise.
+type WholeHistoryProvider interface {
+	MigrationProvider
+
+	// DescribesWholeHistory reports that this provider's migrations are all of
+	// them. A provider that cannot promise it answers false, or does not
+	// implement this interface at all. Either answer is the safe one: the rule
+	// is then not asked.
+	DescribesWholeHistory() bool
 }
 
 // RegisteredMigrationProvider is a simple in-memory implementation of MigrationProvider
@@ -82,7 +88,10 @@ func (p *RegisteredMigrationProvider) AsWholeHistory() *RegisteredMigrationProvi
 	return p
 }
 
-func (p *RegisteredMigrationProvider) describesWholeHistory() bool {
+// DescribesWholeHistory reports whether
+// [RegisteredMigrationProvider.AsWholeHistory] declared these migrations to be
+// the complete history. A provider straight from the constructor answers false.
+func (p *RegisteredMigrationProvider) DescribesWholeHistory() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.wholeHistory
@@ -256,11 +265,13 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	return p, nil
 }
 
-// Migrations returns the list of migrations loaded from the filesystem, sorted by version in ascending order.
-// describesWholeHistory reports that this provider's migrations are the
-// directory's own, which is every migration a database applied from it.
-func (p *FSMigrationProvider) describesWholeHistory() bool { return true }
+// DescribesWholeHistory reports that this provider's migrations are the
+// directory's own, which is every migration a database applied from it. It is
+// always true: this provider reads a directory, and the directory is the
+// history.
+func (p *FSMigrationProvider) DescribesWholeHistory() bool { return true }
 
+// Migrations returns the list of migrations loaded from the filesystem, sorted by version in ascending order.
 func (p *FSMigrationProvider) Migrations() []*Migration {
 	p.mu.Lock()
 	defer p.mu.Unlock()
