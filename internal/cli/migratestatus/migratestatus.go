@@ -346,6 +346,9 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 // pending change, so HasPendingChanges alone would hand a deployment gate a
 // zero over an edited history (stokaro/ptah#3438).
 func notUpToDateExitCode(status *migrator.MigrationStatus) error {
+	if len(status.MissingMigrations) > 0 {
+		return exitcode.New(1, errors.New("applied migrations with no file detected"))
+	}
 	if len(modifiedMigrations(status)) > 0 {
 		return exitcode.New(1, errors.New("modified migrations detected"))
 	}
@@ -407,6 +410,21 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
 		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision))
+		return nil
+	}
+
+	if len(status.MissingMigrations) > 0 {
+		emit.Println("Status: ❌ Applied migration with no file")
+		for _, record := range status.MissingMigrations {
+			emit.Printf(
+				"Missing Migration: version=%d description=%s recorded=%s\n",
+				record.Version, record.Description, record.AppliedChecksum,
+			)
+		}
+		emit.Println("\nThe database recorded these as applied and this directory has no file " +
+			"for them, so nothing here can say what they did or roll them back. Either the files " +
+			"were removed and belong back, or this is an older release in front of a database a " +
+			"newer one migrated.")
 		return nil
 	}
 

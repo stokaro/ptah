@@ -4389,8 +4389,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3705,
-      "sourceBytes": 26666
+      "visibleWords": 3716,
+      "sourceBytes": 26727
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -6527,8 +6527,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5745,
-      "sourceBytes": 42082
+      "visibleWords": 5904,
+      "sourceBytes": 42999
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
