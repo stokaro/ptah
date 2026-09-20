@@ -6575,8 +6575,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 6020,
-      "sourceBytes": 43677
+      "visibleWords": 6060,
+      "sourceBytes": 43909
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -6918,8 +6918,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 2086,
-      "sourceBytes": 16943
+      "visibleWords": 2090,
+      "sourceBytes": 16975
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",
