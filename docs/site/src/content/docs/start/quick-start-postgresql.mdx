@@ -99,7 +99,7 @@ CREATE TABLE users (
     email TEXT NOT NULL
 );
 '@ | Set-Content schema.sql
-$env:DB = 'postgres://ptah:ptah@localhost:55432/app?sslmode=disable'
+$DB = 'postgres://ptah:ptah@localhost:55432/app?sslmode=disable'
 ```
 
 </TabItem>
