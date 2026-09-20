@@ -1712,12 +1712,16 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 // with no such check — but resuming by a stale index executes the wrong
 // statements, so this is one place where matching would mean reproducing a
 // defect.
+//
+// The interrupted statement is read before the counter, not after. A run that
+// died while its first statement was executing records applied=0, and reading
+// the counter first turns that into "start at 1" -- a replay of the one
+// statement whose outcome nothing knows. The zero says only that no checkpoint
+// was written, and on a dialect where each statement commits by itself the
+// statement may well have committed.
 func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
 		return 0, err
-	}
-	if revision.Applied <= 0 {
-		return 1, nil
 	}
 	if revision.Error == unknownStatementOutcomeError {
 		return 0, fmt.Errorf(
@@ -1726,6 +1730,9 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 			revision.Applied+1,
 			revision.Version,
 		)
+	}
+	if revision.Applied <= 0 {
+		return 1, nil
 	}
 	if revision.Total != total {
 		return 0, fmt.Errorf(

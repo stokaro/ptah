@@ -806,8 +806,11 @@ table.
 context is canceled, or its deadline expires while an autocommit statement is
 in flight, the revision row preserves the last known completed statement and
 marks the interrupted statement's outcome as unknown. Inspect the database
-before repair. Ptah rejects `repair --resume-from` while this marker is present
-because the SQL may already have committed.
+before repair. Both `repair --resume-from` and `up --allow-dirty` refuse the
+row while this marker is present, because the SQL may already have committed
+and neither verb can tell. The refusal holds when the marker sits on the first
+statement, where the row records no completed statement at all: zero says no
+checkpoint was written, not that nothing ran.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
 left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`

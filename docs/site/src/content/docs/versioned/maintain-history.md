@@ -205,8 +205,9 @@ statement by statement and reads zero the same way PostgreSQL does.
 A run that died while a statement was executing reads `applied=0/N` too, and the
 hint reads the recorded failure to tell it apart. Whether that statement
 committed was never recorded, and the statements after it did not run, so no
-verb finishes the migration on its own: a rerun can repeat what committed, and
-`ptah migrations repair --resume-from` refuses the row for the same reason.
+verb finishes the migration on its own: a rerun can repeat what committed,
+which is why `ptah migrations up --allow-dirty` and
+`ptah migrations repair --resume-from` both refuse the row.
 
 Inspect the database, apply what is missing yourself, then
 `ptah migrations repair --version <version>` records the result. A rollback
