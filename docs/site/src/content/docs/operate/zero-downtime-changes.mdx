@@ -79,11 +79,31 @@ docker exec ptah-zero-downtime psql -U ptah -d app -c "CREATE TABLE users (id BI
 rows and finishes in microseconds. It still takes an `ACCESS EXCLUSIVE` lock to
 do it, and that is where an outage comes from.
 
-Open a transaction that reads the table and stays open, which is what a slow
-query, a forgotten session or a long report looks like to the database:
+Name the database once:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+export DB='postgres://ptah:ptah@localhost:55434/app?sslmode=disable'
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+$env:DB = 'postgres://ptah:ptah@localhost:55434/app?sslmode=disable'
+```
+
+</TabItem>
+</Tabs>
+
+Start a transaction that reads the table and stays open for twenty seconds,
+which is what a slow query, a forgotten session or a long report looks like to
+the database. `-d` leaves it running in the background:
 
 ```console
-docker exec ptah-zero-downtime psql -U ptah -d app -c 'BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(30);' &
+docker exec -d ptah-zero-downtime psql -U ptah -d app -c "BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(20);"
 ```
 
 Now ask for the instant change. It does not run, because it cannot get its lock:
@@ -97,81 +117,210 @@ SET
 ERROR:  canceling statement due to lock timeout
 ```
 
-That much is ordinary. The part that is not: while an `ALTER` waits, a plain
-read of the same table cannot get in either. Start one without a timeout and try
-to read behind it:
+That much is ordinary. The part that is not needs an `ALTER` that waits rather
+than giving up, so start one with no timeout of its own:
 
 ```console
-docker exec ptah-zero-downtime psql -U ptah -d app -c "SET lock_timeout='2s'; SELECT count(*) FROM users;"
+docker exec -d ptah-zero-downtime psql -U ptah -d app -c "ALTER TABLE users ADD COLUMN nickname TEXT;"
+```
+
+It is now queued behind the open transaction. Read the table while it waits:
+
+```console
+docker exec ptah-zero-downtime psql -U ptah -d app -c "SET lock_timeout = '2s'; SELECT count(*) FROM users;"
 ```
 
 ```text
 ERROR:  canceling statement due to lock timeout
 ```
 
-A `SELECT` refused by a `SELECT`. PostgreSQL's lock queue is first in, first
-out, so the waiting `ALTER` sits ahead of every reader and writer that arrives
-after it, and one statement that cannot start parks the whole table. The outage
-is not the change. It is the queue the change builds while it waits for a
-transaction that has nothing to do with it.
+A `SELECT` refused, with no writer anywhere in sight. PostgreSQL's lock queue is
+first in, first out, so the waiting `ALTER` sits ahead of every reader and
+writer that arrives after it, and one statement that cannot start parks the
+whole table. The outage is not the change. It is the queue the change builds
+while it waits for a transaction that has nothing to do with it.
 
-So cap the wait. `ptah migrations up` takes `--lock-timeout`, and a migration
-that cannot get its lock inside that window gives up rather than holding the
-door open:
+The first transaction ends after its twenty seconds, the waiting `ALTER` then
+gets its lock, and `users` has its column.
+
+### Cap the wait
+
+`ptah migrations up` takes `--lock-timeout`, and a migration that cannot get its
+lock inside that window gives up rather than holding the door open. Write a
+migration to prove it on:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000001_bio.up.sql <<'SQL'
+ALTER TABLE users ADD COLUMN bio TEXT;
+SQL
+cat > migrations/0000000001_bio.down.sql <<'SQL'
+ALTER TABLE users DROP COLUMN bio;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+ALTER TABLE users ADD COLUMN bio TEXT;
+'@ | Set-Content migrations/0000000001_bio.up.sql
+@'
+ALTER TABLE users DROP COLUMN bio;
+'@ | Set-Content migrations/0000000001_bio.down.sql
+```
+
+</TabItem>
+</Tabs>
+
+Hold the table again, and apply against it:
 
 ```console
-ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --lock-timeout 2s
+docker exec -d ptah-zero-downtime psql -U ptah -d app -c "BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(20);"
+```
+
+```console
+ptah migrations up --db-url "$DB" --migrations-dir ./migrations --lock-timeout 2s
 ```
 
 ```text
-error: error running migrations: failed to apply migration 2: failed to execute migration SQL: SQL execution failed: ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)
+error: error running migrations: failed to apply migration 1: failed to execute migration SQL: SQL execution failed: ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)
 SQL: ALTER TABLE users ADD COLUMN bio TEXT
 ```
 
+That run left something behind, because a migration that started and did not
+finish is not the same as one that never started:
+
+```console
+ptah migrations status --db-url "$DB" --migrations-dir ./migrations
+```
+
+```text
+Status: ❌ Dirty migration state detected
+Dirty Migration: version=1 state=failed direction=up applied=0/1
+Error: failed to execute migration SQL: SQL execution failed: ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)
+SQL: ALTER TABLE users ADD COLUMN bio TEXT
+Error Statement: ALTER TABLE users ADD COLUMN bio TEXT
+```
+
+`applied=0/1` is the number that decides what to do next: no statement of this
+migration ran, so there is nothing to reconcile and the answer is to run it
+again once the long transaction is gone. `--allow-dirty` is how you say you read
+that line:
+
+```console
+ptah migrations up --db-url "$DB" --migrations-dir ./migrations --lock-timeout 2s --allow-dirty
+```
+
+```text
+✅ Migrations completed successfully!
+Database is now at version: 1
+```
+
 A migration you retry in a minute is a better outcome than a table nobody can
-read. `--statement-timeout` caps the other half, where the statement does get
-its lock and then runs too long.
+read, and that is the whole argument for the timeout. `--statement-timeout` caps
+the other half, where the statement does get its lock and then runs too long.
+
+Read `applied=` before reaching for anything else. A migration that stopped
+partway through several statements did change the database, and
+`ptah migrations repair` is the verb for recording what you then fix by hand;
+reaching for it here would record a migration as applied that never ran.
 
 ## Ask the linter what the change will cost
 
-Write the change the way it comes to mind first:
+Add the change you actually came for, written the way it comes to mind:
 
-```sql
--- migrations/0000000001_unsafe.up.sql
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000002_unsafe.up.sql <<'SQL'
 CREATE INDEX idx_users_email ON users (email);
 ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+SQL
+cat > migrations/0000000002_unsafe.down.sql <<'SQL'
+DROP INDEX idx_users_email;
+SQL
 ```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE INDEX idx_users_email ON users (email);
+ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+'@ | Set-Content migrations/0000000002_unsafe.up.sql
+@'
+DROP INDEX idx_users_email;
+'@ | Set-Content migrations/0000000002_unsafe.down.sql
+```
+
+</TabItem>
+</Tabs>
 
 ```console
 ptah migrations lint --dir ./migrations --dialect postgres
 ```
 
 ```text
-migrations/0000000001_unsafe.up.sql:1 [warning] PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
-migrations/0000000001_unsafe.up.sql:2 [warning] PG303: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
+migrations/0000000002_unsafe.down.sql:1 [warning] PG106: DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables (index dropped with a table lock)
+migrations/0000000002_unsafe.up.sql:1 [warning] PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
+migrations/0000000002_unsafe.up.sql:2 [warning] PG303: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
+
+3 finding(s).
 ```
 
-Read PG303 again: it is the whole recipe, in order, in the finding. That is what
-the catalog is for. The rules name the rewrite rather than only the cost, and
-the ones you will meet most are `PG101` and `PG106` for index builds and drops,
-`PG104` and `PG105` for primary keys and unique constraints, `PG303` for
+Read PG303 again: it is the whole recipe, in order, inside the finding. That is
+what the catalog is for. The rules name the rewrite rather than only the cost,
+and the ones you will meet most are `PG101` and `PG106` for index builds and
+drops, `PG104` and `PG105` for primary keys and unique constraints, `PG303` for
 `SET NOT NULL`, `PG305` for `CHECK`, and `PG301` for a column type change.
 
-Findings are warnings, so the command exits zero. `--fail-on warning` is what
-turns the catalog into a gate; [run checks in CI](../../testing/ci/) covers that
-side.
+Findings are warnings, so the command still exits zero. `--fail-on any` is what
+turns the catalog into a gate, because it fails on every finding rather than on
+errors alone; [run checks in CI](../../testing/ci/) covers that side.
 
 ## Rewrite each operation into the form that does not block
 
 **An index builds concurrently.** It takes a weaker lock and lets writes
 continue, at the cost of two passes over the table and a build that cannot run
-inside a transaction. Ptah's directive declares that:
+inside a transaction. Ptah's directive declares that. Rewrite both directions of
+the file the linter named:
 
-```sql
--- migrations/0000000001_index.up.sql
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000002_unsafe.up.sql <<'SQL'
 -- +ptah no_transaction
 CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
+SQL
+cat > migrations/0000000002_unsafe.down.sql <<'SQL'
+-- +ptah no_transaction
+DROP INDEX CONCURRENTLY idx_users_email;
+SQL
 ```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+-- +ptah no_transaction
+CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
+'@ | Set-Content migrations/0000000002_unsafe.up.sql
+@'
+-- +ptah no_transaction
+DROP INDEX CONCURRENTLY idx_users_email;
+'@ | Set-Content migrations/0000000002_unsafe.down.sql
+```
+
+</TabItem>
+</Tabs>
 
 **A constraint arrives unvalidated, then validates.** `NOT VALID` adds it
 without reading existing rows, and `VALIDATE CONSTRAINT` reads them under a lock
@@ -179,14 +328,17 @@ that lets writes through.
 
 **`SET NOT NULL` goes through a validated `CHECK`,** in the order PG303 prints:
 backfill, add `CHECK (col IS NOT NULL) NOT VALID`, validate it, then
-`SET NOT NULL`, which now scans nothing because the check already proved it.
+`SET NOT NULL`, which now scans nothing because the check already proved it. The
+rewrite above drops the `SET NOT NULL` rather than showing all four statements,
+which is the other honest answer: a column that has to become `NOT NULL` is its
+own migration, after the backfill.
 
 **A type change is a new column, a backfill and a swap.** `ALTER COLUMN TYPE`
 rewrites the table and every index on it. Adding a column, backfilling it in
 batches and swapping the two takes longer on the clock and never holds the
 table.
 
-The rewritten directory has nothing left to report:
+The directory now has nothing left to report:
 
 ```console
 ptah migrations lint --dir ./migrations --dialect postgres
@@ -200,12 +352,17 @@ One combination Ptah refuses rather than half-honors: a migration marked
 `no_transaction` cannot carry a lock timeout, because the timeout is set on the
 transaction such a migration does not have.
 
+```console
+ptah migrations up --db-url "$DB" --migrations-dir ./migrations --lock-timeout 2s
+```
+
 ```text
-error: error running migrations: migration 1 is marked no_transaction, so migration timeouts cannot be applied safely
+error: error running migrations: migration 2 is marked no_transaction, so migration timeouts cannot be applied safely
 ```
 
 A concurrent index build is exactly that case, and the trade is the right way
-round: the build takes a weak lock to begin with.
+round: the build takes a weak lock to begin with, so it is the migration that
+needs the timeout least.
 
 ## Expand and contract, because deployed code outlives a migration
 

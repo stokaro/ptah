@@ -153,12 +153,18 @@ jobs:
               - '.github/workflows/docs.yml'
             zerodowntime:
               # The page and the script that runs it, plus what renders the SQL
-              # the page lints and what applies it under a lock timeout.
+              # the page lints, what connects to PostgreSQL, and what carries a
+              # statement's timeout to it. A skipped job reads exactly like a
+              # passing one, so a dependency the tutorial goes through belongs
+              # here rather than in the reader's luck.
               - 'docs/site/src/content/docs/operate/zero-downtime-changes.mdx'
               - 'docs/site/scripts/check-zero-downtime-changes.sh'
               - 'cmd/ptah/**'
               - 'internal/cli/**'
               - 'internal/lintcatalog/**'
+              - 'internal/dbschema/**'
+              - 'core/**'
+              - 'dbschema/**'
               - 'migration/**'
               - 'go.mod'
               - 'go.sum'

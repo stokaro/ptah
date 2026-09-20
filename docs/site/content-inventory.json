@@ -4171,8 +4171,8 @@
         "/testing/ci/"
       ],
       "inboundLinks": [],
-      "visibleWords": 1033,
-      "sourceBytes": 9954
+      "visibleWords": 1283,
+      "sourceBytes": 14404
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",

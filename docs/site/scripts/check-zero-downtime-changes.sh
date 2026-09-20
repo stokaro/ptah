@@ -77,59 +77,85 @@ printf 'check-zero-downtime-changes: the table the page seeds\n'
 expect 'INSERT 0 50000' "$(psql_in "CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL); INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 50000) g;")"
 
 # The lock queue, which is the page's central claim: a reader cannot get in
-# behind an ALTER that is itself waiting. The holder runs detached so the two
-# statements below meet it rather than each other.
+# behind an ALTER that is itself waiting. The page publishes every command
+# below, in this order, including the two detached sessions -- a check that
+# started one of them privately would be testing a page the reader cannot
+# follow.
 printf 'check-zero-downtime-changes: a reader refused behind a waiting ALTER\n'
 docker --context "$docker_context" exec -d "$container" \
-	psql -U ptah -d app -c 'BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(30);'
+	psql -U ptah -d app -c "BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(20);"
 sleep 2
 expect 'canceling statement due to lock timeout' \
 	"$(psql_in "SET lock_timeout = '1s'; ALTER TABLE users ADD COLUMN nickname TEXT;")"
 docker --context "$docker_context" exec -d "$container" \
-	psql -U ptah -d app -c 'ALTER TABLE users ADD COLUMN nickname TEXT;'
+	psql -U ptah -d app -c "ALTER TABLE users ADD COLUMN nickname TEXT;"
 sleep 2
 expect 'canceling statement due to lock timeout' \
 	"$(psql_in "SET lock_timeout = '2s'; SELECT count(*) FROM users;")"
 
+# The holder's twenty seconds have to run out before the next section holds the
+# table again, or its migration queues behind this section's ALTER instead.
+printf 'check-zero-downtime-changes: letting the first transaction finish\n'
+sleep 20
+
+printf 'check-zero-downtime-changes: an apply gives up on its lock timeout\n'
+cat >migrations/0000000001_bio.up.sql <<'SQL'
+ALTER TABLE users ADD COLUMN bio TEXT;
+SQL
+cat >migrations/0000000001_bio.down.sql <<'SQL'
+ALTER TABLE users DROP COLUMN bio;
+SQL
+docker --context "$docker_context" exec -d "$container" \
+	psql -U ptah -d app -c "BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(20);"
+sleep 2
+timeout_output=$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s 2>&1 || true)
+expect 'canceling statement due to lock timeout (SQLSTATE 55P03)' "$timeout_output"
+expect 'SQL: ALTER TABLE users ADD COLUMN bio TEXT' "$timeout_output"
+
+printf 'check-zero-downtime-changes: the failed run is dirty, and retrying clears it\n'
+status_output=$("$ptah" migrations status --db-url "$url" --migrations-dir ./migrations 2>&1 || true)
+expect 'Status: ❌ Dirty migration state detected' "$status_output"
+expect 'Dirty Migration: version=1 state=failed direction=up applied=0/1' "$status_output"
+# The page tells the reader to wait for the long transaction before retrying,
+# and the retry cannot get its lock until this one is gone either.
+sleep 20
+expect 'Migrations completed successfully!' \
+	"$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s --allow-dirty 2>&1)"
+expect 'bio' "$(docker --context "$docker_context" exec "$container" psql -U ptah -d app -c '\d users' 2>&1)"
+
 printf 'check-zero-downtime-changes: the linter names the rewrite\n'
-cat >migrations/0000000001_unsafe.up.sql <<'SQL'
+cat >migrations/0000000002_unsafe.up.sql <<'SQL'
 CREATE INDEX idx_users_email ON users (email);
 ALTER TABLE users ALTER COLUMN email SET NOT NULL;
 SQL
-printf 'DROP INDEX idx_users_email;\n' >migrations/0000000001_unsafe.down.sql
+cat >migrations/0000000002_unsafe.down.sql <<'SQL'
+DROP INDEX idx_users_email;
+SQL
 lint_output=$("$ptah" migrations lint --dir ./migrations --dialect postgres 2>&1)
+expect 'PG106: DROP INDEX without CONCURRENTLY blocks writes' "$lint_output"
 expect 'PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build' "$lint_output"
-expect 'on a populated table use CREATE INDEX CONCURRENTLY outside a transaction' "$lint_output"
 expect 'PG303: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock' "$lint_output"
 expect 'backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards' "$lint_output"
+expect '3 finding(s).' "$lint_output"
+
+# The page names --fail-on any as the gate, so the value has to be one the
+# command accepts. An invalid threshold would be a recommendation that exits on
+# the flag rather than on a finding.
+expect '3 finding(s).' "$("$ptah" migrations lint --dir ./migrations --dialect postgres --fail-on any 2>&1 || true)"
 
 printf 'check-zero-downtime-changes: the rewritten directory has nothing to report\n'
-cat >migrations/0000000001_unsafe.up.sql <<'SQL'
+cat >migrations/0000000002_unsafe.up.sql <<'SQL'
 -- +ptah no_transaction
 CREATE INDEX CONCURRENTLY idx_users_email ON users (email);
 SQL
-cat >migrations/0000000001_unsafe.down.sql <<'SQL'
+cat >migrations/0000000002_unsafe.down.sql <<'SQL'
 -- +ptah no_transaction
 DROP INDEX CONCURRENTLY idx_users_email;
 SQL
 expect 'No lint findings.' "$("$ptah" migrations lint --dir ./migrations --dialect postgres 2>&1)"
 
 printf 'check-zero-downtime-changes: a concurrent build refuses a timeout it cannot honor\n'
-expect 'is marked no_transaction, so migration timeouts cannot be applied safely' \
+expect 'migration 2 is marked no_transaction, so migration timeouts cannot be applied safely' \
 	"$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s 2>&1 || true)"
-
-printf 'check-zero-downtime-changes: an apply gives up on its lock timeout\n'
-rm -rf migrations
-mkdir migrations
-cat >migrations/0000000001_bio.up.sql <<'SQL'
-ALTER TABLE users ADD COLUMN bio TEXT;
-SQL
-printf 'ALTER TABLE users DROP COLUMN bio;\n' >migrations/0000000001_bio.down.sql
-docker --context "$docker_context" exec -d "$container" \
-	psql -U ptah -d app -c 'BEGIN; SELECT count(*) FROM users; SELECT pg_sleep(30);'
-sleep 2
-timeout_output=$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s 2>&1 || true)
-expect 'canceling statement due to lock timeout (SQLSTATE 55P03)' "$timeout_output"
-expect 'SQL: ALTER TABLE users ADD COLUMN bio TEXT' "$timeout_output"
 
 printf 'check-zero-downtime-changes: OK (every claim the page makes)\n'
