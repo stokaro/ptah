@@ -4172,7 +4172,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 1283,
-      "sourceBytes": 14404
+      "sourceBytes": 14400
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -6295,7 +6295,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 515,
-      "sourceBytes": 7026
+      "sourceBytes": 7022
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start.mdx",
