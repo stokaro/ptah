@@ -75,7 +75,16 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	// Before the mismatches: a revision with no file cannot be compared at all,
 	// so no projection explains it and reporting a hash difference elsewhere
 	// first would name the smaller problem.
-	if len(classified.missing) > 0 {
+	//
+	// Only a native history refuses. An Atlas-format one is a history the Atlas
+	// community binary also writes, and measured against the pinned v1.3.0 on a
+	// directory missing an applied file it applies at exit 0 with `No migration
+	// files to execute` and reports `Migration Status: OK`. Refusing here would
+	// stop a pipeline CE runs, and would take away the retired-history reading
+	// Ptah supports on purpose. The fact still reaches
+	// [MigrationStatus.MissingMigrations], where a reader can ask for it without
+	// a command deciding for them (stokaro/ptah#3442).
+	if len(classified.missing) > 0 && !m.revisionTableFormat.isAtlas() {
 		return false, newMissingMigrationError(classified.missing[0])
 	}
 	if len(classified.mismatches) == 0 {
@@ -196,22 +205,20 @@ func (m *Migrator) classifyAppliedChecksums(
 // agree on, while the version is an ordering number a converted directory may
 // assign far from it.
 //
-// The rule is asked of a native revision history only. An Atlas-format history
-// is reshaped by compatibility features this package cannot see the marks of --
-// a surviving Flyway `B` file squashes the migrations it supersedes, and the
-// rows they wrote stay recorded as ordinary applied rows carrying no baseline
-// type, while the file that replaced them can hold any ordering number. What
-// makes that legitimate lives in internal/cli/atlas, so deciding it here would
-// refuse an intact directory. stokaro/ptah#3442 carries the Atlas half.
+// This reports the fact and nothing more;
+// [Migrator.verifyAppliedMigrationChecksums] decides where it is a refusal, and
+// a directory converted from another tool's layout is covered by that decision
+// rather than by an exemption here. Such a directory is always an Atlas
+// revision history, where the shape is legitimate often enough that nothing
+// refuses on it: a surviving Flyway `B` file squashes the migrations it
+// supersedes, and retiring a Flyway file while its history stays readable is a
+// capability with machinery of its own (stokaro/ptah#3442).
 func (m *Migrator) missingAppliedRevisions(
 	migrations []*Migration,
 	revisions []MigrationRevision,
 ) []MigrationRevision {
 	provider, ok := m.migrationProvider.(WholeHistoryProvider)
 	if !ok || !provider.DescribesWholeHistory() {
-		return nil
-	}
-	if m.revisionTableFormat.isAtlas() {
 		return nil
 	}
 	held := make(map[string]struct{}, len(migrations))
