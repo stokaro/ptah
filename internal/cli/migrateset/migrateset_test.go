@@ -293,3 +293,110 @@ func TestMigrationsSetRejectsNegativeVersion(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "--version must not be negative", qt.Commentf("%s", out))
 	assertNoRevisionTable(c, dbPath)
 }
+
+// writeAtlasSum rewrites atlas.sum for whatever the directory now holds. A
+// `migrate set` verifies it before writing revision rows, so a fixture that
+// changes has to be rehashed rather than have the gate relaxed.
+func writeAtlasSum(c *qt.C, dir string) {
+	c.Helper()
+	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrationfile.DirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
+}
+
+// writeAtlasRepeatableMigrations writes a directory whose last entry is a
+// numbered repeatable, whose revision identity is the token `3R`.
+func writeAtlasRepeatableMigrations(t *testing.T) string {
+	c := qt.New(t)
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"1_users.sql":  "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		"2_orders.sql": "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
+		"3R_view.sql":  "CREATE VIEW v AS SELECT 1;\n",
+	}
+	for name, content := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	writeAtlasSum(c, dir)
+	return dir
+}
+
+// A repeatable identity has no number, so the delete's numeric predicate
+// cannot reach it, while the summary resolves `3R` to version 3 and reports it
+// removed. Where the directory still holds the file the version map carries
+// the number and both agree; where the file is gone there is no map entry, and
+// the row survived a removal the command said it had made.
+func TestMigrationsSetRemovesAnUnownedRepeatableRevision(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+
+	out, err := runSet(append(args, "--version", "3")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1", "2", "3R"})
+
+	// The repeatable leaves the directory; its revision row stays behind.
+	c.Assert(os.Remove(filepath.Join(migrationsDir, "3R_view.sql")), qt.IsNil)
+	writeAtlasSum(c, migrationsDir)
+
+	out, err = runSet(append(args, "--version", "0")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "- 3 (view)")
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.HasLen, 0)
+}
+
+// The same disagreement above zero: a set to 1 reports the repeatable removed
+// and has to remove it.
+func TestMigrationsSetRemovesAnUnownedRepeatableRevisionAboveZero(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+
+	out, err := runSet(append(args, "--version", "3")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(os.Remove(filepath.Join(migrationsDir, "3R_view.sql")), qt.IsNil)
+	writeAtlasSum(c, migrationsDir)
+
+	out, err = runSet(append(args, "--version", "1")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "- 3 (view)")
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1"})
+}
+
+// The control the fix must not break: a repeatable the directory still owns is
+// removed by the numeric predicate through its version map, and the Atlas
+// metadata row is not reported removed and is not touched.
+func TestMigrationsSetRemovesAnOwnedRepeatableRevision(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+
+	out, err := runSet(append(args, "--version", "3")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	out, err = runSet(append(args, "--version", "1")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1"})
+}

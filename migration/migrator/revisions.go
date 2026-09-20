@@ -922,6 +922,21 @@ func atlasRevisionErrorTests(dialect string) (recorded, absent string) {
 // above, is what protects the statements that select over every revision row.
 const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END`
 
+// atlasVersionNumberIsNull is the Go reading of that guard: it reports whether
+// the numeric form of a revision version is NULL, which is what makes the row
+// uncomparable to a numeric boundary.
+//
+// It is declared here, against the literal it reads, because two places decide
+// what a `set` removes. The delete compares numbers in SQL and a repeatable
+// identity has none, while the summary compares the version parsed out of that
+// identity and `3R` parses to 3. Left to themselves they disagree: the summary
+// reports the row removed and the row is still there (stokaro/ptah#3455).
+func atlasVersionNumberIsNull(revisionVersion string) bool {
+	return strings.HasPrefix(revisionVersion, ".") ||
+		revisionVersion == "R" ||
+		strings.HasSuffix(revisionVersion, "R")
+}
+
 // atlasVersionNumberExpression renders the numeric form of the version column.
 //
 // The CASE arm turns dot-prefixed metadata rows into NULL before the cast, and
@@ -2740,6 +2755,9 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
+	exactRemoved = append(exactRemoved, unnumberedRemovedAtlasRevisions(
+		existing, migrations, version, retired, exactRemoved,
+	)...)
 	result := atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
 	if m.revisionTableFormat.isAtlas() {
 		err = m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version, exactRemoved)
@@ -2810,6 +2828,37 @@ func revisionRemovedByAtlasSet(
 	key := revision.RevisionVersion()
 	return slices.Contains(exactRemoved, key) ||
 		(revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key))
+}
+
+// unnumberedRemovedAtlasRevisions names the rows a set removes that its numeric
+// predicate cannot reach.
+//
+// A repeatable identity such as `3R` is NULL to that predicate, so `NULL > 0`
+// leaves the row where it is, while the summary resolved the same identity to
+// version 3 and reported it removed. Naming those rows in the delete's explicit
+// list is what makes the two agree, and it is short by construction: only a
+// repeatable and an Atlas metadata row have no number, and a metadata row is
+// never reported removed, because it resolves to version 0 and no boundary is
+// below that.
+func unnumberedRemovedAtlasRevisions(
+	existing []MigrationRevision,
+	migrations []*Migration,
+	version int64,
+	retired, exactRemoved []string,
+) []string {
+	target := setBoundary(migrations)
+	var keys []string
+	for _, revision := range existing {
+		key := revision.RevisionVersion()
+		if !atlasVersionNumberIsNull(key) || slices.Contains(exactRemoved, key) {
+			continue
+		}
+		if !revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 // setBoundary names the migration a `set` leaves as the new head: the last one
