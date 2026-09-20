@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/ddltx"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -3075,6 +3076,26 @@ func (m *Migrator) validateRepairMigrationSQL(
 	return nil
 }
 
+// revisionProvesNothingRan reports whether this dirty revision is evidence that
+// no statement of the migration reached the database, rather than evidence only
+// that none was recorded.
+//
+// isZeroProgressUpFailure is the row half: applied is zero, the run was an up
+// run, and the outcome of no statement is in doubt. The class is the other
+// half, and both are needed. Where a statement commits on its own, nothing
+// writes a per-statement checkpoint, so a body that ran and then lost the write
+// that records the migration reads exactly like a body that never started --
+// and there the repair that records it applied is the documented recovery, not
+// a mistake. Where the body rolls back with that write, applied=0 leaves
+// nothing behind, and recording it would claim a schema the database does not
+// have.
+func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
+	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
+		return false
+	}
+	return !ddltx.BodySurvivesRevisionCompletionFailure(ddltx.ClassOf(dialect))
+}
+
 func (m *Migrator) repairUpMigration(
 	ctx context.Context,
 	migration *Migration,
@@ -3097,12 +3118,8 @@ func (m *Migrator) repairUpMigration(
 	}
 	// What is left here would be recorded applied without running. That is the
 	// point of the verb where the operator has already applied the migration by
-	// hand, and a mistake where nothing ran at all, which the row says
-	// (stokaro/ptah#3452). isZeroProgressUpFailure is the one reading of "the
-	// row says nothing ran", and it is what keeps an interrupted statement --
-	// applied=0 as well, outcome unrecorded -- on the repair path the operator
-	// needs for it.
-	if revision != nil && revision.Dirty && isZeroProgressUpFailure(*revision) && !opts.Force {
+	// hand, and a mistake where nothing ran at all (stokaro/ptah#3452).
+	if revisionProvesNothingRan(revision, m.connectionDialect()) && !opts.Force {
 		return &RepairNothingAppliedError{Version: migration.Version}
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {

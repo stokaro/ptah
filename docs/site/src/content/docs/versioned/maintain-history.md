@@ -193,6 +193,14 @@ than a repair. Repair refuses that row instead of recording a migration that
 never ran, and `--force` is how an operator who applied it themselves overrides
 the refusal.
 
+That reading of `applied=0/N` holds where a failed body rolls back with the
+write that records it, which is PostgreSQL and SQLite. On ClickHouse, Oracle,
+Spanner and the MySQL family a statement commits on its own, so nothing writes
+a per-statement checkpoint and the same row is what a body that ran and then
+lost the revision write leaves behind. The hint says so there, repair does not
+refuse, and recording the migration applied is the recovery once you have
+confirmed the schema is in place.
+
 A run that died while a statement was executing reads `applied=0/N` too, and the
 hint reads the recorded failure to tell it apart. Whether that statement
 committed was never recorded, and the statements after it did not run, so no

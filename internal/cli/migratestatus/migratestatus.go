@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/ddltx"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -409,7 +410,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		if status.DirtyRevision.ErrorStatement != "" {
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
-		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision))
+		emit.Printf("\n%s\n", dirtyRevisionRecoveryHint(status.DirtyRevision, conn.Info().Dialect))
 		return nil
 	}
 
@@ -486,21 +487,33 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // rollback already dropped -- so it points at the resume that finishes the
 // rollback instead, at the statement the revision says comes next.
 //
-// The other shapes are read off `applied`, and an interrupted statement is read
-// before them: `applied` counts what is known to have committed, and the
-// statement after it may have committed as well without recording that, which
-// no sentence written off that count alone can be right about.
+// The other shapes are read off `applied`, which is why the dialect is read
+// too. `applied` counts what is known to have committed, and an interrupted
+// statement may have committed as well without recording that; on a dialect
+// whose statements commit on their own, nothing writes a checkpoint at all, so
+// zero there says only that no progress was recorded. Neither shape can be
+// answered from the count alone.
 //
 // `--resume-from` is offered only where a statement is left to run. A body that
 // committed every statement and stopped before recording that has none, and the
 // command refuses the offset past the end, so a completed body is read before
 // the direction split rather than inside each side of it.
-func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision) string {
+func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision, dialect string) string {
 	if revision.StatementOutcomeUnknown() {
 		return unknownStatementOutcomeHint(revision)
 	}
 	if revision.Applied == revision.Total && revision.Total > 0 {
 		return completedBodyHint(revision)
+	}
+	if revision.Applied == 0 && ddltx.BodySurvivesRevisionCompletionFailure(ddltx.ClassOf(dialect)) {
+		return fmt.Sprintf(
+			"On %s a statement commits on its own, so nothing records how far this run got. "+
+				"Inspect the database: if the migration is there, run 'ptah migrations repair "+
+				"--version %d' to record it applied; if it is not, run 'ptah migrations up "+
+				"--allow-dirty' to apply it.",
+			dialect,
+			revision.Version,
+		)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(

@@ -21,11 +21,13 @@ import (
 func TestDirtyRevisionRecoveryHint(t *testing.T) {
 	tests := []struct {
 		name     string
+		dialect  string
 		revision migrator.MigrationRevision
 		want     string
 	}{
 		{
-			name: "a statement was in flight",
+			name:    "a statement was in flight",
+			dialect: "postgres",
 			revision: migrator.MigrationRevision{
 				Version: 2,
 				Applied: 0,
@@ -38,7 +40,8 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"the migration applied -- rerunning it could repeat the statement that committed.",
 		},
 		{
-			name: "a rollback statement was in flight",
+			name:    "a rollback statement was in flight",
+			dialect: "postgres",
 			revision: migrator.MigrationRevision{
 				Version:   2,
 				Applied:   0,
@@ -53,7 +56,8 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"set --version <previous>' if you finished the rollback by hand.",
 		},
 		{
-			name: "a statement was in flight after two committed",
+			name:    "a statement was in flight after two committed",
+			dialect: "postgres",
 			revision: migrator.MigrationRevision{
 				Version: 2,
 				Applied: 2,
@@ -66,19 +70,35 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"the migration applied -- rerunning it could repeat the statement that committed.",
 		},
 		{
+			name:    "no progress recorded where statements commit on their own",
+			dialect: "clickhouse",
+			revision: migrator.MigrationRevision{
+				Version: 2,
+				Applied: 0,
+				Total:   3,
+			},
+			want: "On clickhouse a statement commits on its own, so nothing records how far " +
+				"this run got. Inspect the database: if the migration is there, run 'ptah " +
+				"migrations repair --version 2' to record it applied; if it is not, run 'ptah " +
+				"migrations up --allow-dirty' to apply it.",
+		},
+		{
 			name:     "nothing ran",
+			dialect:  "postgres",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 0, Total: 3},
 			want: "No statement of this migration reached the database. " +
 				"Run 'ptah migrations up --allow-dirty' to apply it.",
 		},
 		{
 			name:     "every statement committed",
+			dialect:  "postgres",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 3, Total: 3},
 			want: "Every statement of this migration committed and the run stopped before " +
 				"recording that. Run 'ptah migrations repair --version 2' to record it applied.",
 		},
 		{
-			name: "every down statement committed",
+			name:    "every down statement committed",
+			dialect: "postgres",
 			revision: migrator.MigrationRevision{
 				Version:   2,
 				Applied:   3,
@@ -90,13 +110,15 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 		},
 		{
 			name:     "some statements ran",
+			dialect:  "postgres",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 1, Total: 3},
 			want: "This migration stopped after 1 of 3 statements. Run 'ptah migrations repair " +
 				"--version 2 --resume-from 2' to run the rest, or repair with --force once you " +
 				"have run them yourself.",
 		},
 		{
-			name: "an interrupted rollback",
+			name:    "an interrupted rollback",
+			dialect: "postgres",
 			revision: migrator.MigrationRevision{
 				Version:   2,
 				Applied:   1,
@@ -112,7 +134,7 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(dirtyRevisionRecoveryHint(&test.revision), qt.Equals, test.want)
+			c.Assert(dirtyRevisionRecoveryHint(&test.revision, test.dialect), qt.Equals, test.want)
 		})
 	}
 }
