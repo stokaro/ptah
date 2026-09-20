@@ -240,6 +240,7 @@ export const sidebar = [
     items: [
       { slug: 'operate/overview', label: 'Overview' },
       { slug: 'operate/deliver' },
+      { slug: 'operate/zero-downtime-changes' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
       { slug: 'operate/kubernetes-operator' },
       { slug: 'versioned/reference-data' },

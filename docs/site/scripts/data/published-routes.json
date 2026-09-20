@@ -99,6 +99,7 @@
   "/operate/overview/",
   "/operate/seed-data/",
   "/operate/troubleshooting/",
+  "/operate/zero-downtime-changes/",
   "/reference/atlas-commands/",
   "/reference/atlas-docs-coverage/",
   "/reference/atlas-project-config/",

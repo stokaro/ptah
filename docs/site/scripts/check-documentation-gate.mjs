@@ -15,6 +15,7 @@ const jobContracts = [
   { changed: 'EXAMPLES_CHANGED', result: 'EXAMPLES_RESULT', label: 'example acceptance' },
   { changed: 'INFERENCE_CHANGED', result: 'INFERENCE_RESULT', label: 'inference quick start' },
   { changed: 'POSTGRES_CHANGED', result: 'POSTGRES_RESULT', label: 'PostgreSQL quick start' },
+  { changed: 'ZERODOWNTIME_CHANGED', result: 'ZERODOWNTIME_RESULT', label: 'zero-downtime acceptance' },
   { changed: 'QUICKSTART_CHANGED', result: 'QUICKSTART_RESULT', label: 'quick-start acceptance' },
   { changed: 'ASSETS_CHANGED', result: 'ASSETS_RESULT', label: 'generated assets' },
 ];
@@ -183,9 +184,18 @@ function selftest() {
     {
       label: 'root Go dependency change',
       paths: ['go.mod'],
-      // The PostgreSQL quick start joins this list because a dependency change
-      // can change the SQL its page prints, and the page states that SQL.
-      groups: ['examples', 'generated', 'inference', 'inventory', 'postgres', 'quickstart'],
+      // The PostgreSQL quick start and the zero-downtime page join this list
+      // because a dependency change can change the SQL and the findings their
+      // pages print, and both pages state those.
+      groups: [
+        'examples',
+        'generated',
+        'inference',
+        'inventory',
+        'postgres',
+        'quickstart',
+        'zerodowntime',
+      ],
     },
     {
       label: 'nested documentation module source',
@@ -214,6 +224,16 @@ function selftest() {
       label: 'the script that runs it',
       paths: ['docs/site/scripts/check-postgresql-quick-start.sh'],
       groups: ['postgres', 'site', 'style'],
+    },
+    {
+      label: 'the zero-downtime page',
+      paths: ['docs/site/src/content/docs/operate/zero-downtime-changes.mdx'],
+      groups: ['inventory', 'quickstart', 'site', 'style', 'zerodowntime'],
+    },
+    {
+      label: 'the script that runs the zero-downtime page',
+      paths: ['docs/site/scripts/check-zero-downtime-changes.sh'],
+      groups: ['site', 'style', 'zerodowntime'],
     },
   ];
   for (const pathCase of pathCases) {

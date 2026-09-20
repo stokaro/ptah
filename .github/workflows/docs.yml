@@ -26,6 +26,7 @@ jobs:
       examples: ${{ steps.filter.outputs.examples }}
       inference: ${{ steps.filter.outputs.inference }}
       postgres: ${{ steps.filter.outputs.postgres }}
+      zerodowntime: ${{ steps.filter.outputs.zerodowntime }}
       quickstart: ${{ steps.filter.outputs.quickstart }}
       assets: ${{ steps.filter.outputs.assets }}
       embedded: ${{ steps.embedded-filter.outputs.embedded }}
@@ -146,6 +147,18 @@ jobs:
               - 'internal/dbschema/**'
               - 'core/**'
               - 'dbschema/**'
+              - 'migration/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docs.yml'
+            zerodowntime:
+              # The page and the script that runs it, plus what renders the SQL
+              # the page lints and what applies it under a lock timeout.
+              - 'docs/site/src/content/docs/operate/zero-downtime-changes.mdx'
+              - 'docs/site/scripts/check-zero-downtime-changes.sh'
+              - 'cmd/ptah/**'
+              - 'internal/cli/**'
+              - 'internal/lintcatalog/**'
               - 'migration/**'
               - 'go.mod'
               - 'go.sum'
@@ -764,6 +777,33 @@ jobs:
           go build -o bin/ptah ./cmd/ptah
           docs/site/scripts/check-postgresql-quick-start.sh
 
+  zero-downtime-changes:
+    name: Zero-downtime acceptance
+    needs: changes
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.zerodowntime == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The page promises a reader refused behind a waiting ALTER, a lint
+      # finding that names the rewrite, and an apply that gives up on its lock
+      # timeout. This runs those and fails on the first one that answers
+      # differently.
+      - name: Execute the disposable zero-downtime tutorial
+        env:
+          PTAH_DOCKER_CONTEXT: default
+        run: |
+          set -euo pipefail
+          go build -o bin/ptah ./cmd/ptah
+          docs/site/scripts/check-zero-downtime-changes.sh
+
   generated-documentation:
     name: Generated documentation
     needs: changes
@@ -871,6 +911,7 @@ jobs:
       - example-acceptance
       - inference-quick-start
       - postgresql-quick-start
+      - zero-downtime-changes
       - quickstart-acceptance
       - asset-freshness
     runs-on: ubuntu-latest
@@ -886,6 +927,7 @@ jobs:
           EXAMPLES_CHANGED: ${{ needs.changes.outputs.examples }}
           INFERENCE_CHANGED: ${{ needs.changes.outputs.inference }}
           POSTGRES_CHANGED: ${{ needs.changes.outputs.postgres }}
+          ZERODOWNTIME_CHANGED: ${{ needs.changes.outputs.zerodowntime }}
           QUICKSTART_CHANGED: ${{ needs.changes.outputs.quickstart }}
           ASSETS_CHANGED: ${{ needs.changes.outputs.assets }}
           CHANGES_RESULT: ${{ needs.changes.result }}
@@ -896,6 +938,7 @@ jobs:
           EXAMPLES_RESULT: ${{ needs.example-acceptance.result }}
           INFERENCE_RESULT: ${{ needs.inference-quick-start.result }}
           POSTGRES_RESULT: ${{ needs.postgresql-quick-start.result }}
+          ZERODOWNTIME_RESULT: ${{ needs.zero-downtime-changes.result }}
           QUICKSTART_RESULT: ${{ needs.quickstart-acceptance.result }}
           ASSETS_RESULT: ${{ needs.asset-freshness.result }}
         run: |
