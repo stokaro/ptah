@@ -1,13 +1,14 @@
 // Package dbverify implements "ptah db verify", which evaluates release-state
 // assertions against an existing database and changes nothing in it.
 //
-// Ptah could already say that a migration ran and that a schema matches a
-// declaration. Neither answers the question a release rests on: did the change
-// produce the result it was for. A migration that adds a column and backfills
-// it can succeed statement by statement, match the declaration, and report no
-// drift, while the backfill predicate was wrong and a subset of rows kept a
-// null. Drift compares structure; this verb evaluates requirements about the
-// data (stokaro/ptah#3404).
+// `migrations status` answers whether the recorded history matches the
+// directory, and `schema drift` whether the structure matches the declaration.
+// Neither answers what a release rests on: did the change produce the result it
+// was for. A migration that adds a column and backfills it can succeed
+// statement by statement, match the declaration, and report no drift, while the
+// backfill predicate was wrong and a subset of rows kept a null. Drift compares
+// structure; this verb evaluates requirements about the data
+// (stokaro/ptah#3404).
 //
 // The requirements are written as the `-- +ptah check` directives a migration
 // already uses, so versioned migrations and direct schema changes express a
