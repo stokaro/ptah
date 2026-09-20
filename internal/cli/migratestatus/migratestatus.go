@@ -506,14 +506,7 @@ func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision, dialect str
 		return completedBodyHint(revision)
 	}
 	if revision.Applied == 0 && ddltx.BodySurvivesRevisionCompletionFailure(ddltx.ClassOf(dialect)) {
-		return fmt.Sprintf(
-			"On %s a statement commits on its own, so nothing records how far this run got. "+
-				"Inspect the database: if the migration is there, run 'ptah migrations repair "+
-				"--version %d' to record it applied; if it is not, run 'ptah migrations up "+
-				"--allow-dirty' to apply it.",
-			dialect,
-			revision.Version,
-		)
+		return uncheckpointedHint(revision, dialect)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(
@@ -553,6 +546,32 @@ func completedBodyHint(revision *migrator.MigrationRevision) string {
 	return fmt.Sprintf(
 		"Every statement of this migration committed and the run stopped before recording that. "+
 			"Run 'ptah migrations repair --version %d' to record it applied.",
+		revision.Version,
+	)
+}
+
+// uncheckpointedHint names what ends a dirty row on a dialect that writes no
+// per-statement checkpoint. Zero progress says only that nothing was recorded
+// there, so the operator reads the database, and the hint names the command for
+// each state they can find. Which states those are depends on the direction,
+// and naming the wrong ones is worse than naming none: 'migrations up
+// --allow-dirty' is refused outright over a row a rollback left.
+func uncheckpointedHint(revision *migrator.MigrationRevision, dialect string) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"On %s a statement commits on its own, so nothing records how far this rollback got. "+
+				"Inspect the database: if the migration is still there, run 'ptah migrations repair "+
+				"--version %d' to record it applied; if the rollback finished, run 'ptah migrations "+
+				"set --version <previous>' to move the boundary back.",
+			dialect,
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"On %s a statement commits on its own, so nothing records how far this run got. Inspect "+
+			"the database: if the migration is there, run 'ptah migrations repair --version %d' to "+
+			"record it applied; if it is not, run 'ptah migrations up --allow-dirty' to apply it.",
+		dialect,
 		revision.Version,
 	)
 }

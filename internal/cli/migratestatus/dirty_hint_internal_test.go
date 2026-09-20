@@ -83,6 +83,21 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"migrations up --allow-dirty' to apply it.",
 		},
 		{
+			name:    "no rollback progress recorded where statements commit on their own",
+			dialect: "clickhouse",
+			revision: migrator.MigrationRevision{
+				Version:   2,
+				Applied:   0,
+				Total:     3,
+				Direction: migrator.MigrationDirectionDown,
+			},
+			want: "On clickhouse a statement commits on its own, so nothing records how far " +
+				"this rollback got. Inspect the database: if the migration is still there, run " +
+				"'ptah migrations repair --version 2' to record it applied; if the rollback " +
+				"finished, run 'ptah migrations set --version <previous>' to move the boundary " +
+				"back.",
+		},
+		{
 			name:     "nothing ran",
 			dialect:  "postgres",
 			revision: migrator.MigrationRevision{Version: 2, Applied: 0, Total: 3},
