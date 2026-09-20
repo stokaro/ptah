@@ -73,6 +73,10 @@ var verbs = map[string]Verb{
 		"drops every schema object in the database it is given"},
 	"db read": {TargetReads, ScratchNone,
 		"introspects the database and prints what it found"},
+	"db verify": {TargetReads, ScratchNone,
+		"evaluates release assertions against the database it is given; every assertion is " +
+			"proved to be a read-only SELECT before it is sent, and the session is opened " +
+			"read-only wherever the engine has such a mode"},
 
 	// inference.
 	"inference abandon": {TargetWrites, ScratchNone,
