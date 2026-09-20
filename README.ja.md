@@ -4,7 +4,7 @@
 
 <p align="center">Ptah（プタハ）は、スキーマと永続的な推論状態を対象とするオープンソースのデータベース変更管理ツールです。</p>
 
-<p align="center"><a href="README.md">English</a> · <strong>日本語</strong></p>
+<p align="center"><a href="README.md">English</a> · <strong>日本語</strong> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a></p>
 
 <p align="center">
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-unit-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-unit-tests.yml?branch=master&label=tests&logo=github" alt="master ブランチにおける単体テストワークフローの状態"></a>

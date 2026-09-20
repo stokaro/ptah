@@ -782,14 +782,14 @@ function bareFlagViolations(lines) {
 // self-test both call it, so a rule that stops firing here fails the self-test
 // instead of quietly passing every file forever.
 export function analyze(source, options = {}) {
-  const { siteContent = true } = options;
+  const { siteContent = true, language = "en" } = options;
   const findings = [];
   const { prose, code, text, fenceErrors } = splitSource(source);
 
   for (const [index, line] of prose.entries()) {
     const lineNumber = index + 1;
 
-    for (const [british, american] of britishSpellings) {
+    for (const [british, american] of language === "en" ? britishSpellings : []) {
       const pattern = new RegExp(`\\b${british.replace(/ /g, '\\s')}[a-z]*`, 'gi');
       for (const match of line.matchAll(pattern)) {
         if (isAttributeName(line, match)) continue;
@@ -800,7 +800,7 @@ export function analyze(source, options = {}) {
       }
     }
 
-    for (const word of bannedFiller) {
+    for (const word of language === "en" ? bannedFiller : []) {
       for (const match of line.matchAll(new RegExp(`\\b${word}\\b`, 'gi'))) {
         findings.push({
           line: lineNumber,
@@ -809,7 +809,7 @@ export function analyze(source, options = {}) {
       }
     }
 
-    for (const word of fillerAdjectives) {
+    for (const word of language === "en" ? fillerAdjectives : []) {
       for (const match of line.matchAll(new RegExp(`\\b${word}\\b`, 'gi'))) {
         findings.push({
           line: lineNumber,
@@ -851,7 +851,9 @@ export function analyze(source, options = {}) {
 function checkFile(file) {
   const displayPath = toPosix(relative(repoRoot, file));
   const siteContent = toPosix(file).includes('/docs/site/src/content/docs/');
-  return analyze(readFileSync(file, 'utf8'), { siteContent }).map(
+  // A translated README declares its language in its established filename.
+  const language = /(?:^|\/)README\.([a-z]{2})(?:-[A-Za-z]{2,4})?\.md$/.exec(displayPath)?.[1] ?? 'en';
+  return analyze(readFileSync(file, 'utf8'), { siteContent, language }).map(
     (finding) => `${displayPath}:${finding.line}: ${finding.message}`,
   );
 }
@@ -861,6 +863,18 @@ function checkFile(file) {
 // here would let a broken checker keep reporting OK.
 function selftest() {
   const failures = [];
+  for (const [language, text] of [['de', 'Ein Schema visualisieren.'], ['fr', 'Utiliser le programme sous licence MIT.']]) {
+    if (analyze(text, { language }).length) failures.push(`${language}: valid translated prose was refused`);
+    if (!analyze(text, { language: 'en' }).some((f) => f.message.includes('British spelling'))) {
+      failures.push(`${language}: the English spelling rule stopped running`);
+    }
+    if (!analyze(`${text}\n\n![](image.svg)`, { language }).some((f) => f.message.includes('alt'))) {
+      failures.push(`${language}: missing image alt text was accepted`);
+    }
+    if (!analyze(text + '\n\n```sh\nptah version', { language }).some((f) => f.message.includes('fence'))) {
+      failures.push(`${language}: unclosed code fence was accepted`);
+    }
+  }
 
   const violating = [
     'The behaviour is documented.',

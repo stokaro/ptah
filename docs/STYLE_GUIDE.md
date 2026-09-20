@@ -970,8 +970,8 @@ in this guide is a review responsibility.
 | Paragraphs under 900 rendered display columns | 4 | `check:style` |
 | A translation's fenced blocks match its source's, in order | 17 | `check:translations` |
 | A translation's link, image and badge addresses match its source's, in order | 17 | `check:translations` |
-| A translation and its source link to each other | 17 | `check:translations` |
-| The product name is glossed once per translated page | 17 | `check:translations` |
+| Every README links to all other available languages near the top | 17 | `check:translations` |
+| The product name is glossed once per Japanese page | 17 | `check:translations` |
 | In-page and cross-page anchors resolve | 12 | `check:links` |
 | Command and flag reference filters work with the keyboard | 3, 13 | `check:accessibility` |
 | No page scrolls sideways at 390px or 1280px | 13 | `check:responsive` |
@@ -1179,9 +1179,11 @@ representative page shapes.
 
 ## 17. Translated pages
 
-A translation is named `README.ja.md` beside the `README.md` it translates:
-the base name, the ISO 639-1 language tag, `.md`. `check:style` governs it the
-same way it governs the source, and `check:translations` holds it to the source.
+Translations are `README.ja.md`, `README.de.md` and `README.fr.md` beside the
+English `README.md`: the base name, the ISO 639-1 language tag, `.md`.
+`check:style` applies the shared structural rules to every language; English
+spelling and vocabulary rules apply only to English. `check:translations`
+holds each translation to the English source.
 
 **Translate the prose. Leave everything else byte for byte.** A command, a
 flag, a schema, a block of expected output means the same thing in every
@@ -1197,14 +1199,17 @@ inside a fence -- a README writes them in a centered HTML header and in prose
 links, where the block rule cannot see them. So the gate compares the `src` and
 `href` of both files, and the destination of every Markdown link and image, in
 order. Two kinds are excluded because they are the two that should differ: the
-reciprocal language link, and an in-page anchor, whose heading is translated.
+language-switch links, and an in-page anchor, whose heading is translated.
 The link text is prose and is not read.
 
-**The two files link to each other, near the top.** A reader who cannot read
+**Every file links to all other available languages within its first 12 lines.** A reader who cannot read
 the page they landed on needs the way out to be the first thing they find, and
-a translation nothing points at is a page nobody reaches.
+a translation nothing points at is a page nobody reaches. Use the native labels
+English, 日本語, Deutsch and Français. Mark links to untranslated documentation
+as English and keep their existing destinations.
 
-**Give the product name its reading once.** In Japanese the first mention is
+**Give the Japanese product name its reading once.** German and French use
+`Ptah` throughout, without a pronunciation gloss. In Japanese the first mention is
 `Ptah（プタハ）` and every mention after it is `Ptah`. The reading appears
 inside that first mention and nowhere else: a page that writes it again has
 started using the reading as the name, which is what this rule prevents.
