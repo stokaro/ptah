@@ -394,6 +394,39 @@ a near-final timestamp and write-order-dependent duration. PostgreSQL-family
 revision tables use `TIMESTAMPTZ` for `executed_at`, matching Atlas-created
 tables.
 
+## Who owns the metadata tables
+
+Ptah creates the revision table and the operation log with `CREATE TABLE IF
+NOT EXISTS`, so a table already standing under that name would be adopted
+whatever put it there. A run refuses a metadata table the connecting role
+neither owns nor inherits, before anything reads or writes it:
+
+```text
+refusing to use metadata table schema_migrations: it is owned by "someone_else"
+and this connection runs as "app", so it is not the table Ptah would have
+created.
+```
+
+A table an administrator created and granted to the application is accepted
+when the application is a member of the owning role, which is what the server
+is asked rather than two names compared. Where ownership cannot be
+transferred, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1` accepts the table as it is.
+
+The refusal is ownership rather than a list of what a table may carry: on the
+PostgreSQL family a trigger, a rule, a default expression on a column Ptah does
+not write and a row-level policy each run somebody else's SQL under the
+migration role, and provenance covers the next one too.
+
+Engines whose catalog reports no table owner are outside it: the MySQL family,
+SQLite, ClickHouse and Spanner. On MySQL and MariaDB a trigger runs as its
+definer rather than as the connected account, so the same table gains its
+author a hook on every migration and not the migration role's privileges.
+
+A foreign **log** table warns and the migration runs. Ptah cannot record what
+it did without a revision table, so that refusal is terminal; the log is a
+record beside the work, and failing the run would hand anyone who can create a
+table in the metadata schema a way to stop every migration.
+
 ## Atlas-compatible surface
 
 In the `ptah-compat` drop-in binary, `migrate edit`, `migrate rebase`, and
