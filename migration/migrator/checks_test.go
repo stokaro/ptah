@@ -22,7 +22,7 @@ func TestParseChecks_MySQLBackslashEscaping(t *testing.T) {
 	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
 		Name:   "escaped",
 		Assert: `SELECT 'it\'s;ok'`,
-		OnFail: migrator.OnFailAbort,
+		OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
 	}})
 }
 
@@ -38,7 +38,7 @@ func TestParseChecks_ClickHouseBackslashEscaping(t *testing.T) {
 	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
 		Name:   "escaped",
 		Assert: `SELECT 'it\'s;ok'`,
-		OnFail: migrator.OnFailAbort,
+		OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
 	}})
 }
 
@@ -54,7 +54,7 @@ DROP TABLE users;
 	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
 		Name:   "after_literal",
 		Assert: "SELECT 1",
-		OnFail: migrator.OnFailAbort,
+		OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
 	}})
 }
 
@@ -70,7 +70,7 @@ DROP TABLE users;
 	c.Assert(checks, qt.DeepEquals, []migrator.Check{{
 		Name:   "after_escape_literal",
 		Assert: "SELECT 1",
-		OnFail: migrator.OnFailAbort,
+		OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
 	}})
 }
 
@@ -95,7 +95,7 @@ DROP TABLE users;
 			c.Assert(checks, qt.DeepEquals, []migrator.Check{{
 				Name:   "after_escape_literal",
 				Assert: "SELECT 1",
-				OnFail: migrator.OnFailAbort,
+				OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
 			}})
 		})
 	}
@@ -110,20 +110,20 @@ func TestParseChecks_HappyPath(t *testing.T) {
 		{
 			name: "single check with spaces and equals in assert",
 			sql:  `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort` + "\nDROP TABLE users;\n",
-			want: []migrator.Check{{Name: "users_empty", Assert: "SELECT count(*) = 0 FROM users", OnFail: migrator.OnFailAbort}},
+			want: []migrator.Check{{Name: "users_empty", Assert: "SELECT count(*) = 0 FROM users", OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore}},
 		},
 		{
 			name: "on_fail defaults to abort",
 			sql:  `-- +ptah check name="x" assert="SELECT true"` + "\nSELECT 1;\n",
-			want: []migrator.Check{{Name: "x", Assert: "SELECT true", OnFail: migrator.OnFailAbort}},
+			want: []migrator.Check{{Name: "x", Assert: "SELECT true", OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore}},
 		},
 		{
 			name: "multiple checks run in file order",
 			sql: `-- +ptah check name="a" assert="SELECT 1"` + "\n" +
 				`-- +ptah check name="b" assert="SELECT 2"` + "\nDROP TABLE t;\n",
 			want: []migrator.Check{
-				{Name: "a", Assert: "SELECT 1", OnFail: migrator.OnFailAbort},
-				{Name: "b", Assert: "SELECT 2", OnFail: migrator.OnFailAbort},
+				{Name: "a", Assert: "SELECT 1", OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore},
+				{Name: "b", Assert: "SELECT 2", OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore},
 			},
 		},
 		{
@@ -149,7 +149,7 @@ func TestParseChecks_HappyPath(t *testing.T) {
 		{
 			name: "doubled quotes escape a double quote in the assert",
 			sql:  `-- +ptah check name="q" assert="SELECT count(*) = 0 FROM ""My Table"""` + "\nSELECT 1;\n",
-			want: []migrator.Check{{Name: "q", Assert: `SELECT count(*) = 0 FROM "My Table"`, OnFail: migrator.OnFailAbort}},
+			want: []migrator.Check{{Name: "q", Assert: `SELECT count(*) = 0 FROM "My Table"`, OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore}},
 		},
 	}
 
@@ -177,7 +177,7 @@ func TestParseChecks_FailurePath(t *testing.T) {
 		{
 			name:    "unknown key",
 			sql:     `-- +ptah check name="x" assert="SELECT 1" bogus=1` + "\nSELECT 1;\n",
-			wantErr: `unknown \+ptah check key "bogus" \(want name, assert, on_fail\)`,
+			wantErr: `unknown \+ptah check key "bogus" \(want name, assert, on_fail, phase\)`,
 		},
 		{
 			name:    "unsupported on_fail",

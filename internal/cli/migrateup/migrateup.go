@@ -760,6 +760,15 @@ func (o migrateUpOutcome) selectedNothing() bool {
 // itself succeeded.
 func (o migrateUpOutcome) err() error {
 	if o.runErr != nil {
+		// The postcondition case is classified FIRST, and the order is the
+		// point: its error unwraps to a CheckFailedError, so the branch below
+		// would replace an outcome that says "applied" with advice to rerun
+		// with --skip-checks -- a retry that runs nothing, because the
+		// migration is already applied, and that loses the only sentence the
+		// operator needed.
+		if postErr, ok := errors.AsType[*migrator.PostMigrationCheckFailedError](o.runErr); ok {
+			return fmt.Errorf("error running migrations: %w", postErr)
+		}
 		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](o.runErr); ok {
 			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
 		}
@@ -950,9 +959,9 @@ func directoryHasTransactionalMigration(fsys fs.FS) (bool, error) {
 	return false, nil
 }
 
-// emitMigrateUpDeferredChecks names the pre-migration checks a dry run
-// validated but did not evaluate. A preview that quietly answers fewer
-// questions than it was asked is worse than one that says so.
+// emitMigrateUpDeferredChecks names the checks a dry run validated but did not
+// evaluate, in either phase. A preview that quietly answers fewer questions
+// than it was asked is worse than one that says so.
 func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 	if len(versions) == 0 {
 		return
@@ -966,7 +975,7 @@ func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 		noun = "migration"
 	}
 	emit.Printf(
-		"Deferred pre-migration checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
+		"Deferred checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
 		len(versions),
 		noun,
 		strings.Join(labels, ", "),

@@ -27,14 +27,33 @@ type OnFail string
 // the default and currently the only supported behavior.
 const OnFailAbort OnFail = "abort"
 
-// Check is a pre-migration assertion parsed from a `-- +ptah check` directive.
-// Assert is a SQL predicate that must evaluate to a single truthy scalar before
-// the migration body runs; Name labels the check in error output; OnFail selects
-// the failure behavior.
+// CheckPhase selects when a check's predicate is evaluated, relative to the
+// migration body it is written in.
+type CheckPhase string
+
+const (
+	// CheckPhaseBefore evaluates the predicate before any body statement runs,
+	// and is what a directive that names no phase selects. The migration is a
+	// precondition's subject: it states what the body needs.
+	CheckPhaseBefore CheckPhase = "before"
+	// CheckPhaseAfter evaluates the predicate once the body has run and its
+	// revision is recorded, so a migration can state what it produced. The body
+	// is committed by then, which is why a failure reports the migration as
+	// applied rather than rolling anything back -- see
+	// [PostMigrationCheckFailedError].
+	CheckPhaseAfter CheckPhase = "after"
+)
+
+// Check is an assertion parsed from a `-- +ptah check` directive. Assert is a
+// SQL predicate that must evaluate to a single truthy scalar; Name labels the
+// check in error output; OnFail selects the failure behavior; Phase selects
+// whether the predicate is evaluated before or after the migration body, and
+// is [CheckPhaseBefore] when the directive names none.
 type Check struct {
 	Name   string
 	Assert string
 	OnFail OnFail
+	Phase  CheckPhase
 }
 
 type checkGroupMode uint8
@@ -48,6 +67,7 @@ type checkGroup struct {
 	name   string
 	checks []Check
 	mode   checkGroupMode
+	phase  CheckPhase
 }
 
 // ParseChecks extracts ordered `-- +ptah check` assertion directives from
@@ -90,7 +110,7 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	if err != nil {
 		return Check{}, err
 	}
-	check := Check{OnFail: OnFailAbort}
+	check := Check{OnFail: OnFailAbort, Phase: CheckPhaseBefore}
 	seen := make(map[string]bool, len(tokens))
 	for _, token := range tokens {
 		key, rawValue, found := strings.Cut(token, "=")
@@ -112,8 +132,10 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 			check.Assert = value
 		case "on_fail":
 			check.OnFail = OnFail(value)
+		case "phase":
+			check.Phase = CheckPhase(value)
 		default:
-			return Check{}, fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail)", key)
+			return Check{}, fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail, phase)", key)
 		}
 	}
 	if strings.TrimSpace(check.Assert) == "" {
@@ -121,6 +143,9 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	}
 	if check.OnFail != OnFailAbort {
 		return Check{}, fmt.Errorf("unsupported +ptah check on_fail=%q (only abort is supported)", check.OnFail)
+	}
+	if check.Phase != CheckPhaseBefore && check.Phase != CheckPhaseAfter {
+		return Check{}, fmt.Errorf("unsupported +ptah check phase=%q (want before or after)", check.Phase)
 	}
 	if statements := splitSQLStatementsForDialect(check.Assert, dialect); len(statements) > 1 {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
@@ -139,6 +164,10 @@ type CheckFailedError struct {
 	Version int64
 	Name    string
 	Assert  string
+	// Phase is the phase the check was evaluated in, and is what the message
+	// names. The zero value is [CheckPhaseBefore], which is the phase a
+	// directive that names none selects.
+	Phase CheckPhase
 	// Err is set when the assertion query itself failed to execute (as opposed
 	// to running and returning a falsy result).
 	Err error
@@ -149,15 +178,63 @@ func (e *CheckFailedError) Error() string {
 	if label == "" {
 		label = "(unnamed)"
 	}
-	if e.Err != nil {
-		return fmt.Sprintf("pre-migration check %s for migration %d could not run: %v (assert: %s)",
-			label, e.Version, e.Err, e.Assert)
+	kind := "pre-migration check"
+	if e.Phase == CheckPhaseAfter {
+		kind = "post-migration check"
 	}
-	return fmt.Sprintf("pre-migration check %s for migration %d was not satisfied (assert: %s)",
-		label, e.Version, e.Assert)
+	if e.Err != nil {
+		return fmt.Sprintf("%s %s for migration %d could not run: %v (assert: %s)",
+			kind, label, e.Version, e.Err, e.Assert)
+	}
+	return fmt.Sprintf("%s %s for migration %d was not satisfied (assert: %s)",
+		kind, label, e.Version, e.Assert)
 }
 
 func (e *CheckFailedError) Unwrap() error {
+	return e.Err
+}
+
+// PostMigrationCheckFailedError reports a migration whose body applied and
+// whose post-migration check did not hold.
+//
+// It is a type of its own because the outcome it names has no equivalent on
+// the precondition path: the body is committed and the revision says applied,
+// so nothing is rolled back and nothing is re-run. An operator reading
+// "migration 20 failed" would look for a migration to retry; what there is to
+// do here is decide what to do about a database that took the change and did
+// not reach the state the change was for.
+//
+// Unwrap yields the check failure underneath, so a caller that wants to know
+// which assertion it was asks [CheckFailedError] through errors.As.
+type PostMigrationCheckFailedError struct {
+	Version int64
+	// Direction is the half that ran. It decides what the message says the
+	// database now holds, which is the opposite thing in each direction: an
+	// applied migration after an up, and a removed revision after a down.
+	// Naming only one of them would tell half the operators the reverse of
+	// their own state.
+	Direction MigrationDirection
+	Err       error
+}
+
+func (e *PostMigrationCheckFailedError) Error() string {
+	if e.Direction == MigrationDirectionDown {
+		return fmt.Sprintf(
+			"rollback of migration %d completed and its post-migration check did not hold: %v "+
+				"(the rollback ran, its revision is gone, and nothing was re-applied)",
+			e.Version,
+			e.Err,
+		)
+	}
+	return fmt.Sprintf(
+		"migration %d applied and its post-migration check did not hold: %v "+
+			"(the migration is recorded as applied and nothing was rolled back)",
+		e.Version,
+		e.Err,
+	)
+}
+
+func (e *PostMigrationCheckFailedError) Unwrap() error {
 	return e.Err
 }
 
@@ -219,14 +296,18 @@ func runCheckGroup(
 	for _, check := range group.checks {
 		result, err := runCheckAssertion(ctx, queryer, dialect, serverVersion, check.Assert)
 		if err != nil {
-			return &CheckFailedError{Version: version, Name: check.Name, Assert: check.Assert, Err: err}
+			return &CheckFailedError{
+				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
+			}
 		}
 		if assertionPassed(result) {
 			onePassed = true
 			continue
 		}
 		if group.mode == checkGroupAll {
-			return &CheckFailedError{Version: version, Name: check.Name, Assert: check.Assert}
+			return &CheckFailedError{
+				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase,
+			}
 		}
 	}
 	if group.mode == checkGroupOneOf {
@@ -415,6 +496,7 @@ func validateCheckGroups(groups []checkGroup, dialect, serverVersion string, ver
 					Version: version,
 					Name:    check.Name,
 					Assert:  check.Assert,
+					Phase:   check.Phase,
 					Err:     err,
 				}
 			}

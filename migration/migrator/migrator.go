@@ -176,18 +176,20 @@ type MigrateUpOptions struct {
 	// transaction-mode validation. It runs even for an empty plan so callers
 	// can replace metadata captured before lock acquisition.
 	PlanObserver MigrationPlanObserver
-	// ChecksDeferredObserver receives the versions whose pre-migration checks
-	// were parsed and statically validated but not evaluated against the
-	// database, because a dry run cannot produce the state they are about. It
+	// ChecksDeferredObserver receives the versions whose checks were parsed
+	// and statically validated but not evaluated against the database, because
+	// a dry run cannot produce the state they are about. A postcondition is
+	// deferred by any dry run and a precondition by every position but the
+	// first, so one version reaching this list can mean either. It
 	// runs after a successful run and only when the list is non-empty, so a
 	// preview can say how much of the guard it did not answer instead of
 	// dropping it silently.
 	ChecksDeferredObserver ChecksDeferredObserver
 }
 
-// ChecksDeferredObserver is notified with the migration versions whose
-// pre-migration checks a run declined to evaluate. The slice is owned by the
-// caller and must not be retained.
+// ChecksDeferredObserver is notified with the migration versions whose checks
+// a run declined to evaluate. The slice is owned by the caller and must not be
+// retained.
 type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 
 // Migrator executes and tracks database migrations: it takes migrations from
@@ -336,24 +338,66 @@ func (m *Migrator) migrationCheckGroups(
 	}
 	parsed, err := ParseChecks(body, dialect)
 	if err != nil {
-		return nil, fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+		return nil, fmt.Errorf("migration %d has invalid check directives: %w", migration.Version, err)
 	}
-	if len(parsed) > 0 {
-		groups = append(groups, checkGroup{checks: parsed, mode: checkGroupAll})
+	for _, phase := range []CheckPhase{CheckPhaseBefore, CheckPhaseAfter} {
+		checks := checksInPhase(parsed, phase)
+		if len(checks) == 0 {
+			continue
+		}
+		groups = append(groups, checkGroup{checks: checks, mode: checkGroupAll, phase: phase})
 	}
 	return groups, nil
 }
 
-// runMigrationChecks evaluates the pre-migration assertion checks embedded in a
-// migration's up SQL (`-- +ptah check` directives and Atlas txtar checks.sql
-// sections) against conn, before any body statement runs. It is a no-op when
-// checks are skipped. A malformed check directive or an unsatisfied assertion
-// returns an error so the caller aborts with nothing applied.
+// checksInPhase selects the checks a phase evaluates, keeping the order they
+// were written in. A migration may declare both phases, and the two are
+// separate groups because they run at different points against different
+// state.
+func checksInPhase(checks []Check, phase CheckPhase) []Check {
+	selected := make([]Check, 0, len(checks))
+	for _, check := range checks {
+		if check.Phase != phase {
+			continue
+		}
+		selected = append(selected, check)
+	}
+	return selected
+}
+
+// groupsInPhase selects the check groups a phase evaluates.
+//
+// An Atlas txtar check file names no phase and carries the zero value, so it
+// belongs to the precondition phase along with every `-- +ptah check` that
+// named none. Both ends of the selection read this one predicate: a second
+// list would agree with the first until a phase was added.
+func groupsInPhase(groups []checkGroup, phase CheckPhase) []checkGroup {
+	selected := make([]checkGroup, 0, len(groups))
+	for _, group := range groups {
+		groupPhase := group.phase
+		if groupPhase == "" {
+			groupPhase = CheckPhaseBefore
+		}
+		if groupPhase != phase {
+			continue
+		}
+		selected = append(selected, group)
+	}
+	return selected
+}
+
+// runMigrationChecks evaluates the assertion checks a migration's body
+// declares for one phase (`-- +ptah check` directives and, before the body,
+// Atlas txtar checks.sql sections) against conn. It is a no-op when checks are
+// skipped. A malformed check directive or an unsatisfied assertion returns an
+// error; what the caller does with it depends on the phase, because before the
+// body nothing is applied and after it everything is.
 func (m *Migrator) runMigrationChecks(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	direction MigrationDirection,
+	phase CheckPhase,
 ) error {
 	if m.skipChecks {
 		return nil
@@ -362,8 +406,58 @@ func (m *Migrator) runMigrationChecks(
 	if err != nil {
 		return err
 	}
+	selected := groupsInPhase(groups, phase)
+	if len(selected) == 0 {
+		return nil
+	}
 	info := conn.Info()
-	return runCheckGroups(ctx, conn, info.Dialect, info.Version, migration.Version, groups)
+	return runCheckGroups(ctx, conn, info.Dialect, info.Version, migration.Version, selected)
+}
+
+// runPostMigrationChecks evaluates a migration's `phase=after` assertions once
+// its body has run and its revision says applied, and reports whether the run
+// deferred them instead.
+//
+// A failure here is not the migration failing. The body is committed, so the
+// error says applied and the run stops rather than retrying or rolling back;
+// what to do about a database that took the change without reaching the state
+// it was for is an operator's decision, not a migrator's (stokaro/ptah#3405).
+//
+// A dry run defers every postcondition, whatever its position in the run. A
+// precondition on the first migration observes the state a real apply would
+// give it, which is why that one is evaluated; a postcondition asks about the
+// state the body produces, and a dry run has refused to produce it.
+func (m *Migrator) runPostMigrationChecks(
+	ctx context.Context,
+	migration *Migration,
+	direction MigrationDirection,
+) (bool, error) {
+	if m.skipChecks {
+		return false, nil
+	}
+	groups, err := m.migrationCheckGroups(migration, direction)
+	if err != nil {
+		return false, err
+	}
+	selected := groupsInPhase(groups, CheckPhaseAfter)
+	if len(selected) == 0 {
+		return false, nil
+	}
+	info := m.conn.Info()
+	if m.conn.Writer().IsDryRun() {
+		if err := validateCheckGroups(selected, info.Dialect, info.Version, migration.Version); err != nil {
+			return false, &PostMigrationCheckFailedError{
+				Version: migration.Version, Direction: direction, Err: err,
+			}
+		}
+		return true, nil
+	}
+	if err := m.runMigrationChecks(ctx, m.conn, migration, direction, CheckPhaseAfter); err != nil {
+		return false, &PostMigrationCheckFailedError{
+			Version: migration.Version, Direction: direction, Err: err,
+		}
+	}
+	return false, nil
 }
 
 // validateDeferredMigrationChecks statically validates the checks of a
@@ -383,11 +477,12 @@ func (m *Migrator) validateDeferredMigrationChecks(migration *Migration) (bool, 
 	if err != nil {
 		return false, err
 	}
-	if len(groups) == 0 {
+	selected := groupsInPhase(groups, CheckPhaseBefore)
+	if len(selected) == 0 {
 		return false, nil
 	}
 	info := m.conn.Info()
-	if err := validateCheckGroups(groups, info.Dialect, info.Version, migration.Version); err != nil {
+	if err := validateCheckGroups(selected, info.Dialect, info.Version, migration.Version); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -2293,11 +2388,17 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	// is bound as a parameter via the dialect-native placeholder.
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 
+	var checksDeferred []int64
 	for _, migration := range migrationsToRollback {
-		if err := m.rollbackMigration(ctx, migration, deleteSQL); err != nil {
+		deferred, err := m.rollbackMigration(ctx, migration, deleteSQL)
+		if err != nil {
 			return err
 		}
+		if deferred {
+			checksDeferred = append(checksDeferred, migration.Version)
+		}
 	}
+	m.reportDeferredDownChecks(checksDeferred)
 	if reconcileChecksums {
 		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
 			return err
@@ -2541,7 +2642,13 @@ func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*M
 		if err != nil {
 			return nil, err
 		}
-		if deferred {
+		// After the body and its revision, so a failure is a statement about a
+		// migration that applied.
+		postDeferred, err := m.runPostMigrationChecks(ctx, migration, MigrationDirectionUp)
+		if err != nil {
+			return nil, err
+		}
+		if deferred || postDeferred {
 			checksDeferred = append(checksDeferred, migration.Version)
 		}
 	}
@@ -2859,7 +2966,7 @@ func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter s
 		}
 		return declaresChecks, nil
 	}
-	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionUp); err != nil {
+	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionUp, CheckPhaseBefore); err != nil {
 		return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
 	}
 	return false, nil
@@ -3241,8 +3348,38 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	return nil
 }
 
-func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, deleteSQL string) error {
-	return m.rollbackMigrationObserved(ctx, migration, deleteSQL)
+// rollbackMigration rolls one migration back and reports whether its
+// postconditions were deferred rather than evaluated.
+func (m *Migrator) rollbackMigration(
+	ctx context.Context,
+	migration *Migration,
+	deleteSQL string,
+) (bool, error) {
+	if err := m.rollbackMigrationObserved(ctx, migration, deleteSQL); err != nil {
+		return false, err
+	}
+	// Outside the observed span on purpose: the rollback ran and is recorded,
+	// and a postcondition that does not hold must not turn that into a
+	// rollback the metrics report as failed.
+	return m.runPostMigrationChecks(ctx, migration, MigrationDirectionDown)
+}
+
+// reportDeferredDownChecks says which rollbacks' postconditions a dry run
+// validated but did not evaluate.
+//
+// The down path has no options struct to hand an observer, so the report goes
+// to the run's logger rather than to a caller. What must not happen is
+// silence: a preview that answered fewer questions than it was asked, and said
+// so on the up path only, tells an operator the rollback was previewed in full
+// (stokaro/ptah#3405).
+func (m *Migrator) reportDeferredDownChecks(versions []int64) {
+	if len(versions) == 0 {
+		return
+	}
+	m.logger.Warn(
+		"Deferred post-migration checks: a dry run does not produce the state they assert on",
+		"versions", versions,
+	)
 }
 
 func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Migration, deleteSQL string) (err error) {
@@ -3267,7 +3404,7 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	// the statement it guards is about to run. Until this existed the directive
 	// was parsed by nothing and the rollback simply proceeded
 	// (stokaro/ptah#1715).
-	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionDown); err != nil {
+	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionDown, CheckPhaseBefore); err != nil {
 		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
 	}
 	txMode, err := m.resolveDownMigrationTxMode(migration)

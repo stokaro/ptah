@@ -610,7 +610,7 @@ func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64, k
 	}
 	fmt.Fprintf(
 		cmd.ErrOrStderr(),
-		"Deferred pre-migration checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
+		"Deferred checks for %d %s (%s): a dry run does not create the state they assert on, so they are evaluated on apply.\n",
 		len(versions),
 		noun,
 		strings.Join(labels, ", "),

@@ -403,10 +403,21 @@ callback cannot control transactions or reach Ptah schema writers. Callers
 remain responsible for restricting SQL to read-only queries.
 
 `migration/migrator.CheckFailedError` identifies one failed or invalid
-pre-migration assertion. `CheckGroupFailedError` identifies an Atlas `oneof`
+assertion, in either phase: its `Phase` field carries `CheckPhaseBefore` or
+`CheckPhaseAfter`, and the zero value is the precondition phase a directive
+that names none selects. `CheckGroupFailedError` identifies an Atlas `oneof`
 check file in which no assertion returned a truthy result, including an empty
 group. Callers can distinguish a group-level precondition failure from an
 assertion execution or result-shape failure with `errors.As`.
+
+`migration/migrator.PostMigrationCheckFailedError` wraps the check failure of a
+`phase=after` assertion, and is a type of its own because the outcome it names
+has no equivalent on the precondition path: the body is committed. On the up
+direction the migration is recorded as applied, nothing is rolled back and
+nothing is re-run; on the down direction the rollback completed and its
+revision is gone. `Direction` says which, and embedders must classify this
+error BEFORE `CheckFailedError`, which it unwraps to — advice to retry with
+checks skipped is wrong for a migration that already applied.
 
 `migration/migrator.ParseChecks` requires the target dialect together with the
 SQL source. This intentional pre-v1 signature change prevents fail-open parsing
