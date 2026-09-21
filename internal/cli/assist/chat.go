@@ -39,7 +39,8 @@ const interactiveHelp = `  /tools     the Ptah tools this session can reach
 At a terminal the line is edited: Up and Down walk the questions you have
 already asked, Left and Right move the cursor, Alt with them moves by word,
 Home and End jump, Ctrl-W deletes a word and Ctrl-U the line, and Tab
-completes a directive. A pasted block arrives as one question.`
+completes a directive. A pasted block arrives as one question, and Ctrl-J
+starts a new line without sending. The answer is rendered as Markdown.`
 
 // registerChatFlags adds the interactive surface's flags to the shared agent
 // ones.

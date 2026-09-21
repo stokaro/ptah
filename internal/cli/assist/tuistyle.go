@@ -1,6 +1,9 @@
 package assist
 
 import (
+	"strings"
+
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -81,4 +84,43 @@ func dim(lines []string) []string {
 		out = append(out, footerStyle.Render(line))
 	}
 	return out
+}
+
+// renderAnswer turns the model's Markdown into what a terminal shows: bold is
+// bold, a list is bullets, a fenced block is syntax-highlighted.
+//
+// The answer arrives as Markdown -- every model writes it -- and a terminal
+// that prints it verbatim shows `**What is configured**` with the asterisks,
+// which is the one place this surface was harder to read than the chat window
+// the same model is used from.
+//
+// Word wrapping is off, deliberately, and that is the whole reason this is
+// configured rather than taken as it comes. Glamour pads every wrapped line
+// out to the wrap width with styled spaces: the same short answer measured
+// 3139 bytes with wrapping at 60 columns and 154 bytes with wrapping off, for
+// identical styling. Off, the terminal wraps instead, which also means a
+// window resized after the answer was printed reflows it rather than leaving
+// it hard-wrapped to a width nobody has any more.
+//
+// A failure returns the Markdown unchanged. An answer that cannot be styled is
+// still the answer, and losing it to a rendering error would be the worse
+// outcome by a wide margin.
+func renderAnswer(markdown string) []string {
+	if strings.TrimSpace(markdown) == "" {
+		return nil
+	}
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(0),
+	)
+	if err != nil {
+		return strings.Split(strings.TrimRight(markdown, "\n"), "\n")
+	}
+	rendered, err := renderer.Render(markdown)
+	if err != nil {
+		return strings.Split(strings.TrimRight(markdown, "\n"), "\n")
+	}
+	// Glamour opens with a blank line and closes with one; the surface puts
+	// its own spacing around a block, so both would double it.
+	return strings.Split(strings.Trim(rendered, "\n"), "\n")
 }

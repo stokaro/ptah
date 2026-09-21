@@ -106,8 +106,13 @@ type tuiModel struct {
 	input   textarea.Model
 	spinner int
 
-	phase   phase
-	partial strings.Builder
+	phase phase
+	// answer is everything the model has streamed for the question in flight.
+	// It is held whole rather than flushed line by line, because Markdown is
+	// rendered as a document: a list, a fenced block and an emphasis run all
+	// need more than the line they start on. The view shows its tail while it
+	// arrives; the scrollback gets it rendered, once, when it is complete.
+	answer strings.Builder
 
 	// history is this session's questions, newest last, walked with Up and
 	// Down. It is not written to disk: the conversation is already saved under
@@ -242,7 +247,7 @@ func (m *tuiModel) startCall(request string) {
 	m.cancel = cancel
 	m.phase = thinking
 	m.dropDone = false
-	m.partial.Reset()
+	m.answer.Reset()
 
 	go func() {
 		result, err := m.session.ask(ctx, request, func(fragment string) {
@@ -304,19 +309,27 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// fragment adds streamed text, flushing whole lines to the scrollback and
-// keeping only the unfinished tail on screen.
+// fragment adds streamed text. Nothing is printed while it arrives: the view
+// shows the tail, and the scrollback gets the rendered document at the end.
 func (m *tuiModel) fragment(text string) tea.Cmd {
-	m.partial.WriteString(text)
-	whole := m.partial.String()
-	cut := strings.LastIndex(whole, "\n")
-	if cut < 0 {
-		return m.pump()
+	m.answer.WriteString(text)
+	return m.pump()
+}
+
+// streamTail is the last few lines of what has arrived, which is what the view
+// shows while the answer is still coming.
+//
+// Bounded because the inline renderer clips a view to the window and a long
+// answer would otherwise push the prompt off the screen while it streamed. The
+// whole answer reaches the scrollback a moment later, so nothing is lost by
+// showing only the end of it here.
+func (m *tuiModel) streamTail() string {
+	lines := strings.Split(strings.TrimRight(m.answer.String(), "\n"), "\n")
+	const shown = 6
+	if len(lines) > shown {
+		lines = lines[len(lines)-shown:]
 	}
-	done, rest := whole[:cut], whole[cut+1:]
-	m.partial.Reset()
-	m.partial.WriteString(rest)
-	return m.say(strings.Split(done, "\n")...)
+	return strings.Join(lines, "\n  ")
 }
 
 // openForm puts the approval choice on screen.
@@ -382,11 +395,10 @@ func (m *tuiModel) finish(msg doneMsg) tea.Cmd {
 		return m.pump()
 	}
 
-	var lines []string
-	if tail := m.partial.String(); tail != "" {
-		lines = append(lines, tail)
-	}
-	m.partial.Reset()
+	// Rendered here rather than as it arrived: Markdown is a document, and a
+	// line at a time cannot know it is inside a list or a fenced block.
+	lines := renderAnswer(m.answer.String())
+	m.answer.Reset()
 	lines = append(lines, tuiReport(msg.result, msg.err, traced(m.trace))...)
 	return m.say(lines...)
 }
@@ -439,11 +451,14 @@ func (m *tuiModel) interrupt() (tea.Model, tea.Cmd) {
 	m.phase = atPrompt
 	m.pending = nil
 	m.form = nil
-	m.partial.Reset()
+	// What arrived before the cancel is kept and rendered: a partial answer is
+	// still an answer, and dropping it would throw away what was paid for.
+	canceled := renderAnswer(m.answer.String())
+	m.answer.Reset()
 	// The worker still delivers one doneMsg after this; without the flag the
 	// surface would print both "canceled" and a context-canceled footer.
 	m.dropDone = true
-	return m, m.say(noticeStyle.Render("  canceled"))
+	return m, m.say(append(canceled, noticeStyle.Render("  canceled"))...)
 }
 
 // submit sends the typed question, or handles a directive.
@@ -535,7 +550,7 @@ func (m *tuiModel) View() tea.View {
 	switch m.phase {
 	case thinking, awaitingApproval:
 		body := "  " + spinnerStyle.Render(spinnerFrame(m.spinner)) + " thinking"
-		if tail := m.partial.String(); tail != "" {
+		if tail := m.streamTail(); tail != "" {
 			body = "  " + tail
 		}
 		return tea.NewView(body + "\n" + hintStyle.Render("  esc or ctrl+c to cancel"))

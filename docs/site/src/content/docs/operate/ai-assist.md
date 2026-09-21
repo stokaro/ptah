@@ -118,6 +118,13 @@ At a terminal the prompt is an edited line:
 A block pasted from the clipboard arrives as one question, so a schema or an
 error message keeps its line breaks instead of being asked a line at a time.
 
+The answer is rendered as Markdown: emphasis is emphasis, a list is a list, and
+a fenced block is highlighted for its language. It is rendered once the answer
+is complete rather than as it arrives, because a list, a fenced block and an
+emphasis run each need more than the line they begin on; while it streams, the
+last few lines are shown as they came. Word wrapping is left to the terminal,
+so a window resized afterwards reflows the answer.
+
 The history lives in the session and is not written to disk. The conversation
 itself is saved under `.ptah/sessions` unless `--ephemeral` is passed, and a
 second copy of what was typed would not honor that flag.
