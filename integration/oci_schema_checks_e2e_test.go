@@ -167,21 +167,32 @@ func pinnedChecksReference(reference, digest string) string {
 // assertions has something to fail on.
 func seedChecksTable(c *qt.C, ctx context.Context, dbURL, table string) {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	statements := []string{
+	execOnDatabase(c, ctx, dbURL,
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", table),
 		fmt.Sprintf("CREATE TABLE %s (id BIGINT PRIMARY KEY, tier TEXT)", table),
 		fmt.Sprintf("INSERT INTO %s (id, tier) VALUES (1, NULL)", table),
-	}
+	)
+	c.Cleanup(func() {
+		execOnDatabase(c, context.Background(), dbURL, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+	})
+}
+
+// execOnDatabase runs statements on a connection of its own and closes it
+// before returning.
+//
+// The cleanup that drops the seeded table needs its own connection: the one
+// the seeding opened is closed by the time any cleanup runs, so a drop issued
+// through it reaches nothing, reports nothing, and leaves the table in a
+// database other tests share.
+func execOnDatabase(c *qt.C, ctx context.Context, dbURL string, statements ...string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
 		c.Assert(execErr, qt.IsNil, qt.Commentf("%s", statement))
 	}
-	c.Cleanup(func() {
-		_, _ = conn.ExecContext(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
-	})
 }
 
 func writeChecksFixture(c *qt.C, path, contents string) {
