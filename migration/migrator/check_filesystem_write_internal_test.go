@@ -367,3 +367,133 @@ func TestValidateCheckAssertionStatically_RefusesALinkedServerQuery(t *testing.T
 
 	c.Assert(err, qt.ErrorMatches, `check assertion must not use OPENQUERY, which runs a query on a linked server.*`)
 }
+
+// A PostgreSQL read-only transaction permits every one of these and undoes
+// none: terminating the connection the verification is running on is not a
+// write, and no rollback brings it back.
+func TestValidateCheckAssertionStatically_RefusesAServerControlFunction(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+	}{
+		{
+			name:      "terminate another backend",
+			dialect:   "postgres",
+			assertion: `SELECT pg_terminate_backend(4242)`,
+		},
+		{
+			name:      "cancel another backend",
+			dialect:   "postgres",
+			assertion: `SELECT pg_cancel_backend(4242)`,
+		},
+		{
+			name:      "reload the configuration",
+			dialect:   "postgres",
+			assertion: `SELECT pg_reload_conf()`,
+		},
+		{
+			name:      "rewrite a session setting",
+			dialect:   "postgres",
+			assertion: `SELECT set_config('statement_timeout', '0', false) = '0'`,
+		},
+		{
+			name:      "on a wire-compatible product",
+			dialect:   "cockroachdb",
+			assertion: `SELECT pg_terminate_backend(4242)`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""),
+				qt.ErrorMatches, `check assertion must not use PostgreSQL server control function, which .*`)
+		})
+	}
+}
+
+// The control: an ordinary read of the same catalog those functions act on is
+// still a read.
+func TestValidateCheckAssertionStatically_AcceptsACatalogRead(t *testing.T) {
+	c := qt.New(t)
+
+	err := validateCheckAssertionStatically(
+		`SELECT COUNT(*) = 0 FROM pg_stat_activity WHERE state = 'idle in transaction'`, "postgres", "")
+
+	c.Assert(err, qt.IsNil)
+}
+
+// A replication slot outlives everything a session can undo: it is created by
+// a SELECT, it survives the rollback and the discarded connection, and it
+// retains write-ahead log until an operator removes it.
+func TestValidateCheckAssertionStatically_RefusesAReplicationSlotFunction(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "create a physical slot",
+			assertion: `SELECT slot_name IS NOT NULL FROM pg_create_physical_replication_slot('ptah_verify')`,
+		},
+		{
+			name:      "drop a slot",
+			assertion: `SELECT pg_drop_replication_slot('ptah_verify') IS NULL`,
+		},
+		{
+			name:      "advance a replication origin",
+			assertion: `SELECT pg_replication_origin_advance('o', '0/0') IS NULL`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "postgres", ""),
+				qt.ErrorMatches, `check assertion must not use PostgreSQL server control function, which .*`)
+		})
+	}
+}
+
+// MySQL starts a line comment at `--` only when whitespace follows, so
+// `SELECT 1--1 INTO OUTFILE '/tmp/p'` is one live statement there. A scanner
+// that used its own lexer options read a grammar no server has and dropped the
+// clause as a comment.
+func TestValidateCheckAssertionStatically_ReadsTheDialectsCommentGrammar(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+	}{
+		{
+			name:      "mysql",
+			dialect:   "mysql",
+			assertion: `SELECT 1--1 INTO OUTFILE '/tmp/ptah-check-probe'`,
+		},
+		{
+			name:      "mariadb",
+			dialect:   "mariadb",
+			assertion: `SELECT 1--1 INTO OUTFILE '/tmp/ptah-check-probe'`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""), qt.IsNotNil)
+		})
+	}
+}
+
+// The control on the other side of that rule: PostgreSQL does start a comment
+// at a bare `--`, so the same text there is a SELECT with a comment on it.
+func TestValidateCheckAssertionStatically_AcceptsABareDashCommentOnPostgres(t *testing.T) {
+	c := qt.New(t)
+
+	err := validateCheckAssertionStatically(`SELECT 1--1 IS NOT NULL`, "postgres", "")
+
+	c.Assert(err, qt.IsNil)
+}

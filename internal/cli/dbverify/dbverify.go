@@ -51,12 +51,12 @@ seed data and drops nothing, which is what separates it from the test runners:
 those want a throwaway database, and this one is pointed at the database a
 release actually runs on.
 
-Four outcomes are reported and kept apart. An assertion that ran and held is
-verified; one that ran and did not hold is failed; one that could not run --
-malformed, write-shaped, or a query the server refused -- is errored, and
-establishes nothing either way. A run that found no assertions at all is not
-verified, and exits non-zero: an empty checks path must not read as a clean
-release.`,
+The outcomes are kept apart, because they mean different things to whoever
+reads the report. An assertion that ran and held is verified; one that ran and
+did not hold is failed; one that could not run -- malformed, write-shaped, or a
+query the server refused -- is errored, and establishes nothing either way. A
+run that found no assertions at all is not verified, and exits non-zero: an
+empty checks path must not read as a clean release.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runVerify(cmd, &opts)
 		},

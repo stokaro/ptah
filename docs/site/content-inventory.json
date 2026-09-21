@@ -4164,8 +4164,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1050,
-      "sourceBytes": 7504
+      "visibleWords": 1052,
+      "sourceBytes": 7517
     },
     {
       "path": "docs/site/src/content/docs/operate/zero-downtime-changes.mdx",

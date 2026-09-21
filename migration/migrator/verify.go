@@ -108,13 +108,14 @@ func (r VerifyReport) Verified() bool {
 // and every requirement is worth an answer. So every check is evaluated and
 // every outcome is reported, including the ones after the first failure.
 //
-// Two rules hold this to reading only. The assertion must be a single SELECT,
-// proved from its text before any query is sent, and the session is opened
-// read-only wherever the dialect has such a mode. Where it does not, the
-// static proof is the whole of the protection, which is the same guarantee a
-// pre-migration check already carries on that dialect.
+// What holds this to reading only is proved before any query is sent and
+// enforced again while it runs. The assertion must be a single SELECT that
+// names nothing outside the database it is sent to, both read off its text;
+// the session is then opened read-only wherever the dialect has such a mode.
+// Where it does not, the static proof is the whole of the protection, which is
+// the same guarantee a pre-migration check already carries on that dialect.
 //
-// What neither rule reaches is a routine that runs in a transaction of its own:
+// What none of that reaches is a routine that runs in a transaction of its own:
 // an Oracle function declared PRAGMA AUTONOMOUS_TRANSACTION can insert and
 // commit while a SELECT calls it, and nothing in a session undoes a transaction
 // that was never part of it. An ordinary writing routine is refused before that

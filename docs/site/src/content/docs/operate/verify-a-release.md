@@ -94,8 +94,8 @@ whose contract is a throwaway database they may destroy. Point those at a live
 database and they would write to it; this verb is meant for the database the
 release actually runs on.
 
-Three rules hold it to reading, and the first two are decided before any query
-is sent:
+What holds it to reading is decided before any query is sent, and then
+enforced again while it runs:
 
 - The assertion is a single `SELECT`, proved from its text.
 - It names nothing outside the database it is sent to: `dblink`,

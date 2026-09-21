@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -250,6 +251,21 @@ var escapeRules = []escapeRule{
 		construct: "sp_addlinkedserver",
 		reach:     "defines a connection to another database server",
 		match:     procedureOrFunction("SP_ADDLINKEDSERVER"),
+	},
+	{
+		// Not reach outside the database but control over the server it runs
+		// on: terminating a backend, reloading the configuration, promoting a
+		// standby, switching the write-ahead log. A read-only transaction
+		// permits every one of them and undoes none.
+		construct: "PostgreSQL server control function",
+		reach: "controls the server or its replication state rather than reading from it, " +
+			"and no transaction undoes that",
+		match: calledFunctionAnyOf(append(
+			PostgresControlFunctions(), PostgresReplicationFunctions()...,
+		)...),
+		dialects: []string{
+			platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		},
 	},
 	{
 		construct: "OPENQUERY",
@@ -673,6 +689,54 @@ func calledFunctionAnyOf(names ...string) tokenMatcher {
 	return anyMatch(matchers...)
 }
 
+// PostgresControlFunctions enumerates the PostgreSQL functions that act on the
+// server rather than reading from it.
+//
+// It is exported because more than one caller refuses the same set:
+// internal/devclean refuses them in a statement it is about to run against a
+// dev database, and the check-assertion validator refuses them in a predicate
+// it is about to send to a live one. The question differs and the names do
+// not, so a second list would agree until one of them was extended.
+//
+// Advisory-lock functions are deliberately absent, and that is the one
+// exclusion. A session advisory lock is released when the session ends, which
+// an isolated query session guarantees by discarding the physical connection,
+// so nothing outlives the statement for a caller to refuse. Replication state
+// is [PostgresReplicationFunctions], separate so a caller can say which it
+// refused.
+func PostgresControlFunctions() []string {
+	return []string{
+		"PG_CANCEL_BACKEND", "PG_TERMINATE_BACKEND",
+		"PG_RELOAD_CONF", "PG_ROTATE_LOGFILE",
+		"PG_PROMOTE", "PG_CREATE_RESTORE_POINT",
+		"PG_SWITCH_WAL", "PG_WAL_REPLAY_PAUSE", "PG_WAL_REPLAY_RESUME",
+		"PG_NOTIFY", "SET_CONFIG",
+	}
+}
+
+// PostgresReplicationFunctions enumerates the functions that change
+// replication state.
+//
+// Separate from [PostgresControlFunctions] because a caller may want to say
+// which it refused -- internal/devclean names the two classes differently in
+// its refusal -- while a caller that only asks "does this reach past the
+// statement" takes both.
+//
+// A slot outlives everything a session can undo: it is created by a SELECT, it
+// survives the rollback and the discarded connection, and it retains
+// write-ahead log until an operator removes it.
+func PostgresReplicationFunctions() []string {
+	return []string{
+		"PG_COPY_LOGICAL_REPLICATION_SLOT", "PG_COPY_PHYSICAL_REPLICATION_SLOT",
+		"PG_CREATE_LOGICAL_REPLICATION_SLOT", "PG_CREATE_PHYSICAL_REPLICATION_SLOT",
+		"PG_DROP_REPLICATION_SLOT",
+		"PG_REPLICATION_ORIGIN_ADVANCE", "PG_REPLICATION_ORIGIN_CREATE",
+		"PG_REPLICATION_ORIGIN_DROP",
+		"PG_REPLICATION_ORIGIN_SESSION_RESET", "PG_REPLICATION_ORIGIN_SESSION_SETUP",
+		"PG_REPLICATION_ORIGIN_XACT_RESET", "PG_REPLICATION_ORIGIN_XACT_SETUP",
+	}
+}
+
 // clickHouseRemoteTableFunctions enumerates the table functions that read
 // something other than this server's own storage, each with its `Cluster`
 // variant, which ClickHouse spells by suffix and which reaches the same place
@@ -837,13 +901,16 @@ func DialectUsesBackslashEscapes(dialect string) bool {
 // [SplitApplyStatements] for the same dialect, so the scanner and the executor
 // agree on what is a string, a comment, and a quoted identifier.
 func SignificantTokens(statement string, backslashEscapes bool, dialect string) []lexer.Token {
-	normalized := platform.NormalizeDialect(dialect)
-	lexr := lexer.NewLexerWithOptions(statement, lexer.Options{
-		StandardStrings:     true,
-		BackslashEscapes:    backslashEscapes,
-		BracketIdentifiers:  normalized == platform.SQLServer,
-		DisableHashComments: normalized == platform.SQLServer,
-	})
+	// The dialect's own options, with the escape mode overridden. Building a
+	// set by hand here meant the scanner read a grammar no server has: MySQL
+	// starts a line comment at `--` only when whitespace follows, so
+	// `SELECT 1--1 INTO OUTFILE '/tmp/p'` is one live statement there and was
+	// dropped as a comment by a lexer that did not know the rule. Escape mode
+	// is the one field that varies, because it is session state; every other
+	// rule the dialect has is fixed and belongs to dialectlexer.
+	options := dialectlexer.Options(dialect)
+	options.BackslashEscapes = backslashEscapes
+	lexr := lexer.NewLexerWithOptions(statement, options)
 	var tokens []lexer.Token
 	for {
 		token := lexr.NextToken()
