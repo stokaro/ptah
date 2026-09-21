@@ -223,6 +223,18 @@ var escapeRules = []escapeRule{
 		match:     calledFunction("PG_READ_BINARY_FILE"),
 	},
 	{
+		// adminpack, which ships with PostgreSQL and is installed on plenty of
+		// servers. Each of these fits in one scalar SELECT and changes a file
+		// on the host, which no transaction restores.
+		construct: "adminpack file function",
+		reach:     "writes, renames or removes a file on the database server host",
+		match: anyMatch(
+			calledFunction("PG_FILE_WRITE"), calledFunction("PG_FILE_RENAME"),
+			calledFunction("PG_FILE_UNLINK"), calledFunction("PG_FILE_SYNC"),
+			calledFunction("PG_LOGDIR_LS"),
+		),
+	},
+	{
 		// Every predefined `pg_ls_` function lists a directory on the server
 		// host -- pg_ls_dir, pg_ls_logdir, pg_ls_waldir, pg_ls_tmpdir,
 		// pg_ls_archive_statusdir, pg_ls_replslotdir -- so the prefix is the
@@ -774,7 +786,7 @@ func clickHouseRemoteTableFunctions() []string {
 	bases := []string{
 		"URL", "REMOTE", "REMOTESECURE", "CLUSTER", "CLUSTERALLREPLICAS",
 		"S3", "GCS", "HDFS", "AZUREBLOBSTORAGE", "COSN", "OSS",
-		"FILE", "INPUT", "EXECUTABLE",
+		"FILE", "INPUT", "EXECUTABLE", "EXECUTABLEPOOL",
 		"MYSQL", "POSTGRESQL", "MONGODB", "REDIS", "SQLITE", "ODBC", "JDBC",
 		"ICEBERG", "ICEBERGS3", "ICEBERGAZURE", "ICEBERGHDFS", "ICEBERGLOCAL",
 		"DELTALAKE", "DELTALAKES3", "DELTALAKEAZURE", "HUDI", "FUZZJSON",

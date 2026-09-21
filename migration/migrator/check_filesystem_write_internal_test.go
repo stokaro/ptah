@@ -590,3 +590,49 @@ func TestValidateCheckAssertionStatically_AcceptsTheReadsBesideThem(t *testing.T
 		})
 	}
 }
+
+// Two more the review found in the same class: a ClickHouse pool variant of
+// the executable table function, and adminpack, which ships with PostgreSQL
+// and writes files on the host from a scalar SELECT.
+func TestValidateCheckAssertionStatically_RefusesThePoolAndTheFileWriters(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "clickhouse executable pool",
+			dialect:   "clickhouse",
+			assertion: `SELECT count() >= 0 FROM executablePool('script.py', 'CSV', 'id UInt32')`,
+			wantErr:   `check assertion must not use ClickHouse remote table function, which .*`,
+		},
+		{
+			name:      "adminpack writes a file",
+			dialect:   "postgres",
+			assertion: `SELECT pg_file_write('/tmp/ptah', 'x', false) > 0`,
+			wantErr:   `check assertion must not use adminpack file function, which .*`,
+		},
+		{
+			name:      "adminpack removes a file",
+			dialect:   "postgres",
+			assertion: `SELECT pg_file_unlink('/tmp/ptah')`,
+			wantErr:   `check assertion must not use adminpack file function, which .*`,
+		},
+		{
+			name:      "adminpack renames a file",
+			dialect:   "postgres",
+			assertion: `SELECT pg_file_rename('/tmp/a', '/tmp/b')`,
+			wantErr:   `check assertion must not use adminpack file function, which .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""),
+				qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
