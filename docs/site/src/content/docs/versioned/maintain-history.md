@@ -356,6 +356,10 @@ Current version is 5 (2 set, 1 removed):
   - 6 (drop_legacy)
 ```
 
+Each line names the row by the identity the revision table holds, which is the
+string that finds it: an Atlas repeatable is `R` or `3R`, not the number beside
+it. The removals are listed in ascending order.
+
 `--version 0` names the state where no migration is applied. It removes every
 revision row and records none, and it says so instead of naming a version the
 migration directory has no file for:

@@ -2889,11 +2889,46 @@ func (m *Migrator) atlasRevisionSetChanges(
 		}
 		result.Set = append(result.Set, AtlasRevisionChange{
 			Version:         migration.Version,
-			RevisionVersion: migration.RevisionVersion(),
+			RevisionVersion: m.persistedRevisionIdentity(migration),
 			Description:     migration.atlasFilenameDescription(),
 		})
 	}
+	sortAtlasRevisionChanges(result.Removed)
+	sortAtlasRevisionChanges(result.Set)
 	return result
+}
+
+// persistedRevisionIdentity is the identity the row this set writes will be
+// stored under, which is what [AtlasRevisionChange.RevisionVersion] means.
+//
+// The two formats answer differently for an Atlas repeatable. The Atlas
+// revision table keeps the file's own identity, so `R__view.sql` is the row
+// `R`. The Ptah table keys on the numeric order key, so beside `1_users.sql`
+// and `2_orders.sql` the same file is the row 3, and naming it `R` would send
+// an operator looking for a row that table does not have.
+//
+// A removed row needs no such choice: it is read back from the table, so
+// [MigrationRevision.RevisionVersion] already answers in that table's terms.
+func (m *Migrator) persistedRevisionIdentity(migration *Migration) string {
+	if m.revisionTableFormat.isAtlas() {
+		return migration.RevisionVersion()
+	}
+	return strconv.FormatInt(migration.Version, 10)
+}
+
+// sortAtlasRevisionChanges puts the changes in the order the type promises.
+//
+// Removed rows arrive in whatever order the revision table returned them, so
+// without this a summary lists them by storage order and a reader cannot tell
+// how far down the boundary moved. The identity breaks a tie, which is what
+// orders a numbered repeatable against the version it shares a number with.
+func sortAtlasRevisionChanges(changes []AtlasRevisionChange) {
+	slices.SortStableFunc(changes, func(a, b AtlasRevisionChange) int {
+		if a.Version != b.Version {
+			return cmp.Compare(a.Version, b.Version)
+		}
+		return cmp.Compare(a.RevisionVersion, b.RevisionVersion)
+	})
 }
 
 // revisionRemovedByAtlasSet reports whether a set removes this revision row.

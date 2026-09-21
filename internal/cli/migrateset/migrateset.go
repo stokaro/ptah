@@ -287,14 +287,26 @@ func writeSetDryRun(out io.Writer, version int64) {
 	fmt.Fprintf(out, "Dry run: would set the revision boundary to version %d.\n", version)
 }
 
+// writeSetRevision names a row by the identity the revision table holds, not
+// by the ordering key the migrator derived from it.
+//
+// The two agree for a numbered migration and part company for an Atlas
+// repeatable: `R__view.sql` is stored as `R`, orders after every version, and
+// has no number of its own. Printed as a number it takes the ordinal of the
+// file beside it, so a summary line sends a reader looking for a version the
+// table never held.
 func writeSetRevision(out io.Writer, action string, revision migrator.AtlasRevisionChange) error {
+	version := revision.RevisionVersion
+	if version == "" {
+		version = strconv.FormatInt(revision.Version, 10)
+	}
 	if revision.Description == "" {
-		if _, err := fmt.Fprintf(out, "  %s %d\n", action, revision.Version); err != nil {
+		if _, err := fmt.Fprintf(out, "  %s %s\n", action, version); err != nil {
 			return fmt.Errorf("write migrations set revision: %w", err)
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintf(out, "  %s %d (%s)\n", action, revision.Version, revision.Description); err != nil {
+	if _, err := fmt.Fprintf(out, "  %s %s (%s)\n", action, version, revision.Description); err != nil {
 		return fmt.Errorf("write migrations set revision: %w", err)
 	}
 	return nil
