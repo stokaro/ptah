@@ -213,7 +213,8 @@ Inspect the database, apply what is missing yourself, then
 `ptah migrations repair --version <version>` records the result. A rollback
 interrupted the same way is recorded with `--force` once you restore what it
 reverted, or with `ptah migrations set --version <previous>` if you finish the
-rollback by hand.
+rollback by hand — version 0 where the migration is the oldest one in the
+directory.
 
 `direction` says which body left the row dirty, and repair follows it. Every
 example on this page is `direction=up`; for `direction=down` see
@@ -354,6 +355,22 @@ Current version is 5 (2 set, 1 removed):
   + 5 (add_index)
   - 6 (drop_legacy)
 ```
+
+`--version 0` names the state where no migration is applied. It removes every
+revision row and records none, and it says so instead of naming a version the
+migration directory has no file for:
+
+```text
+No migration is recorded as applied (2 removed):
+
+  - 1 (create_users)
+  - 2 (add_orders)
+```
+
+That is what clears the row a rollback finished by hand leaves behind when the
+migration it reverted was the oldest one in the directory: `--force` would
+record that migration applied, which is the opposite outcome. A negative
+version is refused.
 
 This is a metadata-only operation for databases whose schema was changed
 outside the migration flow. It never runs or reverts migration SQL — the

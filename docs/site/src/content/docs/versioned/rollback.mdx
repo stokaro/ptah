@@ -353,7 +353,8 @@ error names every way out.
 - `--force` — record it applied, for when you restored by hand the schema the
   rollback had started to undo.
 - `ptah migrations set --version <previous>` — move the revision boundary when
-  you finished the rollback by hand.
+  you finished the rollback by hand. Use `--version 0` where the rolled-back
+  migration is the oldest one in the directory and no previous version exists.
 
 A rollback that committed nothing needs none of this: a transactional down whose
 body was rolled back, or a non-transactional one whose very first statement

@@ -156,6 +156,28 @@ func TestAtlasMetadataRow_SetRevisionPreservesDotRow(t *testing.T) {
 	c.Assert(dotRowLiteral(t, conn), qt.Equals, before)
 }
 
+// A set to version 0 removes every migration revision and keeps the metadata
+// row, which is what the NULL guard around the version cast buys: the dot row
+// casts to NULL, and NULL is not above any boundary (stokaro/ptah#3455).
+func TestAtlasMetadataRow_SetRevisionToZeroPreservesDotRow(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newSQLiteAtlasFormatMigrator(t)
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+	insertAtlasMetadataDotRow(t, conn)
+	before := dotRowLiteral(t, conn)
+
+	result, err := m.SetAtlasRevision(ctx, 0)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(result.Removed, qt.HasLen, 2)
+	version, err := m.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(version, qt.Equals, int64(0))
+	c.Assert(dotRowLiteral(t, conn), qt.Equals, before)
+}
+
 func TestAtlasMetadataRow_DryRunReadsRealVersion(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

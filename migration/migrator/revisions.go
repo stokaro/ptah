@@ -792,15 +792,40 @@ func (m *Migrator) countRevisionsAboveSQL() string {
 	return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE version > ?`, m.qualifiedMigrationsTable())
 }
 
+// deleteRevisionsAboveSQL renders the delete a `set` runs over the NATIVE
+// revision table, whose version column is an integer.
+//
+// So it compares that column and nothing else. The Atlas expression guards a
+// text column that carries metadata and repeatable tokens, and asking it here
+// renders `version LIKE '.%'` against a BIGINT: PostgreSQL answers `operator
+// does not exist: bigint ~~ unknown` and the set fails outright, while SQLite
+// accepts the comparison, which is why no offline test on SQLite could see it
+// (stokaro/ptah#3461). A native table has no dot row and no repeatable token
+// for the guard to protect.
 func (m *Migrator) deleteRevisionsAboveSQL() string {
 	return fmt.Sprintf(
-		`DELETE FROM %s WHERE %s > ?`,
+		`DELETE FROM %s WHERE version > ?`,
 		m.qualifiedMigrationsTable(),
-		m.atlasVersionNumberExpression(),
 	)
 }
 
-func (m *Migrator) deleteAtlasSetRevisionsAboveSQL(retired, exactRemoved []string) string {
+// deleteAtlasSetRevisionsAbove renders the delete a `set` runs over the Atlas
+// revision table together with the arguments it binds.
+//
+// The statement and its argument list are returned by one function because
+// their lengths have to agree, and the boundary decides both. A set that leaves
+// a migration as the new head keeps that row with `version <> ?`; a set to
+// version 0 leaves no head, so the clause is absent rather than bound to the
+// empty string. Binding the empty string reads as correct and deletes nothing
+// on Oracle, which stores the empty string as NULL: measured on Oracle Free 23,
+// a comparison of any value to the empty string literal is not true, and a
+// filter on it keeps 0 of 2 rows. The offline guard in
+// set_revision_zero_internal_test.go carries the measurement.
+func (m *Migrator) deleteAtlasSetRevisionsAbove(
+	retired, exactRemoved []string,
+	version int64,
+	target *Migration,
+) (string, []any) {
 	versionExpression := m.atlasVersionNumberExpression()
 	if len(retired) > 0 {
 		literals := make([]string, len(retired))
@@ -813,7 +838,12 @@ func (m *Migrator) deleteAtlasSetRevisionsAboveSQL(retired, exactRemoved []strin
 			versionExpression,
 		)
 	}
-	predicate := versionExpression + " > ? AND version <> ?"
+	predicate := versionExpression + " > ?"
+	args := []any{version}
+	if target != nil {
+		predicate += " AND version <> ?"
+		args = append(args, target.RevisionVersion())
+	}
 	if len(exactRemoved) > 0 {
 		literals := make([]string, len(exactRemoved))
 		for index, revision := range exactRemoved {
@@ -825,7 +855,7 @@ func (m *Migrator) deleteAtlasSetRevisionsAboveSQL(retired, exactRemoved []strin
 		`DELETE FROM %s WHERE %s`,
 		m.qualifiedMigrationsTable(),
 		predicate,
-	)
+	), args
 }
 
 func (m *Migrator) updateAtlasRevisionTypeSQL() string {
@@ -900,6 +930,21 @@ func atlasRevisionErrorTests(dialect string) (recorded, absent string) {
 // [Migrator.atlasVersionNumberExpression] for why this, and not the predicate
 // above, is what protects the statements that select over every revision row.
 const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END`
+
+// atlasVersionNumberIsNull is the Go reading of that guard: it reports whether
+// the numeric form of a revision version is NULL, which is what makes the row
+// uncomparable to a numeric boundary.
+//
+// It is declared here, against the literal it reads, because two places decide
+// what a `set` removes. The delete compares numbers in SQL and a repeatable
+// identity has none, while the summary compares the version parsed out of that
+// identity and `3R` parses to 3. Left to themselves they disagree: the summary
+// reports the row removed and the row is still there (stokaro/ptah#3455).
+func atlasVersionNumberIsNull(revisionVersion string) bool {
+	return strings.HasPrefix(revisionVersion, ".") ||
+		revisionVersion == "R" ||
+		strings.HasSuffix(revisionVersion, "R")
+}
 
 // atlasVersionNumberExpression renders the numeric form of the version column.
 //
@@ -2612,6 +2657,11 @@ func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRe
 // version are preserved, missing rows are recorded as applied (manually set in
 // the Atlas layout), dirty rows are marked applied, and rows above version are
 // removed.
+//
+// Version 0 names the state where no migration is applied: every revision row
+// is removed and none is recorded. Atlas metadata rows survive it, as they
+// survive every other set. A negative version is refused, and so is a positive
+// version the migration directory has no file for.
 func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
 	// The Atlas-format operation keeps its historical name so lock-timeout
 	// diagnostics from the Atlas-compatible surface stay byte-identical.
@@ -2629,10 +2679,14 @@ func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisio
 }
 
 func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
-	if version <= 0 {
-		return AtlasRevisionSetResult{}, fmt.Errorf("migration version must be greater than zero")
+	if version < 0 {
+		return AtlasRevisionSetResult{}, fmt.Errorf("migration version must not be negative")
 	}
-	if m.migrationByVersion(version) == nil {
+	// Zero names no migration on purpose: it is the state where none is
+	// applied, and it is the only way to express that a rollback finished by
+	// hand left nothing behind. So it is not looked up, and every other
+	// version still must exist before its rows are written.
+	if version > 0 && m.migrationByVersion(version) == nil {
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
 	}
 	if m.isClickHouse() {
@@ -2705,12 +2759,15 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		return AtlasRevisionSetResult{}, err
 	}
 	retired := m.retiredAtlasRevisionVersions()
-	exactRemoved, err := m.unownedExactAtlasRevisionsAbove(existing, migrations[len(migrations)-1])
+	exactRemoved, err := m.unownedExactAtlasRevisionsAbove(existing, setBoundary(migrations))
 	if err != nil {
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	result := atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
+	exactRemoved = append(exactRemoved, m.unnumberedRemovedAtlasRevisions(
+		existing, migrations, version, retired, exactRemoved,
+	)...)
+	result := m.atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
 	if m.revisionTableFormat.isAtlas() {
 		err = m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version, exactRemoved)
 	} else {
@@ -2738,7 +2795,7 @@ func waitForAtlasSetRetry(ctx context.Context, attempt int) error {
 	}
 }
 
-func atlasRevisionSetChanges(
+func (m *Migrator) atlasRevisionSetChanges(
 	existing []MigrationRevision,
 	migrations []*Migration,
 	version int64,
@@ -2747,9 +2804,9 @@ func atlasRevisionSetChanges(
 ) AtlasRevisionSetResult {
 	result := AtlasRevisionSetResult{CurrentVersion: version}
 	revisions := newSetRevisionIndex(existing)
-	target := migrations[len(migrations)-1]
+	target := setBoundary(migrations)
 	for _, revision := range existing {
-		if revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
+		if m.revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
 			result.Removed = append(result.Removed, AtlasRevisionChange{
 				Version:         revision.Version,
 				RevisionVersion: revision.RevisionVersion(),
@@ -2771,15 +2828,106 @@ func atlasRevisionSetChanges(
 	return result
 }
 
-func revisionRemovedByAtlasSet(
+// revisionRemovedByAtlasSet reports whether a set removes this revision row.
+//
+// Above zero the question is ordering: a row is removed when its version is
+// above the boundary and it is neither the boundary row nor a retired
+// identity. Version 0 is not an ordering question. It names the state where no
+// migration is applied, so every row that records one goes, including an
+// identity that orders to zero itself -- an Atlas always-repeatable `R` whose
+// file has left the directory resolves to version 0 and would otherwise sit
+// above no boundary and below none.
+//
+// An Atlas metadata row is not a migration and is not touched at any version,
+// which is the invariant the whole revision path keeps.
+func (m *Migrator) revisionRemovedByAtlasSet(
 	revision MigrationRevision,
 	target *Migration,
 	version int64,
 	retired, exactRemoved []string,
 ) bool {
 	key := revision.RevisionVersion()
-	return slices.Contains(exactRemoved, key) ||
-		(revision.Version > version && key != target.RevisionVersion() && !slices.Contains(retired, key))
+	if slices.Contains(exactRemoved, key) {
+		return true
+	}
+	if m.isAtlasMetadataRevisionVersion(key) {
+		return false
+	}
+	if version == 0 {
+		return true
+	}
+	return revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key)
+}
+
+// isAtlasMetadataRevisionVersion is the Go reading of whichever predicate this
+// migrator's read applied, which is not one predicate.
+//
+// Without an exact revision map the read is [atlasMetadataRowPredicate] and
+// every dot-prefixed pseudo-version is Atlas bookkeeping. With one it is
+// [atlasExactIdentityRowPredicateFor], which excludes `.atlas_cloud_identifier`
+// alone, because a converted directory may map a dot identity to a real
+// migration -- and the version expression then maps it to a number the delete
+// compares. Reading the class in that mode would leave the row deleted and the
+// summary silent about it.
+func (m *Migrator) isAtlasMetadataRevisionVersion(revisionVersion string) bool {
+	if m.hasAtlasRevisionVersionMap() {
+		return revisionVersion == atlasCloudIdentifierVersion
+	}
+	return strings.HasPrefix(revisionVersion, ".")
+}
+
+// unnumberedRemovedAtlasRevisions names the rows a set removes that its numeric
+// predicate cannot reach.
+//
+// A repeatable identity such as `3R` is NULL to that predicate, so `NULL > 0`
+// leaves the row where it is, while the summary resolved the same identity to
+// version 3 and reported it removed. Naming those rows in the delete's explicit
+// list is what makes the two agree, and it is short by construction: only a
+// repeatable and an Atlas metadata row have no number, and a metadata row is
+// never reported removed, because it resolves to version 0 and no boundary is
+// below that.
+func (m *Migrator) unnumberedRemovedAtlasRevisions(
+	existing []MigrationRevision,
+	migrations []*Migration,
+	version int64,
+	retired, exactRemoved []string,
+) []string {
+	target := setBoundary(migrations)
+	var keys []string
+	for _, revision := range existing {
+		key := revision.RevisionVersion()
+		if !atlasVersionNumberIsNull(key) || slices.Contains(exactRemoved, key) {
+			continue
+		}
+		if !m.revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// setBoundary names the migration a `set` leaves as the new head: the last one
+// at or below the requested version.
+//
+// It answers nil for version 0, and that is the whole of what makes zero work.
+// Zero names the state where no migration is applied, so the boundary is below
+// every migration in the directory, there is no head row to keep, and every
+// revision is above it. Each caller below says what nil means where it reads
+// it; none of them may index this slice directly, which is what indexing the
+// last element of an empty selection would do.
+func setBoundary(migrations []*Migration) *Migration {
+	if len(migrations) == 0 {
+		return nil
+	}
+	return migrations[len(migrations)-1]
+}
+
+// boundaryRowKept reports whether this revision version is the row the set
+// leaves as the new head. A set to version 0 has no head, so nothing is kept
+// and every revision above the boundary is reported removed.
+func boundaryRowKept(target *Migration, key string) bool {
+	return target != nil && key == target.RevisionVersion()
 }
 
 func (m *Migrator) unownedExactAtlasRevisionsAbove(
@@ -2798,6 +2946,12 @@ func (m *Migrator) unownedExactAtlasRevisionsAbove(
 		key := revision.RevisionVersion()
 		_, isOwned := owned[key]
 		if isOwned {
+			continue
+		}
+		if target == nil {
+			// The boundary is below every migration, so every unowned
+			// revision is above it and no comparator is needed to say so.
+			removed[key] = struct{}{}
 			continue
 		}
 		if m.atlasRevisionCompare == nil {
@@ -2890,16 +3044,17 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 	version int64,
 	exactRemoved []string,
 ) error {
-	target := migrations[len(migrations)-1]
-	deleteSQL := sqlutil.Rebind(
-		m.conn.Info().Dialect,
-		m.deleteAtlasSetRevisionsAboveSQL(m.retiredAtlasRevisionVersions(), exactRemoved),
+	target := setBoundary(migrations)
+	deleteSQL, deleteArgs := m.deleteAtlasSetRevisionsAbove(
+		m.retiredAtlasRevisionVersions(),
+		exactRemoved,
+		version,
+		target,
 	)
 	if _, err := tx.ExecContext(
 		ctx,
-		deleteSQL,
-		version,
-		target.RevisionVersion(),
+		sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL),
+		deleteArgs...,
 	); err != nil {
 		return fmt.Errorf("failed to remove Atlas revisions above %d: %w", version, err)
 	}

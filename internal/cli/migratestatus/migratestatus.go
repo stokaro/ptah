@@ -567,8 +567,9 @@ func uncheckpointedHint(revision *migrator.MigrationRevision, dialect string) st
 		return fmt.Sprintf(
 			"On %s a statement commits on its own, so nothing records how far this rollback got: "+
 				"it may have run in full, in part, or not at all. Inspect the database and finish "+
-				"the rollback by hand, then run 'ptah migrations set --version <previous>' to move "+
-				"the boundary back -- or, if you restore what it reverted instead, 'ptah migrations "+
+				"the rollback by hand, then run 'ptah migrations set --version <previous>' (version 0 "+
+				"where this is the oldest migration in the directory) to move the boundary back -- "+
+				"or, if you restore what it reverted instead, 'ptah migrations "+
 				"repair --version %d --force' to record the migration applied.",
 			dialect,
 			revision.Version,
@@ -598,7 +599,8 @@ func unknownStatementOutcomeHint(revision *migrator.MigrationRevision) string {
 				"it committed was never recorded, and nothing after it ran. Inspect the database, "+
 				"then run 'ptah migrations repair --version %d --force' to record the migration "+
 				"applied if you restored what the rollback reverted, or 'ptah migrations set "+
-				"--version <previous>' if you finished the rollback by hand.",
+				"--version <previous>' (version 0 where this is the oldest migration in the "+
+				"directory) if you finished the rollback by hand.",
 			revision.Applied+1,
 			revision.Total,
 			revision.Version,
