@@ -517,6 +517,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
+	// Before the first migration, because it says which server the gate about
+	// to run planned against.
+	emitLintPolicyVersionNote(emit, lintPolicy)
 
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
@@ -845,6 +848,21 @@ func emitRunResult(w io.Writer, evidence migrator.RunEvidence) error {
 		return fmt.Errorf("error writing migration run result: %w", err)
 	}
 	return nil
+}
+
+// emitLintPolicyVersionNote says what the policy's declared server version
+// resolved to when it named no measured release line.
+//
+// A gate that planned against a different release than the one the policy
+// names is still a gate, and an apply that ran it without a word would report
+// nothing between "the gate passed on your server" and "the gate passed on the
+// nearest one we have measured".
+func emitLintPolicyVersionNote(emit cliobs.Emitter, policy migrationlintgate.Policy) {
+	note := policy.ServerVersionNote()
+	if note == "" {
+		return
+	}
+	emit.Printf("Migration lint policy: %s\n", note)
 }
 
 // emitMigrateUpDeferredChecks names the pre-migration checks a dry run

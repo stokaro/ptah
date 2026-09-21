@@ -74,8 +74,11 @@ and the first source that names one wins:
 
 A run that names no server plans against the dialect's default capability set.
 That is a starting point rather than a measurement, so the report carries no
-version and a machine can tell the two apart. A run that names no dialect at
-all stops at exit `2`, and so does a version naming no server or a different
+version and a machine can tell the two apart. A run that names no dialect
+either is the ordinary offline invocation: every dialect-independent rule
+runs, and there is no version to refine. Naming a version without a dialect
+stops at exit `2`, because a run over every engine has no single target the
+version could describe, and so does a version naming no server or a different
 product than the target.
 
 A declared version is resolved against the product the connection reports, not

@@ -57,6 +57,17 @@ type Policy struct {
 	families []string
 }
 
+// ServerVersionNote is what the policy's declared server version resolved to
+// when it named no measured release line, and is empty otherwise.
+//
+// The gate plans against a capability ladder, and a version between measured
+// lines lands on the nearest one below. An apply that proceeded without saying
+// so would have gated on a release nobody named, which reads exactly like a
+// gate that planned for the server in front of it.
+func (p Policy) ServerVersionNote() string {
+	return p.target.Note
+}
+
 // BlockingFamilies returns the families this policy refuses an apply on.
 func (p Policy) BlockingFamilies() []string {
 	return slices.Clone(p.families)
