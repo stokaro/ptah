@@ -483,6 +483,10 @@ func lintDirectory(
 		if server.err != nil {
 			return analysis, capture.result(), server.err
 		}
+		learned, learnedServer := server.learned()
+		if learnedServer {
+			analysis = analysisWithLearnedTarget(fsys, lintOptions, analysis, learned)
+		}
 		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
 	if server.err != nil {
@@ -507,6 +511,32 @@ func lintDirectory(
 	// one that belongs to this analysis.
 	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
 	return reanalyzed, schemas, err
+}
+
+// analysisWithLearnedTarget re-ranks the findings against what the connection
+// established, and is what a partial report carries.
+//
+// A replay that failed part way still connected, so the run knows more about
+// the server than the pass it would otherwise return: the version the dev
+// database reported, and the capabilities that resolve to. A report built from
+// the earlier pass names no server and ranks by the dialect default, which is
+// the same output a run against a server that can do nothing produces.
+//
+// A re-analysis that fails leaves the earlier pass in place. The replay error
+// is what this run reports, and replacing it would hide the input that caused
+// both.
+func analysisWithLearnedTarget(
+	fsys fs.FS,
+	opts lint.Options,
+	analysis lint.Analysis,
+	learned lint.Target,
+) lint.Analysis {
+	opts.Target = learned
+	reanalyzed, err := lint.AnalyzeFS(fsys, opts)
+	if err != nil {
+		return analysis
+	}
+	return reanalyzed
 }
 
 // serverTargetCollector records what the dev database reported about itself,

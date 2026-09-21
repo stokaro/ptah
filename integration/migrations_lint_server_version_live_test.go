@@ -197,3 +197,52 @@ func databaseInURL(c *qt.C, rawURL, name string) string {
 	c.Assert(cut > 0, qt.IsTrue)
 	return rawURL[:cut+1] + name
 }
+
+// A replay that fails part way still connected, so the partial report names the
+// server the run resolved against rather than falling back to the dialect
+// default.
+//
+// The version is deferred here -- declared with no dialect beside it -- which
+// is the shape where the pre-connection pass has nothing to plan with. Its
+// findings are ranked by the dialect default, and a report that carried them
+// would say the run planned for a server it never asked about
+// (stokaro/ptah#3420).
+func TestMigrationsLintPartialReportKeepsTheResolvedServerVersionLive(t *testing.T) {
+	c := qt.New(t)
+	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	dir := writeFailingReplayLintDir(c, t)
+
+	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:           dir,
+		DevURL:        devURL,
+		ServerVersion: "13",
+		FailOn:        migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir: true, DevURL: true, ServerVersion: true,
+		},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database.*`)
+	c.Assert(report.ServerVersion, qt.Equals, "13")
+	c.Assert(len(report.Findings) > 0, qt.IsTrue,
+		qt.Commentf("the partial report carries what the analysis found before the replay stopped"))
+}
+
+// writeFailingReplayLintDir writes a directory the analysis accepts and the dev
+// database refuses: the second version drops a table nothing created, so the
+// replay fails after the connection reported what it is.
+func writeFailingReplayLintDir(c *qt.C, t *testing.T) string {
+	c.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"0000000001_users.up.sql":   "CREATE TABLE ptah_lint_partial_users (id BIGINT PRIMARY KEY);\n",
+		"0000000001_users.down.sql": "DROP TABLE ptah_lint_partial_users;\n",
+		"0000000002_absent.up.sql":  "DROP TABLE ptah_lint_partial_absent;\n",
+		"0000000002_absent.down.sql": "CREATE TABLE ptah_lint_partial_absent " +
+			"(id BIGINT PRIMARY KEY);\n",
+	}
+	for name, content := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	return dir
+}
