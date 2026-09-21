@@ -117,8 +117,10 @@ the same result contract and the same session isolation as a precondition.
 **A failure means applied, postcondition failed.** The body is committed, so
 nothing is rolled back, the revision is not marked dirty, and the migration is
 not re-run: a later `ptah migrations up` sees it as applied and moves on. The
-run exits non-zero with a `PostMigrationCheckFailedError` naming the version and
-the assertion. What to do about a database that took the change without reaching
+run exits non-zero with a `PostMigrationCheckFailedError` naming the version,
+the direction and the assertion. On a rollback it says the opposite thing,
+because the database holds the opposite state: the rollback ran, its revision
+is gone, and nothing was re-applied. What to do about a database that took the change without reaching
 the state the change was for is an operator's decision, and Ptah's part is to
 say so rather than to guess.
 
@@ -128,7 +130,8 @@ the same `-- +ptah check` directives, evaluated against a database on demand,
 with no migration history involved.
 
 The same directive works in a down body: a `phase=after` check there is
-evaluated once the rollback has committed and its revision is gone.
+evaluated once the rollback has committed and its revision is gone. A dry run
+defers those too, and names the versions it deferred on `stderr`.
 
 ### Phases and the rest of the migration model
 

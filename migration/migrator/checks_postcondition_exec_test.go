@@ -257,6 +257,12 @@ func TestMigrateDown_FailingPostconditionReportsARolledBackMigration(t *testing.
 	var postErr *migrator.PostMigrationCheckFailedError
 	c.Assert(err, qt.ErrorAs, &postErr, qt.Commentf("want PostMigrationCheckFailedError, got %v", err))
 	c.Assert(postErr.Version, qt.Equals, int64(1))
+	// The message says what this database now holds, which is the opposite of
+	// what the up direction's says: a rollback that ran, not a migration that
+	// applied.
+	c.Assert(postErr.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(err.Error(), qt.Contains, "rollback of migration 1 completed")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "recorded as applied")
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, int64(0),

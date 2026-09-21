@@ -760,6 +760,15 @@ func (o migrateUpOutcome) selectedNothing() bool {
 // itself succeeded.
 func (o migrateUpOutcome) err() error {
 	if o.runErr != nil {
+		// The postcondition case is classified FIRST, and the order is the
+		// point: its error unwraps to a CheckFailedError, so the branch below
+		// would replace an outcome that says "applied" with advice to rerun
+		// with --skip-checks -- a retry that runs nothing, because the
+		// migration is already applied, and that loses the only sentence the
+		// operator needed.
+		if postErr, ok := errors.AsType[*migrator.PostMigrationCheckFailedError](o.runErr); ok {
+			return fmt.Errorf("error running migrations: %w", postErr)
+		}
 		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](o.runErr); ok {
 			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
 		}

@@ -208,10 +208,24 @@ func (e *CheckFailedError) Unwrap() error {
 // which assertion it was asks [CheckFailedError] through errors.As.
 type PostMigrationCheckFailedError struct {
 	Version int64
-	Err     error
+	// Direction is the half that ran. It decides what the message says the
+	// database now holds, which is the opposite thing in each direction: an
+	// applied migration after an up, and a removed revision after a down.
+	// Naming only one of them would tell half the operators the reverse of
+	// their own state.
+	Direction MigrationDirection
+	Err       error
 }
 
 func (e *PostMigrationCheckFailedError) Error() string {
+	if e.Direction == MigrationDirectionDown {
+		return fmt.Sprintf(
+			"rollback of migration %d completed and its post-migration check did not hold: %v "+
+				"(the rollback ran, its revision is gone, and nothing was re-applied)",
+			e.Version,
+			e.Err,
+		)
+	}
 	return fmt.Sprintf(
 		"migration %d applied and its post-migration check did not hold: %v "+
 			"(the migration is recorded as applied and nothing was rolled back)",

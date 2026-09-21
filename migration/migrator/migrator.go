@@ -446,12 +446,16 @@ func (m *Migrator) runPostMigrationChecks(
 	info := m.conn.Info()
 	if m.conn.Writer().IsDryRun() {
 		if err := validateCheckGroups(selected, info.Dialect, info.Version, migration.Version); err != nil {
-			return false, &PostMigrationCheckFailedError{Version: migration.Version, Err: err}
+			return false, &PostMigrationCheckFailedError{
+				Version: migration.Version, Direction: direction, Err: err,
+			}
 		}
 		return true, nil
 	}
 	if err := m.runMigrationChecks(ctx, m.conn, migration, direction, CheckPhaseAfter); err != nil {
-		return false, &PostMigrationCheckFailedError{Version: migration.Version, Err: err}
+		return false, &PostMigrationCheckFailedError{
+			Version: migration.Version, Direction: direction, Err: err,
+		}
 	}
 	return false, nil
 }
@@ -2384,11 +2388,17 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	// is bound as a parameter via the dialect-native placeholder.
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 
+	var checksDeferred []int64
 	for _, migration := range migrationsToRollback {
-		if err := m.rollbackMigration(ctx, migration, deleteSQL); err != nil {
+		deferred, err := m.rollbackMigration(ctx, migration, deleteSQL)
+		if err != nil {
 			return err
 		}
+		if deferred {
+			checksDeferred = append(checksDeferred, migration.Version)
+		}
 	}
+	m.reportDeferredDownChecks(checksDeferred)
 	if reconcileChecksums {
 		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
 			return err
@@ -3338,15 +3348,38 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	return nil
 }
 
-func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, deleteSQL string) error {
+// rollbackMigration rolls one migration back and reports whether its
+// postconditions were deferred rather than evaluated.
+func (m *Migrator) rollbackMigration(
+	ctx context.Context,
+	migration *Migration,
+	deleteSQL string,
+) (bool, error) {
 	if err := m.rollbackMigrationObserved(ctx, migration, deleteSQL); err != nil {
-		return err
+		return false, err
 	}
 	// Outside the observed span on purpose: the rollback ran and is recorded,
 	// and a postcondition that does not hold must not turn that into a
 	// rollback the metrics report as failed.
-	_, err := m.runPostMigrationChecks(ctx, migration, MigrationDirectionDown)
-	return err
+	return m.runPostMigrationChecks(ctx, migration, MigrationDirectionDown)
+}
+
+// reportDeferredDownChecks says which rollbacks' postconditions a dry run
+// validated but did not evaluate.
+//
+// The down path has no options struct to hand an observer, so the report goes
+// to the run's logger rather than to a caller. What must not happen is
+// silence: a preview that answered fewer questions than it was asked, and said
+// so on the up path only, tells an operator the rollback was previewed in full
+// (stokaro/ptah#3405).
+func (m *Migrator) reportDeferredDownChecks(versions []int64) {
+	if len(versions) == 0 {
+		return
+	}
+	m.logger.Warn(
+		"Deferred post-migration checks: a dry run does not produce the state they assert on",
+		"versions", versions,
+	)
 }
 
 func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Migration, deleteSQL string) (err error) {
