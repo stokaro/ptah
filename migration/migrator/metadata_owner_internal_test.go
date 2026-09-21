@@ -52,7 +52,7 @@ func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			query, args, ok := metadataTableOwnerQuery(test.dialect, "public", "schema_migrations")
+			query, args, ok := metadataTableOwnerQuery(test.dialect, "public", "public", "schema_migrations")
 			c.Assert(ok, qt.Equals, test.wantOK)
 			c.Assert(query != "", qt.Equals, test.wantOK)
 			c.Assert(len(args) == 2, qt.Equals, test.wantOK)
@@ -73,7 +73,7 @@ func Test_metadataTableOwnerQuery_BindsItsNames(t *testing.T) {
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			query, args, ok := metadataTableOwnerQuery(dialect, "app", "schema_migrations")
+			query, args, ok := metadataTableOwnerQuery(dialect, "app", "app", "schema_migrations")
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(args, qt.DeepEquals, []any{"app", "schema_migrations"})
 			c.Assert(query, qt.Not(qt.Contains), "app")

@@ -46,9 +46,10 @@ type ForeignMetadataTableError struct {
 func (e *ForeignMetadataTableError) Error() string {
 	return fmt.Sprintf(
 		"refusing to use metadata table %s: it is owned by %q and this connection runs as %q, "+
-			"so it is not the table Ptah would have created. Transfer it with ALTER TABLE %s OWNER TO %q, "+
-			"or set %s=1 to accept a table this connection does not own",
-		e.Table, e.Owner, e.Role, e.Table, e.Role, AllowForeignMetadataTableEnvVar,
+			"so it is not the table Ptah would have created. Drop it and let Ptah create it, after moving "+
+			"any rows worth keeping: ALTER TABLE ... OWNER TO would keep the triggers, defaults and "+
+			"policies it carries, and this check would then accept it. To use it as it stands, set %s=1",
+		e.Table, e.Owner, e.Role, AllowForeignMetadataTableEnvVar,
 	)
 }
 
@@ -88,7 +89,8 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 	}
 	query, args, ok := metadataTableOwnerQuery(
 		m.connectionDialect(),
-		configuredOrConnectionSchema(m.metadataTableSchemaName(), m.connectionSchemaName()),
+		m.metadataTableSchemaName(),
+		m.connectionSchemaName(),
 		table,
 	)
 	if !ok {
@@ -210,12 +212,22 @@ func (m *Migrator) refuseTruncatedIdentifier(name, subject, remedy string) error
 //
 // ok reports whether this dialect answers the question at all. Those that do
 // not are listed at [Migrator.refuseForeignMetadataTable].
-func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool) {
+func metadataTableOwnerQuery(dialect, configuredSchema, connectionSchema, table string) (string, []any, bool) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return postgresTableOwnerQuery, []any{schema, table}, true
+		// The configured schema alone, so an unconfigured run falls through to
+		// current_schema() inside the query. The schema recorded when the
+		// connection opened is not the one an unqualified CREATE TABLE
+		// resolves later: a `$user` schema created after that point takes
+		// precedence, and a lookup bound to the older name would inspect one
+		// schema while the DDL and the writes used another.
+		return postgresTableOwnerQuery, []any{configuredSchema, table}, true
 	case platform.Oracle:
-		return oracleTableOwnerQuery, []any{schema, table}, true
+		// Oracle needs a name: a schema is a user there, and the connected
+		// account is the one an unqualified CREATE TABLE lands in.
+		return oracleTableOwnerQuery,
+			[]any{configuredOrConnectionSchema(configuredSchema, connectionSchema), table},
+			true
 	default:
 		return "", nil, false
 	}
@@ -232,6 +244,11 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 // A deployment that really wants a group-owned metadata table says so with the
 // override.
 //
+// Every name is pg_catalog-qualified. search_path is attacker-influenced input
+// wherever the role that squats a table can also create a schema: a function
+// named pg_get_userbyid in an earlier schema would answer this guard, and the
+// guard would report the squatter's table as this connection's own.
+//
 // No relkind filter: CREATE TABLE IF NOT EXISTS collides with any relation
 // holding the name, so a partitioned table, a view or a foreign table under it
 // is adopted the same way an ordinary one is. Narrowing to `r` would report a
@@ -241,12 +258,12 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 // An empty schema is the connection's own, which is where an unqualified
 // CREATE TABLE lands.
 const postgresTableOwnerQuery = `SELECT
-  pg_get_userbyid(c.relowner),
+  pg_catalog.pg_get_userbyid(c.relowner),
   current_user,
-  pg_get_userbyid(c.relowner) = current_user
-FROM pg_class AS c
-JOIN pg_namespace AS n ON n.oid = c.relnamespace
-WHERE n.nspname = COALESCE(NULLIF(?, ''), current_schema())
+  pg_catalog.pg_get_userbyid(c.relowner) = current_user
+FROM pg_catalog.pg_class AS c
+JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+WHERE n.nspname = COALESCE(NULLIF(?, ''), pg_catalog.current_schema())
   AND c.relname = ?`
 
 // oracleTableOwnerQuery reads ALL_OBJECTS, where a schema is a user, so the

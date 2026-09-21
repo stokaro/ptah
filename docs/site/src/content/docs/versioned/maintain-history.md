@@ -398,8 +398,8 @@ tables.
 
 Ptah creates the revision table and the operation log with `CREATE TABLE IF
 NOT EXISTS`, so a table already standing under that name would be adopted
-whatever put it there. A run refuses a metadata table the connecting role
-neither owns nor inherits, before anything reads or writes it:
+whatever put it there. A run refuses a metadata table the connecting role does
+not own, before anything reads or writes it:
 
 ```text
 refusing to use metadata table schema_migrations: it is owned by "someone_else"
@@ -407,11 +407,16 @@ and this connection runs as "app", so it is not the table Ptah would have
 created.
 ```
 
-The owner has to be the connecting role itself. A group role everyone inherits
-is not an answer: every other member can change the table, which is the
-arrangement the refusal exists to catch. Where a table has to stay owned by a
-role the application only belongs to, the override says so. Where ownership cannot be
-transferred, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1` accepts the table as it is.
+The owner has to be the connecting role itself. A group role the application
+merely belongs to is not an answer: every other member of that role can change
+the table, which is the arrangement the refusal exists to catch. Where a table
+has to stay owned by another role, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`
+accepts it as it stands.
+
+The refusal does not tell you to transfer the table. `ALTER TABLE ... OWNER TO`
+keeps the triggers, defaults and policies it carries, and the check would then
+accept it because the owner matches, so the remedy would be the last step of
+what it refused. Move any rows worth keeping and let Ptah create the table.
 
 The refusal is ownership rather than a list of what a table may carry: on the
 PostgreSQL family a trigger, a rule, a default expression on a column Ptah does

@@ -109,6 +109,7 @@ type foreignMetadataFixture struct {
 	migrationURL  string
 	adminExec     func(c *qt.C, statement string)
 	squatterExec  func(c *qt.C, statement string)
+	migrationExec func(c *qt.C, statement string)
 }
 
 // foreignMetadataMigrations is the one migration every case in this file
@@ -230,6 +231,11 @@ func newForeignMetadataFixture(t *testing.T, squat string) *foreignMetadataFixtu
 
 	fixture.migrationURL = foreignMetadataURL(c, serverURL, database, fixture.migrationRole)
 	conn := openForeignMetadataConnection(c, t, serverURL, database, fixture.migrationRole)
+	fixture.migrationExec = func(c *qt.C, statement string) {
+		c.Helper()
+		_, err := conn.ExecContext(context.Background(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
 	mig, err := migrator.NewFSMigrator(conn, foreignMetadataMigrations())
 	c.Assert(err, qt.IsNil)
 	fixture.migrator = mig
@@ -453,9 +459,9 @@ func TestMetadataTableOwnedByANonInheritedRoleIsRefusedLive(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
 }
 
-// The refusal names the table the way an operator would address it, so the
-// remedy it prints acts on the table that was refused rather than on whatever
-// the search path resolves an unqualified name to.
+// The refusal names the table the way an operator would address it, so a
+// reader looks up the table that was refused rather than whatever the search
+// path resolves a bare name to.
 func TestForeignMetadataRefusalNamesTheQualifiedTableLive(t *testing.T) {
 	c := qt.New(t)
 	fixture := newForeignMetadataFixture(t, "")
@@ -469,7 +475,7 @@ func TestForeignMetadataRefusalNamesTheQualifiedTableLive(t *testing.T) {
 	err := fixture.migrator.WithMigrationsTable("audit", "schema_migrations").Initialize(t.Context())
 
 	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
-	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE "audit"."schema_migrations" OWNER TO.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*refusing to use metadata table "audit"."schema_migrations".*`)
 }
 
 // A log name the target would truncate closes the log rather than the run.
@@ -526,6 +532,81 @@ func TestForeignMetadataTableIsRefusedByTheLayoutProbeLive(t *testing.T) {
 	fixture := newForeignMetadataFixture(t, "schema_migrations")
 
 	_, err := fixture.migrator.RevisionLayoutBase(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
+}
+
+// The refusal does not send an operator to ALTER TABLE ... OWNER TO. Transfer
+// keeps the triggers, defaults and policies the table carries, and this check
+// would then accept it because the owner matches -- turning the remedy into
+// the last step of the attack it refused.
+func TestForeignMetadataRefusalDoesNotRecommendATransferLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "schema_migrations")
+
+	err := fixture.migrator.Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*OWNER TO "[^"]+".*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*Drop it and let Ptah create it.*`)
+}
+
+// The lookup asks the schema an unqualified CREATE TABLE resolves, not the one
+// recorded when the connection opened.
+//
+// The default search_path is `"$user", public`, so a schema named after the
+// connecting role takes precedence the moment it exists -- on a session that
+// is already open. Measured on PostgreSQL 16.15: current_schema() moves from
+// `public` to the new schema while the connection's own record still says
+// `public`, so a check bound to the recorded name inspects one schema while
+// the DDL and the writes use another.
+func TestForeignMetadataTableIsRefusedInALaterUserSchemaLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	admin := fixture.adminExec
+	// The migrator's connection is already open, and recorded public.
+	admin(c, `CREATE SCHEMA `+fixture.migrationRole+` AUTHORIZATION `+fixture.squatterRole)
+	// PostgreSQL skips a search_path entry the session cannot use, so without
+	// this grant current_schema() stays public and there is nothing to measure.
+	fixture.squatterExec(c, `GRANT USAGE ON SCHEMA `+fixture.migrationRole+
+		` TO `+fixture.migrationRole)
+	fixture.squatterExec(c, `CREATE TABLE `+fixture.migrationRole+`.schema_migrations (
+		version bigint PRIMARY KEY, description text NOT NULL,
+		applied_at timestamp without time zone NOT NULL)`)
+	fixture.squatterExec(c, `GRANT ALL ON `+fixture.migrationRole+`.schema_migrations TO PUBLIC`)
+
+	err := fixture.migrator.Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+}
+
+// search_path is attacker-influenced input wherever the role that squats a
+// table can also create a schema, so the guard names pg_catalog itself.
+//
+// With pg_catalog listed explicitly and a schema ahead of it, a function named
+// pg_get_userbyid in that schema answers an unqualified call. Left unqualified
+// the guard would ask the squatter who owns the squatter's table.
+func TestForeignMetadataTableIsRefusedThroughAShadowedCatalogFunctionLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	admin := fixture.adminExec
+	admin(c, `CREATE SCHEMA evil AUTHORIZATION `+fixture.squatterRole)
+	admin(c, `GRANT USAGE, CREATE ON SCHEMA evil TO `+fixture.migrationRole)
+	// The squat, the shadow and the schema an unqualified CREATE resolves are
+	// all `evil`: the role that can place a table there can place a function
+	// beside it.
+	fixture.squatterExec(c, `CREATE TABLE evil.schema_migrations (
+		version bigint PRIMARY KEY, description text NOT NULL,
+		applied_at timestamp without time zone NOT NULL)`)
+	fixture.squatterExec(c, `CREATE TRIGGER ptah_squat_trg BEFORE INSERT ON evil.schema_migrations
+		FOR EACH ROW EXECUTE FUNCTION public.ptah_squat_probe()`)
+	fixture.squatterExec(c, `GRANT ALL ON evil.schema_migrations TO PUBLIC`)
+	fixture.squatterExec(c, `CREATE FUNCTION evil.pg_get_userbyid(oid) RETURNS name
+		LANGUAGE sql IMMUTABLE AS $$ SELECT current_user $$`)
+	fixture.migrationExec(c, `SET search_path = evil, pg_catalog, public`)
+
+	err := fixture.migrator.Initialize(t.Context())
 
 	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
 	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
