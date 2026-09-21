@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -305,8 +306,10 @@ func (m *Migrator) logMigrationEvent(
 		ctx = durable
 	}
 	if err := m.ensureMigrationLogTable(ctx); err != nil {
-		m.logger.Warn("Could not create the migration log table",
-			"version", migration.Version, "error", err)
+		if !errors.Is(err, errMigrationLogAlreadyRefused) {
+			m.logger.Warn("Could not create the migration log table",
+				"version", migration.Version, "error", err)
+		}
 		return
 	}
 	entry := MigrationLogEntry{
@@ -361,9 +364,33 @@ func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
 // by any command run with an account that may read and not create -- turning a
 // question into a write, and a read-only credential into a failure. Only a run
 // that has something to record needs the table.
+// errMigrationLogAlreadyRefused is the silent form of a refusal already
+// reported. The caller warns on every other error and skips this one, so the
+// entry is still not written and the message is not repeated.
+var errMigrationLogAlreadyRefused = errors.New("migration log table already refused")
+
 func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
 		return nil
+	}
+	// The same refusal the revision table gets, and for the same reason: this
+	// table is written on every attempt, so adopting one somebody else created
+	// hands them a hook on every migration. See
+	// [Migrator.refuseForeignMetadataTable].
+	//
+	// It does not stop the migration, unlike the revision table's. Ptah cannot
+	// record what it did without a revision table, so there the refusal has to
+	// be terminal; the log is a record beside the work. Failing the run here
+	// would hand any role that can create a table in the metadata schema a way
+	// to stop every migration by creating this one.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		// Latched so the refusal is reported once rather than per entry: it
+		// names one table and one remedy, and repeating it per attempt buries
+		// the rest of the run.
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
 	}
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
 		return fmt.Errorf("create the migration log table: %w", err)

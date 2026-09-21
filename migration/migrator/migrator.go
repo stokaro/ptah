@@ -238,6 +238,10 @@ type Migrator struct {
 	// that writes two entries per migration sends its DDL once. A pointer for
 	// the same reason the counter is one.
 	migrationLogReady *atomic.Bool
+	// migrationLogRefused latches a log table this connection does not own, so
+	// the refusal is reported once rather than on every entry the run would
+	// have written.
+	migrationLogRefused *atomic.Bool
 	// actor is the name the log records for this run, and actorSource says
 	// what that name is worth. See [ActorSource].
 	actor                    string
@@ -286,6 +290,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLogRunID:   newMigrationLogRunID(),
 		migrationLogSeq:     new(atomic.Int64),
 		migrationLogReady:   new(atomic.Bool),
+		migrationLogRefused: new(atomic.Bool),
 		actor:               actorName,
 		actorSource:         actorSource,
 	}
@@ -1165,6 +1170,13 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 		if _, err := m.conn.ExecContext(ctx, schemaSQL); err != nil {
 			return fmt.Errorf("failed to create migrations schema: %w", err)
 		}
+	}
+
+	// Before the CREATE, so a table Ptah would adopt rather than create is
+	// refused without anything having touched it. See
+	// [Migrator.refuseForeignMetadataTable].
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
+		return err
 	}
 
 	// Deliberately outside the migration writer for the same reason as schema
