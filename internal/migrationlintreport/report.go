@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -58,16 +59,24 @@ const (
 
 // Report is the structured result produced by the migration linter.
 type Report struct {
-	Failed           bool           `json:"failed"`
-	FailureThreshold string         `json:"failure_threshold"`
-	Dialect          string         `json:"dialect,omitempty"`
-	Dir              string         `json:"dir,omitempty"`
-	DisabledRules    []string       `json:"disabled_rules,omitempty"`
-	Findings         []lint.Finding `json:"findings"`
-	Error            string         `json:"error,omitempty"`
-	Versions         []int64        `json:"-"`
-	VersionKeys      []string       `json:"-"`
-	Analysis         lint.Analysis  `json:"-"`
+	Failed           bool   `json:"failed"`
+	FailureThreshold string `json:"failure_threshold"`
+	Dialect          string `json:"dialect,omitempty"`
+	// ServerVersion is the server the run planned against, empty when it named
+	// none and planned against the dialect default.
+	ServerVersion string `json:"server_version,omitempty"`
+	// ServerVersionNote says what was planned when ServerVersion selected no
+	// measured release line, empty otherwise. A run that planned against
+	// something the operator did not name says so here rather than letting the
+	// version alone imply an exact match.
+	ServerVersionNote string         `json:"server_version_note,omitempty"`
+	Dir               string         `json:"dir,omitempty"`
+	DisabledRules     []string       `json:"disabled_rules,omitempty"`
+	Findings          []lint.Finding `json:"findings"`
+	Error             string         `json:"error,omitempty"`
+	Versions          []int64        `json:"-"`
+	VersionKeys       []string       `json:"-"`
+	Analysis          lint.Analysis  `json:"-"`
 	// SchemaCurrent and SchemaDesired are the HCL rendering of the dev database
 	// before the first analyzed version and after the last one. They are empty
 	// unless Options.CaptureSchema asked for them, and empty when the run never
@@ -80,19 +89,23 @@ type Report struct {
 // Options are the migration lint inputs shared by native and Atlas-compatible
 // commands.
 type Options struct {
-	Dir        string
-	FS         fs.FS
-	DirFormat  string
-	Dialect    string
-	ConfigPath string
-	AtlasEnv   string
-	DevURL     string
-	GitBase    string
-	GitDir     string
-	Disabled   []string
-	FailOn     string
-	Latest     uint
-	Positional []string
+	Dir       string
+	FS        fs.FS
+	DirFormat string
+	Dialect   string
+	// ServerVersion pins the server the run plans against. It overrides the
+	// `server-version` key of the lint configuration and what a dev database
+	// reports about itself.
+	ServerVersion string
+	ConfigPath    string
+	AtlasEnv      string
+	DevURL        string
+	GitBase       string
+	GitDir        string
+	Disabled      []string
+	FailOn        string
+	Latest        uint
+	Positional    []string
 	// RevisionVersions maps converted execution-order keys to exact Atlas
 	// identities for replay diagnostics. Native callers leave it nil.
 	RevisionVersions map[int64]string
@@ -111,14 +124,15 @@ type Options struct {
 // command packages preserve their flag precedence without making report
 // construction depend on Cobra.
 type ChangedOptions struct {
-	Dir       bool
-	DirFormat bool
-	Dialect   bool
-	AtlasEnv  bool
-	DevURL    bool
-	GitBase   bool
-	GitDir    bool
-	Latest    bool
+	Dir           bool
+	DirFormat     bool
+	Dialect       bool
+	ServerVersion bool
+	AtlasEnv      bool
+	DevURL        bool
+	GitBase       bool
+	GitDir        bool
+	Latest        bool
 }
 
 type sarifReport struct {
@@ -215,10 +229,15 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
+	declared, err := declaredTarget(opts, cfg, dialect)
+	if err != nil {
+		return Report{}, err
+	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
-	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
+	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferredVersion, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
+		Target:        declared.resolved,
 		Disabled:      disabled,
 		PathPrefix:    filepath.ToSlash(opts.Dir),
 		// Scoped on the Atlas-compatible surface ONLY, where the pinned
@@ -245,18 +264,21 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Naming:            cfg.Naming,
 	})
 	findings := analysis.Findings()
+	reported := analysis.Target()
 	report := Report{
-		Failed:           shouldFail(findings, opts.FailOn),
-		FailureThreshold: opts.FailOn,
-		Dialect:          dialect,
-		Dir:              opts.Dir,
-		DisabledRules:    disabled,
-		Findings:         findings,
-		Versions:         selection.versions,
-		VersionKeys:      selection.versionKeys,
-		Analysis:         analysis,
-		SchemaCurrent:    schemas.current,
-		SchemaDesired:    schemas.desired,
+		Failed:            shouldFail(findings, opts.FailOn),
+		FailureThreshold:  opts.FailOn,
+		Dialect:           dialect,
+		ServerVersion:     reported.Version,
+		ServerVersionNote: reported.Note,
+		Dir:               opts.Dir,
+		DisabledRules:     disabled,
+		Findings:          findings,
+		Versions:          selection.versions,
+		VersionKeys:       selection.versionKeys,
+		Analysis:          analysis,
+		SchemaCurrent:     schemas.current,
+		SchemaDesired:     schemas.desired,
 	}
 	if err != nil {
 		report.Error = err.Error()
@@ -433,6 +455,7 @@ func lintDirectory(
 	opts Options,
 	fsys fs.FS,
 	dirFormat migrationfile.DirFormat,
+	deferredVersion string,
 	lintOptions lint.Options,
 ) (lint.Analysis, replayedSchemas, error) {
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
@@ -442,6 +465,7 @@ func lintDirectory(
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
 	baseline.setDialect(opts.Dialect)
 	capture := newReplaySchemaCapture(opts, analysis)
+	server := newServerTargetCollector(lintOptions.Target, deferredVersion)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
@@ -451,12 +475,33 @@ func lintDirectory(
 		RevisionVersions:  opts.RevisionVersions,
 		ObserveVersion:    replayVersionObserver(baseline, capture),
 		ObserveReplayed:   capture.replayedObserver(ctx),
+		ObserveServer:     server.observe,
 	}); err != nil {
+		// A version the connection refused is reported as itself: the replay
+		// error that follows it is downstream of an input that was already
+		// wrong.
+		if server.err != nil {
+			return analysis, capture.result(), server.err
+		}
+		learned, learnedServer := server.learned()
+		if learnedServer {
+			analysis = analysisWithLearnedTarget(fsys, lintOptions, analysis, learned)
+		}
 		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
+	if server.err != nil {
+		return analysis, capture.result(), server.err
+	}
 	schemas := capture.result()
-	if len(baseline.columns) == 0 {
+	learned, learnedServer := server.learned()
+	if len(baseline.columns) == 0 && !learnedServer {
 		return analysis, schemas, nil
+	}
+	if learnedServer {
+		// The reported analysis is the one that had every fact the run could
+		// gather, so a version the dev database reported reaches the rules
+		// rather than only the summary line.
+		lintOptions.Target = learned
 	}
 	lintOptions.Baseline = baseline.columns
 	lintOptions.BaselineIndexes = baseline.indexes
@@ -466,6 +511,86 @@ func lintDirectory(
 	// one that belongs to this analysis.
 	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
 	return reanalyzed, schemas, err
+}
+
+// analysisWithLearnedTarget re-ranks the findings against what the connection
+// established, and is what a partial report carries.
+//
+// A replay that failed part way still connected, so the run knows more about
+// the server than the pass it would otherwise return: the version the dev
+// database reported, and the capabilities that resolve to. A report built from
+// the earlier pass names no server and ranks by the dialect default, which is
+// the same output a run against a server that can do nothing produces.
+//
+// A re-analysis that fails leaves the earlier pass in place. The replay error
+// is what this run reports, and replacing it would hide the input that caused
+// both.
+func analysisWithLearnedTarget(
+	fsys fs.FS,
+	opts lint.Options,
+	analysis lint.Analysis,
+	learned lint.Target,
+) lint.Analysis {
+	opts.Target = learned
+	reanalyzed, err := lint.AnalyzeFS(fsys, opts)
+	if err != nil {
+		return analysis
+	}
+	return reanalyzed
+}
+
+// serverTargetCollector records what the dev database reported about itself,
+// and only where the run had not already been told.
+//
+// A version an operator declared outranks one read off a dev database: a dev
+// database is a scratch server, often a different release from the one a
+// migration will meet, and silently preferring it would make a declaration
+// that says one thing produce a run that planned for another.
+type serverTargetCollector struct {
+	declared        lint.Target
+	deferredVersion string
+	found           lint.Target
+	seen            bool
+	// err is a declared version the connected product refuses. It aborts the
+	// replay, so the dev realm is not cleaned and rebuilt to report an input
+	// that was already wrong, and it is kept as well so the caller reports it
+	// rather than the replay error wrapped around it.
+	err error
+}
+
+func newServerTargetCollector(declared lint.Target, deferredVersion string) *serverTargetCollector {
+	return &serverTargetCollector{declared: declared, deferredVersion: deferredVersion}
+}
+
+func (c *serverTargetCollector) observe(info catalog.ServerInfo) error {
+	if c.seen || c.err != nil {
+		return c.err
+	}
+	// The dialect is the connection's own, not the URL's scheme: a postgres://
+	// connection can report cockroachdb, and the capabilities it carries are
+	// that product's.
+	if c.deferredVersion != "" {
+		target, err := lint.ResolveTarget(info.Dialect, c.deferredVersion)
+		if err != nil {
+			c.err = err
+			return err
+		}
+		c.found, c.seen = target, true
+		return nil
+	}
+	if c.declared.Named() {
+		return nil
+	}
+	c.found = lint.TargetFromServer(info.Dialect, info.Version, info.Capabilities, info.CapabilityNote)
+	c.seen = c.found.Named()
+	return nil
+}
+
+// learned returns the target read off the dev database, and whether one was
+// read at all. A server that reported no version leaves the run planning
+// against what it already had.
+func (c *serverTargetCollector) learned() (lint.Target, bool) {
+	return c.found, c.seen
 }
 
 // replayedSchemas is the before/after HCL pair a run captured, empty when it
@@ -1589,4 +1714,48 @@ func compatSchemaScope(profile lint.CompatibilityProfile, devURL string) string 
 		return ""
 	}
 	return schemaselection.FromURL(devURL).Scope
+}
+
+// declaration is what the operator said about the server, and whether it could
+// be resolved yet.
+type declaration struct {
+	// resolved is the target, empty when resolution waits for a connection.
+	resolved lint.Target
+	// deferredVersion is the declared version whose dialect only a connection
+	// can name, empty when there is nothing to wait for.
+	deferredVersion string
+}
+
+// declaredTarget resolves the server a lint run plans against from what the
+// operator declared, in the order a declaration outranks another: the flag,
+// then the lint configuration. A dev database is not consulted for the version
+// here -- it answers later, and only when neither of these did.
+//
+// Resolution waits for the connection when nothing but the dev URL named the
+// dialect, because a URL scheme is not a product: a `mysql://` connection can
+// reach MariaDB and a `postgres://` one CockroachDB, YugabyteDB or Spanner.
+// Resolving `10.11.6-MariaDB` against the scheme would refuse a pair that is
+// correct, and a CockroachDB version would select the PostgreSQL ladder.
+func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration, error) {
+	version := cfg.ServerVersion
+	if opts.Changed.ServerVersion {
+		version = opts.ServerVersion
+	}
+	if version != "" && namedDialect(opts, cfg) == "" && strings.TrimSpace(opts.DevURL) != "" {
+		return declaration{deferredVersion: version}, nil
+	}
+	target, err := lint.ResolveTarget(dialect, version)
+	if err != nil {
+		return declaration{}, err
+	}
+	return declaration{resolved: target}, nil
+}
+
+// namedDialect is the dialect the operator named, empty when only the dev
+// URL's scheme suggested one.
+func namedDialect(opts Options, cfg *lint.Config) string {
+	if opts.Changed.Dialect {
+		return opts.Dialect
+	}
+	return cfg.Dialect
 }

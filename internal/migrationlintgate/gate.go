@@ -46,12 +46,26 @@ func DisabledFamilies() []string {
 
 // Policy is a validated apply-time lint policy resolved for a live database.
 type Policy struct {
-	dialect  string
+	dialect string
+	// target is the server the analysis plans against, resolved from the
+	// policy's server-version against the dialect the connection reported.
+	target   lint.Target
 	disabled []string
 	rules    map[string]lint.RuleConfig
 	// families are the identifier families whose blocking findings refuse
 	// the apply: [ReportedFamily] and whatever the policy's gate section adds.
 	families []string
+}
+
+// ServerVersionNote is what the policy's declared server version resolved to
+// when it named no measured release line, and is empty otherwise.
+//
+// The gate plans against a capability ladder, and a version between measured
+// lines lands on the nearest one below. An apply that proceeded without saying
+// so would have gated on a release nobody named, which reads exactly like a
+// gate that planned for the server in front of it.
+func (p Policy) ServerVersionNote() string {
+	return p.target.Note
 }
 
 // BlockingFamilies returns the families this policy refuses an apply on.
@@ -97,8 +111,25 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 			disabled = append(disabled, family)
 		}
 	}
+	// The apply path is where the version a policy declares finally has a
+	// dialect to be resolved against: the configuration may leave the dialect
+	// out, and here the wire reported it. Resolving it is also what refuses a
+	// value that names no server, which `migrations lint` refuses and this
+	// would otherwise accept and ignore.
+	//
+	// Only where the linter has rules for that engine, though. Oracle is the
+	// one it does not, and the gate still runs there: the DS family is
+	// dialect-independent and protects an Oracle apply the same way it
+	// protects every other. A policy that also declared a version on such a
+	// connection is refused rather than ignored, because that declaration
+	// cannot be honored.
+	target, err := policyTarget(databaseDialect, cfg.ServerVersion)
+	if err != nil {
+		return Policy{}, err
+	}
 	policy := Policy{
 		dialect:  databaseDialect,
+		target:   target,
 		disabled: append(disabled, cfg.DisabledRules...),
 		rules:    cfg.Rules,
 		families: families,
@@ -163,8 +194,25 @@ func (p Policy) gatesOn(rule string) bool {
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
 		Dialect:     p.dialect,
+		Target:      p.target,
 		Disabled:    p.disabled,
 		PathPrefix:  pathPrefix,
 		RuleConfigs: p.rules,
 	}
+}
+
+// policyTarget resolves the server the apply-time gate plans against, or
+// leaves it unresolved on an engine the linter has no rules for.
+func policyTarget(databaseDialect, serverVersion string) (lint.Target, error) {
+	if _, ok := lintdialect.Canonical(databaseDialect); ok {
+		return lint.ResolveTarget(databaseDialect, serverVersion)
+	}
+	if serverVersion != "" {
+		return lint.Target{}, fmt.Errorf(
+			"lint server-version %q cannot be resolved against database dialect %q: "+
+				"lint has no rules for it, so there is no capability set to refine",
+			serverVersion, databaseDialect,
+		)
+	}
+	return lint.Target{}, nil
 }

@@ -306,6 +306,16 @@ type Options struct {
 	// of a project file. Nil leaves the six rules silent: a convention is the
 	// project's to state, and the rules carry none of their own.
 	Naming *NamingConfig
+
+	// Target is the server the analyzed migrations will run against, resolved
+	// through [ResolveTarget] from a declared version or from the dev database
+	// a run connected to. Every analyzed [File] and [Statement] carries it, so
+	// a rule whose answer depends on the server reads it there.
+	//
+	// The zero value names no server. [AnalyzeFS] then resolves the dialect
+	// default into it, so a rule never meets an empty capability set that it
+	// would have to tell apart from a server answering false to everything.
+	Target Target
 }
 
 func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {

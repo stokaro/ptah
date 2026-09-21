@@ -321,6 +321,15 @@ func runAtlasMigrateLint(
 	lintOptions.RevisionVersions = revisionVersions
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
+		// Before the error goes out, whichever way it goes: a run that
+		// analyzed against a release line nobody named still analyzed against
+		// it, and a partial report is where a reader is least able to tell.
+		// The Atlas error renderers carry no field for it.
+		if noticeErr := migrationlintreport.WriteServerVersionNotice(
+			cmd.ErrOrStderr(), report,
+		); noticeErr != nil {
+			return cmdutil.Fail(cmd, noticeErr)
+		}
 		if formatOutput {
 			if err := writeAtlasMigrateLintReplayError(
 				cmd, opts, dir, report, integrity, revisionVersions, err,
@@ -355,8 +364,12 @@ func runAtlasMigrateLint(
 	}
 	// Stderr, after the report and whatever format produced it: stdout and the
 	// exit code stay byte-identical to a run without this, and a reader still
-	// learns that an analyzer went without the input it reads.
+	// learns that an analyzer went without the input it reads, or that the run
+	// planned against a release line nobody named.
 	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := migrationlintreport.WriteServerVersionNotice(cmd.ErrOrStderr(), report); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if report.Failed {

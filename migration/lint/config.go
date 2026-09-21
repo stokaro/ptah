@@ -27,6 +27,7 @@ const ConfigFileName = ".ptah-lint.yaml"
 // Example .ptah-lint.yaml:
 //
 //	dialect: postgres
+//	server-version: "17"
 //	disabled-rules:
 //	  - MF103
 //	  - MY
@@ -39,6 +40,18 @@ type Config struct {
 	// Dialect is the target dialect used to gate dialect-specific rules;
 	// the --dialect flag overrides it.
 	Dialect string `yaml:"dialect"`
+	// ServerVersion is the server the migrations will run against, in the same
+	// spelling --server-version takes on every other offline command: "17",
+	// "8.4.6", "10.11.6-MariaDB". The --server-version flag overrides it, and
+	// it overrides what a dev database reports about itself -- what an
+	// operator wrote down is what they meant, and a dev database is often a
+	// different release from the one a migration will meet. Empty with no flag
+	// and no dev database leaves the run planning against the dialect default.
+	//
+	// It is validated against Dialect, so a version naming another product is
+	// refused here rather than resolving to the default and quietly changing
+	// which rules can fire.
+	ServerVersion string `yaml:"server-version,omitempty"`
 	// DisabledRules lists rule codes or family prefixes to skip; merged
 	// with --disable flags.
 	DisabledRules []string `yaml:"disabled-rules"`
@@ -131,6 +144,16 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
 	}
 	cfg.Dialect = canonical
+	// Only where the configuration names its own dialect. A policy may leave
+	// the dialect to the command line or to a dev database and still pin the
+	// version here, and refusing that pair would refuse a configuration that
+	// is complete by the time it is used. What wins is resolved once, against
+	// the effective dialect, by the caller that knows it.
+	if cfg.Dialect != "" {
+		if _, err := ResolveTarget(cfg.Dialect, cfg.ServerVersion); err != nil {
+			return err
+		}
+	}
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
 		return err
 	}

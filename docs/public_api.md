@@ -225,6 +225,18 @@ prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`
 and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
 
+`lint.Target` is the server an analysis plans against, and every prepared
+`File` and `Statement` carries it, so a rule whose verdict depends on the
+server reads `Target.Capabilities` rather than comparing version strings of its
+own. `ResolveTarget` maps a dialect and an operator-supplied version onto one,
+with the same refusals `--server-version` carries elsewhere: a version naming
+no server, a version naming another product, and a version with no dialect are
+each an error rather than a silent fallback to the default. `TargetFromServer`
+is the live counterpart and refuses nothing, because a banner a server wrote is
+what is actually there. A run that passes no target analyzes against the
+dialect default, `Analysis.Target` reports which, and `Target.Named` separates
+a server that was named from a default that was assumed.
+
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
 including selectors with leading or trailing whitespace. It also rejects
 unsupported dialects and empty, malformed, or non-normalized exclusion globs

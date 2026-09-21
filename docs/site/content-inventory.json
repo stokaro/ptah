@@ -4325,8 +4325,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8812,
-      "sourceBytes": 87094
+      "visibleWords": 8819,
+      "sourceBytes": 87164
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -6865,8 +6865,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3454,
-      "sourceBytes": 25056
+      "visibleWords": 3960,
+      "sourceBytes": 28355
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",

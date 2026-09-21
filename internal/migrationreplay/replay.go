@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devclean"
@@ -46,6 +47,21 @@ type Options struct {
 	// after-state counterpart of ObserveVersion. An error from it aborts the
 	// replay.
 	ObserveReplayed func(conn *dbschema.DatabaseConnection) error
+	// ObserveServer, when set, runs once with what the dev database reported
+	// about itself, before any migration is replayed.
+	//
+	// It is separate from the two observers above because it answers a
+	// different question and answers it in a case they cannot: a directory
+	// with nothing to replay still reached a server, and a caller that plans
+	// against that server's version needs the answer whether or not any
+	// migration ran.
+	//
+	// An error from it aborts the replay, before the realm is cleaned and
+	// before a single migration runs. The server is a fact, but what a caller
+	// concludes from it can be a refusal -- a version the operator declared
+	// that the connected product does not own -- and replaying first would
+	// destroy and rebuild a database to report an input that was already wrong.
+	ObserveServer func(info catalog.ServerInfo) error
 }
 
 // Replay connects to the configured dev database and replays the migration
@@ -82,6 +98,11 @@ func Replay(ctx context.Context, opts Options) error {
 		return fmt.Errorf("error connecting to dev database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if opts.ObserveServer != nil {
+		if err := opts.ObserveServer(conn.Info()); err != nil {
+			return err
+		}
+	}
 
 	return replayOnConnection(
 		ctx,

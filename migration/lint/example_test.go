@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
@@ -227,4 +228,46 @@ func ExampleAnalyzeFS_baseline() {
 	// unmet: MF102 needs the baseline schema that refines the statement text
 	// with the state: MF102
 	// unmet with the state: 0
+}
+
+// ExampleResolveTarget shows how a caller names the server a lint run plans
+// against, and what a rule reads off it.
+//
+// The capability set is what a rule asks -- the same set the renderer and the
+// planner gate on -- so a rule that knows a form is a catalog edit on one
+// release and a table rewrite on another asks the key rather than the version
+// string. Two PostgreSQL release lines answer differently about the same key,
+// and a run that named no server plans against the dialect default and says so
+// by carrying no version.
+func ExampleResolveTarget() {
+	fsys := fstest.MapFS{
+		"0000000001_users.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE users (id BIGINT PRIMARY KEY);\n")},
+		"0000000001_users.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+	}
+
+	target, err := lint.ResolveTarget("postgres", "18")
+	if err != nil {
+		fmt.Println("resolve failed:", err)
+		return
+	}
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{Dialect: "postgres", Target: target})
+	if err != nil {
+		fmt.Println("analyze failed:", err)
+		return
+	}
+	fmt.Println("named:", analysis.Target().Named(), analysis.Target().Version)
+	fmt.Println("18 names its NOT NULL constraints:",
+		analysis.Target().Capabilities.Has(capability.NamedNotNullConstraints))
+
+	older := must.Must(lint.ResolveTarget("postgres", "17"))
+	fmt.Println("17 does not:", older.Capabilities.Has(capability.NamedNotNullConstraints))
+
+	unnamed := must.Must(lint.ResolveTarget("postgres", ""))
+	fmt.Println("no server named:", unnamed.Named())
+
+	// Output:
+	// named: true 18
+	// 18 names its NOT NULL constraints: true
+	// 17 does not: false
+	// no server named: false
 }
