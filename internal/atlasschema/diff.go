@@ -246,6 +246,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 
 			Capabilities:         target.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, to, fromSide.database, dialect, target.Capabilities,

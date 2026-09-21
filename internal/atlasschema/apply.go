@@ -399,6 +399,7 @@ func computeApplyPlan(
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,

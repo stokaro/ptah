@@ -110,6 +110,17 @@ type Options struct {
 	// ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
 	// exactly these table-qualified removed indexes when the target supports it.
 	ConcurrentIndexDropRefs []difftypes.IndexRef
+	// OnlineAlter asks the server to apply the plan without blocking the
+	// writes already running against its tables, in whichever grammar the
+	// target has: the MySQL-family ALGORITHM and LOCK clauses, or PostgreSQL's
+	// NOT VALID constraint followed by its own validation.
+	//
+	// It is a request, not a prediction. A MySQL-family server refuses a
+	// statement it cannot apply that way, so a plan built with this either
+	// runs online or fails at the statement rather than under a table copy
+	// nobody expected. A target without the grammar is planned as it would be
+	// without this.
+	OnlineAlter bool
 	// SkipChangeKinds lists destructive change kinds the planner must omit from
 	// the plan (emitting a clearly-marked comment in their place) instead of
 	// deferring to the coarse destructive gate. Currently honored by the
@@ -474,6 +485,12 @@ func GenerateSchemaDiffASTWithOptions(
 	nodes, err := planner.GenerateMigrationAST(diff)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
+	}
+	if opts.OnlineAlter {
+		// After the dialect planner rather than inside it: every ALTER TABLE
+		// the plan emits carries the request, and the dialect planners build
+		// them in a dozen places. A pass over the result cannot miss one.
+		nodes = requestOnlineAlter(nodes, dialect, opts.CapabilitiesFor(dialect))
 	}
 	return nodes, nil
 }

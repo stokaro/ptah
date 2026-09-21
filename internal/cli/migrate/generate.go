@@ -500,6 +500,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
 			ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
 			ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
+			OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
 		},
 	}
 	var files *generator.MigrationFiles

@@ -131,6 +131,28 @@ func (op *AddConstraintOperation) Accept(visitor Visitor) error { return visitor
 // alterOperation implements the marker method for type safety.
 func (op *AddConstraintOperation) alterOperation() {}
 
+// ValidateConstraintOperation represents ALTER TABLE ... VALIDATE CONSTRAINT.
+//
+// It completes a constraint that was added NOT VALID: the server scans the rows
+// that were already there and marks the constraint validated. The scan takes a
+// weaker lock than the one an unqualified ADD CONSTRAINT holds, which is the
+// whole reason the pair exists -- so the two belong to different transactions,
+// and a plan that puts them in one gains nothing.
+//
+// A target without [capability.AddConstraintNotValid] never sees this
+// operation: the renderer that cannot write NOT VALID writes the plain ADD
+// CONSTRAINT, which validates as it goes.
+type ValidateConstraintOperation struct {
+	// ConstraintName is the name of the constraint to validate.
+	ConstraintName string
+}
+
+// Accept hands the visitor this operation.
+func (op *ValidateConstraintOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *ValidateConstraintOperation) alterOperation() {}
+
 // DropConstraintOperation represents a DROP CONSTRAINT operation in ALTER TABLE statements.
 //
 // This operation removes an existing constraint from a table. The constraint can be

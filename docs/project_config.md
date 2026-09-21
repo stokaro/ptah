@@ -119,6 +119,7 @@ env:
 | `diff.skip` | Destructive change kinds the planner omits from generated migrations (`drop_table`, `drop_column`, `drop_index`, `drop_enum`) |
 | `diff.concurrent_index` | Emit `CREATE INDEX CONCURRENTLY` for newly added indexes (PostgreSQL, capability-gated) |
 | `diff.concurrent_index_drop` | Emit `DROP INDEX CONCURRENTLY` for standalone index removals (PostgreSQL, capability-gated) |
+| `diff.online_alter` | Ask the server to apply the plan without blocking writes (MySQL/MariaDB `ALGORITHM`/`LOCK`, PostgreSQL `NOT VALID`; capability-gated) |
 
 `migrate.generate.shadow_db` is also accepted as the older spelling for `dev`.
 When both are present, `dev` wins.

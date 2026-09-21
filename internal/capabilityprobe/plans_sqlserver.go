@@ -264,6 +264,12 @@ func sqlServerPlan() plan {
 	}
 
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +
+			"this server spells online index rebuilds as WITH (ONLINE = ON), so a refusal would answer " +
+			"a different question",
+		capability.AddConstraintNotValid: "the key names PostgreSQL's NOT VALID constraint; this server " +
+			"spells the same idea as WITH NOCHECK, which Ptah neither renders nor reads, so a refusal " +
+			"would answer a different question",
 		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
 			"relation, and the reader the key gates runs only against Oracle, so neither " +
 			"having nor lacking it here would decide the key",

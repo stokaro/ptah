@@ -51,12 +51,14 @@ type yamlExternalSchema struct {
 // kinds to omit from generated migrations; concurrent_index requests
 // CREATE INDEX CONCURRENTLY for newly added indexes and
 // concurrent_index_drop requests DROP INDEX CONCURRENTLY for standalone index
-// removals. Both are pointers so an explicit false is distinguishable from an
+// removals; online_alter asks the server to apply the plan without blocking
+// writes. Each is a pointer so an explicit false is distinguishable from an
 // unset value.
 type yamlDiff struct {
 	Skip                *[]string `yaml:"skip"`
 	ConcurrentIndex     *bool     `yaml:"concurrent_index"`
 	ConcurrentIndexDrop *bool     `yaml:"concurrent_index_drop"`
+	OnlineAlter         *bool     `yaml:"online_alter"`
 }
 
 type yamlMigration struct {
@@ -396,6 +398,9 @@ func (d yamlDiff) diffConfig() (DiffConfig, error) {
 	}
 	if d.ConcurrentIndex != nil {
 		cfg.ConcurrentIndex.Create = ConfigBool{Value: *d.ConcurrentIndex, Set: true}
+	}
+	if d.OnlineAlter != nil {
+		cfg.OnlineAlter = ConfigBool{Value: *d.OnlineAlter, Set: true}
 	}
 	if d.ConcurrentIndexDrop != nil {
 		cfg.ConcurrentIndex.Drop = ConfigBool{Value: *d.ConcurrentIndexDrop, Set: true}

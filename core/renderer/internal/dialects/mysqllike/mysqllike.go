@@ -505,6 +505,43 @@ func writeCustomSQL(w *bufwriter.Writer, node *ast.CreateTableNode) {
 	}
 }
 
+// writeAlterStatementf writes one ALTER TABLE statement of node, with the
+// online clause the node asks for appended to it.
+//
+// Every statement the node renders carries the clause rather than only the
+// first: the server reads ALGORITHM and LOCK per statement, so a node whose
+// operations render as several statements would otherwise ask for the
+// algorithm once and take whatever the server chose for the rest.
+func (r *Renderer) writeAlterStatementf(node *ast.AlterTableNode, format string, args ...any) {
+	r.w.WriteLinef("%s%s;", fmt.Sprintf(format, args...), r.onlineAlterClause(node))
+}
+
+// onlineAlterClause renders the MySQL-family `, ALGORITHM=..., LOCK=...`
+// suffix, and is empty when the node asks for nothing.
+//
+// The clause is a request the server refuses rather than a hint it may ignore,
+// which is the reason to write it: whether the change runs in place stops
+// being Ptah's model of the release line and becomes the server's answer. A
+// target without the grammar records the loss instead of writing a statement
+// it would refuse for the wrong reason.
+func (r *Renderer) onlineAlterClause(node *ast.AlterTableNode) string {
+	if node.Algorithm == "" && node.Lock == "" {
+		return ""
+	}
+	if !r.caps.Has(capability.AlterTableAlgorithmLock) {
+		r.sink.RecordLostOnlineAlterClause(node.Name)
+		return ""
+	}
+	var clause strings.Builder
+	if node.Algorithm != "" {
+		fmt.Fprintf(&clause, ", ALGORITHM=%s", strings.ToUpper(node.Algorithm))
+	}
+	if node.Lock != "" {
+		fmt.Fprintf(&clause, ", LOCK=%s", strings.ToUpper(node.Lock))
+	}
+	return clause.String()
+}
+
 // renderAlterTable renders MariaDB-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	return r.visitAlterTableWithEnums(node, nil)
@@ -1161,7 +1198,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
+			r.writeAlterStatementf(node, "ALTER TABLE %s ADD COLUMN %s", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.AddConstraintOperation:
 			constraintLine, err := r.renderConstraint(op.Constraint)
@@ -1170,13 +1207,13 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD %s;", escapeQualifiedIdentifier(node.Name), constraintLine)
+			r.writeAlterStatementf(node, "ALTER TABLE %s ADD %s", escapeQualifiedIdentifier(node.Name), constraintLine)
 
 		case *ast.DropConstraintOperation:
-			r.w.WriteLinef("%s;", r.dropConstraintSQL(node.Name, op))
+			r.writeAlterStatementf(node, "%s", r.dropConstraintSQL(node.Name, op))
 
 		case *ast.DropColumnOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.ColumnName))
+			r.writeAlterStatementf(node, "ALTER TABLE %s DROP COLUMN %s", escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.ColumnName))
 
 		case *ast.ModifyColumnOperation:
 			// Get enum values for this column type
@@ -1192,7 +1229,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
+			r.writeAlterStatementf(node, "ALTER TABLE %s MODIFY COLUMN %s", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.SetCommentOperation:
 			if err := r.writeSetComment(node.Name, op); err != nil {

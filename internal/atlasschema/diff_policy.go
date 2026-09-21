@@ -17,6 +17,10 @@ type DiffPolicy struct {
 	SkipDropTable         bool
 	ConcurrentIndexCreate bool
 	ConcurrentIndexDrop   bool
+	// OnlineAlter asks the server to apply the plan without blocking the
+	// writes already running against its tables, in whichever grammar the
+	// target has. A target without one is planned as if this were off.
+	OnlineAlter bool
 
 	// ConcurrentIndexCreateDisabled is the operator saying no, which is a
 	// different answer from not saying yes.

@@ -25,6 +25,20 @@ type AlterTableNode struct {
 	Name string
 	// Operations contains the list of operations to perform on the table
 	Operations []AlterOperation
+	// Algorithm is the MySQL-family `ALGORITHM=` value the statement asks the
+	// server for -- INSTANT, INPLACE or COPY -- and is empty when the
+	// statement asks for nothing.
+	//
+	// It is a request the server refuses rather than a hint it may ignore, so
+	// a statement carrying it either runs the way it said or does not run.
+	// Renderers for targets without [capability.AlterTableAlgorithmLock] leave
+	// it out; see the MySQL renderer for what happens to the request there.
+	Algorithm string
+	// Lock is the MySQL-family `LOCK=` value -- NONE, SHARED, EXCLUSIVE or
+	// DEFAULT -- and is empty when the statement asks for nothing. It travels
+	// with Algorithm because the two are one grammar; see
+	// [capability.AlterTableAlgorithmLock].
+	Lock string
 }
 
 // Accept implements the Node interface for AlterTableNode.
@@ -765,6 +779,15 @@ type ConstraintNode struct {
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)
 	Expression string
+	// NotValid asks the server to add the constraint without scanning the rows
+	// that are already there, leaving it enforced for new rows and unvalidated
+	// for the old ones until a [ValidateConstraintOperation] completes it.
+	//
+	// It is only meaningful on an added constraint: a table created with the
+	// constraint has no prior rows to exempt. Renderers for targets without
+	// [capability.AddConstraintNotValid] leave it out and write the plain
+	// constraint, which validates as it goes.
+	NotValid bool
 	// UsingMethod specifies the index method for EXCLUDE constraints (e.g., "gist", "btree")
 	UsingMethod string
 	// ExcludeElements contains the exclude elements specification (e.g., "user_id WITH =", "during WITH &&")

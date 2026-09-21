@@ -199,6 +199,11 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	}, {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
+			// The online-DDL clauses belong to the other two families, and
+			// this engine's mutations are asynchronous rather than clause-led,
+			// so its refusal would answer a different question.
+			capability.AddConstraintNotValid,
+			capability.AlterTableAlgorithmLock,
 			// ClickHouse has no pg catalogs, so the recursive-catalog-read
 			// question cannot be put to it (stokaro/ptah#1811).
 			capability.CatalogPartitions,

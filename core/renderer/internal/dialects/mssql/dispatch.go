@@ -148,6 +148,7 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 	// render it against.
 	case *ast.AddColumnOperation,
 		*ast.AddConstraintOperation,
+		*ast.ValidateConstraintOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,

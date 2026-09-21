@@ -192,6 +192,7 @@ func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
+		OnlineAlter:                   cfg.Diff.OnlineAlterRequested(),
 	}
 }
 

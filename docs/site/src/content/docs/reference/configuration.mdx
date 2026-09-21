@@ -343,7 +343,7 @@ the shadow rehearsal that `migrations down` performs before touching its target.
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults and policy | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base`, `lint.destructive.error`, `lint.concurrent_index.error`, `lint.naming` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows`, `online_ddl.args`, `online_ddl.fallback` |
-| Diff policy (native `migrations generate`) | `diff.skip: [drop_table, drop_column, drop_index, drop_enum]`, `diff.concurrent_index`, `diff.concurrent_index_drop` |
+| Diff policy (native `migrations generate`) | `diff.skip: [drop_table, drop_column, drop_index, drop_enum]`, `diff.concurrent_index`, `diff.concurrent_index_drop`, `diff.online_alter` |
 | Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.clean`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff`, `format.migrate.lint`, `format.migrate.status` |
 | Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create`, `diff.concurrent_index.drop` |
 
@@ -354,7 +354,27 @@ lists destructive change kinds (`drop_table`, `drop_column`, `drop_index`,
 indexes (PostgreSQL, capability-gated), while
 `diff.concurrent_index_drop: true` requests `DROP INDEX CONCURRENTLY` for
 standalone index removals under the same gate. A skipped change is never
-emitted, so it never trips the `--check-destructive` gate. A selected environment's
+emitted, so it never trips the `--check-destructive` gate.
+
+`diff.online_alter: true` asks the server to apply the plan without blocking
+the writes already running against its tables. Each engine family is asked in
+its own grammar, and a target with neither is planned as if the setting were
+off.
+
+- **MySQL and MariaDB**: every `ALTER TABLE` carries `ALGORITHM=INPLACE,
+  LOCK=NONE`. The server refuses the statement when it cannot honor it, so a
+  change that would copy the table fails at the statement rather than
+  proceeding under a copy nobody asked about, and the refusal is reported as
+  the server declining to do it online.
+- **PostgreSQL**: there is no such clause, so the safe form is generated. A
+  `CHECK` or `FOREIGN KEY` constraint is added `NOT VALID` and completed by its
+  own `VALIDATE CONSTRAINT`, whose scan takes `SHARE UPDATE EXCLUSIVE` rather
+  than `ACCESS EXCLUSIVE`.
+
+The PostgreSQL pair buys that weaker lock only when the two statements commit
+separately, so a generated migration carrying one runs outside a transaction. A
+plan that mixes it with ordinary statements is refused: the constraint change
+belongs in a migration of its own. A selected environment's
 `diff.skip` replaces the top-level list; an explicit empty list clears all
 inherited skip kinds.
 

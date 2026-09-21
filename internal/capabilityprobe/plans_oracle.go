@@ -249,6 +249,12 @@ func oraclePlan() plan {
 	}
 
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +
+			"this server spells its own online-redefinition machinery as a package, so a refusal would " +
+			"answer a different question",
+		capability.AddConstraintNotValid: "the key names PostgreSQL's NOT VALID constraint; this server " +
+			"spells the same idea as ENABLE NOVALIDATE, which Ptah neither renders nor reads, so a " +
+			"refusal would answer a different question",
 		capability.SchemaComments: "Oracle comments tables and columns and has no COMMENT ON SCHEMA to accept or refuse, so there is " +
 			"no statement to send. Its renderer emits none either (stokaro/ptah#2651)",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +

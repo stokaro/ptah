@@ -43,6 +43,11 @@ const (
 type BidirectionalPlanPolicy struct {
 	Create ConcurrentIndexMode
 	Drop   ConcurrentIndexMode
+	// OnlineAlter asks the planner for the online form of every ALTER TABLE
+	// the plan emits. It travels with the concurrency modes because the three
+	// answer the same question about one plan: what the server is asked to do
+	// while the tables stay open to writers.
+	OnlineAlter bool
 }
 
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
@@ -169,6 +174,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		Capabilities:            caps,
 		ConcurrentIndexRefs:     forwardCreateRefs,
 		ConcurrentIndexDropRefs: forwardDropRefs,
+		OnlineAlter:             opts.Policy.OnlineAlter,
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, dialect, forwardOpts)
 	if err != nil {
