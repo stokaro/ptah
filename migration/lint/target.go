@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/servertarget"
 )
 
@@ -67,25 +68,38 @@ func (t Target) Named() bool {
 // default would silently change which rules can fire. A version with no
 // dialect is refused for the same reason: a run with no dialect runs every
 // rule against every engine, and there is no one target for the version to
-// describe.
+// describe. A dialect this linter has no rules for is refused too, with the
+// list of the ones it has.
+//
+// The dialect is canonicalized: an accepted alias such as `pgx` resolves to
+// `postgres`, and that is what [Target.Dialect] carries.
 //
 // The resolution is the same one --server-version carries on every other
 // offline command, so a version accepted by `ptah schema render` is accepted
 // here and resolves to the same capabilities.
 func ResolveTarget(dialect, version string) (Target, error) {
-	if version != "" && dialect == "" {
+	// Canonicalized here rather than stored as written, because everything
+	// downstream compares by exact string: Rule.Dialects, the lexer mode, and
+	// a report a reader compares across runs. An alias left in place would
+	// name a dialect no rule selects while the capabilities came from the
+	// engine it aliases.
+	canonical, ok := lintdialect.Canonical(dialect)
+	if !ok {
+		return Target{}, fmt.Errorf("unsupported lint dialect %q: expected %s", dialect, lintdialect.Expected)
+	}
+	if version != "" && canonical == "" {
 		return Target{}, fmt.Errorf(
 			"server version %q needs a dialect: with none, every rule runs and there is no "+
 				"single target the version could describe",
 			version,
 		)
 	}
-	resolved, err := servertarget.Resolve(dialect, version)
+	resolved, err := servertarget.Resolve(canonical, version)
 	if err != nil {
 		return Target{}, err
 	}
 	return Target{
-		Dialect:      dialect,
+		Dialect:      canonical,
 		Version:      version,
 		Capabilities: resolved.Capabilities,
 		Note:         resolved.Note,
@@ -103,7 +117,11 @@ func ResolveTarget(dialect, version string) (Target, error) {
 // its hybrid lexer says: the target is unknown.
 func effectiveTarget(opts Options) (Target, error) {
 	if opts.Target.Named() || len(opts.Target.Capabilities) > 0 {
-		return opts.Target, nil
+		// Cloned on the way in as well as on the way out: the caller keeps
+		// its own Target, and an analysis that stored that map would change
+		// under it -- and change what its rules read -- if the caller wrote to
+		// the set afterwards.
+		return opts.Target.clone(), nil
 	}
 	return ResolveTarget(opts.Dialect, "")
 }
@@ -120,10 +138,27 @@ func effectiveTarget(opts Options) (Target, error) {
 // because Ptah has not measured that release would turn a note into an outage
 // in somebody's pipeline.
 func TargetFromServer(dialect, version string, capabilities capability.Capabilities, note string) Target {
+	// Canonicalized where it can be and passed through where it cannot. A
+	// server may name an engine this linter has no rules for -- Oracle is the
+	// one -- and blanking the name there would say the target is unknown when
+	// it is known and unanalyzed.
+	if canonical, ok := lintdialect.Canonical(dialect); ok {
+		dialect = canonical
+	}
 	return Target{
 		Dialect:      dialect,
 		Version:      version,
 		Capabilities: capabilities,
 		Note:         note,
 	}
+}
+
+// clone returns a target that shares no map with this one.
+//
+// Capabilities is a map, so a Target handed out by an accessor that promises a
+// deep copy would otherwise let a caller rewrite what every rule in the
+// analysis reads. The other fields are strings and copy with the struct.
+func (t Target) clone() Target {
+	t.Capabilities = t.Capabilities.Clone()
+	return t
 }

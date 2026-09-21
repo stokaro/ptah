@@ -29,10 +29,16 @@ const FlagName = "server-version"
 const contractAnnotation = "ptah_server_version"
 
 // Usage is the one help string every registration shares. It names the
-// requirement (--dialect) and the refusal (a value naming no server), because
-// both are behavior an operator meets before any schema is read.
+// requirement and the refusal (a value naming no server), because both are
+// behavior an operator meets before any schema is read.
+//
+// It says a target dialect rather than --dialect, because that flag is not the
+// only way to name one: `ptah migrations lint` also reads a dialect from
+// .ptah-lint.yaml and from the product a --dev-url connection reports, and
+// naming the flag there would tell an operator to add a value they do not need
+// and may get wrong.
 const Usage = "Server version string used to refine target capabilities, for example 17 or " +
-	"10.11.6-MariaDB (requires --dialect; a value that names no server is refused)"
+	"10.11.6-MariaDB (requires a target dialect; a value that names no server is refused)"
 
 // Register registers the flag under [FlagName].
 func Register(flags *pflag.FlagSet, target *string) {

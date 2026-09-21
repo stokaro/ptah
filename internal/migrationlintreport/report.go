@@ -229,15 +229,15 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	target, err := effectiveTarget(opts, cfg.ServerVersion, dialect)
+	declared, err := declaredTarget(opts, cfg, dialect)
 	if err != nil {
 		return Report{}, err
 	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
-	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
+	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferredVersion, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
-		Target:        target,
+		Target:        declared.resolved,
 		Disabled:      disabled,
 		PathPrefix:    filepath.ToSlash(opts.Dir),
 		// Scoped on the Atlas-compatible surface ONLY, where the pinned
@@ -455,6 +455,7 @@ func lintDirectory(
 	opts Options,
 	fsys fs.FS,
 	dirFormat migrationfile.DirFormat,
+	deferredVersion string,
 	lintOptions lint.Options,
 ) (lint.Analysis, replayedSchemas, error) {
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
@@ -464,7 +465,7 @@ func lintDirectory(
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
 	baseline.setDialect(opts.Dialect)
 	capture := newReplaySchemaCapture(opts, analysis)
-	server := newServerTargetCollector(lintOptions.Target)
+	server := newServerTargetCollector(lintOptions.Target, deferredVersion)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
@@ -476,7 +477,16 @@ func lintDirectory(
 		ObserveReplayed:   capture.replayedObserver(ctx),
 		ObserveServer:     server.observe,
 	}); err != nil {
+		// A version the connection refused is reported as itself: the replay
+		// error that follows it is downstream of an input that was already
+		// wrong.
+		if server.err != nil {
+			return analysis, capture.result(), server.err
+		}
 		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
+	}
+	if server.err != nil {
+		return analysis, capture.result(), server.err
 	}
 	schemas := capture.result()
 	learned, learnedServer := server.learned()
@@ -507,22 +517,39 @@ func lintDirectory(
 // migration will meet, and silently preferring it would make a declaration
 // that says one thing produce a run that planned for another.
 type serverTargetCollector struct {
-	declared lint.Target
-	found    lint.Target
-	seen     bool
+	declared        lint.Target
+	deferredVersion string
+	found           lint.Target
+	seen            bool
+	// err is a declared version the connected product refuses, kept rather
+	// than returned because the observer must not abort a replay: the server
+	// is a fact, and this is about the operator's input.
+	err error
 }
 
-func newServerTargetCollector(declared lint.Target) *serverTargetCollector {
-	return &serverTargetCollector{declared: declared}
+func newServerTargetCollector(declared lint.Target, deferredVersion string) *serverTargetCollector {
+	return &serverTargetCollector{declared: declared, deferredVersion: deferredVersion}
 }
 
 func (c *serverTargetCollector) observe(info catalog.ServerInfo) {
-	if c.declared.Named() || c.seen {
+	if c.seen || c.err != nil {
 		return
 	}
 	// The dialect is the connection's own, not the URL's scheme: a postgres://
 	// connection can report cockroachdb, and the capabilities it carries are
 	// that product's.
+	if c.deferredVersion != "" {
+		target, err := lint.ResolveTarget(info.Dialect, c.deferredVersion)
+		if err != nil {
+			c.err = err
+			return
+		}
+		c.found, c.seen = target, true
+		return
+	}
+	if c.declared.Named() {
+		return
+	}
 	c.found = lint.TargetFromServer(info.Dialect, info.Version, info.Capabilities, info.CapabilityNote)
 	c.seen = c.found.Named()
 }
@@ -1657,18 +1684,46 @@ func compatSchemaScope(profile lint.CompatibilityProfile, devURL string) string 
 	return schemaselection.FromURL(devURL).Scope
 }
 
-// effectiveTarget resolves the server a lint run plans against from what the
+// declaration is what the operator said about the server, and whether it could
+// be resolved yet.
+type declaration struct {
+	// resolved is the target, empty when resolution waits for a connection.
+	resolved lint.Target
+	// deferredVersion is the declared version whose dialect only a connection
+	// can name, empty when there is nothing to wait for.
+	deferredVersion string
+}
+
+// declaredTarget resolves the server a lint run plans against from what the
 // operator declared, in the order a declaration outranks another: the flag,
-// then the lint configuration. A dev database is not consulted here -- it
-// answers later, and only when neither of these did.
-func effectiveTarget(opts Options, configVersion, dialect string) (lint.Target, error) {
-	version := configVersion
+// then the lint configuration. A dev database is not consulted for the version
+// here -- it answers later, and only when neither of these did.
+//
+// Resolution waits for the connection when nothing but the dev URL named the
+// dialect, because a URL scheme is not a product: a `mysql://` connection can
+// reach MariaDB and a `postgres://` one CockroachDB, YugabyteDB or Spanner.
+// Resolving `10.11.6-MariaDB` against the scheme would refuse a pair that is
+// correct, and a CockroachDB version would select the PostgreSQL ladder.
+func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration, error) {
+	version := cfg.ServerVersion
 	if opts.Changed.ServerVersion {
 		version = opts.ServerVersion
 	}
+	if version != "" && namedDialect(opts, cfg) == "" && strings.TrimSpace(opts.DevURL) != "" {
+		return declaration{deferredVersion: version}, nil
+	}
 	target, err := lint.ResolveTarget(dialect, version)
 	if err != nil {
-		return lint.Target{}, err
+		return declaration{}, err
 	}
-	return target, nil
+	return declaration{resolved: target}, nil
+}
+
+// namedDialect is the dialect the operator named, empty when only the dev
+// URL's scheme suggested one.
+func namedDialect(opts Options, cfg *lint.Config) string {
+	if opts.Changed.Dialect {
+		return opts.Dialect
+	}
+	return cfg.Dialect
 }

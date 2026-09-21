@@ -23,6 +23,30 @@ func TestResolveTarget_HappyPath(t *testing.T) {
 		c.Assert(target.Capabilities.Has(capability.AlterGeneratedColumnExpression), qt.IsFalse)
 	})
 
+	// Everything downstream compares the dialect by exact string, so an alias
+	// stored as written would name a dialect no rule selects while the
+	// capabilities came from the engine it aliases.
+	t.Run("an alias is stored canonically", func(t *testing.T) {
+		c := qt.New(t)
+
+		target, err := lint.ResolveTarget("pgx", "16")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(target.Dialect, qt.Equals, "postgres")
+		c.Assert(target.Capabilities, qt.DeepEquals, mustTarget(c, "postgres", "16").Capabilities)
+	})
+
+	// A server may name an engine this linter has no rules for, and blanking
+	// the name would say the target is unknown when it is known and
+	// unanalyzed.
+	t.Run("a live server keeps a dialect the linter cannot analyze", func(t *testing.T) {
+		c := qt.New(t)
+
+		target := lint.TargetFromServer("oracle", "23.0.0", nil, "")
+
+		c.Assert(target.Dialect, qt.Equals, "oracle")
+	})
+
 	t.Run("a newer release line answers differently", func(t *testing.T) {
 		c := qt.New(t)
 
@@ -75,6 +99,15 @@ func TestResolveTarget_FailurePath(t *testing.T) {
 		target, err := lint.ResolveTarget("postgres", "10.11.6-MariaDB")
 
 		c.Assert(err, qt.ErrorMatches, `.*mariadb.*`)
+		c.Assert(target, qt.DeepEquals, lint.Target{})
+	})
+
+	t.Run("a dialect this linter has no rules for", func(t *testing.T) {
+		c := qt.New(t)
+
+		target, err := lint.ResolveTarget("oracle", "23")
+
+		c.Assert(err, qt.ErrorMatches, `unsupported lint dialect "oracle": expected postgres, mysql,.*`)
 		c.Assert(target, qt.DeepEquals, lint.Target{})
 	})
 
@@ -216,4 +249,62 @@ func TestLoadConfigFS_ServerVersion_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*mariadb.*`)
 		c.Assert(cfg, qt.IsNil)
 	})
+}
+
+// Every view an analysis hands out is a deep copy, and a capability set is a
+// map. Without the clone, a caller that wrote to the set it was given would
+// rewrite what every rule in that analysis reads.
+func TestAnalyzeFS_HandsOutTargetCopies(t *testing.T) {
+	t.Run("the analysis target is a copy", func(t *testing.T) {
+		c := qt.New(t)
+		target, err := lint.ResolveTarget("postgres", "18")
+		c.Assert(err, qt.IsNil)
+		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+		c.Assert(err, qt.IsNil)
+
+		analysis.Target().Capabilities[capability.NamedNotNullConstraints] = false
+
+		c.Assert(analysis.Target().Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
+	})
+
+	t.Run("a prepared file's target is a copy", func(t *testing.T) {
+		c := qt.New(t)
+		target, err := lint.ResolveTarget("postgres", "18")
+		c.Assert(err, qt.IsNil)
+		analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+		c.Assert(err, qt.IsNil)
+		files := analysis.Files()
+		c.Assert(files, qt.Not(qt.HasLen), 0)
+
+		files[0].Target.Capabilities[capability.NamedNotNullConstraints] = false
+
+		c.Assert(analysis.Files()[0].Target.Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
+	})
+}
+
+// The caller keeps its own Target after handing one to AnalyzeFS, so the
+// analysis clones it on the way in as well as on the way out. Without that, an
+// embedder writing to its own set would change what every rule in a finished
+// analysis reads.
+func TestAnalyzeFS_DoesNotStoreTheCallersTargetMap(t *testing.T) {
+	c := qt.New(t)
+	target, err := lint.ResolveTarget("postgres", "18")
+	c.Assert(err, qt.IsNil)
+	analysis, err := lint.AnalyzeFS(versionedRuleFS(), lint.Options{Dialect: "postgres", Target: target})
+	c.Assert(err, qt.IsNil)
+
+	// The caller keeps its own Target and writes to the set it still holds.
+	target.Capabilities[capability.NamedNotNullConstraints] = false
+
+	c.Assert(analysis.Target().Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
+	c.Assert(analysis.Files()[0].Target.Capabilities.Has(capability.NamedNotNullConstraints), qt.IsTrue)
+}
+
+// mustTarget resolves a target the test treats as fixture setup rather than as
+// the thing under assertion.
+func mustTarget(c *qt.C, dialect, version string) lint.Target {
+	c.Helper()
+	target, err := lint.ResolveTarget(dialect, version)
+	c.Assert(err, qt.IsNil)
+	return target
 }

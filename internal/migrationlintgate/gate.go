@@ -46,7 +46,10 @@ func DisabledFamilies() []string {
 
 // Policy is a validated apply-time lint policy resolved for a live database.
 type Policy struct {
-	dialect  string
+	dialect string
+	// target is the server the analysis plans against, resolved from the
+	// policy's server-version against the dialect the connection reported.
+	target   lint.Target
 	disabled []string
 	rules    map[string]lint.RuleConfig
 	// families are the identifier families whose blocking findings refuse
@@ -97,8 +100,18 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 			disabled = append(disabled, family)
 		}
 	}
+	// The apply path is where the version a policy declares finally has a
+	// dialect to be resolved against: the configuration may leave the dialect
+	// out, and here the wire reported it. Resolving it is also what refuses a
+	// value that names no server, which `migrations lint` refuses and this
+	// would otherwise accept and ignore.
+	target, err := lint.ResolveTarget(databaseDialect, cfg.ServerVersion)
+	if err != nil {
+		return Policy{}, err
+	}
 	policy := Policy{
 		dialect:  databaseDialect,
+		target:   target,
 		disabled: append(disabled, cfg.DisabledRules...),
 		rules:    cfg.Rules,
 		families: families,
@@ -163,6 +176,7 @@ func (p Policy) gatesOn(rule string) bool {
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
 		Dialect:     p.dialect,
+		Target:      p.target,
 		Disabled:    p.disabled,
 		PathPrefix:  pathPrefix,
 		RuleConfigs: p.rules,

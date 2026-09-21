@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -28,7 +29,7 @@ import (
 func TestMigrationsLintReadsTheServerVersionFromTheDevDatabaseLive(t *testing.T) {
 	c := qt.New(t)
 	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
-	dir := writeServerVersionLintDir(c)
+	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
 		Dir:     dir,
@@ -49,7 +50,7 @@ func TestMigrationsLintReadsTheServerVersionFromTheDevDatabaseLive(t *testing.T)
 func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *testing.T) {
 	c := qt.New(t)
 	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
-	dir := writeServerVersionLintDir(c)
+	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
 		Dir:           dir,
@@ -66,9 +67,9 @@ func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *
 	c.Assert(report.ServerVersion, qt.Not(qt.Equals), serverVersionOf(c, devURL))
 }
 
-func writeServerVersionLintDir(c *qt.C) string {
+func writeServerVersionLintDir(c *qt.C, t *testing.T) string {
 	c.Helper()
-	dir := c.TB.(*testing.T).TempDir()
+	dir := t.TempDir()
 	files := map[string]string{
 		"0000000001_users.up.sql":   "CREATE TABLE ptah_lint_version_users (id BIGINT PRIMARY KEY);\n",
 		"0000000001_users.down.sql": "DROP TABLE ptah_lint_version_users;\n",
@@ -88,4 +89,74 @@ func serverVersionOf(c *qt.C, url string) string {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	return conn.Info().Version
+}
+
+// A URL scheme is not a product, and MariaDB is where that costs something: it
+// speaks the MySQL wire protocol, so its address is a `mysql://` URL and the
+// scheme names MySQL. A declared `10.11.6-MariaDB` resolved against the scheme
+// is refused for naming another product than the one it actually names.
+//
+// Only a server can settle it: the dialect comes off the connection, and the
+// version the operator wrote is resolved against that (stokaro/ptah#3420).
+func TestMigrationsLintResolvesTheDeclaredVersionAgainstTheConnectedProductLive(t *testing.T) {
+	c := qt.New(t)
+	devURL := mySQLSchemeFor(c, dbtarget.URL(c, dbtarget.MariaDBAdmin))
+	dir := writeServerVersionLintDir(c, t)
+
+	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:           dir,
+		DevURL:        devURL,
+		ServerVersion: "10.11.6-MariaDB",
+		FailOn:        migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir: true, DevURL: true, ServerVersion: true,
+		},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.ServerVersion, qt.Equals, "10.11.6-MariaDB")
+	// The lint dialect is still the scheme's. It decides which rules run, and
+	// reading it off the connection would change that for every mysql:// URL
+	// that reaches MariaDB, which is a separate decision from resolving a
+	// version (stokaro/ptah#3466).
+	c.Assert(report.Dialect, qt.Equals, "mysql")
+}
+
+// Deferring is not relaxing: a version that names another product is still
+// refused, now against the product that answered rather than against the URL's
+// scheme. A bare number names no product and is resolved on the connected
+// server's ladder, which is why this row uses a banner.
+func TestMigrationsLintRefusesADeclaredVersionTheServerDoesNotOwnLive(t *testing.T) {
+	c := qt.New(t)
+	devURL := mySQLSchemeFor(c, dbtarget.URL(c, dbtarget.MariaDBAdmin))
+	dir := writeServerVersionLintDir(c, t)
+
+	_, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:           dir,
+		DevURL:        devURL,
+		ServerVersion: "PostgreSQL 16.3 (Debian)",
+		FailOn:        migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir: true, DevURL: true, ServerVersion: true,
+		},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*postgres.*`)
+}
+
+// mySQLSchemeFor addresses a MariaDB server the way a MySQL client does, which
+// is the premise of the two tests above and the reason they measure anything.
+//
+// The registry may hand out either spelling -- `mariadb://` names the product
+// and `mysql://` names the protocol both speak -- and which one it is decides
+// what the scheme-read dialect says. Forcing the protocol spelling makes the
+// test about a scheme that does not name the product, whatever the environment
+// happens to be configured with.
+func mySQLSchemeFor(c *qt.C, url string) string {
+	c.Helper()
+	rewritten, found := strings.CutPrefix(url, "mariadb://")
+	if !found {
+		return url
+	}
+	return "mysql://" + rewritten
 }

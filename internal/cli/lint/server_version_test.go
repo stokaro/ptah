@@ -19,9 +19,12 @@ type serverVersionReport struct {
 
 // writeLintableDirectory writes a migration pair with nothing in it for a rule
 // to find, so what a test reads is the target the run planned against.
-func writeLintableDirectory(c *qt.C) string {
+//
+// It takes both: the checker to assert through, and the concrete *testing.T
+// that owns the temporary directory's lifetime.
+func writeLintableDirectory(c *qt.C, t *testing.T) string {
 	c.Helper()
-	dir := c.TB.(*testing.T).TempDir()
+	dir := t.TempDir()
 	writeLintTestFile(c, dir, "0000000001_users.up.sql", "CREATE TABLE users (id BIGINT PRIMARY KEY);\n")
 	writeLintTestFile(c, dir, "0000000001_users.down.sql", "DROP TABLE users;\n")
 	return dir
@@ -37,7 +40,7 @@ func decodeServerVersionReport(c *qt.C, out string) serverVersionReport {
 func TestLintServerVersion_HappyPath(t *testing.T) {
 	t.Run("the flag names the server the run plans against", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		stdout, _, err := execute("--dir", dir, "--dialect", "postgres", "--server-version", "16", "--format", "json")
 
@@ -51,7 +54,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 	// plans against it.
 	t.Run("the configuration names it when the flag does not", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 		writeLintTestFile(c, dir, ".ptah-lint.yaml", "dialect: postgres\nserver-version: \"16\"\n")
 
 		stdout, _, err := execute("--dir", dir, "--format", "json")
@@ -65,7 +68,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 	// ask what a different one would say.
 	t.Run("the flag outranks the configuration", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 		writeLintTestFile(c, dir, ".ptah-lint.yaml", "dialect: postgres\nserver-version: \"16\"\n")
 
 		stdout, _, err := execute("--dir", dir, "--server-version", "18", "--format", "json")
@@ -78,7 +81,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 	// naming one it picked.
 	t.Run("no declaration names no server", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		stdout, _, err := execute("--dir", dir, "--dialect", "postgres", "--format", "json")
 
@@ -93,7 +96,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 	// be said out loud.
 	t.Run("an unmeasured version says what was planned instead", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		stdout, stderr, err := execute("--dir", dir, "--dialect", "postgres", "--server-version", "99")
 
@@ -106,7 +109,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 	// put prose beside a document a consumer decodes.
 	t.Run("json carries the note as a field and prints no prose", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		stdout, stderr, err := execute("--dir", dir, "--dialect", "postgres", "--server-version", "99", "--format", "json")
 
@@ -129,7 +132,7 @@ func TestLintServerVersion_HappyPath(t *testing.T) {
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
 				c := qt.New(t)
-				dir := writeLintableDirectory(c)
+				dir := writeLintableDirectory(c, t)
 
 				_, stderr, err := execute(
 					"--dir", dir, "--dialect", "postgres", "--server-version", "99", "--format", test.format)
@@ -147,7 +150,7 @@ func TestLintServerVersion_FailurePath(t *testing.T) {
 	// rules can fire, so it stops the run at a usage exit code.
 	t.Run("a value that names no server", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		_, stderr, err := execute("--dir", dir, "--dialect", "postgres", "--server-version", "seventeen", "--format", "json")
 
@@ -158,7 +161,7 @@ func TestLintServerVersion_FailurePath(t *testing.T) {
 
 	t.Run("a version with no dialect", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 
 		_, stderr, err := execute("--dir", dir, "--server-version", "16", "--format", "json")
 
@@ -169,7 +172,7 @@ func TestLintServerVersion_FailurePath(t *testing.T) {
 
 	t.Run("a configuration version that names no server", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeLintableDirectory(c)
+		dir := writeLintableDirectory(c, t)
 		writeLintTestFile(c, dir, ".ptah-lint.yaml", "dialect: postgres\nserver-version: seventeen\n")
 
 		_, stderr, err := execute("--dir", dir, "--format", "json")
