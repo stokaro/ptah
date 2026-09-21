@@ -76,3 +76,40 @@ func writeCompatLintVersionDir(c *qt.C, t *testing.T, policy string) string {
 	}
 	return dir
 }
+
+// A replay that fails still analyzed against whatever release line the policy
+// named, and a partial report is where a reader is least able to tell. The
+// Atlas error renderers carry no field for it, so the sentence goes out before
+// the error does.
+func TestCompatMigrateLintReportsAFallbackTargetOnAReplayErrorE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := writeCompatLintVersionDir(c, t, "dialect: postgres\nserver-version: \"99\"\n")
+	// A migration the server refuses, so the replay fails after the version
+	// was already resolved.
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "2_broken.sql"),
+		[]byte("CREATE TABLE ptah_compat_lint_broken (id NOT A TYPE);\n"), 0o600,
+	), qt.IsNil)
+
+	_, stderr, err := runCompatLintVersionLatest(c, t, dir, "2")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains,
+		"warning: postgres 99 is newer than the newest measured release line")
+}
+
+func runCompatLintVersionLatest(c *qt.C, t *testing.T, migrationsDir, latest string) (stdout, stderr string, err error) {
+	c.Helper()
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", "file://" + migrationsDir,
+		"--dev-url", dbtarget.URL(c, dbtarget.PostgreSQL),
+		"--latest", latest,
+	})
+	err = cmd.Execute()
+	return out.String(), errOut.String(), err
+}

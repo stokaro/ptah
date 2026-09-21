@@ -321,6 +321,15 @@ func runAtlasMigrateLint(
 	lintOptions.RevisionVersions = revisionVersions
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
+		// Before the error goes out, whichever way it goes: a run that
+		// analyzed against a release line nobody named still analyzed against
+		// it, and a partial report is where a reader is least able to tell.
+		// The Atlas error renderers carry no field for it.
+		if noticeErr := migrationlintreport.WriteServerVersionNotice(
+			cmd.ErrOrStderr(), report,
+		); noticeErr != nil {
+			return cmdutil.Fail(cmd, noticeErr)
+		}
 		if formatOutput {
 			if err := writeAtlasMigrateLintReplayError(
 				cmd, opts, dir, report, integrity, revisionVersions, err,
