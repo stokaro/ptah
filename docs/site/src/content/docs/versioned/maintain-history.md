@@ -408,8 +408,9 @@ created.
 ```
 
 A table an administrator created and granted to the application is accepted
-when the application is a member of the owning role, which is what the server
-is asked rather than two names compared. Where ownership cannot be
+when the application can act as the owning role, which is what the server is
+asked rather than two names compared. Membership alone is not enough: a
+`NOINHERIT` login is granted the role and still cannot exercise it. Where ownership cannot be
 transferred, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1` accepts the table as it is.
 
 The refusal is ownership rather than a list of what a table may carry: on the
@@ -428,6 +429,11 @@ table.
 The check covers a dry run too, because a dry run reads the table, and it runs
 again after the create, so a table placed between the two statements is caught
 rather than adopted.
+
+A custom `--migrations-table` whose name leaves no room for the log's `_log`
+suffix is refused outright. The server would truncate the derived name, so the
+DDL and the writes would address one table while every catalog lookup named
+another.
 
 Reading the log is refused the same way: a policy or an expression the server
 evaluates during a `SELECT` runs the other role's SQL with the reader's

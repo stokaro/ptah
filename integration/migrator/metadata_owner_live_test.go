@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -105,6 +106,7 @@ type foreignMetadataFixture struct {
 	squatterRole  string
 	migrationURL  string
 	adminExec     func(c *qt.C, statement string)
+	squatterExec  func(c *qt.C, statement string)
 }
 
 // foreignMetadataMigrations is the one migration every case in this file
@@ -205,6 +207,12 @@ func newForeignMetadataFixture(t *testing.T, squat string) *foreignMetadataFixtu
 	fixture.adminExec(c, "GRANT CREATE, USAGE ON SCHEMA public TO "+fixture.squatterRole)
 	fixture.adminExec(c, "GRANT CREATE, USAGE ON SCHEMA public TO "+fixture.migrationRole)
 
+	squatter := openForeignMetadataConnection(c, t, serverURL, database, fixture.squatterRole)
+	fixture.squatterExec = func(c *qt.C, statement string) {
+		c.Helper()
+		_, err := squatter.ExecContext(context.Background(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
 	squatForeignMetadataTable(c, t, serverURL, database, fixture, squat)
 
 	fixture.migrationURL = foreignMetadataURL(c, serverURL, database, fixture.migrationRole)
@@ -409,4 +417,58 @@ func TestForeignMetadataOverrideIsValidatedOnTheLogReadLive(t *testing.T) {
 	_, err := fixture.migrator.MigrationLog(t.Context(), 0)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*`+migrator.AllowForeignMetadataTableEnvVar+`.*`)
+}
+
+// Membership is not the question; whether the session can act as the owner is.
+// A NOINHERIT login granted the owning role answers MEMBER true and USAGE
+// false on PostgreSQL 16.15, so accepting membership would admit a table whose
+// owner the connection cannot become.
+func TestMetadataTableOwnedByANonInheritedRoleIsRefusedLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	admin := fixture.adminExec
+	admin(c, `CREATE ROLE `+fixture.ownerRole)
+	admin(c, `GRANT CREATE, USAGE ON SCHEMA public TO `+fixture.ownerRole)
+	admin(c, `ALTER ROLE `+fixture.migrationRole+` NOINHERIT`)
+	admin(c, `GRANT `+fixture.ownerRole+` TO `+fixture.migrationRole)
+	admin(c, foreignMetadataRevisionTableDDL)
+	admin(c, `ALTER TABLE public.schema_migrations OWNER TO `+fixture.ownerRole)
+	admin(c, `GRANT ALL ON public.schema_migrations TO `+fixture.migrationRole)
+
+	err := fixture.migrator.Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+}
+
+// The refusal names the table the way an operator would address it, so the
+// remedy it prints acts on the table that was refused rather than on whatever
+// the search path resolves an unqualified name to.
+func TestForeignMetadataRefusalNamesTheQualifiedTableLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	admin := fixture.adminExec
+	admin(c, `CREATE SCHEMA audit`)
+	admin(c, `GRANT USAGE, CREATE ON SCHEMA audit TO `+fixture.squatterRole)
+	admin(c, `GRANT USAGE ON SCHEMA audit TO `+fixture.migrationRole)
+	fixture.squatterExec(c, `CREATE TABLE audit.schema_migrations (version bigint PRIMARY KEY)`)
+	fixture.squatterExec(c, `GRANT ALL ON audit.schema_migrations TO PUBLIC`)
+
+	err := fixture.migrator.WithMigrationsTable("audit", "schema_migrations").Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE "audit"."schema_migrations" OWNER TO.*`)
+}
+
+// A log name the target would truncate is refused rather than addressed under
+// two spellings: the DDL and the INSERT would use the truncated name while
+// every catalog lookup binds the full one.
+func TestUnaddressableLogTableNameIsRefusedLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	long := strings.Repeat("a", 60)
+
+	err := fixture.migrator.WithMigrationsTable("", long).Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrUnaddressableMetadataTable)
+	c.Assert(err, qt.ErrorMatches, `(?s).*63-bytes limit.*`)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/envbool"
 )
@@ -46,7 +47,7 @@ func (e *ForeignMetadataTableError) Error() string {
 		"refusing to use metadata table %s: it is owned by %q and this connection runs as %q, "+
 			"so it is not the table Ptah would have created. Transfer it with ALTER TABLE %s OWNER TO %q, "+
 			"or set %s=1 to accept a table this connection does not own",
-		e.Table, e.Owner, e.Role, e.Table, e.Role, allowForeignMetadataTableVar.Name(),
+		e.Table, e.Owner, e.Role, e.Table, e.Role, AllowForeignMetadataTableEnvVar,
 	)
 }
 
@@ -107,7 +108,56 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 	if mine {
 		return nil
 	}
-	return &ForeignMetadataTableError{Table: table, Owner: owner, Role: role}
+	return &ForeignMetadataTableError{
+		Table: m.qualifiedMetadataTable(table),
+		Owner: owner,
+		Role:  role,
+	}
+}
+
+// qualifiedMetadataTable is the name the refusal prints, which has to be the
+// one an operator would type: an unqualified ALTER TABLE resolves through
+// search_path and could rename a different table, or fail while leaving the
+// refused one exactly as it was.
+func (m *Migrator) qualifiedMetadataTable(table string) string {
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
+	}
+	return m.quoteIdentifier(table)
+}
+
+// ErrUnaddressableMetadataTable is returned when the log table's derived name
+// is longer than the target accepts.
+var ErrUnaddressableMetadataTable = errors.New("metadata table name exceeds the identifier limit")
+
+// refuseUnaddressableLogTable refuses a log table whose derived name the
+// server would truncate.
+//
+// The name is the revision table's plus a suffix, so a revision table close to
+// the limit derives one past it. PostgreSQL truncates at 63 bytes without an
+// error, and the truncated name is what the DDL creates and the INSERT writes
+// while every catalog lookup here binds the full string: the ownership check
+// reports the table absent, and a table somebody else placed under the
+// truncated name is adopted. Two revision tables whose names differ only past
+// the limit would also share one log.
+//
+// Refused rather than compensated for. A name Ptah cannot address is a
+// configuration to fix, and guessing the truncation per dialect would put a
+// second spelling of every identifier into the write path.
+func (m *Migrator) refuseUnaddressableLogTable() error {
+	if !m.migrationLogWritable() {
+		return nil
+	}
+	name := m.migrationsTableName() + migrationLogTableSuffix
+	limit := capability.Identifiers(m.connectionDialect())
+	if !limit.Exceeds(name) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the operation log for migrations table %q is named %q, which is over the %d-%s limit "+
+			"this target enforces; shorten the migrations table name, or set migration.log to false",
+		ErrUnaddressableMetadataTable, m.migrationsTableName(), name, limit.Max, limit.Unit,
+	)
 }
 
 // metadataTableOwnerQuery builds the catalog query that answers who owns one
@@ -133,9 +183,14 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 }
 
 // postgresTableOwnerQuery reads the owner from pg_class and asks the server
-// itself whether the current role is that role or a member of it, because
-// pg_has_role follows inheritance the way a grant does and a name comparison
-// would not.
+// itself whether the current session can exercise the owner's privileges,
+// because a name comparison would not follow a grant at all.
+//
+// USAGE rather than MEMBER: membership is recorded even where the session
+// cannot act as the owner. Measured on PostgreSQL 16.15, a NOINHERIT login
+// granted a role answers MEMBER true and USAGE false, and accepting it would
+// admit a table whose owner the connection cannot become -- which is the
+// arrangement the refusal exists to catch, wearing a grant.
 //
 // No relkind filter: CREATE TABLE IF NOT EXISTS collides with any relation
 // holding the name, so a partitioned table, a view or a foreign table under it
@@ -148,7 +203,7 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 const postgresTableOwnerQuery = `SELECT
   pg_get_userbyid(c.relowner),
   current_user,
-  pg_has_role(current_user, c.relowner, 'MEMBER')
+  pg_has_role(current_user, c.relowner, 'USAGE')
 FROM pg_class AS c
 JOIN pg_namespace AS n ON n.oid = c.relnamespace
 WHERE n.nspname = COALESCE(NULLIF(?, ''), current_schema())

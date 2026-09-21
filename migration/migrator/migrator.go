@@ -1149,6 +1149,11 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
 		return err
 	}
+	// Before any statement, for the same reason the engine refusal is: a name
+	// the target would truncate is a configuration this run cannot carry out.
+	if err := m.refuseUnaddressableLogTable(); err != nil {
+		return err
+	}
 
 	// Skip if already initialized. The memoized result is only valid for the
 	// dry-run mode it was computed under: a real Initialize records that the

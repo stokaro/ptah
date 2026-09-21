@@ -477,7 +477,7 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	// Before the absent-table return: this is a public read path of its own,
 	// and a malformed override must not stay dormant because this database
 	// happens to have no log.
-	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
+	if err := m.validateMetadataInputs(); err != nil {
 		return nil, err
 	}
 	// No Initialize: reading is a question, and a question that created a

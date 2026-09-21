@@ -47,7 +47,25 @@ func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
 // The answer is scoped by WithMigrationsTable and WithRevisionTableFormat, so
 // two migrators differing only in format answer for their own two tables.
 func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
+	if err := m.validateMetadataInputs(); err != nil {
+		return false, err
+	}
 	return m.migrationsTableExists(ctx)
+}
+
+// validateMetadataInputs resolves what this migrator reads from the
+// environment, before a public entry point queries anything.
+//
+// [Migrator.Initialize] is not the only way into the metadata: an adoption
+// preflight asks [Migrator.MetadataPresent] and [Migrator.RevisionLayoutBase]
+// first, and each runs a statement. A malformed override left for Initialize
+// to catch would reach the database before the value that was already wrong
+// was read at all.
+func (m *Migrator) validateMetadataInputs() error {
+	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
+		return err
+	}
+	return m.refuseUnaddressableLogTable()
 }
 
 // RevisionLayoutBase reports whether an existing native revision table carries
@@ -64,6 +82,9 @@ func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
 // The answer is meaningful only for the native layout. The Atlas-compatible
 // layout has one shape, and this reports false for it.
 func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
+	if err := m.validateMetadataInputs(); err != nil {
+		return false, err
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return false, nil
 	}
