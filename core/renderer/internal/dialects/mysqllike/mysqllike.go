@@ -856,14 +856,14 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 // with the column and never arrives here. An operation that did would be a
 // planner bug, and rendering something plausible for it would hide the bug
 // behind valid-looking SQL (stokaro/ptah#2168).
-func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) error {
+func (r *Renderer) writeSetComment(node *ast.AlterTableNode, op *ast.SetCommentOperation) error {
 	if op.Column != "" {
 		return fmt.Errorf(
 			"%s renders a column comment as part of MODIFY COLUMN, not on its own: column %q of table %q",
-			r.dialectUpper, op.Column, table)
+			r.dialectUpper, op.Column, node.Name)
 	}
-	r.w.WriteLinef("ALTER TABLE %s COMMENT=%s;",
-		escapeQualifiedIdentifier(table), r.escapeValue(op.Comment))
+	r.writeAlterStatementf(node, "ALTER TABLE %s COMMENT=%s",
+		escapeQualifiedIdentifier(node.Name), r.escapeValue(op.Comment))
 	return nil
 }
 
@@ -1232,7 +1232,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			r.writeAlterStatementf(node, "ALTER TABLE %s MODIFY COLUMN %s", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.SetCommentOperation:
-			if err := r.writeSetComment(node.Name, op); err != nil {
+			if err := r.writeSetComment(node, op); err != nil {
 				return err
 			}
 
@@ -1241,10 +1241,11 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			// `ALTER TABLE x RENAME COLUMN old TO new` form. The runtime
 			// version is the caller's concern; older servers will fail at
 			// migration apply time rather than at SQL generation time.
-			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME COLUMN %s TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
 		case *ast.RenameTableOperation:
-			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))
+			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME TO %s",
+				escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))
 
 		case *ast.AddSkippingIndexOperation:
 			// Data-skipping indexes are a ClickHouse-specific construct; no

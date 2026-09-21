@@ -157,3 +157,37 @@ func TestOnlineAlter_PostgresLeavesAnIndexBackedConstraintAlone(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "NOT VALID")
 	c.Assert(sql, qt.Not(qt.Contains), "VALIDATE CONSTRAINT")
 }
+
+// Every ALTER TABLE the plan writes carries the request, not only the ones an
+// early version of this pass happened to route: MySQL reads ALGORITHM and LOCK
+// per statement, so one that went without them would run under whatever the
+// server chose.
+func TestOnlineAlter_MySQLAsksOnEveryStatementShape(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+	}{
+		{
+			name: "a table comment",
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
+					TableName:     "users",
+					CommentChange: &difftypes.CommentChange{Current: "", Desired: "people"},
+				}},
+				DeclaredTables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := planner.GenerateSchemaDiffSQLWithOptions(test.diff, "mysql",
+				planner.Options{Capabilities: capability.MySQL84(), OnlineAlter: true})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, ", ALGORITHM=INPLACE, LOCK=NONE;")
+		})
+	}
+}

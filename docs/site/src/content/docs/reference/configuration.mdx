@@ -374,7 +374,15 @@ off.
 The PostgreSQL pair buys that weaker lock only when the two statements commit
 separately, so a generated migration carrying one runs outside a transaction. A
 plan that mixes it with ordinary statements is refused: the constraint change
-belongs in a migration of its own. A selected environment's
+belongs in a migration of its own. `ptah schema apply` executes the statements
+itself, so it refuses the setting unless it runs with `--tx-mode none`, rather
+than holding the addition's lock through the validation scan.
+
+On MySQL and MariaDB a table rename is refused under this setting, and that is
+the server's answer rather than Ptah's: measured on MySQL 8.4.6 and MariaDB
+12.3.3, `ALTER TABLE ... RENAME TO ..., ALGORITHM=INPLACE, LOCK=NONE` returns
+`1845` asking for `LOCK=EXCLUSIVE`. A column rename and a table comment are
+accepted. A selected environment's
 `diff.skip` replaces the top-level list; an explicit empty list clears all
 inherited skip kinds.
 

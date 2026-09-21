@@ -1513,6 +1513,7 @@ func mergeDiff(base, override DiffConfig) DiffConfig {
 	result.Skip.DropSchema = mergeBool(result.Skip.DropSchema, override.Skip.DropSchema)
 	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
 	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
+	result.OnlineAlter = mergeBool(result.OnlineAlter, override.OnlineAlter)
 	return result
 }
 
