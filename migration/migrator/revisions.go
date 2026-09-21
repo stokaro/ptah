@@ -2499,7 +2499,44 @@ func (m *Migrator) baselineLocked(ctx context.Context, opts BaselineOptions) err
 			return err
 		}
 	}
-	return m.baselineMigrations(ctx, migrations)
+	if err := m.baselineMigrations(ctx, migrations); err != nil {
+		return err
+	}
+	m.reportBaselineSkippedChecks(migrations)
+	return nil
+}
+
+// reportBaselineSkippedChecks names the baselined migrations whose assertions
+// nothing evaluated.
+//
+// Baseline records a migration as applied without running its body, so there
+// was no statement for a precondition to guard and no moment at which a
+// postcondition was true for Ptah to observe. Skipping both is the only
+// available answer; a skip nobody is told about reads exactly like a migration
+// that declared no assertions.
+//
+// A body whose directives do not parse is named here too. Baseline is not the
+// place to refuse history that already happened, and the version an operator
+// has to look at is the same one either way.
+func (m *Migrator) reportBaselineSkippedChecks(migrations []*Migration) {
+	if m.skipChecks {
+		return
+	}
+	versions := make([]int64, 0, len(migrations))
+	for _, migration := range migrations {
+		groups, err := m.migrationCheckGroups(migration, MigrationDirectionUp)
+		if err == nil && len(groups) == 0 {
+			continue
+		}
+		versions = append(versions, migration.Version)
+	}
+	if len(versions) == 0 {
+		return
+	}
+	m.logger.Warn(
+		"Baseline recorded migrations as applied without evaluating their checks",
+		"versions", versions,
+	)
 }
 
 func (m *Migrator) migrationsForBaseline(version int64) ([]*Migration, error) {

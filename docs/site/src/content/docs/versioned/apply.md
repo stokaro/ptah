@@ -120,7 +120,7 @@ stderr. See
 The per-statement narration is native-only: `ptah-compat migrate apply
 --dry-run` does not emit it, matching Atlas CE. Compat still writes
 safety-relevant notes to stderr — an active `PTAH_SKIP_CHECKS` bypass, and any
-deferred pre-migration checks — so keep the streams apart rather than folding
+deferred checks — so keep the streams apart rather than folding
 them together: `ptah-compat ... --format '{{ json . }}' | jq` sees exactly one
 JSON document, while `2>&1` would mix those notes into it. See
 [Atlas migrate commands](../../atlas/migrate-commands/).

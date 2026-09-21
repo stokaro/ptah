@@ -1,10 +1,11 @@
-# Pre-migration assertion checks
+# Migration assertion checks
 
-Pre-migration checks are SQL predicates that run **before** a migration's
-statements and abort the migration if the precondition is not met. The
-motivating case is guarding a destructive migration on a data-state
-precondition — for example, refusing to `DROP TABLE users` unless the table is
-already empty.
+A check is a SQL predicate a migration file carries. A check runs **before** the
+migration's statements by default and aborts the migration if the precondition
+is not met — the motivating case is guarding a destructive migration on a
+data-state precondition, for example refusing to `DROP TABLE users` unless the
+table is already empty. A check written with `phase=after` runs once the body
+has committed, so a migration can also state what it produced.
 
 This is a **local, offline** capability: no network, no external service, no
 account. It is the open, MIT, embeddable half of Atlas's Pro "pre-migration
@@ -28,6 +29,7 @@ Keys:
 | `assert` | yes | One top-level `SELECT` that returns exactly one column and one row containing a truthy scalar. |
 | `name` | no | A label for the check, shown in error output. |
 | `on_fail` | no | What to do when the assertion is not satisfied. Only `abort` is supported; it is the default. |
+| `phase` | no | When the predicate is evaluated: `before` the body (the default) or `after` it. |
 
 - `assert` is a single top-level `SELECT` returning exactly one column and one
   row. A boolean result uses its value; a number passes when non-zero; a
@@ -38,15 +40,18 @@ Keys:
 - The `assert` value is double-quoted so it can contain spaces and `=`. A literal
   double quote inside the value is escaped by doubling it (`""`).
 - Multiple `-- +ptah check` lines per migration are allowed and run in file
-  order, before the first migration statement.
+  order within their phase: every `before` check runs ahead of the first
+  migration statement, and every `after` check once the body is committed.
 - A check is the one directive whose **position** is not significant. Every
   other `-- +ptah` and `-- atlas:` directive is honored only above the first
   executable statement; a check written below the statements still runs, still
   before them, because its position never decided which statements ran. It is
   therefore not reported as a misplaced directive.
 - A malformed check directive (missing `assert`, unknown key, unsupported
-  `on_fail`, unterminated quote, multi-statement `assert`) aborts the migration
-  with nothing applied.
+  `on_fail`, unsupported `phase`, unterminated quote, multi-statement `assert`)
+  aborts the migration with nothing applied. That includes a directive whose
+  `phase=after` does not parse: the refusal is a property of the text, so it
+  lands before the body runs.
 
 ## Execution semantics
 
@@ -67,9 +72,9 @@ exactly the pre-migration state the migration is about to change.
   such migrations with the default per-file mode.
 
 A `-- +ptah check` runs in the direction it was written. One in the up body
-guards `ptah migrations up`; one in the down body guards the rollback and runs
-before any rollback statement, so a failing assertion aborts with nothing rolled
-back. Neither direction's directive guards the other: an up-body check is not
+guards `ptah migrations up`; one in the down body guards the rollback and, in
+the default phase, runs before any rollback statement, so a failing assertion
+aborts with nothing rolled back. Neither direction's directive guards the other: an up-body check is not
 re-evaluated during a rollback. A failing assertion produces a
 `CheckFailedError` that names the migration version and assertion. An Atlas
 `oneof` file in which every assertion is falsy produces a
@@ -77,7 +82,7 @@ re-evaluated during a rollback. A failing assertion produces a
 the verb that ran the check -- `ptah migrations up` or `ptah migrations down` --
 exits non-zero.
 
-A failed check writes **no revision row**. Checks run before the migration's
+A failed precondition writes **no revision row**. Checks run before the migration's
 bookkeeping row is created, so a blocked migration is recorded as never
 started rather than as dirty: the revision table is left byte-identical, and
 `migrations status` keeps reporting the previous version with the blocked
@@ -94,6 +99,56 @@ failure would have a working in-band recovery. Recording nothing in the first pl
 better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency
 override, not that recovery path: correcting the guarded data is, and it needs
 no bypass at all.
+
+## Post-migration checks
+
+`phase=after` moves the predicate to the other side of the body:
+
+```sql
+-- +ptah check name="every_row_has_a_tier" phase=after assert="SELECT count(*) = 0 FROM accounts WHERE tier IS NULL"
+ALTER TABLE accounts ADD COLUMN tier TEXT;
+UPDATE accounts SET tier = 'free' WHERE id > 0;
+```
+
+The predicate is evaluated once, on the migration that owns it, after the body
+has committed and its revision row says applied. It is read the same way, with
+the same result contract and the same session isolation as a precondition.
+
+**A failure means applied, postcondition failed.** The body is committed, so
+nothing is rolled back, the revision is not marked dirty, and the migration is
+not re-run: a later `ptah migrations up` sees it as applied and moves on. The
+run exits non-zero with a `PostMigrationCheckFailedError` naming the version and
+the assertion. What to do about a database that took the change without reaching
+the state the change was for is an operator's decision, and Ptah's part is to
+say so rather than to guess.
+
+A postcondition runs once, where the migration runs. Re-verifying a database
+later — after a restore, or before a release — is what `ptah db verify` is for:
+the same `-- +ptah check` directives, evaluated against a database on demand,
+with no migration history involved.
+
+The same directive works in a down body: a `phase=after` check there is
+evaluated once the rollback has committed and its revision is gone.
+
+### Phases and the rest of the migration model
+
+- **A dry run defers every postcondition.** A precondition on the first
+  migration executed in the run observes exactly the state a real apply would
+  give it, so it is evaluated; a postcondition asks about the state the body
+  produces, and a dry run refuses to produce it. The run reports which versions
+  it deferred. The static verdict is not deferred: an assertion that is
+  malformed or write-shaped is refused in a preview too.
+- **`ptah migrations baseline` evaluates neither phase and says so.** Baseline
+  records migrations as applied without running their bodies, so there was no
+  statement for a precondition to guard and no moment at which a postcondition
+  was true. The run warns, naming the versions whose checks it skipped.
+- **A checkpoint carries its own checks.** A checkpoint is a migration; the
+  checks in its body are about the state it establishes, and the squashed
+  history's checks are not re-run.
+- **`ptah migrations rebase` moves the directive with the body.** It refuses to
+  rewrite applied history, so a rebased migration is still unapplied and its
+  checks run when it applies.
+- **`--tx-mode all` rejects both phases**, for the reason below.
 
 ## Assertion result shape
 

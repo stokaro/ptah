@@ -1989,7 +1989,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 4591,
-      "sourceBytes": 34982
+      "sourceBytes": 34978
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -4168,7 +4168,8 @@
         "/operate/oci-registry/"
       ],
       "inboundLinks": [
-        "/operate/oci-registry/"
+        "/operate/oci-registry/",
+        "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 1180,
       "sourceBytes": 8423
@@ -6619,8 +6620,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 6060,
-      "sourceBytes": 43909
+      "visibleWords": 6059,
+      "sourceBytes": 43895
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -6825,6 +6826,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/concepts/database-urls-and-dev-databases/",
+        "/operate/verify-a-release/",
         "/reference/exit-codes/",
         "/testing/ci/",
         "/testing/migrations-and-schema/",
@@ -6852,8 +6854,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5085,
-      "sourceBytes": 35428
+      "visibleWords": 5289,
+      "sourceBytes": 36902
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

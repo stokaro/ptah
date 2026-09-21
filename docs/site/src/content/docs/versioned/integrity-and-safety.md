@@ -609,7 +609,7 @@ must remain inside that root after symbolic-link resolution. Parent traversal,
 outside absolute paths, and symbolic-link escapes are refused when their
 resolved destination leaves the root.
 
-## Pre-migration checks
+## Migration checks
 
 Guard a migration on a data-state precondition with a `-- +ptah check`
 directive, which runs before the migration's statements and aborts if the
@@ -640,6 +640,7 @@ than a silent narrowing:
 | `name` | any label; it names the failure |
 | `assert` | exactly one read-only top-level `SELECT` returning one column and one row |
 | `on_fail` | `abort` only — there is no `warn`, `skip` or `continue` |
+| `phase` | `before` (the default) or `after` the migration body |
 
 An assertion of any other shape fails closed before the migration runs, and so
 does a write-shaped one. On SQL Server, `NEXT VALUE FOR` is refused statically
@@ -659,6 +660,33 @@ flags Atlas does not have. This is the open, local half of Atlas Pro's
 pre-migration checks; the Cloud approval-policy half is intentionally out of
 scope.
 
+### What a migration produced
+
+`phase=after` evaluates the predicate on the other side of the body, once it
+has committed and its revision says applied:
+
+```sql
+-- +ptah check name="every_row_has_a_tier" phase=after assert="SELECT count(*) = 0 FROM accounts WHERE tier IS NULL"
+ALTER TABLE accounts ADD COLUMN tier TEXT;
+UPDATE accounts SET tier = 'free' WHERE id > 0;
+```
+
+A failure there is a different outcome from a failed precondition, and the
+error says so: the migration is applied. Nothing is rolled back, the revision
+is not dirty, and the next run treats the migration as done rather than
+retrying a body that already committed. The run exits non-zero so a pipeline
+stops, and what to do about a database that took the change without reaching
+the state it was for is an operator's decision.
+
+A postcondition runs once, where its migration runs. Re-verifying a database on
+demand — after a restore, or before a release — is
+[`ptah db verify`](../../operate/verify-a-release/), which reads the same
+directives against a database with no migration history involved.
+
+`ptah migrations baseline` records migrations as applied without running their
+bodies, so it evaluates neither phase and warns with the versions whose checks
+it skipped.
+
 ### Checks in a dry run
 
 A check is a read, and a dry run intercepts only writes. Evaluating every
@@ -667,9 +695,11 @@ only exists once its predecessors apply — state the dry run has, by
 construction, refused to produce. The answer would be a fact about the preview,
 not about the migrations.
 
-So a dry run evaluates a migration's assertions only where the state it
+So a dry run evaluates a migration's preconditions only where the state it
 observes is the state a real apply would evaluate them against: **the first
-migration executed in the run**. That is a position in the run, not a version
+migration executed in the run**. A postcondition is deferred wherever it sits,
+including on that first migration, because the state it asks about is the state
+the body produces and a dry run produces none. That is a position in the run, not a version
 and not a place in the directory — a migration sitting second in its directory
 is first in the run once its predecessor is applied, and its checks are
 evaluated normally from then on.
@@ -681,7 +711,7 @@ exactly as on a real apply. Only the database evaluation is deferred, and the
 run names what it deferred on stderr:
 
 ```text
-Deferred pre-migration checks for 1 migration (20260101000002): a dry run does
+Deferred checks for 1 migration (20260101000002): a dry run does
 not create the state they assert on, so they are evaluated on apply.
 ```
 

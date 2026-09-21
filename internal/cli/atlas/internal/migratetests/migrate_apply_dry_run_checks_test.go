@@ -91,7 +91,7 @@ ALTER TABLE users ADD COLUMN email TEXT;
 `
 )
 
-const dryRunChecksDeferredNote = "Deferred pre-migration checks"
+const dryRunChecksDeferredNote = "Deferred checks"
 
 // writeDryRunChecksDir writes a hashed two-migration directory.
 func writeDryRunChecksDir(c *qt.C, dir, first, second string) string {
@@ -201,7 +201,7 @@ func TestMigrateApplyDryRunChecksDeferChecksOnLaterMigrations(t *testing.T) {
 			name:     "C check needs state a prior pending migration creates",
 			first:    dryRunChecksCreateUsers,
 			second:   dryRunChecksTxtarNeedsPrior,
-			wantNote: "Deferred pre-migration checks for 1 migration (20260101000002)",
+			wantNote: "Deferred checks for 1 migration (20260101000002)",
 		},
 		{
 			// D's guard is false regardless of state, but proving that needs a
@@ -210,14 +210,14 @@ func TestMigrateApplyDryRunChecksDeferChecksOnLaterMigrations(t *testing.T) {
 			name:     "D always-false check on a later migration is deferred and reported",
 			first:    dryRunChecksCreateUsers,
 			second:   dryRunChecksTxtarAlwaysFalse,
-			wantNote: "Deferred pre-migration checks for 1 migration (20260101000002)",
+			wantNote: "Deferred checks for 1 migration (20260101000002)",
 		},
 		{
 			// G proves the rule covers both spellings, not just txtar.
 			name:     "G +ptah check directive is deferred like a txtar check",
 			first:    dryRunChecksCreateUsers,
 			second:   dryRunChecksDirectiveNeedsPrior,
-			wantNote: "Deferred pre-migration checks for 1 migration (20260101000002)",
+			wantNote: "Deferred checks for 1 migration (20260101000002)",
 		},
 		{
 			// --tx-mode none shares the per-file loop, so it shares the rule.
@@ -225,7 +225,7 @@ func TestMigrateApplyDryRunChecksDeferChecksOnLaterMigrations(t *testing.T) {
 			first:     dryRunChecksCreateUsers,
 			second:    dryRunChecksTxtarNeedsPrior,
 			extraArgs: []string{"--tx-mode", "none"},
-			wantNote:  "Deferred pre-migration checks for 1 migration (20260101000002)",
+			wantNote:  "Deferred checks for 1 migration (20260101000002)",
 		},
 	}
 
@@ -276,7 +276,7 @@ func TestMigrateApplyDryRunChecksRefuseWhatThePreviewCanDecide(t *testing.T) {
 			name:    "H malformed directive is still reported",
 			first:   dryRunChecksCreateUsers,
 			second:  dryRunChecksDirectiveMalformed,
-			wantErr: "invalid pre-migration check directives",
+			wantErr: "invalid check directives",
 		},
 		{
 			// I is the other half of that regression: a write-shaped assertion
@@ -394,6 +394,6 @@ func TestMigrateApplyDryRunChecksNameConvertedFlywayIdentity(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stderr, qt.Contains, "Deferred pre-migration checks for 1 migration (1.5)")
+	c.Assert(stderr, qt.Contains, "Deferred checks for 1 migration (1.5)")
 	c.Assert(stderr, qt.Not(qt.Contains), "461168")
 }

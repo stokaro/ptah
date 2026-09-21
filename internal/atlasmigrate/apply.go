@@ -130,9 +130,9 @@ type ApplyResult struct {
 	EndedAt          time.Time
 	ErrorText        string
 	ApplyError       error
-	// ChecksDeferred lists versions whose pre-migration checks were parsed and
-	// statically validated but not evaluated, because a dry run cannot produce
-	// the state they assert on. Empty outside a dry run.
+	// ChecksDeferred lists versions whose checks were parsed and statically
+	// validated but not evaluated, because a dry run cannot produce the state
+	// they assert on. Empty outside a dry run.
 	ChecksDeferred []int64
 	// ChecksDeferredKeys are exact revision identities aligned with
 	// ChecksDeferred. A present empty key is the migration identity.

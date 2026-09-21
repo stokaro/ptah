@@ -503,7 +503,7 @@ Yes. Use pre-migration assertions for conditions you can check in the data. They
 complement SQL analysis: a statement can be correct and still fail because
 existing rows do not allow it.
 
-- [Integrity and safety](../versioned/integrity-and-safety/#pre-migration-checks)
+- [Integrity and safety](../versioned/integrity-and-safety/#migration-checks)
 
 ### The dry run passed. Why test migrations against a separate database as well? {#dry-run-versus-replay}
 
