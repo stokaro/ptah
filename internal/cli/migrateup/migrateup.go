@@ -538,28 +538,22 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	onlineCfg := projectCfg.OnlineDDL
 	interceptor := onlineddl.New(onlineCfg).WithDryRun(opts.dryRun)
 
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		migrationsFS,
-		migrator.WithStatementInterceptor(interceptor),
-		migrator.WithMigrationDirFormat(settings.dirFormat),
-		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: atlasEnv}),
-	)
+	mig, err := newUpMigrator(upMigratorOptions{
+		conn:             conn,
+		migrationsFS:     migrationsFS,
+		interceptor:      interceptor,
+		settings:         settings,
+		timeouts:         timeouts,
+		atlasEnv:         atlasEnv,
+		migrationsSchema: migrationsSchema,
+		migrationsTable:  migrationsTable,
+		projectCfg:       projectCfg,
+		runtime:          runtime,
+		opts:             opts,
+	})
 	if err != nil {
-		return fmt.Errorf("error registering migrations: %w", err)
+		return err
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
-		WithMigrationsEngine(opts.migrationsEngine).
-		WithActor(opts.actor).
-		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
-		WithRevisionTableFormat(settings.revisionFormat).
-		WithDefaultTimeouts(timeouts).
-		WithExecOrder(settings.execOrder).
-		WithTransactionMode(settings.txMode).
-		WithMigrationLockTimeout(settings.migrationLockTimeout).
-		WithSkipChecks(opts.skipChecks).
-		WithLogger(runtime.Logger()).
-		WithObserver(runtime.Observer())
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(cmd.Context())
@@ -882,6 +876,53 @@ func emitRunResult(w io.Writer, evidence migrator.RunEvidence) error {
 //
 // PostgreSQL only: the MySQL family has no lock_timeout with this meaning, and
 // the clause its statements carry makes the server refuse rather than queue.
+// upMigratorOptions is what the run has resolved by the time it can build a
+// migrator: the connection, the directory, and every setting the flags, the
+// project config and the directives agreed on.
+type upMigratorOptions struct {
+	conn             *dbschema.DatabaseConnection
+	migrationsFS     fs.FS
+	interceptor      migrator.StatementInterceptor
+	settings         parsedMigrationSettings
+	timeouts         migrationfile.Timeouts
+	atlasEnv         string
+	migrationsSchema string
+	migrationsTable  string
+	projectCfg       projectconfig.Config
+	runtime          *cliobs.Runtime
+	opts             *options
+}
+
+// newUpMigrator assembles the migrator the run applies with.
+//
+// It is a function of its own because the assembly is a list: every setting
+// the command resolved arrives here, and a list that grows inside the command
+// makes the command longer without making it say more.
+func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
+	mig, err := migrator.NewFSMigrator(
+		in.conn,
+		in.migrationsFS,
+		migrator.WithStatementInterceptor(in.interceptor),
+		migrator.WithMigrationDirFormat(in.settings.dirFormat),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: in.atlasEnv}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error registering migrations: %w", err)
+	}
+	return mig.WithMigrationsTable(in.migrationsSchema, in.migrationsTable).
+		WithMigrationsEngine(in.opts.migrationsEngine).
+		WithActor(in.opts.actor).
+		WithMigrationLog(in.projectCfg.Migration.MigrationLogEnabled()).
+		WithRevisionTableFormat(in.settings.revisionFormat).
+		WithDefaultTimeouts(in.timeouts).
+		WithExecOrder(in.settings.execOrder).
+		WithTransactionMode(in.settings.txMode).
+		WithMigrationLockTimeout(in.settings.migrationLockTimeout).
+		WithSkipChecks(in.opts.skipChecks).
+		WithLogger(in.runtime.Logger()).
+		WithObserver(in.runtime.Observer()), nil
+}
+
 // emitLintPolicyVersionNote says what the policy's declared server version
 // resolved to when it named no measured release line.
 //
