@@ -148,7 +148,14 @@ func splitRenderable(pending string) (settled, rest string) {
 	fenced := false
 	cut := -1
 
-	for i, line := range lines {
+	// The last element is not a line of the document when the buffer ends with
+	// a newline: `strings.Split("row\n", "\n")` is `["row", ""]`, and that
+	// empty string is an artifact of splitting rather than a blank line. Read
+	// as one, it ends a block every time a line is completed -- which flushed a
+	// table one row at a time, and a single row with no header renders as
+	// literal pipes. A blank line only separates blocks when something follows
+	// it, so the final element is never a candidate.
+	for i, line := range lines[:max(0, len(lines)-1)] {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
 			fenced = !fenced

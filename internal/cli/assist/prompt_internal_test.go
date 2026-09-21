@@ -268,6 +268,32 @@ func TestSplitRenderableHoldsWhatIsNotSettled(t *testing.T) {
 			wantRest: "The schema and the database",
 		},
 		{
+			// The defect this rule exists for. A completed line leaves a
+			// trailing newline in the buffer, and reading the empty string
+			// that `strings.Split` puts after it as a blank line ends a block
+			// on every line: measured live, a table flushed one row at a
+			// time, and a row on its own renders as literal pipes.
+			name:     "a finished line is not a finished block",
+			pending:  "| Column 1 | Column 2 |\n",
+			wantRest: "| Column 1 | Column 2 |\n",
+		},
+		{
+			name:     "a whole table with a trailing newline stays whole",
+			pending:  "| A | B |\n|---|---|\n| 1 | 2 |\n",
+			wantRest: "| A | B |\n|---|---|\n| 1 | 2 |\n",
+		},
+		{
+			name:     "a paragraph that just ended a line is not settled",
+			pending:  "Some prose that reached the end of a line.\n",
+			wantRest: "Some prose that reached the end of a line.\n",
+		},
+		{
+			name:        "a real blank line still settles, trailing newline and all",
+			pending:     "First block.\n\nSecond block, still arriving\n",
+			wantSettled: "First block.",
+			wantRest:    "Second block, still arriving\n",
+		},
+		{
 			name:        "a blank line ends a paragraph",
 			pending:     "First block.\n\nSecond, still arriving",
 			wantSettled: "First block.",
