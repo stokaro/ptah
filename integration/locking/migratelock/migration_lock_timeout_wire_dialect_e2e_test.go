@@ -45,6 +45,10 @@ const probeTable = "lock_probe"
 // it either: initializing it is the first write a migrator makes.
 const revisionTable = "schema_migrations"
 
+// migrationLogTable is written beside it by a run that applies something, and
+// by no run that was refused before it applied anything.
+const migrationLogTable = revisionTable + "_log"
+
 // flagRefusal and environmentRefusal are the part of each refusal that carries
 // the finding: the dialect named is the one the server reported, not the one
 // the URL spelled.
@@ -150,7 +154,8 @@ func TestMigrationsUpWithoutLockTimeoutOnPostgresWireTargetE2E_HappyPath(t *test
 	c.Assert(applied.ExitCode, qt.Equals, 0,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(applied.Stderr, qt.Not(qt.Contains), flagRefusal)
-	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals, []string{probeTable, revisionTable})
+	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals,
+		[]string{probeTable, revisionTable, migrationLogTable})
 }
 
 // TestMigrationsUpLockTimeoutOnAliasTargetE2E_FailurePath is the other half of

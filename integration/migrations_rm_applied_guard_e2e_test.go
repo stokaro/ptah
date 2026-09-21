@@ -96,7 +96,10 @@ func TestMigrationsRmAppliedGuardPostgresE2E(t *testing.T) {
 	// The precondition, read back from the server rather than assumed: version 1
 	// is recorded as applied under the configured names, and version 2 is not.
 	c.Assert(rmGuardAppliedVersions(c, ctx, db, schema, revisionTable), qt.DeepEquals, []int64{1})
-	c.Assert(rmGuardSchemaTables(c, ctx, db, schema), qt.DeepEquals, []string{revisionTable, "widgets"})
+	// The log table sits beside the revision table it was named after, so a
+	// configured revision name moves both.
+	c.Assert(rmGuardSchemaTables(c, ctx, db, schema), qt.DeepEquals,
+		[]string{revisionTable, revisionTable + "_log", "widgets"})
 
 	t.Run("the applied version is refused", func(t *testing.T) {
 		c := qt.New(t)
@@ -158,9 +161,10 @@ func TestMigrationsRmAppliedGuardPostgresE2E(t *testing.T) {
 
 	// Nothing either run wrote to the database. A read that creates its own
 	// revision table is the failure this whole test is about, so the schema is
-	// read back afterwards: the same two tables, and the same one applied row.
+	// read back afterwards: the same tables, and the same one applied row.
 	c.Assert(rmGuardAppliedVersions(c, ctx, db, schema, revisionTable), qt.DeepEquals, []int64{1})
-	c.Assert(rmGuardSchemaTables(c, ctx, db, schema), qt.DeepEquals, []string{revisionTable, "widgets"})
+	c.Assert(rmGuardSchemaTables(c, ctx, db, schema), qt.DeepEquals,
+		[]string{revisionTable, revisionTable + "_log", "widgets"})
 }
 
 // writeRmGuardMigration writes one version's up/down pair. Every statement
