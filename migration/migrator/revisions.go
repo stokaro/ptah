@@ -2778,7 +2778,7 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = session.Close()
 	}()
 
-	tx, err := session.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := m.beginSerializableRevisionSetTx(ctx, session)
 	if err != nil {
 		return AtlasRevisionSetResult{}, fmt.Errorf("failed to begin Atlas revision set transaction: %w", err)
 	}
@@ -2818,6 +2818,37 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		return AtlasRevisionSetResult{}, fmt.Errorf("failed to commit Atlas revision set transaction: %w", err)
 	}
 	return result, nil
+}
+
+// beginSerializableRevisionSetTx opens the revision-set transaction at
+// serializable isolation.
+//
+// The level is what keeps two concurrent sets from each writing rows the other
+// did not see. The migration advisory lock does not cover it: Oracle and SQLite
+// take no such lock, so on those targets the isolation level is the only thing
+// standing between two runs.
+//
+// Oracle asks for it in SQL. Its driver implements one isolation level through
+// [database/sql] and refuses every other by name, so a `sql.TxOptions` naming
+// serializable fails before the transaction opens. `SET TRANSACTION` is
+// Oracle's own spelling of the same request and has to be the first statement
+// of the transaction, which is where this issues it.
+func (m *Migrator) beginSerializableRevisionSetTx(
+	ctx context.Context,
+	session *sql.Conn,
+) (*sql.Tx, error) {
+	if m.connectionDialect() != platform.Oracle {
+		return session.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	}
+	tx, err := session.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"); err != nil {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("failed to request serializable isolation: %w", err)
+	}
+	return tx, nil
 }
 
 func waitForAtlasSetRetry(ctx context.Context, attempt int) error {
