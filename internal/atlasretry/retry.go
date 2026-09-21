@@ -31,6 +31,10 @@ func IsRetryable(err error) bool {
 		return true
 	}
 
+	if oracleSerializationFailure(err) {
+		return true
+	}
+
 	var codedErr interface{ Code() int }
 	if errors.As(err, &codedErr) {
 		switch codedErr.Code() & 0xff {
