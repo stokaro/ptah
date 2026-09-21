@@ -50,6 +50,12 @@ export const SiteOrigin = 'https://ptah.run';
 // address of a link and nothing here builds against it.
 export const OperatorOrigin = 'https://operator.ptah.run';
 
+// BlogOrigin is where the project writes at length: worked migrations against
+// a real workload, and the reasoning behind a decision a reference page states
+// without arguing for. A site of its own, and nothing here builds against it,
+// so this is the address of a link.
+export const BlogOrigin = 'https://blog.ptah.run';
+
 // PlaygroundOrigin is where Ptah runs in a browser tab: the real CLI compiled
 // to WebAssembly against a real SQLite, with nothing installed. It is a site of
 // its own rather than a page of the project site, so that the project's
