@@ -6965,8 +6965,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 2635,
-      "sourceBytes": 20365
+      "visibleWords": 2651,
+      "sourceBytes": 20417
     },
     {
       "path": "docs/site/src/content/docs/versioned/migration-log.md",

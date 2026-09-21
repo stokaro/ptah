@@ -65,7 +65,7 @@ func (m *Migrator) validateMetadataInputs() error {
 	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
 		return err
 	}
-	return m.refuseUnaddressableLogTable()
+	return m.refuseUnaddressableMetadata()
 }
 
 // RevisionLayoutBase reports whether an existing native revision table carries
@@ -83,6 +83,13 @@ func (m *Migrator) validateMetadataInputs() error {
 // layout has one shape, and this reports false for it.
 func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
 	if err := m.validateMetadataInputs(); err != nil {
+		return false, err
+	}
+	// This one selects from the table itself rather than from the catalog, so
+	// it needs the ownership refusal that Initialize performs: a foreign table
+	// can carry a policy or an expression the planner evaluates, and an
+	// adoption preflight reaches here without Initialize having run.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
 		return false, err
 	}
 	if m.revisionTableFormat.isAtlas() {

@@ -59,11 +59,11 @@ func TestOwnMetadataTableIsAcceptedLive(t *testing.T) {
 	c.Assert(applied, qt.DeepEquals, []int64{1})
 }
 
-// A table an administrator created and handed to the application belongs to a
-// role the application is a member of. Refusing that would report an
-// arrangement somebody set up deliberately as an attack, so the check asks the
-// server about membership rather than comparing two names.
-func TestMetadataTableOwnedByAnInheritedRoleIsAcceptedLive(t *testing.T) {
+// A group role owning the table is refused, membership or not. Inheriting the
+// owner says this session reaches it; it says nothing about who else does, and
+// every other member of that role can attach a trigger the migration login
+// then runs. A deployment that wants it says so with the override.
+func TestMetadataTableOwnedByAGroupRoleIsRefusedLive(t *testing.T) {
 	c := qt.New(t)
 	fixture := newForeignMetadataFixture(t, "")
 	admin := fixture.adminExec
@@ -73,7 +73,9 @@ func TestMetadataTableOwnedByAnInheritedRoleIsAcceptedLive(t *testing.T) {
 	admin(c, `ALTER TABLE public.schema_migrations OWNER TO `+fixture.ownerRole)
 	admin(c, `GRANT ALL ON public.schema_migrations TO `+fixture.migrationRole)
 
-	c.Assert(fixture.migrator.Initialize(t.Context()), qt.IsNil)
+	err := fixture.migrator.Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
 }
 
 // The log is a record beside the work, so its refusal warns and the migration
@@ -131,6 +133,17 @@ func (f *foreignMetadataFixture) dryRunMigrator(c *qt.C) *migrator.Migrator {
 	mig, err := migrator.NewFSMigrator(conn, foreignMetadataMigrations())
 	c.Assert(err, qt.IsNil)
 	return mig
+}
+
+// relationExists asks whether anything holds the name, which is the question
+// CREATE TABLE IF NOT EXISTS answers for itself.
+func (f *foreignMetadataFixture) relationExists(c *qt.C, name string) bool {
+	c.Helper()
+	var count int
+	c.Assert(f.adminConn.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		 WHERE n.nspname = 'public' AND c.relname = $1`, name).Scan(&count), qt.IsNil)
+	return count > 0
 }
 
 // triggerRuns counts what the squatter's trigger recorded, which is zero on
@@ -459,16 +472,61 @@ func TestForeignMetadataRefusalNamesTheQualifiedTableLive(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER TABLE "audit"."schema_migrations" OWNER TO.*`)
 }
 
-// A log name the target would truncate is refused rather than addressed under
-// two spellings: the DDL and the INSERT would use the truncated name while
-// every catalog lookup binds the full one.
-func TestUnaddressableLogTableNameIsRefusedLive(t *testing.T) {
+// A log name the target would truncate closes the log rather than the run.
+// The DDL and the INSERT would address the truncated name while every catalog
+// lookup binds the full one, so the table is never created; the revision table
+// is addressable, and stopping a working migration over a record beside it
+// would cost more than the log does.
+func TestUnaddressableLogTableNameKeepsTheMigrationLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	long := strings.Repeat("a", 60)
+	mig := fixture.migrator.WithMigrationsTable("", long)
+
+	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
+
+	applied, err := mig.GetAppliedMigrations(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(applied, qt.DeepEquals, []int64{1})
+	c.Assert(fixture.relationExists(c, long+"_log"), qt.IsFalse)
+}
+
+// A caller that asked for the log is told why, rather than shown the empty
+// list an absent table produces.
+func TestUnaddressableLogTableNameIsRefusedOnAReadLive(t *testing.T) {
 	c := qt.New(t)
 	fixture := newForeignMetadataFixture(t, "")
 	long := strings.Repeat("a", 60)
 
-	err := fixture.migrator.WithMigrationsTable("", long).Initialize(t.Context())
+	_, err := fixture.migrator.WithMigrationsTable("", long).MigrationLog(t.Context(), 0)
 
 	c.Assert(err, qt.ErrorIs, migrator.ErrUnaddressableMetadataTable)
 	c.Assert(err, qt.ErrorMatches, `(?s).*63-bytes limit.*`)
+}
+
+// A revision table the target would truncate stops the run, unlike the log.
+// Without an addressable revision table Ptah cannot record what it did, so
+// there is no reduced mode to fall back to.
+func TestUnaddressableRevisionTableNameIsRefusedLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	long := strings.Repeat("b", 64)
+
+	err := fixture.migrator.WithMigrationsTable("", long).Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrUnaddressableMetadataTable)
+	c.Assert(err, qt.ErrorMatches, `(?s).*the migrations table is named.*`)
+}
+
+// The layout probe selects from the table rather than from the catalog, and an
+// adoption preflight reaches it without Initialize having run, so it carries
+// the same refusal.
+func TestForeignMetadataTableIsRefusedByTheLayoutProbeLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "schema_migrations")
+
+	_, err := fixture.migrator.RevisionLayoutBase(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
 }

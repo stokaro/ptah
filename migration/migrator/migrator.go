@@ -1146,12 +1146,7 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 
 	// Before the memoized return: a malformed value must not stay dormant
 	// because this invocation happened to be the second one.
-	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
-		return err
-	}
-	// Before any statement, for the same reason the engine refusal is: a name
-	// the target would truncate is a configuration this run cannot carry out.
-	if err := m.refuseUnaddressableLogTable(); err != nil {
+	if err := m.validateMetadataInputs(); err != nil {
 		return err
 	}
 

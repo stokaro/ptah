@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -141,22 +142,60 @@ var ErrUnaddressableMetadataTable = errors.New("metadata table name exceeds the 
 // truncated name is adopted. Two revision tables whose names differ only past
 // the limit would also share one log.
 //
-// Refused rather than compensated for. A name Ptah cannot address is a
-// configuration to fix, and guessing the truncation per dialect would put a
-// second spelling of every identifier into the write path.
+// Refused rather than compensated for. Guessing the truncation per dialect
+// would put a second spelling of every identifier into the write path.
+//
+// It closes the log rather than the run. The revision table is addressable --
+// only the derived name is not -- so failing here would turn a working
+// migration into a stopped one over a record beside the work, which is the
+// trade-off the foreign-table refusal already makes on this path.
 func (m *Migrator) refuseUnaddressableLogTable() error {
 	if !m.migrationLogWritable() {
 		return nil
 	}
-	name := m.migrationsTableName() + migrationLogTableSuffix
+	return m.refuseTruncatedIdentifier(
+		m.migrationsTableName()+migrationLogTableSuffix,
+		"the operation log for migrations table "+strconv.Quote(m.migrationsTableName()),
+		"shorten the migrations table name, or set migration.log to false",
+	)
+}
+
+// refuseUnaddressableMetadata refuses the names this migrator was configured
+// with, whatever it does with them afterwards.
+//
+// The log's derived name is the one that goes over a limit by accident, but it
+// is not the only name that can: a configured revision table or schema over
+// the limit is truncated by the DDL while every catalog lookup binds the full
+// string, so the ownership check reports the relation absent and CREATE TABLE
+// IF NOT EXISTS adopts whatever holds the truncated name.
+//
+// This one is terminal. Without an addressable revision table Ptah cannot
+// record what it did, so there is no reduced mode to fall back to the way the
+// log has one.
+func (m *Migrator) refuseUnaddressableMetadata() error {
+	if err := m.refuseTruncatedIdentifier(
+		m.migrationsTableName(),
+		"the migrations table",
+		"shorten it",
+	); err != nil {
+		return err
+	}
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.refuseTruncatedIdentifier(schema, "the migrations schema", "shorten it")
+	}
+	return nil
+}
+
+// refuseTruncatedIdentifier refuses one name the target would cut short.
+func (m *Migrator) refuseTruncatedIdentifier(name, subject, remedy string) error {
 	limit := capability.Identifiers(m.connectionDialect())
 	if !limit.Exceeds(name) {
 		return nil
 	}
 	return fmt.Errorf(
-		"%w: the operation log for migrations table %q is named %q, which is over the %d-%s limit "+
-			"this target enforces; shorten the migrations table name, or set migration.log to false",
-		ErrUnaddressableMetadataTable, m.migrationsTableName(), name, limit.Max, limit.Unit,
+		"%w: %s is named %q, which is over the %d-%s limit this target enforces, "+
+			"so the name Ptah writes and the name it looks up would differ; %s",
+		ErrUnaddressableMetadataTable, subject, name, limit.Max, limit.Unit, remedy,
 	)
 }
 
@@ -186,11 +225,12 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 // itself whether the current session can exercise the owner's privileges,
 // because a name comparison would not follow a grant at all.
 //
-// USAGE rather than MEMBER: membership is recorded even where the session
-// cannot act as the owner. Measured on PostgreSQL 16.15, a NOINHERIT login
-// granted a role answers MEMBER true and USAGE false, and accepting it would
-// admit a table whose owner the connection cannot become -- which is the
-// arrangement the refusal exists to catch, wearing a grant.
+// The connected role itself, not a role it can act as. Membership of any kind
+// says this session reaches the owner; it says nothing about who else does,
+// and a table owned by a shared group role is modifiable by every other member
+// -- which is the arrangement the refusal exists to catch, wearing a grant.
+// A deployment that really wants a group-owned metadata table says so with the
+// override.
 //
 // No relkind filter: CREATE TABLE IF NOT EXISTS collides with any relation
 // holding the name, so a partitioned table, a view or a foreign table under it
@@ -203,7 +243,7 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 const postgresTableOwnerQuery = `SELECT
   pg_get_userbyid(c.relowner),
   current_user,
-  pg_has_role(current_user, c.relowner, 'USAGE')
+  pg_get_userbyid(c.relowner) = current_user
 FROM pg_class AS c
 JOIN pg_namespace AS n ON n.oid = c.relnamespace
 WHERE n.nspname = COALESCE(NULLIF(?, ''), current_schema())

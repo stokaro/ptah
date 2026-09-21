@@ -373,6 +373,14 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
 		return nil
 	}
+	// A name the target would truncate closes the log for this run rather than
+	// stopping the migration. See [Migrator.refuseUnaddressableLogTable].
+	if err := m.refuseUnaddressableLogTable(); err != nil {
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
+	}
 	// The same refusal the revision table gets, and for the same reason: this
 	// table is written on every attempt, so adopting one somebody else created
 	// hands them a hook on every migration. See
@@ -478,6 +486,11 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	// and a malformed override must not stay dormant because this database
 	// happens to have no log.
 	if err := m.validateMetadataInputs(); err != nil {
+		return nil, err
+	}
+	// A caller that asked for the log is told why it cannot be addressed,
+	// rather than shown the empty list an absent table produces.
+	if err := m.refuseUnaddressableLogTable(); err != nil {
 		return nil, err
 	}
 	// No Initialize: reading is a question, and a question that created a
