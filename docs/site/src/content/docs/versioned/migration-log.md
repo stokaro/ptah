@@ -49,6 +49,15 @@ transaction would describe only the runs that succeeded.
 `--json` prints the same attempts with the start and finish timestamps, the run
 identifier, the checksum of the migration that ran, and the error.
 
+Under `tx-mode all` the whole batch is one transaction, so every migration in it
+gets an entry opened before the transaction starts and they all settle with the
+same outcome. Recording one of them applied when a later one rolls the batch
+back would describe a database that never existed.
+
+`ptah migrations down --plan` derives its rollback from the schema difference
+instead of running the authored down bodies. It deletes the same revision rows,
+so it records the same attempts.
+
 ## The actor, and what the name is worth
 
 `--actor` names the run. It is unverified by construction — a name on a command
@@ -78,9 +87,20 @@ be worse off than with no log at all.
 **It keeps everything.** Rows are small and nothing prunes them. A deployment
 that needs a retention rule applies its own `DELETE`.
 
+**A destructive clean destroys it.** `ptah db drop-all` names the log table in
+the plan it asks you to confirm, beside the revision table, and drops it with
+the rest.
+
 ## Turning it off
 
 `migration.log: false` in the project config keeps the table out of a database
-entirely. The Atlas-compatible revision format keeps no log whatever the
-setting says: that contract defines one table, and a second one Ptah added
-would appear in a database an Atlas user believes only Atlas writes.
+entirely: nothing creates it, and `ptah migrations log` says logging is off for
+the run rather than printing an empty table. The Atlas-compatible revision
+format keeps no log whatever the setting says: that contract defines one table,
+and a second one Ptah added would appear in a database an Atlas user believes
+only Atlas writes. The two are different settings, so the command names the one
+that applies.
+
+The table is created by the first entry written, not by the initialization that
+creates the revision table. An account that may read and not create can run
+`ptah migrations log` against a database that has no log yet.
