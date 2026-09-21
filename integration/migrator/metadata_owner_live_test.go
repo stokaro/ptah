@@ -383,12 +383,17 @@ func TestForeignPartitionedMetadataTableIsRefusedLive(t *testing.T) {
 // The override is resolved before Initialize's early returns, so a malformed
 // value fails the run rather than lying dormant until an invocation happens to
 // reach the branch that reads it.
+//
+// The second call is the measurement: it returns on the memoized result before
+// any query, so a variable read only by the ownership lookup would never be
+// parsed and a typo would select the default instead of failing closed.
 func TestForeignMetadataOverrideIsValidatedEarlyLive(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(migrator.AllowForeignMetadataTableEnvVar, "perhaps")
 	fixture := newForeignMetadataFixture(t, "")
+	c.Assert(fixture.migrator.Initialize(t.Context()), qt.IsNil)
 
-	err := fixture.dryRunMigrator(c).Initialize(t.Context())
+	t.Setenv(migrator.AllowForeignMetadataTableEnvVar, "perhaps")
+	err := fixture.migrator.Initialize(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*`+migrator.AllowForeignMetadataTableEnvVar+`.*`)
 }
