@@ -6913,7 +6913,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 3986,
-      "sourceBytes": 28537
+      "sourceBytes": 28504
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",
@@ -7031,8 +7031,8 @@
       "inboundLinks": [
         "/versioned/lint/"
       ],
-      "visibleWords": 571,
-      "sourceBytes": 3896
+      "visibleWords": 629,
+      "sourceBytes": 4252
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

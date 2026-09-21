@@ -116,11 +116,11 @@ func TestMigrationsLintResolvesTheDeclaredVersionAgainstTheConnectedProductLive(
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.ServerVersion, qt.Equals, "10.11.6-MariaDB")
-	// The lint dialect is still the scheme's. It decides which rules run, and
-	// reading it off the connection would change that for every mysql:// URL
-	// that reaches MariaDB, which is a separate decision from resolving a
-	// version (stokaro/ptah#3466).
-	c.Assert(report.Dialect, qt.Equals, "mysql")
+	// The lint dialect is the connection's product, not the scheme's. It
+	// decides which rules run, so a run addressed through `mysql://` that
+	// reached MariaDB linted as MySQL and applied one product's rules to the
+	// other's server (stokaro/ptah#3466).
+	c.Assert(report.Dialect, qt.Equals, "mariadb")
 }
 
 // Deferring is not relaxing: a version that names another product is still
@@ -243,6 +243,81 @@ func writeFailingReplayLintDir(c *qt.C, t *testing.T) string {
 	}
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	return dir
+}
+
+// The dialect decides which rules run, so a run that took it from the URL
+// scheme applied MySQL's rules to a MariaDB server.
+//
+// MY146 is the measurable half: `DROP SYSTEM VERSIONING` deletes every history
+// row the table accumulated, permanently, and MariaDB is the only family that
+// has the statement. Linted as MySQL the rule never runs, so the directory
+// reports no findings and the gate exits 0 -- a data-loss migration passing a
+// check that exists to stop it (stokaro/ptah#3466).
+func TestMigrationsLintRunsTheConnectedProductsRulesLive(t *testing.T) {
+	c := qt.New(t)
+	devURL := mariaDBScratchDevURL(c, t, "ptah_lint_product_dev")
+	dir := writeSystemVersioningLintDir(c, t)
+
+	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:     dir,
+		DevURL:  devURL,
+		FailOn:  migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{Dir: true, DevURL: true},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Dialect, qt.Equals, "mariadb")
+	c.Assert(report.Failed, qt.IsTrue)
+	c.Assert(lintFindingCodes(report), qt.Contains, "MY146")
+}
+
+// The control for the test above: a dialect the operator named is the one the
+// run uses, so naming `mysql` against the same MariaDB server still runs
+// MySQL's rules and still misses MY146. Without it the assertion above would
+// also pass on a build that ignored every declared dialect.
+func TestMigrationsLintKeepsTheDialectTheOperatorNamedLive(t *testing.T) {
+	c := qt.New(t)
+	devURL := mariaDBScratchDevURL(c, t, "ptah_lint_named_dev")
+	dir := writeSystemVersioningLintDir(c, t)
+
+	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:     dir,
+		DevURL:  devURL,
+		Dialect: "mysql",
+		FailOn:  migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{Dir: true, DevURL: true, Dialect: true},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Dialect, qt.Equals, "mysql")
+	c.Assert(lintFindingCodes(report), qt.Not(qt.Contains), "MY146")
+}
+
+func lintFindingCodes(report migrationlintreport.Report) []string {
+	codes := make([]string, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		codes = append(codes, finding.Rule)
+	}
+	return codes
+}
+
+// writeSystemVersioningLintDir writes a directory whose second migration drops
+// system versioning, the statement MariaDB has and MySQL does not.
+func writeSystemVersioningLintDir(c *qt.C, t *testing.T) string {
+	c.Helper()
+	dir := filepath.Join(t.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+	files := map[string]string{
+		"0000000001_audited.up.sql": "CREATE TABLE audited (id INT PRIMARY KEY, name VARCHAR(50))" +
+			" WITH SYSTEM VERSIONING;\n",
+		"0000000001_audited.down.sql": "DROP TABLE audited;\n",
+		"0000000002_drop.up.sql":      "ALTER TABLE audited DROP SYSTEM VERSIONING;\n",
+		"0000000002_drop.down.sql":    "ALTER TABLE audited ADD SYSTEM VERSIONING;\n",
+	}
+	for name, body := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 	}
 	return dir
 }

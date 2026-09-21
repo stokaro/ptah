@@ -234,7 +234,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
-	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferredVersion, lint.Options{
+	outcome, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferred, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
 		Target:        declared.resolved,
@@ -268,12 +268,13 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// refused it, is the pair an operator cannot act on.
 		RequireOnline: cfg.RequiresOnline(),
 	})
+	analysis, schemas := outcome.analysis, outcome.schemas
 	findings := analysis.Findings()
 	reported := analysis.Target()
 	report := Report{
 		Failed:            shouldFail(findings, opts.FailOn),
 		FailureThreshold:  opts.FailOn,
-		Dialect:           dialect,
+		Dialect:           outcome.dialect,
 		ServerVersion:     reported.Version,
 		ServerVersionNote: reported.Note,
 		Dir:               opts.Dir,
@@ -460,17 +461,18 @@ func lintDirectory(
 	opts Options,
 	fsys fs.FS,
 	dirFormat migrationfile.DirFormat,
-	deferredVersion string,
+	deferred deferredTarget,
 	lintOptions lint.Options,
-) (lint.Analysis, replayedSchemas, error) {
+) (lintOutcome, error) {
+	dialect := lintOptions.Dialect
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
 	if err != nil {
-		return lint.Analysis{}, replayedSchemas{}, err
+		return lintOutcome{dialect: dialect}, err
 	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
 	baseline.setDialect(opts.Dialect)
 	capture := newReplaySchemaCapture(opts, analysis)
-	server := newServerTargetCollector(lintOptions.Target, deferredVersion)
+	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
@@ -486,21 +488,35 @@ func lintDirectory(
 		// error that follows it is downstream of an input that was already
 		// wrong.
 		if server.err != nil {
-			return analysis, capture.result(), server.err
+			return lintOutcome{analysis, capture.result(), dialect}, server.err
 		}
 		learned, learnedServer := server.learned()
-		if learnedServer {
-			analysis = analysisWithLearnedTarget(fsys, lintOptions, analysis, learned)
+		learnedDialect := deferred.dialectFrom(server)
+		if learnedServer || learnedDialect != "" {
+			analysis = analysisWithLearnedTarget(fsys, lintOptions, analysis, learned, learnedDialect)
 		}
-		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
+		if learnedDialect != "" {
+			dialect = learnedDialect
+		}
+		return lintOutcome{analysis, capture.result(), dialect}, fmt.Errorf(
+			"error validating migration SQL on dev database: %w", err)
 	}
 	if server.err != nil {
-		return analysis, capture.result(), server.err
+		return lintOutcome{analysis, capture.result(), dialect}, server.err
 	}
 	schemas := capture.result()
 	learned, learnedServer := server.learned()
-	if len(baseline.columns) == 0 && !learnedServer {
-		return analysis, schemas, nil
+	learnedDialect := deferred.dialectFrom(server)
+	if len(baseline.columns) == 0 && !learnedServer && learnedDialect == "" {
+		return lintOutcome{analysis, schemas, dialect}, nil
+	}
+	if learnedDialect != "" {
+		// The rules a run applies follow the product that answered, not the
+		// scheme that addressed it: `mysql://` reaching MariaDB ran MySQL's
+		// rules, so MY146 -- DROP SYSTEM VERSIONING deletes every history row
+		// -- never fired on the only family that has the statement.
+		lintOptions.Dialect = learnedDialect
+		dialect = learnedDialect
 	}
 	if learnedServer {
 		// The reported analysis is the one that had every fact the run could
@@ -515,7 +531,16 @@ func lintDirectory(
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
 	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
-	return reanalyzed, schemas, err
+	return lintOutcome{reanalyzed, schemas, dialect}, err
+}
+
+// lintOutcome is what a lint pass produced, including the dialect it settled
+// on: a run that took its dialect from the connection reports that product
+// rather than the scheme the operator typed.
+type lintOutcome struct {
+	analysis lint.Analysis
+	schemas  replayedSchemas
+	dialect  string
 }
 
 // analysisWithLearnedTarget re-ranks the findings against what the connection
@@ -535,8 +560,14 @@ func analysisWithLearnedTarget(
 	opts lint.Options,
 	analysis lint.Analysis,
 	learned lint.Target,
+	learnedDialect string,
 ) lint.Analysis {
-	opts.Target = learned
+	if learned.Named() {
+		opts.Target = learned
+	}
+	if learnedDialect != "" {
+		opts.Dialect = learnedDialect
+	}
 	reanalyzed, err := lint.AnalyzeFS(fsys, opts)
 	if err != nil {
 		return analysis
@@ -552,10 +583,20 @@ func analysisWithLearnedTarget(
 // migration will meet, and silently preferring it would make a declaration
 // that says one thing produce a run that planned for another.
 type serverTargetCollector struct {
-	declared        lint.Target
-	deferredVersion string
-	found           lint.Target
-	seen            bool
+	declared lint.Target
+	deferred deferredTarget
+	// requireOnline says the policy demands the online mode. The configuration
+	// could not check the engine for it -- a run that names no dialect has
+	// none to check -- so the check lands here, on the product that answered.
+	requireOnline bool
+	found         lint.Target
+	seen          bool
+	// product is the dialect the connection reported, recorded whether or not
+	// a version came with it. A URL scheme is not a product -- a `mysql://`
+	// connection reaches MariaDB and a `postgres://` one CockroachDB -- and
+	// the rules a run applies are chosen by dialect, so a run that took the
+	// scheme applied one product's rules to another's server.
+	product string
 	// err is a declared version the connected product refuses. It aborts the
 	// replay, so the dev realm is not cleaned and rebuilt to report an input
 	// that was already wrong, and it is kept as well so the caller reports it
@@ -563,19 +604,44 @@ type serverTargetCollector struct {
 	err error
 }
 
-func newServerTargetCollector(declared lint.Target, deferredVersion string) *serverTargetCollector {
-	return &serverTargetCollector{declared: declared, deferredVersion: deferredVersion}
+func newServerTargetCollector(
+	declared lint.Target,
+	deferred deferredTarget,
+	requireOnline bool,
+) *serverTargetCollector {
+	return &serverTargetCollector{declared: declared, deferred: deferred, requireOnline: requireOnline}
 }
 
 func (c *serverTargetCollector) observe(info catalog.ServerInfo) error {
-	if c.seen || c.err != nil {
+	if c.err != nil {
 		return c.err
+	}
+	if c.product == "" {
+		if canonical, ok := lintdialect.Canonical(info.Dialect); ok {
+			c.product = canonical
+		}
+	}
+	// A policy that requires the online mode is refused on an engine the mode
+	// has no measurement for, and the engine is only known here: the
+	// configuration validates the dialect it names itself, and a run that
+	// named none has nothing to validate. Without this a `postgres://` dev URL
+	// reaching CockroachDB, YugabyteDB or Spanner would lint as that product,
+	// find no ON rule that runs there, and report a clean directory for a
+	// guarantee nothing measured.
+	if c.requireOnline && c.deferred.dialect {
+		if err := lint.ValidateOnlineDialect(c.onlineDialect(info)); err != nil {
+			c.err = fmt.Errorf("online: %w", err)
+			return c.err
+		}
+	}
+	if c.seen {
+		return nil
 	}
 	// The dialect is the connection's own, not the URL's scheme: a postgres://
 	// connection can report cockroachdb, and the capabilities it carries are
 	// that product's.
-	if c.deferredVersion != "" {
-		target, err := lint.ResolveTarget(info.Dialect, c.deferredVersion)
+	if c.deferred.version != "" {
+		target, err := lint.ResolveTarget(info.Dialect, c.deferred.version)
 		if err != nil {
 			c.err = err
 			return err
@@ -596,6 +662,24 @@ func (c *serverTargetCollector) observe(info catalog.ServerInfo) error {
 // against what it already had.
 func (c *serverTargetCollector) learned() (lint.Target, bool) {
 	return c.found, c.seen
+}
+
+// onlineDialect names the engine the online refusal reports. The canonical
+// name where this linter knows the product, and the server's own name where it
+// does not, so the message says what answered rather than an empty string.
+func (c *serverTargetCollector) onlineDialect(info catalog.ServerInfo) string {
+	if c.product != "" {
+		return c.product
+	}
+	return info.Dialect
+}
+
+// learnedDialect returns the product the connection reported, empty when it
+// reported none this linter has rules for. It is separate from [learned]
+// because a server that named no version still named itself, and the rules a
+// run applies depend on the second answer rather than the first.
+func (c *serverTargetCollector) learnedDialect() string {
+	return c.product
 }
 
 // replayedSchemas is the before/after HCL pair a run captured, empty when it
@@ -1726,9 +1810,8 @@ func compatSchemaScope(profile lint.CompatibilityProfile, devURL string) string 
 type declaration struct {
 	// resolved is the target, empty when resolution waits for a connection.
 	resolved lint.Target
-	// deferredVersion is the declared version whose dialect only a connection
-	// can name, empty when there is nothing to wait for.
-	deferredVersion string
+	// deferred is what only a connection can settle. See [deferredTarget].
+	deferred deferredTarget
 }
 
 // declaredTarget resolves the server a lint run plans against from what the
@@ -1746,14 +1829,44 @@ func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration
 	if opts.Changed.ServerVersion {
 		version = opts.ServerVersion
 	}
-	if version != "" && namedDialect(opts, cfg) == "" && strings.TrimSpace(opts.DevURL) != "" {
-		return declaration{deferredVersion: version}, nil
+	// A run with a dev database and no dialect of its own lets the connection
+	// name the product, so the rules follow the server rather than the scheme.
+	deferred := deferredTarget{
+		dialect: namedDialect(opts, cfg) == "" && strings.TrimSpace(opts.DevURL) != "",
+	}
+	if version != "" && deferred.dialect {
+		deferred.version = version
+		return declaration{deferred: deferred}, nil
 	}
 	target, err := lint.ResolveTarget(dialect, version)
 	if err != nil {
 		return declaration{}, err
 	}
-	return declaration{resolved: target}, nil
+	return declaration{resolved: target, deferred: deferred}, nil
+}
+
+// deferredTarget is what the run could not settle before it connected.
+//
+// Both halves are deferred for the same reason: a URL scheme is not a product.
+// The version waits because `10.11.6-MariaDB` resolved against `mysql` would
+// refuse a correct pair; the dialect waits because the scheme would choose one
+// product's rules for another product's server.
+type deferredTarget struct {
+	// version is the declared server version whose dialect only a connection
+	// can name, empty when the run did not defer one.
+	version string
+	// dialect says the operator named no dialect, so the connection's product
+	// decides which rules run.
+	dialect bool
+}
+
+// dialectFrom returns the product to lint as, empty when the run named a
+// dialect itself or the connection reported none this linter has rules for.
+func (d deferredTarget) dialectFrom(server *serverTargetCollector) string {
+	if !d.dialect {
+		return ""
+	}
+	return server.learnedDialect()
 }
 
 // namedDialect is the dialect the operator named, empty when only the dev
