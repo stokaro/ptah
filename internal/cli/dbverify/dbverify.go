@@ -29,6 +29,7 @@ type options struct {
 	checks         string
 	connectTimeout string
 	format         string
+	plainHTTP      bool
 }
 
 // NewVerifyCommand returns the verb that evaluates release-state assertions
@@ -70,7 +71,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.checks, checksFlag, "",
-		"Path to a .sql file of `-- +ptah check` directives, or a directory of them (required)")
+		"`source` of \"-- +ptah check\" directives: a .sql file, a directory of them, "+
+			"or an oci:// schema artifact that publishes them (required)")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	flags.StringVar(&opts.format, "format", formatText, "Output format: text or json")
 }
@@ -106,7 +109,7 @@ func runVerify(cmd *cobra.Command, opts *options) error {
 	// the target's lexer rules, and those come from the connection. A checks
 	// file is therefore read by the rules of the engine it will be evaluated
 	// against, never by a default that happens to agree.
-	sourced, err := loadChecks(opts.checks, conn.Info().Dialect)
+	sourced, err := loadChecks(cmd.Context(), opts.checks, conn.Info().Dialect, opts.plainHTTP)
 	if err != nil {
 		return err
 	}

@@ -461,6 +461,14 @@ values in the same column, and resolving them to Go values loses the
 difference. A column absent from a row was not declared, and a column written as
 `null` was declared null.
 
+`--checks ./release-checks.sql` publishes a third layer, under
+`application/vnd.stokaro.ptah.checks.v1+sql`, carrying the `-- +ptah check`
+release assertions that describe what the change was for. `ptah db verify
+--checks oci://...` reads them back, so the assertions a reviewer approved and
+the assertions that run are one set of bytes rather than two files that drifted.
+Pin the reference by digest to make that binding hold: a tag can be moved, and
+a digest names the bytes it named. See [Verify a release](../verify-a-release/).
+
 A reader that does not know the managed-data media type refuses the artifact
 instead of reading the schema layer and deploying a database without the rows
 its author declared. The media type is what an artifact says its reader must

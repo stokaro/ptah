@@ -2,7 +2,9 @@
 package schemapush
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +20,7 @@ type options struct {
 	dialect     string
 	tags        []string
 	version     string
+	checks      string
 	plainHTTP   bool
 
 	latest           bool
@@ -52,6 +55,8 @@ Authentication comes from the Docker credential store.`,
 	flags.StringVar(&opts.dialect, "dialect", "", "Dialect hint used when parsing SQL schema files")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")
+	flags.StringVar(&opts.checks, checksFlag, "",
+		"`path` to a .sql file of \"-- +ptah check\" release assertions published with the schema")
 	flags.BoolVar(&opts.latest, "latest", false,
 		"Also move the latest alias onto this push")
 	flags.BoolVar(&opts.generatedVersion, "generated-version", false,
@@ -81,7 +86,12 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err := schemaload.ReadManagedRows(db); err != nil {
 		return err
 	}
+	checks, err := readChecks(opts.checks)
+	if err != nil {
+		return err
+	}
 	result, err := schemaartifact.Push(cmd.Context(), reference, db, schemaartifact.PushOptions{
+		Checks:           checks,
 		Latest:           opts.latest,
 		GeneratedVersion: opts.generatedVersion,
 		Tags:             opts.tags,
@@ -100,4 +110,31 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		result.Tags,
 	)
 	return nil
+}
+
+// checksFlag names the release assertions published beside the schema.
+const checksFlag = "checks"
+
+// readChecks reads the assertions to publish, and refuses a file that carries
+// none.
+//
+// An empty file is a mistake worth naming: the operator asked for a checks
+// layer, and publishing an artifact whose layer asserts nothing would make
+// `ptah db verify` against it report a clean release it never verified.
+//
+// The file is not parsed here. Parsing needs the dialect of the database the
+// assertions will run against, which a publish does not have and must not
+// guess: the same artifact is verified against every database of a fleet.
+func readChecks(path string) ([]byte, error) {
+	if path == "" {
+		return nil, nil
+	}
+	source, err := os.ReadFile(path) // #nosec G304 -- the operator named this file
+	if err != nil {
+		return nil, fmt.Errorf("read checks file %s: %w", path, err)
+	}
+	if len(bytes.TrimSpace(source)) == 0 {
+		return nil, fmt.Errorf("checks file %s is empty, so the artifact would assert nothing", path)
+	}
+	return source, nil
 }

@@ -298,6 +298,7 @@ Read the columns as follows.
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
 </div>
 
@@ -1551,6 +1552,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--checks` | `string` | — | `PTAH_CHECKS` | — |
 | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
 | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
