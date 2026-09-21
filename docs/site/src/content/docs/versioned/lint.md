@@ -87,7 +87,13 @@ that is correct.
 
 `migrations up` reads the same `.ptah-lint.yaml` for its apply-time gate, and
 resolves `server-version` there against the dialect the connection reports, so
-a value that names no server is refused by both verbs rather than by one.
+a value that names no server is refused by both verbs rather than by one. On an
+engine the linter has no rules for, the gate still runs its dialect-independent
+data-safety rules, and a version declared for such a connection is refused
+rather than ignored.
+
+`ptah-compat migrate lint` reads the same file and prints the same warning on
+`stderr`, after its report, so its stdout and exit code are what they were.
 
 A run that names none plans against the dialect's default capability set. That
 is a starting point rather than a measurement, so the report carries no

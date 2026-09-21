@@ -4,7 +4,6 @@ package lint
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -340,23 +339,19 @@ func reportOptions(cmd *cobra.Command, opts runOptions) migrationlintreport.Opti
 	}
 }
 
-// writeServerVersionNotice says what a run planned against when the version it
-// was given selected no measured release line. A clean run against an
-// unmodeled server is exactly the case it exists to announce, so it is not
-// conditional on findings.
+// writeServerVersionNotice prints the shared notice for every format whose
+// document does not carry it.
 //
-// It is suppressed for the one format whose document carries the note itself,
-// and printed for every other, because the rest render findings and nothing
-// else: a SARIF or GitLab run would otherwise analyze against a preset the
-// operator did not name and say nothing about it. It takes the stream the
-// report did not, for the reason the unmet-input notice does -- prose must not
-// land inside a document a consumer decodes, and a failing report is on stderr.
+// JSON is the one that does, and a sentence printed beside a document is a
+// sentence a consumer has to strip. The rest render findings and nothing else,
+// so a SARIF or GitLab run would otherwise analyze against a preset the
+// operator did not name and say nothing about it. The stream is the one the
+// report did not take, for the reason the unmet-input notice does.
 func writeServerVersionNotice(w io.Writer, format string, report migrationlintreport.Report) error {
-	if report.ServerVersionNote == "" || format == migrationlintreport.FormatJSON {
+	if format == migrationlintreport.FormatJSON {
 		return nil
 	}
-	_, err := fmt.Fprintf(w, "warning: %s\n", report.ServerVersionNote)
-	return err
+	return migrationlintreport.WriteServerVersionNotice(w, report)
 }
 
 func lintReportWriter(stdout, stderr io.Writer, report migrationlintreport.Report) io.Writer {

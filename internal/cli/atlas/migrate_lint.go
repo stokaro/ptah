@@ -355,8 +355,12 @@ func runAtlasMigrateLint(
 	}
 	// Stderr, after the report and whatever format produced it: stdout and the
 	// exit code stay byte-identical to a run without this, and a reader still
-	// learns that an analyzer went without the input it reads.
+	// learns that an analyzer went without the input it reads, or that the run
+	// planned against a release line nobody named.
 	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := migrationlintreport.WriteServerVersionNotice(cmd.ErrOrStderr(), report); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if report.Failed {
