@@ -124,3 +124,99 @@ func renderAnswer(markdown string) []string {
 	// its own spacing around a block, so both would double it.
 	return strings.Split(strings.Trim(rendered, "\n"), "\n")
 }
+
+// splitRenderable divides streamed Markdown into the part that can be rendered
+// and printed now, and the part that has to wait for more text.
+//
+// This is what makes the answer appear as it arrives rather than all at once
+// when it finishes. Rendering the whole buffer on every fragment would do the
+// same thing on screen and cost too much to do: a short answer renders in
+// about a millisecond, but 8 KB takes 30, and at that size every frame would
+// miss. Flushing what is settled keeps the live part small, so the cost does
+// not grow with the answer.
+//
+// A cut is safe at a blank line, which is what separates one Markdown block
+// from the next -- but only outside a fenced code block, where a blank line is
+// just a blank line, and only where it does not split a list. A list whose
+// items are separated by blank lines is one block: cutting inside it restarts
+// the numbering at 1 in the second half.
+//
+// Returns empty `settled` when nothing can be cut yet, in which case the
+// caller keeps the whole buffer live.
+func splitRenderable(pending string) (settled, rest string) {
+	lines := strings.Split(pending, "\n")
+	fenced := false
+	cut := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced || trimmed != "" {
+			continue
+		}
+		// A blank line at the top level. It ends a block unless the blocks on
+		// both sides of it are list items, which is one loose list.
+		if listContinues(lines, i) {
+			continue
+		}
+		cut = i
+	}
+
+	// An unterminated fence means the whole buffer is inside one code block,
+	// and nothing in it has settled.
+	if cut < 0 || fenced {
+		return "", pending
+	}
+	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut+1:], "\n")
+}
+
+// listContinues reports whether the blank line at `at` sits inside one list
+// rather than between two blocks.
+func listContinues(lines []string, at int) bool {
+	return isListItem(previousNonEmpty(lines, at)) && isListItem(nextNonEmpty(lines, at))
+}
+
+func previousNonEmpty(lines []string, at int) string {
+	for i := at - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	return ""
+}
+
+func nextNonEmpty(lines []string, at int) string {
+	for i := at + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	return ""
+}
+
+// isListItem recognizes the bullet and ordered markers a model writes. An
+// indented continuation of an item counts too, so a wrapped item does not read
+// as the end of the list.
+func isListItem(line string) bool {
+	if line == "" {
+		return false
+	}
+	if strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") {
+		return true
+	}
+	trimmed := strings.TrimSpace(line)
+	for _, marker := range []string{"- ", "* ", "+ "} {
+		if strings.HasPrefix(trimmed, marker) {
+			return true
+		}
+	}
+	digits := 0
+	for digits < len(trimmed) && trimmed[digits] >= '0' && trimmed[digits] <= '9' {
+		digits++
+	}
+	return digits > 0 && digits < len(trimmed) &&
+		(trimmed[digits] == '.' || trimmed[digits] == ')')
+}

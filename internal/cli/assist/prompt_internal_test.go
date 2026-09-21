@@ -249,3 +249,104 @@ func TestRememberSkipsRepeatsAndBlanks(t *testing.T) {
 		c.Assert(p.history, qt.DeepEquals, []string{"first", "second", "first"})
 	})
 }
+
+// TestSplitRenderableHoldsWhatIsNotSettled covers the decision that makes the
+// answer appear as it is written. Cutting in the wrong place is not a cosmetic
+// mistake: the text before the cut has already been printed to the scrollback
+// and cannot be taken back, so a cut inside a fence prints an unterminated
+// code block and a cut inside a list restarts its numbering at 1.
+func TestSplitRenderableHoldsWhatIsNotSettled(t *testing.T) {
+	tests := []struct {
+		name        string
+		pending     string
+		wantSettled string
+		wantRest    string
+	}{
+		{
+			name:     "one unfinished paragraph settles nothing",
+			pending:  "The schema and the database",
+			wantRest: "The schema and the database",
+		},
+		{
+			name:        "a blank line ends a paragraph",
+			pending:     "First block.\n\nSecond, still arriving",
+			wantSettled: "First block.",
+			wantRest:    "Second, still arriving",
+		},
+		{
+			name:     "a blank line inside a fence is not a cut",
+			pending:  "```sql\nSELECT 1;\n\nSELECT 2;\n",
+			wantRest: "```sql\nSELECT 1;\n\nSELECT 2;\n",
+		},
+		{
+			name:        "a closed fence settles",
+			pending:     "```sql\nSELECT 1;\n```\n\nAfter the block",
+			wantSettled: "```sql\nSELECT 1;\n```",
+			wantRest:    "After the block",
+		},
+		{
+			name:     "a loose list is one block",
+			pending:  "1. first\n\n2. second\n\n3. third",
+			wantRest: "1. first\n\n2. second\n\n3. third",
+		},
+		{
+			name:        "a list ends where prose resumes",
+			pending:     "- one\n- two\n\nAnd then prose",
+			wantSettled: "- one\n- two",
+			wantRest:    "And then prose",
+		},
+		{
+			name:        "the last cut wins, so everything settled goes at once",
+			pending:     "One.\n\nTwo.\n\nThree, arriving",
+			wantSettled: "One.\n\nTwo.",
+			wantRest:    "Three, arriving",
+		},
+		{
+			name:     "an unterminated fence holds everything, even past a blank line",
+			pending:  "Prose.\n\n```go\nfunc main() {\n",
+			wantRest: "Prose.\n\n```go\nfunc main() {\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			settled, rest := splitRenderable(test.pending)
+
+			c.Assert(settled, qt.Equals, test.wantSettled)
+			c.Assert(rest, qt.Equals, test.wantRest)
+		})
+	}
+}
+
+// TestIsListItem pins what counts as a list line. The loose-list rule reads
+// both sides of a blank line through it, so a marker it does not know splits a
+// list that should have stayed whole.
+func TestIsListItem(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "dash", line: "- one", want: true},
+		{name: "asterisk", line: "* one", want: true},
+		{name: "plus", line: "+ one", want: true},
+		{name: "ordered with a dot", line: "1. one", want: true},
+		{name: "ordered with a paren", line: "2) two", want: true},
+		{name: "multi-digit ordered", line: "10. ten", want: true},
+		{name: "an indented continuation", line: "  still the same item", want: true},
+		{name: "prose", line: "And then prose", want: false},
+		{name: "a heading", line: "## Heading", want: false},
+		{name: "empty", line: "", want: false},
+		{name: "a bare number", line: "42 things", want: false},
+		{name: "a dash with no space", line: "-notalist", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(isListItem(test.line), qt.Equals, test.want)
+		})
+	}
+}

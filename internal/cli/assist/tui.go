@@ -309,27 +309,40 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// fragment adds streamed text. Nothing is printed while it arrives: the view
-// shows the tail, and the scrollback gets the rendered document at the end.
+// fragment adds streamed text and prints whatever has settled.
+//
+// A Markdown block is complete once a blank line ends it, so that much can be
+// rendered and pushed to the scrollback while the rest is still arriving. What
+// is left is rendered live in the view, which is what makes the answer appear
+// formatted as it is written rather than raw and then replaced.
 func (m *tuiModel) fragment(text string) tea.Cmd {
 	m.answer.WriteString(text)
-	return m.pump()
+	settled, rest := splitRenderable(m.answer.String())
+	if settled == "" {
+		return m.pump()
+	}
+	m.answer.Reset()
+	m.answer.WriteString(rest)
+	return m.say(renderAnswer(settled)...)
 }
 
-// streamTail is the last few lines of what has arrived, which is what the view
-// shows while the answer is still coming.
+// streamTail is the block still being written, rendered as it stands.
 //
-// Bounded because the inline renderer clips a view to the window and a long
-// answer would otherwise push the prompt off the screen while it streamed. The
-// whole answer reaches the scrollback a moment later, so nothing is lost by
-// showing only the end of it here.
+// Rendering an incomplete document is safe -- an unclosed emphasis shows its
+// asterisks until the closing one arrives, which is what a reader would expect
+// -- and it is cheap, because everything before this block has already been
+// flushed to the scrollback. That is the whole reason for the flush: rendering
+// a whole long answer every frame costs 30ms, and this costs about one.
+//
+// Bounded anyway: the inline renderer clips a view to the window, and a block
+// longer than the screen would push the prompt off it.
 func (m *tuiModel) streamTail() string {
-	lines := strings.Split(strings.TrimRight(m.answer.String(), "\n"), "\n")
-	const shown = 6
-	if len(lines) > shown {
-		lines = lines[len(lines)-shown:]
+	rendered := renderAnswer(m.answer.String())
+	const shown = 8
+	if len(rendered) > shown {
+		rendered = rendered[len(rendered)-shown:]
 	}
-	return strings.Join(lines, "\n  ")
+	return strings.Join(rendered, "\n  ")
 }
 
 // openForm puts the approval choice on screen.
