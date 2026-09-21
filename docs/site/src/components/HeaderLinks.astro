@@ -1,13 +1,13 @@
 ---
 /**
  * The right-hand links of the header, as text rather than icons: the project
- * site, Install, the Playground, the operator's guide and the repository, the
- * way ptah.run's own header reads them.
+ * site, Install, the Playground, the operator's guide, the blog and the
+ * repository, the way ptah.run's own header reads them.
  * Replaces Starlight's SocialIcons, so it also renders inside the mobile menu
  * footer (stokaro/ptah#2893).
  */
 import config from 'virtual:starlight/user-config';
-import { OperatorOrigin, PlaygroundOrigin, SiteOrigin } from '../lib/docs-origin.mjs';
+import { BlogOrigin, OperatorOrigin, PlaygroundOrigin, SiteOrigin } from '../lib/docs-origin.mjs';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
 const social = config.social ?? [];
@@ -29,6 +29,10 @@ const siteHost = new URL(SiteOrigin).host;
 {/* The operator's guide is a site of its own, and a reader who came here for
     Kubernetes needs the address rather than a page that describes it. */}
 <a class="ptah-nav-link" href={`${OperatorOrigin}/`}>Operator</a>
+{/* The blog carries what a reference page has no room to argue: a migration
+    worked through against a real workload, and why a default is the way it is.
+    Its own header links back here, so the pair reads the same from both ends. */}
+<a class="ptah-nav-link" href={`${BlogOrigin}/`}>Blog</a>
 {
   social.map(({ href, label }) => (
     <a class="ptah-nav-link" href={href} rel="me">
