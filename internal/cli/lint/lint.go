@@ -4,6 +4,7 @@ package lint
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/lintartifact"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationintegrity"
@@ -46,6 +48,7 @@ func NewLintCommand() *cobra.Command {
 	var dir string
 	var dirFormat string
 	var dialect string
+	var serverVersion string
 	var format string
 	var configPath string
 	var atlasEnv string
@@ -77,21 +80,22 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLint(cmd, runOptions{
-				dir:        dir,
-				dirFormat:  dirFormat,
-				dialect:    dialect,
-				format:     format,
-				configPath: configPath,
-				atlasEnv:   atlasEnv,
-				devURL:     devURL,
-				gitBase:    gitBase,
-				gitDir:     gitDir,
-				disabled:   disabled,
-				failOn:     failOn,
-				latest:     latest,
-				attach:     attach,
-				plainHTTP:  plainHTTP,
-				positional: args,
+				dir:           dir,
+				dirFormat:     dirFormat,
+				dialect:       dialect,
+				serverVersion: serverVersion,
+				format:        format,
+				configPath:    configPath,
+				atlasEnv:      atlasEnv,
+				devURL:        devURL,
+				gitBase:       gitBase,
+				gitDir:        gitDir,
+				disabled:      disabled,
+				failOn:        failOn,
+				latest:        latest,
+				attach:        attach,
+				plainHTTP:     plainHTTP,
+				positional:    args,
 			})
 		},
 	}
@@ -99,6 +103,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
+	serverversion.Register(cmd.Flags(), &serverVersion)
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+migrationlint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -118,21 +123,22 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 }
 
 type runOptions struct {
-	dir        string
-	dirFormat  string
-	dialect    string
-	format     string
-	configPath string
-	atlasEnv   string
-	devURL     string
-	gitBase    string
-	gitDir     string
-	disabled   []string
-	failOn     string
-	latest     uint
-	attach     bool
-	plainHTTP  bool
-	positional []string
+	dir           string
+	dirFormat     string
+	dialect       string
+	serverVersion string
+	format        string
+	configPath    string
+	atlasEnv      string
+	devURL        string
+	gitBase       string
+	gitDir        string
+	disabled      []string
+	failOn        string
+	latest        uint
+	attach        bool
+	plainHTTP     bool
+	positional    []string
 }
 
 func runLint(cmd *cobra.Command, opts runOptions) error {
@@ -206,6 +212,11 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 
 	writer := lintReportWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report)
 	if err := migrationlintreport.Write(writer, opts.format, report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
+	if err := writeServerVersionNotice(
+		lintNoticeWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report), opts.format, report,
+	); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
 	// Whichever stream the report did NOT take. The notice is prose and the
@@ -302,29 +313,50 @@ func prepareReportOptions(
 
 func reportOptions(cmd *cobra.Command, opts runOptions) migrationlintreport.Options {
 	return migrationlintreport.Options{
-		Dir:        opts.dir,
-		DirFormat:  opts.dirFormat,
-		Dialect:    opts.dialect,
-		ConfigPath: opts.configPath,
-		AtlasEnv:   opts.atlasEnv,
-		DevURL:     opts.devURL,
-		GitBase:    opts.gitBase,
-		GitDir:     opts.gitDir,
-		Disabled:   opts.disabled,
-		FailOn:     opts.failOn,
-		Latest:     opts.latest,
-		Positional: opts.positional,
+		Dir:           opts.dir,
+		DirFormat:     opts.dirFormat,
+		Dialect:       opts.dialect,
+		ServerVersion: opts.serverVersion,
+		ConfigPath:    opts.configPath,
+		AtlasEnv:      opts.atlasEnv,
+		DevURL:        opts.devURL,
+		GitBase:       opts.gitBase,
+		GitDir:        opts.gitDir,
+		Disabled:      opts.disabled,
+		FailOn:        opts.failOn,
+		Latest:        opts.latest,
+		Positional:    opts.positional,
 		Changed: migrationlintreport.ChangedOptions{
-			Dir:       cmd.Flags().Changed("dir"),
-			DirFormat: cmd.Flags().Changed("dir-format"),
-			Dialect:   cmd.Flags().Changed("dialect"),
-			AtlasEnv:  cmd.Flags().Changed("atlas-env"),
-			DevURL:    cmd.Flags().Changed("dev-url"),
-			GitBase:   cmd.Flags().Changed(gitBaseFlag),
-			GitDir:    cmd.Flags().Changed(gitDirFlag),
-			Latest:    cmd.Flags().Changed(latestFlag),
+			Dir:           cmd.Flags().Changed("dir"),
+			DirFormat:     cmd.Flags().Changed("dir-format"),
+			Dialect:       cmd.Flags().Changed("dialect"),
+			ServerVersion: cmd.Flags().Changed(serverversion.FlagName),
+			AtlasEnv:      cmd.Flags().Changed("atlas-env"),
+			DevURL:        cmd.Flags().Changed("dev-url"),
+			GitBase:       cmd.Flags().Changed(gitBaseFlag),
+			GitDir:        cmd.Flags().Changed(gitDirFlag),
+			Latest:        cmd.Flags().Changed(latestFlag),
 		},
 	}
+}
+
+// writeServerVersionNotice says what a run planned against when the version it
+// was given selected no measured release line. A clean run against an
+// unmodeled server is exactly the case it exists to announce, so it is not
+// conditional on findings.
+//
+// It is suppressed for the one format whose document carries the note itself,
+// and printed for every other, because the rest render findings and nothing
+// else: a SARIF or GitLab run would otherwise analyze against a preset the
+// operator did not name and say nothing about it. It takes the stream the
+// report did not, for the reason the unmet-input notice does -- prose must not
+// land inside a document a consumer decodes, and a failing report is on stderr.
+func writeServerVersionNotice(w io.Writer, format string, report migrationlintreport.Report) error {
+	if report.ServerVersionNote == "" || format == migrationlintreport.FormatJSON {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "warning: %s\n", report.ServerVersionNote)
+	return err
 }
 
 func lintReportWriter(stdout, stderr io.Writer, report migrationlintreport.Report) io.Writer {

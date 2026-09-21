@@ -48,6 +48,49 @@ Every rule identifier, with its one-line meaning, the dialects it applies to,
 the surface that reports it, and whether the name is Atlas's or Ptah's, is
 enumerated in [Lint rules](../../reference/lint-rules/).
 
+## Which server the run plans against
+
+Whether a DDL statement is safe against a live database is decided by the
+server version at least as often as by the statement. `ADD COLUMN` with a
+non-volatile default rewrites the table on PostgreSQL 10 and edits the catalog
+on 11. `DROP COLUMN` copies the table on MySQL 8.0.28 and is `INSTANT` on
+8.0.29. A rule that fires on every version is noise on the new ones; one that
+stays quiet is wrong on the old ones.
+
+`--server-version` names that server:
+
+```bash
+ptah migrations lint --dir ./migrations --dialect postgres --server-version 17
+```
+
+The value takes the same spellings every other Ptah command accepts — `17`,
+`8.4.6`, `10.11.6-MariaDB`, or a full server banner. It requires `--dialect`,
+because a run without one checks every rule against every engine and there is
+no single target for a version to describe. A value that names no server, or
+one naming a different product than the dialect, stops the run at exit `2`
+rather than falling back to a default that would silently change which rules
+can fire.
+
+Three sources name the server, and the first one that does wins:
+
+1. `--server-version`.
+2. `server-version` in `.ptah-lint.yaml`.
+3. The dev database, when `--dev-url` is given. Its banner is read off the same
+   connection the replay uses, so no extra round trip and no second answer.
+
+A run that names none plans against the dialect's default capability set. That
+is a starting point rather than a measurement, so the report carries no
+version, and a machine reading the report can tell the two apart.
+
+A version Ptah recognizes but has not measured resolves to the nearest release
+line it has, and the run says so. `--format json` carries it as
+`server_version_note`; every other format renders findings and nothing else, so
+there the sentence is printed on whichever stream the report did not take:
+
+```text
+warning: postgres 99 is newer than the newest measured release line 18.x; capabilities were planned as 18.x
+```
+
 ## Which direction each rule reads
 
 Most rules describe a forward schema change, so they read the `.up.sql` half
@@ -120,6 +163,7 @@ selects an explicit lint policy; without that flag, lint loads
 
 ```yaml
 dialect: postgres
+server-version: "17"
 disabled-rules:
   - MF103
   - MY
@@ -137,6 +181,15 @@ rules:
 - `dialect` sets the default lint dialect; `--dialect` overrides it. It takes
   the same spellings as `--dialect`, aliases included, and is stored
   canonicalized — `dialect: pgx` and `dialect: postgres` select the same rules.
+- `server-version` names the server the migrations will run against, in the
+  same spelling `--server-version` takes: `"17"`, `"8.4.6"`,
+  `"10.11.6-MariaDB"`. It decides the capability set a rule reads, because
+  whether a statement is safe against a live database is decided by the server
+  version at least as often as by the statement. `--server-version` overrides
+  it, and it overrides what a dev database reports about itself. A value that
+  names no server, or one naming a different product than `dialect`, fails
+  config parsing (exit `2`). See [Which server the run plans
+  against](#which-server-the-run-plans-against).
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
   skip entirely; entries merge with `--disable` flags. Selectors and custom
   rule codes use uppercase ASCII letters and digits and start with a letter.

@@ -91,6 +91,13 @@ func offlineDialectVerbs() []dialectVerb {
 				"and nothing here connects to a server",
 		},
 		{
+			verb: "migrations lint",
+			why: "--dialect gates dialect-specific rules by name and also resolves the capability " +
+				"preset a rule reads off lint.Target, which every analyzed statement carries. " +
+				"A run with --dev-url reads the version off that server; a run without one has " +
+				"nothing to read it from, which is what the flag is for",
+		},
+		{
 			verb: "mcp",
 			why: "--dialect selects the capability preset the agent surface's verification gates " +
 				"validate and lint against, and the server holds no connection: every tool it " +
@@ -115,12 +122,6 @@ func offlineDialectVerbs() []dialectVerb {
 // decides something a server version cannot refine. Each row says what.
 func exemptDialectVerbs() []dialectVerb {
 	return []dialectVerb{
-		{
-			verb: "migrations lint",
-			why: "--dialect gates dialect-specific rules by NAME; migration/lint imports no " +
-				"capability package, so there is no preset for a version to refine. " +
-				"Gating those rules by capability is stokaro/ptah#929, not this",
-		},
 		{
 			verb:                          "migrations checkpoint",
 			carriesAnUnrelatedVersionFlag: true,

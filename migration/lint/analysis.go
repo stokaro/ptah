@@ -139,7 +139,11 @@ type Statement struct {
 	// column named "type" can never impersonate a keyword).
 	Words []string
 	// Line is the 1-based line number of the statement's first token.
-	Line            int
+	Line int
+	// Target is the server this run plans against, the same value every other
+	// statement of the run carries. A rule whose verdict depends on the server
+	// reads Target.Capabilities; see [Target].
+	Target          Target
 	sourceWords     []string
 	suppressedRules []atlaslint.Target
 }
@@ -204,6 +208,10 @@ type File struct {
 	// NoTransaction reports whether file-scoped directives opt this migration
 	// out of the migrator's transaction wrapper.
 	NoTransaction bool
+	// Target is the server this run plans against, the same value every file
+	// of the run carries and the one each of its [Statement]s carries. See
+	// [Target].
+	Target Target
 	// Statements holds the parsed statements of up and down migrations. Empty
 	// for any other file. A rule that reads them without checking direction
 	// gets both, which is why every direction-sensitive rule tests IsUp.
@@ -264,6 +272,15 @@ type Analysis struct {
 	snapshot         fsnapshot.Snapshot
 	baselineVersions []int64
 	unmetInputs      []UnmetInput
+	target           Target
+}
+
+// Target returns the server this analysis planned against, resolved from
+// [Options.Target] or defaulted to the dialect. A report that names what it
+// planned against reads it here rather than repeating the resolution, so the
+// sentence a reader sees and the set the rules read cannot disagree.
+func (a Analysis) Target() Target {
+	return a.target
 }
 
 // Files returns every prepared migration file in the captured directory.
@@ -438,6 +455,13 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	}
 
 	mode := modeForDialect(opts.Dialect)
+	// A run that named no server still analyzes against a resolved set, so a
+	// rule reading Capabilities never has to tell an unresolved target apart
+	// from a server that answers false to every key.
+	target, err := effectiveTarget(opts)
+	if err != nil {
+		return Analysis{}, err
+	}
 	scope := newSchemaScope(opts.SchemaScope)
 	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline), normalizeBaselineIndexes(opts.BaselineIndexes))
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
@@ -456,6 +480,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			opts.PathPrefix,
 			mode,
 			opts.Dialect,
+			target,
 			opts.AtlasTemplateData,
 			dirFormat,
 			opts.Selection,
@@ -496,6 +521,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 		snapshot:         snapshot,
 		baselineVersions: baselineVersions(files, opts, rules),
 		unmetInputs:      unmetInputs(files, opts, rules),
+		target:           target,
 	}, nil
 }
 
@@ -604,6 +630,7 @@ func prepareFile(
 	pathPrefix string,
 	mode scanMode,
 	dialect string,
+	target Target,
 	atlasTemplateData any,
 	dirFormat migrationfile.DirFormat,
 	selection VersionSelection,
@@ -631,6 +658,7 @@ func prepareFile(
 		repeatable = parsed.Repeatable
 	}
 	file := File{
+		Target:          target,
 		Path:            path.Join(pathPrefix, name),
 		Name:            name,
 		Source:          raw,
@@ -694,6 +722,7 @@ func prepareFile(
 		file.NoTransaction = up.TxMode == migrationfile.FileTxModeNone
 		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility, registered) {
 			file.Statements = append(file.Statements, Statement{
+				Target:          target,
 				Index:           index,
 				Span:            SourceSpan{Start: rawStmt.start, End: rawStmt.end},
 				SQL:             rawStmt.text,

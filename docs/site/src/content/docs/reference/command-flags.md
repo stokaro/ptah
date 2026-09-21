@@ -831,6 +831,7 @@ Read the columns as follows.
 | `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
 | `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
