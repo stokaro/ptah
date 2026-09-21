@@ -260,6 +260,19 @@ var escapeRules = []escapeRule{
 		dialects: []string{platform.Oracle},
 	},
 	{
+		// Not a reach of its own: a spelling this scanner reads as something
+		// else. Oracle's alternative quoting picks its own delimiter, so
+		// `q'[x']'` ends at `]'` on the server and at the embedded quote here,
+		// and everything after it is scanned as string text -- including a
+		// package call the server executes. Refusing the spelling is the
+		// honest answer while the lexer does not implement the grammar; what
+		// it hides cannot be judged.
+		construct: "Oracle alternative-quoted literal",
+		reach:     "hides its contents from this scanner, so what the statement runs cannot be judged",
+		match:     alternativeQuotedLiteral(),
+		dialects:  []string{platform.Oracle},
+	},
+	{
 		// Oracle's own instance is the other side here. A pipe is server
 		// memory shared by every session, a job runs after the statement that
 		// created it, and both are committed by the package rather than by the
@@ -797,6 +810,11 @@ func PostgresControlFunctions() []string {
 		// A nontransactional logical message survives the rollback and reaches
 		// whatever is decoding the write-ahead log.
 		"PG_LOGICAL_EMIT_MESSAGE",
+		// Backup mode forces a checkpoint and the write-ahead log activity
+		// behind it. Ending the session aborts the unfinished backup and
+		// leaves the checkpoint where it is.
+		"PG_BACKUP_START", "PG_BACKUP_STOP",
+		"PG_START_BACKUP", "PG_STOP_BACKUP",
 	}
 }
 
@@ -847,6 +865,34 @@ func clickHouseRemoteTableFunctions() []string {
 		names = append(names, base, base+"CLUSTER")
 	}
 	return names
+}
+
+// alternativeQuotedLiteral matches Oracle's `q'...'` and `nq'...'` spellings.
+//
+// The introducer sits directly against the quote, which is what separates it
+// from a column named `q`: `WHERE q = 'x'` has an operator between the two
+// tokens and is an ordinary comparison.
+func alternativeQuotedLiteral() tokenMatcher {
+	return func(ctx scanContext) bool {
+		for i, token := range ctx.tokens {
+			if token.Type != lexer.TokenIdentifier || i+1 >= len(ctx.tokens) {
+				continue
+			}
+			introducer := strings.ToUpper(token.Value)
+			if introducer != "Q" && introducer != "NQ" {
+				continue
+			}
+			quoted := ctx.tokens[i+1]
+			if quoted.Type != lexer.TokenString || !strings.HasPrefix(quoted.Value, "'") {
+				continue
+			}
+			if token.End != quoted.Start {
+				continue
+			}
+			return true
+		}
+		return false
+	}
 }
 
 func calledFunction(name string) tokenMatcher {

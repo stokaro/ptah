@@ -835,3 +835,96 @@ func TestValidateCheckAssertionStatically_RefusesMoreServerControl(t *testing.T)
 		})
 	}
 }
+
+// Backup mode is server control with a cost the session cannot take back: the
+// checkpoint it forces and the write-ahead log behind it stay where they are,
+// and ending the session only abandons the unfinished backup.
+func TestValidateCheckAssertionStatically_RefusesBackupControl(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "backup started",
+			assertion: `SELECT pg_backup_start('ptah-verify', true) IS NOT NULL`,
+		},
+		{
+			name:      "the legacy spelling",
+			assertion: `SELECT pg_start_backup('ptah-verify') IS NOT NULL`,
+		},
+		{
+			name:      "backup stopped",
+			assertion: `SELECT pg_backup_stop() IS NOT NULL`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "postgres", ""),
+				qt.ErrorMatches, `check assertion must not use PostgreSQL server control function, which .*`)
+		})
+	}
+}
+
+// An Oracle alternative-quoted literal picks its own delimiter, so the scanner
+// and the server disagree about where the string ends: `q'[x']'` ends at `]'`
+// on the server and at the embedded quote here, and a package call after it is
+// read as string text. Refusing the spelling is the answer while the lexer
+// does not implement the grammar.
+func TestValidateCheckAssertionStatically_RefusesOracleAlternativeQuoting(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "a package call hidden behind the delimiter",
+			assertion: `SELECT q'[x']' || UTL_HTTP.REQUEST('http://internal/') FROM dual`,
+		},
+		{
+			name:      "the plain spelling, with nothing hidden",
+			assertion: `SELECT q'{a}' FROM dual`,
+		},
+		{
+			name:      "the national-character introducer",
+			assertion: `SELECT nq'[a]' FROM dual`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "oracle", ""),
+				qt.ErrorMatches, `check assertion must not use Oracle alternative-quoted literal, which .*`)
+		})
+	}
+}
+
+// The control the introducer needs. A column named `q` is an ordinary
+// identifier, and what separates it from the literal is that the literal's
+// quote sits directly against the introducer.
+func TestValidateCheckAssertionStatically_AcceptsAColumnNamedQ(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "compared against a literal",
+			assertion: `SELECT count(*) = 0 FROM queues WHERE q = 'x'`,
+		},
+		{
+			name:      "selected from a table named q",
+			assertion: `SELECT count(*) = 0 FROM q`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "oracle", ""), qt.IsNil)
+		})
+	}
+}
