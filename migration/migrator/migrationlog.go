@@ -165,9 +165,20 @@ func (m *Migrator) MigrationLogTableIdentifier() string {
 	return m.migrationLogTable()
 }
 
-// migrationLogObjectName is the unqualified name SQL Server's OBJECT_ID takes.
+// migrationLogObjectName is the name SQL Server's OBJECT_ID probe takes.
+//
+// The suffix goes on the bare table name and the schema is applied after, the
+// same way [Migrator.migrationLogTable] builds the identifier. Appending to
+// the already-qualified name would make the guard probe
+// `[dbo].[schema_migrations]_log` while the DDL creates
+// `[dbo].[schema_migrations_log]`, so the guard would never find the table it
+// created and every later initialization would try to create it again.
 func (m *Migrator) migrationLogObjectName() string {
-	return m.sqlServerObjectName() + migrationLogTableSuffix
+	table := m.quoteIdentifier(m.migrationsTableName() + migrationLogTableSuffix)
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.quoteIdentifier(schema) + "." + table
+	}
+	return table
 }
 
 // ptahMigrationLogDDL is the log table, in the spelling each engine takes.
@@ -261,6 +272,22 @@ func (m *Migrator) logMigrationEvent(
 	if !m.migrationLogWritable() || m.conn.Writer().IsDryRun() {
 		return
 	}
+	// A terminal entry is written with a context of its own, detached from the
+	// one the migration ran under. A run that failed because its deadline
+	// expired or because somebody interrupted it arrives here with that
+	// context already done, and the write would fail immediately -- leaving
+	// the start row alone and reporting a timeout as undetermined, which is
+	// the one outcome nobody can act on.
+	if state != MigrationLogStarted {
+		durable, cancel := durableRevisionWriteContext(ctx)
+		defer cancel()
+		ctx = durable
+	}
+	if err := m.ensureMigrationLogTable(ctx); err != nil {
+		m.logger.Warn("Could not create the migration log table",
+			"version", migration.Version, "error", err)
+		return
+	}
 	entry := MigrationLogEntry{
 		RunID:       m.migrationLogRunID,
 		Seq:         m.nextMigrationLogSeq(),
@@ -279,6 +306,49 @@ func (m *Migrator) logMigrationEvent(
 		m.logger.Warn("Could not append to the migration log",
 			"version", migration.Version, "operation", operation, "state", string(state), "error", err)
 	}
+}
+
+// migrationLogTableExists reports whether the log table is there.
+//
+// It asks the same presence query the revision table's own check asks, so the
+// two answer through one grammar and a dialect whose catalog needs a special
+// spelling needs it written once.
+func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
+	query, args, err := migrationTablePresenceQuery(
+		m.connectionDialect(),
+		m.metadataTableSchemaName(),
+		m.connectionSchemaName(),
+		m.migrationsTableName()+migrationLogTableSuffix,
+		m.quoteIdentifier,
+	)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	query = sqlutil.Rebind(m.connectionDialect(), query)
+	if err := m.conn.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return false, fmt.Errorf("read the migration log: %w", err)
+	}
+	return count > 0, nil
+}
+
+// ensureMigrationLogTable creates the log table if it is not there yet.
+//
+// The creation lives here rather than in Initialize, and the difference is who
+// pays for it. Every read entry point calls Initialize, so a table created
+// there would be created by `migrations status`, by the log reader itself, and
+// by any command run with an account that may read and not create -- turning a
+// question into a write, and a read-only credential into a failure. Only a run
+// that has something to record needs the table.
+func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
+	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
+		return nil
+	}
+	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
+		return fmt.Errorf("create the migration log table: %w", err)
+	}
+	m.migrationLogReady.Store(true)
+	return nil
 }
 
 func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLogEntry) error {
@@ -348,8 +418,16 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 			"this migrator keeps no operation log: the log is a native capability and this run uses " +
 				"the Atlas-compatible revision format, which defines no such table")
 	}
-	if err := m.Initialize(ctx); err != nil {
+	// No Initialize: reading is a question, and a question that created a
+	// table would change the database it was asked about -- and fail outright
+	// for an account allowed to read and not to create. A target with no log
+	// has nothing to report, which is what an absent table means.
+	present, err := m.migrationLogTableExists(ctx)
+	if err != nil {
 		return nil, err
+	}
+	if !present {
+		return nil, nil
 	}
 	entries, err := m.readMigrationLogEntries(ctx)
 	if err != nil {

@@ -191,3 +191,105 @@ func TestMigrationLog_IsInvisibleToTheSchemaReader(t *testing.T) {
 	// above measures an exclusion rather than a reader that found nothing.
 	c.Assert(names, qt.Contains, "notes")
 }
+
+// Reading is a question. A read that created the log table would change the
+// database it was asked about, and would fail outright for an account allowed
+// to read and not to create: every migrator read entry point calls Initialize,
+// which is why the table is created by the writer instead.
+func TestMigrationLog_ReadsWithoutCreatingTheTable(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(context.Background(),
+		"sqlite://"+filepath.Join(t.TempDir(), "log.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "create_notes",
+			"CREATE TABLE notes (id INTEGER PRIMARY KEY);\n", "DROP TABLE notes;\n")))
+	c.Assert(m.Initialize(ctx), qt.IsNil)
+
+	attempts, err := m.MigrationLog(ctx, 0)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(attempts, qt.HasLen, 0)
+	var tables int
+	c.Assert(conn.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations_log'",
+	).Scan(&tables), qt.IsNil)
+	c.Assert(tables, qt.Equals, 0, qt.Commentf("neither Initialize nor the reader creates it"))
+}
+
+// The control: applying a migration does create it, so the assertion above
+// measures where the creation happens rather than that it never does.
+func TestMigrationLog_TheWriterCreatesTheTable(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newLogMigrator(t)
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+
+	var tables int
+	c.Assert(conn.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations_log'",
+	).Scan(&tables), qt.IsNil)
+	c.Assert(tables, qt.Equals, 1)
+}
+
+// newBatchLogMigrator builds a migrator over two migrations run as one
+// transaction. The second body is the parameter, so the same fixture serves
+// the batch that lands and the batch that does not.
+func newBatchLogMigrator(t *testing.T, secondUp string) *migrator.Migrator {
+	c := qt.New(t)
+	t.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(),
+		"sqlite://"+filepath.Join(t.TempDir(), "log.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "create_notes",
+			"CREATE TABLE notes (id INTEGER PRIMARY KEY);\n", "DROP TABLE notes;\n"),
+		migrator.CreateMigrationFromSQL(2, "create_tags",
+			secondUp, "DROP TABLE tags;\n"),
+	)).WithTransactionMode(migrator.MigrationTxModeAll).WithActor("release-bot")
+	c.Assert(m.Initialize(context.Background()), qt.IsNil)
+	return m
+}
+
+// Under tx-mode all every migration in the batch is attempted, so every one
+// gets its entry. A log that recorded the batch as one attempt would name a
+// version that is only the first of several.
+func TestMigrationLog_RecordsEveryMigrationOfABatch(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	m := newBatchLogMigrator(t, "CREATE TABLE tags (id INTEGER PRIMARY KEY);\n")
+
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+
+	attempts, err := m.MigrationLog(ctx, 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(attempts, qt.HasLen, 2)
+	c.Assert(attempts[0].Start.Version, qt.Equals, int64(2))
+	c.Assert(attempts[0].Outcome.State, qt.Equals, migrator.MigrationLogApplied)
+	c.Assert(attempts[1].Start.Version, qt.Equals, int64(1))
+	c.Assert(attempts[1].Outcome.State, qt.Equals, migrator.MigrationLogApplied)
+	// One batch is one run, and the entries say so.
+	c.Assert(attempts[0].Start.RunID, qt.Equals, attempts[1].Start.RunID)
+}
+
+// One batch is one outcome. The transaction rolls back as a unit, so the
+// migration that ran before the failure did not land either, and an entry
+// calling it applied would send a reader to a table that is not there.
+func TestMigrationLog_RecordsABatchThatRolledBackAsFailed(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	m := newBatchLogMigrator(t, "DROP TABLE absent_table;\n")
+
+	c.Assert(m.MigrateUp(ctx), qt.IsNotNil)
+
+	attempts, err := m.MigrationLog(ctx, 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(attempts, qt.HasLen, 2)
+	c.Assert(attempts[0].Outcome.State, qt.Equals, migrator.MigrationLogFailed)
+	c.Assert(attempts[1].Outcome.State, qt.Equals, migrator.MigrationLogFailed)
+	c.Assert(attempts[1].Start.Version, qt.Equals, int64(1),
+		qt.Commentf("the migration that ran before the failure is recorded failed with it"))
+}

@@ -135,6 +135,10 @@ func runMigrateLog(cmd *cobra.Command, opts options) error {
 	mig = mig.
 		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
+		// The same setting the writing commands read. A project that turned
+		// the log off is told so here rather than shown an empty table, which
+		// reads as a database nothing has ever happened to.
+		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(revisionFormat)
 
 	attempts, err := mig.MigrationLog(cmd.Context(), opts.limit)

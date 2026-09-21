@@ -234,6 +234,10 @@ type Migrator struct {
 	// builder copies the Migrator by value, and the entries of one run have to
 	// share a counter or two derived migrators would both start at one.
 	migrationLogSeq *atomic.Int64
+	// migrationLogReady memoizes that the table has been created, so a run
+	// that writes two entries per migration sends its DDL once. A pointer for
+	// the same reason the counter is one.
+	migrationLogReady *atomic.Bool
 	// actor is the name the log records for this run, and actorSource says
 	// what that name is worth. See [ActorSource].
 	actor                    string
@@ -281,6 +285,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLogEnabled: true,
 		migrationLogRunID:   newMigrationLogRunID(),
 		migrationLogSeq:     new(atomic.Int64),
+		migrationLogReady:   new(atomic.Bool),
 		actor:               actorName,
 		actorSource:         actorSource,
 	}
@@ -1166,16 +1171,6 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// creation: there is no active migration transaction yet.
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
 		return m.migrationsTableCreateError(err)
-	}
-	// The log table travels with the revision table: same schema, same naming,
-	// created by the same call, so an operator who moved one finds the other
-	// beside it. A failure here fails Initialize, because a table the run
-	// cannot create is a table the run cannot write to, and finding that out
-	// per entry would put a warning next to every migration.
-	if m.migrationLogWritable() {
-		if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
-			return fmt.Errorf("failed to create the migration log table: %w", err)
-		}
 	}
 	// Check the engine before upgrading an existing table. ALTER TABLE itself
 	// commits on the MySQL family, so validating afterward could mutate metadata
@@ -2759,9 +2754,23 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		plans[migration.RevisionVersion()] = plan
 	}
 
+	// One batch is one outcome: every migration in it applies or none does, so
+	// the log opens an entry for each before the transaction starts and settles
+	// all of them together. Recording a migration applied when a later one rolls
+	// the whole transaction back would describe a database that never existed.
+	//
+	// The starts are written here rather than as each migration is reached
+	// because the log writes on the pool: once the batch transaction holds the
+	// write lock, SQLite refuses a second writer with SQLITE_BUSY and every
+	// entry after the first would be lost.
+	started := slices.Clone(migrations)
+	m.logBatchStart(ctx, started)
+
 	tx, err := sqliterebuild.BeginTransactionForAnySQL(ctx, m.conn, upSQLTexts(migrations))
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+		failure := fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+		return nil, failure
 	}
 	txConn := m.conn.WithExecutor(tx)
 	startedAt := make(map[string]time.Time, len(migrations))
@@ -2772,18 +2781,46 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
 		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[key]); err != nil {
 			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
+			recorded := m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
+			m.logBatchOutcome(ctx, started, MigrationLogFailed, recorded)
+			return nil, recorded
 		}
 		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[key], plan); err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+			failure := fmt.Errorf(
+				"failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+			m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+			return nil, failure
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		failure := fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+		return nil, failure
 	}
+	m.logBatchOutcome(ctx, started, MigrationLogApplied, nil)
 	m.logger.Info("Applied migrations in one transaction", "count", len(migrations))
 	return checksDeferred, nil
+}
+
+// logBatchStart opens a log entry for every migration the batch will attempt.
+func (m *Migrator) logBatchStart(ctx context.Context, started []*Migration) {
+	for _, migration := range started {
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
+	}
+}
+
+// logBatchOutcome records the same outcome for every migration the batch
+// started, because one transaction gives them one.
+func (m *Migrator) logBatchOutcome(
+	ctx context.Context,
+	started []*Migration,
+	state MigrationLogState,
+	failure error,
+) {
+	for _, migration := range started {
+		m.logMigrationEvent(ctx, "up", migration, state, failure)
+	}
 }
 
 // runBatchPreMigrationChecks evaluates pre-migration checks for a tx-mode all
