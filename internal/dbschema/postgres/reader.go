@@ -445,7 +445,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			` + r.rowStatisticsJoin() + `
 			WHERE t.table_schema = $1
 			AND t.table_type = 'BASE TABLE'
-			AND t.table_name NOT IN ('schema_migrations')
+			AND t.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
 			ORDER BY table_schema, table_name`
 
 	rows, err := r.db.QueryContext(ctx, tablesQuery, schemaName)
@@ -842,7 +842,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			AND NOT a.attisdropped
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
 		WHERE col.table_schema = $1
-		AND col.table_name NOT IN ('schema_migrations')
+		AND col.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
 		` + r.hiddenColumnFilter() + `
 		ORDER BY col.table_name, col.ordinal_position`
 
@@ -1536,7 +1536,7 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 		JOIN pg_namespace n ON n.oid = t.relnamespace
 		JOIN pg_am am ON am.oid = i.relam
 		WHERE n.nspname = $1
-		AND t.relname NOT IN ('schema_migrations')
+		AND t.relname NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY t.relname, i.relname`
 
 	rows, err := r.db.QueryContext(ctx, indexesQuery, schemaName)
@@ -2076,7 +2076,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			ON foreign_column.attrelid = pc.confrelid
 			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
 		WHERE tc.table_schema = $1
-		AND tc.table_name NOT IN ('schema_migrations')
+		AND tc.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
 		GROUP BY
 			tc.table_schema,
 			tc.table_name,
@@ -2247,7 +2247,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		LEFT JOIN pg_class ic ON ic.oid = c.conindid
 		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
 		AND n.nspname = $1
-		AND cl.relname NOT IN ('schema_migrations')
+		AND cl.relname NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY cl.relname, c.conname`
 
 	rows, err := r.db.QueryContext(ctx, pgQuery, schemaName)
@@ -3100,7 +3100,7 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 			ON v.table_schema = n.nspname AND v.table_name = c.relname
 		WHERE n.nspname = $1
 		AND c.relkind = 'v'
-		AND c.relname NOT IN ('schema_migrations')
+		AND c.relname NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY c.relname`
 
 	rows, err := r.db.QueryContext(ctx, viewsQuery, schemaName)

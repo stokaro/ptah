@@ -188,7 +188,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_TYPE = 'BASE TABLE'
-		AND TABLE_NAME NOT IN ('schema_migrations')
+		AND TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY TABLE_NAME`
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
@@ -243,7 +243,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			COLUMN_COMMENT
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
-		AND TABLE_NAME NOT IN ('schema_migrations')
+		AND TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
@@ -526,7 +526,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION
 		FROM information_schema.VIEWS
 		WHERE TABLE_SCHEMA = ?
-		AND TABLE_NAME NOT IN ('schema_migrations')
+		AND TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY TABLE_NAME`
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
@@ -892,7 +892,7 @@ const indexKeyPartsQuery = `
 			s.COLLATION
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
-		AND s.TABLE_NAME NOT IN ('schema_migrations')
+		AND s.TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX`
 
 // readIndexes reads all indexes, assembling each key from its parts.
@@ -1072,7 +1072,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 			tc.TABLE_NAME = rc.TABLE_NAME AND
 			tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
 		WHERE tc.TABLE_SCHEMA = ?
-		AND tc.TABLE_NAME NOT IN ('schema_migrations')
+		AND tc.TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
 		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)

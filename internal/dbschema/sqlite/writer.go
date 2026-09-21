@@ -467,7 +467,7 @@ func (w *Writer) listCleanupObjects(
 		WHERE schema = ?
 		  AND type IN ('table', 'view', 'virtual')
 		  AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
-		  AND (? OR name <> 'schema_migrations')
+		  AND (? OR name NOT IN ('schema_migrations', 'schema_migrations_log'))
 		ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END, name
 	`
 	rows, err := tx.QueryContext(ctx, query, w.cleanupSchema(), includeRevisionTable)

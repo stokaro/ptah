@@ -195,7 +195,7 @@ func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 		 AND ep.minor_id = 0
 		 AND ep.name = 'MS_Description'
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -255,7 +255,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 		 AND ep.minor_id = c.column_id
 		 AND ep.name = 'MS_Description'
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, c.column_id`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -378,7 +378,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 		  AND i.is_unique_constraint = 0
 		  AND ic.is_included_column = 0
 		  AND ic.key_ordinal > 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 		  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, i.name, ic.key_ordinal`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -459,7 +459,7 @@ func (r *Reader) readKeyConstraints(ctx context.Context) ([]catalog.Constraint, 
 		JOIN sys.index_columns AS ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
 		JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, kc.name, ic.key_ordinal`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -523,7 +523,7 @@ func (r *Reader) readForeignKeys(ctx context.Context) ([]catalog.Constraint, err
 		JOIN sys.schemas AS rs ON rs.schema_id = rt.schema_id
 		JOIN sys.columns AS rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, fk.name, fkc.constraint_column_id`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -590,7 +590,7 @@ func (r *Reader) readChecks(ctx context.Context) ([]catalog.Constraint, error) {
 		JOIN sys.tables AS t ON t.object_id = cc.parent_object_id
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
+		  AND t.name NOT IN ('schema_migrations', 'schema_migrations_log', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, cc.name`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)

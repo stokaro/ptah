@@ -201,7 +201,7 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 		FROM %s
 		WHERE type IN ('table', 'index', 'view', 'trigger')
 		  AND NOT (type = 'table' AND name LIKE 'sqlite\_%%' ESCAPE '\')
-		  AND NOT (type IN ('table', 'view') AND name = 'schema_migrations')
+		  AND NOT (type IN ('table', 'view') AND name IN ('schema_migrations', 'schema_migrations_log'))
 		ORDER BY type, tbl_name, name
 	`, r.schemaObject("sqlite_schema"))
 	rows, err := r.db.QueryContext(ctx, query)
@@ -349,7 +349,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 		JOIN pragma_table_xinfo(m.name, ?) AS x
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'%s
+		  AND m.name NOT IN ('schema_migrations', 'schema_migrations_log')%s
 		ORDER BY m.name, x.cid
 	`, r.schemaObject("sqlite_schema"), exclusion)
 	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)
@@ -511,7 +511,7 @@ func (r *Reader) readIndexEntriesByTable(ctx context.Context, skipped []string) 
 		JOIN pragma_index_list(m.name, ?) AS il
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'%s
+		  AND m.name NOT IN ('schema_migrations', 'schema_migrations_log')%s
 		ORDER BY m.name, il.seq
 	`, r.schemaObject("sqlite_schema"), exclusion)
 	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)
@@ -641,7 +641,7 @@ func (r *Reader) readIndexColumnsByIndex(ctx context.Context, skipped []string) 
 		JOIN pragma_index_xinfo(il.name, ?) AS ix
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'%s
+		  AND m.name NOT IN ('schema_migrations', 'schema_migrations_log')%s
 		ORDER BY il.name, ix.seqno
 	`, r.schemaObject("sqlite_schema"), exclusion)
 	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema, r.schema}, exclusionArguments...)...)
@@ -880,7 +880,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 		JOIN pragma_foreign_key_list(m.name, ?) AS fk
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'%s
+		  AND m.name NOT IN ('schema_migrations', 'schema_migrations_log')%s
 		ORDER BY m.name, fk.id, fk.seq
 	`, r.schemaObject("sqlite_schema"), exclusion)
 	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)

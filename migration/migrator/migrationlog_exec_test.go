@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -165,4 +166,30 @@ func TestMigrationLog_IsAbsentUnderTheAtlasRevisionFormat(t *testing.T) {
 
 	_, err = m.MigrationLog(ctx, 0)
 	c.Assert(err, qt.ErrorMatches, `this migrator keeps no operation log.*`)
+}
+
+// The log table must be invisible to the schema comparison, or Ptah plans a
+// migration that drops its own bookkeeping: the generator sees a table no
+// declaration describes and writes the DROP for it.
+//
+// A reader-level property, so it is measured through a reader rather than
+// through the migrator that created the table.
+func TestMigrationLog_IsInvisibleToTheSchemaReader(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, m := newLogMigrator(t)
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
+
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(schema.Tables))
+	for _, table := range schema.Tables {
+		names = append(names, table.Name)
+	}
+	c.Assert(slices.Contains(names, "schema_migrations_log"), qt.IsFalse,
+		qt.Commentf("tables: %v", names))
+	// The control: the migration's own table IS reported, so the assertion
+	// above measures an exclusion rather than a reader that found nothing.
+	c.Assert(slices.Contains(names, "notes"), qt.IsTrue, qt.Commentf("tables: %v", names))
 }

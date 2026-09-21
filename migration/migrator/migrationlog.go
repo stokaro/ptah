@@ -151,6 +151,20 @@ func (m *Migrator) migrationLogTable() string {
 // to name the same table.
 const migrationLogTableSuffix = "_log"
 
+// MigrationLogTableIdentifier returns the dialect-quoted name of the operation
+// log's table, or an empty string when this migrator keeps no log.
+//
+// It exists for the callers that have to clear Ptah's own bookkeeping out of a
+// database before comparing it against what the migrations describe: a shadow
+// replay leaves both tables behind, and one left in place reads as a schema
+// difference rather than as metadata.
+func (m *Migrator) MigrationLogTableIdentifier() string {
+	if !m.migrationLogWritable() {
+		return ""
+	}
+	return m.migrationLogTable()
+}
+
 // migrationLogObjectName is the unqualified name SQL Server's OBJECT_ID takes.
 func (m *Migrator) migrationLogObjectName() string {
 	return m.sqlServerObjectName() + migrationLogTableSuffix
