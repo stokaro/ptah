@@ -417,10 +417,21 @@ PostgreSQL family a trigger, a rule, a default expression on a column Ptah does
 not write and a row-level policy each run somebody else's SQL under the
 migration role, and provenance covers the next one too.
 
-Engines whose catalog reports no table owner are outside it: the MySQL family,
-SQLite, ClickHouse and Spanner. On MySQL and MariaDB a trigger runs as its
-definer rather than as the connected account, so the same table gains its
-author a hook on every migration and not the migration role's privileges.
+Engines whose catalog cannot answer are outside it: the MySQL family, SQL
+Server, SQLite, ClickHouse and Spanner. On MySQL and MariaDB a trigger runs as
+its definer rather than as the connected account, so the same table gains its
+author a hook on every migration and not the migration role's privileges. SQL
+Server records no creator for an ordinary object -- the catalog reports the
+schema's owner -- so the answer there would say nothing about who made the
+table.
+
+The check covers a dry run too, because a dry run reads the table, and it runs
+again after the create, so a table placed between the two statements is caught
+rather than adopted.
+
+Reading the log is refused the same way: a policy or an expression the server
+evaluates during a `SELECT` runs the other role's SQL with the reader's
+privileges, so a read is not safe by being a read.
 
 A foreign **log** table warns and the migration runs. Ptah cannot record what
 it did without a revision table, so that refusal is terminal; the log is a
