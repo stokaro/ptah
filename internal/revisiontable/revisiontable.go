@@ -26,6 +26,13 @@ const (
 	// migrations in.
 	Atlas = "atlas_schema_revisions"
 
+	// PtahLog is the table Ptah's native layout records migration attempts in.
+	// The migrator derives it from whatever revision table it was given, so
+	// this is the name a default configuration produces. The Atlas-compatible
+	// layout has no counterpart: that contract defines the revision table and
+	// nothing beside it.
+	PtahLog = Ptah + "_log"
+
 	// PtahOperatorVersion is the generic operator marker for migrations without
 	// a mapped source identity. Current mapped writes use the source-identity
 	// marker instead, so a Flyway row with this generic value is eligible for
@@ -47,8 +54,8 @@ const (
 	SourceIdentityOperatorVersion = "Ptah/source-identity"
 )
 
-// DefaultNames returns the table a migrator writes revisions to for every
-// supported revision-table format, when no explicit table name is configured.
+// DefaultNames returns the migrator's bookkeeping tables for every supported
+// revision-table format, when no explicit table name is configured.
 //
 // Callers that enumerate bookkeeping tables in a live database must iterate all
 // of them rather than picking the one matching the current configuration: a
@@ -60,5 +67,5 @@ const (
 // missing from a schema snapshot; a custom name is read back as an ordinary
 // table and needs no restoring.
 func DefaultNames() []string {
-	return []string{Atlas, Ptah}
+	return []string{Atlas, Ptah, PtahLog}
 }

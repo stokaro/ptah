@@ -86,6 +86,7 @@ type options struct {
 	migrationsSchema     string
 	migrationsTable      string
 	migrationsEngine     string
+	actor                string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -171,6 +172,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
+	dbcli.RegisterActorFlag(flags, &opts.actor)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -438,6 +440,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
+		WithActor(opts.actor).
+		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(revisionFormat).
 		WithSkipChecks(resolvedOpts.skipChecks).
 		WithDefaultTimeouts(settings.timeouts).
@@ -823,7 +827,7 @@ type dynamicRollback struct {
 // it after the statements, not before, means a plan that fails partway leaves
 // revisions that still describe a database ahead of the target -- which is the
 // honest reading of what happened, and what `migrations repair` expects.
-func runDynamicRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) error {
+func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitter) error {
 	if strings.TrimSpace(r.devURL) == "" {
 		return fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
 			"before it can be compared against the live database",
@@ -859,6 +863,18 @@ func runDynamicRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitt
 	if r.dryRun {
 		return nil
 	}
+	// The statements run on the connection rather than through the migrator, so
+	// nothing below would record them. They delete the same revision rows an
+	// authored rollback deletes, which is the history the log exists to keep.
+	settle := r.migrator.LogDerivedRollback(cmd.Context(), r.targetVersion)
+	err = applyDerivedRollback(cmd, r, statements)
+	settle(err)
+	return err
+}
+
+// applyDerivedRollback runs the derived statements and moves the revision
+// boundary, so the caller has one error to record the attempt against.
+func applyDerivedRollback(cmd *cobra.Command, r rollbackExecution, statements []string) error {
 	for _, statement := range statements {
 		if _, err := r.conn.ExecContext(cmd.Context(), statement); err != nil {
 			return fmt.Errorf("apply derived rollback statement %q: %w", statement, err)
@@ -887,7 +903,7 @@ type rollbackExecution struct {
 // wrote and reviewed, the other runs SQL inferred from structure minutes ago.
 func executeRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitter) error {
 	if r.plan {
-		return runDynamicRollback(cmd, r.dynamicRollback, emit)
+		return runDynamicRollback(cmd, r, emit)
 	}
 	// The rollback watches the command's context, which an interrupt cancels.
 	// A down body that kept executing after the signal would commit a

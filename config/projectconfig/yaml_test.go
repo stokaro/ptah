@@ -125,7 +125,7 @@ func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T
   pg_dumpto: ./backups
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook, log`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 

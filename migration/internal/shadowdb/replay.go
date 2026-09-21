@@ -95,11 +95,25 @@ func ResetSchemas(ctx context.Context, conn *dbschema.DatabaseConnection, schema
 	return nil
 }
 
-// DropMigrationMetadata removes the migration bookkeeping table a replay wrote,
-// so what remains is the schema the migrations describe and nothing else.
-func DropMigrationMetadata(ctx context.Context, conn *dbschema.DatabaseConnection, tableIdentifier string) error {
-	if _, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+tableIdentifier); err != nil {
-		return fmt.Errorf("drop metadata table: %w", err)
+// DropMigrationMetadata removes the migration bookkeeping tables a replay
+// wrote, so what remains is the schema the migrations describe and nothing
+// else.
+//
+// Every one of them, which is why this takes a list: a replay that left one
+// behind would hand the comparison a table no migration declares, and the
+// mismatch reads as a schema difference rather than as Ptah's own bookkeeping.
+func DropMigrationMetadata(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	tableIdentifiers ...string,
+) error {
+	for _, identifier := range tableIdentifiers {
+		if identifier == "" {
+			continue
+		}
+		if _, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+identifier); err != nil {
+			return fmt.Errorf("drop metadata table: %w", err)
+		}
 	}
 	return nil
 }

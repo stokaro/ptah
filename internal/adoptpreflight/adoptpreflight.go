@@ -327,9 +327,14 @@ func probe(ctx context.Context, opts Options, format migrator.RevisionTableForma
 // provider: presence and the row-level dimensions are answerable without files,
 // and the dimensions that are not say so rather than passing.
 func build(opts Options, format migrator.RevisionTableFormat, schema string) (*migrator.Migrator, error) {
+	// The log is off on both paths: this is a probe of a database somebody
+	// else owns, and every migrator read entry point calls Initialize, so a
+	// migrator that kept the log would create a table as a side effect of
+	// being asked a question.
 	if opts.MigrationsFS == nil {
 		return migrator.NewMigrator(opts.Conn, migrator.NewRegisteredMigrationProvider()).
 			WithMigrationsTable(schema, opts.RevisionsTable).
+			WithMigrationLog(false).
 			WithRevisionTableFormat(format), nil
 	}
 	mig, err := migrator.NewFSMigrator(opts.Conn, opts.MigrationsFS,
@@ -339,6 +344,7 @@ func build(opts Options, format migrator.RevisionTableFormat, schema string) (*m
 	}
 	return mig.
 		WithMigrationsTable(schema, opts.RevisionsTable).
+		WithMigrationLog(false).
 		WithRevisionTableFormat(format), nil
 }
 

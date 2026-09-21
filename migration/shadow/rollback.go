@@ -118,7 +118,9 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 	// The baseline verification drops the same table for the same reason. It
 	// does so after its replay, where the point is a clean introspection; here
 	// the point is a clean starting version, so it happens before.
-	if err := shadowdb.DropMigrationMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
+	if err := shadowdb.DropMigrationMetadata(
+		ctx, shadowConn, mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(),
+	); err != nil {
 		return fmt.Errorf("rollback verification failed: drop shadow revision metadata: %w", err)
 	}
 

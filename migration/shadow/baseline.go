@@ -138,7 +138,9 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 		}
 		return baselineError("replay", "replay_error", "replay migrations", err)
 	}
-	if err := shadowdb.DropMigrationMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
+	if err := shadowdb.DropMigrationMetadata(
+		ctx, shadowConn, mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(),
+	); err != nil {
 		return baselineErrorWithDisplayMessage("drop-metadata", "drop_metadata_error", err.Error(), err)
 	}
 

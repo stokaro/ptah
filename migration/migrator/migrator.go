@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"ptah.run/core/platform"
@@ -221,8 +222,26 @@ type Migrator struct {
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a
 	// mode change.
-	initializedDryRun        bool
-	logger                   *slog.Logger
+	initializedDryRun bool
+	logger            *slog.Logger
+	// migrationLogEnabled turns the append-only operation log on. It is a
+	// separate table from the revision one and answers a separate question;
+	// see [MigrationLogEntry].
+	migrationLogEnabled bool
+	// migrationLogRunID groups the entries one invocation writes.
+	migrationLogRunID string
+	// migrationLogSeq orders them. It is a pointer because every With*
+	// builder copies the Migrator by value, and the entries of one run have to
+	// share a counter or two derived migrators would both start at one.
+	migrationLogSeq *atomic.Int64
+	// migrationLogReady memoizes that the table has been created, so a run
+	// that writes two entries per migration sends its DDL once. A pointer for
+	// the same reason the counter is one.
+	migrationLogReady *atomic.Bool
+	// actor is the name the log records for this run, and actorSource says
+	// what that name is worth. See [ActorSource].
+	actor                    string
+	actorSource              ActorSource
 	observer                 Observer
 	skipChecks               bool
 	metadataAvailable        bool
@@ -263,7 +282,39 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLockName:   migrationAdvisoryLockName,
 		logger:              slog.Default(),
 		observer:            NoopObserver{},
+		migrationLogEnabled: true,
+		migrationLogRunID:   newMigrationLogRunID(),
+		migrationLogSeq:     new(atomic.Int64),
+		migrationLogReady:   new(atomic.Bool),
+		actor:               actorName,
+		actorSource:         actorSource,
 	}
+}
+
+// WithMigrationLog returns a copy of the migrator that writes, or does not
+// write, the append-only operation log.
+//
+// On by default: a database that cannot say what happened to it is the gap
+// this exists to close, and a log nobody turned on closes nothing. The switch
+// is for the caller that must not add a table to the database it migrates --
+// the Atlas-compatible surface is the one in the tree, which ships the
+// revision table Atlas defines and nothing beside it.
+func (m *Migrator) WithMigrationLog(enabled bool) *Migrator {
+	tmp := *m
+	tmp.migrationLogEnabled = enabled
+	return &tmp
+}
+
+// WithActor returns a copy of the migrator that records name as the actor of
+// its operations.
+//
+// An empty name falls back to the user the process runs as, and the two are
+// recorded as different claims: see [ActorSource]. Nothing here verifies
+// either, which is why the provenance travels with the name.
+func (m *Migrator) WithActor(name string) *Migrator {
+	tmp := *m
+	tmp.actor, tmp.actorSource = resolveActor(name)
+	return &tmp
 }
 
 // WithLogger returns a copy of the migrator that logs through l. A nil logger
@@ -2638,10 +2689,16 @@ func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*M
 		if err != nil {
 			return nil, err
 		}
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
 		deferred, err := m.applyUpMigrationObserved(ctx, migration, txMode, i == 0)
 		if err != nil {
+			m.logMigrationEvent(ctx, "up", migration, MigrationLogFailed, err)
 			return nil, err
 		}
+		// Before the postconditions, because the entry says what the database
+		// holds: the body ran and its revision is recorded, and a check that
+		// does not hold afterwards does not take that back.
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogApplied, nil)
 		// After the body and its revision, so a failure is a statement about a
 		// migration that applied.
 		postDeferred, err := m.runPostMigrationChecks(ctx, migration, MigrationDirectionUp)
@@ -2697,9 +2754,23 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		plans[migration.RevisionVersion()] = plan
 	}
 
+	// One batch is one outcome: every migration in it applies or none does, so
+	// the log opens an entry for each before the transaction starts and settles
+	// all of them together. Recording a migration applied when a later one rolls
+	// the whole transaction back would describe a database that never existed.
+	//
+	// The starts are written here rather than as each migration is reached
+	// because the log writes on the pool: once the batch transaction holds the
+	// write lock, SQLite refuses a second writer with SQLITE_BUSY and every
+	// entry after the first would be lost.
+	started := slices.Clone(migrations)
+	m.logBatchStart(ctx, started)
+
 	tx, err := sqliterebuild.BeginTransactionForAnySQL(ctx, m.conn, upSQLTexts(migrations))
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+		failure := fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+		return nil, failure
 	}
 	txConn := m.conn.WithExecutor(tx)
 	startedAt := make(map[string]time.Time, len(migrations))
@@ -2710,18 +2781,46 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
 		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[key]); err != nil {
 			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
+			recorded := m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
+			m.logBatchOutcome(ctx, started, MigrationLogFailed, recorded)
+			return nil, recorded
 		}
 		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[key], plan); err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+			failure := fmt.Errorf(
+				"failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+			m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+			return nil, failure
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		failure := fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
+		return nil, failure
 	}
+	m.logBatchOutcome(ctx, started, MigrationLogApplied, nil)
 	m.logger.Info("Applied migrations in one transaction", "count", len(migrations))
 	return checksDeferred, nil
+}
+
+// logBatchStart opens a log entry for every migration the batch will attempt.
+func (m *Migrator) logBatchStart(ctx context.Context, started []*Migration) {
+	for _, migration := range started {
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
+	}
+}
+
+// logBatchOutcome records the same outcome for every migration the batch
+// started, because one transaction gives them one.
+func (m *Migrator) logBatchOutcome(
+	ctx context.Context,
+	started []*Migration,
+	state MigrationLogState,
+	failure error,
+) {
+	for _, migration := range started {
+		m.logMigrationEvent(ctx, "up", migration, state, failure)
+	}
 }
 
 // runBatchPreMigrationChecks evaluates pre-migration checks for a tx-mode all
@@ -3355,9 +3454,15 @@ func (m *Migrator) rollbackMigration(
 	migration *Migration,
 	deleteSQL string,
 ) (bool, error) {
+	// The rollback is the reason this log exists: it deletes the revision row,
+	// so without a record here a database that was on this version yesterday
+	// reads exactly like one that never reached it.
+	m.logMigrationEvent(ctx, "down", migration, MigrationLogStarted, nil)
 	if err := m.rollbackMigrationObserved(ctx, migration, deleteSQL); err != nil {
+		m.logMigrationEvent(ctx, "down", migration, MigrationLogFailed, err)
 		return false, err
 	}
+	m.logMigrationEvent(ctx, "down", migration, MigrationLogRolledBack, nil)
 	// Outside the observed span on purpose: the rollback ran and is recorded,
 	// and a postcondition that does not hold must not turn that into a
 	// rollback the metrics report as failed.

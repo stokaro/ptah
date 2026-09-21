@@ -116,6 +116,7 @@ env:
 | `online_ddl.threshold_rows` | Estimated row threshold that activates automatic routing |
 | `online_ddl.args` | Extra arguments appended to every online-DDL tool invocation |
 | `online_ddl.fallback` | Routing fallback policy: `error` or `plain` |
+| `migration.log` | Keep the append-only record of migration operations (default true; the Atlas-compatible revision format keeps none) |
 | `diff.skip` | Destructive change kinds the planner omits from generated migrations (`drop_table`, `drop_column`, `drop_index`, `drop_enum`) |
 | `diff.concurrent_index` | Emit `CREATE INDEX CONCURRENTLY` for newly added indexes (PostgreSQL, capability-gated) |
 | `diff.concurrent_index_drop` | Emit `DROP INDEX CONCURRENTLY` for standalone index removals (PostgreSQL, capability-gated) |

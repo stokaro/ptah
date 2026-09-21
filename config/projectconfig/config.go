@@ -695,6 +695,15 @@ type MigrationConfig struct {
 	// applied before running the pending ones, the config spelling of its
 	// --baseline flag.
 	Baseline string
+	// Log is the append-only record of migration operations. It is a
+	// tri-state so an explicit false can turn off what is on by default.
+	Log ConfigBool
+}
+
+// MigrationLogEnabled reports whether the project keeps the operation log. It
+// is on unless the project turned it off.
+func (c MigrationConfig) MigrationLogEnabled() bool {
+	return !c.Log.Set || c.Log.Value
 }
 
 // LintConfig is the lint section of the project config IR.
@@ -1169,6 +1178,7 @@ func mergeMigration(
 	resultPresence *configPresence,
 ) MigrationConfig {
 	result := base
+	result.Log = mergeBool(result.Log, override.Log)
 	result.Dir = mergeStringValue(base.Dir, override.Dir, fieldMigrationDir, overridePresence, resultPresence)
 	result.Format = mergeStringValue(
 		base.Format,

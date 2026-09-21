@@ -128,6 +128,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations hash` | none | none | — | writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one |
 | `migrations import` | none | none | — | converts another tool's migration directory into Ptah's format on disk |
 | `migrations lint` | none | **rewrites** | `--dev-url` | lints migration files; the dev database it names is cleaned and replayed into |
+| `migrations log` | reads | none | `--db-url` | reads the target's record of past migration operations and prints it, changing nothing |
 | `migrations ls` | none | none | — | lists the migration files in a directory, reading nothing but the directory |
 | `migrations plan` | reads | none | `--db-url` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | none | none | — | downloads a migration directory from an OCI registry and writes it to disk |
@@ -221,6 +222,7 @@ permission.
 | `migrations edit` | rewrites a migration file and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations hash` | writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one |
 | `migrations import` | converts another tool's migration directory into Ptah's format on disk |
+| `migrations log` | reads the target's record of past migration operations and prints it, changing nothing |
 | `migrations ls` | lists the migration files in a directory, reading nothing but the directory |
 | `migrations plan` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | downloads a migration directory from an OCI registry and writes it to disk |

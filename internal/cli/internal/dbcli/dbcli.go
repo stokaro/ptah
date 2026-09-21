@@ -79,6 +79,21 @@ func RegisterMigrationsTableFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsTableFlagName, "", "Table name for the migration tracking table. Empty uses the revision format default.")
 }
 
+// ActorFlagName is the flag that names who a run records itself as.
+const ActorFlagName = "actor"
+
+// RegisterActorFlag registers the actor a run records in the operation log.
+//
+// It is unverified by construction: a name typed on a command line is what
+// somebody wrote, and the log stores where the name came from beside it so a
+// later reader is not left treating it as an identity Ptah checked. Empty
+// records the user the process runs as, under a different provenance.
+func RegisterActorFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, ActorFlagName, "",
+		"Name recorded as the actor of this run in the migration log (unverified; "+
+			"empty records the user the process runs as)")
+}
+
 // RegisterMigrationsEngineFlag registers the revision table's storage engine.
 //
 // It exists for ClickHouse, where a table has no engine unless one is named and
