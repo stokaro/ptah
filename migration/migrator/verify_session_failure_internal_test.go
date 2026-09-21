@@ -66,6 +66,19 @@ func TestSessionFailure_FailurePath(t *testing.T) {
 		c.Assert(failure, qt.Not(qt.ErrorIs), errAssertionRefused)
 	})
 
+	// The discard defer joins again as the wrapper unwinds, so the pair above
+	// arrives one level down. A removal that dropped whole branches would take
+	// the rollback failure with it.
+	t.Run("a cleanup failure nested under a second join", func(t *testing.T) {
+		c := qt.New(t)
+		nested := errors.Join(errors.Join(errAssertionRefused, errRollbackFailed))
+
+		failure := sessionFailure(nested, errAssertionRefused)
+
+		c.Assert(failure, qt.ErrorIs, errRollbackFailed)
+		c.Assert(failure, qt.Not(qt.ErrorIs), errAssertionRefused)
+	})
+
 	t.Run("a cleanup failure after an assertion that held", func(t *testing.T) {
 		c := qt.New(t)
 

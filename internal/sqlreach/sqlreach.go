@@ -15,7 +15,9 @@ package sqlreach
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
@@ -250,11 +252,22 @@ var escapeRules = []escapeRule{
 		// token is the procedure and the package sits in front of a dot.
 		construct: "Oracle network package",
 		reach:     "sends a request from the database server, which no transaction retracts",
-		match: containsNameAnyOf(
+		match: packageCallAnyOf(
 			"UTL_HTTP", "UTL_TCP", "UTL_SMTP", "UTL_MAIL",
 			"UTL_INADDR", "UTL_URL", "UTL_FILE",
 			"DBMS_LDAP", "HTTPURITYPE", "DBMS_NETWORK_ACL_ADMIN",
 		),
+		dialects: []string{platform.Oracle},
+	},
+	{
+		// Oracle's own instance is the other side here. A pipe is server
+		// memory shared by every session, a job runs after the statement that
+		// created it, and both are committed by the package rather than by the
+		// transaction around it.
+		construct: "Oracle server control package",
+		reach: "changes instance state that outlives the statement, " +
+			"which no transaction undoes",
+		match:    packageCallAnyOf("DBMS_PIPE", "DBMS_SCHEDULER", "DBMS_JOB"),
 		dialects: []string{platform.Oracle},
 	},
 	{
@@ -606,14 +619,25 @@ func matchesKeywordSequence(tokens []lexer.Token, keywords []string) bool {
 // the lexer reports a quoted identifier as a string token, so a keyword match
 // sees nothing. [callableName] already unquotes for call position and is the
 // same reading here.
-func containsNameAnyOf(names ...string) tokenMatcher {
+// packageCallAnyOf matches a name used to call something: qualified, as
+// `UTL_HTTP.REQUEST(...)`, or applied directly, as `HTTPURITYPE('http://...')`.
+//
+// The call shape is the rule rather than the bare name, because these names
+// are ordinary identifiers everywhere else. A column named `UTL_HTTP` makes
+// `SELECT UTL_HTTP IS NULL FROM endpoints` an ordinary read, and refusing it
+// costs the author an assertion they are entitled to write.
+func packageCallAnyOf(names ...string) tokenMatcher {
 	return func(ctx scanContext) bool {
-		for _, token := range ctx.tokens {
+		for i, token := range ctx.tokens {
 			value, ok := callableName(token)
-			if !ok {
+			if !ok || !slices.Contains(names, value) {
 				continue
 			}
-			if slices.Contains(names, value) {
+			if i+1 >= len(ctx.tokens) {
+				continue
+			}
+			next := ctx.tokens[i+1]
+			if next.MatchOperatorValue(".") || next.MatchOperatorValue("(") {
 				return true
 			}
 		}
@@ -767,6 +791,9 @@ func PostgresControlFunctions() []string {
 		"PG_STAT_RESET", "PG_STAT_RESET_SHARED", "PG_STAT_RESET_SLRU",
 		"PG_STAT_RESET_SINGLE_TABLE_COUNTERS", "PG_STAT_RESET_SINGLE_FUNCTION_COUNTERS",
 		"PG_STAT_RESET_REPLICATION_SLOT", "PG_STAT_RESET_SUBSCRIPTION_STATS",
+		// The backend writes its memory contexts to the server log, which no
+		// rollback retracts and no caller can read back.
+		"PG_LOG_BACKEND_MEMORY_CONTEXTS",
 		// A nontransactional logical message survives the rollback and reaches
 		// whatever is decoding the write-ahead log.
 		"PG_LOGICAL_EMIT_MESSAGE",
@@ -788,7 +815,7 @@ func PostgresReplicationFunctions() []string {
 	return []string{
 		"PG_COPY_LOGICAL_REPLICATION_SLOT", "PG_COPY_PHYSICAL_REPLICATION_SLOT",
 		"PG_CREATE_LOGICAL_REPLICATION_SLOT", "PG_CREATE_PHYSICAL_REPLICATION_SLOT",
-		"PG_DROP_REPLICATION_SLOT",
+		"PG_DROP_REPLICATION_SLOT", "PG_REPLICATION_SLOT_ADVANCE",
 		"PG_REPLICATION_ORIGIN_ADVANCE", "PG_REPLICATION_ORIGIN_CREATE",
 		"PG_REPLICATION_ORIGIN_DROP",
 		"PG_REPLICATION_ORIGIN_SESSION_RESET", "PG_REPLICATION_ORIGIN_SESSION_SETUP",
@@ -974,11 +1001,137 @@ func SignificantTokens(statement string, backslashEscapes bool, dialect string) 
 	for {
 		token := lexr.NextToken()
 		if token.Type == lexer.TokenEOF {
-			return tokens
+			return foldUnicodeEscapedIdentifiers(tokens)
 		}
 		if token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment {
 			continue
 		}
 		tokens = append(tokens, token)
 	}
+}
+
+// foldUnicodeEscapedIdentifiers rewrites the `U&"..."` spelling of an
+// identifier into the name it stands for, so a matcher reads the name the
+// server will resolve rather than the characters the author typed.
+//
+// PostgreSQL decodes `U&"pg\005Fread\005Ffile"` to `pg_read_file` before it
+// looks anything up, so a catalog that compares the undecoded text refuses the
+// plain spelling and runs the escaped one. The escape character is `\` unless
+// a `UESCAPE 'c'` clause names another.
+//
+// The fold requires the three tokens to be adjacent, which is the same rule
+// the server applies: with a space between them, `u & "mask"` is a bitwise
+// operator over two columns. It runs for every dialect, because a token that
+// arrives double-quoted is already read as a possible callable name for every
+// dialect -- see [callableName] -- and a name this misses is a construct that
+// executes.
+func foldUnicodeEscapedIdentifiers(tokens []lexer.Token) []lexer.Token {
+	folded := make([]lexer.Token, 0, len(tokens))
+	for i := 0; i < len(tokens); i++ {
+		name, consumed, ok := unicodeEscapedIdentifier(tokens[i:])
+		if !ok {
+			folded = append(folded, tokens[i])
+			continue
+		}
+		folded = append(folded, lexer.Token{
+			Type:  lexer.TokenIdentifier,
+			Value: name,
+			Start: tokens[i].Start,
+			End:   tokens[i+consumed-1].End,
+		})
+		i += consumed - 1
+	}
+	return folded
+}
+
+// unicodeEscapedIdentifier reads a `U&"..."` identifier off the front of
+// tokens, returning the decoded name and how many tokens it spans.
+func unicodeEscapedIdentifier(tokens []lexer.Token) (string, int, bool) {
+	if len(tokens) < 3 {
+		return "", 0, false
+	}
+	introducer, ampersand, quoted := tokens[0], tokens[1], tokens[2]
+	if introducer.Type != lexer.TokenIdentifier || !strings.EqualFold(introducer.Value, "U") {
+		return "", 0, false
+	}
+	if !ampersand.MatchOperatorValue("&") || quoted.Type != lexer.TokenString {
+		return "", 0, false
+	}
+	if !strings.HasPrefix(quoted.Value, `"`) {
+		return "", 0, false
+	}
+	if introducer.End != ampersand.Start || ampersand.End != quoted.Start {
+		return "", 0, false
+	}
+	escape, consumed := byte('\\'), 3
+	if named, ok := unicodeEscapeCharacter(tokens[3:]); ok {
+		escape, consumed = named, 5
+	}
+	return decodeUnicodeEscapes(strings.Trim(quoted.Value, `"`), escape), consumed, true
+}
+
+// unicodeEscapeCharacter reads the escape character a `UESCAPE 'c'` clause
+// names. A clause that names anything but a single character is left alone:
+// the server refuses it, and guessing what it meant would decode a name it
+// never resolves.
+func unicodeEscapeCharacter(tokens []lexer.Token) (byte, bool) {
+	if len(tokens) < 2 || tokens[0].Type != lexer.TokenIdentifier ||
+		!strings.EqualFold(tokens[0].Value, "UESCAPE") {
+		return 0, false
+	}
+	value := strings.Trim(tokens[1].Value, `'`)
+	if tokens[1].Type != lexer.TokenString || len(value) != 1 {
+		return 0, false
+	}
+	return value[0], true
+}
+
+// decodeUnicodeEscapes expands the escape sequences a `U&` identifier carries:
+// a doubled escape character stands for itself, four hexadecimal digits name a
+// code point, and a `+` before six digits names one outside the basic plane.
+//
+// A sequence the server would refuse is copied through rather than repaired,
+// so the name this returns is either the one the server resolves or one it
+// never reaches.
+func decodeUnicodeEscapes(value string, escape byte) string {
+	var out strings.Builder
+	for i := 0; i < len(value); {
+		if value[i] != escape {
+			out.WriteByte(value[i])
+			i++
+			continue
+		}
+		if i+1 < len(value) && value[i+1] == escape {
+			out.WriteByte(escape)
+			i += 2
+			continue
+		}
+		point, width, ok := unicodeEscapeCodePoint(value[i+1:])
+		if !ok {
+			out.WriteByte(value[i])
+			i++
+			continue
+		}
+		out.WriteRune(point)
+		i += 1 + width
+	}
+	return out.String()
+}
+
+// unicodeEscapeCodePoint reads the digits behind an escape character and
+// returns the code point they name, with the number of bytes they occupy.
+func unicodeEscapeCodePoint(value string) (rune, int, bool) {
+	digits, width := 4, 4
+	if strings.HasPrefix(value, "+") {
+		digits, width = 6, 7
+	}
+	hex := strings.TrimPrefix(value, "+")
+	if len(hex) < digits {
+		return 0, 0, false
+	}
+	point, err := strconv.ParseUint(hex[:digits], 16, 32)
+	if err != nil || point > unicode.MaxRune {
+		return 0, 0, false
+	}
+	return rune(point), width, true
 }

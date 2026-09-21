@@ -152,10 +152,8 @@ func TestValidateCheckAssertionStatically_AcceptsAnOrdinaryPredicate(t *testing.
 	}
 }
 
-// The two constructs the review found after the file-write rule was written,
-// and the reason the recognition moved to one place: each is a SELECT that
-// touches something no transaction owns, and each was outside the list this
-// file first carried.
+// Each row is a SELECT that touches something no transaction owns, which is
+// why the recognition sits in one catalog rather than in a list per caller.
 //
 // dblink runs its statement through a second connection, which commits on its
 // own; the read-only transaction binds the local one. And under
@@ -498,9 +496,8 @@ func TestValidateCheckAssertionStatically_AcceptsABareDashCommentOnPostgres(t *t
 	c.Assert(err, qt.IsNil)
 }
 
-// Three families the review found after the first control-function pass, each
-// a SELECT whose effect no session undoes: statistics cleared for good, a
-// directory on the host listed, a request sent from the server.
+// Every row is a SELECT whose effect no session undoes: statistics cleared for
+// good, a directory on the host listed, a request sent from the server.
 func TestValidateCheckAssertionStatically_RefusesMoreThanTheFirstList(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -591,9 +588,9 @@ func TestValidateCheckAssertionStatically_AcceptsTheReadsBesideThem(t *testing.T
 	}
 }
 
-// Two more the review found in the same class: a ClickHouse pool variant of
-// the executable table function, and adminpack, which ships with PostgreSQL
-// and writes files on the host from a scalar SELECT.
+// The same class reached by a spelling that is easy to leave out: ClickHouse's
+// pool variant of the executable table function, and adminpack, which ships
+// with PostgreSQL and writes files on the host from a scalar SELECT.
 func TestValidateCheckAssertionStatically_RefusesThePoolAndTheFileWriters(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -681,4 +678,160 @@ func TestValidateCheckAssertionStatically_AcceptsThePackageNameAsData(t *testing
 		`SELECT COUNT(*) = 0 FROM audit WHERE note = 'UTL_HTTP'`, "oracle", "")
 
 	c.Assert(err, qt.IsNil)
+}
+
+// A name the server resolves is the name this refuses, whatever spelling
+// reaches it. PostgreSQL decodes a `U&"..."` identifier before it looks the
+// function up, so a catalog that compares the characters the author typed
+// refuses the plain spelling and runs the escaped one.
+func TestValidateCheckAssertionStatically_RefusesUnicodeEscapedNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "the default escape character",
+			assertion: `SELECT U&"pg\005Fread\005Ffile"('/etc/passwd') IS NOT NULL`,
+			wantErr:   `check assertion must not use pg_read_file, which .*`,
+		},
+		{
+			name:      "an escape character the clause names",
+			assertion: `SELECT U&"pg!005Fread!005Ffile" UESCAPE '!' ('/etc/passwd') IS NOT NULL`,
+			wantErr:   `check assertion must not use pg_read_file, which .*`,
+		},
+		{
+			name:      "a code point written in six digits",
+			assertion: `SELECT U&"pg\+00005Fterminate\+00005Fbackend"(1)`,
+			wantErr:   `check assertion must not use PostgreSQL server control function, which .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "postgres", ""),
+				qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// The control the decoding needs. `U&` introduces an identifier only when it
+// sits against the quote, so a bitwise operator over a column named `u` stays
+// an ordinary read, and a doubled escape character stands for itself rather
+// than opening a sequence.
+func TestValidateCheckAssertionStatically_AcceptsWhatIsNotAnEscapedName(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "a bitwise operator between two columns",
+			assertion: `SELECT u & "pg_read_file" > 0 FROM flags`,
+		},
+		{
+			name:      "a doubled escape character names no code point",
+			assertion: `SELECT U&"pg\\005Fread" IS NOT NULL FROM names`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "postgres", ""), qt.IsNil)
+		})
+	}
+}
+
+// A package name is refused where it calls something, and left alone where it
+// is an ordinary identifier. Oracle reaches the network and the instance
+// through packages whose names a table is free to reuse as a column.
+func TestValidateCheckAssertionStatically_RefusesOraclePackageCalls(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "a pipe removed from the instance",
+			assertion: `SELECT CASE DBMS_PIPE.REMOVE_PIPE('APP_EVENTS') WHEN 0 THEN 1 ELSE 2 END FROM dual`,
+			wantErr:   `check assertion must not use Oracle server control package, which .*`,
+		},
+		{
+			name:      "a job that runs after this statement",
+			assertion: `SELECT 1 FROM dual WHERE DBMS_SCHEDULER.RUNNING_JOB_COUNT > 0`,
+			wantErr:   `check assertion must not use Oracle server control package, which .*`,
+		},
+		{
+			name:      "a request sent from the server",
+			assertion: `SELECT UTL_HTTP.REQUEST('http://example.com') IS NOT NULL FROM dual`,
+			wantErr:   `check assertion must not use Oracle network package, which .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "oracle", ""),
+				qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// The control the call shape needs. A column carrying a package's name is an
+// ordinary read, and refusing it would cost the author an assertion they are
+// entitled to write.
+func TestValidateCheckAssertionStatically_AcceptsAPackageNameAsAColumn(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "a column named after a network package",
+			assertion: `SELECT count(*) FROM endpoints WHERE UTL_HTTP IS NOT NULL`,
+		},
+		{
+			name:      "a column named after a control package",
+			assertion: `SELECT count(*) FROM queues WHERE DBMS_PIPE IS NOT NULL`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "oracle", ""), qt.IsNil)
+		})
+	}
+}
+
+// Server control is not only the functions that stop a backend: a slot moved
+// forward loses write-ahead log a consumer had not read, and a backend told to
+// log its memory contexts writes to the server log, which no rollback retracts.
+func TestValidateCheckAssertionStatically_RefusesMoreServerControl(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "a replication slot advanced",
+			assertion: `SELECT end_lsn IS NOT NULL FROM pg_replication_slot_advance('consumer', '0/5000000')`,
+		},
+		{
+			name:      "the backend's memory contexts logged",
+			assertion: `SELECT pg_log_backend_memory_contexts(pg_backend_pid())`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "postgres", ""),
+				qt.ErrorMatches, `check assertion must not use PostgreSQL server control function, which .*`)
+		})
+	}
 }

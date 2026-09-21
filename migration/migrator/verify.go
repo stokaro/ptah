@@ -225,22 +225,36 @@ func verifyOneCheck(
 // a report that says verified over one of those is a report about a database
 // nobody proved was left alone.
 func sessionFailure(sessionErr, assertionErr error) error {
-	if sessionErr == nil {
+	return withoutJoinedError(sessionErr, assertionErr)
+}
+
+// withoutJoinedError rebuilds err without the branches that report removed,
+// descending into every join it meets.
+//
+// The descent is the point. The wrapper joins as it unwinds, so an assertion
+// error that met a failing rollback arrives as a join inside another join, and
+// removing whole branches that report the assertion error would take the
+// rollback failure beside it. What is removed is a leaf, and a join keeps
+// whatever its other branches carry.
+func withoutJoinedError(err, removed error) error {
+	if err == nil {
 		return nil
 	}
-	joined, isJoined := sessionErr.(interface{ Unwrap() []error })
+	joined, isJoined := err.(interface{ Unwrap() []error })
 	if !isJoined {
-		if assertionErr != nil && errors.Is(sessionErr, assertionErr) {
+		if removed != nil && errors.Is(err, removed) {
 			return nil
 		}
-		return sessionErr
+		return err
 	}
-	rest := make([]error, 0, 1)
-	for _, err := range joined.Unwrap() {
-		if assertionErr != nil && errors.Is(err, assertionErr) {
+	branches := joined.Unwrap()
+	rest := make([]error, 0, len(branches))
+	for _, branch := range branches {
+		kept := withoutJoinedError(branch, removed)
+		if kept == nil {
 			continue
 		}
-		rest = append(rest, err)
+		rest = append(rest, kept)
 	}
 	return errors.Join(rest...)
 }
