@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,7 +101,7 @@ func serverVersionOf(c *qt.C, url string) string {
 // version the operator wrote is resolved against that (stokaro/ptah#3420).
 func TestMigrationsLintResolvesTheDeclaredVersionAgainstTheConnectedProductLive(t *testing.T) {
 	c := qt.New(t)
-	devURL := mySQLSchemeFor(c, dbtarget.URL(c, dbtarget.MariaDBAdmin))
+	devURL := mariaDBScratchDevURL(c, t, "ptah_lint_resolves_dev")
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
@@ -128,7 +129,7 @@ func TestMigrationsLintResolvesTheDeclaredVersionAgainstTheConnectedProductLive(
 // server's ladder, which is why this row uses a banner.
 func TestMigrationsLintRefusesADeclaredVersionTheServerDoesNotOwnLive(t *testing.T) {
 	c := qt.New(t)
-	devURL := mySQLSchemeFor(c, dbtarget.URL(c, dbtarget.MariaDBAdmin))
+	devURL := mariaDBScratchDevURL(c, t, "ptah_lint_refuses_dev")
 	dir := writeServerVersionLintDir(c, t)
 
 	_, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
@@ -163,4 +164,36 @@ func mySQLSchemeFor(c *qt.C, url string) string {
 		return url
 	}
 	return "mysql://" + rewritten
+}
+
+// mariaDBScratchDevURL addresses a MariaDB server, the way a MySQL client
+// does, on a database of this test's own.
+//
+// A lint replay cleans the database it plans against, so pointing it at a
+// shared one would delete whatever another package is in the middle of, and
+// pointing it at the administrative account's own database is refused outright
+// -- `mysql` is protected. The scratch database is created and dropped through
+// the administrative account, which is also the account the URL carries,
+// because the unprivileged test user is granted nothing outside its own
+// database.
+func mariaDBScratchDevURL(c *qt.C, t *testing.T, name string) string {
+	c.Helper()
+	admin, err := sql.Open("mysql", dbtarget.DriverDSN(c, dbtarget.MariaDBAdmin))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
+	dropMySQLDatabase(c, c.Context(), admin, name)
+	createMySQLDatabase(c, c.Context(), admin, name)
+	t.Cleanup(func() { dropMySQLDatabase(c, context.Background(), admin, name) })
+	return mySQLSchemeFor(c, databaseInURL(c, dbtarget.URL(c, dbtarget.MariaDBAdmin), name))
+}
+
+// databaseInURL renames the database a URL addresses, keeping the scheme, the
+// credentials and the host exactly as the registry handed them over. The
+// address is a driver DSN wearing a scheme, so its last path segment is the
+// database and url.Parse cannot read the `tcp(host:port)` host beside it.
+func databaseInURL(c *qt.C, rawURL, name string) string {
+	c.Helper()
+	cut := strings.LastIndex(rawURL, "/")
+	c.Assert(cut > 0, qt.IsTrue)
+	return rawURL[:cut+1] + name
 }
