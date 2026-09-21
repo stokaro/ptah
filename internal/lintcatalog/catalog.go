@@ -247,6 +247,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"ON102": {
 		Summary: "the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse",
 	},
+	"ON103": {
+		Summary: "a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting",
+	},
 	"DS108": {
 		Summary: "TRUNCATE deletes every row in the table",
 	},

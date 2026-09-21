@@ -53,7 +53,7 @@ import (
 // checks that the statement asked the SERVER to decide, which is a stronger
 // answer and a shorter list.
 func onlineRules() []Rule {
-	return []Rule{postgresOnlineRule(), mysqlOnlineRule()}
+	return []Rule{postgresOnlineRule(), mysqlOnlineRule(), postgresOnlineTransactionRule()}
 }
 
 // onlineModeDialects are the dialects the online mode covers, in the order a
@@ -134,6 +134,82 @@ func mysqlOnlineRule() Rule {
 	}
 	rule.AppliesToDown = true
 	return rule
+}
+
+// postgresOnlineTransactionRule reports a transactional file whose statements
+// are individually online and together are not.
+//
+// PostgreSQL holds a lock until the transaction commits, not until the
+// statement ends. So an ADD COLUMN that takes ACCESS EXCLUSIVE for an instant
+// holds it for the rest of the file, and a VALIDATE CONSTRAINT after it scans
+// the whole table with every reader and writer waiting -- each statement
+// proven, the migration blocking for the length of the scan. Classifying
+// statements one at a time cannot see it, which is why this reads the file.
+//
+// The remedy is in the message because it is the shape the planner already
+// generates: the constraint pair belongs in a migration of its own, marked
+// no_transaction, where each statement commits and the validation takes the
+// weaker lock it was written for.
+func postgresOnlineTransactionRule() Rule {
+	return Rule{
+		Code:     "ON103",
+		Title:    "an online statement's lock is held across a scan",
+		Severity: SeverityError,
+		Dialects: []string{"postgres"},
+		CheckFile: func(file *File) []Finding {
+			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
+				return nil
+			}
+			return postgresHeldLockFindings(file)
+		},
+	}
+}
+
+// postgresHeldLockFindings reports each validation that runs behind a lock the
+// same transaction already took.
+func postgresHeldLockFindings(file *File) []Finding {
+	var findings []Finding
+	locked := false
+	for index, stmt := range file.Statements {
+		switch {
+		case postgresStatementValidatesAConstraint(stmt.Words):
+			if !locked {
+				continue
+			}
+			findings = append(findings, Finding{
+				Rule:     "ON103",
+				Title:    "an online statement's lock is held across a scan",
+				Severity: SeverityError,
+				File:     file.Path,
+				Line:     stmt.Line,
+				Message: "an earlier statement in this migration took an ACCESS EXCLUSIVE lock, and " +
+					"PostgreSQL holds it until the transaction commits, so this validation scans the " +
+					"table with every reader and writer waiting; put the constraint and its validation " +
+					"in a migration of their own marked no_transaction",
+				Context: statementFindingContext(index),
+			})
+		case postgresStatementTakesAccessExclusive(stmt.Words):
+			locked = true
+		}
+	}
+	return findings
+}
+
+// postgresStatementValidatesAConstraint reports the one allowlisted statement
+// that scans the table.
+func postgresStatementValidatesAConstraint(words []string) bool {
+	return isAlterTable(words) && hasWordSeq(words, "VALIDATE", "CONSTRAINT")
+}
+
+// postgresStatementTakesAccessExclusive reports a statement that takes the
+// lock PostgreSQL keeps to commit.
+//
+// Every ALTER TABLE takes it, including the catalog-only forms this mode
+// proves: what makes them online is that they hold it for an instant, which
+// stops being true once something long-running follows them in the same
+// transaction.
+func postgresStatementTakesAccessExclusive(words []string) bool {
+	return isAlterTable(words) && !postgresStatementValidatesAConstraint(words)
 }
 
 // postgresStatementIsOnline reports whether the statement belongs to the set
@@ -236,14 +312,7 @@ func postgresAlterClauseAt(words []string, index int, word string) (online, reco
 func postgresAddClauseIsOnline(words []string, index int) bool {
 	switch {
 	case postgresWordAfter(words, index, "COLUMN"):
-		// A column addition is a catalog edit on PostgreSQL 11 and newer,
-		// including one with a non-volatile default. A column that arrives
-		// with a constraint is the constraint's question, not the column's.
-		return !hasWordSeq(words[index:], "NOT", "NULL") &&
-			!hasWordSeq(words[index:], "PRIMARY", "KEY") &&
-			!slices.Contains(words[index:], "UNIQUE") &&
-			!slices.Contains(words[index:], "REFERENCES") &&
-			!slices.Contains(words[index:], "CHECK")
+		return postgresAddColumnIsCatalogOnly(words[index:])
 	case postgresWordAfter(words, index, "CONSTRAINT"), postgresWordAfter(words, index, "CHECK"),
 		postgresWordAfter(words, index, "FOREIGN"):
 		// A catalog edit only when the constraint is one whose cost is a scan
@@ -264,6 +333,42 @@ func postgresConstraintDeclinesItsScan(words []string) bool {
 		return false
 	}
 	return slices.Contains(words, "CHECK") || hasWordSeq(words, "FOREIGN", "KEY")
+}
+
+// postgresAddColumnIsCatalogOnly reports whether an ADD COLUMN clause edits
+// the catalog and leaves the rows alone.
+//
+// PostgreSQL 11 and newer store a column's default in the catalog and read it
+// for the rows that predate it, so a plain addition with a constant default is
+// free. Three shapes are not, and each rewrites every row under ACCESS
+// EXCLUSIVE:
+//
+//   - a constraint, which is the constraint's cost rather than the column's;
+//   - GENERATED, whether an identity column or a stored generated one, which
+//     computes a value per row;
+//   - a default that is not a constant, because a volatile expression has to
+//     be evaluated per row. A call is the recognizable shape, so a default
+//     carrying one is refused rather than judged: `now()` would be safe and
+//     `random()` would not, and this reads the text.
+func postgresAddColumnIsCatalogOnly(words []string) bool {
+	if hasWordSeq(words, "NOT", "NULL") || hasWordSeq(words, "PRIMARY", "KEY") ||
+		slices.Contains(words, "UNIQUE") || slices.Contains(words, "REFERENCES") ||
+		slices.Contains(words, "CHECK") || slices.Contains(words, "GENERATED") {
+		return false
+	}
+	return postgresDefaultIsConstant(words)
+}
+
+// postgresDefaultIsConstant reports whether the DEFAULT this clause carries,
+// if any, is a value rather than something the server has to call.
+func postgresDefaultIsConstant(words []string) bool {
+	index := slices.Index(words, "DEFAULT")
+	if index < 0 {
+		return true
+	}
+	// A call is a name followed by an opening parenthesis, which is what
+	// separates `DEFAULT 0` and `DEFAULT 'free'` from `DEFAULT random()`.
+	return !slices.Contains(words[index:], "(")
 }
 
 // postgresAlterColumnRewrites reports whether an ALTER COLUMN clause names a

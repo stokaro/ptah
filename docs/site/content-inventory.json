@@ -6,8 +6,8 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 145,
-    "authored": 142,
+    "pages": 146,
+    "authored": 143,
     "generated": 3,
     "byType": {
       "concept": 16,
@@ -4697,8 +4697,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5854,
-      "sourceBytes": 38931
+      "visibleWords": 5884,
+      "sourceBytes": 39118
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6991,8 +6991,8 @@
       "inboundLinks": [
         "/versioned/lint/"
       ],
-      "visibleWords": 525,
-      "sourceBytes": 3606
+      "visibleWords": 571,
+      "sourceBytes": 3896
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

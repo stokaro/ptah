@@ -73,3 +73,8 @@ statement the mode calls online can therefore take an application down for as
 long as somebody else's `SELECT` runs. Set `--lock-timeout`, or
 `migration.lock_timeout` in the project config, and a wait becomes a failed
 statement somebody can retry.
+
+The requirement lifts where nothing can take a timeout: a run under
+`--tx-mode none`, or a directory whose every migration opted out of the
+transaction, because the migrator refuses a timeout on those outright and
+requiring one would leave the configuration with no successful invocation.

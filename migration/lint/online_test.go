@@ -1,11 +1,15 @@
 package lint_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/migrationlintreport"
 	"ptah.run/migration/lint"
 )
 
@@ -213,4 +217,153 @@ func TestOnlineMode_GateIsUnchangedWithoutTheMode(t *testing.T) {
 	cfg := &lint.Config{Dialect: "postgres"}
 
 	c.Assert(cfg.GateFamilies(), qt.DeepEquals, []string{"DS"})
+}
+
+// A column addition is free only when the catalog can answer for the rows that
+// already exist. A generated column and a default the server has to call are
+// computed per row, under the lock the ALTER took.
+func TestOnlineMode_PostgresReportsARewritingColumnAddition(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "identity column", sql: "ALTER TABLE users ADD COLUMN n int GENERATED ALWAYS AS IDENTITY;"},
+		{name: "stored generated column", sql: "ALTER TABLE users ADD COLUMN n int GENERATED ALWAYS AS (id * 2) STORED;"},
+		{name: "volatile default", sql: "ALTER TABLE users ADD COLUMN token text DEFAULT random()::text;"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.DeepEquals, []string{"ON101"})
+		})
+	}
+}
+
+// The control: a constant default is still catalog-only, so the rule above did
+// not take the ordinary addition with it.
+func TestOnlineMode_PostgresProvesAConstantDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "a text constant", sql: "ALTER TABLE users ADD COLUMN tier text DEFAULT 'free';"},
+		{name: "a number", sql: "ALTER TABLE users ADD COLUMN score int DEFAULT 0;"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.HasLen, 0)
+		})
+	}
+}
+
+// PostgreSQL holds a lock until the transaction commits, so two statements
+// each proven online are not an online migration: the validation's scan runs
+// behind the ACCESS EXCLUSIVE lock the addition took.
+func TestOnlineMode_PostgresReportsALockHeldAcrossAScan(t *testing.T) {
+	c := qt.New(t)
+	sql := "ALTER TABLE users ADD COLUMN tier text;\n" +
+		"ALTER TABLE users ADD CONSTRAINT ck CHECK (id > 0) NOT VALID;\n" +
+		"ALTER TABLE users VALIDATE CONSTRAINT ck;\n"
+
+	c.Assert(onlineRuleCodes(c, "postgres", sql), qt.DeepEquals, []string{"ON103"})
+}
+
+// Two controls for it. A file that opted out of the transaction commits each
+// statement, so the validation takes only its own weaker lock; and a
+// validation with nothing before it holds nothing either.
+func TestOnlineMode_PostgresAcceptsAValidationThatHoldsNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "the pair in a migration of its own",
+			sql: "-- +ptah no_transaction\n" +
+				"ALTER TABLE users ADD CONSTRAINT ck CHECK (id > 0) NOT VALID;\n" +
+				"ALTER TABLE users VALIDATE CONSTRAINT ck;\n",
+		},
+		{
+			name: "a validation with nothing before it",
+			sql:  "ALTER TABLE users VALIDATE CONSTRAINT ck;\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.HasLen, 0)
+		})
+	}
+}
+
+// A policy that requires the mode and then takes its findings away is a policy
+// that does not require the mode. Each of these would make the stated
+// guarantee advisory without saying so.
+func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{
+			name:    "the family disabled",
+			config:  "dialect: postgres\nonline: require\ndisabled-rules: [ON]\n",
+			wantErr: `.*disabled-rules names "ON".*`,
+		},
+		{
+			name:    "a rule dropped below blocking",
+			config:  "dialect: postgres\nonline: require\nrules:\n  ON101:\n    severity: warning\n",
+			wantErr: `.*rules.ON101 sets severity "warning".*`,
+		},
+		{
+			name:    "paths excluded from it",
+			config:  "dialect: postgres\nonline: require\nrules:\n  ON101:\n    exclude: [\"legacy/*\"]\n",
+			wantErr: `.*rules.ON101 excludes paths.*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			path := filepath.Join(dir, ".ptah-lint.yaml")
+			c.Assert(os.WriteFile(path, []byte(test.config), 0o600), qt.IsNil)
+
+			_, err := lint.LoadConfig(path)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// The standalone lint and the apply gate read the same policy, or the two
+// disagree about the same directory: a `migrations lint` that reported a
+// blocking migration clean and a `migrations up` that refused it is a pair an
+// operator cannot act on.
+func TestOnlineMode_StandaloneLintHonorsTheSameSelection(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, ".ptah-lint.yaml"),
+		[]byte("dialect: postgres\nonline: require\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_x.up.sql"),
+		[]byte("CREATE INDEX idx ON users (email);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_x.down.sql"),
+		[]byte("-- +ptah no_transaction\nDROP INDEX CONCURRENTLY idx;\n"), 0o600), qt.IsNil)
+
+	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
+		Dir:     dir,
+		FailOn:  migrationlintreport.FailOnError,
+		Changed: migrationlintreport.ChangedOptions{Dir: true},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(slices.ContainsFunc(report.Findings, func(finding lint.Finding) bool {
+		return finding.Rule == "ON101"
+	}), qt.IsTrue, qt.Commentf("findings: %v", rulesOf(report.Findings)))
 }

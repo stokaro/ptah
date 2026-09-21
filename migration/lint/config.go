@@ -183,6 +183,9 @@ func validateConfig(cfg *Config) error {
 	if err := validateOnlineConfig(cfg); err != nil {
 		return err
 	}
+	if err := validateOnlineSelectors(cfg); err != nil {
+		return err
+	}
 	return validateRuleConfigs(cfg.Rules)
 }
 
@@ -210,6 +213,51 @@ func validateOnlineConfig(cfg *Config) error {
 		return fmt.Errorf("online: %w", err)
 	}
 	return nil
+}
+
+// validateOnlineSelectors refuses a policy that requires the mode and then
+// takes its findings away.
+//
+// Adding ON to the gate is not enough on its own: the same file can disable
+// the family, drop its severity below blocking, or exclude the paths it would
+// have fired on, and each of those turns a stated guarantee into advice
+// without saying so. A policy that wants the findings reported and not blocked
+// is a policy that does not require the mode.
+func validateOnlineSelectors(cfg *Config) error {
+	if !cfg.RequiresOnline() {
+		return nil
+	}
+	for _, selector := range cfg.DisabledRules {
+		if selectorTouchesOnline(selector) {
+			return fmt.Errorf(
+				"online: disabled-rules names %q while online: require is set, which would report "+
+					"nothing and refuse nothing", selector)
+		}
+	}
+	for _, code := range slices.Sorted(maps.Keys(cfg.Rules)) {
+		if !selectorTouchesOnline(code) {
+			continue
+		}
+		rule := cfg.Rules[code]
+		if rule.Severity != "" && Severity(rule.Severity) != SeverityError {
+			return fmt.Errorf(
+				"online: rules.%s sets severity %q while online: require is set; the mode's findings "+
+					"refuse the apply, so a lower severity would make the guarantee advisory",
+				code, rule.Severity)
+		}
+		if len(rule.Exclude) > 0 {
+			return fmt.Errorf(
+				"online: rules.%s excludes paths while online: require is set; a migration the mode "+
+					"does not read is one it cannot prove", code)
+		}
+	}
+	return nil
+}
+
+// selectorTouchesOnline reports whether a rule selector names the ON family or
+// a rule in it.
+func selectorTouchesOnline(selector string) bool {
+	return strings.HasPrefix(selector, OnlineFamily)
 }
 
 // validateGateConfig refuses a gate that names no family and a family no

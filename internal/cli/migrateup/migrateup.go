@@ -521,7 +521,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)
-	if err := requireLockTimeoutForOnlineMode(lintPolicy, conn.Info().Dialect, timeouts, migrationsFS); err != nil {
+	if err := requireLockTimeoutForOnlineMode(
+		lintPolicy, conn.Info().Dialect, timeouts, settings.txMode, migrationsFS,
+	); err != nil {
 		return err
 	}
 
@@ -886,9 +888,16 @@ func requireLockTimeoutForOnlineMode(
 	policy migrationlintgate.Policy,
 	dialect string,
 	timeouts migrationfile.Timeouts,
+	runTxMode migrator.MigrationTxMode,
 	fsys fs.FS,
 ) error {
 	if !policy.RequiresOnline() || !platform.IsPostgresFamily(dialect) || timeouts.HasLockTimeout {
+		return nil
+	}
+	if runTxMode == migrator.MigrationTxModeNone {
+		// The run itself opted every file out, so no migration can take a
+		// timeout and requiring one would leave this configuration with no
+		// successful invocation at all.
 		return nil
 	}
 	transactional, err := directoryHasTransactionalMigration(fsys)
@@ -920,7 +929,12 @@ func requireLockTimeoutForOnlineMode(
 // more files than the run will apply can only make the requirement stricter,
 // which is the safe direction for a mode that exists to refuse.
 func directoryHasTransactionalMigration(fsys fs.FS) (bool, error) {
-	names, err := fs.Glob(fsys, "*.up.sql")
+	// Every `.sql` file rather than the `*.up.sql` the Ptah format uses: an
+	// Atlas directory names its files `version.sql`, and a glob that matched
+	// none of them would report a directory made entirely of transactional
+	// migrations as needing no timeout. Reading a down file too can only make
+	// the requirement stricter, which is the safe direction here.
+	names, err := fs.Glob(fsys, "*.sql")
 	if err != nil {
 		return false, fmt.Errorf("read migrations for the online-mode lock timeout check: %w", err)
 	}
