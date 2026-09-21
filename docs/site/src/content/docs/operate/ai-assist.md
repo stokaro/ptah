@@ -102,6 +102,33 @@ Interactive commands begin with `/`:
 /exit      leave; Ctrl-D does the same
 ```
 
+At a terminal the prompt is an edited line:
+
+| Key | What it does |
+| --- | --- |
+| Up, Down | Walk the questions asked in this session |
+| Left, Right | Move the cursor |
+| Alt with Left or Right | Move by word |
+| Home, End | Jump to the start or the end of the line |
+| Backspace, Delete | Remove a character |
+| Ctrl-W, Ctrl-U | Delete the word before the cursor, or the line |
+| Tab | Complete a directive, where one matches |
+| Ctrl-L | Clear the screen |
+
+A block pasted from the clipboard arrives as one question, so a schema or an
+error message keeps its line breaks instead of being asked a line at a time.
+
+The history lives in the session and is not written to disk. The conversation
+itself is saved under `.ptah/sessions` unless `--ephemeral` is passed, and a
+second copy of what was typed would not honor that flag.
+
+Reading from a pipe or a file keeps the plain behavior, so a scripted run
+behaves the same as it always did:
+
+```bash
+printf 'what migrations are there?\n/exit\n' | ptah assist
+```
+
 When a patch requires approval, Ptah shows the artifact, paths, and exact digest
 before asking whether to allow it once or for the session. The one-shot
 `--non-interactive` mode refuses an operation that needs approval instead of

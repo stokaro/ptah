@@ -1,7 +1,6 @@
 package assist
 
 import (
-	"bufio"
 	"fmt"
 	"strings"
 
@@ -34,7 +33,12 @@ const interactiveHelp = `  /tools     the Ptah tools this session can reach
   /session   where this conversation is being saved
   /trace     show or hide the tool trace
   /help      this list
-  /exit      leave (Ctrl-D does the same)`
+  /exit      leave (Ctrl-D does the same)
+
+At a terminal the line is edited: Up and Down walk the questions you have
+already asked, Left and Right move the cursor, Alt with them moves by word,
+Home and End jump, Ctrl-W deletes a word and Ctrl-U the line, and Tab
+completes a directive. A pasted block arrives as one question.`
 
 // registerChatFlags adds the interactive surface's flags to the shared agent
 // ones.
@@ -64,11 +68,14 @@ func runChat(cmd *cobra.Command, opts *chatOptions) error {
 	}
 	defer cleanup()
 
-	// One reader for the whole surface: the approval prompt and the question
-	// prompt read the same stdin, and two buffered readers would each hold a
-	// partial line, so the second would consume what the first was waiting for.
-	reader := bufio.NewReader(cmd.InOrStdin())
-	tools, err := connectTools(cmd, session, terminalApprover(cmd, reader))
+	// One prompter for the whole surface: the approval prompt and the question
+	// prompt read the same stdin, and two readers would each hold a partial
+	// line, so the second would consume what the first was waiting for. At a
+	// terminal it edits the line; on a pipe it reads one the way it always
+	// did. See prompt.go.
+	input := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+	defer input.close() //nolint:errcheck // restoring a terminal that was never raw cannot fail
+	tools, err := connectTools(cmd, session, terminalApprover(cmd, input))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -93,7 +100,7 @@ func runChat(cmd *cobra.Command, opts *chatOptions) error {
 	talk.announce(out)
 	fmt.Fprintf(out, "Ask a question, or /help.\n\n")
 
-	return converse(cmd, opts, provider, tools, talk, reader)
+	return converse(cmd, opts, provider, tools, talk, input)
 }
 
 // converse is the read-ask-print loop.
@@ -103,14 +110,16 @@ func converse(
 	provider aiprovider.Provider,
 	tools toolSession,
 	talk *conversation,
-	reader *bufio.Reader,
+	input prompter,
 ) error {
 	out := cmd.OutOrStdout()
 	trace := opts.trace
 
 	for {
-		fmt.Fprint(out, "> ")
-		line, readErr := reader.ReadString('\n')
+		// The prompt is the prompter's, not a Fprint before it: the line
+		// editor has to redraw it whenever the line is re-wrapped, so it has
+		// to own it.
+		line, readErr := input.ask("> ")
 		request := strings.TrimSpace(line)
 
 		if request == "" {

@@ -1,7 +1,6 @@
 package assist
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -99,13 +98,14 @@ func connectTools(
 // parseable, and the answer is read from the same reader the interactive loop
 // uses -- one reader, because two would each buffer and the second would eat
 // the first's line.
-func terminalApprover(cmd *cobra.Command, reader *bufio.Reader) approvalHandler {
+func terminalApprover(cmd *cobra.Command, input prompter) approvalHandler {
 	return func(_ context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
 		out := cmd.ErrOrStderr()
 		fmt.Fprintf(out, "\n%s\n\n", request.Params.Message)
-		fmt.Fprint(out, "Allow? [n]o / [o]nce / [s]ession: ")
 
-		answer, err := reader.ReadString('\n')
+		// Not remembered: walking Up through "o", "s" and "n" to reach the
+		// last real question is not a history worth having.
+		answer, err := input.confirm("Allow? [n]o / [o]nce / [s]ession: ")
 		if err != nil && answer == "" {
 			return &mcp.ElicitResult{Action: "cancel"}, nil
 		}
