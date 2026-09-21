@@ -250,12 +250,10 @@ var escapeRules = []escapeRule{
 		// token is the procedure and the package sits in front of a dot.
 		construct: "Oracle network package",
 		reach:     "sends a request from the database server, which no transaction retracts",
-		match: anyMatch(
-			containsKeyword("UTL_HTTP"), containsKeyword("UTL_TCP"),
-			containsKeyword("UTL_SMTP"), containsKeyword("UTL_MAIL"),
-			containsKeyword("UTL_INADDR"), containsKeyword("UTL_URL"),
-			containsKeyword("DBMS_LDAP"), containsKeyword("HTTPURITYPE"),
-			containsKeyword("DBMS_NETWORK_ACL_ADMIN"), containsKeyword("UTL_FILE"),
+		match: containsNameAnyOf(
+			"UTL_HTTP", "UTL_TCP", "UTL_SMTP", "UTL_MAIL",
+			"UTL_INADDR", "UTL_URL", "UTL_FILE",
+			"DBMS_LDAP", "HTTPURITYPE", "DBMS_NETWORK_ACL_ADMIN",
 		),
 		dialects: []string{platform.Oracle},
 	},
@@ -600,6 +598,29 @@ func matchesKeywordSequence(tokens []lexer.Token, keywords []string) bool {
 	return true
 }
 
+// containsNameAnyOf reports whether any token names one of the given objects,
+// in any spelling the engine resolves to it.
+//
+// Quoting is the reason this is not [containsKeyword]: Oracle resolves
+// `"UTL_HTTP"."REQUEST"(...)` to the same package as the bare spelling, and
+// the lexer reports a quoted identifier as a string token, so a keyword match
+// sees nothing. [callableName] already unquotes for call position and is the
+// same reading here.
+func containsNameAnyOf(names ...string) tokenMatcher {
+	return func(ctx scanContext) bool {
+		for _, token := range ctx.tokens {
+			value, ok := callableName(token)
+			if !ok {
+				continue
+			}
+			if slices.Contains(names, value) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 func containsKeyword(keyword string) tokenMatcher {
 	return func(ctx scanContext) bool {
 		for _, token := range ctx.tokens {
@@ -746,6 +767,9 @@ func PostgresControlFunctions() []string {
 		"PG_STAT_RESET", "PG_STAT_RESET_SHARED", "PG_STAT_RESET_SLRU",
 		"PG_STAT_RESET_SINGLE_TABLE_COUNTERS", "PG_STAT_RESET_SINGLE_FUNCTION_COUNTERS",
 		"PG_STAT_RESET_REPLICATION_SLOT", "PG_STAT_RESET_SUBSCRIPTION_STATS",
+		// A nontransactional logical message survives the rollback and reaches
+		// whatever is decoding the write-ahead log.
+		"PG_LOGICAL_EMIT_MESSAGE",
 	}
 }
 

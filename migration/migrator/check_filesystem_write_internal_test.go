@@ -636,3 +636,49 @@ func TestValidateCheckAssertionStatically_RefusesThePoolAndTheFileWriters(t *tes
 		})
 	}
 }
+
+// Two spellings the first pass missed. A nontransactional logical message
+// reaches whatever is decoding the write-ahead log and survives the rollback,
+// and Oracle resolves a quoted package name to the same package the bare one
+// names while the lexer reports it as a different kind of token.
+func TestValidateCheckAssertionStatically_RefusesTheSpellingsAroundTheEdges(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "a nontransactional logical message",
+			dialect:   "postgres",
+			assertion: `SELECT pg_logical_emit_message(false, 'release-check', 'x') IS NOT NULL`,
+			wantErr:   `check assertion must not use PostgreSQL server control function, which .*`,
+		},
+		{
+			name:      "a quoted Oracle package",
+			dialect:   "oracle",
+			assertion: `SELECT "UTL_HTTP"."REQUEST"('http://example.com/') IS NOT NULL FROM dual`,
+			wantErr:   `check assertion must not use Oracle network package, which .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""),
+				qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// The control the quoted spelling must not swallow: a string literal that
+// merely contains the package name is data, not a call.
+func TestValidateCheckAssertionStatically_AcceptsThePackageNameAsData(t *testing.T) {
+	c := qt.New(t)
+
+	err := validateCheckAssertionStatically(
+		`SELECT COUNT(*) = 0 FROM audit WHERE note = 'UTL_HTTP'`, "oracle", "")
+
+	c.Assert(err, qt.IsNil)
+}
