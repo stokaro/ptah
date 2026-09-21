@@ -1,6 +1,7 @@
 package assist
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -68,11 +69,31 @@ func runChat(cmd *cobra.Command, opts *chatOptions) error {
 	}
 	defer cleanup()
 
+	talk, err := openConversation(opts.agent, &opts.session, provider, nil)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer talk.recorder.Close() //nolint:errcheck // each record is written as it happens
+
+	// At a terminal the conversation runs as an inline Bubble Tea program; a
+	// pipe, a file or a test keeps the read-ask-print loop below, byte for
+	// byte. The decision is `atTerminal`, asked once, so the two surfaces
+	// never both hold stdin. The tool session is opened inside runTUI because
+	// its approval handler is a method on the program's model.
+	if atTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+		return runTUI(cmd, opts, provider, talk, func(approve approvalHandler) (toolSession, func(), error) {
+			connected, connectErr := connectTools(cmd, session, approve)
+			if connectErr != nil {
+				return nil, nil, cmdutil.Fail(cmd, connectErr)
+			}
+			return connected, func() { _ = connected.Close() }, nil
+		})
+	}
+
 	// One prompter for the whole surface: the approval prompt and the question
 	// prompt read the same stdin, and two readers would each hold a partial
-	// line, so the second would consume what the first was waiting for. At a
-	// terminal it edits the line; on a pipe it reads one the way it always
-	// did. See prompt.go.
+	// line, so the second would consume what the first was waiting for. See
+	// prompt.go.
 	input := newPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
 	defer input.close() //nolint:errcheck // restoring a terminal that was never raw cannot fail
 	tools, err := connectTools(cmd, session, terminalApprover(cmd, input))
@@ -80,12 +101,6 @@ func runChat(cmd *cobra.Command, opts *chatOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer tools.Close() //nolint:errcheck // the in-memory transport has nothing to fail at
-
-	talk, err := openConversation(opts.agent, &opts.session, provider, nil)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	defer talk.recorder.Close() //nolint:errcheck // each record is written as it happens
 
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Ptah Assist. %s via %s.\n", provider.Model(), provider.Profile())
@@ -241,16 +256,23 @@ var shownWord = map[bool]string{true: "on", false: "off"}
 // writeToolList prints what this session can reach, from the server rather than
 // from a list in this file.
 func writeToolList(cmd *cobra.Command, tools toolSession) {
-	out := cmd.OutOrStdout()
-	listed, err := tools.ListTools(cmd.Context(), nil)
+	writeToolCatalog(cmd.Context(), cmd.OutOrStdout(), tools)
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+}
+
+// writeToolCatalog renders the list itself, from the server rather than from a
+// list in this file. It takes a writer and a context so both surfaces can use
+// it: the scripted one prints it, and the interactive one queues it for the
+// scrollback.
+func writeToolCatalog(ctx context.Context, out writer, tools toolSession) {
+	listed, err := tools.ListTools(ctx, nil)
 	if err != nil {
-		fmt.Fprintf(out, "  the tool list could not be read: %v\n\n", err)
+		fmt.Fprintf(out, "  the tool list could not be read: %v\n", err)
 		return
 	}
 	for _, tool := range listed.Tools {
 		fmt.Fprintf(out, "  %-22s %s\n", tool.Name, firstResultLine(tool.Description))
 	}
-	fmt.Fprintln(out, "")
 }
 
 // writeSessionState says where the conversation is being kept.

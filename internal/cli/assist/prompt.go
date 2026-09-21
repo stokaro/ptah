@@ -62,12 +62,23 @@ type prompter interface {
 // mode while output goes somewhere else leaves the echo on a screen nobody is
 // looking at.
 func newPrompter(in io.Reader, out io.Writer) prompter {
-	inFile, inOK := in.(*os.File)
-	outFile, outOK := out.(*os.File)
-	if !inOK || !outOK || !term.IsTerminal(int(inFile.Fd())) || !term.IsTerminal(int(outFile.Fd())) {
+	if !atTerminal(in, out) {
 		return &plainPrompter{reader: bufio.NewReader(in), out: out}
 	}
-	return newTermPrompter(inFile, outFile)
+	return newTermPrompter(in.(*os.File), out.(*os.File))
+}
+
+// atTerminal reports whether both halves are a terminal.
+//
+// Both, deliberately: reading in raw mode while output goes somewhere else
+// leaves the echo on a screen nobody is looking at. It is the one decision
+// that separates the interactive surface from the scripted one, so it is
+// written once and both callers ask it.
+func atTerminal(in io.Reader, out io.Writer) bool {
+	inFile, inOK := in.(*os.File)
+	outFile, outOK := out.(*os.File)
+	return inOK && outOK &&
+		term.IsTerminal(int(inFile.Fd())) && term.IsTerminal(int(outFile.Fd()))
 }
 
 // plainPrompter is the scripted path: one buffered reader, as before.

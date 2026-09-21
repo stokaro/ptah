@@ -1,0 +1,538 @@
+package assist
+
+import (
+	"context"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"ptah.run/internal/assistloop"
+)
+
+// The interactive surface at a terminal.
+//
+// It is an inline Bubble Tea program: the prompt is the only thing it repaints,
+// and everything finished -- the question, the answer, the tool trace, the
+// provenance footer -- is pushed into the terminal's scrollback, where it
+// scrolls and can be selected and copied like any other command's output. The
+// alternative, keeping the conversation inside the view, would cap it at the
+// window height and repaint all of it on every token.
+//
+// A scripted run never reaches this file. `runChat` sends a pipe, a file or a
+// test down the plain path in chat.go, byte for byte as before.
+//
+// Four facts about this stack decide the shape here, each measured before it
+// was written rather than read off a signature:
+//
+//  1. `Program.Send` is ordered, lossless, and a no-op once the program has
+//     exited. That is what carries the model's tokens from the worker
+//     goroutine. A channel with a draining command loses the tail of the
+//     stream, because the final message overtakes what is still buffered.
+//  2. The approval reply channel has capacity 1 and is written at most once.
+//     At capacity 0 the write inside Update blocks the whole event loop when
+//     the worker has already gone, and the interface freezes.
+//  3. Bubble Tea v2 does not quit on Ctrl-C. In raw mode it is an ordinary key
+//     press, so this model owns the decision: cancel a call in flight, leave
+//     at the prompt.
+//  4. An embedded `huh.Form` keeps the older Bubble Tea shape -- `Init`,
+//     `Update` returning `huh.Model`, and a `View` returning a string -- so it
+//     is held as a `*huh.Form` and driven by hand rather than stored in a
+//     `tea.Model` field.
+
+// tuiSession is what the program needs from the rest of the surface. It is an
+// interface so the model can be driven without a provider or a running server.
+type tuiSession interface {
+	// ask runs one request to completion, streaming text to onText.
+	ask(ctx context.Context, request string, onText func(string)) (*assistloop.Result, error)
+}
+
+// approvalRequest is one elicitation waiting for a person.
+type approvalRequest struct {
+	message string
+	// reply carries the decision back to the goroutine blocked inside the MCP
+	// callback. Capacity 1, written at most once; see fact 2 above.
+	reply chan string
+}
+
+// Decisions the approval form offers, in the order it lists them. The values
+// are what terminalApprover already answers with, so the two surfaces agree on
+// what a decision means without a second vocabulary.
+const (
+	decisionOnce    = "once"
+	decisionSession = "session"
+	decisionNo      = "no"
+)
+
+type (
+	fragmentMsg struct{ text string }
+	doneMsg     struct {
+		result *assistloop.Result
+		err    error
+	}
+	// printedMsg acknowledges that the previous scrollback line reached the
+	// event loop, so the next may go. One print is in flight at a time:
+	// each command runs in its own goroutine and two of them reorder.
+	printedMsg struct{}
+	// formDoneMsg carries the decision rather than a canceled flag: the bound
+	// pointer follows the cursor rather than the submission, so on an abort it
+	// holds whatever happened to be highlighted.
+	formDoneMsg struct{ decision string }
+)
+
+type phase int
+
+const (
+	atPrompt phase = iota
+	thinking
+	awaitingApproval
+)
+
+// tuiModel is the whole interactive surface.
+type tuiModel struct {
+	// program is stored between NewProgram and Run, and read by the worker
+	// goroutine. Never sent to before Run, which would block.
+	program atomic.Pointer[tea.Program]
+
+	session tuiSession
+	input   textarea.Model
+	spinner int
+
+	phase   phase
+	partial strings.Builder
+
+	// history is this session's questions, newest last, walked with Up and
+	// Down. It is not written to disk: the conversation is already saved under
+	// .ptah/sessions unless --ephemeral says otherwise, and a second copy of
+	// what was typed would not honor that flag.
+	history []string
+	at      int
+	draft   string
+
+	pending *approvalRequest
+	form    *huh.Form
+	// decision is a heap pointer because Update has a value receiver on the
+	// form's side: binding to a field of a copied model loses the answer with
+	// no error at all.
+	decision *string
+
+	cancel   context.CancelFunc
+	dropDone bool
+
+	queue    []string
+	inFlight bool
+
+	trace bool
+	width int
+	info  tuiInfo
+}
+
+// newTUIModel builds the model. The program is attached afterwards, by run.
+func newTUIModel(session tuiSession, trace bool) *tuiModel {
+	input := textarea.New()
+	// textinput cannot hold a newline -- its sanitizer replaces one with a
+	// space and has no setter -- so the multi-line requirement picks textarea.
+	input.Prompt = ""
+	input.ShowLineNumbers = false
+	input.DynamicHeight = true
+	input.MinHeight, input.MaxHeight = 1, 10
+	// Enter submits, so a deliberate newline needs its own key. Ctrl-J is a
+	// plain control byte every terminal sends without negotiating anything.
+	input.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("ctrl+j"),
+		key.WithHelp("ctrl+j", "newline"),
+	)
+	// The default styles fill each line out to the width with a background,
+	// which reads as a black band across the terminal. This surface wants a
+	// plain line, so every style the component paints is cleared.
+	plain := textarea.DefaultStyles(true)
+	bare := lipgloss.NewStyle()
+	plain.Focused.Base, plain.Focused.CursorLine, plain.Focused.EndOfBuffer = bare, bare, bare
+	plain.Blurred.Base, plain.Blurred.CursorLine, plain.Blurred.EndOfBuffer = bare, bare, bare
+	input.SetStyles(plain)
+	// The real terminal cursor is drawn through tea.View.Cursor below, so the
+	// component's own virtual cursor and the blink chain that drives it are
+	// not needed: the terminal blinks it.
+	input.SetVirtualCursor(false)
+	input.Focus()
+
+	return &tuiModel{session: session, input: input, trace: trace, decision: new(string)}
+}
+
+func (m *tuiModel) Init() tea.Cmd { return nil }
+
+// send delivers a message from the worker goroutine. After the program has
+// exited it does nothing, which is what lets a worker outlive the interface
+// without hanging on it.
+func (m *tuiModel) send(msg tea.Msg) {
+	if p := m.program.Load(); p != nil {
+		p.Send(msg)
+	}
+}
+
+// say queues lines for the scrollback.
+func (m *tuiModel) say(lines ...string) tea.Cmd {
+	m.queue = append(m.queue, lines...)
+	return m.pump()
+}
+
+// pump prints the next queued line, one at a time.
+//
+// tea.Sequence rather than tea.Batch: the acknowledgement must not overtake
+// the print it acknowledges.
+func (m *tuiModel) pump() tea.Cmd {
+	if m.inFlight || len(m.queue) == 0 {
+		return nil
+	}
+	// The whole queue in one print, not one print per line. Each Printf
+	// command runs in its own goroutine and emits its own line break, so a
+	// line at a time both doubled the spacing and left two prints racing to
+	// reach the event loop.
+	block := strings.Join(m.queue, "\n")
+	m.queue = nil
+	m.inFlight = true
+	return tea.Sequence(
+		tea.Printf("%s", block),
+		func() tea.Msg { return printedMsg{} },
+	)
+}
+
+// approve is the approval handler the MCP client calls, on the worker
+// goroutine, blocking until the person decides.
+func (m *tuiModel) approve(ctx context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+	pending := &approvalRequest{
+		message: request.Params.Message,
+		reply:   make(chan string, 1),
+	}
+	m.send(pending)
+
+	select {
+	case decision := <-pending.reply:
+		switch decision {
+		case decisionOnce:
+			return accepted("allow once"), nil
+		case decisionSession:
+			return accepted("allow for this session"), nil
+		}
+		return &mcp.ElicitResult{Action: "decline"}, nil
+	case <-ctx.Done():
+		// Never wait forever on an answer the interface may never give: the
+		// person may have canceled the call or left.
+		return &mcp.ElicitResult{Action: "cancel"}, nil
+	}
+}
+
+// startCall runs one question on a goroutine of its own.
+func (m *tuiModel) startCall(request string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.phase = thinking
+	m.dropDone = false
+	m.partial.Reset()
+
+	go func() {
+		result, err := m.session.ask(ctx, request, func(fragment string) {
+			m.send(fragmentMsg{text: fragment})
+		})
+		m.send(doneMsg{result: result, err: err})
+	}()
+}
+
+func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		return m.key(msg)
+
+	case tea.PasteMsg:
+		// The sanitizer turns each \r and each \n into a newline on its own,
+		// so a paste from Windows or a web page would double every break.
+		clean := tea.PasteMsg{Content: strings.ReplaceAll(msg.Content, "\r\n", "\n")}
+		input, cmd := m.input.Update(clean)
+		m.input = input
+		return m, cmd
+
+	case printedMsg:
+		m.inFlight = false
+		return m, m.pump()
+
+	case fragmentMsg:
+		return m, m.fragment(msg.text)
+
+	case *approvalRequest:
+		return m, m.openForm(msg)
+
+	case formDoneMsg:
+		return m, m.answerForm(msg.decision)
+
+	case doneMsg:
+		return m, m.finish(msg)
+
+	case spinnerTickMsg:
+		m.spinner++
+		return m, m.tick()
+
+	case tea.WindowSizeMsg:
+		// Without a width the textarea has no line to wrap against and the
+		// renderer repaints every frame over a view whose trailing space keeps
+		// changing: measured at 21 erase-to-end sequences a second on an idle
+		// prompt. The 2 is the width of the "> " this surface draws itself.
+		m.width = msg.Width
+		m.input.SetWidth(max(msg.Width-2, 20))
+		return m, nil
+	}
+
+	// Everything else is dropped, deliberately. Forwarding unhandled messages
+	// to the textarea makes it re-arm the cursor-blink timer it schedules for
+	// itself, and with the virtual cursor off nothing ever consumes the
+	// result: measured at 80 repaints a second on an idle prompt, growing with
+	// uptime. The component is given exactly what it needs -- key presses and
+	// pastes, above -- and nothing else.
+	return m, nil
+}
+
+// fragment adds streamed text, flushing whole lines to the scrollback and
+// keeping only the unfinished tail on screen.
+func (m *tuiModel) fragment(text string) tea.Cmd {
+	m.partial.WriteString(text)
+	whole := m.partial.String()
+	cut := strings.LastIndex(whole, "\n")
+	if cut < 0 {
+		return m.pump()
+	}
+	done, rest := whole[:cut], whole[cut+1:]
+	m.partial.Reset()
+	m.partial.WriteString(rest)
+	return m.say(strings.Split(done, "\n")...)
+}
+
+// openForm puts the approval choice on screen.
+func (m *tuiModel) openForm(request *approvalRequest) tea.Cmd {
+	m.pending = request
+	m.phase = awaitingApproval
+	*m.decision = decisionNo
+
+	// Esc means deny. huh binds Quit to Ctrl-C alone, and for a prompt that
+	// guards a write that is not enough.
+	keys := huh.NewDefaultKeyMap()
+	keys.Quit = key.NewBinding(key.WithKeys("esc", "ctrl+c"))
+
+	m.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(request.message).
+				Options(
+					huh.NewOption("Allow once", decisionOnce),
+					huh.NewOption("Allow for this session", decisionSession),
+					huh.NewOption("No", decisionNo),
+				).
+				Value(m.decision),
+		),
+	).WithKeyMap(keys).WithShowHelp(true)
+
+	// The defaults are tea.Quit and tea.Interrupt, which would take the host
+	// program down with the form.
+	m.form.SubmitCmd = func() tea.Msg { return formDoneMsg{decision: *m.decision} }
+	m.form.CancelCmd = func() tea.Msg { return formDoneMsg{decision: decisionNo} }
+
+	return m.form.Init()
+}
+
+// answerForm answers the waiting goroutine and puts the prompt back.
+func (m *tuiModel) answerForm(decision string) tea.Cmd {
+	if m.pending != nil {
+		m.pending.reply <- decision // capacity 1: cannot block
+		m.pending = nil
+	}
+	m.form = nil
+	m.phase = thinking
+	return m.say("  " + decisionWord[decision])
+}
+
+var decisionWord = map[string]string{
+	decisionOnce:    "allowed once",
+	decisionSession: "allowed for this session",
+	decisionNo:      "declined",
+}
+
+// finish prints what the run produced and returns to the prompt.
+func (m *tuiModel) finish(msg doneMsg) tea.Cmd {
+	m.phase = atPrompt
+	m.pending = nil
+	m.form = nil
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
+	if m.dropDone {
+		m.dropDone = false
+		return m.pump()
+	}
+
+	var lines []string
+	if tail := m.partial.String(); tail != "" {
+		lines = append(lines, tail)
+	}
+	m.partial.Reset()
+	lines = append(lines, tuiReport(msg.result, msg.err, traced(m.trace))...)
+	return m.say(lines...)
+}
+
+func (m *tuiModel) key(press tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if press.Keystroke() == "ctrl+c" && m.phase != awaitingApproval {
+		return m.interrupt()
+	}
+
+	if m.form != nil {
+		form, cmd := m.form.Update(press)
+		if updated, ok := form.(*huh.Form); ok {
+			m.form = updated
+		}
+		return m, cmd
+	}
+	if m.phase != atPrompt {
+		return m, nil
+	}
+
+	switch press.Keystroke() {
+	case "enter":
+		return m, m.submit()
+	case "ctrl+d":
+		return m, tea.Quit
+	case "up", "down":
+		if m.input.LineCount() == 1 {
+			m.walk(press.Keystroke())
+			return m, nil
+		}
+	case "tab":
+		m.complete()
+		return m, nil
+	}
+
+	input, cmd := m.input.Update(press)
+	m.input = input
+	return m, cmd
+}
+
+// interrupt cancels a call in flight, or leaves when nothing is running.
+func (m *tuiModel) interrupt() (tea.Model, tea.Cmd) {
+	if m.phase == atPrompt {
+		return m, tea.Quit
+	}
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
+	m.phase = atPrompt
+	m.pending = nil
+	m.form = nil
+	m.partial.Reset()
+	// The worker still delivers one doneMsg after this; without the flag the
+	// surface would print both "canceled" and a context-canceled footer.
+	m.dropDone = true
+	return m, m.say("  canceled")
+}
+
+// submit sends the typed question, or handles a directive.
+func (m *tuiModel) submit() tea.Cmd {
+	request := strings.TrimSpace(m.input.Value())
+	if request == "" {
+		return nil
+	}
+	m.input.Reset()
+	m.remember(request)
+
+	if strings.HasPrefix(request, "/") {
+		leave, lines, trace := tuiDirective(request, m.trace, m.info)
+		m.trace = trace
+		if leave {
+			return tea.Sequence(m.say(append([]string{"> " + request}, lines...)...), tea.Quit)
+		}
+		return m.say(append([]string{"> " + request}, lines...)...)
+	}
+
+	cmd := m.say("> " + request)
+	m.startCall(request)
+	return tea.Batch(cmd, m.tick())
+}
+
+// remember appends to the history, skipping a repeat of the newest entry.
+func (m *tuiModel) remember(line string) {
+	if len(m.history) == 0 || m.history[len(m.history)-1] != line {
+		m.history = append(m.history, line)
+	}
+	m.at = len(m.history)
+	m.draft = ""
+}
+
+// walk moves through the history, keeping whatever was half-typed so stepping
+// back down returns it rather than an empty line.
+func (m *tuiModel) walk(direction string) {
+	if len(m.history) == 0 {
+		return
+	}
+	if m.at == len(m.history) {
+		m.draft = m.input.Value()
+	}
+	if direction == "up" && m.at > 0 {
+		m.at--
+	}
+	if direction == "down" && m.at < len(m.history) {
+		m.at++
+	}
+	m.input.Reset()
+	if m.at == len(m.history) {
+		m.input.InsertString(m.draft)
+		return
+	}
+	m.input.InsertString(m.history[m.at])
+}
+
+// complete finishes a directive when exactly one matches. The textarea has no
+// suggestion API, so Tab is the caller's to handle.
+func (m *tuiModel) complete() {
+	line := m.input.Value()
+	if !strings.HasPrefix(line, "/") {
+		return
+	}
+	matches := directivesWithPrefix(line)
+	if len(matches) != 1 {
+		return
+	}
+	m.input.Reset()
+	m.input.InsertString(matches[0] + " ")
+}
+
+type spinnerTickMsg struct{}
+
+func (m *tuiModel) tick() tea.Cmd {
+	if m.phase == atPrompt {
+		return nil
+	}
+	return tea.Tick(spinnerPeriod, func(time.Time) tea.Msg { return spinnerTickMsg{} })
+}
+
+func (m *tuiModel) View() tea.View {
+	// No AltScreen anywhere: inline is the default in this version, and the
+	// conversation belongs in the scrollback.
+	if m.form != nil {
+		return tea.NewView(m.form.View())
+	}
+	switch m.phase {
+	case thinking, awaitingApproval:
+		body := "  " + spinnerFrame(m.spinner) + " thinking"
+		if tail := m.partial.String(); tail != "" {
+			body = "  " + tail
+		}
+		return tea.NewView(body + "\n  esc or ctrl+c to cancel")
+	default:
+		view := tea.NewView("> " + m.input.View())
+		view.Cursor = m.input.Cursor()
+		return view
+	}
+}
