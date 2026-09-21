@@ -65,39 +65,29 @@ ptah migrations lint --dir ./migrations --dialect postgres --server-version 17
 
 The value takes the same spellings every other Ptah command accepts — `17`,
 `8.4.6`, `10.11.6-MariaDB`, or a full server banner. It needs a target dialect,
-because a run without one checks every rule against every engine and there is
-no single target for a version to describe. That dialect comes from
-`--dialect`, from the `dialect` key of `.ptah-lint.yaml`, or from the product a
-`--dev-url` connection reports. A run with none of them stops at exit `2`, and
-so does a value that names no server or a different product than the target.
+and the first source that names one wins:
 
-Three sources name the server, and the first one that does wins:
-
-1. `--server-version`.
-2. `server-version` in `.ptah-lint.yaml`.
+1. `--server-version` and `--dialect`.
+2. `server-version` and `dialect` in `.ptah-lint.yaml`.
 3. The dev database, when `--dev-url` is given. Its banner is read off the same
    connection the replay uses, so no extra round trip and no second answer.
+
+A run that names no server plans against the dialect's default capability set.
+That is a starting point rather than a measurement, so the report carries no
+version and a machine can tell the two apart. A run that names no dialect at
+all stops at exit `2`, and so does a version naming no server or a different
+product than the target.
 
 A declared version is resolved against the product the connection reports, not
 against the URL's scheme, when nothing else named the dialect. A scheme is not
 a product: MariaDB speaks the MySQL protocol, so its address is a `mysql://`
-URL, and `postgres://` reaches CockroachDB, YugabyteDB and Spanner as well as
-PostgreSQL. Resolving `10.11.6-MariaDB` against `mysql://` would refuse a pair
-that is correct.
+URL, and `postgres://` reaches CockroachDB, YugabyteDB and Spanner too.
 
-`migrations up` reads the same `.ptah-lint.yaml` for its apply-time gate, and
-resolves `server-version` there against the dialect the connection reports, so
-a value that names no server is refused by both verbs rather than by one. On an
-engine the linter has no rules for, the gate still runs its dialect-independent
-data-safety rules, and a version declared for such a connection is refused
-rather than ignored.
-
-`ptah-compat migrate lint` reads the same file and prints the same warning on
-`stderr`, after its report, so its stdout and exit code are what they were.
-
-A run that names none plans against the dialect's default capability set. That
-is a starting point rather than a measurement, so the report carries no
-version, and a machine reading the report can tell the two apart.
+`migrations up` and `ptah-compat migrate lint` read the same file. The apply
+gate resolves `server-version` against the dialect its connection reports, and
+still runs its dialect-independent rules on an engine the linter has none for;
+the compatibility command prints the same warning on `stderr`, after its
+report.
 
 A version Ptah recognizes but has not measured resolves to the nearest release
 line it has, and the run says so. `--format json` carries it as
