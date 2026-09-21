@@ -105,7 +105,14 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 	// out, and here the wire reported it. Resolving it is also what refuses a
 	// value that names no server, which `migrations lint` refuses and this
 	// would otherwise accept and ignore.
-	target, err := lint.ResolveTarget(databaseDialect, cfg.ServerVersion)
+	//
+	// Only where the linter has rules for that engine, though. Oracle is the
+	// one it does not, and the gate still runs there: the DS family is
+	// dialect-independent and protects an Oracle apply the same way it
+	// protects every other. A policy that also declared a version on such a
+	// connection is refused rather than ignored, because that declaration
+	// cannot be honored.
+	target, err := policyTarget(databaseDialect, cfg.ServerVersion)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -181,4 +188,20 @@ func (p Policy) options(pathPrefix string) lint.Options {
 		PathPrefix:  pathPrefix,
 		RuleConfigs: p.rules,
 	}
+}
+
+// policyTarget resolves the server the apply-time gate plans against, or
+// leaves it unresolved on an engine the linter has no rules for.
+func policyTarget(databaseDialect, serverVersion string) (lint.Target, error) {
+	if _, ok := lintdialect.Canonical(databaseDialect); ok {
+		return lint.ResolveTarget(databaseDialect, serverVersion)
+	}
+	if serverVersion != "" {
+		return lint.Target{}, fmt.Errorf(
+			"lint server-version %q cannot be resolved against database dialect %q: "+
+				"lint has no rules for it, so there is no capability set to refine",
+			serverVersion, databaseDialect,
+		)
+	}
+	return lint.Target{}, nil
 }

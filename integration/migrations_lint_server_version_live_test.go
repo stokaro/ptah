@@ -142,6 +142,10 @@ func TestMigrationsLintRefusesADeclaredVersionTheServerDoesNotOwnLive(t *testing
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*postgres.*`)
+	// That the refusal arrives before the replay is measured where the replay
+	// lives: TestReplayStopsWhenTheServerObserverRefuses asserts no migration
+	// ran and the dev database is untouched. Here the error is the same either
+	// way, so there is nothing for this test to tell apart.
 }
 
 // mySQLSchemeFor addresses a MariaDB server the way a MySQL client does, which

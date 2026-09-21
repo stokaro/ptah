@@ -521,9 +521,10 @@ type serverTargetCollector struct {
 	deferredVersion string
 	found           lint.Target
 	seen            bool
-	// err is a declared version the connected product refuses, kept rather
-	// than returned because the observer must not abort a replay: the server
-	// is a fact, and this is about the operator's input.
+	// err is a declared version the connected product refuses. It aborts the
+	// replay, so the dev realm is not cleaned and rebuilt to report an input
+	// that was already wrong, and it is kept as well so the caller reports it
+	// rather than the replay error wrapped around it.
 	err error
 }
 
@@ -531,9 +532,9 @@ func newServerTargetCollector(declared lint.Target, deferredVersion string) *ser
 	return &serverTargetCollector{declared: declared, deferredVersion: deferredVersion}
 }
 
-func (c *serverTargetCollector) observe(info catalog.ServerInfo) {
+func (c *serverTargetCollector) observe(info catalog.ServerInfo) error {
 	if c.seen || c.err != nil {
-		return
+		return c.err
 	}
 	// The dialect is the connection's own, not the URL's scheme: a postgres://
 	// connection can report cockroachdb, and the capabilities it carries are
@@ -542,16 +543,17 @@ func (c *serverTargetCollector) observe(info catalog.ServerInfo) {
 		target, err := lint.ResolveTarget(info.Dialect, c.deferredVersion)
 		if err != nil {
 			c.err = err
-			return
+			return err
 		}
 		c.found, c.seen = target, true
-		return
+		return nil
 	}
 	if c.declared.Named() {
-		return
+		return nil
 	}
 	c.found = lint.TargetFromServer(info.Dialect, info.Version, info.Capabilities, info.CapabilityNote)
 	c.seen = c.found.Named()
+	return nil
 }
 
 // learned returns the target read off the dev database, and whether one was

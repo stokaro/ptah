@@ -63,3 +63,33 @@ func TestLoadPolicy_ServerVersion_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `.*mariadb.*`)
 	})
 }
+
+// The apply-time gate runs on engines the linter has no rules for: the DS
+// family is dialect-independent and protects an Oracle apply the same way it
+// protects every other. Refusing the policy there would fail every Oracle
+// apply before planning (stokaro/ptah#3420).
+func TestLoadPolicy_UnsupportedLintDialect_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - MF103\n")},
+	}
+
+	policy, err := migrationlintgate.LoadPolicy(fsys, "oracle")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
+}
+
+// A version declared for such a connection cannot be honored, so it is refused
+// rather than accepted and ignored.
+func TestLoadPolicy_UnsupportedLintDialect_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: {Data: []byte("server-version: \"23\"\n")},
+	}
+
+	_, err := migrationlintgate.LoadPolicy(fsys, "oracle")
+
+	c.Assert(err, qt.ErrorMatches,
+		`lint server-version "23" cannot be resolved against database dialect "oracle".*`)
+}

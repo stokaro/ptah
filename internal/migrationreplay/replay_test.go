@@ -11,9 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // TestReplayRoutesADockerDevURLToTheProvisioner pins that replay provisions a
@@ -429,4 +431,58 @@ func assertSQLiteRealmObjectCount(
 	`).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	c.Assert(count, qt.Equals, want)
+}
+
+// An ObserveServer that refuses stops the replay where it stands: before the
+// dev realm is cleaned and before a migration runs.
+//
+// The caller that needs this resolves a declared server version against the
+// product the connection reports, and a version the product does not own is an
+// input that was already wrong. Replaying first would destroy and rebuild a
+// database to report it (stokaro/ptah#3420).
+func TestReplayStopsWhenTheServerObserverRefuses(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_users.up.sql"),
+		[]byte("CREATE TABLE replay_observer_users (id INTEGER PRIMARY KEY);\n"), 0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_users.down.sql"),
+		[]byte("DROP TABLE replay_observer_users;\n"), 0o600,
+	), qt.IsNil)
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+	refusal := errors.New("the declared version names another product")
+	replayed := 0
+
+	err := migrationreplay.Replay(context.Background(), migrationreplay.Options{
+		Dir:       migrationsDir,
+		DirFormat: migrationfile.DirFormatPtah,
+		DevURL:    "sqlite://" + devDBPath,
+		ObserveServer: func(catalog.ServerInfo) error {
+			return refusal
+		},
+		ObserveVersion: func(context.Context, *migrator.Migration, *dbschema.DatabaseConnection) error {
+			replayed++
+			return nil
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, refusal)
+	c.Assert(replayed, qt.Equals, 0)
+	c.Assert(replayedTableExists(c, devDBPath), qt.IsFalse)
+}
+
+// replayedTableExists asks the dev database whether the migration ran, which
+// is the side effect an aborted replay must not have left.
+func replayedTableExists(c *qt.C, devDBPath string) bool {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+devDBPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	c.Assert(conn.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'replay_observer_users'`,
+	).Scan(&count), qt.IsNil)
+	return count > 0
 }
