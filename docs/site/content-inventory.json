@@ -6,14 +6,14 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 146,
-    "authored": 143,
+    "pages": 147,
+    "authored": 144,
     "generated": 3,
     "byType": {
       "concept": 16,
       "how-to": 57,
       "landing": 14,
-      "reference": 34,
+      "reference": 35,
       "status": 9,
       "troubleshooting": 5,
       "tutorial": 11
@@ -4370,8 +4370,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8872,
-      "sourceBytes": 87672
+      "visibleWords": 8969,
+      "sourceBytes": 88619
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4820,8 +4820,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7579,
-      "sourceBytes": 51045
+      "visibleWords": 7596,
+      "sourceBytes": 51166
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -6967,6 +6967,38 @@
       ],
       "visibleWords": 2178,
       "sourceBytes": 17589
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/migration-log.md",
+      "route": "/versioned/migration-log/",
+      "title": "The migration log",
+      "description": "What `ptah migrations log` records, what it cannot be used for, and why a rollback no longer erases the fact that a version was applied.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I find out what happened to this database, beyond where it stands now?",
+      "goal": "Read the recorded history of migration operations and know its limits.",
+      "sourceOfTruth": [
+        "migration/migrator"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "sourceMode": null,
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 476,
+      "sourceBytes": 3732
     },
     {
       "path": "docs/site/src/content/docs/versioned/online-mode.md",

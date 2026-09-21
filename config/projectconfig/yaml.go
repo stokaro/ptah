@@ -78,6 +78,10 @@ type yamlMigration struct {
 	PostgresDumpTo       *string `yaml:"pg_dump_to"`
 	MySQLDumpTo          *string `yaml:"mysqldump_to"`
 	Webhook              *string `yaml:"webhook"`
+	// Log turns the append-only record of migration operations off. It is on
+	// by default: a database that cannot say what happened to it is the gap
+	// the log exists to close, and one nobody turned on closes nothing.
+	Log *bool `yaml:"log"`
 }
 
 type yamlLint struct {
@@ -294,6 +298,9 @@ func (c yamlSettings) projectConfig() (Config, error) {
 		fieldMigrationWebhook,
 		&cfg.presence,
 	)
+	if c.Migration.Log != nil {
+		cfg.Migration.Log = ConfigBool{Value: *c.Migration.Log, Set: true}
+	}
 	applyYAMLString(c.Lint.Dialect, &cfg.Lint.Dialect, fieldLintDialect, &cfg.presence)
 	if c.Lint.Latest != nil {
 		cfg.Lint.Latest = clonePointer(c.Lint.Latest)

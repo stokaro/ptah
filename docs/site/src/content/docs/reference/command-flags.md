@@ -704,6 +704,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--actor` | `string` | — | `PTAH_ACTOR` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
 | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
 | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
@@ -846,6 +847,26 @@ Read the columns as follows.
 | `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+</div>
+
+**`ptah migrations log`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--limit` | `int` | `50` | `PTAH_LIMIT` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1092,6 +1113,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--actor` | `string` | — | `PTAH_ACTOR` | — |
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |

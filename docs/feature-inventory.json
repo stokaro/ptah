@@ -292,6 +292,12 @@
       "claimed_by": "docs/site/src/content/docs/versioned/lint.md"
     },
     {
+      "id": "cli-ptah-migrations-log",
+      "kind": "native-verb",
+      "surface": "ptah migrations log",
+      "claimed_by": null
+    },
+    {
       "id": "cli-ptah-migrations-ls",
       "kind": "native-verb",
       "surface": "ptah migrations ls",

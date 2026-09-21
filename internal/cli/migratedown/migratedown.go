@@ -86,6 +86,7 @@ type options struct {
 	migrationsSchema     string
 	migrationsTable      string
 	migrationsEngine     string
+	actor                string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -171,6 +172,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
+	dbcli.RegisterActorFlag(flags, &opts.actor)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -438,6 +440,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
+		WithActor(opts.actor).
+		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(revisionFormat).
 		WithSkipChecks(resolvedOpts.skipChecks).
 		WithDefaultTimeouts(settings.timeouts).

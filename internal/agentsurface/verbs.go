@@ -163,6 +163,8 @@ var verbs = map[string]Verb{
 		"converts another tool's migration directory into Ptah's format on disk"},
 	"migrations lint": {TargetNone, ScratchRewrites,
 		"lints migration files; the dev database it names is cleaned and replayed into"},
+	"migrations log": {TargetReads, ScratchNone,
+		"reads the target's record of past migration operations and prints it, changing nothing"},
 	"migrations ls": {TargetNone, ScratchNone,
 		"lists the migration files in a directory, reading nothing but the directory"},
 	"migrations plan": {TargetReads, ScratchNone,

@@ -108,6 +108,7 @@ rather than a person.
 | `ptah migrations hash` | Writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one | — |
 | `ptah migrations import` | Converts another tool's migration directory into Ptah's format on disk | — |
 | `ptah migrations lint` | Lints migration files; the dev database it names is cleaned and replayed into | — |
+| `ptah migrations log` | Reads the target's record of past migration operations and prints it, changing nothing | — |
 | `ptah migrations ls` | Lists the migration files in a directory, reading nothing but the directory | — |
 | `ptah migrations plan` | Reads the target and prints the migration SQL the difference implies, writing nothing | — |
 | `ptah migrations pull` | Downloads a migration directory from an OCI registry and writes it to disk | — |

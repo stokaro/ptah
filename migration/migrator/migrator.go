@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"ptah.run/core/platform"
@@ -221,8 +222,22 @@ type Migrator struct {
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a
 	// mode change.
-	initializedDryRun        bool
-	logger                   *slog.Logger
+	initializedDryRun bool
+	logger            *slog.Logger
+	// migrationLogEnabled turns the append-only operation log on. It is a
+	// separate table from the revision one and answers a separate question;
+	// see [MigrationLogEntry].
+	migrationLogEnabled bool
+	// migrationLogRunID groups the entries one invocation writes.
+	migrationLogRunID string
+	// migrationLogSeq orders them. It is a pointer because every With*
+	// builder copies the Migrator by value, and the entries of one run have to
+	// share a counter or two derived migrators would both start at one.
+	migrationLogSeq *atomic.Int64
+	// actor is the name the log records for this run, and actorSource says
+	// what that name is worth. See [ActorSource].
+	actor                    string
+	actorSource              ActorSource
 	observer                 Observer
 	skipChecks               bool
 	metadataAvailable        bool
@@ -263,7 +278,38 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLockName:   migrationAdvisoryLockName,
 		logger:              slog.Default(),
 		observer:            NoopObserver{},
+		migrationLogEnabled: true,
+		migrationLogRunID:   newMigrationLogRunID(),
+		migrationLogSeq:     new(atomic.Int64),
+		actor:               actorName,
+		actorSource:         actorSource,
 	}
+}
+
+// WithMigrationLog returns a copy of the migrator that writes, or does not
+// write, the append-only operation log.
+//
+// On by default: a database that cannot say what happened to it is the gap
+// this exists to close, and a log nobody turned on closes nothing. The switch
+// is for the caller that must not add a table to the database it migrates --
+// the Atlas-compatible surface is the one in the tree, which ships the
+// revision table Atlas defines and nothing beside it.
+func (m *Migrator) WithMigrationLog(enabled bool) *Migrator {
+	tmp := *m
+	tmp.migrationLogEnabled = enabled
+	return &tmp
+}
+
+// WithActor returns a copy of the migrator that records name as the actor of
+// its operations.
+//
+// An empty name falls back to the user the process runs as, and the two are
+// recorded as different claims: see [ActorSource]. Nothing here verifies
+// either, which is why the provenance travels with the name.
+func (m *Migrator) WithActor(name string) *Migrator {
+	tmp := *m
+	tmp.actor, tmp.actorSource = resolveActor(name)
+	return &tmp
 }
 
 // WithLogger returns a copy of the migrator that logs through l. A nil logger
@@ -1120,6 +1166,16 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// creation: there is no active migration transaction yet.
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
 		return m.migrationsTableCreateError(err)
+	}
+	// The log table travels with the revision table: same schema, same naming,
+	// created by the same call, so an operator who moved one finds the other
+	// beside it. A failure here fails Initialize, because a table the run
+	// cannot create is a table the run cannot write to, and finding that out
+	// per entry would put a warning next to every migration.
+	if m.migrationLogWritable() {
+		if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
+			return fmt.Errorf("failed to create the migration log table: %w", err)
+		}
 	}
 	// Check the engine before upgrading an existing table. ALTER TABLE itself
 	// commits on the MySQL family, so validating afterward could mutate metadata
@@ -2638,10 +2694,16 @@ func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*M
 		if err != nil {
 			return nil, err
 		}
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
 		deferred, err := m.applyUpMigrationObserved(ctx, migration, txMode, i == 0)
 		if err != nil {
+			m.logMigrationEvent(ctx, "up", migration, MigrationLogFailed, err)
 			return nil, err
 		}
+		// Before the postconditions, because the entry says what the database
+		// holds: the body ran and its revision is recorded, and a check that
+		// does not hold afterwards does not take that back.
+		m.logMigrationEvent(ctx, "up", migration, MigrationLogApplied, nil)
 		// After the body and its revision, so a failure is a statement about a
 		// migration that applied.
 		postDeferred, err := m.runPostMigrationChecks(ctx, migration, MigrationDirectionUp)
@@ -3355,9 +3417,15 @@ func (m *Migrator) rollbackMigration(
 	migration *Migration,
 	deleteSQL string,
 ) (bool, error) {
+	// The rollback is the reason this log exists: it deletes the revision row,
+	// so without a record here a database that was on this version yesterday
+	// reads exactly like one that never reached it.
+	m.logMigrationEvent(ctx, "down", migration, MigrationLogStarted, nil)
 	if err := m.rollbackMigrationObserved(ctx, migration, deleteSQL); err != nil {
+		m.logMigrationEvent(ctx, "down", migration, MigrationLogFailed, err)
 		return false, err
 	}
+	m.logMigrationEvent(ctx, "down", migration, MigrationLogRolledBack, nil)
 	// Outside the observed span on purpose: the rollback ran and is recorded,
 	// and a postcondition that does not hold must not turn that into a
 	// rollback the metrics report as failed.
