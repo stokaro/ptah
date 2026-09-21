@@ -397,3 +397,16 @@ func TestForeignMetadataOverrideIsValidatedEarlyLive(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*`+migrator.AllowForeignMetadataTableEnvVar+`.*`)
 }
+
+// The override is resolved on the log read path too, before the return that
+// reports an absent table. A database with no log is the invocation a variable
+// read further down would never reach.
+func TestForeignMetadataOverrideIsValidatedOnTheLogReadLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "")
+	t.Setenv(migrator.AllowForeignMetadataTableEnvVar, "perhaps")
+
+	_, err := fixture.migrator.MigrationLog(t.Context(), 0)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*`+migrator.AllowForeignMetadataTableEnvVar+`.*`)
+}

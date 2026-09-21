@@ -395,6 +395,16 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
 		return fmt.Errorf("create the migration log table: %w", err)
 	}
+	// Again after the create, for the reason the revision table is asked
+	// twice: the check above and this statement are two round trips, and a
+	// role that can create objects in the metadata schema can place its table
+	// between them for IF NOT EXISTS to adopt.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
+	}
 	m.migrationLogReady.Store(true)
 	return nil
 }
@@ -462,6 +472,12 @@ func resolveActor(provided string) (string, ActorSource) {
 // returns every one.
 func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogAttempt, error) {
 	if err := m.refuseUnloggedRead(); err != nil {
+		return nil, err
+	}
+	// Before the absent-table return: this is a public read path of its own,
+	// and a malformed override must not stay dormant because this database
+	// happens to have no log.
+	if _, err := allowForeignMetadataTableVar.Resolve(); err != nil {
 		return nil, err
 	}
 	// No Initialize: reading is a question, and a question that created a

@@ -154,13 +154,25 @@ JOIN pg_namespace AS n ON n.oid = c.relnamespace
 WHERE n.nspname = COALESCE(NULLIF(?, ''), current_schema())
   AND c.relname = ?`
 
-// oracleTableOwnerQuery reads ALL_TABLES, where a schema is a user, so the
-// owner column is the answer. There is no membership to follow: a table in
+// oracleTableOwnerQuery reads ALL_OBJECTS, where a schema is a user, so the
+// owner column is the answer. There is no membership to follow: an object in
 // another account's schema is that account's, and reaching it at all is a
 // deliberate cross-schema arrangement.
+//
+// ALL_OBJECTS rather than ALL_TABLES, for the reason the PostgreSQL arm takes
+// no relkind: a view holding the name collides with CREATE TABLE the same way
+// a table does, and [oracleCreateTableIfAbsent] suppresses ORA-00955 for the
+// collision, so a lookup that saw only tables would report the name free and
+// hand a crafted view with an INSTEAD OF trigger the adoption this refuses.
+//
+// No object-type filter either. An object type in its own namespace -- an
+// index, a trigger -- cannot collide, but one standing in this account's own
+// schema answers that the account owns it, so filtering would remove nothing
+// but the sentence explaining the filter.
 const oracleTableOwnerQuery = `SELECT
-  t.owner,
+  o.owner,
   SYS_CONTEXT('USERENV', 'CURRENT_USER'),
-  CASE WHEN t.owner = SYS_CONTEXT('USERENV', 'CURRENT_USER') THEN 1 ELSE 0 END
-FROM all_tables t
-WHERE t.owner = ? AND t.table_name = ?`
+  CASE WHEN o.owner = SYS_CONTEXT('USERENV', 'CURRENT_USER') THEN 1 ELSE 0 END
+FROM all_objects o
+WHERE o.owner = ? AND o.object_name = ?
+FETCH FIRST 1 ROWS ONLY`
