@@ -792,11 +792,20 @@ func (m *Migrator) countRevisionsAboveSQL() string {
 	return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE version > ?`, m.qualifiedMigrationsTable())
 }
 
+// deleteRevisionsAboveSQL renders the delete a `set` runs over the NATIVE
+// revision table, whose version column is an integer.
+//
+// So it compares that column and nothing else. The Atlas expression guards a
+// text column that carries metadata and repeatable tokens, and asking it here
+// renders `version LIKE '.%'` against a BIGINT: PostgreSQL answers `operator
+// does not exist: bigint ~~ unknown` and the set fails outright, while SQLite
+// accepts the comparison, which is why no offline test on SQLite could see it
+// (stokaro/ptah#3461). A native table has no dot row and no repeatable token
+// for the guard to protect.
 func (m *Migrator) deleteRevisionsAboveSQL() string {
 	return fmt.Sprintf(
-		`DELETE FROM %s WHERE %s > ?`,
+		`DELETE FROM %s WHERE version > ?`,
 		m.qualifiedMigrationsTable(),
-		m.atlasVersionNumberExpression(),
 	)
 }
 
@@ -2755,10 +2764,10 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	exactRemoved = append(exactRemoved, unnumberedRemovedAtlasRevisions(
+	exactRemoved = append(exactRemoved, m.unnumberedRemovedAtlasRevisions(
 		existing, migrations, version, retired, exactRemoved,
 	)...)
-	result := atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
+	result := m.atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
 	if m.revisionTableFormat.isAtlas() {
 		err = m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version, exactRemoved)
 	} else {
@@ -2786,7 +2795,7 @@ func waitForAtlasSetRetry(ctx context.Context, attempt int) error {
 	}
 }
 
-func atlasRevisionSetChanges(
+func (m *Migrator) atlasRevisionSetChanges(
 	existing []MigrationRevision,
 	migrations []*Migration,
 	version int64,
@@ -2797,7 +2806,7 @@ func atlasRevisionSetChanges(
 	revisions := newSetRevisionIndex(existing)
 	target := setBoundary(migrations)
 	for _, revision := range existing {
-		if revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
+		if m.revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
 			result.Removed = append(result.Removed, AtlasRevisionChange{
 				Version:         revision.Version,
 				RevisionVersion: revision.RevisionVersion(),
@@ -2831,7 +2840,7 @@ func atlasRevisionSetChanges(
 //
 // An Atlas metadata row is not a migration and is not touched at any version,
 // which is the invariant the whole revision path keeps.
-func revisionRemovedByAtlasSet(
+func (m *Migrator) revisionRemovedByAtlasSet(
 	revision MigrationRevision,
 	target *Migration,
 	version int64,
@@ -2841,7 +2850,7 @@ func revisionRemovedByAtlasSet(
 	if slices.Contains(exactRemoved, key) {
 		return true
 	}
-	if isAtlasMetadataRevisionVersion(key) {
+	if m.isAtlasMetadataRevisionVersion(key) {
 		return false
 	}
 	if version == 0 {
@@ -2850,10 +2859,20 @@ func revisionRemovedByAtlasSet(
 	return revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key)
 }
 
-// isAtlasMetadataRevisionVersion is the Go reading of [atlasMetadataRowPredicate]:
-// Atlas writes dot-prefixed pseudo-versions for its own bookkeeping, and no
-// write path in Ptah removes or rewrites one.
-func isAtlasMetadataRevisionVersion(revisionVersion string) bool {
+// isAtlasMetadataRevisionVersion is the Go reading of whichever predicate this
+// migrator's read applied, which is not one predicate.
+//
+// Without an exact revision map the read is [atlasMetadataRowPredicate] and
+// every dot-prefixed pseudo-version is Atlas bookkeeping. With one it is
+// [atlasExactIdentityRowPredicateFor], which excludes `.atlas_cloud_identifier`
+// alone, because a converted directory may map a dot identity to a real
+// migration -- and the version expression then maps it to a number the delete
+// compares. Reading the class in that mode would leave the row deleted and the
+// summary silent about it.
+func (m *Migrator) isAtlasMetadataRevisionVersion(revisionVersion string) bool {
+	if m.hasAtlasRevisionVersionMap() {
+		return revisionVersion == atlasCloudIdentifierVersion
+	}
 	return strings.HasPrefix(revisionVersion, ".")
 }
 
@@ -2867,7 +2886,7 @@ func isAtlasMetadataRevisionVersion(revisionVersion string) bool {
 // repeatable and an Atlas metadata row have no number, and a metadata row is
 // never reported removed, because it resolves to version 0 and no boundary is
 // below that.
-func unnumberedRemovedAtlasRevisions(
+func (m *Migrator) unnumberedRemovedAtlasRevisions(
 	existing []MigrationRevision,
 	migrations []*Migration,
 	version int64,
@@ -2880,7 +2899,7 @@ func unnumberedRemovedAtlasRevisions(
 		if !atlasVersionNumberIsNull(key) || slices.Contains(exactRemoved, key) {
 			continue
 		}
-		if !revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
+		if !m.revisionRemovedByAtlasSet(revision, target, version, retired, exactRemoved) {
 			continue
 		}
 		keys = append(keys, key)

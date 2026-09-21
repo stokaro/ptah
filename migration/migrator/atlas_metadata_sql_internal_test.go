@@ -197,7 +197,11 @@ func TestAtlasVersionNumberExpression_MapsOpaqueRevisionIdentitiesToRuntimeOrder
 	c.Assert(m.atlasVersionNumberExpression(), qt.Equals, wantMapping)
 	c.Assert(m.getVersionSQL(), qt.Contains, wantMapping)
 	c.Assert(m.countRevisionsAboveSQL(), qt.Contains, wantMapping)
-	c.Assert(m.deleteRevisionsAboveSQL(), qt.Contains, wantMapping)
+	deleteSQL, _ := m.deleteAtlasSetRevisionsAbove(nil, nil, 1, nil)
+	c.Assert(deleteSQL, qt.Contains, wantMapping)
+	// The native delete is not in this list: it compares an integer column and
+	// must not carry the mapping, which would be a text predicate over BIGINT.
+	c.Assert(m.deleteRevisionsAboveSQL(), qt.Not(qt.Contains), wantMapping)
 }
 
 func TestAtlasVersionNumberExpression_UsesTypedZeroForRetiredExactHistory(t *testing.T) {
@@ -364,7 +368,7 @@ func TestAtlasUnfilteredRevisionSQL_CarriesNullGuard(t *testing.T) {
 	}{
 		{name: "get version", sql: m.getVersionSQL()},
 		{name: "count revisions above", sql: m.countRevisionsAboveSQL()},
-		{name: "delete revisions above", sql: m.deleteRevisionsAboveSQL()},
+		{name: "delete atlas revisions above", sql: mustAtlasSetDeleteSQL(m)},
 	}
 
 	for _, tt := range tests {
@@ -812,4 +816,13 @@ func TestRevisionUpdateSQL_TransactionalDialectUsesUpdate(t *testing.T) {
 	c.Assert(got, qt.Equals, `UPDATE "revisions"
 SET applied = ?, total = ?
 WHERE version = ?`)
+}
+
+// mustAtlasSetDeleteSQL renders the Atlas set delete for the guard table above.
+// The native delete is not there: it compares the integer version column, so it
+// has no cast to guard, and asking it for one is the defect stokaro/ptah#3461
+// records.
+func mustAtlasSetDeleteSQL(m *Migrator) string {
+	sql, _ := m.deleteAtlasSetRevisionsAbove(nil, nil, 1, nil)
+	return sql
 }

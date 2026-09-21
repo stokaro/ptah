@@ -119,32 +119,69 @@ func TestSetRevision_FailurePath(t *testing.T) {
 func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
 	t.Run("version 0 removes a migration row that orders to zero", func(t *testing.T) {
 		c := qt.New(t)
+		plain := &Migrator{}
 		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
 
-		removed := revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
+		removed := plain.revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
 
 		c.Assert(removed, qt.IsTrue)
 	})
 
 	t.Run("version 0 keeps an Atlas metadata row", func(t *testing.T) {
 		c := qt.New(t)
+		plain := &Migrator{}
 		revision := MigrationRevision{
 			Version:         0,
 			AtlasVersion:    ".atlas_cloud_identifier",
 			hasAtlasVersion: true,
 		}
 
-		removed := revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
+		removed := plain.revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
 
 		c.Assert(removed, qt.IsFalse)
+	})
+
+	// With an exact revision map the read keeps every dot identity but the
+	// cloud one, because a converted directory may map one to a real
+	// migration. Classifying by prefix there would leave the row deleted and
+	// the summary silent about it.
+	t.Run("an exact identity map keeps only the cloud row as metadata", func(t *testing.T) {
+		c := qt.New(t)
+		exact := exactIdentityMigrator(c)
+		plain := &Migrator{}
+		mapped := MigrationRevision{Version: 3, AtlasVersion: ".foo", hasAtlasVersion: true}
+		cloud := MigrationRevision{
+			Version:         0,
+			AtlasVersion:    ".atlas_cloud_identifier",
+			hasAtlasVersion: true,
+		}
+
+		c.Assert(exact.revisionRemovedByAtlasSet(mapped, nil, 0, nil, nil), qt.IsTrue)
+		c.Assert(exact.revisionRemovedByAtlasSet(cloud, nil, 0, nil, nil), qt.IsFalse)
+		// Without the map the whole dot-prefixed class is bookkeeping again.
+		c.Assert(plain.revisionRemovedByAtlasSet(mapped, nil, 0, nil, nil), qt.IsFalse)
 	})
 
 	t.Run("a version above zero is an ordering question again", func(t *testing.T) {
 		c := qt.New(t)
+		plain := &Migrator{}
 		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
 
-		removed := revisionRemovedByAtlasSet(revision, nil, 1, nil, nil)
+		removed := plain.revisionRemovedByAtlasSet(revision, nil, 1, nil, nil)
 
 		c.Assert(removed, qt.IsFalse)
 	})
+}
+
+// exactIdentityMigrator returns a migrator whose provider carries an exact
+// revision version map, which is what selects the narrower metadata predicate.
+func exactIdentityMigrator(c *qt.C) *Migrator {
+	c.Helper()
+	provider, err := NewFSMigrationProvider(
+		fstest.MapFS{"3_mapped.sql": {Data: []byte("SELECT 3;\n")}},
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		WithAtlasRevisionVersions(map[int64]string{3: ".foo"}),
+	)
+	c.Assert(err, qt.IsNil)
+	return &Migrator{migrationProvider: provider, revisionTableFormat: RevisionTableFormatAtlas}
 }

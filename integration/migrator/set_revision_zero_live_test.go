@@ -30,16 +30,18 @@ import (
 // distinction belongs to Oracle, where the empty string is NULL, and it is
 // pinned offline in migration/migrator/set_revision_zero_internal_test.go.
 //
-// The Atlas revision table is the format whose delete names the head row, so it
-// is the one this measures. The native format reaches no server here at all:
-// its delete applies the Atlas metadata guard to a BIGINT column and PostgreSQL
-// refuses the statement at every version, which stokaro/ptah#3461 owns. A row
-// for it belongs here once that closes (stokaro/ptah#3455).
+// Both formats run. They build their delete separately, and the native one is
+// where PostgreSQL decides: its version column is an integer, so a predicate
+// written for the Atlas text column -- `version LIKE '.%'` -- is refused with
+// `operator does not exist: bigint ~~ unknown` and the set fails at every
+// version. SQLite accepts that comparison, which is why only a server can say
+// the statement is well formed (stokaro/ptah#3455, stokaro/ptah#3461).
 func TestSetRevisionToZeroClearsEveryRevisionLive(t *testing.T) {
 	tests := []struct {
 		name   string
 		format migrator.RevisionTableFormat
 	}{
+		{name: "ptah revision table", format: migrator.RevisionTableFormatPtah},
 		{name: "atlas revision table", format: migrator.RevisionTableFormatAtlas},
 	}
 
