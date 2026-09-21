@@ -131,6 +131,27 @@ func (m *Migrator) migrationLogWritable() bool {
 	return m.migrationLogEnabled && !m.revisionTableFormat.isAtlas()
 }
 
+// refuseUnloggedRead says why this migrator has no log to read.
+//
+// Two conditions switch the log off and they have different remedies, so the
+// message names the one that applies. A run told the log was absent because of
+// the revision format, when the project simply turned it off, sends its
+// operator to change `revision-format` -- a setting that would not bring the
+// log back and that changes how every revision is written.
+func (m *Migrator) refuseUnloggedRead() error {
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Errorf(
+			"this migrator keeps no operation log: the log is a native capability and this run uses " +
+				"the Atlas-compatible revision format, which defines no such table")
+	}
+	if !m.migrationLogEnabled {
+		return fmt.Errorf(
+			"this migrator keeps no operation log: logging is turned off for this run, " +
+				"so there is no table to read. Set migration.log to true to record future runs")
+	}
+	return nil
+}
+
 // migrationLogTable is the log's table name, derived from the revision
 // table's so an operator who renamed or moved one finds the other beside it.
 //
@@ -413,10 +434,8 @@ func resolveActor(provided string) (string, ActorSource) {
 // pairing is what makes it visible. limit bounds the attempts returned; zero
 // returns every one.
 func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogAttempt, error) {
-	if !m.migrationLogWritable() {
-		return nil, fmt.Errorf(
-			"this migrator keeps no operation log: the log is a native capability and this run uses " +
-				"the Atlas-compatible revision format, which defines no such table")
+	if err := m.refuseUnloggedRead(); err != nil {
+		return nil, err
 	}
 	// No Initialize: reading is a question, and a question that created a
 	// table would change the database it was asked about -- and fail outright
@@ -514,4 +533,56 @@ func scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, error) {
 	entry.Checksum = checksum.String
 	entry.Error = failure.String
 	return entry, nil
+}
+
+// LogDerivedRollback opens a log attempt for every migration a rollback is
+// about to undo and returns the function that settles them.
+//
+// It is for a caller that rolls back by running its own statements -- a
+// rollback derived from the schema difference rather than from the authored
+// down bodies. That path never reaches [Migrator.MigrateDownTo], so nothing
+// would record it, while it deletes the same revision rows: the database ends
+// up looking like one that was never at those versions, which is the history
+// this log exists to keep.
+//
+// The returned function takes the rollback's own error, records
+// [MigrationLogRolledBack] for a nil one and [MigrationLogFailed] otherwise,
+// and must be called exactly once. Calling it is the caller's obligation: an
+// attempt left unsettled reads as [MigrationLogAttempt.Undetermined], which is
+// the right answer for a process that stopped and the wrong one for a rollback
+// that finished.
+//
+// Logging never fails the rollback. A migrator that keeps no log, a dry run,
+// and a boundary this migrator cannot resolve each return a function that
+// records nothing.
+func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) func(error) {
+	noop := func(error) {}
+	if !m.migrationLogWritable() || m.conn.Writer().IsDryRun() {
+		return noop
+	}
+	applied, err := m.GetAppliedMigrations(ctx)
+	if err != nil {
+		m.logger.Warn("Could not read the applied migrations for the log",
+			"targetVersion", targetVersion, "error", err)
+		return noop
+	}
+	rollingBack, err := migrationsToRollback(
+		migrationsByVersion(m.migrationProvider.Migrations()), applied, targetVersion)
+	if err != nil {
+		m.logger.Warn("Could not name the migrations a derived rollback undoes",
+			"targetVersion", targetVersion, "error", err)
+		return noop
+	}
+	for _, migration := range rollingBack {
+		m.logMigrationEvent(ctx, "down", migration, MigrationLogStarted, nil)
+	}
+	return func(failure error) {
+		state := MigrationLogRolledBack
+		if failure != nil {
+			state = MigrationLogFailed
+		}
+		for _, migration := range rollingBack {
+			m.logMigrationEvent(ctx, "down", migration, state, failure)
+		}
+	}
 }

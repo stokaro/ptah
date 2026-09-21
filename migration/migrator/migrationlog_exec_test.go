@@ -164,7 +164,29 @@ func TestMigrationLog_IsAbsentUnderTheAtlasRevisionFormat(t *testing.T) {
 	c.Assert(tables, qt.Equals, 0)
 
 	_, err = m.MigrationLog(ctx, 0)
-	c.Assert(err, qt.ErrorMatches, `this migrator keeps no operation log.*`)
+	c.Assert(err, qt.ErrorMatches, `.*Atlas-compatible revision format.*`)
+}
+
+// A run with the log turned off is told that, and not that its revision format
+// defines no log. The two are different settings with different remedies, and
+// the wrong message sends an operator to change how every revision is written.
+func TestMigrationLog_SaysWhichSettingClosedIt(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(context.Background(),
+		"sqlite://"+filepath.Join(t.TempDir(), "log.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "create_notes",
+			"CREATE TABLE notes (id INTEGER PRIMARY KEY);\n", "DROP TABLE notes;\n"))).
+		WithMigrationLog(false)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
+
+	_, err = m.MigrationLog(ctx, 0)
+
+	c.Assert(err, qt.ErrorMatches, `.*logging is turned off for this run.*`)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `.*Atlas.*`)
 }
 
 // The log table must be invisible to the schema comparison, or Ptah plans a

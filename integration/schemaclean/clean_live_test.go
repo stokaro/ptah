@@ -30,6 +30,10 @@ import (
 // by the catalog probe, and the other must NOT be added a second time on top of
 // the row the reader already produced.
 //
+// schema_migrations_log is the third: the reader hides it the same way and the
+// writer destroys it as an ordinary table, so a plan that omitted it would
+// delete operation history the operator was never shown.
+//
 // The keepme copies carry the same two names on purpose. The cleanup is schema
 // scoped, so a probe that ignored scope would plan two schema_migrations rows
 // against one destroyed, and the plan/destroyed comparison would fail.
@@ -47,6 +51,7 @@ var postgresCleanupFixture = []string{
 	`CREATE TRIGGER trg_users BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION f_touch()`,
 	`CREATE INDEX idx_users_email ON users (email)`,
 	`CREATE TABLE schema_migrations (version bigint PRIMARY KEY, dirty boolean)`,
+	`CREATE TABLE schema_migrations_log (run_id varchar, seq bigint, PRIMARY KEY (run_id, seq))`,
 	`CREATE TABLE atlas_schema_revisions (version varchar PRIMARY KEY, description varchar)`,
 
 	`CREATE SCHEMA keepme`,
@@ -55,6 +60,7 @@ var postgresCleanupFixture = []string{
 	`CREATE VIEW keepme.control_view AS SELECT id FROM keepme.control_table`,
 	`CREATE FUNCTION keepme.control_fn() RETURNS integer LANGUAGE sql AS 'SELECT 1'`,
 	`CREATE TABLE keepme.schema_migrations (version bigint PRIMARY KEY)`,
+	`CREATE TABLE keepme.schema_migrations_log (run_id varchar PRIMARY KEY)`,
 	`CREATE TABLE keepme.atlas_schema_revisions (version varchar PRIMARY KEY)`,
 }
 
@@ -163,6 +169,7 @@ func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 		"table|atlas_schema_revisions",
 		"table|control_table",
 		"table|schema_migrations",
+		"table|schema_migrations_log",
 		"view|control_view",
 	})
 	c.Assert(planned, qt.Not(qt.Any(qt.Contains)), "control")
@@ -172,6 +179,7 @@ func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 	// destroyed, so both must be named; neither reader nor probe alone
 	// produces both.
 	c.Assert(planned, qt.Contains, "table|schema_migrations")
+	c.Assert(planned, qt.Contains, "table|schema_migrations_log")
 	c.Assert(planned, qt.Contains, "table|atlas_schema_revisions")
 }
 
