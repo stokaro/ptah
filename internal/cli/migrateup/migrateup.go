@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdflags"
@@ -520,6 +521,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)
+	if err := requireLockTimeoutForOnlineMode(
+		lintPolicy, conn.Info().Dialect, timeouts, settings.txMode, migrationsFS,
+	); err != nil {
+		return err
+	}
 
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
@@ -850,6 +856,19 @@ func emitRunResult(w io.Writer, evidence migrator.RunEvidence) error {
 	return nil
 }
 
+// requireLockTimeoutForOnlineMode refuses an online-mode run on PostgreSQL
+// that set no lock timeout.
+//
+// It is the one requirement no reading of the SQL can carry. An ADD COLUMN
+// that edits only the catalog still takes ACCESS EXCLUSIVE for an instant, and
+// if anything holds a conflicting lock the ALTER waits -- with every later
+// reader and writer of that table waiting behind it, because the lock queue is
+// first in, first out. So a statement the mode calls online can take an
+// application down for as long as somebody else's SELECT runs, and a timeout
+// is what turns that wait into a failed statement somebody can retry.
+//
+// PostgreSQL only: the MySQL family has no lock_timeout with this meaning, and
+// the clause its statements carry makes the server refuse rather than queue.
 // emitLintPolicyVersionNote says what the policy's declared server version
 // resolved to when it named no measured release line.
 //
@@ -863,6 +882,72 @@ func emitLintPolicyVersionNote(emit cliobs.Emitter, policy migrationlintgate.Pol
 		return
 	}
 	emit.Printf("Migration lint policy: %s\n", note)
+}
+
+func requireLockTimeoutForOnlineMode(
+	policy migrationlintgate.Policy,
+	dialect string,
+	timeouts migrationfile.Timeouts,
+	runTxMode migrator.MigrationTxMode,
+	fsys fs.FS,
+) error {
+	if !policy.RequiresOnline() || !platform.IsPostgresFamily(dialect) || timeouts.HasLockTimeout {
+		return nil
+	}
+	if runTxMode == migrator.MigrationTxModeNone {
+		// The run itself opted every file out, so no migration can take a
+		// timeout and requiring one would leave this configuration with no
+		// successful invocation at all.
+		return nil
+	}
+	transactional, err := directoryHasTransactionalMigration(fsys)
+	if err != nil {
+		return err
+	}
+	if !transactional {
+		// Every migration in the directory opted out of the transaction, so
+		// none of them can take a timeout at all: the migrator refuses one on
+		// such a migration outright, and requiring it here would make the mode
+		// and the opt-out mutually exclusive. What those migrations run is the
+		// concurrent form, which is the repair this mode recommends.
+		return nil
+	}
+	return fmt.Errorf(
+		"online mode requires a lock timeout on PostgreSQL: a statement that takes ACCESS EXCLUSIVE "+
+			"for an instant still queues behind any conflicting lock, and every later reader and writer "+
+			"of that table queues behind it. Set --%s, or migration.lock_timeout in the project config",
+		lockTimeoutFlag,
+	)
+}
+
+// directoryHasTransactionalMigration reports whether any up file in the
+// directory runs inside the migrator's transaction.
+//
+// The whole directory rather than the pending versions: the hook that knows
+// which versions are pending runs after the lock is taken, and what this
+// question needs is whether a timeout can be set for the run at all. Reading
+// more files than the run will apply can only make the requirement stricter,
+// which is the safe direction for a mode that exists to refuse.
+func directoryHasTransactionalMigration(fsys fs.FS) (bool, error) {
+	// Every `.sql` file rather than the `*.up.sql` the Ptah format uses: an
+	// Atlas directory names its files `version.sql`, and a glob that matched
+	// none of them would report a directory made entirely of transactional
+	// migrations as needing no timeout. Reading a down file too can only make
+	// the requirement stricter, which is the safe direction here.
+	names, err := fs.Glob(fsys, "*.sql")
+	if err != nil {
+		return false, fmt.Errorf("read migrations for the online-mode lock timeout check: %w", err)
+	}
+	for _, name := range names {
+		sqlText, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return false, fmt.Errorf("read %s for the online-mode lock timeout check: %w", name, err)
+		}
+		if migrationfile.ParseFileTxMode(name, string(sqlText)).Mode != migrationfile.FileTxModeNone {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // emitMigrateUpDeferredChecks names the pre-migration checks a dry run

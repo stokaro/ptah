@@ -157,6 +157,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MF` | Atlas | Atlas: changes that may fail. Ptah: migration file form |
 | `MY` | Atlas | MySQL and MariaDB-specific rebuild and blocking-DDL hazards |
 | `NM` | Atlas | naming conventions, checked against the patterns a project configures |
+| `ON` | Ptah | online-DDL proof: statements the online mode could not prove take no conflicting lock, reported only when that mode is selected |
 | `OW` | Atlas | ownership policy; Atlas documents these, Ptah emits none |
 | `PG` | Atlas | PostgreSQL-specific locking, rewrite, and transaction hazards |
 | `SA` | Atlas | static analysis of routine bodies a migration defines |
@@ -165,7 +166,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-88 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+91 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -245,6 +246,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY143` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
 | `MY144` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
 | `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
+| `ON102` | the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse | both | Ptah |
 
 ### mysql, mariadb, sqlserver, clickhouse
 
@@ -256,6 +258,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
+| `ON101` | the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL | both | Ptah |
+| `ON103` | a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting | both | Ptah |
 | `PG101` | CREATE INDEX without CONCURRENTLY blocks writes for the whole build | both | Atlas |
 | `PG102` | ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it | both | Ptah |
 | `PG103` | CONCURRENTLY cannot run inside the migration's transaction | both | Atlas |
@@ -311,7 +315,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-17 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `MY146`, `SQL001`, `SQL002`. The other 78 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+20 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `MY146`, `ON101`, `ON102`, `ON103`, `SQL001`, `SQL002`. The other 78 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

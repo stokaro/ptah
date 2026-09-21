@@ -85,6 +85,7 @@ var families = []Family{
 	{Prefix: "DDL", Origin: OriginPtah, Summary: "the shape of a DDL statement the SQL linter modeled"},
 	{Prefix: "CAP", Origin: OriginPtah, Summary: "the target server version lacks a capability the statement needs"},
 	{Prefix: "AC", Origin: OriginPtah, Summary: "analysis coverage: what the linter did not read, so a clean result is not mistaken for a checked one"},
+	{Prefix: "ON", Origin: OriginPtah, Summary: "online-DDL proof: statements the online mode could not prove take no conflicting lock, reported only when that mode is selected"},
 }
 
 // Entry is one rule, joined from a registry and this package's declaration.
@@ -239,6 +240,15 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"AC101": {
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
+	},
+	"ON101": {
+		Summary: "the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL",
+	},
+	"ON102": {
+		Summary: "the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse",
+	},
+	"ON103": {
+		Summary: "a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting",
 	},
 	"DS108": {
 		Summary: "TRUNCATE deletes every row in the table",

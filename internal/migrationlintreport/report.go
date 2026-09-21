@@ -262,6 +262,11 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RuleConfigs:       cfg.Rules,
 		Naming:            cfg.Naming,
+		// The same policy decides the standalone lint and the apply gate, or
+		// the two disagree about the same directory: a `migrations lint` that
+		// reported a blocking migration clean, and a `migrations up` that
+		// refused it, is the pair an operator cannot act on.
+		RequireOnline: cfg.RequiresOnline(),
 	})
 	findings := analysis.Findings()
 	reported := analysis.Target()

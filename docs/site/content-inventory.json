@@ -6,14 +6,14 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 145,
-    "authored": 142,
+    "pages": 146,
+    "authored": 143,
     "generated": 3,
     "byType": {
       "concept": 16,
       "how-to": 57,
       "landing": 14,
-      "reference": 33,
+      "reference": 34,
       "status": 9,
       "troubleshooting": 5,
       "tutorial": 11
@@ -4703,8 +4703,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5780,
-      "sourceBytes": 38473
+      "visibleWords": 5884,
+      "sourceBytes": 39118
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6893,7 +6893,8 @@
         "/reference/lint-rules/",
         "/testing/ci/",
         "/versioned/generate/",
-        "/versioned/integrity-and-safety/"
+        "/versioned/integrity-and-safety/",
+        "/versioned/online-mode/"
       ],
       "inboundLinks": [
         "/concepts/database-urls-and-dev-databases/",
@@ -6909,8 +6910,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3960,
-      "sourceBytes": 28355
+      "visibleWords": 3986,
+      "sourceBytes": 28537
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",
@@ -6964,6 +6965,40 @@
       ],
       "visibleWords": 2178,
       "sourceBytes": 17589
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/online-mode.md",
+      "route": "/versioned/online-mode/",
+      "title": "The online mode",
+      "description": "What `online: require` proves about a migration, what it refuses, and what no reading of the SQL can answer.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "What does `online: require` prove about a migration, and what does it leave to me?",
+      "goal": "Read the online mode's guarantee and its limits before relying on it.",
+      "sourceOfTruth": [
+        "migration/lint"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "sourceMode": null,
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/versioned/lint/"
+      ],
+      "visibleWords": 571,
+      "sourceBytes": 3896
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

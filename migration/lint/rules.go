@@ -88,6 +88,7 @@ func builtinRules() []Rule {
 	rules = append(rules, inPlaceRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
+	rules = append(rules, onlineRules()...)
 	rules = append(rules, atlasGapRules()...)
 	return rules
 }

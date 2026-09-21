@@ -55,6 +55,8 @@ type Policy struct {
 	// families are the identifier families whose blocking findings refuse
 	// the apply: [ReportedFamily] and whatever the policy's gate section adds.
 	families []string
+	// online is the online mode, selected by the policy's `online` key.
+	online bool
 }
 
 // ServerVersionNote is what the policy's declared server version resolved to
@@ -133,6 +135,10 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 		disabled: append(disabled, cfg.DisabledRules...),
 		rules:    cfg.Rules,
 		families: families,
+		online:   cfg.RequiresOnline(),
+	}
+	if err := validateOnlineDialect(cfg, databaseDialect); err != nil {
+		return Policy{}, err
 	}
 	if err := lint.ValidateOptions(policy.options("")); err != nil {
 		return Policy{}, err
@@ -193,12 +199,41 @@ func (p Policy) gatesOn(rule string) bool {
 
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
-		Dialect:     p.dialect,
-		Target:      p.target,
-		Disabled:    p.disabled,
-		PathPrefix:  pathPrefix,
-		RuleConfigs: p.rules,
+		Dialect:       p.dialect,
+		Target:        p.target,
+		Disabled:      p.disabled,
+		PathPrefix:    pathPrefix,
+		RuleConfigs:   p.rules,
+		RequireOnline: p.online,
 	}
+}
+
+// RequiresOnline reports whether the policy selected the online mode.
+//
+// The apply path reads it for the one requirement no analysis of the SQL can
+// carry: on PostgreSQL an ALTER that takes ACCESS EXCLUSIVE for an instant
+// still queues behind whatever holds a conflicting lock, and every later
+// reader and writer of that table queues behind the ALTER. A statement this
+// mode calls online can therefore take an application down for as long as
+// somebody else's SELECT runs, and the only defense is a lock timeout that
+// turns the wait into a retry.
+func (p Policy) RequiresOnline() bool {
+	return p.online
+}
+
+// validateOnlineDialect refuses the online mode on a database the mode has no
+// measurement for.
+//
+// The configuration validates its own dialect when it names one, and a policy
+// that leaves the dialect to the connection reaches here with the engine the
+// wire reported. Both ends need the refusal: a mode that ran on an engine
+// nobody measured and reported nothing would be claiming a guarantee it never
+// checked.
+func validateOnlineDialect(cfg *lint.Config, databaseDialect string) error {
+	if !cfg.RequiresOnline() {
+		return nil
+	}
+	return lint.ValidateOnlineDialect(databaseDialect)
 }
 
 // policyTarget resolves the server the apply-time gate plans against, or

@@ -86,6 +86,7 @@ export const sidebar = [
       { slug: 'versioned/rollback' },
       { slug: 'versioned/integrity-and-safety' },
       { slug: 'versioned/lint' },
+      { slug: 'versioned/online-mode' },
       { slug: 'versioned/maintain-history' },
       { slug: 'versioned/import' },
       { slug: 'versioned/checkpoints' },

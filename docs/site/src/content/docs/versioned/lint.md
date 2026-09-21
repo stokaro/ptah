@@ -239,6 +239,10 @@ rules:
   is reported by `ptah migrations lint` and applies. A family no rule belongs
   to, and an empty list, fail config parsing.
 
+- `online: require` selects the online mode, which reports every statement it
+  cannot prove takes no blocking lock and refuses the apply. See
+  [The online mode](../online-mode/).
+
 Configuration decoding is strict. Unknown keys, misspelled keys such as
 `severty`, lowercase or whitespace-padded selectors, selectors that match no
 registered rule, unsupported dialects or severities, empty or malformed

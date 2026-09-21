@@ -279,6 +279,19 @@ type Options struct {
 	// RuleConfigs carries per-rule severity and path-scoping overrides,
 	// normally loaded from .ptah-lint.yaml.
 	RuleConfigs map[string]RuleConfig
+	// RequireOnline selects the online mode: the ON family runs, and every
+	// statement it cannot prove takes no conflicting lock on this engine is
+	// reported at error severity.
+	//
+	// It is an option rather than a rule selector because the family is an
+	// allowlist. Left on by default it would report most statements of most
+	// migrations, which is correct for the guarantee and useless as advice.
+	//
+	// The mode covers PostgreSQL, MySQL and MariaDB. Another dialect is
+	// refused by the caller that selects the mode rather than reported clean
+	// here, because a run that proved nothing and found nothing is the one
+	// answer this family must never give.
+	RequireOnline bool
 	// Baseline carries the schema state each analyzed version starts from,
 	// normally read from the dev database after replaying the migrations that
 	// precede that version. Empty analyzes SQL text alone, which is what every
@@ -954,6 +967,17 @@ func tokenizeSourceWords(sql string, mode scanMode) []string {
 	return words
 }
 
+// onlineRuleSelected reports whether an ON rule may run.
+//
+// The family is an allowlist, so on an ordinary run it would report almost
+// every statement in almost every migration. It runs only where a caller asked
+// for the guarantee, and the selection lives here rather than in the rules
+// because [ruleRunsOnFile] is the one place that decides what runs at all --
+// a second gate would be a second answer to the same question.
+func onlineRuleSelected(code string, opts Options) bool {
+	return opts.RequireOnline || !strings.HasPrefix(code, OnlineFamily)
+}
+
 // ruleRunsOnFile reports whether rule is enabled for this file under opts.
 //
 // It is shared with [baselineVersions] on purpose: the set of rules that run on
@@ -961,7 +985,8 @@ func tokenizeSourceWords(sql string, mode scanMode) []string {
 // be the same set, or a run reads a dev database for a rule it then skips, or
 // skips a read for a rule it then runs (stokaro/ptah#1632).
 func ruleRunsOnFile(rule Rule, file *File, opts Options) bool {
-	return !ruleDisabled(rule.Code, opts.Disabled, opts.Dialect, file.registered) &&
+	return onlineRuleSelected(rule.Code, opts) &&
+		!ruleDisabled(rule.Code, opts.Disabled, opts.Dialect, file.registered) &&
 		!fileSuppressesRule(file, rule.Code) &&
 		ruleAppliesToDialect(rule, opts.Dialect) &&
 		!ruleExcludedForFile(rule.Code, file, opts.RuleConfigs)

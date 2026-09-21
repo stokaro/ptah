@@ -62,6 +62,23 @@ type Config struct {
 	Naming *NamingConfig `yaml:"naming,omitempty"`
 	// Gate widens what the apply-time gate blocks on. See [GateConfig].
 	Gate *GateConfig `yaml:"gate,omitempty"`
+	// Online selects the online mode: every statement the analysis cannot
+	// prove takes no lock conflicting with reads and writes is reported at
+	// error severity, and `ptah migrations up` refuses the migration.
+	//
+	// The only accepted value is `require`. It is a word rather than a boolean
+	// because the mode is a promise about the SQL and not a preference, and
+	// because a second level -- report without refusing -- is the obvious next
+	// value and would have no room in a boolean.
+	Online string `yaml:"online,omitempty"`
+}
+
+// OnlineRequire is the one accepted value of the `online` key.
+const OnlineRequire = "require"
+
+// RequiresOnline reports whether the configuration selected the online mode.
+func (c *Config) RequiresOnline() bool {
+	return c != nil && c.Online == OnlineRequire
 }
 
 // GateConfig is the `gate` section of .ptah-lint.yaml: the rule families
@@ -163,7 +180,84 @@ func validateConfig(cfg *Config) error {
 	if err := validateGateConfig(cfg.Gate); err != nil {
 		return err
 	}
+	if err := validateOnlineConfig(cfg); err != nil {
+		return err
+	}
+	if err := validateOnlineSelectors(cfg); err != nil {
+		return err
+	}
 	return validateRuleConfigs(cfg.Rules)
+}
+
+// validateOnlineConfig refuses a value the mode does not have and a dialect it
+// cannot honestly cover.
+//
+// The dialect refusal is the load-bearing half. A mode that ran on SQLite and
+// found nothing would be reporting that every change is online on an engine
+// that rebuilds the table for most of them, and a guarantee that is wrong in
+// silence is worse than no guarantee. The same applies to the engines whose
+// online story is real but unmeasured here: CockroachDB, YugabyteDB and
+// Spanner apply schema changes online by design, and saying so needs its own
+// measurement rather than PostgreSQL's; SQL Server and Oracle answer
+// differently by edition.
+func validateOnlineConfig(cfg *Config) error {
+	switch cfg.Online {
+	case "", OnlineRequire:
+	default:
+		return fmt.Errorf("online: unsupported value %q (only %q is supported)", cfg.Online, OnlineRequire)
+	}
+	if !cfg.RequiresOnline() || cfg.Dialect == "" {
+		return nil
+	}
+	if err := ValidateOnlineDialect(cfg.Dialect); err != nil {
+		return fmt.Errorf("online: %w", err)
+	}
+	return nil
+}
+
+// validateOnlineSelectors refuses a policy that requires the mode and then
+// takes its findings away.
+//
+// Adding ON to the gate is not enough on its own: the same file can disable
+// the family, drop its severity below blocking, or exclude the paths it would
+// have fired on, and each of those turns a stated guarantee into advice
+// without saying so. A policy that wants the findings reported and not blocked
+// is a policy that does not require the mode.
+func validateOnlineSelectors(cfg *Config) error {
+	if !cfg.RequiresOnline() {
+		return nil
+	}
+	for _, selector := range cfg.DisabledRules {
+		if selectorTouchesOnline(selector) {
+			return fmt.Errorf(
+				"online: disabled-rules names %q while online: require is set, which would report "+
+					"nothing and refuse nothing", selector)
+		}
+	}
+	for _, code := range slices.Sorted(maps.Keys(cfg.Rules)) {
+		if !selectorTouchesOnline(code) {
+			continue
+		}
+		rule := cfg.Rules[code]
+		if rule.Severity != "" && Severity(rule.Severity) != SeverityError {
+			return fmt.Errorf(
+				"online: rules.%s sets severity %q while online: require is set; the mode's findings "+
+					"refuse the apply, so a lower severity would make the guarantee advisory",
+				code, rule.Severity)
+		}
+		if len(rule.Exclude) > 0 {
+			return fmt.Errorf(
+				"online: rules.%s excludes paths while online: require is set; a migration the mode "+
+					"does not read is one it cannot prove", code)
+		}
+	}
+	return nil
+}
+
+// selectorTouchesOnline reports whether a rule selector names the ON family or
+// a rule in it.
+func selectorTouchesOnline(selector string) bool {
+	return strings.HasPrefix(selector, OnlineFamily)
 }
 
 // validateGateConfig refuses a gate that names no family and a family no
@@ -187,6 +281,13 @@ func validateGateConfig(gate *GateConfig) error {
 // DS family the gate always blocks on first and no family twice.
 func (c *Config) GateFamilies() []string {
 	families := []string{"DS"}
+	if c.RequiresOnline() {
+		// The mode is a promise about what the apply does, so its findings
+		// refuse the apply. A policy selecting it and then having to name the
+		// family under `gate` as well would be two ways to say one thing, and
+		// the one that was left out would be a mode that reported and ran.
+		families = append(families, OnlineFamily)
+	}
 	if c == nil || c.Gate == nil {
 		return families
 	}
