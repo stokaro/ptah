@@ -394,6 +394,61 @@ a near-final timestamp and write-order-dependent duration. PostgreSQL-family
 revision tables use `TIMESTAMPTZ` for `executed_at`, matching Atlas-created
 tables.
 
+## Who owns the metadata tables
+
+Ptah creates the revision table and the operation log with `CREATE TABLE IF
+NOT EXISTS`, so a table already standing under that name would be adopted
+whatever put it there. A run refuses a metadata table the connecting role does
+not own, before anything reads or writes it:
+
+```text
+refusing to use metadata table schema_migrations: it is owned by "someone_else"
+and this connection runs as "app", so it is not the table Ptah would have
+created.
+```
+
+The owner has to be the connecting role itself. A group role the application
+merely belongs to is not an answer: every other member of that role can change
+the table, which is the arrangement the refusal exists to catch. Where a table
+has to stay owned by another role, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`
+accepts it as it stands.
+
+The refusal does not tell you to transfer the table. `ALTER TABLE ... OWNER TO`
+keeps the triggers, defaults and policies it carries, and the check would then
+accept it because the owner matches, so the remedy would be the last step of
+what it refused. Move any rows worth keeping and let Ptah create the table.
+
+The refusal is ownership rather than a list of what a table may carry: on the
+PostgreSQL family a trigger, a rule, a default expression on a column Ptah does
+not write and a row-level policy each run somebody else's SQL under the
+migration role, and provenance covers the next one too.
+
+Engines whose catalog cannot answer are outside it: the MySQL family, SQL
+Server, SQLite, ClickHouse and Spanner. On MySQL and MariaDB a trigger runs as
+its definer rather than as the connected account, so the same table gains its
+author a hook on every migration and not the migration role's privileges. SQL
+Server records no creator for an ordinary object -- the catalog reports the
+schema's owner -- so the answer there would say nothing about who made the
+table.
+
+The check covers a dry run too, because a dry run reads the table, and it runs
+again after the create, so a table placed between the two statements is caught
+rather than adopted.
+
+A name the target would truncate is refused, because the DDL and the writes
+would address one table while every catalog lookup named another. An overlong
+revision table or schema stops the run; an overlong derived log name only turns
+the log off for it, since the work itself is still recordable.
+
+Reading the log is refused the same way: a policy or an expression the server
+evaluates during a `SELECT` runs the other role's SQL with the reader's
+privileges, so a read is not safe by being a read.
+
+A foreign **log** table warns and the migration runs. Ptah cannot record what
+it did without a revision table, so that refusal is terminal; the log is a
+record beside the work, and failing the run would hand anyone who can create a
+table in the metadata schema a way to stop every migration.
+
 ## Atlas-compatible surface
 
 In the `ptah-compat` drop-in binary, `migrate edit`, `migrate rebase`, and

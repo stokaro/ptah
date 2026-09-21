@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -305,8 +306,10 @@ func (m *Migrator) logMigrationEvent(
 		ctx = durable
 	}
 	if err := m.ensureMigrationLogTable(ctx); err != nil {
-		m.logger.Warn("Could not create the migration log table",
-			"version", migration.Version, "error", err)
+		if !errors.Is(err, errMigrationLogAlreadyRefused) {
+			m.logger.Warn("Could not create the migration log table",
+				"version", migration.Version, "error", err)
+		}
 		return
 	}
 	entry := MigrationLogEntry{
@@ -361,12 +364,54 @@ func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
 // by any command run with an account that may read and not create -- turning a
 // question into a write, and a read-only credential into a failure. Only a run
 // that has something to record needs the table.
+// errMigrationLogAlreadyRefused is the silent form of a refusal already
+// reported. The caller warns on every other error and skips this one, so the
+// entry is still not written and the message is not repeated.
+var errMigrationLogAlreadyRefused = errors.New("migration log table already refused")
+
 func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
 		return nil
 	}
+	// A name the target would truncate closes the log for this run rather than
+	// stopping the migration. See [Migrator.refuseUnaddressableLogTable].
+	if err := m.refuseUnaddressableLogTable(); err != nil {
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
+	}
+	// The same refusal the revision table gets, and for the same reason: this
+	// table is written on every attempt, so adopting one somebody else created
+	// hands them a hook on every migration. See
+	// [Migrator.refuseForeignMetadataTable].
+	//
+	// It does not stop the migration, unlike the revision table's. Ptah cannot
+	// record what it did without a revision table, so there the refusal has to
+	// be terminal; the log is a record beside the work. Failing the run here
+	// would hand any role that can create a table in the metadata schema a way
+	// to stop every migration by creating this one.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		// Latched so the refusal is reported once rather than per entry: it
+		// names one table and one remedy, and repeating it per attempt buries
+		// the rest of the run.
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
+	}
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
 		return fmt.Errorf("create the migration log table: %w", err)
+	}
+	// Again after the create, for the reason the revision table is asked
+	// twice: the check above and this statement are two round trips, and a
+	// role that can create objects in the metadata schema can place its table
+	// between them for IF NOT EXISTS to adopt.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+			return errMigrationLogAlreadyRefused
+		}
+		return err
 	}
 	m.migrationLogReady.Store(true)
 	return nil
@@ -437,6 +482,17 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	if err := m.refuseUnloggedRead(); err != nil {
 		return nil, err
 	}
+	// Before the absent-table return: this is a public read path of its own,
+	// and a malformed override must not stay dormant because this database
+	// happens to have no log.
+	if err := m.validateMetadataInputs(); err != nil {
+		return nil, err
+	}
+	// A caller that asked for the log is told why it cannot be addressed,
+	// rather than shown the empty list an absent table produces.
+	if err := m.refuseUnaddressableLogTable(); err != nil {
+		return nil, err
+	}
 	// No Initialize: reading is a question, and a question that created a
 	// table would change the database it was asked about -- and fail outright
 	// for an account allowed to read and not to create. A target with no log
@@ -447,6 +503,14 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	}
 	if !present {
 		return nil, nil
+	}
+	// A read is not safe by being a read: a foreign table can carry a policy
+	// or an expression the server evaluates during the SELECT, which runs the
+	// squatter's SQL with the reader's privileges. The refusal is terminal
+	// here rather than a warning, because a caller that asked for the log gets
+	// nothing either way and should be told which table it declined to read.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		return nil, err
 	}
 	entries, err := m.readMigrationLogEntries(ctx)
 	if err != nil {

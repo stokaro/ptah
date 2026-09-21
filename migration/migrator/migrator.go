@@ -238,6 +238,10 @@ type Migrator struct {
 	// that writes two entries per migration sends its DDL once. A pointer for
 	// the same reason the counter is one.
 	migrationLogReady *atomic.Bool
+	// migrationLogRefused latches a log table this connection does not own, so
+	// the refusal is reported once rather than on every entry the run would
+	// have written.
+	migrationLogRefused *atomic.Bool
 	// actor is the name the log records for this run, and actorSource says
 	// what that name is worth. See [ActorSource].
 	actor                    string
@@ -286,6 +290,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLogRunID:   newMigrationLogRunID(),
 		migrationLogSeq:     new(atomic.Int64),
 		migrationLogReady:   new(atomic.Bool),
+		migrationLogRefused: new(atomic.Bool),
 		actor:               actorName,
 		actorSource:         actorSource,
 	}
@@ -1139,6 +1144,12 @@ func (m *Migrator) deleteMigrationSQL() string {
 func (m *Migrator) Initialize(ctx context.Context) error {
 	dryRun := m.conn.Writer().IsDryRun()
 
+	// Before the memoized return: a malformed value must not stay dormant
+	// because this invocation happened to be the second one.
+	if err := m.validateMetadataInputs(); err != nil {
+		return err
+	}
+
 	// Skip if already initialized. The memoized result is only valid for the
 	// dry-run mode it was computed under: a real Initialize records that the
 	// metadata now exists, while a dry-run Initialize only records what the
@@ -1151,6 +1162,14 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// Before any statement, including the dry run's inspection: a named engine
 	// the revision table cannot be is a refusal, not a table.
 	if err := revisionEngineRefusal(m.connectionDialect(), m.migrationsEngine); err != nil {
+		return err
+	}
+
+	// Before the dry run too: a dry run reads the existing metadata table, and
+	// a foreign one can attach a policy or a default expression that runs the
+	// squatter's SQL during a SELECT. A refusal that only covered writes would
+	// describe a protection the read path does not have.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
 		return err
 	}
 
@@ -1171,6 +1190,14 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// creation: there is no active migration transaction yet.
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
 		return m.migrationsTableCreateError(err)
+	}
+	// Again after the create, because the check above and this statement are
+	// two round trips: a role that can create objects in the metadata schema
+	// can place its table between them, and IF NOT EXISTS would adopt it
+	// silently. What Ptah created it owns, so the second answer is the one
+	// that holds.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
+		return err
 	}
 	// Check the engine before upgrading an existing table. ALTER TABLE itself
 	// commits on the MySQL family, so validating afterward could mutate metadata
