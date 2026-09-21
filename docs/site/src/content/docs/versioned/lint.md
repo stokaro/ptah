@@ -81,10 +81,12 @@ stops at exit `2`, because a run over every engine has no single target the
 version could describe, and so does a version naming no server or a different
 product than the target.
 
-A declared version is resolved against the product the connection reports, not
-against the URL's scheme, when nothing else named the dialect. A scheme is not
-a product: MariaDB speaks the MySQL protocol, so its address is a `mysql://`
-URL, and `postgres://` reaches CockroachDB, YugabyteDB and Spanner too.
+The dialect and a declared version both come from the product the connection
+reports, not from the URL's scheme, when nothing else named the dialect. A
+scheme is not a product: MariaDB speaks the MySQL protocol, so its address is a
+`mysql://` URL, and `postgres://` reaches CockroachDB, YugabyteDB and Spanner.
+The dialect picks the rules, so that server is linted as MariaDB; a dialect the
+run named itself still wins.
 
 `migrations up` and `ptah-compat migrate lint` read the same file. The apply
 gate resolves `server-version` against the dialect its connection reports, and
@@ -140,12 +142,10 @@ Useful controls, all designed for CI:
   `codequality` artifact — [CI](../../testing/ci/) shows both upload steps.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
   `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
-  `yugabytedb`, and `spanner`. Every documented alias of those names is
-  accepted too and resolves to the canonical one, so `--dialect pgx`,
-  `--dialect postgresql` and `--dialect postgres` are the same request — see
-  [Dialects and capabilities](../../concepts/dialects-and-capabilities/) for
-  the full spelling table. `--dev-url` infers the dialect and additionally
-  replays the directory on the dev database. Before each analyzed version
+  `yugabytedb`, and `spanner`. Every documented alias resolves to the canonical
+  name — see [Dialects and capabilities](../../concepts/dialects-and-capabilities/)
+  for the spelling table. `--dev-url` infers the dialect and replays the
+  directory on the dev database. Before each analyzed version
   the run reads the schema state that version starts from and hands it to
   the rules that ask for it: the columns with their type, nullability,
   default, character set and collation, the indexes with their key parts,

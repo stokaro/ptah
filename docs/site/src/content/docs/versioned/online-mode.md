@@ -22,6 +22,12 @@ statement it does not recognize.
 
 It does not guarantee zero downtime, and must not be read as doing so.
 
+The mode is refused on an engine it has no measurement for, rather than
+reporting a clean directory nothing proved. Where the run names a dialect the
+refusal comes from the configuration; where only a dev URL names one, it comes
+when the connection says which product answered, because a `postgres://` URL
+reaches CockroachDB, YugabyteDB and Spanner too.
+
 ## What it proves
 
 `online: require` states one property about the SQL, and it is worth quoting
