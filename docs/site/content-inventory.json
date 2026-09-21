@@ -3954,6 +3954,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/operate/verify-a-release/",
         "/reference/capabilities/",
         "/reference/exit-codes/",
         "/reference/native-commands/",
@@ -3971,14 +3972,15 @@
         "/operate/deliver/",
         "/operate/kubernetes-operator/",
         "/operate/overview/",
+        "/operate/verify-a-release/",
         "/reference/capabilities/",
         "/reference/native-commands/",
         "/versioned/apply/",
         "/versioned/lint/",
         "/versioned/maintain-history/"
       ],
-      "visibleWords": 3363,
-      "sourceBytes": 27256
+      "visibleWords": 3443,
+      "sourceBytes": 27790
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -4162,10 +4164,14 @@
         "/direct/compare-and-drift/"
       ],
       "disposition": "keep",
-      "outboundLinks": [],
-      "inboundLinks": [],
-      "visibleWords": 1052,
-      "sourceBytes": 7517
+      "outboundLinks": [
+        "/operate/oci-registry/"
+      ],
+      "inboundLinks": [
+        "/operate/oci-registry/"
+      ],
+      "visibleWords": 1180,
+      "sourceBytes": 8423
     },
     {
       "path": "docs/site/src/content/docs/operate/zero-downtime-changes.mdx",
@@ -4363,8 +4369,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8859,
-      "sourceBytes": 87554
+      "visibleWords": 8872,
+      "sourceBytes": 87672
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

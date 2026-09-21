@@ -78,7 +78,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 func TestCapture_FailurePath(t *testing.T) {
 	t.Run("nil database", func(t *testing.T) {
 		c := qt.New(t)
-		snapshot, err := schemaartifact.Capture(nil)
+		snapshot, err := schemaartifact.Capture(nil, nil)
 		c.Assert(err, qt.ErrorMatches, "schema database is required")
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -90,7 +90,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.ManagedData = []schemamodel.ManagedData{{Table: "users", Keys: []string{"id"}, File: "users.yaml"}}
-		snapshot, err := schemaartifact.Capture(db)
+		snapshot, err := schemaartifact.Capture(db, nil)
 		c.Assert(err, qt.ErrorMatches, `managed data for table users was never read from users.yaml`)
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -99,7 +99,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.Roles = []schemamodel.Role{{Name: "app_user", Password: "secret"}}
-		snapshot, err := schemaartifact.Capture(db)
+		snapshot, err := schemaartifact.Capture(db, nil)
 		c.Assert(err, qt.ErrorMatches, `schema artifact cannot contain password for role "app_user"`)
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -108,7 +108,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
 		db.Indexes = []schemamodel.Index{{Name: "missing_idx", TableName: "missing"}}
-		snapshot, err := schemaartifact.Capture(db)
+		snapshot, err := schemaartifact.Capture(db, nil)
 		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*index missing_idx.*")
 		c.Assert(snapshot, qt.IsNil)
 	})
@@ -120,7 +120,7 @@ func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
-	snapshot, err := schemaartifact.Capture(db)
+	snapshot, err := schemaartifact.Capture(db, nil)
 	c.Assert(err, qt.IsNil)
 	data, err := fs.ReadFile(snapshot, schemaartifact.FileName)
 	c.Assert(err, qt.IsNil)

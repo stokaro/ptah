@@ -37,6 +37,17 @@ const (
 	// refuses the artifact rather than reading the schema layer and publishing a
 	// database without the rows its author declared.
 	ManagedDataLayerMediaType = "application/vnd.stokaro.ptah.managed-data.v1+json"
+	// ChecksFileName is the release-assertion layer name, present only in an
+	// artifact published with checks.
+	ChecksFileName = "checks.sql"
+	// ChecksLayerMediaType identifies the release-assertion layer.
+	//
+	// The version suffix carries the same weight it does above: a reader that
+	// does not know this media type refuses the artifact rather than pulling
+	// the schema and verifying nothing, which is the failure this layer exists
+	// to design out -- checks approved at review time and different checks
+	// evaluated afterwards.
+	ChecksLayerMediaType = "application/vnd.stokaro.ptah.checks.v1+sql"
 
 	annotationFormat = "io.stokaro.ptah.schema-format"
 	canonicalFormat  = "hcl"
@@ -48,8 +59,11 @@ const (
 var (
 	layerMediaTypes = map[string]string{
 		ManagedDataFileName: ManagedDataLayerMediaType,
+		ChecksFileName:      ChecksLayerMediaType,
 	}
-	acceptedLayerMediaTypes = []string{LayerMediaType, ManagedDataLayerMediaType}
+	acceptedLayerMediaTypes = []string{
+		LayerMediaType, ManagedDataLayerMediaType, ChecksLayerMediaType,
+	}
 )
 
 // PushOptions controls schema artifact tags and metadata.
@@ -65,6 +79,16 @@ type PushOptions struct {
 	// by default makes every publish a promotion nobody asked for.
 	Latest           bool
 	GeneratedVersion bool
+	// Checks is the release-assertion source published beside the schema,
+	// empty when the artifact carries none.
+	//
+	// It is bytes the caller supplies rather than a field of the schema model,
+	// deliberately. The model is walked by every comparator, planner and
+	// renderer, and a checks field there would be traversed by all of them to
+	// serve one publisher and one reader. What the artifact needs is that the
+	// approved checks and the evaluated checks are the same bytes, which a
+	// layer gives without the model knowing they exist (stokaro/ptah#3458).
+	Checks []byte
 }
 
 // PushResult describes a published immutable schema artifact.
@@ -82,6 +106,10 @@ type PushResult struct {
 type Artifact struct {
 	Database   *schemamodel.Database
 	FileSystem fs.FS
+	// Checks is the release-assertion source the artifact carries, nil when it
+	// carries none. It is the bytes that were published, so an evaluation that
+	// reads them here is evaluating what was approved.
+	Checks     []byte
 	Descriptor ocispec.Descriptor
 	Reference  ociartifact.Reference
 }
@@ -93,8 +121,13 @@ type preparedPush struct {
 	Annotations map[string]string
 }
 
-// Capture renders db into a lossless canonical HCL snapshot.
-func Capture(db *schemamodel.Database) (fs.FS, error) {
+// Capture renders db into a lossless canonical HCL snapshot, with the layers
+// the artifact carries beside it.
+//
+// checks is the release-assertion source, empty for an artifact that carries
+// none. It is taken here rather than read from db for the reason
+// [PushOptions.Checks] gives.
+func Capture(db *schemamodel.Database, checks []byte) (fs.FS, error) {
 	if db == nil {
 		return nil, fmt.Errorf("schema database is required")
 	}
@@ -135,6 +168,9 @@ func Capture(db *schemamodel.Database) (fs.FS, error) {
 	files := map[string][]byte{FileName: rendered.Data}
 	if managed != nil {
 		files[ManagedDataFileName] = managed
+	}
+	if len(checks) > 0 {
+		files[ChecksFileName] = checks
 	}
 	snapshot, err := fsnapshot.FromFiles(files)
 	if err != nil {
@@ -305,7 +341,7 @@ func prepare(
 	db *schemamodel.Database,
 	opts PushOptions,
 ) (preparedPush, error) {
-	snapshot, err := Capture(db)
+	snapshot, err := Capture(db, opts.Checks)
 	if err != nil {
 		return preparedPush{}, err
 	}
@@ -343,19 +379,27 @@ func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("read schema artifact: %w", err)
 	}
 	managedDataPresent := false
+	checksPresent := false
+	schemaPresent := false
 	for _, entry := range entries {
 		if entry.IsDir() {
-			return Artifact{}, fmt.Errorf("schema artifact must contain only %s and %s", FileName, ManagedDataFileName)
+			return Artifact{}, fmt.Errorf(
+				"schema artifact must contain only %s, %s and %s",
+				FileName, ManagedDataFileName, ChecksFileName,
+			)
 		}
 		switch entry.Name() {
 		case FileName:
+			schemaPresent = true
 		case ManagedDataFileName:
 			managedDataPresent = true
+		case ChecksFileName:
+			checksPresent = true
 		default:
 			return Artifact{}, fmt.Errorf("schema artifact carries unexpected file %s", entry.Name())
 		}
 	}
-	if len(entries) == 0 || (len(entries) == 1 && managedDataPresent) {
+	if !schemaPresent {
 		return Artifact{}, fmt.Errorf("schema artifact must contain %s", FileName)
 	}
 	data, err := fs.ReadFile(pulled.FileSystem, FileName)
@@ -376,9 +420,17 @@ func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
 	if err := AttachManagedRows(db, managed); err != nil {
 		return Artifact{}, err
 	}
+	checks := []byte(nil)
+	if checksPresent {
+		checks, err = fs.ReadFile(pulled.FileSystem, ChecksFileName)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("read checks layer: %w", err)
+		}
+	}
 	return Artifact{
 		Database:   db,
 		FileSystem: pulled.FileSystem,
+		Checks:     checks,
 		Descriptor: pulled.Descriptor,
 		Reference:  pulled.Reference,
 	}, nil

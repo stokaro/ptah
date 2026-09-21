@@ -68,9 +68,9 @@ func TestPushToPullFrom_CarriesDeclaredRows(t *testing.T) {
 func TestCaptureRendersTheSameLayerTwice(t *testing.T) {
 	c := qt.New(t)
 
-	first, err := schemaartifact.Capture(managedUsersDatabase())
+	first, err := schemaartifact.Capture(managedUsersDatabase(), nil)
 	c.Assert(err, qt.IsNil)
-	second, err := schemaartifact.Capture(managedUsersDatabase())
+	second, err := schemaartifact.Capture(managedUsersDatabase(), nil)
 	c.Assert(err, qt.IsNil)
 
 	firstLayer, err := fs.ReadFile(first, schemaartifact.ManagedDataFileName)
@@ -127,7 +127,7 @@ func TestCaptureRefusesUnusableRows(t *testing.T) {
 				Table: "users", Keys: test.keys, File: "users.yaml", Rows: test.rows,
 			}}
 
-			snapshot, err := schemaartifact.Capture(db)
+			snapshot, err := schemaartifact.Capture(db, nil)
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(snapshot, qt.IsNil)

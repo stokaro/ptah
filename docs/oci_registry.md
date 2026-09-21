@@ -735,6 +735,16 @@ ptah schema push \
   --dialect postgres
 ```
 
+Publish the release assertions beside the schema:
+
+```bash
+ptah schema push \
+  oci://ghcr.io/acme/app-schema \
+  --schema-file ./schema.sql \
+  --dialect postgres \
+  --checks ./release-checks.sql
+```
+
 Ptah resolves and merges the selected desired-schema sources, then renders one
 canonical `schema.hcl` layer, and a `managed-data.json` layer beside it when the
 schema declares reference data. Publication fails closed if the schema cannot be
@@ -758,6 +768,24 @@ declared it, because resolving to a Go value loses what a reference table is
 made of: `007` becomes 7, `1.0` becomes 1, and `2020-01-01` becomes a timestamp.
 A column absent from a row was not declared; a column written as `null` was
 declared null, and nothing collapses the two.
+
+`--checks` publishes a third layer, under
+`application/vnd.stokaro.ptah.checks.v1+sql`, carrying the `-- +ptah check`
+release assertions that say what the change was for. `ptah db verify --checks
+oci://...` reads them back, so the assertions a reviewer approved and the
+assertions that run are one set of bytes rather than two files that drifted:
+
+```bash
+ptah db verify \
+  --db-url "$DATABASE_URL" \
+  --checks oci://ghcr.io/acme/app-schema@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+Pin the reference by digest to make that binding hold: a tag can be moved, and a
+digest names the bytes it named. An empty checks file is refused at publish
+time, and an artifact that publishes no checks layer is refused at verify time,
+because an operator who named an artifact expected its assertions and "this
+publishes none" is a different answer from "every one held".
 
 A reader that does not know the managed-data media type refuses the whole
 artifact rather than reading the schema and deploying a database without the

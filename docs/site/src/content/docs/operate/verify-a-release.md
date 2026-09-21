@@ -125,6 +125,26 @@ the guarantee a pre-migration check already carries there.
 Each assertion is evaluated in its own session, so one the server refuses
 cannot decide the outcome of the next.
 
+## Verify the checks that were approved
+
+`--checks` also takes an `oci://` reference to a schema artifact that publishes
+them. `ptah schema push --checks ./release-checks.sql` puts the assertions in a
+layer beside the schema — see [Publish a schema to an OCI
+registry](../oci-registry/) — and the verify run reads them from there:
+
+```bash
+ptah db verify \
+  --db-url "$DATABASE_URL" \
+  --checks oci://ghcr.io/acme/app-schema@sha256:...
+```
+
+A path names whatever is on disk when the run happens. An artifact reference
+pinned by digest names one set of bytes, so the assertions a reviewer approved
+are the assertions that run — a tag moved afterwards cannot turn a violated
+requirement into a clean release. An artifact that publishes no checks layer is
+refused rather than reported as a run with nothing to verify: "this artifact
+asserts nothing" and "every assertion held" are different answers.
+
 ### What it reads
 
 A verification run reads whatever the login it connects with can read. The
