@@ -684,9 +684,9 @@ func (m *Migration) executeUp(ctx context.Context, conn *dbschema.DatabaseConnec
 		return m.upTxModeErr
 	}
 	if m.upSQLFunc != nil {
-		return m.upSQLFunc(ctx, conn, mode)
+		return onlineAlterRefusal(m.Version, m.upSQLFunc(ctx, conn, mode))
 	}
-	return m.Up(ctx, conn)
+	return onlineAlterRefusal(m.Version, m.Up(ctx, conn))
 }
 
 func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
@@ -694,9 +694,9 @@ func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConn
 		return m.downTxModeErr
 	}
 	if m.downSQLFunc != nil {
-		return m.downSQLFunc(ctx, conn, mode)
+		return onlineAlterRefusal(m.Version, m.downSQLFunc(ctx, conn, mode))
 	}
-	return m.Down(ctx, conn)
+	return onlineAlterRefusal(m.Version, m.Down(ctx, conn))
 }
 
 // CreateMigrationFromSQL creates a programmatic migration from up and down SQL

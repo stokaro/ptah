@@ -540,6 +540,7 @@ func planDiffFileContents(
 		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 		})
 

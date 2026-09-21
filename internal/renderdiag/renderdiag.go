@@ -408,6 +408,17 @@ const (
 	// attached on the create path alone, so a record written for a drop would
 	// be handling that can never fire.
 	ConcurrentBuildProperty = "concurrent index build"
+	// OnlineAlterClauseProperty is the MySQL-family ALGORITHM and LOCK request
+	// a target has no grammar for. The statement reads as an ordinary ALTER
+	// TABLE either way, and the difference is who decides whether it runs in
+	// place: with the clause the server refuses what it cannot honor, and
+	// without it the change proceeds however the server chooses.
+	OnlineAlterClauseProperty = "online alter clause"
+	// UnvalidatedConstraintProperty is a constraint the target adds while
+	// scanning the rows already in the table, where the plan asked for the
+	// two-step form. The constraint is enforced either way; what is lost is
+	// the weaker lock the separate validation takes.
+	UnvalidatedConstraintProperty = "unvalidated constraint"
 )
 
 // RecordLostStorageParams records every index storage parameter a target drops.
@@ -459,6 +470,26 @@ func (s *Sink) RecordLostIndexType(index, indexType string) {
 // makes the loss worth a record: nothing in the file says the lock is coming.
 func (s *Sink) RecordLostConcurrentBuild(index string) {
 	s.Record(PropertyOmission(IndexKind, index, ConcurrentBuildProperty, ""))
+}
+
+// RecordLostOnlineAlterClause records an ALTER TABLE whose ALGORITHM and LOCK
+// request the target has no grammar for.
+//
+// The rendered statement is a valid ALTER TABLE either way, which is what
+// makes the loss worth a record: nothing in the file says the server was free
+// to copy the table.
+func (s *Sink) RecordLostOnlineAlterClause(table string) {
+	s.Record(PropertyOmission(TableKind, table, OnlineAlterClauseProperty, ""))
+}
+
+// RecordLostUnvalidatedConstraint records a constraint the target adds with
+// its scan, where the plan asked to add it NOT VALID and validate it
+// separately.
+//
+// The constraint ends up enforced either way, so the statement reads as
+// correct; what is gone is the lock the separate validation would have taken.
+func (s *Sink) RecordLostUnvalidatedConstraint(constraint string) {
+	s.Record(PropertyOmission(TableKind, constraint, UnvalidatedConstraintProperty, ""))
 }
 
 // Kinds an omission names beside [TableKind], [ColumnKind] and [IndexKind].

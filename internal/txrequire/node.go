@@ -39,9 +39,27 @@ func NodeRequiresAutocommit(dialect string, node ast.Node) bool {
 		return typed.Concurrently
 	case *ast.AlterTypeNode:
 		return addsEnumValue(typed)
+	case *ast.AlterTableNode:
+		// A constraint added NOT VALID and validated in the same transaction
+		// gains nothing: the ACCESS EXCLUSIVE lock the addition takes is held
+		// to commit, so the weaker lock the validation asks for is held behind
+		// it and writers wait either way. The pair is worth writing only when
+		// the two statements commit separately.
+		return validatesConstraint(typed)
 	default:
 		return false
 	}
+}
+
+// validatesConstraint reports whether the ALTER completes a constraint added
+// NOT VALID.
+func validatesConstraint(node *ast.AlterTableNode) bool {
+	for _, operation := range node.Operations {
+		if _, ok := operation.(*ast.ValidateConstraintOperation); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func addsEnumValue(node *ast.AlterTypeNode) bool {
@@ -62,10 +80,11 @@ func addsEnumValue(node *ast.AlterTypeNode) bool {
 // 55P04 otherwise -- so its file leads. A concurrent index is built after the
 // table it indexes, so its file follows.
 //
-// [KindUnsplittable] is not reachable from a plan today: every node
-// [NodeRequiresAutocommit] answers true for is one of the other two. It exists
-// so that a third kind added later is refused by name rather than dropped into
-// whichever file happens to come first.
+// [KindUnsplittable] is what a constraint pair asking for its own transaction
+// lands on, and the refusal is the answer: a NOT VALID constraint and the
+// statement that validates it have to stay together and have to commit apart
+// from the statements around them, which is one migration of their own rather
+// than a place in this one.
 type AutocommitKind int
 
 const (
@@ -108,6 +127,8 @@ func Describe(node ast.Node) string {
 		return "DROP INDEX " + typed.Name
 	case *ast.AlterTypeNode:
 		return "ALTER TYPE " + typed.Name
+	case *ast.AlterTableNode:
+		return "ALTER TABLE " + typed.Name
 	default:
 		return fmt.Sprintf("%T", node)
 	}

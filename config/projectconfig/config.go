@@ -775,6 +775,10 @@ type SchemaFormatConfig struct {
 type DiffConfig struct {
 	Skip            DiffSkipConfig
 	ConcurrentIndex DiffConcurrentIndexConfig
+	// OnlineAlter asks a generated migration to tell the server to apply it
+	// without blocking writes: the MySQL-family ALGORITHM and LOCK clauses, or
+	// a PostgreSQL constraint added NOT VALID and validated separately.
+	OnlineAlter ConfigBool
 }
 
 // DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
@@ -847,6 +851,16 @@ func (c DiffConfig) ConcurrentIndexCreateDisabled() bool {
 // DROP INDEX CONCURRENTLY for removed indexes.
 func (c DiffConfig) ConcurrentIndexDrop() bool {
 	return c.ConcurrentIndex.Drop.Value
+}
+
+// OnlineAlterRequested reports whether the policy asks the server to apply the plan
+// without blocking the writes already running against its tables.
+//
+// A target without the grammar is planned as if this were off, so the setting
+// is safe to leave on for a project whose environments are not all the same
+// engine.
+func (c DiffConfig) OnlineAlterRequested() bool {
+	return c.OnlineAlter.Value
 }
 
 // DiffConcurrentIndexConfig holds Atlas diff.concurrent_index policy.
@@ -1499,6 +1513,7 @@ func mergeDiff(base, override DiffConfig) DiffConfig {
 	result.Skip.DropSchema = mergeBool(result.Skip.DropSchema, override.Skip.DropSchema)
 	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
 	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
+	result.OnlineAlter = mergeBool(result.OnlineAlter, override.OnlineAlter)
 	return result
 }
 

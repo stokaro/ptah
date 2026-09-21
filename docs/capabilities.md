@@ -83,8 +83,10 @@ so typos fail fast. Current registry:
 <!-- BEGIN GENERATED CAPABILITY KEYS -->
 | Capability | Meaning |
 |---|---|
+| `add_constraint_not_valid` | NOT VALID on an added constraint and VALIDATE CONSTRAINT to complete it (PostgreSQL family) |
 | `advisory_locks` | PostgreSQL advisory lock functions |
 | `alter_generated_column_expression` | in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+) |
+| `alter_table_algorithm_lock` | ALGORITHM= and LOCK= clauses on ALTER TABLE, which the server refuses when it cannot honor them (MySQL, MariaDB) |
 | `catalog_check_constraint_table_name` | information_schema.CHECK_CONSTRAINTS carries TABLE_NAME (MariaDB only) |
 | `catalog_default_privileges` | the catalog has pg_default_acl, the relation recording ALTER DEFAULT PRIVILEGES grants |
 | `catalog_dependencies` | the catalog exposes pg_depend |
@@ -220,8 +222,10 @@ set that names no mode at all, which only a hand-built set produces and
 <!-- BEGIN GENERATED PRESET MATRIX -->
 | Capability | MySQLLegacy | MySQL8013 | MySQL8016 | MySQL8019 | MySQL8020 | MySQL84 | MariaDBLegacy | MariaDB1011 | Postgres13 | Postgres14 | Postgres16 | Postgres17 | Postgres18 | ClickHouse24 | ClickHouse2411 | CockroachDB23 | CockroachDB25 | CockroachDB26 | CockroachDB263 | YugabyteDB24 | YugabyteDB25 | SQLite324 | SQLite3 | SQLServer2022 | SpannerPostgres | Oracle21 | Oracle23 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `add_constraint_not_valid` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `alter_table_algorithm_lock` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_check_constraint_table_name` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_default_privileges` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |

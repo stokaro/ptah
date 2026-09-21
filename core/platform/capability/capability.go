@@ -776,6 +776,41 @@ const (
 	// constraint spelling and still has unique indexes, so coupling them would
 	// make a valid preset invalid (stokaro/ptah#2820).
 	UniqueNullsDistinctClause Capability = "unique_nulls_distinct_clause"
+	// AlterTableAlgorithmLock is whether the target takes the MySQL-family
+	// `ALGORITHM=` and `LOCK=` clauses on ALTER TABLE.
+	//
+	// The pair is one key because Ptah writes them together and because they
+	// are one grammar: both are trailing clauses of the same statement, both
+	// are refused by the same servers, and a statement that asked for an
+	// algorithm without a lock level would leave the part an operator cares
+	// about -- whether writes keep running -- unstated.
+	//
+	// What the clause buys is not a prediction. The server refuses the
+	// statement when it cannot honor what was asked, so the guarantee moves
+	// from Ptah's model of the release line to the server in front of the
+	// migration, and it fails at the statement rather than under a table copy
+	// nobody expected.
+	//
+	// Measured on MySQL 8.4.6 and MariaDB 12.3.3: both accept
+	// `ALGORITHM=INSTANT`, `ALGORITHM=INPLACE, LOCK=NONE` and
+	// `ALGORITHM=COPY`, and both refuse the clause with 1845/1846 where the
+	// operation cannot be done that way. No other engine has the grammar.
+	AlterTableAlgorithmLock Capability = "alter_table_algorithm_lock"
+	// AddConstraintNotValid is whether the target takes `NOT VALID` on an
+	// added constraint and `VALIDATE CONSTRAINT` to complete it.
+	//
+	// One key for the pair, because half of it is worse than neither: a
+	// constraint added `NOT VALID` and never validated is a constraint the
+	// server does not enforce over the rows that were already there, and a
+	// target that accepted the first spelling and refused the second would
+	// leave exactly that.
+	//
+	// Measured on PostgreSQL 18.6 over a 1,000-row table: `ADD CONSTRAINT ...
+	// CHECK ... NOT VALID` leaves `relfilenode` unchanged and `convalidated`
+	// false, `VALIDATE CONSTRAINT` takes ShareUpdateExclusiveLock and sets it
+	// true, and the same `ADD CONSTRAINT` without the clause takes
+	// AccessExclusiveLock. A foreign key behaves the same way.
+	AddConstraintNotValid Capability = "add_constraint_not_valid"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -972,6 +1007,12 @@ var registry = map[Capability]spec{
 	},
 	UniqueNullsDistinctClause: {
 		doc: "NULLS [NOT] DISTINCT accepted on a unique constraint or index (PostgreSQL 15+ and YugabyteDB 2025+ only)",
+	},
+	AlterTableAlgorithmLock: {
+		doc: "ALGORITHM= and LOCK= clauses on ALTER TABLE, which the server refuses when it cannot honor them (MySQL, MariaDB)",
+	},
+	AddConstraintNotValid: {
+		doc: "NOT VALID on an added constraint and VALIDATE CONSTRAINT to complete it (PostgreSQL family)",
 	},
 }
 
@@ -1189,6 +1230,8 @@ func MySQL84() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		AlterTableAlgorithmLock:         true,
+		AddConstraintNotValid:           false,
 	}
 }
 
@@ -1328,6 +1371,8 @@ func MariaDB1011() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		AlterTableAlgorithmLock:         true,
+		AddConstraintNotValid:           false,
 	}
 }
 
@@ -1412,6 +1457,8 @@ func Postgres16() Capabilities {
 		DeferrableConstraints:           true,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       true,
+		AlterTableAlgorithmLock:         false,
+		AddConstraintNotValid:           true,
 	}
 }
 
@@ -1617,6 +1664,8 @@ func ClickHouse24() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               false,
 		UniqueNullsDistinctClause:       false,
+		AlterTableAlgorithmLock:         false,
+		AddConstraintNotValid:           false,
 	}
 }
 
@@ -1716,6 +1765,8 @@ func SQLite3() Capabilities {
 		// plan, so this value is a hand measurement rather than a probed one
 		// (stokaro/ptah#2820).
 		UniqueNullsDistinctClause: false,
+		AlterTableAlgorithmLock:   false,
+		AddConstraintNotValid:     false,
 	}
 }
 
@@ -1897,6 +1948,8 @@ func SQLServer2022() Capabilities {
 		// both spellings rather than dropping whichever one is the default
 		// (stokaro/ptah#2820).
 		UniqueNullsDistinctClause: false,
+		AlterTableAlgorithmLock:   false,
+		AddConstraintNotValid:     false,
 	}
 }
 
@@ -2137,6 +2190,11 @@ func YugabyteDB24() Capabilities {
 // line stays best-effort -- not for want of coverage.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Unmeasured against a live emulator and false on the conservative
+		// side: the emulator refuses ALTER TABLE ... VALIDATE CONSTRAINT, and
+		// an unvalidated constraint nothing can complete is worse than the
+		// plain statement this leaves in place.
+		With(AddConstraintNotValid, false).
 		// Unmeasured against a live emulator and false on the conservative
 		// side: Spanner refuses the UNIQUE constraint spelling outright, so a
 		// clause on it cannot be reached, and its renderer already errors on
@@ -2410,6 +2468,8 @@ func Oracle23() Capabilities {
 		DeferrableConstraints:     true,
 		UniqueConstraints:         true,
 		UniqueNullsDistinctClause: false,
+		AlterTableAlgorithmLock:   false,
+		AddConstraintNotValid:     false,
 	}
 }
 

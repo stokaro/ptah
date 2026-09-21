@@ -97,6 +97,11 @@ type DiffPolicy struct {
 	// SkipChangeKinds lists destructive change kinds to omit from generated
 	// migrations. Currently honored by the PostgreSQL-family planner.
 	SkipChangeKinds []diffpolicy.ChangeKind
+	// OnlineAlter asks the server to apply the generated migration without
+	// blocking the writes already running against its tables, in whichever
+	// grammar the target has. A target without one generates as if this were
+	// off.
+	OnlineAlter bool
 	// ConcurrentIndex requests CREATE INDEX CONCURRENTLY for every newly added
 	// index, superseding the populated-table heuristic. It remains gated on the
 	// target's CreateIndexConcurrently capability.

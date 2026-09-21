@@ -413,6 +413,21 @@ func postgresFamilyPlan(dialect string) plan {
 			[]string{t.table("ndc", "n int", "n")},
 			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
 		),
+		// The two halves of the online constraint, asked as one experiment
+		// because either half alone is useless: a constraint added NOT VALID
+		// that nothing can validate stays unenforced over the rows that were
+		// already there.
+		all(capability.AddConstraintNotValid,
+			[]string{t.table("nvc", "n int", "n")},
+			"ALTER TABLE nvc ADD CONSTRAINT nvc_ck CHECK (n > 0) NOT VALID",
+			"ALTER TABLE nvc VALIDATE CONSTRAINT nvc_ck",
+		),
+		// Asked rather than declared: the clause is MySQL's, and a server that
+		// took it would mean Ptah could write it here too.
+		acceptance(capability.AlterTableAlgorithmLock,
+			[]string{t.table("aal", "n int", "n")},
+			"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
+		),
 		acceptance(capability.DeferrableConstraints,
 			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
@@ -783,6 +798,20 @@ func mysqlFamilyPlan(dialect string) plan {
 	experiments = append(experiments, all(capability.Sequences, nil,
 		"CREATE SEQUENCE sq",
 		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
+	))
+	// The ALGORITHM and LOCK pair, asked on a change both engines apply in
+	// place. A server that refuses the clause refuses the statement, so
+	// acceptance is the whole answer.
+	experiments = append(experiments, acceptance(capability.AlterTableAlgorithmLock,
+		[]string{"CREATE TABLE aal (n int PRIMARY KEY)"},
+		"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
+	))
+	// Asked rather than declared for the same reason its twin above is: the
+	// clause is PostgreSQL's, and a server that took it would mean Ptah could
+	// write it here too.
+	experiments = append(experiments, acceptance(capability.AddConstraintNotValid,
+		[]string{"CREATE TABLE nvc (n int PRIMARY KEY)"},
+		"ALTER TABLE nvc ADD CONSTRAINT nvc_ck CHECK (n > 0) NOT VALID",
 	))
 	return plan{experiments: experiments, undecided: undecided}
 }

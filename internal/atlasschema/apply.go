@@ -399,6 +399,7 @@ func computeApplyPlan(
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
@@ -763,6 +764,9 @@ func PrepareApply(
 	if err != nil {
 		return ApplyRuntimePlan{}, err
 	}
+	if err := refuseOnlineAlterInOneTransaction(opts.Policy, opts.TxMode, conn.Info().Dialect); err != nil {
+		return ApplyRuntimePlan{}, err
+	}
 	return ApplyRuntimePlan{
 		plan:    ApplyPlan{statements: computation.executionStatements()},
 		dryRun:  opts.DryRun,
@@ -770,6 +774,38 @@ func PrepareApply(
 		txMode:  opts.TxMode,
 		current: computation.current,
 	}, nil
+}
+
+// refuseOnlineAlterInOneTransaction refuses an online apply whose statements
+// would share a transaction on the PostgreSQL family.
+//
+// The pair this policy generates -- ADD CONSTRAINT ... NOT VALID and the
+// VALIDATE CONSTRAINT that completes it -- buys its weaker lock only when the
+// two statements commit separately. In one transaction the ACCESS EXCLUSIVE
+// lock the addition takes is held to commit, so the validation's scan runs
+// behind it and writers wait for the whole scan: the apply would do more work
+// than the plain statement and block for just as long.
+//
+// Refused rather than silently downgraded, because the policy is a promise
+// about what the apply does to a live database and an apply that quietly did
+// not keep it is the outcome the policy exists to prevent.
+func refuseOnlineAlterInOneTransaction(
+	policy DiffPolicy,
+	txMode migrator.MigrationTxMode,
+	dialect string,
+) error {
+	if !policy.OnlineAlter || !platform.IsPostgresFamily(dialect) {
+		return nil
+	}
+	if txMode == migrator.MigrationTxModeNone {
+		return nil
+	}
+	return fmt.Errorf(
+		"online alter needs each statement to commit on its own on %s: a constraint added NOT VALID "+
+			"and validated in the same transaction holds the addition's ACCESS EXCLUSIVE lock through "+
+			"the validation scan. Apply with --tx-mode none, or turn diff.online_alter off",
+		dialect,
+	)
 }
 
 func validateDesiredApplySchema(

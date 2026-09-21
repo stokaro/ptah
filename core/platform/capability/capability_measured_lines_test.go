@@ -193,6 +193,14 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:          {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.AlterTableAlgorithmLock: "the probe sends no ALTER TABLE ... ALGORITHM= " +
+					"clause, and the key is false for every PostgreSQL-family target because the grammar " +
+					"is MySQL's alone",
+				capability.AddConstraintNotValid: "the probe sends no NOT VALID constraint. Measured " +
+					"separately on PostgreSQL 18.6 over a 1,000-row table: ADD CONSTRAINT ... CHECK ... " +
+					"NOT VALID leaves relfilenode unchanged and convalidated false, VALIDATE CONSTRAINT " +
+					"takes ShareUpdateExclusiveLock and sets it true, and the same ADD CONSTRAINT without " +
+					"the clause takes AccessExclusiveLock (stokaro/ptah#3421)",
 				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
 					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
@@ -280,6 +288,13 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
+					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
+					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
+					"both refuse the clause with 1845 or 1846 where the form cannot be applied that way " +
+					"(stokaro/ptah#3421)",
+				capability.AddConstraintNotValid: "the probe sends no NOT VALID constraint, and the key is " +
+					"false for the MySQL family because neither engine has the spelling",
 				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
 					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
@@ -368,6 +383,13 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
+					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
+					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
+					"both refuse the clause with 1845 or 1846 where the form cannot be applied that way " +
+					"(stokaro/ptah#3421)",
+				capability.AddConstraintNotValid: "the probe sends no NOT VALID constraint, and the key is " +
+					"false for the MySQL family because neither engine has the spelling",
 				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
 					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
 					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +

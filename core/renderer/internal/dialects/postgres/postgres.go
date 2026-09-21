@@ -577,6 +577,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	// the fragment inside it.
 	case *ast.AddColumnOperation,
 		*ast.AddConstraintOperation,
+		*ast.ValidateConstraintOperation,
 		*ast.AddEnumValueOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
@@ -1170,6 +1171,50 @@ func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
 	}
 }
 
+// writeAddConstraint writes one ALTER TABLE ... ADD CONSTRAINT and the comment
+// that belongs to it.
+func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNode) error {
+	constraintLine, err := r.renderConstraint(constraint)
+	if err != nil {
+		return fmt.Errorf("error rendering add constraint: %w", err)
+	}
+	if constraintLine == "" {
+		r.writeObjectSkipped(foreignKeyConstraintKind, foreignKeyIdentity(constraint))
+		return nil
+	}
+	// Remove the leading spaces from constraint rendering for ALTER
+	constraintLine = strings.TrimPrefix(constraintLine, "  ")
+	r.w.WriteLinef("ALTER TABLE %s ADD %s%s;",
+		r.escapeQualifiedIdentifier(table), constraintLine, r.notValidClause(constraint))
+	// The comment is a separate statement here for the same reason it is after
+	// CREATE TABLE, and it has to be written on BOTH paths. Measured on
+	// PostgreSQL 18: `schema apply` reaches an existing table through ALTER
+	// rather than CREATE, so a fix that taught only the CREATE path left the
+	// comment out of every applied database while `schema render` printed it.
+	r.writeConstraintComment(table, constraint)
+	return nil
+}
+
+// notValidClause renders the ` NOT VALID` suffix an added constraint asks for,
+// and is empty when it asks for nothing.
+//
+// Adding a constraint NOT VALID leaves the rows already in the table
+// unchecked, so it is half of a pair: the other half is a
+// [ast.ValidateConstraintOperation] in a later transaction, whose scan takes a
+// weaker lock than the one the plain ADD CONSTRAINT holds. A target without
+// the grammar records the loss and writes the plain form, which is correct and
+// takes the stronger lock.
+func (r *Renderer) notValidClause(constraint *ast.ConstraintNode) string {
+	if constraint == nil || !constraint.NotValid {
+		return ""
+	}
+	if !r.capabilities().Has(capability.AddConstraintNotValid) {
+		r.sink.RecordLostUnvalidatedConstraint(constraint.Name)
+		return ""
+	}
+	return " NOT VALID"
+}
+
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	r.w.WriteLine("-- ALTER statements: --")
@@ -1185,24 +1230,12 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", r.escapeQualifiedIdentifier(node.Name), line)
 		case *ast.AddConstraintOperation:
-			constraintLine, err := r.renderConstraint(op.Constraint)
-			if err != nil {
-				return fmt.Errorf("error rendering add constraint: %w", err)
+			if err := r.writeAddConstraint(node.Name, op.Constraint); err != nil {
+				return err
 			}
-			if constraintLine == "" {
-				r.writeObjectSkipped(foreignKeyConstraintKind, foreignKeyIdentity(op.Constraint))
-				continue
-			}
-			// Remove the leading spaces from constraint rendering for ALTER
-			constraintLine = strings.TrimPrefix(constraintLine, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD %s;", r.escapeQualifiedIdentifier(node.Name), constraintLine)
-			// The comment is a separate statement here for the same reason it
-			// is after CREATE TABLE, and it has to be written on BOTH paths.
-			// Measured on PostgreSQL 18: `schema apply` reaches an existing
-			// table through ALTER rather than CREATE, so a fix that taught only
-			// the CREATE path left the comment out of every applied database
-			// while `schema render` printed it.
-			r.writeConstraintComment(node.Name, op.Constraint)
+		case *ast.ValidateConstraintOperation:
+			r.w.WriteLinef("ALTER TABLE %s VALIDATE CONSTRAINT %s;",
+				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.ConstraintName))
 		case *ast.DropConstraintOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", r.escapeQualifiedIdentifier(node.Name))
 			if op.IfExists {
