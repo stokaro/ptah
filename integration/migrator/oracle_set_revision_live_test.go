@@ -17,9 +17,9 @@ import (
 // The transaction the set opens asks for serializable isolation, and Oracle's
 // driver implements one isolation level through database/sql: given any other
 // through sql.TxOptions it refuses before the transaction opens, with "only
-// support default value for isolation". The command then failed on Oracle at
-// every version and in both formats, before it read a single revision row.
-// Asking for the level in SQL is what Oracle accepts (stokaro/ptah#3462).
+// support default value for isolation". Ask for it that way instead of in SQL
+// and this test fails at every version and in both formats, before the command
+// reads a single revision row (stokaro/ptah#3462).
 func TestOracleSetRevisionMovesTheBoundaryLive(t *testing.T) {
 	tests := []struct {
 		name   string
