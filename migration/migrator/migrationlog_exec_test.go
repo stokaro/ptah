@@ -3,7 +3,6 @@ package migrator_test
 import (
 	"context"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -187,9 +186,8 @@ func TestMigrationLog_IsInvisibleToTheSchemaReader(t *testing.T) {
 	for _, table := range schema.Tables {
 		names = append(names, table.Name)
 	}
-	c.Assert(slices.Contains(names, "schema_migrations_log"), qt.IsFalse,
-		qt.Commentf("tables: %v", names))
+	c.Assert(names, qt.Not(qt.Contains), "schema_migrations_log")
 	// The control: the migration's own table IS reported, so the assertion
 	// above measures an exclusion rather than a reader that found nothing.
-	c.Assert(slices.Contains(names, "notes"), qt.IsTrue, qt.Commentf("tables: %v", names))
+	c.Assert(names, qt.Contains, "notes")
 }
