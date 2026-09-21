@@ -195,7 +195,7 @@ func TestValidateCheckAssertion_Accepted(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(validateCheckAssertion(test.assertion, test.dialect, test.serverVersion), qt.IsNil)
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, test.serverVersion), qt.IsNil)
 		})
 	}
 }
@@ -228,7 +228,7 @@ func TestValidateCheckAssertion_Rejected(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(validateCheckAssertion(test.assertion, test.dialect, test.serverVersion), qt.ErrorMatches, test.wantErr)
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, test.serverVersion), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }

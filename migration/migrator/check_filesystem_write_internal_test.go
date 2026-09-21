@@ -205,3 +205,111 @@ func TestValidateCheckAssertionStatically_RefusesWhatReachesOutsideTheDatabase(t
 		})
 	}
 }
+
+// The two decisions compose, which is what this row is for. Expanding an
+// executable comment needs a tokenizer, and which characters end a string
+// decides whether the comment is a comment at all: with backslash escapes on
+// the string opens at `'x` and runs through the comment, so nothing is
+// expanded and a scan of that expansion sees a harmless SELECT; with them off
+// the string ends at the second quote and the comment is SQL the server runs.
+// Reading one expansion under both interpretations is not enough -- the
+// expansion has to happen under both.
+func TestValidateCheckAssertionStatically_RefusesAcrossEscapeModesAndComments(t *testing.T) {
+	tests := []struct {
+		name          string
+		dialect       string
+		serverVersion string
+		assertion     string
+	}{
+		{
+			name:      "mysql outfile in an executable comment behind a backslash",
+			dialect:   "mysql",
+			assertion: `SELECT 'x\' /*! INTO OUTFILE '/tmp/ptah-check-probe' */`,
+		},
+		{
+			name:      "mariadb dumpfile in an executable comment behind a backslash",
+			dialect:   "mariadb",
+			assertion: `SELECT 'x\' /*M! INTO DUMPFILE '/tmp/ptah-check-probe' */`,
+		},
+		{
+			name:          "mysql versioned comment behind a backslash",
+			dialect:       "mysql",
+			serverVersion: "8.0.36",
+			assertion:     `SELECT 'x\' /*!50001 INTO OUTFILE '/tmp/ptah-check-probe' */`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, test.serverVersion),
+				qt.IsNotNil)
+		})
+	}
+}
+
+// ClickHouse takes a remote source as a table function in an ordinary FROM
+// clause, so a statement that declares no table and begins with SELECT still
+// fetches a URL from inside the server's network. It also runs the assertion
+// outside any transaction, because its driver implements none, so nothing
+// after the statement can take it back.
+func TestValidateCheckAssertionStatically_RefusesAClickHouseRemoteSource(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "url",
+			assertion: `SELECT count() > 0 FROM url('http://169.254.169.254/latest/meta-data', 'CSV')`,
+		},
+		{
+			name:      "remote",
+			assertion: `SELECT count() > 0 FROM remote('other:9000', 'db', 'users')`,
+		},
+		{
+			name:      "s3",
+			assertion: `SELECT count() > 0 FROM s3('https://bucket/key', 'CSV')`,
+		},
+		{
+			name:      "file",
+			assertion: `SELECT count() > 0 FROM file('/etc/passwd', 'CSV')`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "clickhouse", ""),
+				qt.ErrorMatches, `check assertion must not use ClickHouse remote table function, which .*`)
+		})
+	}
+}
+
+// The control: an ordinary ClickHouse predicate over a real table is accepted,
+// and so is a column or alias that merely shares a name with one of the
+// functions, because call position is what the rule reads.
+func TestValidateCheckAssertionStatically_AcceptsAnOrdinaryClickHousePredicate(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+	}{
+		{
+			name:      "count over a table",
+			assertion: `SELECT count() = 0 FROM users WHERE tier IS NULL`,
+		},
+		{
+			name:      "a column named like a table function",
+			assertion: `SELECT count() = 0 FROM documents WHERE url IS NULL`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, "clickhouse", ""), qt.IsNil)
+		})
+	}
+}

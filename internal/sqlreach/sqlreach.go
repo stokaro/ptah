@@ -137,6 +137,27 @@ var escapeRules = []escapeRule{
 		),
 	},
 	{
+		// The same reach without a table to attach it to. ClickHouse takes
+		// these in the FROM clause of an ordinary SELECT, so a statement that
+		// declares nothing and begins with SELECT still fetches a URL the
+		// author named, from inside the server's network.
+		construct: "ClickHouse remote table function",
+		reach:     "reads over the network or from the host filesystem inside a query",
+		match: anyMatch(
+			calledFunction("URL"), calledFunction("URLCLUSTER"),
+			calledFunction("REMOTE"), calledFunction("REMOTESECURE"),
+			calledFunction("CLUSTER"), calledFunction("CLUSTERALLREPLICAS"),
+			calledFunction("S3"), calledFunction("S3CLUSTER"),
+			calledFunction("HDFS"), calledFunction("HDFSCLUSTER"),
+			calledFunction("AZUREBLOBSTORAGE"), calledFunction("GCS"),
+			calledFunction("FILE"), calledFunction("INPUT"),
+			calledFunction("MYSQL"), calledFunction("POSTGRESQL"),
+			calledFunction("MONGODB"), calledFunction("REDIS"),
+			calledFunction("SQLITE"), calledFunction("ODBC"), calledFunction("JDBC"),
+			calledFunction("EXECUTABLE"), calledFunction("ICEBERG"), calledFunction("DELTALAKE"),
+		),
+	},
+	{
 		construct: "CREATE SERVER",
 		reach:     "defines a connection to another database server",
 		match:     statementStartsWith("CREATE", "SERVER"),

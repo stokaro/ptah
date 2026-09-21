@@ -104,12 +104,15 @@ is sent:
   touch is not in it.
 - The session is opened read-only wherever the engine has such a mode.
 
-The reach rule reads the assertion under both string-escape interpretations,
-because the one a server applies is session state: under MySQL's
-`NO_BACKSLASH_ESCAPES` a string ends at a quote the other reading swallows, so
-a clause that looks like data on one reading is live SQL on the other. It is
-the same recognition the plan guard applies before a dev database replays a
-plan file, kept in one place, so a construct added there is refused here too.
+Both static rules read the assertion under every string-escape interpretation
+a server might apply, because the one it applies is session state: under
+MySQL's `NO_BACKSLASH_ESCAPES` a string ends at a quote the other reading
+swallows, so a clause that looks like data on one reading is live SQL on the
+other. A MySQL executable comment is expanded under each interpretation too,
+since which characters end a string decides whether the comment is a comment.
+The construct list is the one the plan guard applies before a dev database
+replays a plan file, kept in one place, so a construct added there is refused
+here too.
 
 The read-only session is what catches a shape no reading of the statement can:
 on PostgreSQL it refuses a `SELECT` that writes by calling a function that

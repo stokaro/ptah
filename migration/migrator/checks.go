@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -352,15 +353,28 @@ func runCheckAssertion(
 // `SELECT 'x' /*! INTO OUTFILE '/tmp/x' */` hides the clause from a scan of the
 // original. Expanding first is what makes one rule cover both spellings.
 //
+// And every rule runs over every effective form, because the expansion itself
+// depends on the escape mode the server is in: see [effectiveCheckSQLForms].
+//
 // Both callers go through here so there is exactly one implementation of "is
 // this assertion well-formed": [runCheckAssertion] on the evaluation path, and
 // [validateCheckGroups] for checks a dry run defers.
 func validateCheckAssertionStatically(assertion, dialect, serverVersion string) error {
-	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
+	forms, err := effectiveCheckSQLForms(assertion, dialect, serverVersion)
+	if err != nil {
 		return err
 	}
-	effective, err := effectiveCheckSQL(assertion, dialect, serverVersion)
-	if err != nil {
+	for _, effective := range forms {
+		if err := validateEffectiveCheckAssertion(effective, dialect); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEffectiveCheckAssertion applies every rule to one effective form.
+func validateEffectiveCheckAssertion(effective, dialect string) error {
+	if err := validateCheckAssertion(effective, dialect); err != nil {
 		return err
 	}
 	finding, reaches, err := sqlreach.Scan(effective, dialect)
@@ -409,11 +423,7 @@ func validateCheckGroups(groups []checkGroup, dialect, serverVersion string, ver
 	return nil
 }
 
-func validateCheckAssertion(assertion, dialect, serverVersion string) error {
-	effectiveSQL, err := effectiveCheckSQL(assertion, dialect, serverVersion)
-	if err != nil {
-		return err
-	}
+func validateCheckAssertion(effectiveSQL, dialect string) error {
 	statements := sqlutil.SplitSQLStatementsForDialect(effectiveSQL, dialect)
 	if len(statements) != 1 {
 		return fmt.Errorf("check assertion must be one read-only SELECT statement, got %d statements", len(statements))
@@ -425,8 +435,41 @@ func validateCheckAssertion(assertion, dialect, serverVersion string) error {
 	return nil
 }
 
-func effectiveCheckSQL(source, dialect, serverVersion string) (string, error) {
-	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+// effectiveCheckSQLForms returns the effective SQL of an assertion under every
+// string-escape interpretation the server might apply.
+//
+// One form is not enough, because the two decisions compose. The expansion
+// tokenizes to find the executable comments, and which characters end a string
+// decides whether a comment is a comment at all: with backslash escapes on,
+// `SELECT 'x\' /*! INTO OUTFILE '/tmp/p' */` opens a string at `'x` that runs
+// through the comment, so nothing is expanded; with them off the string ends
+// at the second quote and the comment is real SQL the server runs. A scan of
+// one expansion therefore reads a statement the server may never see.
+//
+// Duplicates are dropped, so a dialect with no executable comments and no
+// backslash ambiguity still produces one form and every rule runs once.
+func effectiveCheckSQLForms(source, dialect, serverVersion string) ([]string, error) {
+	forms := make([]string, 0, 2)
+	for _, backslashEscapes := range []bool{false, true} {
+		options := checkLexerOptions(dialect)
+		options.BackslashEscapes = backslashEscapes
+		form, err := effectiveCheckSQLWithOptions(source, options, dialect, serverVersion)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(forms, form) {
+			forms = append(forms, form)
+		}
+	}
+	return forms, nil
+}
+
+func effectiveCheckSQLWithOptions(
+	source string,
+	options lexer.Options,
+	dialect, serverVersion string,
+) (string, error) {
+	lexr := lexer.NewLexerWithOptions(source, options)
 	var effective strings.Builder
 	for {
 		tok := lexr.NextToken()
@@ -449,7 +492,7 @@ func effectiveCheckSQL(source, dialect, serverVersion string) (string, error) {
 				effective.WriteByte(' ')
 				continue
 			}
-			expanded, err := effectiveCheckSQL(comment.body, dialect, serverVersion)
+			expanded, err := effectiveCheckSQLWithOptions(comment.body, options, dialect, serverVersion)
 			if err != nil {
 				return "", err
 			}
