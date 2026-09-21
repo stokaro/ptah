@@ -109,3 +109,42 @@ func TestSetRevision_FailurePath(t *testing.T) {
 		c.Assert(result, qt.DeepEquals, AtlasRevisionSetResult{})
 	})
 }
+
+// Version 0 removes every row that records a migration, and an Atlas metadata
+// row records none. The read usually excludes those rows before the decision
+// is made, but with an exact identity map the predicate names
+// `.atlas_cloud_identifier` alone rather than the dot-prefixed class, so a
+// second metadata row reaches this predicate and nothing else stands between
+// it and the delete.
+func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
+	t.Run("version 0 removes a migration row that orders to zero", func(t *testing.T) {
+		c := qt.New(t)
+		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
+
+		removed := revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
+
+		c.Assert(removed, qt.IsTrue)
+	})
+
+	t.Run("version 0 keeps an Atlas metadata row", func(t *testing.T) {
+		c := qt.New(t)
+		revision := MigrationRevision{
+			Version:         0,
+			AtlasVersion:    ".atlas_cloud_identifier",
+			hasAtlasVersion: true,
+		}
+
+		removed := revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
+
+		c.Assert(removed, qt.IsFalse)
+	})
+
+	t.Run("a version above zero is an ordering question again", func(t *testing.T) {
+		c := qt.New(t)
+		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
+
+		removed := revisionRemovedByAtlasSet(revision, nil, 1, nil, nil)
+
+		c.Assert(removed, qt.IsFalse)
+	})
+}

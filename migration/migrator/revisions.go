@@ -2819,6 +2819,18 @@ func atlasRevisionSetChanges(
 	return result
 }
 
+// revisionRemovedByAtlasSet reports whether a set removes this revision row.
+//
+// Above zero the question is ordering: a row is removed when its version is
+// above the boundary and it is neither the boundary row nor a retired
+// identity. Version 0 is not an ordering question. It names the state where no
+// migration is applied, so every row that records one goes, including an
+// identity that orders to zero itself -- an Atlas always-repeatable `R` whose
+// file has left the directory resolves to version 0 and would otherwise sit
+// above no boundary and below none.
+//
+// An Atlas metadata row is not a migration and is not touched at any version,
+// which is the invariant the whole revision path keeps.
 func revisionRemovedByAtlasSet(
 	revision MigrationRevision,
 	target *Migration,
@@ -2826,8 +2838,23 @@ func revisionRemovedByAtlasSet(
 	retired, exactRemoved []string,
 ) bool {
 	key := revision.RevisionVersion()
-	return slices.Contains(exactRemoved, key) ||
-		(revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key))
+	if slices.Contains(exactRemoved, key) {
+		return true
+	}
+	if isAtlasMetadataRevisionVersion(key) {
+		return false
+	}
+	if version == 0 {
+		return true
+	}
+	return revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key)
+}
+
+// isAtlasMetadataRevisionVersion is the Go reading of [atlasMetadataRowPredicate]:
+// Atlas writes dot-prefixed pseudo-versions for its own bookkeeping, and no
+// write path in Ptah removes or rewrites one.
+func isAtlasMetadataRevisionVersion(revisionVersion string) bool {
+	return strings.HasPrefix(revisionVersion, ".")
 }
 
 // unnumberedRemovedAtlasRevisions names the rows a set removes that its numeric
