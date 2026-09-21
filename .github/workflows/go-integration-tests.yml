@@ -82,7 +82,7 @@ jobs:
           POSTGRES_USER: ptah_user
           POSTGRES_PASSWORD: ptah_password
         options: >-
-          --health-cmd "pg_isready -U ptah_user -d ptah_test"
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U ptah_user -d ptah_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -111,7 +111,7 @@ jobs:
           POSTGRES_USER: ptah_user
           POSTGRES_PASSWORD: ptah_password
         options: >-
-          --health-cmd "pg_isready -U ptah_user -d ptah_test"
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U ptah_user -d ptah_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

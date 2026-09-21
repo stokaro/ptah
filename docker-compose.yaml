@@ -10,7 +10,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ptah_user -d ptah_test"]
+      # -h forces TCP, which is what a client connects over. The Unix socket
+      # answers while the image is still running its init server.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ptah_user -d ptah_test"]
       interval: 5s
       timeout: 5s
       retries: 5
