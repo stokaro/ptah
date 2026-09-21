@@ -94,15 +94,30 @@ whose contract is a throwaway database they may destroy. Point those at a live
 database and they would write to it; this verb is meant for the database the
 release actually runs on.
 
-Two rules hold it to reading. Every assertion is proved to be a single `SELECT`
-from its text before any query is sent, and the session is opened read-only
-wherever the engine has such a mode. On PostgreSQL that second rule is what
-refuses a `SELECT` that writes by calling a function that writes — a shape no
-reading of the statement can catch. On Oracle the driver cannot open a
-read-only transaction, so Ptah asks the server for one instead, which refuses a
-`SELECT ... FOR UPDATE` that would otherwise hold a row lock every writer waits
-on. Where an engine has no read-only mode, the static proof is the whole of the
-protection, which is the guarantee a pre-migration check already carries there.
+Three rules hold it to reading, and the first two are decided before any query
+is sent:
+
+- The assertion is a single `SELECT`, proved from its text.
+- It names nothing outside the database it is sent to: `dblink`,
+  `postgres_fdw`, `INTO OUTFILE`, `LOAD_FILE`, `pg_read_file`, `xp_cmdshell`
+  and the rest of that set. No transaction can undo those, because what they
+  touch is not in it.
+- The session is opened read-only wherever the engine has such a mode.
+
+The reach rule reads the assertion under both string-escape interpretations,
+because the one a server applies is session state: under MySQL's
+`NO_BACKSLASH_ESCAPES` a string ends at a quote the other reading swallows, so
+a clause that looks like data on one reading is live SQL on the other. It is
+the same recognition the plan guard applies before a dev database replays a
+plan file, kept in one place, so a construct added there is refused here too.
+
+The read-only session is what catches a shape no reading of the statement can:
+on PostgreSQL it refuses a `SELECT` that writes by calling a function that
+writes. On Oracle the driver cannot open a read-only transaction, so Ptah asks
+the server for one instead, which refuses a `SELECT ... FOR UPDATE` that would
+otherwise hold a row lock every writer waits on. Where an engine has no
+read-only mode, the two static rules are the whole of the protection, which is
+the guarantee a pre-migration check already carries there.
 
 Each assertion is evaluated in its own session, so one the server refuses
 cannot decide the outcome of the next.

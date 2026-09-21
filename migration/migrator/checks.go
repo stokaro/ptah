@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/ptahdirective"
+	"ptah.run/internal/sqlreach"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -319,17 +320,31 @@ func runCheckAssertion(
 }
 
 // validateCheckAssertionStatically proves an assertion is well-formed from its
-// text alone: a single read-only SELECT that does not advance a SQL Server
-// sequence, does not advance an Oracle sequence, and does not write a file. It
-// needs a dialect and a server version string, never a query, so it is the
-// whole of what can be decided about a check without a database.
+// text alone: a single read-only SELECT that reaches nothing outside the
+// database it is sent to and advances no sequence. It needs a dialect and a
+// server version string, never a query, so it is the whole of what can be
+// decided about a check without a database.
 //
-// Beginning with SELECT is not by itself enough, and the dialect rules below
-// are the constructs where it is not. What they have in common is an effect the
-// transaction around the statement does not own, so no isolation level and no
-// read-only session takes it back: a SQL Server or Oracle sequence advances,
-// and a MySQL-family INTO OUTFILE writes a file on the server. Reading the
-// assertion is the only thing standing in front of any of them.
+// Beginning with SELECT is not by itself enough, and the two rules below the
+// shape check are the constructs where it is not. What they have in common is
+// an effect the transaction around the statement does not own, so no isolation
+// level and no read-only session takes it back.
+//
+// The first is reach. A SELECT can name another database server, a file on the
+// host or a shell -- dblink, postgres_fdw, INTO OUTFILE, LOAD_FILE,
+// pg_read_file, xp_cmdshell -- and what those touch is outside every
+// transaction. [sqlreach.Scan] is the one place that set is written down,
+// shared with the plan guard that refuses the same constructs before a dev
+// database replay, because two lists agree only until one of them is extended.
+// It reads a statement under both string-escape interpretations, which is what
+// closes the MySQL sql_mode gap: under NO_BACKSLASH_ESCAPES the server ends a
+// string where the backslash reading continues it, so `SELECT 'x\' INTO
+// OUTFILE '/tmp/p'` is a SELECT with a live clause on one reading and an
+// opaque literal on the other.
+//
+// The second is a sequence, which is a side effect inside the database rather
+// than reach outside it: SQL Server's NEXT VALUE FOR and Oracle's NEXTVAL
+// advance a counter no rollback restores.
 //
 // Every rule reads the effective SQL rather than the text as written, for the
 // reason the effective form exists: a MySQL-family executable comment carries
@@ -348,22 +363,27 @@ func validateCheckAssertionStatically(assertion, dialect, serverVersion string) 
 	if err != nil {
 		return err
 	}
+	finding, reaches, err := sqlreach.Scan(effective, dialect)
+	if err != nil {
+		return fmt.Errorf("check assertion cannot be proved read-only: it %w", err)
+	}
+	if reaches {
+		return fmt.Errorf(
+			"check assertion must not use %s, which %s",
+			finding.Construct, finding.Reach,
+		)
+	}
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLServer:
 		if containsIdentifierSequence(effective, dialect, "NEXT", "VALUE", "FOR") {
 			return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
 		}
 	case platform.Oracle:
-		// Oracle has no read-only transaction in checkTransactionOptions and a
-		// NEXTVAL is not rolled back by one anywhere, so the text is the only
-		// place this can be refused.
+		// A NEXTVAL is not rolled back by any transaction anywhere, so the
+		// text is the only place this can be refused.
 		if containsIdentifierSequence(effective, dialect, "NEXTVAL") {
 			return fmt.Errorf("check assertion must not advance an Oracle sequence with NEXTVAL")
 		}
-	}
-	if implicitCommitDialect(dialect) &&
-		mysqlUnwitnessedFilesystemWrite(significantSQLTokens(effective, dialect)) {
-		return fmt.Errorf("check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE")
 	}
 	return nil
 }

@@ -18,6 +18,10 @@ import (
 // on the server, outside anything the transaction owns: no isolation level and
 // no read-only session takes that back. Reading the assertion is the only thing
 // in front of it.
+//
+// The recognition is sqlreach's, shared with the plan guard, so these rows
+// measure that the validator consults it and that the effective SQL is what it
+// consults it with -- not a second copy of the construct list.
 func TestValidateCheckAssertionStatically_RefusesAServerSideFileWrite(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -30,19 +34,19 @@ func TestValidateCheckAssertionStatically_RefusesAServerSideFileWrite(t *testing
 			name:      "mysql outfile",
 			dialect:   "mysql",
 			assertion: `SELECT 'x' INTO OUTFILE '/tmp/ptah-check-probe'`,
-			wantErr:   `check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE`,
+			wantErr:   `check assertion must not use SELECT \.\.\. INTO OUTFILE, which writes a file on the database server host`,
 		},
 		{
 			name:      "mariadb outfile",
 			dialect:   "mariadb",
 			assertion: `SELECT 'x' INTO OUTFILE '/tmp/ptah-check-probe'`,
-			wantErr:   `check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE`,
+			wantErr:   `check assertion must not use SELECT \.\.\. INTO OUTFILE, which writes a file on the database server host`,
 		},
 		{
 			name:      "mysql dumpfile",
 			dialect:   "mysql",
 			assertion: `SELECT 'x' INTO DUMPFILE '/tmp/ptah-check-probe'`,
-			wantErr:   `check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE`,
+			wantErr:   `check assertion must not use SELECT \.\.\. INTO DUMPFILE, which writes a file on the database server host`,
 		},
 		// An executable comment is SQL the server runs and the lexer reports as
 		// one opaque token, so a scan of the text as written never sees the
@@ -52,7 +56,7 @@ func TestValidateCheckAssertionStatically_RefusesAServerSideFileWrite(t *testing
 			name:      "mysql outfile inside an executable comment",
 			dialect:   "mysql",
 			assertion: `SELECT 'x' /*! INTO OUTFILE '/tmp/ptah-check-probe' */`,
-			wantErr:   `check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE`,
+			wantErr:   `check assertion must not use SELECT \.\.\. INTO OUTFILE, which writes a file on the database server host`,
 		},
 		// A versioned executable comment needs a server version to decide
 		// whether the server would run it. This one would, so the clause is
@@ -62,7 +66,7 @@ func TestValidateCheckAssertionStatically_RefusesAServerSideFileWrite(t *testing
 			dialect:       "mysql",
 			serverVersion: "8.0.36",
 			assertion:     `SELECT 'x' /*!50001 INTO DUMPFILE '/tmp/ptah-check-probe' */`,
-			wantErr:       `check assertion must not write a file with INTO OUTFILE or INTO DUMPFILE`,
+			wantErr:       `check assertion must not use SELECT \.\.\. INTO DUMPFILE, which writes a file on the database server host`,
 		},
 	}
 
@@ -144,6 +148,60 @@ func TestValidateCheckAssertionStatically_AcceptsAnOrdinaryPredicate(t *testing.
 			c := qt.New(t)
 
 			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""), qt.IsNil)
+		})
+	}
+}
+
+// The two constructs the review found after the file-write rule was written,
+// and the reason the recognition moved to one place: each is a SELECT that
+// touches something no transaction owns, and each was outside the list this
+// file first carried.
+//
+// dblink runs its statement through a second connection, which commits on its
+// own; the read-only transaction binds the local one. And under
+// NO_BACKSLASH_ESCAPES a MySQL server ends the string at the quote the
+// backslash reading swallows, so the INTO OUTFILE clause the scanner saw as
+// data is live SQL on the server. The scan reads both interpretations rather
+// than asking the session which mode it is in.
+func TestValidateCheckAssertionStatically_RefusesWhatReachesOutsideTheDatabase(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "postgres dblink writes through another connection",
+			dialect:   "postgres",
+			assertion: `SELECT dblink_exec('dbname=target', 'INSERT INTO audit VALUES (1)') = 'INSERT 0 1'`,
+			wantErr:   `check assertion must not use dblink, which opens a connection to another database server`,
+		},
+		{
+			name:      "postgres reads a file on the host",
+			dialect:   "postgres",
+			assertion: `SELECT length(pg_read_file('/etc/passwd')) > 0`,
+			wantErr:   `check assertion must not use pg_read_file, which reads a file on the database server host`,
+		},
+		{
+			name:      "sql server runs a shell command",
+			dialect:   "sqlserver",
+			assertion: `SELECT 1 FROM (SELECT xp_cmdshell('whoami')) AS t`,
+			wantErr:   `check assertion must not use xp_cmdshell, which .*`,
+		},
+		{
+			name:      "mysql outfile behind a backslash the server does not escape",
+			dialect:   "mysql",
+			assertion: `SELECT 'x\' INTO OUTFILE '/tmp/ptah-check-probe'`,
+			wantErr:   `check assertion must not use SELECT \.\.\. INTO OUTFILE, which writes a file on the database server host`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""),
+				qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
