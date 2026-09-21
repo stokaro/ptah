@@ -46,6 +46,16 @@ type escapeRule struct {
 	construct string
 	reach     string
 	match     tokenMatcher
+	// dialects restricts the rule to the engines whose grammar gives the
+	// construct its meaning. Empty means every engine, which is right for a
+	// spelling no other dialect can mistake for something ordinary -- there is
+	// no `xp_cmdshell` that means anything else.
+	//
+	// It exists for the ones that can be mistaken: `url(...)` is a remote read
+	// on ClickHouse and an ordinary user function name anywhere else, and a
+	// rule that fired on every dialect would refuse a PostgreSQL assertion for
+	// a grammar PostgreSQL does not have.
+	dialects []string
 }
 
 // escapeRules enumerates the escape constructs this lint knows about.
@@ -143,19 +153,8 @@ var escapeRules = []escapeRule{
 		// author named, from inside the server's network.
 		construct: "ClickHouse remote table function",
 		reach:     "reads over the network or from the host filesystem inside a query",
-		match: anyMatch(
-			calledFunction("URL"), calledFunction("URLCLUSTER"),
-			calledFunction("REMOTE"), calledFunction("REMOTESECURE"),
-			calledFunction("CLUSTER"), calledFunction("CLUSTERALLREPLICAS"),
-			calledFunction("S3"), calledFunction("S3CLUSTER"),
-			calledFunction("HDFS"), calledFunction("HDFSCLUSTER"),
-			calledFunction("AZUREBLOBSTORAGE"), calledFunction("GCS"),
-			calledFunction("FILE"), calledFunction("INPUT"),
-			calledFunction("MYSQL"), calledFunction("POSTGRESQL"),
-			calledFunction("MONGODB"), calledFunction("REDIS"),
-			calledFunction("SQLITE"), calledFunction("ODBC"), calledFunction("JDBC"),
-			calledFunction("EXECUTABLE"), calledFunction("ICEBERG"), calledFunction("DELTALAKE"),
-		),
+		match:     calledFunctionAnyOf(clickHouseRemoteTableFunctions()...),
+		dialects:  []string{platform.ClickHouse},
 	},
 	{
 		construct: "CREATE SERVER",
@@ -253,6 +252,11 @@ var escapeRules = []escapeRule{
 		match:     procedureOrFunction("SP_ADDLINKEDSERVER"),
 	},
 	{
+		construct: "OPENQUERY",
+		reach:     "runs a query on a linked server, which is another database server",
+		match:     calledFunction("OPENQUERY"),
+	},
+	{
 		construct: "OPENROWSET",
 		reach:     "reads from another data source or a file on the database server host",
 		match:     calledFunction("OPENROWSET"),
@@ -338,7 +342,11 @@ func scanStatement(statement string, backslashEscapes bool, dialect string, dept
 		return Finding{}, false, nil
 	}
 	ctx := scanContext{tokens: tokens, inBody: depth > 0}
+	normalized := platform.NormalizeDialect(dialect)
 	for _, rule := range escapeRules {
+		if len(rule.dialects) > 0 && !slices.Contains(rule.dialects, normalized) {
+			continue
+		}
 		if !rule.match(ctx) {
 			continue
 		}
@@ -656,6 +664,41 @@ var nameIntroducingKeywords = []string{
 // by an opening parenthesis, and not sitting where DDL introduces an object
 // name. This separates `SELECT dblink_exec(...)` from a table called
 // `dblink_events (id integer)` or an index named `lo_import`.
+// calledFunctionAnyOf matches a call to any of the named functions.
+func calledFunctionAnyOf(names ...string) tokenMatcher {
+	matchers := make([]tokenMatcher, 0, len(names))
+	for _, name := range names {
+		matchers = append(matchers, calledFunction(name))
+	}
+	return anyMatch(matchers...)
+}
+
+// clickHouseRemoteTableFunctions enumerates the table functions that read
+// something other than this server's own storage, each with its `Cluster`
+// variant, which ClickHouse spells by suffix and which reaches the same place
+// from every node.
+//
+// Enumeration rather than a prefix: `file` and `url` are short enough that a
+// prefix match would catch `fileSize` and `urlHash`, which read nothing. The
+// list is the one a reader can check against ClickHouse's own table-function
+// index, and a name missing from it is a gap to add rather than a rule to
+// loosen.
+func clickHouseRemoteTableFunctions() []string {
+	bases := []string{
+		"URL", "REMOTE", "REMOTESECURE", "CLUSTER", "CLUSTERALLREPLICAS",
+		"S3", "GCS", "HDFS", "AZUREBLOBSTORAGE", "COSN", "OSS",
+		"FILE", "INPUT", "EXECUTABLE",
+		"MYSQL", "POSTGRESQL", "MONGODB", "REDIS", "SQLITE", "ODBC", "JDBC",
+		"ICEBERG", "ICEBERGS3", "ICEBERGAZURE", "ICEBERGHDFS", "ICEBERGLOCAL",
+		"DELTALAKE", "DELTALAKES3", "DELTALAKEAZURE", "HUDI", "FUZZJSON",
+	}
+	names := make([]string, 0, len(bases)*2)
+	for _, base := range bases {
+		names = append(names, base, base+"CLUSTER")
+	}
+	return names
+}
+
 func calledFunction(name string) tokenMatcher {
 	return callPositionMatcher(name, false)
 }

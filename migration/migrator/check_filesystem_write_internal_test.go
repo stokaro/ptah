@@ -275,6 +275,14 @@ func TestValidateCheckAssertionStatically_RefusesAClickHouseRemoteSource(t *test
 			name:      "file",
 			assertion: `SELECT count() > 0 FROM file('/etc/passwd', 'CSV')`,
 		},
+		{
+			name:      "a cluster variant",
+			assertion: `SELECT count() > 0 FROM icebergCluster('c', 'https://bucket/key')`,
+		},
+		{
+			name:      "a lake format the first list missed",
+			assertion: `SELECT count() > 0 FROM hudi('https://bucket/key')`,
+		},
 	}
 
 	for _, test := range tests {
@@ -303,6 +311,10 @@ func TestValidateCheckAssertionStatically_AcceptsAnOrdinaryClickHousePredicate(t
 			name:      "a column named like a table function",
 			assertion: `SELECT count() = 0 FROM documents WHERE url IS NULL`,
 		},
+		{
+			name:      "a local function whose name starts like one",
+			assertion: `SELECT count() = 0 FROM links WHERE urlHash(href) = 0`,
+		},
 	}
 
 	for _, test := range tests {
@@ -312,4 +324,46 @@ func TestValidateCheckAssertionStatically_AcceptsAnOrdinaryClickHousePredicate(t
 			c.Assert(validateCheckAssertionStatically(test.assertion, "clickhouse", ""), qt.IsNil)
 		})
 	}
+}
+
+// A rule speaks for the grammar that gives the construct its meaning. `url(...)`
+// is a remote read on ClickHouse and an ordinary user function name anywhere
+// else, so a scan that applied it to every dialect would refuse a PostgreSQL
+// assertion for a grammar PostgreSQL does not have.
+func TestValidateCheckAssertionStatically_AcceptsAClickHouseNameOnAnotherDialect(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+	}{
+		{
+			name:      "postgres function named url",
+			dialect:   "postgres",
+			assertion: `SELECT url(path) IS NOT NULL FROM links`,
+		},
+		{
+			name:      "mysql function named remote",
+			dialect:   "mysql",
+			assertion: `SELECT remote(id) = 1 FROM links`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""), qt.IsNil)
+		})
+	}
+}
+
+// SQL Server reaches a linked server by function too, and OPENQUERY sat beside
+// the two forms the catalog already knew.
+func TestValidateCheckAssertionStatically_RefusesALinkedServerQuery(t *testing.T) {
+	c := qt.New(t)
+
+	err := validateCheckAssertionStatically(
+		`SELECT COUNT(*) > 0 FROM OPENQUERY(remote, 'SELECT id FROM audit')`, "sqlserver", "")
+
+	c.Assert(err, qt.ErrorMatches, `check assertion must not use OPENQUERY, which runs a query on a linked server.*`)
 }

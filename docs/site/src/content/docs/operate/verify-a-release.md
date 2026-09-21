@@ -125,6 +125,19 @@ the guarantee a pre-migration check already carries there.
 Each assertion is evaluated in its own session, so one the server refuses
 cannot decide the outcome of the next.
 
+### What it reads
+
+A verification run reads whatever the login it connects with can read. The
+promise is that it changes nothing, not that it reads only the connected
+database: an assertion may name a view, and a view may already span databases.
+On SQL Server a three-part name is ordinary T-SQL, and refusing one would
+refuse a correct assertion about a database the same operator owns.
+
+So give `ptah db verify` a login scoped to what the release's requirements are
+about, the way you would scope any other credential, and treat a checks file as
+code that runs with it — the same standing a migration in the same directory
+already has.
+
 ### What a read-only session cannot reach
 
 A routine that runs in a transaction of its own is not undone with the session
