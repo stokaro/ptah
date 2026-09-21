@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 93,
+  "claimed": 94,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -104,6 +104,12 @@
       "kind": "native-verb",
       "surface": "ptah db read",
       "claimed_by": "docs/site/src/content/docs/direct/inspect.md"
+    },
+    {
+      "id": "cli-ptah-db-verify",
+      "kind": "native-verb",
+      "surface": "ptah db verify",
+      "claimed_by": "docs/site/src/content/docs/operate/verify-a-release.md"
     },
     {
       "id": "cli-ptah-help",

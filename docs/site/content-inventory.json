@@ -6,12 +6,12 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 144,
-    "authored": 141,
+    "pages": 145,
+    "authored": 142,
     "generated": 3,
     "byType": {
       "concept": 16,
-      "how-to": 56,
+      "how-to": 57,
       "landing": 14,
       "reference": 33,
       "status": 9,
@@ -4130,6 +4130,44 @@
       "sourceBytes": 9905
     },
     {
+      "path": "docs/site/src/content/docs/operate/verify-a-release.md",
+      "route": "/operate/verify-a-release/",
+      "title": "Verify a release against the database",
+      "description": "Write release requirements as `-- +ptah check` assertions and evaluate them against a live database with ptah db verify, which reads and changes nothing.",
+      "sidebarPath": "Deliver and operate",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I confirm a change produced the result it was for, not only that it ran?",
+      "goal": "Write assertions about the data a release must leave behind, and run them against the database as a gate.",
+      "sourceOfTruth": [
+        "internal/cli/dbverify",
+        "migration/migrator"
+      ],
+      "owns": [
+        "cli-ptah-db-verify"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "sourceMode": null,
+      "overlaps": [
+        "/versioned/apply/",
+        "/direct/compare-and-drift/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 1052,
+      "sourceBytes": 7517
+    },
+    {
       "path": "docs/site/src/content/docs/operate/zero-downtime-changes.mdx",
       "route": "/operate/zero-downtime-changes/",
       "title": "Change a schema without downtime",
@@ -4325,8 +4363,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8819,
-      "sourceBytes": 87164
+      "visibleWords": 8859,
+      "sourceBytes": 87554
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4434,8 +4472,8 @@
         "/testing/overview/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3734,
-      "sourceBytes": 26831
+      "visibleWords": 3781,
+      "sourceBytes": 27115
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -4775,8 +4813,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7540,
-      "sourceBytes": 50811
+      "visibleWords": 7579,
+      "sourceBytes": 51045
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",

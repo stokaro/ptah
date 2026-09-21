@@ -2,10 +2,12 @@ package devclean
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlreach"
 )
 
 func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {
@@ -712,7 +714,19 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 		if !tokens[index+1].MatchOperatorValue("(") {
 			continue
 		}
-		switch normalizedIdentifier(tokens[index]) {
+		name := normalizedIdentifier(tokens[index])
+		// The control-function names are sqlreach's, shared with the
+		// check-assertion validator, which refuses the same set in a predicate
+		// it is about to send to a live database. The rest below are this
+		// guard's own: they answer what a dev-clean run may execute, which is
+		// a wider question.
+		if slices.Contains(sqlreach.PostgresControlFunctions(), name) {
+			return "cluster control function"
+		}
+		if slices.Contains(sqlreach.PostgresReplicationFunctions(), name) {
+			return "replication state operation"
+		}
+		switch name {
 		case "DBLINK", "DBLINK_CANCEL_QUERY", "DBLINK_CLOSE", "DBLINK_CONNECT",
 			"DBLINK_CONNECT_U", "DBLINK_DISCONNECT", "DBLINK_EXEC", "DBLINK_FETCH",
 			"DBLINK_GET_RESULT", "DBLINK_OPEN", "DBLINK_SEND_QUERY":
@@ -724,17 +738,6 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 		case "PG_ADVISORY_LOCK", "PG_ADVISORY_LOCK_SHARED", "PG_TRY_ADVISORY_LOCK",
 			"PG_TRY_ADVISORY_LOCK_SHARED":
 			return "session advisory lock"
-		case "PG_CANCEL_BACKEND", "PG_CREATE_RESTORE_POINT", "PG_NOTIFY", "PG_PROMOTE",
-			"PG_RELOAD_CONF", "PG_ROTATE_LOGFILE", "PG_SWITCH_WAL", "PG_TERMINATE_BACKEND",
-			"PG_WAL_REPLAY_PAUSE", "PG_WAL_REPLAY_RESUME", "SET_CONFIG":
-			return "cluster control function"
-		case "PG_COPY_LOGICAL_REPLICATION_SLOT", "PG_COPY_PHYSICAL_REPLICATION_SLOT",
-			"PG_CREATE_LOGICAL_REPLICATION_SLOT", "PG_CREATE_PHYSICAL_REPLICATION_SLOT",
-			"PG_DROP_REPLICATION_SLOT", "PG_REPLICATION_ORIGIN_ADVANCE",
-			"PG_REPLICATION_ORIGIN_CREATE", "PG_REPLICATION_ORIGIN_DROP",
-			"PG_REPLICATION_ORIGIN_SESSION_RESET", "PG_REPLICATION_ORIGIN_SESSION_SETUP",
-			"PG_REPLICATION_ORIGIN_XACT_RESET", "PG_REPLICATION_ORIGIN_XACT_SETUP":
-			return "replication state operation"
 		}
 	}
 	return ""

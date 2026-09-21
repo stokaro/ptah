@@ -1537,3 +1537,52 @@ func TestDatabaseDriverConfig_OracleCarriesTheOption(t *testing.T) {
 	c.Assert(driverName, qt.Equals, "oracle")
 	c.Assert(dataSourceName, qt.Contains, "FAST+LOGIN=FALSE")
 }
+
+// A read-only request a driver cannot carry has to go somewhere, and where it
+// goes is not observable through WithIsolatedQuerySession without an Oracle
+// server: every other dialect passes the options through and answers the same
+// either way.
+func TestIsolatedSessionReadOnly_HappyPath(t *testing.T) {
+	t.Run("Oracle carries the request to the server", func(t *testing.T) {
+		c := qt.New(t)
+		asked := &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelReadCommitted}
+
+		carried, statement := isolatedSessionReadOnly(platform.Oracle, asked)
+
+		c.Assert(statement, qt.Equals, "SET TRANSACTION READ ONLY")
+		c.Assert(carried.ReadOnly, qt.IsFalse)
+		c.Assert(carried.Isolation, qt.Equals, sql.LevelReadCommitted)
+		// The caller's options are not the ones handed to the driver: a caller
+		// that reuses them would otherwise find its own request erased.
+		c.Assert(asked.ReadOnly, qt.IsTrue)
+	})
+
+	t.Run("a dialect whose driver carries it is untouched", func(t *testing.T) {
+		c := qt.New(t)
+		asked := &sql.TxOptions{ReadOnly: true}
+
+		carried, statement := isolatedSessionReadOnly(platform.Postgres, asked)
+
+		c.Assert(statement, qt.Equals, "")
+		c.Assert(carried, qt.Equals, asked)
+	})
+
+	t.Run("Oracle without the request is untouched", func(t *testing.T) {
+		c := qt.New(t)
+		asked := &sql.TxOptions{}
+
+		carried, statement := isolatedSessionReadOnly(platform.Oracle, asked)
+
+		c.Assert(statement, qt.Equals, "")
+		c.Assert(carried, qt.Equals, asked)
+	})
+
+	t.Run("no options at all", func(t *testing.T) {
+		c := qt.New(t)
+
+		carried, statement := isolatedSessionReadOnly(platform.Oracle, nil)
+
+		c.Assert(statement, qt.Equals, "")
+		c.Assert(carried, qt.IsNil)
+	})
+}

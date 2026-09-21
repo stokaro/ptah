@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/dbcapabilities"
+	"ptah.run/internal/cli/dbverify"
 	"ptah.run/internal/cli/dropall"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/readdb"
@@ -43,5 +44,7 @@ in the separate ptah-compat binary.`,
 	capabilitiesCmd := dbcapabilities.NewCapabilitiesCommand()
 	capabilitiesCmd.Short = "Report the capability profile Ptah resolves for a live database"
 	cmd.AddCommand(capabilitiesCmd)
+
+	cmd.AddCommand(dbverify.NewVerifyCommand())
 	return cmd
 }

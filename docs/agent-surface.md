@@ -97,6 +97,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `db capabilities` | reads | none | `--db-url` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db drop-all` | **writes** | none | `--db-url` | drops every schema object in the database it is given |
 | `db read` | reads | none | `--db-url` | introspects the database and prints what it found |
+| `db verify` | reads | none | `--db-url` | evaluates release assertions against the database it is given; every assertion is proved to be a read-only SELECT before it is sent, and the session is opened read-only wherever the engine has such a mode |
 | `help` | none | none | — | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
 | `inference abandon` | **writes** | none | `--db-url` | ends one run and releases its position in shared outbox history; the run-state row is written, and this command does not delete the generation or its vectors |
 | `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
@@ -204,6 +205,7 @@ permission.
 | `completion zsh` | writes a zsh completion script to stdout, generated from the command tree; it opens no database and writes no file |
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
+| `db verify` | evaluates release assertions against the database it is given; every assertion is proved to be a read-only SELECT before it is sent, and the session is opened read-only wherever the engine has such a mode |
 | `help` | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
 | `inference describe` | reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first |
 | `inference evaluate` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |

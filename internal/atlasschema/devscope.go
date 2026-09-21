@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlreach"
 )
 
 // DevScopeError reports that a statement about to be rehearsed on the dev
@@ -103,7 +104,7 @@ func rewriteSchemaNames(statement, dialect, from, to string) string {
 	if from == "" || from == to {
 		return statement
 	}
-	tokens := significantTokens(statement, dialectUsesBackslashEscapes(dialect), dialect)
+	tokens := sqlreach.SignificantTokens(statement, sqlreach.DialectUsesBackslashEscapes(dialect), dialect)
 	positions := schemaNamePositions(tokens)
 	replacement := sqlident.Quote(dialect, to)
 	// Splice from the end so earlier offsets stay valid.
@@ -124,7 +125,7 @@ func rewriteSchemaNames(statement, dialect, from, to string) string {
 // was not checked.
 func checkStatementScopedToDev(statement string, index int, dialect, devSchema string) error {
 	for _, backslashEscapes := range []bool{false, true} {
-		tokens := significantTokens(statement, backslashEscapes, dialect)
+		tokens := sqlreach.SignificantTokens(statement, backslashEscapes, dialect)
 		for _, position := range schemaNamePositions(tokens) {
 			name := unquoteSchemaName(tokens[position])
 			if name == devSchema {
@@ -177,21 +178,21 @@ func schemaNamePositions(tokens []lexer.Token) []int {
 // EXISTS] <db>`. USE matters most: a plan that switches the session's database
 // would silently move every later statement out of the dev database.
 func schemaOperandPosition(tokens []lexer.Token) (int, bool) {
-	if len(tokens) >= 2 && isKeyword(tokens[0], "USE") && isSchemaNameToken(tokens[1]) {
+	if len(tokens) >= 2 && sqlreach.IsKeyword(tokens[0], "USE") && isSchemaNameToken(tokens[1]) {
 		return 1, true
 	}
 	if len(tokens) < 3 {
 		return 0, false
 	}
-	if !isKeyword(tokens[0], "CREATE") && !isKeyword(tokens[0], "DROP") && !isKeyword(tokens[0], "ALTER") {
+	if !sqlreach.IsKeyword(tokens[0], "CREATE") && !sqlreach.IsKeyword(tokens[0], "DROP") && !sqlreach.IsKeyword(tokens[0], "ALTER") {
 		return 0, false
 	}
-	if !isKeyword(tokens[1], "SCHEMA") && !isKeyword(tokens[1], "DATABASE") {
+	if !sqlreach.IsKeyword(tokens[1], "SCHEMA") && !sqlreach.IsKeyword(tokens[1], "DATABASE") {
 		return 0, false
 	}
 	position := 2
-	for position < len(tokens) && (isKeyword(tokens[position], "IF") ||
-		isKeyword(tokens[position], "NOT") || isKeyword(tokens[position], "EXISTS")) {
+	for position < len(tokens) && (sqlreach.IsKeyword(tokens[position], "IF") ||
+		sqlreach.IsKeyword(tokens[position], "NOT") || sqlreach.IsKeyword(tokens[position], "EXISTS")) {
 		position++
 	}
 	if position >= len(tokens) || !isSchemaNameToken(tokens[position]) {
@@ -231,16 +232,4 @@ func unquoteSchemaName(token lexer.Token) string {
 		return inner
 	}
 	return value
-}
-
-// dialectUsesBackslashEscapes reports the string-escape interpretation the
-// server actually applies, so a rewrite edits the same token stream the engine
-// will parse. MySQL, MariaDB, and ClickHouse honor backslash escapes.
-func dialectUsesBackslashEscapes(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
-		return true
-	default:
-		return false
-	}
 }

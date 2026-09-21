@@ -758,9 +758,10 @@ type schemaTransactionRunnerProvider interface {
 // cannot leak back into the pool. In-memory SQLite is the sole exception: its
 // only connection owns the database lifetime, so Ptah rolls back and returns it
 // to the pool. The callback cannot control a transaction or reach Ptah schema
-// writers. opts is passed to database/sql unchanged when a transaction is
-// available. This method provides lifecycle isolation, not SQL read-only
-// validation: callers must restrict statements themselves.
+// writers. opts reaches database/sql unchanged on every driver that can carry
+// it; where one cannot, the request is moved to the server rather than dropped
+// (see isolatedSessionReadOnly). This method provides lifecycle isolation, not
+// SQL read-only validation: callers must restrict statements themselves.
 func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	ctx context.Context,
 	opts *sql.TxOptions,
@@ -791,7 +792,8 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 		return use(isolatedQueryer{runner: session})
 	}
 
-	tx, err := session.BeginTx(ctx, opts)
+	txOpts, readOnlyStatement := isolatedSessionReadOnly(dc.info.Dialect, opts)
+	tx, err := session.BeginTx(ctx, txOpts)
 	if err != nil {
 		return fmt.Errorf("begin isolated query transaction: %w", err)
 	}
@@ -800,8 +802,35 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 			resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
 		}
 	}()
+	if readOnlyStatement != "" {
+		if _, err := tx.ExecContext(ctx, readOnlyStatement); err != nil {
+			return fmt.Errorf("make isolated query transaction read-only: %w", err)
+		}
+	}
 
 	return use(isolatedQueryer{runner: tx})
+}
+
+// isolatedSessionReadOnly moves a read-only request from a driver that cannot
+// carry one to the server, which can.
+//
+// go-ora answers "readonly transaction is not supported" to a BeginTx that asks
+// for a read-only transaction, so passing the request through drops it in
+// silence. The Oracle server accepts SET TRANSACTION READ ONLY as the first
+// statement of a transaction and then answers ORA-01456 to an insert, update or
+// delete inside it, measured on Oracle Free 23.
+//
+// What that binds is DML. Oracle commits DDL on its own, and a routine declared
+// PRAGMA AUTONOMOUS_TRANSACTION runs in a transaction of its own, so a caller
+// that needs a statement to change nothing still has to say so about the
+// statement itself.
+func isolatedSessionReadOnly(dialect string, opts *sql.TxOptions) (*sql.TxOptions, string) {
+	if opts == nil || !opts.ReadOnly || platform.NormalizeDialect(dialect) != platform.Oracle {
+		return opts, ""
+	}
+	carried := *opts
+	carried.ReadOnly = false
+	return &carried, "SET TRANSACTION READ ONLY"
 }
 
 // WithSession pins one physical database session for the callback and rebuilds

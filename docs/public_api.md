@@ -413,6 +413,19 @@ SQL source. This intentional pre-v1 signature change prevents fail-open parsing
 when PostgreSQL escape strings or MySQL/MariaDB comment rules determine whether
 a later check directive is SQL code or literal/comment content.
 
+`migration/migrator.VerifyChecks` evaluates those same checks against a database
+that is already running and writes nothing to it, returning a `VerifyReport`
+with one `VerifyResult` per check in the order given. Each assertion is proved
+to be a single read-only `SELECT` before any query is sent and is evaluated in
+its own read-only session, so one the server refuses cannot decide the outcome
+of the next. The guarantee covers what Ptah sends and the session it sends it
+in: a routine the assertion calls that opens a transaction of its own is not
+undone with that session. A returned error means no session, no answers, or a
+session that could not be undone; an assertion
+that ran and did not hold, or could not run, is a status in the report rather
+than an error. `VerifyReport.Verdict` reduces a run to one word and never
+reports an empty run as verified.
+
 `migration/generator.PlanMigration` performs loading, diff planning, safety
 checks, and optional shadow verification without publishing files. Its
 `MigrationPlan.WriteFiles` method publishes the validated artifacts once. The

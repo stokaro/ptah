@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/ptahdirective"
+	"ptah.run/internal/sqlreach"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -259,10 +261,15 @@ func atlasCheckFileMode(source, dialect string) checkGroupMode {
 	}
 }
 
+// checkTransactionOptions names the dialects whose server enforces a read-only
+// session, so a statement that gets past the static rules is still refused by
+// something other than Ptah. Oracle is in the group through a translation its
+// driver needs: dbschema.WithIsolatedQuerySession turns the request into SET
+// TRANSACTION READ ONLY, which binds DML there.
 func checkTransactionOptions(dialect string) *sql.TxOptions {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.MySQL, platform.MariaDB:
+		platform.MySQL, platform.MariaDB, platform.Oracle:
 		return &sql.TxOptions{ReadOnly: true}
 	default:
 		return new(sql.TxOptions)
@@ -314,20 +321,83 @@ func runCheckAssertion(
 }
 
 // validateCheckAssertionStatically proves an assertion is well-formed from its
-// text alone: a single read-only SELECT that does not advance a SQL Server
-// sequence. It needs a dialect and a server version string, never a query, so
-// it is the whole of what can be decided about a check without a database.
+// text alone: a single read-only SELECT that reaches nothing outside the
+// database it is sent to and advances no sequence. It needs a dialect and a
+// server version string, never a query, so it is the whole of what can be
+// decided about a check without a database.
+//
+// Beginning with SELECT is not by itself enough, and the two rules below the
+// shape check are the constructs where it is not. What they have in common is
+// an effect the transaction around the statement does not own, so no isolation
+// level and no read-only session takes it back.
+//
+// The first is reach. A SELECT can name another database server, a file on the
+// host or a shell -- dblink, postgres_fdw, INTO OUTFILE, LOAD_FILE,
+// pg_read_file, xp_cmdshell -- and what those touch is outside every
+// transaction. [sqlreach.Scan] is the one place that set is written down,
+// shared with the plan guard that refuses the same constructs before a dev
+// database replay, because two lists agree only until one of them is extended.
+// It reads a statement under both string-escape interpretations, which is what
+// closes the MySQL sql_mode gap: under NO_BACKSLASH_ESCAPES the server ends a
+// string where the backslash reading continues it, so `SELECT 'x\' INTO
+// OUTFILE '/tmp/p'` is a SELECT with a live clause on one reading and an
+// opaque literal on the other.
+//
+// The second is a sequence, which is a side effect inside the database rather
+// than reach outside it: SQL Server's NEXT VALUE FOR and Oracle's NEXTVAL
+// advance a counter no rollback restores.
+//
+// Every rule reads the effective SQL rather than the text as written, for the
+// reason the effective form exists: a MySQL-family executable comment carries
+// SQL the server runs and the lexer reports as one opaque token, so
+// `SELECT 'x' /*! INTO OUTFILE '/tmp/x' */` hides the clause from a scan of the
+// original. Expanding first is what makes one rule cover both spellings.
+//
+// And every rule runs over every effective form, because the expansion itself
+// depends on the escape mode the server is in: see [effectiveCheckSQLForms].
 //
 // Both callers go through here so there is exactly one implementation of "is
 // this assertion well-formed": [runCheckAssertion] on the evaluation path, and
 // [validateCheckGroups] for checks a dry run defers.
 func validateCheckAssertionStatically(assertion, dialect, serverVersion string) error {
-	if err := validateCheckAssertion(assertion, dialect, serverVersion); err != nil {
+	forms, err := effectiveCheckSQLForms(assertion, dialect, serverVersion)
+	if err != nil {
 		return err
 	}
-	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
-		containsIdentifierSequence(assertion, dialect, "NEXT", "VALUE", "FOR") {
-		return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+	for _, effective := range forms {
+		if err := validateEffectiveCheckAssertion(effective, dialect); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEffectiveCheckAssertion applies every rule to one effective form.
+func validateEffectiveCheckAssertion(effective, dialect string) error {
+	if err := validateCheckAssertion(effective, dialect); err != nil {
+		return err
+	}
+	finding, reaches, err := sqlreach.Scan(effective, dialect)
+	if err != nil {
+		return fmt.Errorf("check assertion cannot be proved read-only: it %w", err)
+	}
+	if reaches {
+		return fmt.Errorf(
+			"check assertion must not use %s, which %s",
+			finding.Construct, finding.Reach,
+		)
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
+		if containsIdentifierSequence(effective, dialect, "NEXT", "VALUE", "FOR") {
+			return fmt.Errorf("check assertion must not advance a SQL Server sequence with NEXT VALUE FOR")
+		}
+	case platform.Oracle:
+		// A NEXTVAL is not rolled back by any transaction anywhere, so the
+		// text is the only place this can be refused.
+		if containsIdentifierSequence(effective, dialect, "NEXTVAL") {
+			return fmt.Errorf("check assertion must not advance an Oracle sequence with NEXTVAL")
+		}
 	}
 	return nil
 }
@@ -353,11 +423,7 @@ func validateCheckGroups(groups []checkGroup, dialect, serverVersion string, ver
 	return nil
 }
 
-func validateCheckAssertion(assertion, dialect, serverVersion string) error {
-	effectiveSQL, err := effectiveCheckSQL(assertion, dialect, serverVersion)
-	if err != nil {
-		return err
-	}
+func validateCheckAssertion(effectiveSQL, dialect string) error {
 	statements := sqlutil.SplitSQLStatementsForDialect(effectiveSQL, dialect)
 	if len(statements) != 1 {
 		return fmt.Errorf("check assertion must be one read-only SELECT statement, got %d statements", len(statements))
@@ -369,8 +435,41 @@ func validateCheckAssertion(assertion, dialect, serverVersion string) error {
 	return nil
 }
 
-func effectiveCheckSQL(source, dialect, serverVersion string) (string, error) {
-	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
+// effectiveCheckSQLForms returns the effective SQL of an assertion under every
+// string-escape interpretation the server might apply.
+//
+// One form is not enough, because the two decisions compose. The expansion
+// tokenizes to find the executable comments, and which characters end a string
+// decides whether a comment is a comment at all: with backslash escapes on,
+// `SELECT 'x\' /*! INTO OUTFILE '/tmp/p' */` opens a string at `'x` that runs
+// through the comment, so nothing is expanded; with them off the string ends
+// at the second quote and the comment is real SQL the server runs. A scan of
+// one expansion therefore reads a statement the server may never see.
+//
+// Duplicates are dropped, so a dialect with no executable comments and no
+// backslash ambiguity still produces one form and every rule runs once.
+func effectiveCheckSQLForms(source, dialect, serverVersion string) ([]string, error) {
+	forms := make([]string, 0, 2)
+	for _, backslashEscapes := range []bool{false, true} {
+		options := checkLexerOptions(dialect)
+		options.BackslashEscapes = backslashEscapes
+		form, err := effectiveCheckSQLWithOptions(source, options, dialect, serverVersion)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(forms, form) {
+			forms = append(forms, form)
+		}
+	}
+	return forms, nil
+}
+
+func effectiveCheckSQLWithOptions(
+	source string,
+	options lexer.Options,
+	dialect, serverVersion string,
+) (string, error) {
+	lexr := lexer.NewLexerWithOptions(source, options)
 	var effective strings.Builder
 	for {
 		tok := lexr.NextToken()
@@ -393,7 +492,7 @@ func effectiveCheckSQL(source, dialect, serverVersion string) (string, error) {
 				effective.WriteByte(' ')
 				continue
 			}
-			expanded, err := effectiveCheckSQL(comment.body, dialect, serverVersion)
+			expanded, err := effectiveCheckSQLWithOptions(comment.body, options, dialect, serverVersion)
 			if err != nil {
 				return "", err
 			}
