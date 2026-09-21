@@ -2872,9 +2872,9 @@ func (m *Migrator) atlasRevisionSetChanges(
 //
 // The two formats answer differently for an Atlas repeatable. The Atlas
 // revision table keeps the file's own identity, so `R__view.sql` is the row
-// `R`. The Ptah table keys on the numeric order key, so the same file is the
-// row 2, and naming it `R` would send an operator looking for a row that table
-// does not have.
+// `R`. The Ptah table keys on the numeric order key, so beside `1_users.sql`
+// and `2_orders.sql` the same file is the row 3, and naming it `R` would send
+// an operator looking for a row that table does not have.
 //
 // A removed row needs no such choice: it is read back from the table, so
 // [MigrationRevision.RevisionVersion] already answers in that table's terms.
