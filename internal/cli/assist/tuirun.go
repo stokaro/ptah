@@ -39,20 +39,20 @@ func spinnerFrame(at int) string {
 func tuiDirective(line string, trace bool, info tuiInfo) (leave bool, lines []string, showTrace bool) {
 	switch strings.ToLower(strings.Fields(line)[0]) {
 	case "/tools":
-		return false, info.tools(), trace
+		return false, dim(info.tools()), trace
 	case "/session":
-		return false, info.session(), trace
+		return false, dim(info.session()), trace
 	case "/exit", "/quit":
 		return true, nil, trace
 	case "/help":
 		return false, strings.Split(interactiveHelp, "\n"), trace
 	case "/trace":
 		trace = !trace
-		return false, []string{fmt.Sprintf("  tool trace %s", shownWord[trace])}, trace
+		return false, []string{noticeStyle.Render(fmt.Sprintf("  tool trace %s", shownWord[trace]))}, trace
 	}
-	return false, []string{
+	return false, []string{noticeStyle.Render(
 		fmt.Sprintf("  %q is not a command. Try /help, or ask without the slash.", line),
-	}, trace
+	)}, trace
 }
 
 // tuiInfo answers the two directives that read state the model does not hold.
@@ -68,28 +68,34 @@ type tuiInfo struct {
 // them.
 func tuiReport(result *assistloop.Result, runErr error, show traceSetting) []string {
 	if result == nil {
-		return []string{fmt.Sprintf("  %s", runErr)}
+		return []string{noticeStyle.Render(fmt.Sprintf("  %s", runErr))}
 	}
 
 	var lines []string
 	for _, record := range show.records(result.Tools) {
+		style := traceOKStyle
+		if record.Failed {
+			style = traceFailStyle
+		}
 		lines = append(lines,
-			fmt.Sprintf("  %s %s", outcomeWord[record.Failed], record.Name),
-			fmt.Sprintf("      %s", firstResultLine(record.Result)),
+			style.Render(fmt.Sprintf("  %s %s", outcomeWord[record.Failed], record.Name)),
+			footerStyle.Render(fmt.Sprintf("      %s", firstResultLine(record.Result))),
 		)
 	}
 	if runErr != nil {
-		lines = append(lines, fmt.Sprintf("  %s", runErr))
+		lines = append(lines, noticeStyle.Render(fmt.Sprintf("  %s", runErr)))
 	}
-	lines = append(lines, fmt.Sprintf("-- %s via %s, %d turn(s), %d tool call(s), %s",
-		result.Model, result.Provider, result.Turns, len(result.Tools), result.StopReason))
+	lines = append(lines, footerStyle.Render(fmt.Sprintf(
+		"-- %s via %s, %d turn(s), %d tool call(s), %s",
+		result.Model, result.Provider, result.Turns, len(result.Tools), result.StopReason)))
 	if !result.UsedTools() {
-		return append(lines,
-			"-- No Ptah tool answered, so nothing above was checked against this project.")
+		// The one footer line that is a warning rather than a fact.
+		return append(lines, unverifiedStyle.Render(
+			"-- No Ptah tool answered, so nothing above was checked against this project."))
 	}
-	return append(lines, fmt.Sprintf(
+	return append(lines, footerStyle.Render(fmt.Sprintf(
 		"-- %d bytes of project content reached %s, from %d tool answer(s).",
-		result.ToolBytes(), result.Provider, len(result.Tools)))
+		result.ToolBytes(), result.Provider, len(result.Tools))))
 }
 
 // loopSession runs one request through the model loop and records it, which is

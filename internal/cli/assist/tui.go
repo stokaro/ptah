@@ -2,6 +2,8 @@ package assist
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -138,7 +140,6 @@ func newTUIModel(session tuiSession, trace bool) *tuiModel {
 	input := textarea.New()
 	// textinput cannot hold a newline -- its sanitizer replaces one with a
 	// space and has no setter -- so the multi-line requirement picks textarea.
-	input.Prompt = ""
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
 	input.MinHeight, input.MaxHeight = 1, 10
@@ -160,6 +161,13 @@ func newTUIModel(session tuiSession, trace bool) *tuiModel {
 	// component's own virtual cursor and the blink chain that drives it are
 	// not needed: the terminal blinks it.
 	input.SetVirtualCursor(false)
+	// The marker is the component's, not something this file draws in front of
+	// it: the cursor is placed in the component's own coordinates, so a marker
+	// printed separately left the cursor two columns to the left of the text,
+	// sitting on the marker and hiding it on an empty prompt.
+	input.SetPromptFunc(promptWidth, func(info textarea.PromptInfo) string {
+		return promptMarker(info.LineNumber)
+	})
 	input.Focus()
 
 	return &tuiModel{session: session, input: input, trace: trace, decision: new(string)}
@@ -283,7 +291,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// changing: measured at 21 erase-to-end sequences a second on an idle
 		// prompt. The 2 is the width of the "> " this surface draws itself.
 		m.width = msg.Width
-		m.input.SetWidth(max(msg.Width-2, 20))
+		m.input.SetWidth(max(msg.Width, 24))
 		return m, nil
 	}
 
@@ -351,7 +359,7 @@ func (m *tuiModel) answerForm(decision string) tea.Cmd {
 	}
 	m.form = nil
 	m.phase = thinking
-	return m.say("  " + decisionWord[decision])
+	return m.say(noticeStyle.Render("  " + decisionWord[decision]))
 }
 
 var decisionWord = map[string]string{
@@ -435,7 +443,7 @@ func (m *tuiModel) interrupt() (tea.Model, tea.Cmd) {
 	// The worker still delivers one doneMsg after this; without the flag the
 	// surface would print both "canceled" and a context-canceled footer.
 	m.dropDone = true
-	return m, m.say("  canceled")
+	return m, m.say(noticeStyle.Render("  canceled"))
 }
 
 // submit sends the typed question, or handles a directive.
@@ -450,13 +458,14 @@ func (m *tuiModel) submit() tea.Cmd {
 	if strings.HasPrefix(request, "/") {
 		leave, lines, trace := tuiDirective(request, m.trace, m.info)
 		m.trace = trace
+		echo := echoStyle.Render("> " + request)
 		if leave {
-			return tea.Sequence(m.say(append([]string{"> " + request}, lines...)...), tea.Quit)
+			return tea.Sequence(m.say(append([]string{echo}, lines...)...), tea.Quit)
 		}
-		return m.say(append([]string{"> " + request}, lines...)...)
+		return m.say(append([]string{echo}, lines...)...)
 	}
 
-	cmd := m.say("> " + request)
+	cmd := m.say(echoStyle.Render("> " + request))
 	m.startCall(request)
 	return tea.Batch(cmd, m.tick())
 }
@@ -525,13 +534,17 @@ func (m *tuiModel) View() tea.View {
 	}
 	switch m.phase {
 	case thinking, awaitingApproval:
-		body := "  " + spinnerFrame(m.spinner) + " thinking"
+		body := "  " + spinnerStyle.Render(spinnerFrame(m.spinner)) + " thinking"
 		if tail := m.partial.String(); tail != "" {
 			body = "  " + tail
 		}
-		return tea.NewView(body + "\n  esc or ctrl+c to cancel")
+		return tea.NewView(body + "\n" + hintStyle.Render("  esc or ctrl+c to cancel"))
 	default:
-		view := tea.NewView("> " + m.input.View())
+		if f, e := os.OpenFile("/tmp/view.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); e == nil {
+			fmt.Fprintf(f, "w=%d val=%q view=%q\n", m.width, m.input.Value(), m.input.View())
+			f.Close()
+		}
+		view := tea.NewView(m.input.View())
 		view.Cursor = m.input.Cursor()
 		return view
 	}
