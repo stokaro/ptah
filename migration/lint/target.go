@@ -112,9 +112,10 @@ func ResolveTarget(dialect, version string) (Target, error) {
 // A caller that resolved none -- every caller that never heard of a server --
 // gets the dialect default, resolved here rather than left empty, because an
 // empty capability set answers false to every key and a rule cannot tell that
-// apart from a server that genuinely lacks everything. A run with no dialect
-// has no ladder to resolve and keeps the empty set, which is the same thing
-// its hybrid lexer says: the target is unknown.
+// apart from a server that genuinely lacks everything. A run with no dialect,
+// or with one this linter has no rules for, has no ladder to resolve and keeps
+// the empty set, which is the same thing its hybrid lexer says: the target is
+// unknown.
 func effectiveTarget(opts Options) (Target, error) {
 	if opts.Target.Named() || len(opts.Target.Capabilities) > 0 {
 		// Cloned on the way in as well as on the way out: the caller keeps
@@ -122,6 +123,15 @@ func effectiveTarget(opts Options) (Target, error) {
 		// under it -- and change what its rules read -- if the caller wrote to
 		// the set afterwards.
 		return opts.Target.clone(), nil
+	}
+	// A run may analyze against a dialect this linter has no rules for. The
+	// apply-time gate does, on Oracle, and that is not an error there: the
+	// dialect-independent rules still run and still refuse a destructive
+	// change. So the default is resolved where there is a ladder and left
+	// unresolved where there is none, rather than refusing a run that asked
+	// for no version at all.
+	if _, ok := lintdialect.Canonical(opts.Dialect); !ok {
+		return Target{Dialect: opts.Dialect}, nil
 	}
 	return ResolveTarget(opts.Dialect, "")
 }

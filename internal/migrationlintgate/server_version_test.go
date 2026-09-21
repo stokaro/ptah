@@ -93,3 +93,26 @@ func TestLoadPolicy_UnsupportedLintDialect_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`lint server-version "23" cannot be resolved against database dialect "oracle".*`)
 }
+
+// The gate is what an Oracle apply actually runs, and it reaches further than
+// LoadPolicy: AnalyzeWithPolicy hands the policy's target to AnalyzeFS, which
+// resolves a default of its own when none was given. A refusal there fails
+// every Oracle apply just as surely (stokaro/ptah#3420).
+func TestAnalyze_UnsupportedLintDialect_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - MF103\n")},
+		"0000000001_drop_column.up.sql": {
+			Data: []byte("ALTER TABLE users DROP COLUMN legacy;\n"),
+		},
+		"0000000001_drop_column.down.sql": {
+			Data: []byte("ALTER TABLE users ADD COLUMN legacy TEXT;\n"),
+		},
+	}
+
+	findings, err := migrationlintgate.Analyze(fsys, []int64{1}, "oracle", "")
+
+	c.Assert(err, qt.IsNil)
+	// The dialect-independent data-safety rule still protects the apply.
+	c.Assert(findings, qt.Not(qt.HasLen), 0)
+}
