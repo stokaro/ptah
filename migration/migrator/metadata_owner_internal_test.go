@@ -19,8 +19,17 @@ import (
 // table owner, and a trigger there runs as its definer rather than as the
 // connected account, so the same squat gains the squatter a hook on every
 // migration and not the migration role's privileges -- measured on MySQL
-// 8.4.11 and MariaDB 12.3.3. SQLite has no roles, ClickHouse and Spanner no
-// per-table owner to compare against (stokaro/ptah#3474).
+// 8.4.11 and MariaDB 12.3.3.
+//
+// SQL Server is out for a different reason: `sys.objects.principal_id` is NULL
+// for an ordinary object, which the catalog reports as the schema's owner
+// rather than the creator. Measured on SQL Server 2022, a `db_ddladmin`
+// account created a table in `dbo` and the catalog named `dbo` as its owner,
+// so the answer says nothing about who created it and a refusal built on it
+// would reject the table Ptah itself had just created.
+//
+// SQLite has no roles, and ClickHouse and Spanner no per-table owner to
+// compare against (stokaro/ptah#3474).
 func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -30,7 +39,7 @@ func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 		{name: "postgres answers", dialect: platform.Postgres, wantOK: true},
 		{name: "cockroachdb answers", dialect: platform.CockroachDB, wantOK: true},
 		{name: "yugabytedb answers", dialect: platform.YugabyteDB, wantOK: true},
-		{name: "sqlserver answers", dialect: platform.SQLServer, wantOK: true},
+		{name: "sqlserver reports the schema owner, not the creator", dialect: platform.SQLServer, wantOK: false},
 		{name: "oracle answers", dialect: platform.Oracle, wantOK: true},
 		{name: "mysql has no table owner", dialect: platform.MySQL, wantOK: false},
 		{name: "mariadb has no table owner", dialect: platform.MariaDB, wantOK: false},
@@ -58,7 +67,6 @@ func Test_metadataTableOwnerQuery_BindsItsNames(t *testing.T) {
 		platform.Postgres,
 		platform.CockroachDB,
 		platform.YugabyteDB,
-		platform.SQLServer,
 		platform.Oracle,
 	}
 

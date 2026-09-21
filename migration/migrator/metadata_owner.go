@@ -125,8 +125,6 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return postgresTableOwnerQuery, []any{schema, table}, true
-	case platform.SQLServer:
-		return sqlServerTableOwnerQuery, []any{schema, table}, true
 	case platform.Oracle:
 		return oracleTableOwnerQuery, []any{schema, table}, true
 	default:
@@ -139,6 +137,12 @@ func metadataTableOwnerQuery(dialect, schema, table string) (string, []any, bool
 // pg_has_role follows inheritance the way a grant does and a name comparison
 // would not.
 //
+// No relkind filter: CREATE TABLE IF NOT EXISTS collides with any relation
+// holding the name, so a partitioned table, a view or a foreign table under it
+// is adopted the same way an ordinary one is. Narrowing to `r` would report a
+// partitioned squat as an absent table and hand it the adoption this refusal
+// exists to stop.
+//
 // An empty schema is the connection's own, which is where an unqualified
 // CREATE TABLE lands.
 const postgresTableOwnerQuery = `SELECT
@@ -148,25 +152,7 @@ const postgresTableOwnerQuery = `SELECT
 FROM pg_class AS c
 JOIN pg_namespace AS n ON n.oid = c.relnamespace
 WHERE n.nspname = COALESCE(NULLIF(?, ''), current_schema())
-  AND c.relname = ?
-  AND c.relkind = 'r'`
-
-// sqlServerTableOwnerQuery reads the principal that owns the table, falling
-// back to the schema's owner, which is what an object created without an
-// explicit owner inherits. Membership is asked of the database roles, so a
-// table owned by dbo is accepted for a member of db_owner.
-const sqlServerTableOwnerQuery = `SELECT
-  USER_NAME(COALESCE(o.principal_id, s.principal_id)),
-  USER_NAME(),
-  CASE
-    WHEN USER_NAME(COALESCE(o.principal_id, s.principal_id)) = USER_NAME() THEN 1
-    WHEN IS_ROLEMEMBER(USER_NAME(COALESCE(o.principal_id, s.principal_id))) = 1 THEN 1
-    WHEN IS_ROLEMEMBER('db_owner') = 1 THEN 1
-    ELSE 0
-  END
-FROM sys.tables AS o
-JOIN sys.schemas AS s ON s.schema_id = o.schema_id
-WHERE s.name = ? AND o.name = ?`
+  AND c.relname = ?`
 
 // oracleTableOwnerQuery reads ALL_TABLES, where a schema is a user, so the
 // owner column is the answer. There is no membership to follow: a table in

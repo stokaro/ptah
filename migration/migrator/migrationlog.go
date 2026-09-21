@@ -475,6 +475,14 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	if !present {
 		return nil, nil
 	}
+	// A read is not safe by being a read: a foreign table can carry a policy
+	// or an expression the server evaluates during the SELECT, which runs the
+	// squatter's SQL with the reader's privileges. The refusal is terminal
+	// here rather than a warning, because a caller that asked for the log gets
+	// nothing either way and should be told which table it declined to read.
+	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
+		return nil, err
+	}
 	entries, err := m.readMigrationLogEntries(ctx)
 	if err != nil {
 		return nil, err

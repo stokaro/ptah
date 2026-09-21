@@ -86,9 +86,13 @@ func TestForeignMigrationLogTableDoesNotStopTheMigrationLive(t *testing.T) {
 
 	c.Assert(fixture.migrator.MigrateUp(t.Context()), qt.IsNil)
 
+	// The work landed and the squatter's trigger did not run. Reading the log
+	// is refused on its own, which is
+	// [TestForeignMigrationLogTableIsRefusedOnARead].
 	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
-	_, err := fixture.migrator.MigrationLog(t.Context(), 0)
+	applied, err := fixture.migrator.GetAppliedMigrations(t.Context())
 	c.Assert(err, qt.IsNil)
+	c.Assert(applied, qt.DeepEquals, []int64{1})
 }
 
 // foreignMetadataFixture is a scratch database with two login roles: one that
@@ -99,7 +103,32 @@ type foreignMetadataFixture struct {
 	ownerRole     string
 	migrationRole string
 	squatterRole  string
+	migrationURL  string
 	adminExec     func(c *qt.C, statement string)
+}
+
+// foreignMetadataMigrations is the one migration every case in this file
+// applies; what varies is the metadata table standing in front of it.
+func foreignMetadataMigrations() fstest.MapFS {
+	return fstest.MapFS{
+		"0000000001_widgets.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE widgets (id integer PRIMARY KEY);\n"),
+		},
+		"0000000001_widgets.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE widgets;\n")},
+	}
+}
+
+// dryRunMigrator is the same migrator asked to simulate, which is the path
+// that returns before the writes and still reads the metadata table.
+func (f *foreignMetadataFixture) dryRunMigrator(c *qt.C) *migrator.Migrator {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), f.migrationURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	conn.SchemaWriter().SetDryRun(true)
+	mig, err := migrator.NewFSMigrator(conn, foreignMetadataMigrations())
+	c.Assert(err, qt.IsNil)
+	return mig
 }
 
 // triggerRuns counts what the squatter's trigger recorded, which is zero on
@@ -169,14 +198,18 @@ func newForeignMetadataFixture(t *testing.T, squat string) *foreignMetadataFixtu
 	fixture.adminExec(c, "CREATE TABLE public.ptah_squat_evidence (note text)")
 	fixture.adminExec(c, "GRANT INSERT, SELECT ON public.ptah_squat_evidence TO PUBLIC")
 	fixture.adminExec(c, foreignMetadataTriggerFunctionDDL)
+	// PostgreSQL 15 and later revoke CREATE on public from PUBLIC, so the
+	// grants are what make this test about the refusal rather than about the
+	// server's default. The exposure is a schema both roles can create in,
+	// however it came to be one.
+	fixture.adminExec(c, "GRANT CREATE, USAGE ON SCHEMA public TO "+fixture.squatterRole)
+	fixture.adminExec(c, "GRANT CREATE, USAGE ON SCHEMA public TO "+fixture.migrationRole)
 
 	squatForeignMetadataTable(c, t, serverURL, database, fixture, squat)
 
+	fixture.migrationURL = foreignMetadataURL(c, serverURL, database, fixture.migrationRole)
 	conn := openForeignMetadataConnection(c, t, serverURL, database, fixture.migrationRole)
-	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
-		"0000000001_widgets.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE widgets (id integer PRIMARY KEY);\n")},
-		"0000000001_widgets.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE widgets;\n")},
-	})
+	mig, err := migrator.NewFSMigrator(conn, foreignMetadataMigrations())
 	c.Assert(err, qt.IsNil)
 	fixture.migrator = mig
 	return fixture
@@ -234,6 +267,14 @@ func squatForeignMetadataTable(
 			 FOR EACH ROW EXECUTE FUNCTION public.ptah_squat_probe()`,
 			`GRANT ALL ON public.schema_migrations TO PUBLIC`,
 		},
+		"partitioned": {
+			`CREATE TABLE public.schema_migrations (
+			   version bigint NOT NULL,
+			   description text NOT NULL,
+			   applied_at timestamp without time zone NOT NULL
+			 ) PARTITION BY RANGE (version)`,
+			`GRANT ALL ON public.schema_migrations TO PUBLIC`,
+		},
 		"schema_migrations_log": {
 			foreignMetadataLogTableDDL,
 			`CREATE TRIGGER ptah_squat_trg BEFORE INSERT ON public.schema_migrations_log
@@ -248,22 +289,28 @@ func squatForeignMetadataTable(
 	}
 }
 
-// openForeignMetadataConnection addresses the scratch database, as the named
-// role or as the account the registry handed over when the name is empty.
 func openForeignMetadataConnection(
 	c *qt.C,
 	t *testing.T,
 	serverURL, database, role string,
 ) *dbschema.DatabaseConnection {
 	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(
+		context.Background(), foreignMetadataURL(c, serverURL, database, role))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
+
+// foreignMetadataURL addresses the scratch database as the named role, or as
+// the account the registry handed over when the name is empty.
+func foreignMetadataURL(c *qt.C, serverURL, database, role string) string {
+	c.Helper()
 	parsed, err := url.Parse(serverURL)
 	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + database
 	parsed.User = foreignMetadataUser(parsed.User, role)
-	conn, err := dbschema.ConnectToDatabase(context.Background(), parsed.String())
-	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	return conn
+	return parsed.String()
 }
 
 func foreignMetadataUser(existing *url.Userinfo, role string) *url.Userinfo {
@@ -292,4 +339,56 @@ func dropForeignMetadataFixture(serverURL, database string, fixture *foreignMeta
 	} {
 		_, _ = admin.ExecContext(ctx, statement)
 	}
+}
+
+// A dry run reads the existing metadata table, so it is refused too. A foreign
+// table can attach a policy or a default expression the server evaluates during
+// a SELECT, and a refusal that covered only the writes would describe a
+// protection the read path does not have.
+func TestForeignMetadataTableIsRefusedOnADryRunLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "schema_migrations")
+
+	err := fixture.dryRunMigrator(c).Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
+}
+
+// Reading the log is refused for the same reason, and terminally: a caller
+// that asked for the log gets nothing either way, and should be told which
+// table it declined to read rather than shown an empty list.
+func TestForeignMigrationLogTableIsRefusedOnARead(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "schema_migrations_log")
+
+	_, err := fixture.migrator.MigrationLog(t.Context(), 0)
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+	c.Assert(fixture.triggerRuns(c), qt.Equals, 0)
+}
+
+// A partitioned table holds the name the same way an ordinary one does, and
+// CREATE TABLE IF NOT EXISTS adopts it. A lookup narrowed to ordinary tables
+// would report it absent and hand it the adoption this refusal exists to stop.
+func TestForeignPartitionedMetadataTableIsRefusedLive(t *testing.T) {
+	c := qt.New(t)
+	fixture := newForeignMetadataFixture(t, "partitioned")
+
+	err := fixture.migrator.Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
+}
+
+// The override is resolved before Initialize's early returns, so a malformed
+// value fails the run rather than lying dormant until an invocation happens to
+// reach the branch that reads it.
+func TestForeignMetadataOverrideIsValidatedEarlyLive(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(migrator.AllowForeignMetadataTableEnvVar, "perhaps")
+	fixture := newForeignMetadataFixture(t, "")
+
+	err := fixture.dryRunMigrator(c).Initialize(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*`+migrator.AllowForeignMetadataTableEnvVar+`.*`)
 }
