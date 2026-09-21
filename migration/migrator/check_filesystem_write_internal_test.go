@@ -497,3 +497,96 @@ func TestValidateCheckAssertionStatically_AcceptsABareDashCommentOnPostgres(t *t
 
 	c.Assert(err, qt.IsNil)
 }
+
+// Three families the review found after the first control-function pass, each
+// a SELECT whose effect no session undoes: statistics cleared for good, a
+// directory on the host listed, a request sent from the server.
+func TestValidateCheckAssertionStatically_RefusesMoreThanTheFirstList(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+		wantErr   string
+	}{
+		{
+			name:      "reset the statistics",
+			dialect:   "postgres",
+			assertion: `SELECT pg_stat_reset() IS NULL`,
+			wantErr:   `check assertion must not use PostgreSQL server control function, which .*`,
+		},
+		{
+			name:      "reset one table's counters",
+			dialect:   "postgres",
+			assertion: `SELECT pg_stat_reset_single_table_counters(1) IS NULL`,
+			wantErr:   `check assertion must not use PostgreSQL server control function, which .*`,
+		},
+		{
+			name:      "list the log directory",
+			dialect:   "postgres",
+			assertion: `SELECT count(*) >= 0 FROM pg_ls_logdir()`,
+			wantErr:   `check assertion must not use pg_ls_ directory listing, which .*`,
+		},
+		{
+			name:      "list the write-ahead log directory",
+			dialect:   "postgres",
+			assertion: `SELECT count(*) >= 0 FROM pg_ls_waldir()`,
+			wantErr:   `check assertion must not use pg_ls_ directory listing, which .*`,
+		},
+		{
+			name:      "send an HTTP request from Oracle",
+			dialect:   "oracle",
+			assertion: `SELECT UTL_HTTP.REQUEST('http://169.254.169.254/') IS NOT NULL FROM dual`,
+			wantErr:   `check assertion must not use Oracle network package, which .*`,
+		},
+		{
+			name:      "resolve a host from Oracle",
+			dialect:   "oracle",
+			assertion: `SELECT UTL_INADDR.GET_HOST_ADDRESS('example.com') IS NOT NULL FROM dual`,
+			wantErr:   `check assertion must not use Oracle network package, which .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""),
+				qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// The controls those three rules must not swallow: reading the statistics is
+// not resetting them, a column named like a package is a column, and the
+// Oracle rule speaks only for Oracle.
+func TestValidateCheckAssertionStatically_AcceptsTheReadsBesideThem(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		assertion string
+	}{
+		{
+			name:      "read the statistics",
+			dialect:   "postgres",
+			assertion: `SELECT numbackends = 0 FROM pg_stat_database WHERE datname = current_database()`,
+		},
+		{
+			name:      "a column named like an Oracle package",
+			dialect:   "postgres",
+			assertion: `SELECT COUNT(*) = 0 FROM endpoints WHERE utl_http IS NULL`,
+		},
+		{
+			name:      "count rows on Oracle",
+			dialect:   "oracle",
+			assertion: `SELECT COUNT(*) FROM users WHERE tier IS NULL`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(validateCheckAssertionStatically(test.assertion, test.dialect, ""), qt.IsNil)
+		})
+	}
+}

@@ -223,9 +223,29 @@ var escapeRules = []escapeRule{
 		match:     calledFunction("PG_READ_BINARY_FILE"),
 	},
 	{
-		construct: "pg_ls_dir",
+		// Every predefined `pg_ls_` function lists a directory on the server
+		// host -- pg_ls_dir, pg_ls_logdir, pg_ls_waldir, pg_ls_tmpdir,
+		// pg_ls_archive_statusdir, pg_ls_replslotdir -- so the prefix is the
+		// rule rather than a list that goes stale on the next release.
+		construct: "pg_ls_ directory listing",
 		reach:     "lists a directory on the database server host",
-		match:     calledFunction("PG_LS_DIR"),
+		match:     calledFunctionPrefix("PG_LS_"),
+	},
+	{
+		// Oracle reaches the network through built-in packages rather than
+		// through a table or a function name of its own, and a package name is
+		// matched wherever it appears: the call is qualified, so the callable
+		// token is the procedure and the package sits in front of a dot.
+		construct: "Oracle network package",
+		reach:     "sends a request from the database server, which no transaction retracts",
+		match: anyMatch(
+			containsKeyword("UTL_HTTP"), containsKeyword("UTL_TCP"),
+			containsKeyword("UTL_SMTP"), containsKeyword("UTL_MAIL"),
+			containsKeyword("UTL_INADDR"), containsKeyword("UTL_URL"),
+			containsKeyword("DBMS_LDAP"), containsKeyword("HTTPURITYPE"),
+			containsKeyword("DBMS_NETWORK_ACL_ADMIN"), containsKeyword("UTL_FILE"),
+		),
+		dialects: []string{platform.Oracle},
 	},
 	{
 		construct: "lo_import",
@@ -711,6 +731,9 @@ func PostgresControlFunctions() []string {
 		"PG_PROMOTE", "PG_CREATE_RESTORE_POINT",
 		"PG_SWITCH_WAL", "PG_WAL_REPLAY_PAUSE", "PG_WAL_REPLAY_RESUME",
 		"PG_NOTIFY", "SET_CONFIG",
+		"PG_STAT_RESET", "PG_STAT_RESET_SHARED", "PG_STAT_RESET_SLRU",
+		"PG_STAT_RESET_SINGLE_TABLE_COUNTERS", "PG_STAT_RESET_SINGLE_FUNCTION_COUNTERS",
+		"PG_STAT_RESET_REPLICATION_SLOT", "PG_STAT_RESET_SUBSCRIPTION_STATS",
 	}
 }
 
