@@ -573,3 +573,27 @@ func runUp(args ...string) (string, error) {
 	err := cmd.Execute()
 	return out.String(), err
 }
+
+// The Ptah revision table keys on the numeric order key, so a repeatable is
+// stored there as a number and the summary has to name it that way. The same
+// file under the Atlas format is the row `R`, and the two summaries differ
+// because the two tables do.
+func TestMigrationsSetNamesAPtahFormatRepeatableByItsNumber(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasAlwaysRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+	}
+
+	out, err := runSet(append(args, "--version", "3")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	// The repeatable takes the next order key in this table, so that is the
+	// row an operator would look up and the name the summary has to give.
+	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1", "2", "3"})
+	c.Assert(out, qt.Contains, "+ 3 (view)")
+	c.Assert(out, qt.Not(qt.Contains), "+ R ")
+}

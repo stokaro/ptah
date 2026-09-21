@@ -2858,13 +2858,31 @@ func (m *Migrator) atlasRevisionSetChanges(
 		}
 		result.Set = append(result.Set, AtlasRevisionChange{
 			Version:         migration.Version,
-			RevisionVersion: migration.RevisionVersion(),
+			RevisionVersion: m.persistedRevisionIdentity(migration),
 			Description:     migration.atlasFilenameDescription(),
 		})
 	}
 	sortAtlasRevisionChanges(result.Removed)
 	sortAtlasRevisionChanges(result.Set)
 	return result
+}
+
+// persistedRevisionIdentity is the identity the row this set writes will be
+// stored under, which is what [AtlasRevisionChange.RevisionVersion] means.
+//
+// The two formats answer differently for an Atlas repeatable. The Atlas
+// revision table keeps the file's own identity, so `R__view.sql` is the row
+// `R`. The Ptah table keys on the numeric order key, so the same file is the
+// row 2, and naming it `R` would send an operator looking for a row that table
+// does not have.
+//
+// A removed row needs no such choice: it is read back from the table, so
+// [MigrationRevision.RevisionVersion] already answers in that table's terms.
+func (m *Migrator) persistedRevisionIdentity(migration *Migration) string {
+	if m.revisionTableFormat.isAtlas() {
+		return migration.RevisionVersion()
+	}
+	return strconv.FormatInt(migration.Version, 10)
 }
 
 // sortAtlasRevisionChanges puts the changes in the order the type promises.
