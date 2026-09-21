@@ -1,10 +1,15 @@
 ---
 /**
  * The article footer: a meta row (last updated, the source commit, the
- * evidence date; "Edit this page" and "Report an issue" as plain links), then
- * previous / next as two cards. Registered in astro.config.mjs as the override
- * of Starlight's Footer, whose EditLink, LastUpdated and Pagination it
- * replaces; the route data they read (lastUpdated, pagination) is the same.
+ * evidence date, the copyright; "Edit this page" and "Report an issue" as
+ * plain links), then previous / next as two cards. Registered in
+ * astro.config.mjs as the override of Starlight's Footer, whose EditLink,
+ * LastUpdated and Pagination it replaces; the route data they read
+ * (lastUpdated, pagination) is the same.
+ *
+ * The meta row is unconditional because the copyright is: every other fact
+ * depends on the page, so a row rendered only when one of them is present
+ * leaves the copyright off whichever pages happen to carry none.
  *
  * The meta row also carries the "Copy as Markdown" split button below 80rem,
  * where there is no contents rail to hold it. It is rendered here whenever a
@@ -22,64 +27,62 @@ const { entry, lang, lastUpdated, pagination, toc } = Astro.locals.starlightRout
 const { prev, next } = pagination;
 const source = pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: import.meta.env.BASE_URL });
 const verified = verifiedDate(entry, lang);
-const hasFacts = Boolean(lastUpdated || (source.hasSource && source.shortCommit) || verified);
 const hasLinks = source.hasSource;
 ---
 
 <footer class="ptah-footer">
-  {(hasFacts || hasLinks) && (
-    <div class="ptah-footer-meta">
-      <div class="ptah-footer-facts">
-        {lastUpdated && (
-          <span class="ptah-footer-fact">
-            {Astro.locals.t('page.lastUpdated')}{' '}
-            <time datetime={lastUpdated.toISOString()}>{formatDate(lastUpdated, lang)}</time>
-          </span>
+  <div class="ptah-footer-meta">
+    <div class="ptah-footer-facts">
+      {lastUpdated && (
+        <span class="ptah-footer-fact">
+          {Astro.locals.t('page.lastUpdated')}{' '}
+          <time datetime={lastUpdated.toISOString()}>{formatDate(lastUpdated, lang)}</time>
+        </span>
+      )}
+      {source.hasSource && source.shortCommit && (
+        <span class="ptah-footer-fact">
+          source{' '}
+          <a class="ptah-footer-commit" href={source.sourceUrl} target="_blank" rel="noreferrer">
+            {source.shortCommit}
+          </a>
+        </span>
+      )}
+      {verified && (
+        <span class="ptah-footer-fact">
+          Evidence verified <time datetime={verified.datetime}>{verified.label}</time>
+        </span>
+      )}
+      <span class="ptah-footer-fact">© 2026 Stokaro</span>
+    </div>
+
+    {hasLinks && (
+      <div class="ptah-footer-links">
+        <PageActions
+          markdownUrl={source.markdownUrl}
+          markdownLabel={source.markdownLabel}
+          actions={source.actions}
+          sourceContext={source.sourceContext}
+          llmsEntry={publishesLlmsTxt}
+          primary={!toc}
+        />
+        {source.view && (
+          <a class="ptah-footer-link" href={source.view.url} target="_blank" rel="noreferrer" data-footer-action="source">
+            {source.view.label} <span aria-hidden="true">↗</span>
+          </a>
         )}
-        {source.hasSource && source.shortCommit && (
-          <span class="ptah-footer-fact">
-            source{' '}
-            <a class="ptah-footer-commit" href={source.sourceUrl} target="_blank" rel="noreferrer">
-              {source.shortCommit}
-            </a>
-          </span>
+        {source.edit && (
+          <a class="ptah-footer-link" href={source.edit.url} target="_blank" rel="noreferrer" data-footer-action="edit">
+            {source.edit.label} <span aria-hidden="true">↗</span>
+          </a>
         )}
-        {verified && (
-          <span class="ptah-footer-fact">
-            Evidence verified <time datetime={verified.datetime}>{verified.label}</time>
-          </span>
+        {source.report && (
+          <a class="ptah-footer-link" href={source.report.url} target="_blank" rel="noreferrer" data-footer-action="report">
+            {source.report.label} <span aria-hidden="true">↗</span>
+          </a>
         )}
       </div>
-
-      {hasLinks && (
-        <div class="ptah-footer-links">
-          <PageActions
-            markdownUrl={source.markdownUrl}
-            markdownLabel={source.markdownLabel}
-            actions={source.actions}
-            sourceContext={source.sourceContext}
-            llmsEntry={publishesLlmsTxt}
-            primary={!toc}
-          />
-          {source.view && (
-            <a class="ptah-footer-link" href={source.view.url} target="_blank" rel="noreferrer" data-footer-action="source">
-              {source.view.label} <span aria-hidden="true">↗</span>
-            </a>
-          )}
-          {source.edit && (
-            <a class="ptah-footer-link" href={source.edit.url} target="_blank" rel="noreferrer" data-footer-action="edit">
-              {source.edit.label} <span aria-hidden="true">↗</span>
-            </a>
-          )}
-          {source.report && (
-            <a class="ptah-footer-link" href={source.report.url} target="_blank" rel="noreferrer" data-footer-action="report">
-              {source.report.label} <span aria-hidden="true">↗</span>
-            </a>
-          )}
-        </div>
-      )}
-    </div>
-  )}
+    )}
+  </div>
 
   {(prev || next) && (
     <nav class="ptah-pagination" aria-label="Previous and next pages">
