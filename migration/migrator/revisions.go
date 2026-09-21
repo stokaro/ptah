@@ -2862,7 +2862,24 @@ func (m *Migrator) atlasRevisionSetChanges(
 			Description:     migration.atlasFilenameDescription(),
 		})
 	}
+	sortAtlasRevisionChanges(result.Removed)
+	sortAtlasRevisionChanges(result.Set)
 	return result
+}
+
+// sortAtlasRevisionChanges puts the changes in the order the type promises.
+//
+// Removed rows arrive in whatever order the revision table returned them, so
+// without this a summary lists them by storage order and a reader cannot tell
+// how far down the boundary moved. The identity breaks a tie, which is what
+// orders a numbered repeatable against the version it shares a number with.
+func sortAtlasRevisionChanges(changes []AtlasRevisionChange) {
+	slices.SortStableFunc(changes, func(a, b AtlasRevisionChange) int {
+		if a.Version != b.Version {
+			return cmp.Compare(a.Version, b.Version)
+		}
+		return cmp.Compare(a.RevisionVersion, b.RevisionVersion)
+	})
 }
 
 // revisionRemovedByAtlasSet reports whether a set removes this revision row.

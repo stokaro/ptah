@@ -13,6 +13,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/migrateset"
+	"ptah.run/internal/cli/migrateup"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -350,7 +351,9 @@ func TestMigrationsSetRemovesAnUnownedRepeatableRevision(t *testing.T) {
 	out, err = runSet(append(args, "--version", "0")...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "- 3 (view)")
+	// Named by the identity the revision table holds, which is what the
+	// operator would look the row up by.
+	c.Assert(out, qt.Contains, "- 3R (view)")
 	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.HasLen, 0)
 }
 
@@ -375,7 +378,7 @@ func TestMigrationsSetRemovesAnUnownedRepeatableRevisionAboveZero(t *testing.T) 
 	out, err = runSet(append(args, "--version", "1")...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "- 3 (view)")
+	c.Assert(out, qt.Contains, "- 3R (view)")
 	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1"})
 }
 
@@ -480,4 +483,93 @@ func applyAtlasMigrations(c *qt.C, dbPath, dir string) {
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	c.Assert(m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).MigrateUp(context.Background()), qt.IsNil)
+}
+
+// writeAtlasAlwaysRepeatableMigrations writes a directory whose repeatable
+// carries no number at all, which is the identity `R` the revision table
+// stores for `R__name.sql`.
+func writeAtlasAlwaysRepeatableMigrations(t *testing.T) string {
+	c := qt.New(t)
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"1_users.sql":  "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		"2_orders.sql": "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
+		"R__view.sql":  "DROP VIEW IF EXISTS v;\nCREATE VIEW v AS SELECT 1;\n",
+	}
+	for name, content := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	writeAtlasSum(c, dir)
+	return dir
+}
+
+// An always-repeatable orders after every version, so every boundary is below
+// it and a set removes it. The summary names it `R`, which is the identity the
+// revision table holds and the only string that finds the row.
+//
+// Measured on the pinned community binary, which removes the row and reports
+// `- R (_view)`: the rows and the summary are parity, not a Ptah choice
+// (stokaro/ptah#3464).
+func TestMigrationsSetRemovesAnAlwaysRepeatableRevision(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasAlwaysRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+
+	// The row comes from an apply, which is the only way it is written: a set
+	// records no `R` row at any version, and neither does the community
+	// binary, so seeding it with a set would measure nothing.
+	out, err := runUp(args...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"R", "1", "2"})
+
+	out, err = runSet(append(args, "--version", "1")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "- R (view)")
+	c.Assert(out, qt.Not(qt.Contains), "- 0 (view)")
+	c.Assert(queryVersions(c, dbPath, "atlas_schema_revisions"), qt.DeepEquals, []string{"1"})
+}
+
+// The removals are listed in ascending order, which is what tells a reader how
+// far down the boundary moved.
+//
+// A row the directory no longer owns is collected on its own path and appended
+// ahead of the rest, so without sorting a repeatable whose file has left the
+// directory is listed before the versions below it.
+func TestMigrationsSetListsRemovalsInAscendingOrder(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := writeAtlasRepeatableMigrations(t)
+	dbPath := filepath.Join(t.TempDir(), "set.db")
+	args := []string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+	}
+	out, err := runSet(append(args, "--version", "3")...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(os.Remove(filepath.Join(migrationsDir, "3R_view.sql")), qt.IsNil)
+	writeAtlasSum(c, migrationsDir)
+
+	out, err = runSet(append(args, "--version", "0")...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "  - 1 (users)\n  - 2 (orders)\n  - 3R (view)\n")
+}
+
+func runUp(args ...string) (string, error) {
+	cmd := migrateup.NewMigrateUpCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
 }
