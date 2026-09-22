@@ -458,16 +458,16 @@ func TestRenderedBlocksAreSeparated(t *testing.T) {
 		// colour reset, so it is never an empty string by accident.
 		shape := make([]string, 0, len(lines))
 		for _, line := range lines {
-			if blank(line) {
-				shape = append(shape, "-")
-				continue
-			}
-			shape = append(shape, "x")
+			shape = append(shape, blankMark[blank(line)])
 		}
 
 		c.Assert(strings.Join(shape, ""), qt.Equals, "x-x-xx-")
 	})
 }
+
+// blankMark draws one line of the shape assertion. A map rather than a branch:
+// a test function in this repository carries no conditional.
+var blankMark = map[bool]string{true: "-", false: "x"}
 
 // TestTrimBlankReadsWhatIsShown covers the recognition the separation rests on.
 func TestTrimBlankReadsWhatIsShown(t *testing.T) {
@@ -480,7 +480,7 @@ func TestTrimBlankReadsWhatIsShown(t *testing.T) {
 		{name: "indented pad", in: []string{"  ", "body", "  "}, want: []string{"body"}},
 		{name: "a colour reset alone", in: []string{"\x1b[38;5;252m\x1b[m", "body"}, want: []string{"body"}},
 		{name: "nothing to trim", in: []string{"body"}, want: []string{"body"}},
-		{name: "blank throughout", in: []string{"", "  "}, want: []string{}},
+		{name: "blank throughout", in: []string{"", "  "}, want: make([]string, 0)},
 	}
 
 	for _, test := range tests {
