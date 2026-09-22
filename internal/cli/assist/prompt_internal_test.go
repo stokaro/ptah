@@ -344,15 +344,25 @@ func TestSplitRenderableHoldsWhatIsNotSettled(t *testing.T) {
 			wantRest:    "And then prose",
 		},
 		{
-			name:        "the last cut wins, so everything settled goes at once",
+			// One block per call, so a four-block answer reaches the screen in
+			// four arrivals. Taking the last cut instead holds every finished
+			// block until the one after it finishes too, and the answer lands
+			// in two lumps that read as a dump rather than as text arriving.
+			name:        "the first cut wins, so a finished block goes on its own",
 			pending:     "One.\n\nTwo.\n\nThree, arriving",
-			wantSettled: "One.\n\nTwo.",
-			wantRest:    "Three, arriving",
+			wantSettled: "One.",
+			wantRest:    "Two.\n\nThree, arriving",
 		},
 		{
-			name:     "an unterminated fence holds everything, even past a blank line",
-			pending:  "Prose.\n\n```go\nfunc main() {\n",
-			wantRest: "Prose.\n\n```go\nfunc main() {\n",
+			// The fence opens after the blank line, so the prose before it is
+			// a finished block and nothing about the unfinished one can change
+			// that. Holding it back was the same over-caution as above: the
+			// rule that matters is that a cut never lands inside a fence, and
+			// the loop already refuses those.
+			name:        "prose settles even though a fence opens after it",
+			pending:     "Prose.\n\n```go\nfunc main() {\n",
+			wantSettled: "Prose.",
+			wantRest:    "```go\nfunc main() {\n",
 		},
 	}
 

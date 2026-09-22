@@ -244,12 +244,16 @@ func splitRenderable(pending string) (settled, rest string) {
 		if listContinues(lines, i) {
 			continue
 		}
+		// The first such line, not the last. Cutting at the last one holds
+		// every completed block until the one after it completes too, so a
+		// four-block answer reaches the screen in two arrivals and reads as a
+		// dump rather than as text being written. Cutting at the first sends
+		// each block on as it finishes.
 		cut = i
+		break
 	}
 
-	// An unterminated fence means the whole buffer is inside one code block,
-	// and nothing in it has settled.
-	if cut < 0 || fenced {
+	if cut < 0 {
 		return "", pending
 	}
 	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut+1:], "\n")
