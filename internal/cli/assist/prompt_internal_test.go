@@ -1,3 +1,5 @@
+//go:build !js
+
 package assist
 
 // White-box testing required: the interactive surface reads its line through
