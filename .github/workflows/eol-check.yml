@@ -243,11 +243,16 @@ jobs:
               printf 'To stop this check asking again, close this pull request with the `%s` label. Closed without it, the next daily run opens a new one.\n' "$KEEP_LABEL"
             } >"$RUNNER_TEMP/body-$id.md"
 
+            # Not the capability-matrix label. That one is the fan-out's
+            # trigger, and capability-matrix.yml then looks for the
+            # `/capability-matrix` comment the request has to be read from --
+            # an automated pull request carries no such comment, so the label
+            # would give every one of these a red `cells` job saying a
+            # requested fan-out probed nothing.
             gh pr create --draft \
               --base master \
               --head "$branch" \
               --title "chore(matrix): $(field dialect) $(field line) is past upstream end of life" \
-              --label 'capability-matrix' \
               --label 'database-release-line' \
               --body-file "$RUNNER_TEMP/body-$id.md"
           done
