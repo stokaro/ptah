@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/internal/aiprovider"
 	"ptah.run/internal/assistloop"
+	"ptah.run/internal/cli/banner"
 )
 
 // The pieces the interactive program needs that are not about the event loop:
@@ -163,21 +164,36 @@ func runTUI(
 		maxToolCalls: opts.maxToolCalls,
 	}
 
-	// The same three lines the scripted surface opens with. They go to the
-	// scrollback before the program starts, so they scroll away with the rest
-	// of the conversation rather than sitting in a pane.
+	// What the session opens on. It goes to the scrollback before the program
+	// starts, so it scrolls away with the rest of the conversation rather than
+	// sitting in a pane.
+	//
+	// The wordmark and the model are what a reader needs here. Everything under
+	// them is a path or a housekeeping notice: true, worth having, and not what
+	// anyone came to read, so it is drawn in the muted color the footers use.
+	// Undifferentiated, the block was six lines of full-strength text and the
+	// screen read as noise.
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Ptah Assist. %s via %s.\n", provider.Model(), provider.Profile())
+	heading := strings.SplitN(banner.Heading("Interactive Assistant"), "\n\n", 2)
+	fmt.Fprint(out, logoStyle.Render(heading[0]), "\n\n")
+	if len(heading) > 1 {
+		fmt.Fprint(out, subtitleStyle.Render(strings.TrimRight(heading[1], "\n")), "\n\n")
+	}
+	fmt.Fprintf(out, "%s\n\n", footerStyle.Render(
+		fmt.Sprintf("%s via %s", provider.Model(), provider.Profile())))
+
+	var aside strings.Builder
 	if opts.agent.Workspace == "" {
-		fmt.Fprintln(out, "No workspace: the model can read declared schemas and databases you "+
+		fmt.Fprintln(&aside, "No workspace: the model can read declared schemas and databases you "+
 			"name, and cannot change a file. Pass --workspace to add the artifact tools.")
 	}
 	if opts.session.resume != "" {
-		fmt.Fprintf(out, "Continuing %s: %d earlier message(s).\n",
+		fmt.Fprintf(&aside, "Continuing %s: %d earlier message(s).\n",
 			opts.session.resume, len(talk.history))
 	}
-	talk.announce(out)
-	fmt.Fprintf(out, "Ask a question, or /help. Ctrl-J for a new line.\n\n")
+	talk.announce(&aside)
+	fmt.Fprintln(&aside, "Ask a question, or /help. Ctrl-J for a new line.")
+	fmt.Fprintf(out, "%s\n\n", hintStyle.Render(strings.TrimRight(aside.String(), "\n")))
 
 	program := tea.NewProgram(model,
 		tea.WithContext(cmd.Context()),

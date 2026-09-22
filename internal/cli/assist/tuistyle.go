@@ -39,6 +39,11 @@ var (
 )
 
 var (
+	// logoStyle and subtitleStyle draw the heading the session opens on. The
+	// wordmark takes the accent and the line under it the text color, so the
+	// screen leads with the name rather than with the paths below it.
+	logoStyle     = lipgloss.NewStyle().Foreground(accent)
+	subtitleStyle = lipgloss.NewStyle().Foreground(echoed).Bold(true)
 	// promptStyle draws the `>` that marks where typing goes.
 	promptStyle = lipgloss.NewStyle().Foreground(accent).Bold(true)
 	// echoStyle draws the question above the answer it produced.

@@ -182,3 +182,46 @@ func TestWanted_ClassifiesTheWriter(t *testing.T) {
 		c.Assert(banner.Wanted(file), qt.IsFalse)
 	})
 }
+
+// TestHeadingCarriesTheWordmarkAndTheSubtitle covers the shape `ptah assist`
+// opens on: the identity, and the name of the surface rather than of the
+// binary. The version and the project address that [banner.Text] adds would be
+// noise on a screen inside one tool, so their absence is asserted too.
+func TestHeadingCarriesTheWordmarkAndTheSubtitle(t *testing.T) {
+	c := qt.New(t)
+
+	got := banner.Heading("Interactive Assistant")
+
+	c.Assert(got, qt.Contains, wordmark)
+	c.Assert(got, qt.Contains, "Interactive Assistant")
+	c.Assert(got, qt.Not(qt.Contains), buildinfo.URL)
+	c.Assert(strings.HasSuffix(got, "\n"), qt.IsTrue)
+}
+
+// TestHeadingCentersTheSubtitleUnderTheWordmark pins the placement, which is
+// the whole reason this returns a string rather than the art and a label: a
+// subtitle flush against the left margin reads as a separate line of output
+// rather than as part of the mark.
+func TestHeadingCentersTheSubtitleUnderTheWordmark(t *testing.T) {
+	c := qt.New(t)
+
+	lines := strings.Split(strings.TrimRight(banner.Heading("Assistant"), "\n"), "\n")
+	subtitle := lines[len(lines)-1]
+	art := 0
+	for _, line := range lines[:len(lines)-2] {
+		if len(line) > art {
+			art = len(line)
+		}
+	}
+
+	indent := len(subtitle) - len(strings.TrimLeft(subtitle, " "))
+	c.Assert(indent, qt.Equals, (art-len("Assistant"))/2)
+}
+
+// TestHeadingWithoutASubtitleIsTheArtAlone is the boundary the caller relies
+// on when it has nothing to name.
+func TestHeadingWithoutASubtitleIsTheArtAlone(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(banner.Heading("  "), qt.Equals, wordmark)
+}

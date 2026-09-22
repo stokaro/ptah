@@ -57,6 +57,32 @@ func Text(tool, version string) string {
 	return out.String()
 }
 
+// Heading renders the wordmark with one line under it.
+//
+// For a surface that names itself rather than the binary: `ptah assist` is one
+// screen inside one tool, so the version and the project address belong to the
+// entry screen [Text] renders and would be noise here. The caller decides how
+// to colour it, which is why this returns the art rather than printing it.
+//
+// The subtitle is centred under the wordmark, and an empty one renders the art
+// alone. The result ends in a newline.
+func Heading(subtitle string) string {
+	var out strings.Builder
+	width := 0
+	for _, line := range logo {
+		if len(line) > width {
+			width = len(line)
+		}
+		out.WriteString(line)
+		out.WriteString("\n")
+	}
+	if subtitle = strings.TrimSpace(subtitle); subtitle != "" {
+		pad := max((width-len(subtitle))/2, 0)
+		fmt.Fprintf(&out, "\n%s%s\n", strings.Repeat(" ", pad), subtitle)
+	}
+	return out.String()
+}
+
 // release is the "<tool> v<version>" line, or the tool alone when there is no
 // version to report.
 func release(tool, version string) string {
