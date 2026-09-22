@@ -439,10 +439,12 @@ var Cells = []Cell{
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.9",
 		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
-			"is what the level asserts. The preset is not a fresh reading: clickHouseForVersion " +
-			"returns ClickHouse2411 for every line above 24.11, and the arm was measured on 26.8.2.7 " +
-			"-- 54 rows, 34 agreements, 0 disagreements. Run /capability-matrix clickhouse-26.9 on a " +
-			"pull request to measure this line itself",
+			"is what the level asserts. Measured on 26.9.1.1629: 58 rows, 35 agreements, 0 " +
+			"disagreements, " +
+			"and this cell's floor of 35 met, which is what says ClickHouse2411 -- the arm " +
+			"clickHouseForVersion returns for every line above 24.11 -- is right for 26.9 rather " +
+			"than assumed. capabilityline names 26.9 as the newest measured line on the strength " +
+			"of that measurement",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.8",

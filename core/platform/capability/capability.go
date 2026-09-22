@@ -3131,7 +3131,7 @@ func clickHouseResolution(version string) VersionResolution {
 		return VersionResolution{Capabilities: ClickHouse24()}
 	}
 	return measuredMinorLineResolution(
-		clickHouseForVersion(v), v, capabilityline.ClickHouseMeasured(), capabilityline.ClickHouse268)
+		clickHouseForVersion(v), v, capabilityline.ClickHouseMeasured(), capabilityline.ClickHouse269)
 }
 
 // clickHouseForVersion picks the arm. CHECK GRANT arrived in 24.11.
