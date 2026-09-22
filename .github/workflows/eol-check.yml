@@ -152,12 +152,15 @@ jobs:
           DECIDE
 
           # The label has to exist before anybody can apply it, and it is the
-          # only way to tell this workflow not to ask again.
+          # only way to tell this workflow not to ask again. GitHub caps a
+          # label description at 100 characters and refuses a longer one with
+          # HTTP 422, which fails the whole step before a single pull request
+          # is opened.
           if gh label list --limit 200 --json name --jq '.[].name' | grep -qx "$KEEP_LABEL"; then
             echo "$KEEP_LABEL already exists"
           else
             gh label create "$KEEP_LABEL" --color ededed \
-              --description 'The declaration for this release line is deliberate; the end-of-life check opens no further pull request for it'
+              --description 'Deliberate declaration; the end-of-life check opens no further pull request for this line'
           fi
 
           # Read the whole list before the loop body runs. A `while read`
