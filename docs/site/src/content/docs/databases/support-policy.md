@@ -94,6 +94,19 @@ key reference.
 ## Upstream end of life
 
 An upstream end-of-life date never removes a line or blocks a connection by
-itself. It moves an exercised line from `certified` to `legacy-tested`. Removing
-a release line, refusing an operation, and changing a capability preset are
+itself. What it changes is the promise. A line Ptah keeps exercising moves from
+`certified` to `legacy-tested`. A line Ptah stops spending a test run on moves
+to `best-effort`, and the support matrix prints the reason beside it. Removing a
+release line, refusing an operation, and changing a capability preset are
 separate product decisions that need their own evidence.
+
+A `best-effort` line is resolved and operated exactly as any other, and may
+break as the code around it moves. That is what the level states, and it is why
+the line stays declared instead of being deleted: the compatibility is kept on
+a best-effort basis rather than withdrawn.
+
+A daily job compares the declared lines against the vendor calendars published
+by [endoflife.date](https://endoflife.date), so a declaration that overtakes its
+upstream support is noticed on the day rather than the next time somebody
+re-reads the table. Where a line promises more than the calendar allows, the job
+opens a draft pull request lowering it, and a person decides.

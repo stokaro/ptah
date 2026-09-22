@@ -1,0 +1,222 @@
+name: End-of-life check
+
+# Asks endoflife.date whether the release lines internal/capabilityprobe/cells.go
+# declares are still supported upstream, and opens a draft pull request lowering
+# the promise on one that is not.
+#
+# The declaration cannot notice this by itself. A cell's Support level describes
+# what this repository tests, not what the vendor still patches, and support
+# ends on a calendar date rather than on a commit -- so a line keeps calling
+# itself certified for a year after its last security release with every check
+# green.
+#
+# What a finding costs is the guarantee, never the dialect. Upstream end of life
+# lowers what Ptah promises about a release line and is not a reason to refuse a
+# server, so the pull request drops the level to best-effort and stops a probe
+# job being spent on the line, while the capability preset, the image and the
+# dialect stay. A best-effort line may break as the code around it moves, which
+# is exactly what the level tells a reader.
+#
+# A line already declared legacy-tested or best-effort is reported and asks for
+# nothing: PostgreSQL 13 is past end of life and kept as a regression sentinel
+# on purpose (stokaro/ptah#341), and its declaration already says so.
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queued rather than cancelled, and one slot for the whole workflow: it has no
+# pull_request trigger, so it starves nobody, and two runs racing to push the
+# same eol/<line> branch is how a late one overwrites a newer copy.
+concurrency:
+  group: eol-check
+  cancel-in-progress: false
+
+env:
+  # Applied to a closed pull request, this says the declaration it proposed to
+  # change is deliberate, and no further one is opened for that line. Closed
+  # without it, the next run opens a new pull request.
+  KEEP_LABEL: eol-keep
+
+jobs:
+  check:
+    name: Compare the declared lines against the vendor calendars
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Read once and keep the answer. Asking twice would put two measurements
+      # in one run, and the log and the decision could then disagree.
+      - name: Read the vendor calendars
+        id: report
+        run: |
+          set -euo pipefail
+          go run ./internal/cmd/eolcheck report --json >"$RUNNER_TEMP/eol.json"
+          cat "$RUNNER_TEMP/eol.json"
+          echo "overstated=$(jq '[.findings[] | select(.overstated)] | length' "$RUNNER_TEMP/eol.json")" >>"$GITHUB_OUTPUT"
+
+      # The report is the whole measurement, so it reaches the run summary
+      # whether or not anything is opened. A run that found nothing has to say
+      # what it asked and what no calendar could answer.
+      - name: Report what the calendars said
+        run: |
+          set -euo pipefail
+          {
+            printf '## End-of-life check\n\n'
+            jq -r '"Asked \(.asked) declared release lines on \(.on)."' "$RUNNER_TEMP/eol.json"
+            printf '\n### Past upstream end of life\n\n'
+            jq -r '.findings[] | "- `\(.id)` ended \(.eol) (\(.product)), declared \(.support)"' "$RUNNER_TEMP/eol.json"
+            printf '\n### No calendar covers these\n\n'
+            jq -r '.unanswered[] | "- `\(.id)` — \(.reason)"' "$RUNNER_TEMP/eol.json"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Mint a GitHub App token
+        id: app-token
+        if: steps.report.outputs.overstated != '0' && vars.CAPABILITY_MATRIX_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.CAPABILITY_MATRIX_APP_ID }}
+          private-key: ${{ secrets.CAPABILITY_MATRIX_APP_KEY }}
+
+      # A pull request opened with GITHUB_TOKEN receives no checks, and this one
+      # rewrites the declaration every probe job reads. So the run refuses rather
+      # than opening one nothing verifies: the missing credential is a
+      # configuration gap, not a reason to publish an unverified change.
+      - name: Resolve the credential whose pull request runs the checks
+        id: credential
+        if: steps.report.outputs.overstated != '0'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          AUTOMATION_TOKEN: ${{ secrets.CAPABILITY_MATRIX_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APP_TOKEN" ]; then
+            echo "::add-mask::$APP_TOKEN"
+            echo "value=$APP_TOKEN" >>"$GITHUB_OUTPUT"
+            echo "opening as the app installation"
+            exit 0
+          fi
+          if [ -n "$AUTOMATION_TOKEN" ]; then
+            echo "::add-mask::$AUTOMATION_TOKEN"
+            echo "value=$AUTOMATION_TOKEN" >>"$GITHUB_OUTPUT"
+            echo "opening with CAPABILITY_MATRIX_TOKEN"
+            exit 0
+          fi
+          echo "a declared release line is past upstream end of life and no credential of its own is configured." >&2
+          echo "A pull request opened with GITHUB_TOKEN would receive no checks, so none is opened." >&2
+          echo "Set CAPABILITY_MATRIX_APP_ID with a CAPABILITY_MATRIX_APP_KEY secret, or a" >&2
+          echo "CAPABILITY_MATRIX_TOKEN secret. Lowering the level by hand is the other way out:" >&2
+          echo "go run ./internal/cmd/eolcheck demote <cell-id> --reason '...' && scripts/check-docsync.sh --write" >&2
+          exit 1
+
+      - name: Open a draft pull request for each overstated line
+        if: steps.report.outputs.overstated != '0'
+        env:
+          GH_TOKEN: ${{ steps.credential.outputs.value }}
+        run: |
+          set -euo pipefail
+          git config user.name 'ptah-automation'
+          git config user.email 'ptah-automation@users.noreply.github.com'
+          base="$(git rev-parse HEAD)"
+
+          # The label has to exist before anybody can apply it, and it is the
+          # only way to tell this workflow not to ask again.
+          if gh label list --limit 200 --json name --jq '.[].name' | grep -qx "$KEEP_LABEL"; then
+            echo "$KEEP_LABEL already exists"
+          else
+            gh label create "$KEEP_LABEL" --color ededed \
+              --description 'The declaration for this release line is deliberate; the end-of-life check opens no further pull request for it'
+          fi
+
+          mapfile -t lines < <(jq -r '.findings[] | select(.overstated) | @base64' "$RUNNER_TEMP/eol.json")
+          for encoded in "${lines[@]}"; do
+            # `// empty` rather than a bare path: jq prints the word null for
+            # an absent field, and a null image would become a search term.
+            field() { echo "$encoded" | base64 --decode | jq -r ".$1 // empty"; }
+            id="$(field id)"
+            image="$(field image)"
+            branch="eol/$id"
+
+            # One pull request per engine and line while the question is open.
+            # A merged one already answered it; a closed one carrying the label
+            # answered it the other way and stays answered. A closed one
+            # without the label left no decision behind, so the line comes back.
+            decision="$(gh pr list --head "$branch" --state all --limit 20 --json number,state,labels --jq '
+              ([.[] | select(.state == "OPEN")] | first) as $open
+              | ([.[] | select(.state == "MERGED")] | first) as $merged
+              | ([.[] | select(.state == "CLOSED")
+                      | select(any(.labels[]?.name; . == env.KEEP_LABEL))] | first) as $kept
+              | if $open then "open #\($open.number)"
+                elif $merged then "merged #\($merged.number)"
+                elif $kept then "kept by #\($kept.number)"
+                else "none" end')"
+            if [ "$decision" != "none" ]; then
+              echo "$id: $decision -- nothing opened"
+              continue
+            fi
+
+            git checkout -q -B "$branch" "$base"
+            go run ./internal/cmd/eolcheck demote "$id" --reason "$(field reason)"
+            scripts/check-docsync.sh --write
+            git add -u
+            git commit -q \
+              -m "chore(matrix): $(field dialect) $(field line) drops to best-effort" \
+              -m "endoflife.date reports $(field product) $(field line) past end of life on $(field eol). Upstream end of life lowers what Ptah promises about a release line and is not a reason to refuse a server, so the line keeps its capability preset, its image and its place in the matrix, and stops being probed."
+            git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              "HEAD:refs/heads/$branch"
+
+            # After the commit, so the search reads the tree the pull request
+            # carries: cells.go no longer names the line, and what is left is
+            # what a reviewer has to decide about. Exit 1 is "no match" and
+            # anything above it is a real failure.
+            terms=(-e "$id")
+            if [ -n "$image" ]; then
+              terms+=(-e "$image")
+            fi
+            set +e
+            leftovers="$(git grep -l -F "${terms[@]}" -- .)"
+            status=$?
+            set -e
+            [ "$status" -le 1 ] || { echo "git grep failed with status $status" >&2; exit 1; }
+
+            # Through a file rather than an argument: a body written inline
+            # would have to sit at column zero to keep its paragraph breaks,
+            # which ends the YAML block this step is written in.
+            {
+              printf 'endoflife.date reports `%s` %s past end of life on %s.\n\n' \
+                "$(field product)" "$(field line)" "$(field eol)"
+              printf 'This branch drops the declared support level to best-effort and gives the cell an `Unprobed` reason, which is what stops a probe job being spent on the line. `scripts/check-docsync.sh --write` regenerated the support matrix from it.\n\n'
+              printf 'Nothing was removed. The line keeps its capability preset, its container image and its row in the matrix, because upstream end of life lowers what Ptah promises and is not a reason to refuse a server. What it loses is the guarantee: a best-effort line may break as the code around it moves.\n\n'
+              printf 'It is a draft because three questions are left:\n\n'
+              printf -- '- Whether the line should keep being measured instead. `legacy-tested` is the level for a line deliberately kept as a regression sentinel, which is what PostgreSQL 13 is (stokaro/ptah#341).\n'
+              printf -- '- `TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes` pins the best-effort lines one by one, so it is red until `%s` is added there with a sentence saying why. That red is the point: the list exists so a line losing its coverage is read by somebody.\n' "$id"
+              printf -- '- `docs/site/src/content/docs/databases/capability-status.md` is a measurement over one matrix run and cannot be regenerated here. Comment `/capability-matrix` on this pull request and rewrite the file from that run.\n\n'
+              printf 'The cell keeps its own `Note`, which still describes the line as certified. Re-read it.\n\n'
+              if [ -n "$leftovers" ]; then
+                printf 'These tracked files still name the line:\n\n'
+                printf '%s\n' "$leftovers" | sed 's/^/- `/; s/$/`/'
+                printf '\n'
+              fi
+              printf 'To stop this check asking again, close this pull request with the `%s` label. Closed without it, the next daily run opens a new one.\n' "$KEEP_LABEL"
+            } >"$RUNNER_TEMP/body-$id.md"
+
+            gh pr create --draft \
+              --base master \
+              --head "$branch" \
+              --title "chore(matrix): $(field dialect) $(field line) is past upstream end of life" \
+              --label 'capability-matrix' \
+              --label 'database-release-line' \
+              --body-file "$RUNNER_TEMP/body-$id.md"
+          done

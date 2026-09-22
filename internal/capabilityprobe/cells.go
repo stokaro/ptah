@@ -119,6 +119,25 @@ type Cell struct {
 	// patch before invoking Docker.
 	Image string
 
+	// Unprobed declares a line this repository keeps describing and stops
+	// exercising, carrying the reason. A cell with a reason here is skipped
+	// however complete the rest of its declaration is, and keeps its Image so
+	// the container the line ran on is still recorded.
+	//
+	// It exists because "no container is declared for this line" and "the
+	// container is declared and deliberately not started" read identically
+	// once the Image is deleted, and they are opposite claims to a reader of
+	// the support matrix. Upstream end of life is the case it is for: the
+	// vendor stops patching a line, Ptah stops spending a probe job on it, and
+	// the line keeps working on a best-effort basis. What Ptah promises drops;
+	// nothing refuses a server.
+	//
+	// A line with a reason here therefore declares [capability.BestEffort].
+	// The census in cells_test.go holds that in both directions, because a
+	// level claiming testing that nothing exercises is the defect the
+	// vocabulary exists to prevent.
+	Unprobed string
+
 	// ResolveNewestPatch selects registries that do not publish a floating tag
 	// for a release line. The current implementation supports Docker Hub and
 	// requires Image's tag to equal Line, so the declaration cannot quietly
