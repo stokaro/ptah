@@ -429,21 +429,32 @@ var Cells = []Cell{
 	// the rule is a rolling window, a line leaves support when three newer
 	// stable lines exist rather than on any date this comment could name.
 	//
-	// 26.8 is newer than that reading and is the line the integration workflow
-	// now starts. 26.7 keeps its cell: the probe fan-out still runs it, and it
-	// is the line the ClickHouse dialect's behavior is recorded against --
-	// core/renderer/internal/dialects/clickhouse pins statement-level findings
-	// to a live 26.7.3.19 throughout.
+	// 26.9 is newer than that reading and is the line the integration workflow
+	// now starts. 26.8 and 26.7 keep their cells: the probe fan-out still runs
+	// both, and 26.7 is the line the ClickHouse dialect's behavior is recorded
+	// against -- core/renderer/internal/dialects/clickhouse pins
+	// statement-level findings to a live 26.7.3.19 throughout.
+	{
+		Dialect: platform.ClickHouse, Line: "26.9",
+		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.9",
+		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
+			"is what the level asserts. Measured on 26.9.1.1629: 58 rows, 35 agreements, 0 " +
+			"disagreements, " +
+			"and this cell's floor of 35 met, which is what says ClickHouse2411 -- the arm " +
+			"clickHouseForVersion returns for every line above 24.11 -- is right for 26.9 rather " +
+			"than assumed. capabilityline names 26.9 as the newest measured line on the strength " +
+			"of that measurement",
+	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.8",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.8",
-		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
-			"is what the level asserts. Measured on 26.8.2.7: 54 rows, 34 agreements, 0 disagreements, " +
-			"and this cell's floor of 34 met, which is what says ClickHouse2411 -- the arm " +
-			"clickHouseForVersion returns for every line above 24.11 -- is right for 26.8 rather than " +
-			"assumed. capabilityline names 26.8 as the newest measured line on the strength of that " +
-			"measurement (stokaro/ptah#2802)",
+		Note: "certified because the probe fan-out runs this line. Measured on 26.8.2.7: 54 rows, " +
+			"34 agreements, 0 disagreements, and this cell's floor of 34 met, which is what says " +
+			"ClickHouse2411 -- the arm clickHouseForVersion returns for every line above 24.11 -- is " +
+			"right for 26.8 rather than assumed. capabilityline names 26.8 as the newest measured " +
+			"line on the strength of that measurement (stokaro/ptah#2802)",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
