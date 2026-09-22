@@ -30,37 +30,53 @@ import (
 func TestNewPrompterPicksThePlainReaderWithoutATerminal(t *testing.T) {
 	tests := []struct {
 		name string
-		// Built per case rather than held in the row, because the cases that
-		// discriminate need real operating-system files and a row cannot own
-		// their cleanup.
-		open func(c *qt.C) (io.Reader, io.Writer)
+		in   io.Reader
+		out  io.Writer
 	}{
-		{name: "string reader", open: func(*qt.C) (io.Reader, io.Writer) {
-			return strings.NewReader("hi\n"), &strings.Builder{}
-		}},
-		{name: "os.Stdin with a non-file writer", open: func(*qt.C) (io.Reader, io.Writer) {
-			return os.Stdin, &strings.Builder{}
-		}},
-		// The rows that matter. Both sides are *os.File here, so the type
-		// assertions pass and only the terminal check can refuse: this is a
-		// redirected run, which is what CI and `go test` actually are.
-		// Without these the tty check can be deleted and this test stays green.
-		{name: "both sides are pipes", open: openPipes},
-		{name: "both sides are files on disk", open: openFiles},
+		{name: "string reader", in: strings.NewReader("hi\n"), out: &strings.Builder{}},
+		{name: "os.Stdin with a non-file writer", in: os.Stdin, out: &strings.Builder{}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			in, out := test.open(c)
-
-			input := newPrompter(in, out)
-
-			_, plain := input.(*plainPrompter)
-			c.Assert(plain, qt.IsTrue)
-			c.Assert(input.close(), qt.IsNil)
+			assertPlainPrompter(c, test.in, test.out)
 		})
 	}
+}
+
+// TestNewPrompterPicksThePlainReaderForARedirectedRun is the half that
+// discriminates. Both sides are *os.File here, so the type assertions pass and
+// only the terminal check can refuse -- which is what CI and `go test` are.
+// Without it the tty check can be deleted and the table above stays green.
+//
+// These are subtests rather than rows because each one needs a pair of real
+// operating-system files and the cleanup that goes with them, and a row that
+// has to open something is a fixture, not data.
+func TestNewPrompterPicksThePlainReaderForARedirectedRun(t *testing.T) {
+	t.Run("both sides are pipes", func(t *testing.T) {
+		c := qt.New(t)
+		in, out := openPipes(c)
+		assertPlainPrompter(c, in, out)
+	})
+
+	t.Run("both sides are files on disk", func(t *testing.T) {
+		c := qt.New(t)
+		in, out := openFiles(c)
+		assertPlainPrompter(c, in, out)
+	})
+}
+
+// assertPlainPrompter asserts that this pair gets the reader that does no
+// terminal handling, and that closing it reports nothing.
+func assertPlainPrompter(c *qt.C, in io.Reader, out io.Writer) {
+	c.Helper()
+
+	input := newPrompter(in, out)
+
+	_, plain := input.(*plainPrompter)
+	c.Assert(plain, qt.IsTrue)
+	c.Assert(input.close(), qt.IsNil)
 }
 
 // openPipes gives a reader and a writer that are both *os.File and neither a
@@ -570,7 +586,7 @@ func TestInlineCodeCarriesNoNonBreakingSpace(t *testing.T) {
 
 			rendered := strings.Join(renderAnswer(test.markdown), "\n")
 
-			c.Assert(strings.Contains(rendered, " "), qt.IsFalse)
+			c.Assert(rendered, qt.Not(qt.Contains), "\u00a0")
 			c.Assert(rendered, qt.Contains, "\x1b[38;5;203")
 		})
 	}
