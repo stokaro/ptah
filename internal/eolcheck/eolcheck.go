@@ -34,31 +34,84 @@ import (
 	"ptah.run/internal/capabilityprobe"
 )
 
-// Product is the endoflife.date identifier for one engine.
+// Calendar is where one dialect's release dates come from.
 //
-// The mapping is written out because it is not derivable: endoflife.date names
-// SQL Server `mssqlserver` and Oracle `oracle-database`, and a dialect with no
-// entry there has no row to read rather than an empty one.
-var Product = map[string]string{
-	platform.Postgres:    "postgresql",
-	platform.MySQL:       "mysql",
-	platform.MariaDB:     "mariadb",
-	platform.SQLServer:   "mssqlserver",
-	platform.Oracle:      "oracle-database",
-	platform.CockroachDB: "cockroachdb",
-	platform.ClickHouse:  "clickhouse",
+// A calendar with no Cycles is fetched from endoflife.date by Product. One
+// that carries Cycles is declared here instead, for a vendor endoflife.date
+// does not list: the dates are read off the vendor's own page and the page is
+// cited, so the answer is checkable rather than remembered.
+type Calendar struct {
+	// Product is the short identifier a report prints, and the endoflife.date
+	// product name where the calendar is fetched.
+	Product string
+
+	// Cite is the page a reader checks the dates against.
+	Cite string
+
+	// Cycles is the calendar itself, for a vendor endoflife.date does not
+	// carry. Nil means the calendar is fetched.
+	Cycles []Cycle
 }
 
-// Unlisted names the dialects endoflife.date does not carry, so a run says
-// which lines it could not ask about instead of reporting them supported.
+// Calendars is where each dialect's release dates are read.
 //
-// YugabyteDB has no entry; SQLite publishes no end-of-life calendar at all and
-// is compiled into the binary rather than run as a server; Spanner is a
-// managed service whose only container is an emulator with no release line.
+// The endoflife.date names are written out because they are not derivable: it
+// calls SQL Server `mssqlserver` and Oracle `oracle-database`, and a dialect
+// with no entry there has no row to read rather than an empty one.
+var Calendars = map[string]Calendar{
+	platform.Postgres:    {Product: "postgresql", Cite: "endoflife.date/postgresql"},
+	platform.MySQL:       {Product: "mysql", Cite: "endoflife.date/mysql"},
+	platform.MariaDB:     {Product: "mariadb", Cite: "endoflife.date/mariadb"},
+	platform.SQLServer:   {Product: "mssqlserver", Cite: "endoflife.date/mssqlserver"},
+	platform.Oracle:      {Product: "oracle-database", Cite: "endoflife.date/oracle-database"},
+	platform.CockroachDB: {Product: "cockroachdb", Cite: "endoflife.date/cockroachdb"},
+	platform.ClickHouse:  {Product: "clickhouse", Cite: "endoflife.date/clickhouse"},
+	platform.YugabyteDB: {
+		Product: "yugabytedb",
+		Cite:    "docs.yugabyte.com/stable/releases/ybdb-releases",
+		Cycles:  yugabyteLines,
+	},
+}
+
+// yugabyteLines is the release table docs.yugabyte.com publishes, read on
+// 2026-09-22. It is declared rather than fetched because endoflife.date
+// carries no yugabytedb product, and a dialect nothing can answer about is a
+// line whose declaration nobody re-reads.
+//
+// The date taken is the END OF MAINTENANCE SUPPORT, and the vendor's later
+// "End of Life" column is recorded beside it. Maintenance is when patches for
+// the line stop, which is the question a testing promise turns on and the date
+// endoflife.date records for the products it does carry. Taking the later
+// column would keep a line certified for the eighteen months after its last
+// patch.
+//
+// Yugabyte publishes no schedule past the lines below, so a newer line reads
+// as unanswered here until somebody adds it, which is the visible half of the
+// declaration going stale.
+var yugabyteLines = []Cycle{
+	// End of Life 2027-12-29.
+	{Cycle: "2026.1", EOL: day(2027, 6, 29), HasDate: true},
+	// End of Life 2028-06-11.
+	{Cycle: "2025.2", EOL: day(2027, 12, 11), HasDate: true},
+	// End of Life 2027-01-23.
+	{Cycle: "2025.1", EOL: day(2026, 7, 23), HasDate: true},
+	// End of Life 2027-06-09.
+	{Cycle: "2024.2", EOL: day(2026, 12, 9), HasDate: true},
+}
+
+func day(year int, month time.Month, dayOfMonth int) time.Time {
+	return time.Date(year, month, dayOfMonth, 0, 0, 0, 0, time.UTC)
+}
+
+// Unlisted names the dialects no calendar answers for, so a run says which
+// lines it could not ask about instead of reporting them supported.
+//
+// SQLite publishes no end-of-life calendar at all and is compiled into the
+// binary rather than run as a server; Spanner is a managed service whose only
+// container is an emulator with no release line.
 var Unlisted = map[string]string{
-	platform.YugabyteDB: "endoflife.date carries no yugabytedb product",
-	platform.SQLite:     "SQLite publishes no end-of-life calendar, and the engine is compiled in",
-	platform.Spanner:    "a managed service; the cell names an emulator rather than a release line",
+	platform.SQLite:  "SQLite publishes no end-of-life calendar, and the engine is compiled in",
+	platform.Spanner: "a managed service; the cell names an emulator rather than a release line",
 }
 
 // Cycle is one release line as endoflife.date reports it.
@@ -87,8 +140,10 @@ func (c Cycle) Ceased(on time.Time) bool {
 type Finding struct {
 	// Cell is the declared line.
 	Cell capabilityprobe.Cell
-	// Product is the endoflife.date identifier the answer came from.
+	// Product is the short identifier of the calendar the answer came from.
 	Product string
+	// Cite is the page a reader checks the date against.
+	Cite string
 	// EOL is when support ended, or the zero time when the product reported a
 	// boolean rather than a date.
 	EOL time.Time
@@ -132,7 +187,7 @@ func (f Finding) UnprobedReason() string {
 	if f.HasDate {
 		when = "on " + f.EOL.Format("2006-01-02")
 	}
-	return fmt.Sprintf("upstream support ended %s (endoflife.date/%s)", when, f.Product)
+	return fmt.Sprintf("upstream support ended %s (%s)", when, f.Cite)
 }
 
 // Unanswered is one declared line no vendor calendar covers.
@@ -171,26 +226,27 @@ func Check(ctx context.Context, cells []capabilityprobe.Cell, on time.Time, fetc
 	report := Report{On: on}
 	cycles := make(map[string][]Cycle)
 	for _, cell := range cells {
-		product, listed := Product[platform.NormalizeDialect(cell.Dialect)]
+		dialect := platform.NormalizeDialect(cell.Dialect)
+		calendar, listed := Calendars[dialect]
 		if !listed {
 			report.Unanswered = append(report.Unanswered, Unanswered{
 				Cell:   cell,
-				Reason: Unlisted[platform.NormalizeDialect(cell.Dialect)],
+				Reason: Unlisted[dialect],
 			})
 			continue
 		}
-		if _, read := cycles[product]; !read {
-			got, err := fetch(ctx, product)
+		if _, read := cycles[calendar.Product]; !read {
+			got, err := readCalendar(ctx, calendar, fetch)
 			if err != nil {
-				return Report{}, fmt.Errorf("read the %s calendar: %w", product, err)
+				return Report{}, fmt.Errorf("read the %s calendar: %w", calendar.Product, err)
 			}
-			cycles[product] = got
+			cycles[calendar.Product] = got
 		}
-		cycle, found := findCycle(cycles[product], cell.Line)
+		cycle, found := findCycle(cycles[calendar.Product], cell.Line)
 		if !found {
 			report.Unanswered = append(report.Unanswered, Unanswered{
 				Cell:   cell,
-				Reason: fmt.Sprintf("%s lists no cycle %q", product, cell.Line),
+				Reason: fmt.Sprintf("%s lists no cycle %q", calendar.Cite, cell.Line),
 			})
 			continue
 		}
@@ -199,7 +255,8 @@ func Check(ctx context.Context, cells []capabilityprobe.Cell, on time.Time, fetc
 			continue
 		}
 		report.Findings = append(report.Findings, Finding{
-			Cell: cell, Product: product, EOL: cycle.EOL, HasDate: cycle.HasDate,
+			Cell: cell, Product: calendar.Product, Cite: calendar.Cite,
+			EOL: cycle.EOL, HasDate: cycle.HasDate,
 		})
 	}
 	sort.Slice(report.Findings, func(i, j int) bool {
@@ -210,6 +267,14 @@ func Check(ctx context.Context, cells []capabilityprobe.Cell, on time.Time, fetc
 			capabilityprobe.CellID(report.Unanswered[j].Cell)
 	})
 	return report, nil
+}
+
+// readCalendar takes a declared calendar as it stands and fetches the rest.
+func readCalendar(ctx context.Context, calendar Calendar, fetch Fetcher) ([]Cycle, error) {
+	if calendar.Cycles != nil {
+		return calendar.Cycles, nil
+	}
+	return fetch(ctx, calendar.Product)
 }
 
 func findCycle(cycles []Cycle, line string) (Cycle, bool) {

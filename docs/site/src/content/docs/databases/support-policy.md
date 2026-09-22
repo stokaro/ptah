@@ -105,8 +105,14 @@ break as the code around it moves. That is what the level states, and it is why
 the line stays declared instead of being deleted: the compatibility is kept on
 a best-effort basis rather than withdrawn.
 
-A daily job compares the declared lines against the vendor calendars published
-by [endoflife.date](https://endoflife.date), so a declaration that overtakes its
-upstream support is noticed on the day rather than the next time somebody
-re-reads the table. Where a line promises more than the calendar allows, the job
+A daily job compares the declared lines against the vendor calendars, so a
+declaration that overtakes its upstream support is noticed on the day rather
+than the next time somebody re-reads the table. Most calendars come from
+[endoflife.date](https://endoflife.date); a vendor it does not carry has its
+schedule recorded in Ptah with the page it was read from, so no release line is
+left unasked about. Where a line promises more than its calendar allows, the job
 opens a draft pull request lowering it, and a person decides.
+
+The date the comparison uses is when the vendor stops shipping patches for the
+line, which is earlier than the vendor's final end-of-life date where the two
+are published separately. That is the date a testing promise turns on.

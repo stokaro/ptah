@@ -3,6 +3,7 @@ package eolcheck_test
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -142,7 +143,7 @@ func TestCheck_UnansweredLines(t *testing.T) {
 	on := time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)
 
 	report, err := eolcheck.Check(context.Background(), []capabilityprobe.Cell{
-		cell(platform.YugabyteDB, "2026.1"),
+		cell(platform.SQLite, "3"),
 		cell(platform.Postgres, "99"),
 	}, on, fixedFetcher(map[string][]eolcheck.Cycle{"postgresql": {{Cycle: "18"}}}))
 
@@ -153,7 +154,113 @@ func TestCheck_UnansweredLines(t *testing.T) {
 	// Ordered by cell id, which is what makes a run's output comparable with
 	// the one before it.
 	c.Assert(report.Unanswered[0].Reason, qt.Contains, `lists no cycle "99"`)
-	c.Assert(report.Unanswered[1].Reason, qt.Contains, "no yugabytedb product")
+	c.Assert(report.Unanswered[1].Reason, qt.Contains, "compiled in")
+}
+
+// A dialect endoflife.date does not carry is answered from a calendar declared
+// in the package, so the whole matrix is measured rather than the part one
+// service happens to list. The fetcher is not offered the dialect at all.
+func TestCheck_DeclaredCalendar(t *testing.T) {
+	c := qt.New(t)
+	on := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	report, err := eolcheck.Check(context.Background(), []capabilityprobe.Cell{
+		cell(platform.YugabyteDB, "2024.2"),
+		cell(platform.YugabyteDB, "2025.2"),
+	}, on, func(_ context.Context, product string) ([]eolcheck.Cycle, error) {
+		return nil, errors.New("nothing should be fetched for " + product)
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Asked, qt.Equals, 2)
+	// 2024.2 leaves maintenance on 2026-12-09 and 2025.2 on 2027-12-11, so
+	// this date separates them.
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].ID(), qt.Equals, "yugabytedb-2024-2")
+	c.Assert(report.Findings[0].UnprobedReason(), qt.Equals,
+		"upstream support ended on 2026-12-09 (docs.yugabyte.com/stable/releases/ybdb-releases)")
+}
+
+// declaredCalendars is every dialect whose calendar is written in the package
+// rather than fetched, in a stable order.
+func declaredCalendars() []string {
+	out := make([]string, 0, len(eolcheck.Calendars))
+	for dialect, calendar := range eolcheck.Calendars {
+		if calendar.Cycles != nil {
+			out = append(out, dialect)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// refusingFetcher proves the declared calendar answered on its own. A fetcher
+// that returned rows would make the assertions below true whatever the
+// declaration held.
+func refusingFetcher(_ context.Context, product string) ([]eolcheck.Cycle, error) {
+	return nil, errors.New("nothing should be fetched for " + product)
+}
+
+// Every line the matrix declares for a dialect whose calendar is declared here
+// has a cycle in it, so a release line added to the matrix cannot quietly stop
+// being asked about while the calendar beside it goes stale.
+func TestDeclaredCalendarsCoverTheDeclaredLines(t *testing.T) {
+	declared := declaredCalendars()
+
+	// The corpus floor. With no declared calendar the loop below would pass
+	// over an empty list and report success about a rule with no subject.
+	t.Run("a calendar is declared in this package", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(len(declared) > 0, qt.IsTrue)
+	})
+
+	for _, dialect := range declared {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			lines := linesOf(dialect)
+			c.Assert(len(lines) > 0, qt.IsTrue,
+				qt.Commentf("the matrix declares no %s line", dialect))
+
+			report, err := eolcheck.Check(context.Background(), lines, time.Now().UTC(), refusingFetcher)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(unansweredLines(report), qt.HasLen, 0)
+			c.Assert(report.Asked, qt.Equals, len(lines))
+		})
+	}
+}
+
+// A calendar with no citation gives a reader nothing to check the date
+// against, and the citation is what a demoted cell carries into the matrix.
+func TestEveryCalendarCitesItsSource(t *testing.T) {
+	for dialect, calendar := range eolcheck.Calendars {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(calendar.Product, qt.Not(qt.Equals), "")
+			c.Assert(calendar.Cite, qt.Not(qt.Equals), "")
+		})
+	}
+}
+
+// linesOf is every declared cell of one dialect.
+func linesOf(dialect string) []capabilityprobe.Cell {
+	out := make([]capabilityprobe.Cell, 0, len(capabilityprobe.Cells))
+	for _, declared := range capabilityprobe.Cells {
+		if platform.NormalizeDialect(declared.Dialect) == dialect {
+			out = append(out, declared)
+		}
+	}
+	return out
+}
+
+// unansweredLines is the ids a report could not ask about, with the reason, so
+// a failure names the line rather than a count.
+func unansweredLines(report eolcheck.Report) []string {
+	out := make([]string, 0, len(report.Unanswered))
+	for _, line := range report.Unanswered {
+		out = append(out, capabilityprobe.CellID(line.Cell)+": "+line.Reason)
+	}
+	return out
 }
 
 // A calendar that cannot be read fails the run. Treating a network error as
@@ -204,11 +311,11 @@ func TestEveryDeclaredDialectIsClassified(t *testing.T) {
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			_, mapped := eolcheck.Product[dialect]
+			_, answered := eolcheck.Calendars[dialect]
 			reason, unlisted := eolcheck.Unlisted[dialect]
-			c.Assert(mapped, qt.Not(qt.Equals), unlisted,
-				qt.Commentf("dialect %q must be either mapped to an endoflife.date product or "+
-					"named in Unlisted with a reason, and never both", dialect))
+			c.Assert(answered, qt.Not(qt.Equals), unlisted,
+				qt.Commentf("dialect %q must be either given a calendar or named in Unlisted "+
+					"with a reason, and never both", dialect))
 			// A reason is present exactly when the dialect is unlisted, which
 			// says both halves at once: an unlisted dialect carries one, and a
 			// mapped dialect is absent from Unlisted rather than present with
