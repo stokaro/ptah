@@ -17,13 +17,12 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
-
-	"golang.org/x/term"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/agentapi"

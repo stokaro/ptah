@@ -3,6 +3,7 @@ package banner_test
 import (
 	"bytes"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -207,12 +208,11 @@ func TestHeadingCentersTheSubtitleUnderTheWordmark(t *testing.T) {
 
 	lines := strings.Split(strings.TrimRight(banner.Heading("Assistant"), "\n"), "\n")
 	subtitle := lines[len(lines)-1]
-	art := 0
+	widths := make([]int, 0, len(lines))
 	for _, line := range lines[:len(lines)-2] {
-		if len(line) > art {
-			art = len(line)
-		}
+		widths = append(widths, len(line))
 	}
+	art := slices.Max(widths)
 
 	indent := len(subtitle) - len(strings.TrimLeft(subtitle, " "))
 	c.Assert(indent, qt.Equals, (art-len("Assistant"))/2)
