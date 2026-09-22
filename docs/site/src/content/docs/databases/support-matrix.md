@@ -90,7 +90,6 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.7 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
-| `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | yes |
 | `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | yes |
@@ -105,13 +104,15 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 32. Probed on every pull request: 32.
+Declared release lines: 32. Probed on every pull request: 31.
 
-Support levels across the 32 declared lines: 29 certified, 2 legacy-tested, 1 best-effort.
+Support levels across the 32 declared lines: 28 certified, 2 legacy-tested, 2 best-effort.
 
 Lines that are declared and not probed, and why:
 
+- `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
