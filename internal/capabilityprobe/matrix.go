@@ -558,6 +558,12 @@ func toCICell(cell Cell) CICell {
 // both states one fact twice and buries the one that has to change first.
 func skipReasons(cell Cell) []string {
 	var reasons []string
+	// First, because it is the only reason here that is a decision rather than
+	// a gap, and a reader of the support matrix is asking which of the two
+	// this line is.
+	if cell.Unprobed != "" {
+		reasons = append(reasons, cell.Unprobed)
+	}
 	if cell.Image == "" && !cell.CompiledIn {
 		reasons = append(reasons, "no container image is declared for this line")
 	}

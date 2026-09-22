@@ -196,6 +196,15 @@ The probe fan-out does not run on a pull request by default
 exact ids. The cheap jobs -- `cells`, `preset coverage`, `documented matrix` --
 run on every pull request regardless.
 
+Upstream end of life lowers what Ptah promises about a line and removes
+nothing. An exercised line drops to `legacy-tested`, a line CI stops running
+drops to `best-effort` and states the reason in `Unprobed`, and the preset, the
+image and the dialect stay -- a best-effort line is operated like any other and
+may break as the code around it moves, which is what the level says.
+`.github/workflows/eol-check.yml` reads the vendor calendars daily and opens a
+draft pull request where a declaration promises more than the calendar allows;
+`go run ./internal/cmd/eolcheck report` is the same measurement by hand.
+
 A cell's `Support` level describes **this repository's testing**, not the
 server, and nothing reads it to gate an operation. A line may claim certified
 or legacy-tested only if something actually runs against it -- the probe, a
@@ -647,7 +656,10 @@ not used. Prefer no label to a wrong one.
 `frozen` means work must not proceed and the comments say why; it is not
 ownership, and a reason that no longer holds makes the label stale rather than
 binding -- say so on the issue rather than deciding alone. `hold-off-merge`
-means what it says.
+means what it says. `eol-keep` belongs on a CLOSED end-of-life pull request and
+says the declaration it proposed to change is deliberate: the daily check reads
+it back and opens no further pull request for that line, where a closed one
+without it comes back tomorrow.
 
 ## Code Style And Linting
 
