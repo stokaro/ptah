@@ -1,7 +1,6 @@
 package assist
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 
@@ -130,7 +129,7 @@ func runExplain(cmd *cobra.Command, opts *explainOptions, question string) error
 
 	var approve approvalHandler
 	if !opts.nonInteractive {
-		approve = terminalApprover(cmd, bufio.NewReader(cmd.InOrStdin()))
+		approve = terminalApprover(cmd, newPrompter(cmd.InOrStdin(), cmd.OutOrStdout()))
 	}
 	tools, err := connectTools(cmd, session, approve)
 	if err != nil {

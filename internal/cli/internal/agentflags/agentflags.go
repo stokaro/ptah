@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/agentapi"
@@ -610,9 +611,28 @@ func openAudit(
 		return nil, nil, err
 	}
 	// The path goes to stderr rather than stdout: stdout is the protocol's.
-	fmt.Fprintf(cmd.ErrOrStderr(), "ptah: recording agent decisions to %s\n", path)
+	//
+	// Muted, and only where a person is reading it. The line is a housekeeping
+	// notice printed before anything a caller asked for, and at full strength it
+	// is the first thing on screen and reads as though it mattered. The colour
+	// is skipped when stderr is not a terminal, because there it is a log line
+	// and an escape sequence in a log is damage.
+	notice := fmt.Sprintf("ptah: recording agent decisions to %s", path)
+	if file, isFile := cmd.ErrOrStderr().(*os.File); isFile && term.IsTerminal(int(file.Fd())) {
+		notice = mutedNotice + notice + resetNotice
+	}
+	fmt.Fprintln(cmd.ErrOrStderr(), notice)
 	return writer, func() { _ = writer.Close() }, nil
 }
+
+// mutedNotice and resetNotice are the grey the command-line surfaces use for a
+// line that is true but secondary. Written out rather than taken from a styling
+// package: this file is reached by the MCP server as well as by the assistant,
+// and it has no terminal of its own to configure a renderer against.
+const (
+	mutedNotice = "\x1b[38;5;245m"
+	resetNotice = "\x1b[m"
+)
 
 // newSessionID groups one server run's records.
 func newSessionID() string {

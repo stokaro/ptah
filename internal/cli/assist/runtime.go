@@ -1,10 +1,12 @@
 package assist
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -99,13 +101,14 @@ func connectTools(
 // parseable, and the answer is read from the same reader the interactive loop
 // uses -- one reader, because two would each buffer and the second would eat
 // the first's line.
-func terminalApprover(cmd *cobra.Command, reader *bufio.Reader) approvalHandler {
+func terminalApprover(cmd *cobra.Command, input prompter) approvalHandler {
 	return func(_ context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
 		out := cmd.ErrOrStderr()
 		fmt.Fprintf(out, "\n%s\n\n", request.Params.Message)
-		fmt.Fprint(out, "Allow? [n]o / [o]nce / [s]ession: ")
 
-		answer, err := reader.ReadString('\n')
+		// Not remembered: walking Up through "o", "s" and "n" to reach the
+		// last real question is not a history worth having.
+		answer, err := input.confirm("Allow? [n]o / [o]nce / [s]ession: ")
 		if err != nil && answer == "" {
 			return &mcp.ElicitResult{Action: "cancel"}, nil
 		}
@@ -185,12 +188,58 @@ var outcomeWord = map[bool]string{true: "refused", false: "ok      "}
 
 // firstResultLine renders one line of a tool result for the trace.
 func firstResultLine(result string) string {
-	const width = 100
-	line, _, _ := strings.Cut(strings.TrimSpace(result), "\n")
-	if len(line) <= width {
+	return clip(firstLine(result), 100)
+}
+
+// firstLine is the first line of a value, with the surrounding space gone.
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	return line
+}
+
+// clip shortens a line to fit, at a word boundary.
+//
+// Cutting at the character the budget lands on leaves a word in halves --
+// `Text ins` / `ide it` in a trace, `read one file inside it, with content
+// digests.` broken across two rows in the tool list -- and a reader spends a
+// moment reassembling it before deciding the line was not worth reading. The
+// ellipsis says the rest is there; the half word says the program is broken.
+//
+// Runes rather than bytes, so a clip never lands inside one.
+func clip(line string, width int) string {
+	runes := []rune(line)
+	if len(runes) <= width {
 		return line
 	}
-	return line[:width] + "..."
+	cut := string(runes[:width])
+	if space := strings.LastIndexAny(cut, " \t"); space > width/2 {
+		cut = cut[:space]
+	}
+	return strings.TrimRight(cut, " \t,;:") + "..."
+}
+
+// traceResultLine is what one tool call shows under its name in the trace.
+//
+// A tool answers with JSON, and every answer carries the same `notice` field:
+// a paragraph telling the model that what follows is repository data rather
+// than instructions. It is load-bearing for the model and pure noise for a
+// reader, who sees the same sentence under every call and none of the answer.
+// So it goes, and what is left is the part that differs.
+func traceResultLine(result string, width int) string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result), &fields); err != nil {
+		return clip(firstLine(result), width)
+	}
+	delete(fields, "notice")
+	keys := slices.Sorted(maps.Keys(fields))
+	var out strings.Builder
+	for _, key := range keys {
+		if out.Len() > 0 {
+			out.WriteString(" ")
+		}
+		fmt.Fprintf(&out, "%s=%s", key, clip(firstLine(string(fields[key])), 40))
+	}
+	return clip(out.String(), width)
 }
 
 // writeProvenance prints who answered and whether Ptah checked anything.

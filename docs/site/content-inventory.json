@@ -3810,8 +3810,8 @@
         "/operate/ai-agents/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 387,
-      "sourceBytes": 4080
+      "visibleWords": 633,
+      "sourceBytes": 5538
     },
     {
       "path": "docs/site/src/content/docs/operate/deliver.mdx",
