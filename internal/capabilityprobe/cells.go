@@ -492,12 +492,14 @@ var Cells = []Cell{
 	{
 		Dialect: platform.ClickHouse, Line: "25.8",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:25.8",
-		Note: "the older live LTS line, in the same position as 26.3 and certified for the same " +
-			"reason: the launch recipe stokaro/ptah#916 added gives it a probe job. Measured live " +
-			"on the recipe's own docker arguments: 30 decided rows, zero mismatches against " +
-			"ClickHouse2411. Its LTS window is the shortest of the three supported lines, so it is " +
-			"the first candidate to leave the matrix",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:25.8",
+		Unprobed: "upstream support ended on 2026-08-29 (endoflife.date/clickhouse)",
+		Note: "the shortest LTS window of the ClickHouse lines, and the first to close: upstream " +
+			"support ended 2026-08-29, so the line declares best-effort and no probe job is spent " +
+			"on it. The preset stands on the last live measurement, taken on the launch recipe's " +
+			"own docker arguments (stokaro/ptah#916): 30 decided rows, zero mismatches against " +
+			"ClickHouse2411. A server on this line is operated exactly as any other, and what it " +
+			"loses is the guarantee -- nothing here measures it against the code as that moves",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "24.10",

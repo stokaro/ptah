@@ -13,6 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/eolcheck"
 )
 
@@ -48,7 +50,42 @@ func cellLiteral(c *qt.C, source []byte, image string) string {
 	return found
 }
 
-const trialReason = "upstream support ended on 2026-08-29 (endoflife.date/clickhouse)"
+const trialReason = "upstream support ended on 2026-08-29 (endoflife.date/example)"
+
+// Every cell here is chosen out of the declarations rather than named.
+//
+// DemoteCell only accepts the real cells.go, and its whole purpose is to
+// change a cell -- so a test naming one names the thing that stops matching
+// the first time the daily check fires, and the test goes red for a change it
+// was written to allow. Choosing by the property under test keeps it honest:
+// whatever the declarations hold, the test acts on a cell that has the shape
+// the case is about.
+func firstCell(c *qt.C, name string, wanted func(capabilityprobe.Cell) bool) capabilityprobe.Cell {
+	for _, cell := range capabilityprobe.Cells {
+		if wanted(cell) {
+			return cell
+		}
+	}
+	c.Fatalf("no declared cell is %s, so this case has no subject", name)
+	return capabilityprobe.Cell{}
+}
+
+// demotable is a cell DemoteCell acts on: it claims certification, so there is
+// a promise to lower, and it has a container to withhold.
+func demotable(c *qt.C) capabilityprobe.Cell {
+	return firstCell(c, "certified with a container", func(cell capabilityprobe.Cell) bool {
+		return cell.Support == capability.Certified && !cell.CompiledIn && cell.Image != ""
+	})
+}
+
+// neighbor is a second certified cell, for the control that the rewrite
+// touched one literal rather than every occurrence in the file.
+func neighbor(c *qt.C, except capabilityprobe.Cell) capabilityprobe.Cell {
+	return firstCell(c, "a second certified line", func(cell capabilityprobe.Cell) bool {
+		return cell.Support == capability.Certified && cell.Image != "" &&
+			capabilityprobe.CellID(cell) != capabilityprobe.CellID(except)
+	})
+}
 
 // The level drops and the reason arrives together, because either alone is a
 // declaration the census refuses: a line claiming testing nothing runs, or a
@@ -56,12 +93,12 @@ const trialReason = "upstream support ended on 2026-08-29 (endoflife.date/clickh
 func TestDemoteCell_HappyPath(t *testing.T) {
 	t.Run("the level drops to best-effort", func(t *testing.T) {
 		c := qt.New(t)
-		source := declarationsSource(c)
+		cell := demotable(c)
 
-		got, err := eolcheck.DemoteCell(source, "clickhouse-25-8", trialReason)
+		got, err := eolcheck.DemoteCell(declarationsSource(c), capabilityprobe.CellID(cell), trialReason)
 
 		c.Assert(err, qt.IsNil)
-		literal := cellLiteral(c, got, "clickhouse/clickhouse-server:25.8")
+		literal := cellLiteral(c, got, cell.Image)
 		c.Assert(literal, qt.Contains, "capability.BestEffort")
 		c.Assert(literal, qt.Not(qt.Contains), "capability.Certified")
 		c.Assert(literal, qt.Contains, `Unprobed: "`+trialReason+`"`)
@@ -71,26 +108,31 @@ func TestDemoteCell_HappyPath(t *testing.T) {
 	// told the line ran on, and the preset is what resolves for a server on it.
 	t.Run("the image and the preset stay", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "clickhouse-25-8", trialReason)
+		cell := demotable(c)
+		got, err := eolcheck.DemoteCell(declarationsSource(c), capabilityprobe.CellID(cell), trialReason)
 		c.Assert(err, qt.IsNil)
-		literal := cellLiteral(c, got, "clickhouse/clickhouse-server:25.8")
-		c.Assert(literal, qt.Contains, `Image: "clickhouse/clickhouse-server:25.8"`)
-		c.Assert(literal, qt.Contains, "capability.ClickHouse2411")
+		literal := cellLiteral(c, got, cell.Image)
+		c.Assert(literal, qt.Contains, `"`+cell.Image+`"`)
+		c.Assert(literal, qt.Contains, "capability."+cell.PresetName)
 	})
 
 	// The neighbors keep their level. A rewrite that replaced every
 	// capability.Certified in the file would pass every assertion above.
 	t.Run("the neighboring lines are untouched", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "clickhouse-25-8", trialReason)
+		cell := demotable(c)
+		other := neighbor(c, cell)
+
+		got, err := eolcheck.DemoteCell(declarationsSource(c), capabilityprobe.CellID(cell), trialReason)
+
 		c.Assert(err, qt.IsNil)
-		c.Assert(cellLiteral(c, got, "clickhouse/clickhouse-server:26.3"), qt.Contains, "capability.Certified")
-		c.Assert(cellLiteral(c, got, "postgres:18"), qt.Contains, "capability.Certified")
+		c.Assert(cellLiteral(c, got, other.Image), qt.Contains, "capability.Certified")
 	})
 
 	t.Run("the rewritten file is gofmt-clean", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "clickhouse-25-8", trialReason)
+		got, err := eolcheck.DemoteCell(
+			declarationsSource(c), capabilityprobe.CellID(demotable(c)), trialReason)
 		c.Assert(err, qt.IsNil)
 		formatted, err := format.Source(got)
 		c.Assert(err, qt.IsNil)
@@ -108,29 +150,41 @@ func TestDemoteCell_FailurePath(t *testing.T) {
 
 	t.Run("no reason", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "clickhouse-25-8", "")
+		id := capabilityprobe.CellID(demotable(c))
+		got, err := eolcheck.DemoteCell(declarationsSource(c), id, "")
 		c.Assert(err, qt.ErrorMatches,
-			`cell "clickhouse-25-8" needs a reason; an unprobed line with no reason reads as an oversight`)
+			`cell "`+id+`" needs a reason; an unprobed line with no reason reads as an oversight`)
 		c.Assert(got, qt.IsNil)
 	})
 
-	// spanner-0 already declares best-effort, so there is no promise to lower.
+	// A line already lowered has no promise left to lower.
 	t.Run("the line does not claim certification", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "spanner-0", trialReason)
+		cell := firstCell(c, "declared below certified", func(cell capabilityprobe.Cell) bool {
+			return cell.Support != capability.Certified
+		})
+		id := capabilityprobe.CellID(cell)
+
+		got, err := eolcheck.DemoteCell(declarationsSource(c), id, trialReason)
+
 		c.Assert(err, qt.ErrorMatches,
-			`cell "spanner-0" declares best-effort, and certified is the only level lowered here`)
+			`cell "`+id+`" declares `+string(cell.Support)+`, and certified is the only level lowered here`)
 		c.Assert(got, qt.IsNil)
 	})
 
-	// sqlite-3 runs the engine compiled into the binary, so withholding a
-	// container would claim it stopped being exercised while the probe still
+	// A compiled-in engine has no container to withhold, so writing Unprobed
+	// on it would claim the line stopped being exercised while the probe still
 	// opens it in memory.
 	t.Run("the engine is compiled in", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell(declarationsSource(c), "sqlite-3", trialReason)
+		id := capabilityprobe.CellID(firstCell(c, "compiled in", func(cell capabilityprobe.Cell) bool {
+			return cell.CompiledIn && cell.Support == capability.Certified
+		}))
+
+		got, err := eolcheck.DemoteCell(declarationsSource(c), id, trialReason)
+
 		c.Assert(err, qt.ErrorMatches,
-			`cell "sqlite-3" compiles its engine in, so no container can be withheld from it`)
+			`cell "`+id+`" compiles its engine in, so no container can be withheld from it`)
 		c.Assert(got, qt.IsNil)
 	})
 
@@ -142,7 +196,7 @@ func TestDemoteCell_FailurePath(t *testing.T) {
 		source := declarationsSource(c)
 		short := removeLastCell(c, source)
 
-		got, err := eolcheck.DemoteCell(short, "clickhouse-25-8", trialReason)
+		got, err := eolcheck.DemoteCell(short, capabilityprobe.CellID(demotable(c)), trialReason)
 
 		c.Assert(err, qt.ErrorMatches,
 			`internal/capabilityprobe/cells\.go declares \d+ cell literals and this binary `+
@@ -152,14 +206,16 @@ func TestDemoteCell_FailurePath(t *testing.T) {
 
 	t.Run("the source does not parse", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell([]byte("package capabilityprobe\n\nvar Cells = "), "clickhouse-25-8", trialReason)
+		got, err := eolcheck.DemoteCell(
+			[]byte("package capabilityprobe\n\nvar Cells = "), capabilityprobe.CellID(demotable(c)), trialReason)
 		c.Assert(err, qt.ErrorMatches, `parse internal/capabilityprobe/cells\.go: .*`)
 		c.Assert(got, qt.IsNil)
 	})
 
 	t.Run("the source declares no Cells", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := eolcheck.DemoteCell([]byte("package capabilityprobe\n"), "clickhouse-25-8", trialReason)
+		got, err := eolcheck.DemoteCell(
+			[]byte("package capabilityprobe\n"), capabilityprobe.CellID(demotable(c)), trialReason)
 		c.Assert(err, qt.ErrorMatches, `internal/capabilityprobe/cells\.go declares no var Cells`)
 		c.Assert(got, qt.IsNil)
 	})
@@ -167,7 +223,8 @@ func TestDemoteCell_FailurePath(t *testing.T) {
 	t.Run("Cells is not a literal", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := eolcheck.DemoteCell(
-			[]byte("package capabilityprobe\n\nvar Cells = declaredCells()\n"), "clickhouse-25-8", trialReason)
+			[]byte("package capabilityprobe\n\nvar Cells = declaredCells()\n"),
+			capabilityprobe.CellID(demotable(c)), trialReason)
 		c.Assert(err, qt.ErrorMatches, `Cells in internal/capabilityprobe/cells\.go is not a composite literal`)
 		c.Assert(got, qt.IsNil)
 	})

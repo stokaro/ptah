@@ -673,6 +673,13 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
+		// ClickHouse 25.8 came back, and by the other route: not a line that
+		// lost a recipe, but one whose vendor stopped patching it. Upstream
+		// support ended on 2026-08-29, and end of life lowers what Ptah
+		// promises about a line rather than removing it -- the cell keeps its
+		// preset, its image and its row, declares best-effort, and says in
+		// Unprobed why no job is spent on it.
+		"clickhouse-25-8",
 		// Neither Oracle line is here any more. The 23 line left when the
 		// tagged integration contour started its image, and 21 left when the
 		// matrix gained a launch recipe, which is what #1875 asks for: a

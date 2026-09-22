@@ -739,7 +739,6 @@ nightly, from the workflow's Run button, or when somebody comments
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.8` | yes | yes |
 | `clickhouse` | 26.7 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | yes |
-| `clickhouse` | 25.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | yes |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2025-latest` | no | yes |
 | `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2022-latest` | no | yes |
@@ -754,6 +753,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `sqlite` | 3 | certified | `SQLite3` | version-ladder | none | n/a | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3` | no | yes |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
 <!-- END GENERATED VERSION MATRIX -->
 
 Which versions are supported is the vendors' answer, not Ptah's, and the
