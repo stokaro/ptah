@@ -300,6 +300,16 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// A form drives itself with messages of its own: Enter on a select produces
+	// huh's nextFieldMsg, and the form submits only when it receives that back.
+	// Dropping it here left the approval prompt on screen forever -- the arrow
+	// keys moved the cursor, Enter did nothing, and the next thing typed went
+	// into the form's filter. Nothing else is forwarded, because the textarea
+	// re-arms its own timers when it is handed messages it did not ask for.
+	if m.form != nil {
+		return m, m.driveForm(msg)
+	}
+
 	// Everything else is dropped, deliberately. Forwarding unhandled messages
 	// to the textarea makes it re-arm the cursor-blink timer it schedules for
 	// itself, and with the virtual cursor off nothing ever consumes the
@@ -377,6 +387,17 @@ func (m *tuiModel) openForm(request *approvalRequest) tea.Cmd {
 	return m.form.Init()
 }
 
+// driveForm hands one message to the approval form and keeps whatever it
+// becomes. The form is held as a *huh.Form rather than in a tea.Model field
+// because it carries the older Bubble Tea shape, so the assertion is here.
+func (m *tuiModel) driveForm(msg tea.Msg) tea.Cmd {
+	form, cmd := m.form.Update(msg)
+	if updated, ok := form.(*huh.Form); ok {
+		m.form = updated
+	}
+	return cmd
+}
+
 // answerForm answers the waiting goroutine and puts the prompt back.
 func (m *tuiModel) answerForm(decision string) tea.Cmd {
 	if m.pending != nil {
@@ -422,11 +443,7 @@ func (m *tuiModel) key(press tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.form != nil {
-		form, cmd := m.form.Update(press)
-		if updated, ok := form.(*huh.Form); ok {
-			m.form = updated
-		}
-		return m, cmd
+		return m, m.driveForm(press)
 	}
 	if m.phase != atPrompt {
 		return m, nil

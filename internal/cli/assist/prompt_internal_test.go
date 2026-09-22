@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	qt "github.com/frankban/quicktest"
 )
 
@@ -374,5 +375,66 @@ func TestIsListItem(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(isListItem(test.line), qt.Equals, test.want)
 		})
+	}
+}
+
+// TestApprovalFormSubmits is the regression for a prompt that could not be
+// answered. Enter on a huh select does not submit: it produces the form's own
+// nextFieldMsg, and the form completes only when that message is handed back.
+// The host dropped it, so the approval prompt stayed on screen forever -- the
+// arrows moved the cursor, Enter did nothing, and the next thing typed went
+// into the form's filter. Nothing in the surface could grant a write.
+//
+// The loop below is the event loop, in miniature: a command yields a message
+// which yields another command. One round is not enough and was how the defect
+// first read as fixed.
+func TestApprovalFormSubmits(t *testing.T) {
+	tests := []struct {
+		name    string
+		presses []rune
+		want    string
+	}{
+		{name: "the default is refusal", presses: nil, want: decisionNo},
+		{name: "one step up allows for the session", presses: []rune{tea.KeyUp}, want: decisionSession},
+		{name: "two steps up allow once", presses: []rune{tea.KeyUp, tea.KeyUp}, want: decisionOnce},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			m := newTUIModel(nil, false)
+			request := &approvalRequest{message: "write a file?", reply: make(chan string, 1)}
+
+			pump(m, m.openForm(request))
+			for _, key := range test.presses {
+				_, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: key}))
+				pump(m, cmd)
+			}
+			_, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			pump(m, cmd)
+
+			c.Assert(m.form, qt.IsNil)
+			c.Assert(<-request.reply, qt.Equals, test.want)
+		})
+	}
+}
+
+// pump runs commands until none is left, the way the program's event loop
+// does. Bounded so a command that keeps producing one cannot hang the test.
+func pump(m *tuiModel, cmd tea.Cmd) {
+	pending := []tea.Cmd{cmd}
+	for step := 0; step < 40 && len(pending) > 0; step++ {
+		next := pending[0]
+		pending = pending[1:]
+		if next == nil {
+			continue
+		}
+		msg := next()
+		if msg == nil {
+			continue
+		}
+		if _, produced := m.Update(msg); produced != nil {
+			pending = append(pending, produced)
+		}
 	}
 }
