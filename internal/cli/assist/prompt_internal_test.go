@@ -546,3 +546,32 @@ type silentSession struct{}
 func (*silentSession) ask(context.Context, string, func(string)) (*assistloop.Result, error) {
 	return nil, nil
 }
+
+// TestInlineCodeCarriesNoNonBreakingSpace pins the padding around a code span.
+//
+// The style this builds on pads inline code with U+00A0 to keep a line break
+// out of the middle of it. Wrapping is off here, so nothing would break the
+// line anyway, and a terminal or a font without that character draws a
+// replacement glyph on both sides of every code span -- which is most of what
+// an answer about a schema is made of.
+func TestInlineCodeCarriesNoNonBreakingSpace(t *testing.T) {
+	tests := []struct {
+		name     string
+		markdown string
+	}{
+		{name: "a command", markdown: "run `ptah schema drift` to see it\n"},
+		{name: "a file name", markdown: "it is in `models/entities.go`\n"},
+		{name: "two spans", markdown: "`users` and `tasks`\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			rendered := strings.Join(renderAnswer(test.markdown), "\n")
+
+			c.Assert(strings.Contains(rendered, " "), qt.IsFalse)
+			c.Assert(rendered, qt.Contains, "\x1b[38;5;203")
+		})
+	}
+}

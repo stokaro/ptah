@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 )
 
@@ -107,6 +109,21 @@ func dim(lines []string) []string {
 	return out
 }
 
+// answerStyle is the dark style with one change: inline code is padded with an
+// ordinary space rather than a non-breaking one.
+//
+// The upstream style uses U+00A0 to keep a line break out of the middle of a
+// short code span. Wrapping is off here, so nothing is going to break the line
+// anyway, and the character costs more than it buys: a terminal or a font
+// without it draws a replacement glyph on both sides of every piece of inline
+// code, which is most of what an answer about a schema contains.
+func answerStyle() ansi.StyleConfig {
+	style := styles.DarkStyleConfig
+	style.Code.Prefix = " "
+	style.Code.Suffix = " "
+	return style
+}
+
 // renderAnswer turns the model's Markdown into what a terminal shows: bold is
 // bold, a list is bullets, a fenced block is syntax-highlighted.
 //
@@ -131,7 +148,7 @@ func renderAnswer(markdown string) []string {
 		return nil
 	}
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(answerStyle()),
 		glamour.WithWordWrap(0),
 	)
 	if err != nil {
