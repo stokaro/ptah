@@ -4,8 +4,6 @@ package assist
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -335,7 +333,7 @@ func (m *tuiModel) fragment(text string) tea.Cmd {
 	}
 	m.answer.Reset()
 	m.answer.WriteString(rest)
-	return m.say(renderAnswer(settled)...)
+	return m.say(renderAnswer(settled, m.width)...)
 }
 
 // streamTail is the block still being written, rendered as it stands.
@@ -348,13 +346,25 @@ func (m *tuiModel) fragment(text string) tea.Cmd {
 //
 // Bounded anyway: the inline renderer clips a view to the window, and a block
 // longer than the screen would push the prompt off it.
+// tailIndent is the margin the live view draws the tail inside. It comes out
+// of the width the tail is rendered to, or the last two characters of a full
+// line are clipped away by the view.
+const tailIndent = 2
+
 func (m *tuiModel) streamTail() string {
-	rendered := renderAnswer(m.answer.String())
+	rendered := renderAnswer(m.answer.String(), m.width-tailIndent)
 	const shown = 8
 	if len(rendered) > shown {
 		rendered = rendered[len(rendered)-shown:]
 	}
-	return strings.Join(rendered, "\n  ")
+	// Clipped as well as wrapped. The wrap is glamour's and counts what it
+	// rendered; the view counts cells, and a line carrying a wide rune or an
+	// escape the wrap did not account for still overflows. A tail is a preview,
+	// so losing the end of a long line costs nothing and a mangled screen does.
+	for at, line := range rendered {
+		rendered[at] = clip(line, max(m.width-tailIndent, minAnswerWidth))
+	}
+	return strings.Join(rendered, "\n"+strings.Repeat(" ", tailIndent))
 }
 
 // openForm puts the approval choice on screen.
@@ -433,7 +443,7 @@ func (m *tuiModel) finish(msg doneMsg) tea.Cmd {
 
 	// Rendered here rather than as it arrived: Markdown is a document, and a
 	// line at a time cannot know it is inside a list or a fenced block.
-	lines := renderAnswer(m.answer.String())
+	lines := renderAnswer(m.answer.String(), m.width)
 	m.answer.Reset()
 	lines = append(lines, tuiReport(msg.result, msg.err, traced(m.trace))...)
 	// And a blank line after the footer, so the next question does not start
@@ -487,7 +497,7 @@ func (m *tuiModel) interrupt() (tea.Model, tea.Cmd) {
 	m.form = nil
 	// What arrived before the cancel is kept and rendered: a partial answer is
 	// still an answer, and dropping it would throw away what was paid for.
-	canceled := renderAnswer(m.answer.String())
+	canceled := renderAnswer(m.answer.String(), m.width)
 	m.answer.Reset()
 	// The worker still delivers one doneMsg after this; without the flag the
 	// surface would print both "canceled" and a context-canceled footer.
@@ -594,10 +604,6 @@ func (m *tuiModel) View() tea.View {
 		}
 		return tea.NewView(body + "\n" + hintStyle.Render("  esc or ctrl+c to cancel"))
 	default:
-		if f, e := os.OpenFile("/tmp/view.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); e == nil {
-			fmt.Fprintf(f, "w=%d val=%q view=%q\n", m.width, m.input.Value(), m.input.View())
-			f.Close()
-		}
 		view := tea.NewView(m.input.View())
 		view.Cursor = m.input.Cursor()
 		return view

@@ -131,6 +131,23 @@ func answerStyle() ansi.StyleConfig {
 	return style
 }
 
+// answerWidth is how wide an answer may be rendered.
+//
+// A terminal that has not reported its size yet reads as zero, and so does a
+// pipe. Both want the fallback rather than a wrap at nothing, which glamour
+// reads as "do not wrap".
+func answerWidth(width int) int {
+	if width < minAnswerWidth {
+		return defaultAnswerWidth
+	}
+	return width
+}
+
+const (
+	minAnswerWidth     = 20
+	defaultAnswerWidth = 96
+)
+
 // renderAnswer turns the model's Markdown into what a terminal shows: bold is
 // bold, a list is bullets, a fenced block is syntax-highlighted.
 //
@@ -150,13 +167,18 @@ func answerStyle() ansi.StyleConfig {
 // A failure returns the Markdown unchanged. An answer that cannot be styled is
 // still the answer, and losing it to a rendering error would be the worse
 // outcome by a wide margin.
-func renderAnswer(markdown string) []string {
+func renderAnswer(markdown string, width int) []string {
 	if strings.TrimSpace(markdown) == "" {
 		return nil
 	}
+	// Wrapped to the terminal rather than left to it. With wrapping off the
+	// renderer emits lines longer than the screen, and what happens to them
+	// depends on where they go: the scrollback lets the terminal break them,
+	// which it does mid-word, and the live view is clipped to the width, which
+	// loses characters off a line the reader is watching arrive.
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(answerStyle()),
-		glamour.WithWordWrap(0),
+		glamour.WithWordWrap(answerWidth(width)),
 	)
 	if err != nil {
 		return strings.Split(strings.TrimRight(markdown, "\n"), "\n")

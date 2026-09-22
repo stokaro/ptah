@@ -272,7 +272,7 @@ func writeToolCatalog(ctx context.Context, out writer, tools toolSession) {
 		return
 	}
 	for _, tool := range listed.Tools {
-		fmt.Fprintf(out, "  %-22s %s\n", tool.Name, firstResultLine(tool.Description))
+		fmt.Fprintf(out, "  %-22s %s\n", tool.Name, clip(firstLine(tool.Description), 72))
 	}
 }
 

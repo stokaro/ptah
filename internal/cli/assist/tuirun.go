@@ -82,7 +82,7 @@ func tuiReport(result *assistloop.Result, runErr error, show traceSetting) []str
 		}
 		lines = append(lines,
 			style.Render(fmt.Sprintf("  %s %s", outcomeWord[record.Failed], record.Name)),
-			footerStyle.Render(fmt.Sprintf("      %s", firstResultLine(record.Result))),
+			footerStyle.Render(fmt.Sprintf("      %s", traceResultLine(record.Result, 92))),
 		)
 	}
 	if runErr != nil {
