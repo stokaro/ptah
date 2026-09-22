@@ -10,6 +10,7 @@ package assist
 // built binary under a pseudo-terminal instead.
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/assistloop"
 )
 
 // TestNewPrompterPicksThePlainReaderWithoutATerminal is the seam the whole
@@ -489,4 +492,57 @@ func TestTrimBlankReadsWhatIsShown(t *testing.T) {
 			c.Assert(trimBlank(test.in), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestATurnIsSetApart pins the blank lines around one exchange.
+//
+// Everything a turn prints goes into one queue, so the spacing between a
+// question and the spinner under it, and between a footer and the next
+// question, is decided here rather than by the renderer. Without it the
+// spinner printed on the line directly below the question and read as part of
+// it, and the next question started on the line under the previous footer.
+func TestATurnIsSetApart(t *testing.T) {
+	t.Run("a question is followed by a blank line", func(t *testing.T) {
+		c := qt.New(t)
+		m := newTUIModel(&silentSession{}, false)
+		m.input.InsertString("what tables are there?")
+		// A print is already in flight, so the queue is readable instead of
+		// being drained into a command the moment it is filled.
+		m.inFlight = true
+
+		m.submit()
+
+		c.Assert(m.queue, qt.HasLen, 2)
+		c.Assert(m.queue[1], qt.Equals, "")
+	})
+
+	t.Run("a directive is followed by a blank line", func(t *testing.T) {
+		c := qt.New(t)
+		m := newTUIModel(&silentSession{}, false)
+		m.input.InsertString("/trace")
+		m.inFlight = true
+
+		m.submit()
+
+		c.Assert(m.queue[1], qt.Equals, "")
+		c.Assert(m.queue[len(m.queue)-1], qt.Equals, "")
+	})
+
+	t.Run("a finished answer ends with a blank line", func(t *testing.T) {
+		c := qt.New(t)
+		m := newTUIModel(&silentSession{}, false)
+		m.inFlight = true
+
+		m.finish(doneMsg{result: nil, err: io.EOF})
+
+		c.Assert(m.queue[len(m.queue)-1], qt.Equals, "")
+	})
+}
+
+// silentSession stands in for the model loop: the spacing is decided before
+// anything is asked, so nothing needs to answer.
+type silentSession struct{}
+
+func (*silentSession) ask(context.Context, string, func(string)) (*assistloop.Result, error) {
+	return nil, nil
 }

@@ -434,7 +434,9 @@ func (m *tuiModel) finish(msg doneMsg) tea.Cmd {
 	lines := renderAnswer(m.answer.String())
 	m.answer.Reset()
 	lines = append(lines, tuiReport(msg.result, msg.err, traced(m.trace))...)
-	return m.say(lines...)
+	// And a blank line after the footer, so the next question does not start
+	// on the line under it.
+	return m.say(append(lines, "")...)
 }
 
 func (m *tuiModel) key(press tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -504,13 +506,18 @@ func (m *tuiModel) submit() tea.Cmd {
 		leave, lines, trace := tuiDirective(request, m.trace, m.info)
 		m.trace = trace
 		echo := echoStyle.Render("> " + request)
+		said := append([]string{echo, ""}, lines...)
 		if leave {
-			return tea.Sequence(m.say(append([]string{echo}, lines...)...), tea.Quit)
+			return tea.Sequence(m.say(said...), tea.Quit)
 		}
-		return m.say(append([]string{echo}, lines...)...)
+		return m.say(append(said, "")...)
 	}
 
-	cmd := m.say(echoStyle.Render("> " + request))
+	// The question is set apart on both sides: from the answer above it, and
+	// from the spinner that replaces the prompt under it. Without the second
+	// one the spinner sits on the line directly below the question, which
+	// reads as part of it.
+	cmd := m.say(echoStyle.Render("> "+request), "")
 	m.startCall(request)
 	return tea.Batch(cmd, m.tick())
 }
