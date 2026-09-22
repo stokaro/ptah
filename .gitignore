@@ -19,6 +19,11 @@
 
 # Dev files
 /bin/*
+# `go build ./internal/cmd/quickstart` from the repository root writes
+# this, and 4 MB of it reached master once. Anchored: unanchored it would
+# also hide internal/quickstart and internal/cmd/quickstart, which are
+# the source it is built from.
+/quickstart
 # Anchored. Unanchored, this matched any path segment named `coverage`
 # anywhere in the tree, so the `core/coverage` package was ignored and would
 # have been committed as nothing at all. The artifacts `make coverage`
