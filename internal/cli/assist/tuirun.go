@@ -31,6 +31,13 @@ func spinnerFrame(at int) string {
 	return spinnerFrames[at%len(spinnerFrames)]
 }
 
+// traceMeaning says what the setting does, in the words of what a reader sees
+// rather than in the name of the setting.
+var traceMeaning = map[bool]string{
+	true:  "every Ptah tool the model calls, and what Ptah answered",
+	false: "answers only, without the calls behind them",
+}
+
 // tuiDirective answers a `/` line: whether to leave, what to print, and the
 // trace setting afterwards.
 //
@@ -54,12 +61,15 @@ func tuiDirective(line string, trace bool, info tuiInfo) (leave bool, lines []st
 		// What it is, not only that it changed. `tool trace on` says nothing to
 		// a reader who has not met the term, and the trace is the one part of
 		// the surface that answers "did the model check this, or say it".
-		lines := []string{noticeStyle.Render(fmt.Sprintf("  tool trace %s", shownWord[trace]))}
-		if trace {
-			lines = append(lines, hintStyle.Render(
-				"  every Ptah tool the model calls, and what Ptah answered"))
-		}
-		return false, lines, trace
+		//
+		// A lookup rather than a branch on the flag, which is the shape
+		// `shownWord` already uses here. It also answers the question in both
+		// directions: what a reader loses by turning it off is worth a line as
+		// much as what they gain by turning it on.
+		return false, []string{
+			noticeStyle.Render(fmt.Sprintf("  tool trace %s", shownWord[trace])),
+			hintStyle.Render("  " + traceMeaning[trace]),
+		}, trace
 	}
 	return false, []string{noticeStyle.Render(
 		fmt.Sprintf("  %q is not a command. Try /help, or ask without the slash.", line),

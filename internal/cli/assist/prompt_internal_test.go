@@ -762,3 +762,31 @@ func TestSplitRenderableCannotClearALeadingBlankLine(t *testing.T) {
 
 	c.Assert(settled, qt.Equals, "")
 }
+
+// TestTraceDirectiveExplainsBothStates covers the line under `tool trace on`.
+// The words `tool trace` name a thing a reader who has not met it cannot
+// picture, and the trace is what answers "did the model check this, or say
+// it". Turning it off is worth the same sentence: what a reader loses is as
+// useful to know as what they gain.
+func TestTraceDirectiveExplainsBothStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		start bool
+		want  string
+	}{
+		{name: "turning it on", start: false, want: "every Ptah tool the model calls"},
+		{name: "turning it off", start: true, want: "answers only, without the calls"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			leave, lines, showTrace := tuiDirective("/trace", test.start, tuiInfo{})
+
+			c.Assert(leave, qt.IsFalse)
+			c.Assert(showTrace, qt.Equals, !test.start)
+			c.Assert(strings.Join(lines, "\n"), qt.Contains, test.want)
+		})
+	}
+}
