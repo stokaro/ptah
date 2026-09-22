@@ -86,6 +86,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `clickhouse` | 26.9 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.7 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
@@ -105,9 +106,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 
-Declared release lines: 31. Probed on every pull request: 31.
+Declared release lines: 32. Probed on every pull request: 32.
 
-Support levels across the 31 declared lines: 28 certified, 2 legacy-tested, 1 best-effort.
+Support levels across the 32 declared lines: 29 certified, 2 legacy-tested, 1 best-effort.
 
 Lines that are declared and not probed, and why:
 
