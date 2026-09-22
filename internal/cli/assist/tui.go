@@ -328,6 +328,18 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *tuiModel) fragment(text string) tea.Cmd {
 	m.answer.WriteString(text)
 
+	// Leading blank lines carry nothing, and left in place they jam the whole
+	// stream: a model opens its answer with a newline or two, the block cut
+	// lands on the first of them and yields an empty `settled` the caller
+	// cannot use, and the line cut refuses a buffer whose first line is blank.
+	// Neither ever clears them, so nothing was ever sent until the turn ended.
+	// This is the one that mattered -- every other rule here only decides where
+	// a stream that is running gets cut.
+	if trimmed := strings.TrimLeft(m.answer.String(), "\n"); trimmed != m.answer.String() {
+		m.answer.Reset()
+		m.answer.WriteString(trimmed)
+	}
+
 	// A finished block first: it carries its own spacing, and the blank line
 	// that ended it is the signal that the block is done.
 	if settled, rest := splitRenderable(m.answer.String()); settled != "" {

@@ -680,9 +680,20 @@ func TestSplitProseSendsCompletedLines(t *testing.T) {
 		// one-item list, a table row without a header renders as pipes, and a
 		// fence line is not prose at all. They wait for their block to end.
 		{
-			name:     "a list item waits for its block",
-			pending:  "- one\n- two still arr",
-			wantRest: "- one\n- two still arr",
+			// The shape a model uses when asked for bullets, and the shape that
+			// made the whole answer arrive in one piece: a tight list has no
+			// blank line in it until it ends.
+			name:        "a finished bullet goes on its own",
+			pending:     "- one\n- two still arr",
+			wantSettled: "- one",
+			wantRest:    "- two still arr",
+		},
+		{
+			// Ordered items do not stand alone: rendered by itself, the second
+			// item comes out numbered 1.
+			name:     "a numbered item waits for its block",
+			pending:  "1. first\n2. second still arr",
+			wantRest: "1. first\n2. second still arr",
 		},
 		{
 			name:     "a table row waits for its block",
@@ -709,4 +720,45 @@ func TestSplitProseSendsCompletedLines(t *testing.T) {
 			c.Assert(rest, qt.Equals, test.wantRest)
 		})
 	}
+}
+
+// TestABulletRendersTheSameAloneAsInItsList is the property that lets a bullet
+// be sent on before the list ends. Nothing about an unordered item depends on
+// the ones around it -- unlike a numbered item, which is renumbered.
+func TestABulletRendersTheSameAloneAsInItsList(t *testing.T) {
+	c := qt.New(t)
+
+	together := renderProse("- one\n- two", 80)
+	first := renderProse("- one", 80)
+	second := renderProse("- two", 80)
+
+	c.Assert(append(first, second...), qt.DeepEquals, together)
+}
+
+// TestSplitProseRefusesALeadingBlankLine pins the shape that stopped an answer
+// from streaming at all.
+//
+// A model opens with a newline or two. The block cut lands on the first of
+// them and hands back an empty `settled`, which a caller cannot print; the
+// line cut refuses a buffer whose first line is blank. Neither clears the
+// blanks, so the buffer grew to the whole answer and arrived in one piece.
+// [tuiModel.fragment] trims them before either is asked.
+func TestSplitProseRefusesALeadingBlankLine(t *testing.T) {
+	c := qt.New(t)
+
+	settled, rest := splitProse("\n\n- one\n- two arriving")
+
+	c.Assert(settled, qt.Equals, "")
+	c.Assert(rest, qt.Equals, "\n\n- one\n- two arriving")
+}
+
+// TestSplitRenderableCannotClearALeadingBlankLine is the other half: the block
+// cut finds a boundary but everything before it is nothing, so the caller is
+// handed an empty string and the blanks stay in the buffer.
+func TestSplitRenderableCannotClearALeadingBlankLine(t *testing.T) {
+	c := qt.New(t)
+
+	settled, _ := splitRenderable("\n\n- one\n- two arriving")
+
+	c.Assert(settled, qt.Equals, "")
 }

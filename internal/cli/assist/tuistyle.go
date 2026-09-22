@@ -294,11 +294,33 @@ func splitProse(pending string) (settled, rest string) {
 		return "", pending
 	}
 	for _, line := range complete {
-		if !isProse(line) {
+		if !isProse(line) && !isBulletItem(line) {
 			return "", pending
 		}
 	}
 	return strings.Join(complete, "\n"), lines[len(lines)-1]
+}
+
+// isBulletItem reports whether a line is an item of an unordered list.
+//
+// Unordered ones can be sent on as they finish. Rendering `- one` by itself
+// produces the same line as rendering it inside its list, because nothing about
+// a bullet depends on the items around it. An ordered item does: rendered
+// alone, `2. second` comes out as `1.`, so those wait for the end of the block.
+//
+// This is what makes a streamed answer stream at all. A model asked for three
+// bullets writes a tight list with no blank line in it until the list ends, so
+// a rule that only cuts at blank lines has nothing to cut until the answer is
+// finished -- which is why an answer that took eight seconds to write appeared
+// in one piece at the end of them.
+func isBulletItem(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for _, marker := range []string{"- ", "* ", "+ ", "• "} {
+		if strings.HasPrefix(trimmed, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // isProse reports whether a line can be rendered without the lines around it.
