@@ -131,6 +131,26 @@ jobs:
           git config user.email 'ptah-automation@users.noreply.github.com'
           base="$(git rev-parse HEAD)"
 
+          # One pull request per engine and line while the question is open.
+          # A merged one already answered it; a closed one carrying the label
+          # answered it the other way and stays answered. A closed one without
+          # the label left no decision behind, so the line comes back.
+          #
+          # In a file rather than a --jq argument. A jq program written across
+          # several lines inside a command substitution leaves the repository's
+          # own workflow reader unable to say where the command ends, and a
+          # program squeezed onto one line is one nobody re-reads.
+          cat >"$RUNNER_TEMP/decide.jq" <<'DECIDE'
+          ([.[] | select(.state == "OPEN")] | first) as $open
+          | ([.[] | select(.state == "MERGED")] | first) as $merged
+          | ([.[] | select(.state == "CLOSED")
+                  | select(any(.labels[]?.name; . == env.KEEP_LABEL))] | first) as $kept
+          | if $open then "open #\($open.number)"
+            elif $merged then "merged #\($merged.number)"
+            elif $kept then "kept by #\($kept.number)"
+            else "none" end
+          DECIDE
+
           # The label has to exist before anybody can apply it, and it is the
           # only way to tell this workflow not to ask again.
           if gh label list --limit 200 --json name --jq '.[].name' | grep -qx "$KEEP_LABEL"; then
@@ -140,8 +160,16 @@ jobs:
               --description 'The declaration for this release line is deliberate; the end-of-life check opens no further pull request for it'
           fi
 
-          mapfile -t lines < <(jq -r '.findings[] | select(.overstated) | @base64' "$RUNNER_TEMP/eol.json")
-          for encoded in "${lines[@]}"; do
+          # Read the whole list before the loop body runs. A `while read`
+          # straight off the pipe shares its stdin with everything the body
+          # calls, and one command that consumes stdin ends the loop after a
+          # single pass while reporting success.
+          findings=()
+          while IFS= read -r encoded; do
+            findings+=("$encoded")
+          done < <(jq -r '.findings[] | select(.overstated) | @base64' "$RUNNER_TEMP/eol.json")
+
+          for encoded in "${findings[@]}"; do
             # `// empty` rather than a bare path: jq prints the word null for
             # an absent field, and a null image would become a search term.
             field() { echo "$encoded" | base64 --decode | jq -r ".$1 // empty"; }
@@ -149,19 +177,17 @@ jobs:
             image="$(field image)"
             branch="eol/$id"
 
-            # One pull request per engine and line while the question is open.
-            # A merged one already answered it; a closed one carrying the label
-            # answered it the other way and stays answered. A closed one
-            # without the label left no decision behind, so the line comes back.
-            decision="$(gh pr list --head "$branch" --state all --limit 20 --json number,state,labels --jq '
-              ([.[] | select(.state == "OPEN")] | first) as $open
-              | ([.[] | select(.state == "MERGED")] | first) as $merged
-              | ([.[] | select(.state == "CLOSED")
-                      | select(any(.labels[]?.name; . == env.KEEP_LABEL))] | first) as $kept
-              | if $open then "open #\($open.number)"
-                elif $merged then "merged #\($merged.number)"
-                elif $kept then "kept by #\($kept.number)"
-                else "none" end')"
+            gh pr list --head "$branch" --state all --limit 20 \
+              --json number,state,labels >"$RUNNER_TEMP/pulls-$id.json"
+            decision="$(jq -r -f "$RUNNER_TEMP/decide.jq" "$RUNNER_TEMP/pulls-$id.json")"
+            # An empty answer is not "no pull request": it is a query that
+            # returned nothing readable, and treating it as either verdict
+            # would be a guess. Skipping on it would be the worse guess, since
+            # a run that opened nothing all week would look like a quiet one.
+            if [ -z "$decision" ]; then
+              echo "the pull request query for $branch answered nothing" >&2
+              exit 1
+            fi
             if [ "$decision" != "none" ]; then
               echo "$id: $decision -- nothing opened"
               continue
@@ -177,19 +203,21 @@ jobs:
             git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
               "HEAD:refs/heads/$branch"
 
-            # After the commit, so the search reads the tree the pull request
-            # carries: cells.go no longer names the line, and what is left is
-            # what a reviewer has to decide about. Exit 1 is "no match" and
+            # What else starts a server on this line. The cell stays and the
+            # matrix keeps naming it, so a search of the whole tree would
+            # return the places that are supposed to mention it; the workflows
+            # and the Compose files are the ones that would keep running the
+            # line the declaration now says nothing is run against, which is
+            # what the certification census reads. Exit 1 is "no match" and
             # anything above it is a real failure.
-            terms=(-e "$id")
+            starters=""
             if [ -n "$image" ]; then
-              terms+=(-e "$image")
+              set +e
+              starters="$(git grep -l -F -e "$image" -- .github '*compose*.yaml' '*compose*.yml' integration)"
+              status=$?
+              set -e
+              [ "$status" -le 1 ] || { echo "git grep failed with status $status" >&2; exit 1; }
             fi
-            set +e
-            leftovers="$(git grep -l -F "${terms[@]}" -- .)"
-            status=$?
-            set -e
-            [ "$status" -le 1 ] || { echo "git grep failed with status $status" >&2; exit 1; }
 
             # Through a file rather than an argument: a body written inline
             # would have to sit at column zero to keep its paragraph breaks,
@@ -204,9 +232,9 @@ jobs:
               printf -- '- `TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes` pins the best-effort lines one by one, so it is red until `%s` is added there with a sentence saying why. That red is the point: the list exists so a line losing its coverage is read by somebody.\n' "$id"
               printf -- '- `docs/site/src/content/docs/databases/capability-status.md` is a measurement over one matrix run and cannot be regenerated here. Comment `/capability-matrix` on this pull request and rewrite the file from that run.\n\n'
               printf 'The cell keeps its own `Note`, which still describes the line as certified. Re-read it.\n\n'
-              if [ -n "$leftovers" ]; then
-                printf 'These tracked files still name the line:\n\n'
-                printf '%s\n' "$leftovers" | sed 's/^/- `/; s/$/`/'
+              if [ -n "$starters" ]; then
+                printf 'These still start a server on `%s`, so the line is exercised by something the declaration no longer accounts for:\n\n' "$image"
+                printf '%s\n' "$starters" | sed 's/^/- `/; s/$/`/'
                 printf '\n'
               fi
               printf 'To stop this check asking again, close this pull request with the `%s` label. Closed without it, the next daily run opens a new one.\n' "$KEEP_LABEL"
