@@ -654,3 +654,59 @@ func TestTraceResultLineKeepsWhatIsNotJSON(t *testing.T) {
 
 	c.Assert(got, qt.Equals, "invalid_request: no schema source: name at least one root_dirs entry")
 }
+
+// TestSplitProseSendsCompletedLines is what puts an answer on screen as it is
+// written. Without it a paragraph waits for its blank line and lands all at
+// once, which is what a reader called a buffer that jumps.
+func TestSplitProseSendsCompletedLines(t *testing.T) {
+	tests := []struct {
+		name        string
+		pending     string
+		wantSettled string
+		wantRest    string
+	}{
+		{
+			name:        "a finished line goes, the unfinished one waits",
+			pending:     "First line of the answer.\nSecond line still arr",
+			wantSettled: "First line of the answer.",
+			wantRest:    "Second line still arr",
+		},
+		{
+			name:     "nothing completed yet",
+			pending:  "Still on the first",
+			wantRest: "Still on the first",
+		},
+		// Each of these renders wrongly on its own: a list item becomes a
+		// one-item list, a table row without a header renders as pipes, and a
+		// fence line is not prose at all. They wait for their block to end.
+		{
+			name:     "a list item waits for its block",
+			pending:  "- one\n- two still arr",
+			wantRest: "- one\n- two still arr",
+		},
+		{
+			name:     "a table row waits for its block",
+			pending:  "| a | b |\n| - | -",
+			wantRest: "| a | b |\n| - | -",
+		},
+		{
+			name:     "a fence waits for its block",
+			pending:  "```sql\nSELECT 1",
+			wantRest: "```sql\nSELECT 1",
+		},
+		{
+			name:     "a blank line is the block splitter's business",
+			pending:  "Done.\n\nNext",
+			wantRest: "Done.\n\nNext",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			settled, rest := splitProse(test.pending)
+			c.Assert(settled, qt.Equals, test.wantSettled)
+			c.Assert(rest, qt.Equals, test.wantRest)
+		})
+	}
+}

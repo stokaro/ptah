@@ -32,7 +32,7 @@ type chatOptions struct {
 // person who met it.
 const interactiveHelp = `  /tools     the Ptah tools this session can reach
   /session   where this conversation is being saved
-  /trace     show or hide the tool trace
+  /trace     show every Ptah tool the model calls, and what Ptah answered
   /help      this list
   /exit      leave (Ctrl-D does the same)
 

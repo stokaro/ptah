@@ -327,44 +327,26 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // formatted as it is written rather than raw and then replaced.
 func (m *tuiModel) fragment(text string) tea.Cmd {
 	m.answer.WriteString(text)
-	settled, rest := splitRenderable(m.answer.String())
-	if settled == "" {
-		return m.pump()
-	}
-	m.answer.Reset()
-	m.answer.WriteString(rest)
-	return m.say(renderAnswer(settled, m.width)...)
-}
 
-// streamTail is the block still being written, rendered as it stands.
-//
-// Rendering an incomplete document is safe -- an unclosed emphasis shows its
-// asterisks until the closing one arrives, which is what a reader would expect
-// -- and it is cheap, because everything before this block has already been
-// flushed to the scrollback. That is the whole reason for the flush: rendering
-// a whole long answer every frame costs 30ms, and this costs about one.
-//
-// Bounded anyway: the inline renderer clips a view to the window, and a block
-// longer than the screen would push the prompt off it.
-// tailIndent is the margin the live view draws the tail inside. It comes out
-// of the width the tail is rendered to, or the last two characters of a full
-// line are clipped away by the view.
-const tailIndent = 2
+	// A finished block first: it carries its own spacing, and the blank line
+	// that ended it is the signal that the block is done.
+	if settled, rest := splitRenderable(m.answer.String()); settled != "" {
+		m.answer.Reset()
+		m.answer.WriteString(rest)
+		return m.say(renderAnswer(settled, m.width)...)
+	}
 
-func (m *tuiModel) streamTail() string {
-	rendered := renderAnswer(m.answer.String(), m.width-tailIndent)
-	const shown = 8
-	if len(rendered) > shown {
-		rendered = rendered[len(rendered)-shown:]
+	// Otherwise whatever prose has completed a line. This is what makes an
+	// answer arrive as it is written: waiting for the end of the block shows a
+	// paragraph all at once, and showing the unfinished part in a pane of its
+	// own draws the same text twice in two places.
+	if settled, rest := splitProse(m.answer.String()); settled != "" {
+		m.answer.Reset()
+		m.answer.WriteString(rest)
+		return m.say(renderProse(settled, m.width)...)
 	}
-	// Clipped as well as wrapped. The wrap is glamour's and counts what it
-	// rendered; the view counts cells, and a line carrying a wide rune or an
-	// escape the wrap did not account for still overflows. A tail is a preview,
-	// so losing the end of a long line costs nothing and a mangled screen does.
-	for at, line := range rendered {
-		rendered[at] = clip(line, max(m.width-tailIndent, minAnswerWidth))
-	}
-	return strings.Join(rendered, "\n"+strings.Repeat(" ", tailIndent))
+
+	return m.pump()
 }
 
 // openForm puts the approval choice on screen.
@@ -598,10 +580,17 @@ func (m *tuiModel) View() tea.View {
 	}
 	switch m.phase {
 	case thinking, awaitingApproval:
+		// The spinner, and nothing else. Painting the text that has not settled
+		// yet showed it twice: once in a block the view redraws in place, and
+		// again when it reached the scrollback, where it is laid out properly
+		// and lands somewhere else on screen. The jump is what a reader
+		// notices, and it made the spinner invisible as well -- the preview
+		// filled the line the spinner would have been on, so a model that
+		// thought for ten seconds looked like a model that did not think.
+		//
+		// An answer still arrives in pieces: each block goes to the scrollback
+		// as it finishes, and what has not finished waits behind the spinner.
 		body := "  " + spinnerStyle.Render(spinnerFrame(m.spinner)) + " thinking"
-		if tail := m.streamTail(); tail != "" {
-			body = "  " + tail
-		}
 		return tea.NewView(body + "\n" + hintStyle.Render("  esc or ctrl+c to cancel"))
 	default:
 		view := tea.NewView(m.input.View())

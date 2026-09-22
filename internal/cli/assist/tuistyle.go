@@ -200,6 +200,16 @@ func renderAnswer(markdown string, width int) []string {
 	return append(trimBlank(strings.Split(rendered, "\n")), "")
 }
 
+// renderProse renders lines that are part of a block still being written.
+//
+// Same renderer, without the blank line [renderAnswer] puts after a finished
+// block: these lines continue a paragraph that has not ended, and a blank
+// after each one would turn every line of it into a paragraph of its own.
+func renderProse(markdown string, width int) []string {
+	rendered := renderAnswer(markdown, width)
+	return trimBlank(rendered)
+}
+
 // splitRenderable divides streamed Markdown into the part that can be rendered
 // and printed now, and the part that has to wait for more text.
 //
@@ -257,6 +267,56 @@ func splitRenderable(pending string) (settled, rest string) {
 		return "", pending
 	}
 	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut+1:], "\n")
+}
+
+// splitProse divides streamed Markdown after the last completed line, when
+// every line in it is ordinary prose.
+//
+// This is what puts an answer on the screen as it is written rather than a
+// block at a time. Waiting for a blank line means a paragraph appears all at
+// once when it ends, and showing the unfinished part in a pane of its own
+// means the same text is drawn twice in two places -- once where the pane is
+// and again, laid out differently, where the scrollback puts it. The jump
+// between the two is the thing a reader notices.
+//
+// Only prose. A list item rendered on its own is a one-item list, and an
+// ordered one restarts at 1; a table row without its header renders as literal
+// pipes; a line inside a fence is not Markdown at all. Those wait for
+// [splitRenderable] to find the end of their block.
+//
+// Returns empty `settled` when the buffer holds no completed prose line.
+func splitProse(pending string) (settled, rest string) {
+	lines := strings.Split(pending, "\n")
+	// The last element is what has arrived of the line still being written, so
+	// it is never complete. With nothing before it there is nothing to send.
+	complete := lines[:max(0, len(lines)-1)]
+	if len(complete) == 0 {
+		return "", pending
+	}
+	for _, line := range complete {
+		if !isProse(line) {
+			return "", pending
+		}
+	}
+	return strings.Join(complete, "\n"), lines[len(lines)-1]
+}
+
+// isProse reports whether a line can be rendered without the lines around it.
+func isProse(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	switch {
+	case trimmed == "":
+		return false
+	case strings.HasPrefix(trimmed, "```"), strings.HasPrefix(trimmed, "~~~"):
+		return false
+	case strings.HasPrefix(trimmed, "|"):
+		return false
+	case strings.HasPrefix(trimmed, ">"):
+		return false
+	case isListItem(trimmed):
+		return false
+	}
+	return true
 }
 
 // listContinues reports whether the blank line at `at` sits inside one list

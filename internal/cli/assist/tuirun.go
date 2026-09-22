@@ -51,7 +51,15 @@ func tuiDirective(line string, trace bool, info tuiInfo) (leave bool, lines []st
 		return false, strings.Split(interactiveHelp, "\n"), trace
 	case "/trace":
 		trace = !trace
-		return false, []string{noticeStyle.Render(fmt.Sprintf("  tool trace %s", shownWord[trace]))}, trace
+		// What it is, not only that it changed. `tool trace on` says nothing to
+		// a reader who has not met the term, and the trace is the one part of
+		// the surface that answers "did the model check this, or say it".
+		lines := []string{noticeStyle.Render(fmt.Sprintf("  tool trace %s", shownWord[trace]))}
+		if trace {
+			lines = append(lines, hintStyle.Render(
+				"  every Ptah tool the model calls, and what Ptah answered"))
+		}
+		return false, lines, trace
 	}
 	return false, []string{noticeStyle.Render(
 		fmt.Sprintf("  %q is not a command. Try /help, or ask without the slash.", line),
