@@ -438,3 +438,55 @@ func pump(m *tuiModel, cmd tea.Cmd) {
 		}
 	}
 }
+
+// TestRenderedBlocksAreSeparated pins the spacing between two renders.
+//
+// A streamed answer is rendered in pieces -- a block is printed once it has
+// settled, before the next one exists -- so the gap between two pieces is this
+// code's to produce. Without it a heading printed on the line under the
+// paragraph above it and the answer read as one wall of text.
+func TestRenderedBlocksAreSeparated(t *testing.T) {
+	t.Run("one blank line, and only one", func(t *testing.T) {
+		c := qt.New(t)
+
+		var lines []string
+		for _, block := range []string{"## Heading\n", "A paragraph.\n", "- one\n- two\n"} {
+			lines = append(lines, renderAnswer(block)...)
+		}
+
+		// Read by what each line shows: a rendered blank carries indent and a
+		// colour reset, so it is never an empty string by accident.
+		shape := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if blank(line) {
+				shape = append(shape, "-")
+				continue
+			}
+			shape = append(shape, "x")
+		}
+
+		c.Assert(strings.Join(shape, ""), qt.Equals, "x-x-xx-")
+	})
+}
+
+// TestTrimBlankReadsWhatIsShown covers the recognition the separation rests on.
+func TestTrimBlankReadsWhatIsShown(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{name: "plain empties", in: []string{"", "body", ""}, want: []string{"body"}},
+		{name: "indented pad", in: []string{"  ", "body", "  "}, want: []string{"body"}},
+		{name: "a colour reset alone", in: []string{"\x1b[38;5;252m\x1b[m", "body"}, want: []string{"body"}},
+		{name: "nothing to trim", in: []string{"body"}, want: []string{"body"}},
+		{name: "blank throughout", in: []string{"", "  "}, want: []string{}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(trimBlank(test.in), qt.DeepEquals, test.want)
+		})
+	}
+}

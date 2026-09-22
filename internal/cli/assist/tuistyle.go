@@ -1,6 +1,7 @@
 package assist
 
 import (
+	"regexp"
 	"strings"
 
 	"charm.land/glamour/v2"
@@ -76,6 +77,26 @@ func promptMarker(line int) string {
 // the byte length, so the styling cannot change it.
 var promptWidth = lipgloss.Width(promptMarker(0))
 
+// blank reports whether a rendered line shows nothing: the renderer pads with
+// indent and a colour reset, so an empty line is rarely an empty string.
+func blank(line string) bool {
+	return strings.TrimSpace(ansiPattern.ReplaceAllString(line, "")) == ""
+}
+
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// trimBlank drops the blank lines a render begins and ends with.
+func trimBlank(lines []string) []string {
+	start, end := 0, len(lines)
+	for start < end && blank(lines[start]) {
+		start++
+	}
+	for end > start && blank(lines[end-1]) {
+		end--
+	}
+	return lines[start:end]
+}
+
 // dim renders a whole block in the muted color, line by line, so a block that
 // is queued for the scrollback keeps its color when the terminal re-wraps it.
 func dim(lines []string) []string {
@@ -120,9 +141,17 @@ func renderAnswer(markdown string) []string {
 	if err != nil {
 		return strings.Split(strings.TrimRight(markdown, "\n"), "\n")
 	}
-	// Glamour opens with a blank line and closes with one; the surface puts
-	// its own spacing around a block, so both would double it.
-	return strings.Split(strings.Trim(rendered, "\n"), "\n")
+	// Glamour separates the blocks inside one render, but a streamed answer is
+	// rendered in several: a block that has settled is printed before the next
+	// one exists. So the spacing between two renders is this function's, and
+	// without it a heading sat on the line under the paragraph above it and
+	// the whole answer read as one wall.
+	//
+	// Exactly one blank line, which means trimming what the renderer already
+	// put at each end first. Those lines are not empty strings: they carry
+	// indent and a colour reset, so they have to be recognised by what they
+	// show rather than by their length.
+	return append(trimBlank(strings.Split(rendered, "\n")), "")
 }
 
 // splitRenderable divides streamed Markdown into the part that can be rendered
