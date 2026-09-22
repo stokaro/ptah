@@ -15,7 +15,7 @@ generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
 lastVerified: "2026-09-22"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/35706287809"
+  - "https://github.com/stokaro/ptah/actions/runs/35729544267"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-09-22T08:42:41Z
-- Commit: `fabccfe0dd058ed81c9991d4f36d883433a46a8e`
-- Run: [35706287809](https://github.com/stokaro/ptah/actions/runs/35706287809)
-- Declared release lines: 32. Runnable cells: 32. Results received: 32.
-- 32 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-09-22T12:49:37Z
+- Commit: `37a21258e4a28d35af6961cdab5579f4d5714d7b`
+- Run: [35729544267](https://github.com/stokaro/ptah/actions/runs/35729544267)
+- Declared release lines: 32. Runnable cells: 31. Results received: 31.
+- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -56,7 +56,6 @@ over that run's cell results.
 | `clickhouse-26-8` | clickhouse | 26.8 | PASS |
 | `clickhouse-26-7` | clickhouse | 26.7 | PASS |
 | `clickhouse-26-3` | clickhouse | 26.3 | PASS |
-| `clickhouse-25-8` | clickhouse | 25.8 | PASS |
 | `clickhouse-24-10` | clickhouse | 24.10 | PASS |
 | `sqlserver-17-0` | sqlserver | 17.0 | PASS |
 | `sqlserver-16-0` | sqlserver | 16.0 | PASS |
@@ -71,3 +70,7 @@ over that run's cell results.
 | `yugabytedb-2024-2` | yugabytedb | 2024.2 | PASS |
 | `sqlite-3` | sqlite | 3 | PASS |
 | `spanner-0` | spanner | 0 | PASS |
+
+## Declared lines this tier cannot run
+
+- `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
