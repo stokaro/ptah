@@ -1352,13 +1352,23 @@ func postgresVolatileDefaultRule() Rule {
 		"adding a column with a volatile DEFAULT rewrites or evaluates every existing row; add the column first, backfill in batches, then set the default")
 }
 
+// PG305 and PG306 advise adding the constraint NOT VALID and validating it
+// separately, so the form they recommend is not a finding: each reports only
+// a clause that validates the existing rows as it adds the constraint
+// (stokaro/ptah#3502). Measured on PostgreSQL 18.6 and 13.23 over a table with
+// one violating row: ADD CONSTRAINT ... NOT VALID accepts it, leaves
+// convalidated false and rewrites nothing, and VALIDATE CONSTRAINT then takes
+// SHARE UPDATE EXCLUSIVE on the table (and ROW SHARE on a foreign key's
+// referenced table) and lets writes to both through, where the same ADD
+// without NOT VALID refuses the violating row and blocks writes to the table,
+// and for a foreign key to the referenced table as well.
 func postgresAddCheckRule() Rule {
-	return postgresAlterRule("PG305", "check constraint validates existing rows", scanAddCheckConstraint,
+	return postgresAlterRule("PG305", "check constraint validates existing rows", scanAddValidatedCheck,
 		"adding a CHECK constraint validates existing rows and can hold locks; add it NOT VALID first, then validate separately")
 }
 
 func postgresAddForeignKeyRule() Rule {
-	return postgresAlterRule("PG306", "foreign key validates existing rows", scanAddForeignKey,
+	return postgresAlterRule("PG306", "foreign key validates existing rows", scanAddValidatedForeignKey,
 		"adding a foreign key validates existing rows and can block writes on both tables; add it NOT VALID first, then validate separately")
 }
 
@@ -1617,6 +1627,29 @@ func hasWordSeq(w []string, seq ...string) bool {
 	for i := 0; i+len(seq) <= len(w); i++ {
 		if hasWordPrefix(w[i:], seq...) {
 			return true
+		}
+	}
+	return false
+}
+
+// hasTopLevelWordSeq is hasWordSeq outside every pair of parentheses. A
+// clause's own keywords sit at the top level; the same words inside a
+// parenthesized expression are the expression's, as in CHECK (NOT valid) over
+// a boolean column named valid.
+func hasTopLevelWordSeq(w []string, seq ...string) bool {
+	depth := 0
+	for i, word := range w {
+		switch word {
+		case "(":
+			depth++
+		case ")":
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 && hasWordPrefix(w[i:], seq...) {
+				return true
+			}
 		}
 	}
 	return false
@@ -2142,25 +2175,50 @@ func scanAddUniqueConstraint(w []string) bool {
 }
 
 func scanAddCheckConstraint(w []string) bool {
+	return anyAlterClause(w, addsCheckConstraint)
+}
+
+func scanAddForeignKey(w []string) bool {
+	return anyAlterClause(w, addsForeignKey)
+}
+
+// scanAddValidatedCheck is scanAddCheckConstraint for PostgreSQL, where a
+// constraint added NOT VALID does not read the existing rows. A statement
+// adding two checks, one of them NOT VALID, still validates the other.
+func scanAddValidatedCheck(w []string) bool {
+	return anyAlterClause(w, func(clause []string) bool {
+		return addsCheckConstraint(clause) && !postgresConstraintDeclinesItsScan(clause)
+	})
+}
+
+// scanAddValidatedForeignKey is scanAddValidatedCheck for a foreign key.
+func scanAddValidatedForeignKey(w []string) bool {
+	return anyAlterClause(w, func(clause []string) bool {
+		return addsForeignKey(clause) && !postgresConstraintDeclinesItsScan(clause)
+	})
+}
+
+// anyAlterClause reports whether any clause of an ALTER TABLE satisfies match.
+func anyAlterClause(w []string, match func(clause []string) bool) bool {
 	for _, i := range clauseStarts(w) {
-		clause := w[i:clauseEnd(w, i)]
-		if hasWordPrefix(clause, "ADD", "CHECK") ||
-			hasWordPrefix(clause, "ADD", "CONSTRAINT") && slices.Contains(clause, "CHECK") {
+		if match(w[i:clauseEnd(w, i)]) {
 			return true
 		}
 	}
 	return false
 }
 
-func scanAddForeignKey(w []string) bool {
-	for _, i := range clauseStarts(w) {
-		clause := w[i:clauseEnd(w, i)]
-		if hasWordPrefix(clause, "ADD", "FOREIGN", "KEY") ||
-			hasWordPrefix(clause, "ADD", "CONSTRAINT") && hasWordSeq(clause, "FOREIGN", "KEY") {
-			return true
-		}
-	}
-	return false
+// addsCheckConstraint reports whether one ALTER TABLE clause adds a CHECK
+// constraint.
+func addsCheckConstraint(clause []string) bool {
+	return hasWordPrefix(clause, "ADD", "CHECK") ||
+		hasWordPrefix(clause, "ADD", "CONSTRAINT") && slices.Contains(clause, "CHECK")
+}
+
+// addsForeignKey reports whether one ALTER TABLE clause adds a foreign key.
+func addsForeignKey(clause []string) bool {
+	return hasWordPrefix(clause, "ADD", "FOREIGN", "KEY") ||
+		hasWordPrefix(clause, "ADD", "CONSTRAINT") && hasWordSeq(clause, "FOREIGN", "KEY")
 }
 
 func scanSetTablePersistence(w []string) bool {
