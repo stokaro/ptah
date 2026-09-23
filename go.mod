@@ -154,7 +154,7 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260921160320-bdcd072333a6 // indirect
+	golang.org/x/telemetry v0.0.0-20260922173722-c6096d2f4a49 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/vuln v1.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
