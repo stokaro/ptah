@@ -3,14 +3,12 @@
  *
  * Only Starlight's own `--sl-*` custom properties are read here. Every version
  * that loads this file carries Starlight's, while Ptah's own tokens are those
- * of the release that built the page and may not exist in an older one.
- *
- * The pill: `padding: 2px 7px`, a 1px hairline, radius 2px, 12px mono in
- * gray-2, reading "edge" with a small triangle after it. It is a native select
- * with its own arrow removed, so the triangle is a glyph laid over the pill's
- * end padding, in the pill's color and size. Before the script runs, the mount
- * point holds the version as text; it takes the same box, so the header does
- * not move when the select replaces it. */
+ * of the release that built the page and may not exist in an older one. */
+
+/* The button in the header: `padding: 2px 7px`, a 1px hairline, radius 2px,
+ * 12px mono in gray-2, reading "edge" with a small triangle after it. Before
+ * the script runs, the mount point holds the version as text in the same box,
+ * so the header does not move when the button replaces it. */
 .ptah-version-picker {
   position: relative;
   display: flex;
@@ -18,11 +16,14 @@
   margin-inline-start: auto;
 }
 
-.ptah-version-picker select,
+.ptah-version-picker__trigger,
 .ptah-version-picker__current {
-  appearance: none;
   box-sizing: border-box;
-  padding: 2px 1.25rem 2px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 2px 7px;
   border: 1px solid var(--sl-color-hairline);
   border-radius: 2px;
   background: transparent;
@@ -33,44 +34,288 @@
   max-width: 9rem;
 }
 
-.ptah-version-picker select {
+.ptah-version-picker__current {
+  padding-inline-end: 1.25rem;
+}
+
+.ptah-version-picker__trigger {
   cursor: pointer;
 }
 
-.ptah-version-picker select:hover {
+.ptah-version-picker__trigger:hover,
+.ptah-version-picker__trigger[aria-expanded='true'] {
   border-color: var(--sl-color-gray-4);
   color: var(--sl-color-white);
 }
 
-.ptah-version-picker select:focus-visible {
+.ptah-version-picker__trigger:focus-visible {
   outline: 2px solid var(--sl-color-accent);
   outline-offset: 2px;
 }
 
+.ptah-version-picker__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ptah-version-picker__caret {
-  position: absolute;
-  inset-inline-end: 7px;
-  color: var(--sl-color-gray-2);
-  font-family: var(--sl-font-mono);
   font-size: 0.75rem;
   line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.ptah-version-picker__trigger[aria-expanded='true'] .ptah-version-picker__caret {
+  transform: rotate(180deg);
+}
+
+/* The panel is placed by the script, below the button and inside the
+ * viewport. It is a child of the body rather than of the header, so the
+ * header's clipping cannot cut it off. */
+.ptah-version-picker__panel {
+  position: fixed;
+  z-index: 30;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(19rem, calc(100vw - 1rem));
+  max-height: min(28rem, var(--ptah-version-picker-room, 28rem));
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 4px;
+  background: var(--sl-color-bg-nav);
+  box-shadow: var(--sl-shadow-md);
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  animation: ptah-version-picker-in 0.12s ease-out;
+}
+
+.ptah-version-picker__panel[hidden] {
+  display: none;
+}
+
+.ptah-version-picker__panel:focus {
+  outline: none;
+}
+
+@keyframes ptah-version-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ptah-version-picker__panel {
+    animation: none;
+  }
+  .ptah-version-picker__caret {
+    transition: none;
+  }
+}
+
+/* The filter: a field across the top, its magnifier drawn with borders. */
+.ptah-version-picker__search {
+  position: relative;
+  flex: none;
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+.ptah-version-picker__search-icon {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 0.75rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: -0.3125rem;
+  border: 1.5px solid var(--sl-color-gray-3);
+  border-radius: 50%;
   pointer-events: none;
 }
 
-.ptah-version-picker select:hover + .ptah-version-picker__caret {
+.ptah-version-picker__search-icon::after {
+  content: '';
+  position: absolute;
+  top: 0.4375rem;
+  left: 0.4375rem;
+  width: 0.25rem;
+  height: 1.5px;
+  background: var(--sl-color-gray-3);
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+.ptah-version-picker__input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.625rem 0.75rem 0.625rem 2rem;
+  border: 0;
+  background: transparent;
+  color: var(--sl-color-white);
+  font: inherit;
+  appearance: none;
+}
+
+.ptah-version-picker__input::placeholder {
+  color: var(--sl-color-gray-2);
+}
+
+.ptah-version-picker__input:focus {
+  outline: none;
+}
+
+.ptah-version-picker__search:focus-within {
+  box-shadow: inset 0 -1px 0 var(--sl-color-accent);
+}
+
+.ptah-version-picker__input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* The list scrolls on its own, so the filter and the hints stay in view. */
+.ptah-version-picker__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem 0;
+}
+
+.ptah-version-picker__group[hidden],
+.ptah-version-picker__item[hidden],
+.ptah-version-picker__empty[hidden] {
+  display: none;
+}
+
+.ptah-version-picker__group + .ptah-version-picker__group {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--sl-color-hairline);
+}
+
+.ptah-version-picker__group-title {
+  margin: 0;
+  padding: 0.375rem 0.75rem 0.25rem;
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ptah-version-picker__option {
+  display: grid;
+  grid-template-columns: 1rem auto 1fr auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  margin: 0 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 3px;
+  color: var(--sl-color-gray-1);
+  text-decoration: none;
+}
+
+.ptah-version-picker__option:hover,
+.ptah-version-picker__option:focus-visible {
+  background: var(--sl-color-gray-6);
   color: var(--sl-color-white);
 }
 
-/* Phone: the pill at 11.5px mono, `padding: 1px 6px`; the header has three
- * 44px controls to fit at the right. */
+.ptah-version-picker__option:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: -2px;
+}
+
+.ptah-version-picker__option[aria-current='page'] {
+  color: var(--sl-color-white);
+}
+
+.ptah-version-picker__mark {
+  color: var(--sl-color-accent-high);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.ptah-version-picker__slug {
+  font-family: var(--sl-font-mono);
+  font-size: 0.8125rem;
+}
+
+.ptah-version-picker__option[aria-current='page'] .ptah-version-picker__slug {
+  font-weight: 600;
+}
+
+.ptah-version-picker__badge {
+  justify-self: start;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--sl-color-accent);
+  border-radius: 2px;
+  background: var(--sl-color-accent-low);
+  color: var(--sl-color-accent-high);
+  font-family: var(--sl-font-mono);
+  font-size: 0.625rem;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ptah-version-picker__meta {
+  grid-column: 4;
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.ptah-version-picker__empty {
+  margin: 0;
+  padding: 0.75rem;
+  color: var(--sl-color-gray-2);
+}
+
+/* Keyboard hints, only where there is likely a keyboard. */
+.ptah-version-picker__hints {
+  display: none;
+  flex: none;
+  gap: 0.875rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  border-top: 1px solid var(--sl-color-hairline);
+  color: var(--sl-color-gray-2);
+  font-size: 0.6875rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ptah-version-picker__hints {
+    display: flex;
+  }
+}
+
+.ptah-version-picker__hints kbd {
+  padding: 0 0.25rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 2px;
+  font-family: var(--sl-font-mono);
+  font-size: 0.625rem;
+}
+
+/* Phone: the button at 11.5px mono, `padding: 1px 6px`; the header has three
+ * 44px controls to fit at the right. The rows get taller targets. */
 @media (width < 50rem) {
-  .ptah-version-picker select,
+  .ptah-version-picker__trigger,
   .ptah-version-picker__current {
-    padding: 1px 1.125rem 1px 6px;
+    padding: 1px 6px;
     font-size: 0.71875rem;
   }
+  .ptah-version-picker__current {
+    padding-inline-end: 1.125rem;
+  }
   .ptah-version-picker__caret {
-    inset-inline-end: 6px;
     font-size: 0.6875rem;
+  }
+  .ptah-version-picker__option {
+    padding-block: 0.625rem;
   }
 }

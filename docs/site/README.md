@@ -292,7 +292,7 @@ at the root itself and address the site as a whole:
 
 | File | Written by | What it is |
 | --- | --- | --- |
-| `versions.json` | `scripts/gen-versions.mjs` | The version list the picker reads |
+| `versions.json` | `scripts/gen-versions.mjs` | The version list the picker reads: each version, each release's date, and the latest release |
 | `index.html` | `scripts/gen-versions.mjs` | The redirect from the root to the default version |
 | `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
 | `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
@@ -413,7 +413,8 @@ overlaid release on the next deploy. Releases older than the overlay's
 `minimumRelease` keep the picker they were built with; it reads the same
 `versions.json`.
 
-Two constraints follow from where the files run:
+The root files load into pages they were not built with, which limits what
+they may contain:
 
 - `version-picker.js` is published as written, with no build step, so it is
   plain script with no imports.
@@ -425,16 +426,32 @@ The mount point is built inside each overlaid release, so whatever it imports
 has to exist in the oldest of them. That is why it imports nothing, and why the
 picker's markup and styles live in the root files rather than here.
 
+The button opens a panel that lists edge, then the releases newest first. Each
+release shows the day its tag was made, and the newest carries a `latest` badge;
+both come from `versions.json`, where `gen-versions.mjs` reads the dates from
+the release tags. Each version is a link to the same page in that version, or
+to its home page when the page does not exist there, so it can be opened in a
+new tab. The panel has a filter; the arrow keys move through the list, Enter
+opens a version, and Escape clears the filter and then closes the panel. On a
+touch screen the panel opens without focusing the filter, so the keyboard does
+not come up.
+
+The panel is appended to the body and fixed to the viewport, because the
+header clips what overflows it.
+
 `npm run dev` serves `public/` under the version's base rather than at the root,
 so in dev the mount point loads the picker from `/edge/` and reads the version
 list from the published site. The list is real; the other versions are not
 served locally, so choosing one leads to a 404.
 
 `scripts/check-version-picker.mjs` runs the picker in a browser against the
-built site: the list and its order, the selected version, a version the list
-does not name, a missing list, and where a choice leads.
-`scripts/check-release-page-actions.mjs` requires each overlaid release to carry
-the mount point and to load the picker from the root.
+built site: the list, its groups and order, the page's own version, the latest
+badge, the dates, the filter, the keyboard, a version the list does not name, a
+missing list, where a choice leads, and axe's WCAG rules over the open panel in
+both themes. `scripts/check-release-page-actions.mjs` requires each overlaid
+release to carry the mount point and to load the picker from the root.
+`check-pages-root.mjs --site` requires the assembled `versions.json` to date
+every release and to name the newest one latest.
 
 ## Brand assets
 

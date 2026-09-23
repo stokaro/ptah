@@ -13,7 +13,8 @@ import { mimeType } from './built-site.mjs';
 
 export const PICKER_SCRIPT = 'version-picker.js';
 export const PICKER_STYLESHEET = 'version-picker.css';
-export const PICKER_LABEL = 'Select documentation version';
+// The trigger's accessible name is this prefix and the version.
+export const PICKER_LABEL = 'Documentation version:';
 
 // pickerRoute answers the root paths a version's page reaches for: the two
 // picker files, and whatever `extra` maps a path to, such as a version index
@@ -36,12 +37,12 @@ export function pickerRoute(extra = () => undefined) {
 }
 
 // readPicker waits for the script to replace the mount point, then reads the
-// mount point and the control. A mount point the script never replaced is read
-// as it stands, and mountProblems reports it.
+// mount point and the closed control. A mount point the script never replaced
+// is read as it stands, and mountProblems reports it.
 export async function readPicker(page, { hydrate = true } = {}) {
   if (hydrate) {
     await page
-      .locator('header [data-ptah-version-picker-ready] select')
+      .locator('header [data-ptah-version-picker-ready] button')
       .first()
       .waitFor({ state: 'attached', timeout: 10_000 })
       .catch(() => {});
@@ -50,7 +51,8 @@ export async function readPicker(page, { hydrate = true } = {}) {
     ([script, stylesheet]) => {
       const mounts = [...document.querySelectorAll('header [data-ptah-version-picker]')];
       const mount = mounts[0];
-      const select = mount?.querySelector('select');
+      const trigger = mount?.querySelector('button');
+      const panel = trigger && document.getElementById(trigger.getAttribute('aria-controls'));
       const ends = (url, name) => new URL(url, location.href).pathname.endsWith(`/${name}`);
       return {
         mounts: mounts.length,
@@ -64,11 +66,13 @@ export async function readPicker(page, { hydrate = true } = {}) {
           .map((element) => element.getAttribute('src'))
           .filter((src) => ends(src, script)),
         text: mount?.textContent?.trim() ?? null,
-        hydrated: Boolean(select),
-        selected: select?.value ?? null,
-        options: select ? [...select.options].map((option) => option.value) : [],
-        appearance: select ? getComputedStyle(select).appearance : null,
-        label: select?.labels?.[0]?.textContent?.trim() ?? null,
+        hydrated: Boolean(trigger),
+        selected: trigger?.querySelector('.ptah-version-picker__value')?.textContent ?? null,
+        expanded: trigger?.getAttribute('aria-expanded') ?? null,
+        // The panel is fixed to the viewport by the root stylesheet alone, so
+        // its position says whether that stylesheet applied.
+        panelPosition: panel ? getComputedStyle(panel).position : null,
+        label: trigger?.querySelector('.sr-only')?.textContent?.trim() ?? null,
       };
     },
     [PICKER_SCRIPT, PICKER_STYLESHEET],
@@ -101,9 +105,12 @@ export function mountProblems(reading, { version, root = '/', hydrated = true })
     problems.push('the picker did not replace its mount point');
     return problems;
   }
-  if (reading.selected !== version) problems.push(`the picker selects ${reading.selected}, want ${version}`);
-  if (reading.appearance !== 'none') problems.push(`the picker's select has appearance ${reading.appearance}; the root stylesheet did not apply`);
-  if (reading.label !== PICKER_LABEL) problems.push(`the picker's label reads ${JSON.stringify(reading.label)}, want ${JSON.stringify(PICKER_LABEL)}`);
+  if (reading.selected !== version) problems.push(`the picker's button reads ${reading.selected}, want ${version}`);
+  if (reading.expanded !== 'false') problems.push(`the picker's button is aria-expanded=${reading.expanded} before anyone opened it`);
+  if (reading.panelPosition !== 'fixed') {
+    problems.push(`the picker's panel is positioned ${reading.panelPosition}; the root stylesheet did not apply`);
+  }
+  if (reading.label !== PICKER_LABEL) problems.push(`the picker's button is named ${JSON.stringify(reading.label)}, want ${JSON.stringify(PICKER_LABEL)}`);
   return problems;
 }
 
@@ -119,8 +126,8 @@ export function mountFixture(version, { root = '/', hydrated = true } = {}) {
     text: version,
     hydrated,
     selected: hydrated ? version : null,
-    options: hydrated ? [version] : [],
-    appearance: hydrated ? 'none' : null,
+    expanded: hydrated ? 'false' : null,
+    panelPosition: hydrated ? 'fixed' : null,
     label: hydrated ? PICKER_LABEL : null,
   };
 }

@@ -57,6 +57,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GENERATED_ROOT_FILES, ROOT_ASSETS, sourcePath } from './publish-root-assets.mjs';
+import { indexProblems } from './gen-versions.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -378,6 +379,13 @@ function checkAssembledSite(siteDir) {
     if (readFileSync(published, 'utf8') !== readFileSync(sourcePath(asset), 'utf8')) {
       problems.push(`${siteDir}/${asset.name} is not the bytes of ${asset.source}`);
     }
+  }
+  // The picker shows each release's date and marks the newest. This is the
+  // checkout that built every release folder from its tag, so each date is
+  // known here; one missing is the generator not reading the tags.
+  const index = join(siteDir, 'versions.json');
+  if (existsSync(index) && statSync(index).size > 0) {
+    problems.push(...indexProblems(JSON.parse(readFileSync(index, 'utf8'))));
   }
   return problems;
 }
