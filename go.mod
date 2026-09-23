@@ -162,7 +162,7 @@ require (
 	google.golang.org/genproto v0.0.0-20260921155816-b14227669459 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260921155816-b14227669459 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
-	google.golang.org/grpc v1.85.0-dev.0.20260922031938-d331f1108320 // indirect
+	google.golang.org/grpc v1.85.0-dev.0.20260923125217-1863b598b62e // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
