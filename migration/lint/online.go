@@ -320,19 +320,28 @@ func postgresAddClauseIsOnline(words []string, index int) bool {
 		// builds an index under ACCESS EXCLUSIVE, which NOT VALID says nothing
 		// about -- PostgreSQL refuses the clause there, and a classifier that
 		// read the words alone would call the refused statement online.
-		return postgresConstraintDeclinesItsScan(words[index:])
+		return postgresConstraintDeclinesItsScan(words[index:clauseEnd(words, index)])
 	default:
 		return false
 	}
 }
 
-// postgresConstraintDeclinesItsScan reports whether an ADD CONSTRAINT clause
+// postgresConstraintDeclinesItsScan reports whether one ADD CONSTRAINT clause
 // names a constraint that can arrive unvalidated and does.
-func postgresConstraintDeclinesItsScan(words []string) bool {
-	if !hasWordSeq(words, "NOT", "VALID") {
+//
+// It is the one answer to "added NOT VALID": this mode reads it to call the
+// clause online, and PG305 and PG306 read it to stay silent about the form
+// they recommend (stokaro/ptah#3502). A second predicate would agree with this
+// one only until either learned a new spelling. It takes one clause, because a
+// NOT VALID later in the statement belongs to another constraint, and it reads
+// NOT VALID only outside parentheses, where PostgreSQL's grammar puts the
+// attribute; inside them the words are the expression's, as in
+// CHECK (NOT valid).
+func postgresConstraintDeclinesItsScan(clause []string) bool {
+	if !hasTopLevelWordSeq(clause, "NOT", "VALID") {
 		return false
 	}
-	return slices.Contains(words, "CHECK") || hasWordSeq(words, "FOREIGN", "KEY")
+	return slices.Contains(clause, "CHECK") || hasWordSeq(clause, "FOREIGN", "KEY")
 }
 
 // postgresAddColumnIsCatalogOnly reports whether an ADD COLUMN clause edits
