@@ -119,13 +119,20 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 7. Verify the versioned documentation. The tag's `Docs` run deploys it under a
    commit of its own — Pages keys a deployment by a commit the repository holds,
    and the tag's own commit is the one `master` already deployed — and the
-   deploy job waits for the public site to serve that build before it finishes,
-   so a green run is the answer. These two commands are what it waited for:
+   deploy job waits for the public site to serve that build before it finishes.
+   Where the deploy job skips instead, because a newer deploy is already
+   served, the run fails unless the served site lists the tag. So a green run
+   is the answer. These two commands are what it checked:
 
    ```bash
    curl -s https://docs.ptah.run/versions.json
    curl -o /dev/null -w '%{http_code}\n' https://docs.ptah.run/v0.1.2/
    ```
+
+   The site serves edge and the newest `MAX_DOC_TAG_VERSIONS` releases, ten
+   unless the repository variable says otherwise. A release that makes the
+   window full takes the oldest version off the site, and its URL then answers
+   404.
 
 8. Verify the Homebrew install:
 

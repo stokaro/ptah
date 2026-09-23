@@ -3,31 +3,13 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { EDGE, compareReleases, isRelease, isVersionFolder } from './lib/doc-versions.mjs';
+
 // The site root, from the one declaration. It is empty because the site is
 // served at the apex of its own domain; it was `/ptah` while the site was a
 // GitHub project page, and this stub kept sending readers there after the move
 // (stokaro/ptah#2884).
 export const PAGES_PREFIX = '';
-
-const EDGE = 'edge';
-const VERSION_RE = /^v(\d+)\.(\d+)(?:\.(\d+))?$/;
-
-export function isVersionFolder(name) {
-  return name === EDGE || VERSION_RE.test(name);
-}
-
-export function parseSemver(name) {
-  const match = VERSION_RE.exec(name);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), match[3] === undefined ? 0 : Number(match[3])];
-}
-
-function compareSemver(a, b) {
-  for (let i = 0; i < 3; i += 1) {
-    if (a[i] !== b[i]) return a[i] - b[i];
-  }
-  return 0;
-}
 
 // computeDefault names the version the apex redirect serves, and the one its
 // canonical link points at.
@@ -35,29 +17,22 @@ function compareSemver(a, b) {
 // Edge, while Ptah is pre-GA. A release is a snapshot of what shipped; edge is
 // what master documents, and before v1 the difference between them is most of
 // the product -- a reader arriving at the apex is asking what Ptah does, not
-// what the last tag did. Nothing is hidden by the choice: every release keeps
-// its own stable URL, and the picker lists them all, so a reader who wants the
-// version they installed is one selection away.
+// what the last tag did. Nothing is hidden by the choice: every release the
+// retention window keeps has its own stable URL, and the picker lists each of
+// them, so a reader who wants the version they installed is one selection
+// away.
 //
 // The newest tag is still the answer where there is no edge folder at all: a
 // deployment assembled from tags alone needs a default, and the highest one is
 // the only sensible pick.
 export function computeDefault(slugs) {
   if (slugs.includes(EDGE)) return EDGE;
-  let best = null;
-  for (const slug of slugs) {
-    const semver = parseSemver(slug);
-    if (semver && (best === null || compareSemver(semver, best.semver) > 0)) {
-      best = { slug, semver };
-    }
-  }
-  return best ? best.slug : EDGE;
+  const releases = slugs.filter(isRelease).sort(compareReleases);
+  return releases.length ? releases[releases.length - 1] : EDGE;
 }
 
 export function buildIndex(slugs) {
-  const tags = slugs
-    .filter((slug) => parseSemver(slug))
-    .sort((a, b) => compareSemver(parseSemver(b), parseSemver(a)));
+  const tags = slugs.filter(isRelease).sort((a, b) => compareReleases(b, a));
   const ordered = [];
   if (slugs.includes(EDGE)) ordered.push(EDGE);
   ordered.push(...tags);

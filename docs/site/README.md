@@ -299,10 +299,18 @@ at the root itself and address the site as a whole:
 
 That default is `edge` while Ptah is pre-GA. A release is a snapshot of what
 shipped; edge is what master documents, and before v1 the difference between
-them is most of the product. Every release keeps its own stable URL and the
-picker lists them all, so a reader who wants the version they installed is one
-selection away. `computeDefault` falls back to the newest tag where a
-deployment carries no edge folder at all.
+them is most of the product. Each release in the retention window keeps its
+own stable URL and the picker lists it, so a reader who wants the version they
+installed is one selection away. `computeDefault` falls back to the newest tag
+where a deployment carries no edge folder at all.
+
+The retention window is the newest `MAX_DOC_TAG_VERSIONS` releases, ten unless
+the repository variable says otherwise. `scripts/retained-doc-tags.mjs` picks
+the tags a deploy builds, and `scripts/check-deployment-candidate.mjs` lets a
+served version leave the site only when the window has moved past it. Both read
+the version order from `scripts/lib/doc-versions.mjs`. Any other removal is a
+build that started before a newer tag, or a version inside the window that
+failed to build, and the deploy is skipped.
 
 The installers have to answer at the root because the commands published
 before the site had its own address carry no version, and the retired host's

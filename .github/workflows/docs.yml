@@ -358,8 +358,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
 
-      - name: Self-test the version generator
-        run: node docs/site/scripts/gen-versions.mjs --selftest
+      - name: Self-test the version generator and the retained tags
+        run: |
+          node docs/site/scripts/gen-versions.mjs --selftest
+          node docs/site/scripts/retained-doc-tags.mjs --selftest
 
       # The route ledger's primary invariant runs with the other site checks
       # below and needs no history. This is the secondary one, and it is here
@@ -546,7 +548,11 @@ jobs:
         run: |
           set -euo pipefail
           version_action_browser_marker="$RUNNER_TEMP/ptah-version-action-browser-ready"
-          for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -V | tail -n "${MAX_DOC_TAG_VERSIONS:-10}" || true); do
+          # The newest MAX_DOC_TAG_VERSIONS release tags, chosen by the same
+          # order the deployment guard uses to decide which served version may
+          # leave the site.
+          retained_tags="$(git tag -l 'v*' | node docs/site/scripts/retained-doc-tags.mjs --keep "${MAX_DOC_TAG_VERSIONS:-10}")"
+          for tag in $retained_tags; do
             echo "::group::Building $tag"
             workdir="$(mktemp -d)"
             tag_source_commit="$(git rev-list -n 1 "$tag")"
@@ -990,10 +996,16 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --force --no-tags origin master:refs/remotes/origin/master
+          # A tag run names its tag, and fails unless the served site ends up
+          # listing it: a skipped deploy must not read as a published release.
+          tag_args=()
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then tag_args=(--tag "$GITHUB_REF_NAME"); fi
           node docs/site/scripts/check-deployment-candidate.mjs \
             --candidate-commit "$CANDIDATE_COMMIT" \
             --candidate-versions "$CANDIDATE_VERSIONS" \
-            --base-url https://docs.ptah.run/edge/
+            --base-url https://docs.ptah.run/edge/ \
+            --retained-releases "$MAX_DOC_TAG_VERSIONS" \
+            "${tag_args[@]}"
 
       # Two deploys, because Pages keys a deployment by `pages_build_version`
       # and actions/deploy-pages takes that from GITHUB_SHA alone. On master
