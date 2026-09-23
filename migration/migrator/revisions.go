@@ -3494,6 +3494,31 @@ func (m *Migrator) resumeMigrationDirectionOnSession(
 	if resumeFrom < 1 || resumeFrom > len(statements) {
 		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
 	}
+	timeouts, err := m.effectiveTimeouts(migration, direction)
+	if err != nil {
+		return err
+	}
+	restoreTimeouts, err := m.applySessionTimeouts(ctx, migration, timeouts)
+	if err != nil {
+		return err
+	}
+	if err := m.resumeStatementsOnSession(ctx, migration, statements, resumeFrom, direction); err != nil {
+		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
+	}
+	return m.restoreTimeouts(ctx, migration.Version, restoreTimeouts)
+}
+
+// resumeStatementsOnSession runs a migration's statements from resumeFrom on,
+// each outside a transaction, after replaying the session state the committed
+// prefix set.
+func (m *Migrator) resumeStatementsOnSession(
+	ctx context.Context,
+	migration *Migration,
+	statements []string,
+	resumeFrom int,
+	direction MigrationDirection,
+) error {
+	executionConn := m.noTransactionConnection()
 	if err := m.restoreNoTransactionSessionPrefix(ctx, migration, direction, resumeFrom); err != nil {
 		return err
 	}

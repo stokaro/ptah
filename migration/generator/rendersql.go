@@ -71,6 +71,13 @@ func generateUpMigrationSQL(
 }
 
 type generatedDirectiveOptions struct {
+	// skipTimeouts leaves the generated timeouts off a file that runs outside a
+	// transaction. Such a file holds a concurrent index build or a constraint
+	// validation, which runs as long as the table is large under a lock that
+	// blocks no reader or writer: the generated 30s statement timeout would
+	// cancel it on a large table, and the 3s lock timeout stops a concurrent
+	// build that waits on a write transaction, leaving an invalid index. A run
+	// that wants the bound sets it with --lock-timeout.
 	skipTimeouts bool
 }
 

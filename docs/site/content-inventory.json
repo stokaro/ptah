@@ -4215,9 +4215,11 @@
         "/start/install/",
         "/testing/ci/"
       ],
-      "inboundLinks": [],
-      "visibleWords": 1292,
-      "sourceBytes": 14446
+      "inboundLinks": [
+        "/versioned/online-mode/"
+      ],
+      "visibleWords": 1396,
+      "sourceBytes": 15003
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -6620,8 +6622,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 6059,
-      "sourceBytes": 43895
+      "visibleWords": 6092,
+      "sourceBytes": 44070
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -7015,7 +7017,8 @@
       "readerQuestion": "What does `online: require` prove about a migration, and what does it leave to me?",
       "goal": "Read the online mode's guarantee and its limits before relying on it.",
       "sourceOfTruth": [
-        "migration/lint"
+        "migration/lint",
+        "internal/cli/migrateup"
       ],
       "owns": [],
       "generated": false,
@@ -7027,12 +7030,14 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/operate/zero-downtime-changes/"
+      ],
       "inboundLinks": [
         "/versioned/lint/"
       ],
-      "visibleWords": 629,
-      "sourceBytes": 4252
+      "visibleWords": 699,
+      "sourceBytes": 4795
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",

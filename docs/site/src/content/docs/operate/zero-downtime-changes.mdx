@@ -349,21 +349,30 @@ ptah migrations lint --dir ./migrations --dialect postgres
 No lint findings.
 ```
 
-One combination Ptah refuses rather than half-honors: a migration marked
-`no_transaction` cannot carry a lock timeout, because the timeout is set on the
-transaction such a migration does not have.
+The rewritten migration still runs under the lock timeout. A migration marked
+`no_transaction` commits each statement on its own, so Ptah sets the timeout on
+the database session that runs them rather than on a transaction:
 
 ```console
 ptah migrations up --db-url "$DB" --migrations-dir ./migrations --lock-timeout 2s
 ```
 
 ```text
-error: error running migrations: migration 2 is marked no_transaction, so migration timeouts cannot be applied safely
+✅ Migrations completed successfully!
+Database is now at version: 2
 ```
 
-A concurrent index build is exactly that case, and the trade is the right way
-round: the build takes a weak lock to begin with, so it is the migration that
-needs the timeout least.
+The constraint pair needs that timeout. `ADD CONSTRAINT ... NOT VALID` takes
+`ACCESS EXCLUSIVE` for an instant, so it queues behind a long transaction like
+any other `ALTER`, and every later reader queues behind it.
+
+A concurrent index build meets the timeout in one more place. After it starts,
+it waits for the open transactions that write to the table, and the lock timeout
+bounds that wait too. When the wait runs out, the build stops and leaves an
+invalid index behind. The next attempt then fails because that index still holds
+the name. Drop it with `DROP INDEX CONCURRENTLY`, and run the migration again
+with `--allow-dirty`. If the table has long write transactions, give the index
+migration a longer timeout of its own with `-- +ptah lock_timeout=`.
 
 ## Expand and contract, because deployed code outlives a migration
 

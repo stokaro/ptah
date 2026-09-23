@@ -5,8 +5,8 @@
 # rather than read. What it checks is the page's claims in the page's order: a
 # reader is refused behind a waiting ALTER, an apply gives up on its lock
 # timeout, the linter names the rewrite for each unsafe operation, the rewritten
-# directory has nothing left to report, and a concurrent build refuses a timeout
-# it cannot honor.
+# directory has nothing left to report, and the rewritten migration applies
+# under the same lock timeout.
 #
 #   docs/site/scripts/check-zero-downtime-changes.sh
 #
@@ -154,8 +154,9 @@ DROP INDEX CONCURRENTLY idx_users_email;
 SQL
 expect 'No lint findings.' "$("$ptah" migrations lint --dir ./migrations --dialect postgres 2>&1)"
 
-printf 'check-zero-downtime-changes: a concurrent build refuses a timeout it cannot honor\n'
-expect 'migration 2 is marked no_transaction, so migration timeouts cannot be applied safely' \
-	"$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s 2>&1 || true)"
+printf 'check-zero-downtime-changes: the rewritten migration runs under the lock timeout\n'
+concurrent_output=$("$ptah" migrations up --db-url "$url" --migrations-dir ./migrations --lock-timeout 2s 2>&1)
+expect 'Migrations completed successfully!' "$concurrent_output"
+expect 'Database is now at version: 2' "$concurrent_output"
 
 printf 'check-zero-downtime-changes: OK (every claim the page makes)\n'

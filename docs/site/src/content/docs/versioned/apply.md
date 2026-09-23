@@ -582,10 +582,12 @@ and pipelines share a directory:
   lock that keeps two migrators from racing. A target whose dialect has no such
   advisory lock refuses `--migration-lock-timeout`; see
   [Locking and `--migration-lock-timeout`](#locking-and---migration-lock-timeout).
-  A migration that resolves to
-  `none` cannot use statement or lock timeouts. Ptah rejects the combination
-  before executing SQL or changing the revision row. A file-level `file`
-  override under global `none` restores the transaction and may use timeouts.
+  A migration that resolves to `none` takes its statement and lock timeouts
+  on the database session that runs its statements, because `SET LOCAL`
+  outside a transaction changes nothing. That session belongs to the one
+  migration, so the settings end with it. On a target with no timeout setting
+  Ptah can use, a migration that declares one is refused in every transaction
+  mode, before any SQL runs or the revision row changes.
   SQL-backed non-transactional migrations record a durable progress marker
   before and after each autocommit statement. A custom Go `MigrationFunc`
   remains opaque and is recorded only when it returns.
