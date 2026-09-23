@@ -1,0 +1,76 @@
+/* The documentation version picker, served once at the Pages root beside
+ * version-picker.js and loaded by every documentation version.
+ *
+ * Only Starlight's own `--sl-*` custom properties are read here. Every version
+ * that loads this file carries Starlight's, while Ptah's own tokens are those
+ * of the release that built the page and may not exist in an older one.
+ *
+ * The pill: `padding: 2px 7px`, a 1px hairline, radius 2px, 12px mono in
+ * gray-2, reading "edge" with a small triangle after it. It is a native select
+ * with its own arrow removed, so the triangle is a glyph laid over the pill's
+ * end padding, in the pill's color and size. Before the script runs, the mount
+ * point holds the version as text; it takes the same box, so the header does
+ * not move when the select replaces it. */
+.ptah-version-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.ptah-version-picker select,
+.ptah-version-picker__current {
+  appearance: none;
+  box-sizing: border-box;
+  padding: 2px 1.25rem 2px 7px;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  max-width: 9rem;
+}
+
+.ptah-version-picker select {
+  cursor: pointer;
+}
+
+.ptah-version-picker select:hover {
+  border-color: var(--sl-color-gray-4);
+  color: var(--sl-color-white);
+}
+
+.ptah-version-picker select:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+.ptah-version-picker__caret {
+  position: absolute;
+  inset-inline-end: 7px;
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font-mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ptah-version-picker select:hover + .ptah-version-picker__caret {
+  color: var(--sl-color-white);
+}
+
+/* Phone: the pill at 11.5px mono, `padding: 1px 6px`; the header has three
+ * 44px controls to fit at the right. */
+@media (width < 50rem) {
+  .ptah-version-picker select,
+  .ptah-version-picker__current {
+    padding: 1px 1.125rem 1px 6px;
+    font-size: 0.71875rem;
+  }
+  .ptah-version-picker__caret {
+    inset-inline-end: 6px;
+    font-size: 0.6875rem;
+  }
+}

@@ -70,6 +70,8 @@
     "check:visual-assets:selftest": "node scripts/check-visual-assets.mjs --selftest",
     "check:visual-snapshots": "node scripts/check-visual-snapshots.mjs",
     "check:visual-snapshots:selftest": "node scripts/check-visual-snapshots.mjs --selftest",
+    "check:version-picker": "node scripts/check-version-picker.mjs",
+    "check:version-picker:selftest": "node scripts/check-version-picker.mjs --selftest",
     "check:content-inventory": "node scripts/build-content-inventory.mjs",
     "check:content-inventory:selftest": "node scripts/build-content-inventory.mjs --selftest",
     "inventory:write": "node scripts/build-content-inventory.mjs --write",

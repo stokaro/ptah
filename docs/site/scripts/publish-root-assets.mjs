@@ -92,6 +92,26 @@ export const ROOT_ASSETS = [
     advertised: RootURL('ptah-annotations.schema.json'),
     published: RootURL('ptah-annotations.schema.json'),
   },
+  // The version picker, one copy for every documentation version. Each version
+  // carries only a mount point (src/components/VersionPicker.astro) that loads
+  // these two from the root, so the picker a released version shows is the
+  // one this deploy publishes, not the one its tag was built with.
+  {
+    name: 'version-picker.js',
+    source: 'docs/site/public/version-picker.js',
+    url: RootURL('version-picker.js'),
+    onProjectSite: false,
+    advertised: RootURL('version-picker.js'),
+    published: RootURL('version-picker.js'),
+  },
+  {
+    name: 'version-picker.css',
+    source: 'docs/site/public/version-picker.css',
+    url: RootURL('version-picker.css'),
+    onProjectSite: false,
+    advertised: RootURL('version-picker.css'),
+    published: RootURL('version-picker.css'),
+  },
 ];
 
 // GENERATED_ROOT_FILES names what the other producers write into the same
