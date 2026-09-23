@@ -96,6 +96,19 @@
       "enabled": true
     },
     {
+      "description": "An indirect dependency's module path is chosen by whatever imports it, not here. A major Go upgrade is a path change -- foo becomes foo/v2 -- so proposing one for an indirect dependency rewrites go.mod into a graph the import tree does not support, and postUpdateOptions cannot repair it: gomodTidy needs a go.mod that parses, and the rewrite is what stops it parsing. Measured on stokaro/ptah#3522, which replaced github.com/yuin/goldmark-emoji with a second copy of github.com/yuin/goldmark-emoji/v2 and failed 32 checks on a duplicate require, and on stokaro/ptah#3519, which added github.com/yuin/goldmark/v2 beside a downgrade of v1 that nothing asked for. A major version a direct importer adopts arrives through that importer's own bump. Patch and minor updates keep flowing, which is what the rule above is for. TestRenovate_LeavesAnIndirectMajorToTheImporter requires this rule to exist.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Every Image in internal/capabilityprobe/cells.go names the release LINE the cell reproduces -- tagPinsLine in matrix.go requires tag == Line -- so moving one is not an update. It renames the line and stops covering the old one. stokaro/ptah#3031 moved four before anyone noticed: two ClickHouse cells were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered, and the MariaDB 11.4 cell claimed the 11.8 cell's image; stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18. The custom manager above is already narrowed to the one image that may move, and this rule is the second lock, on a different axis: the file is denied by name and the emulator is the single exception. The emulator is the only cell declared Versionless, meaning its tag names no line, which is what makes it safe to follow. TestRenovate_DisablesEveryLinePinnedImage requires this rule to exist, because a lock nobody checks is a lock somebody deletes.",
       "matchFileNames": [
         "internal/capabilityprobe/cells.go"
