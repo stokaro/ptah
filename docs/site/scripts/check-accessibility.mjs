@@ -33,6 +33,30 @@ function formatViolation(route, viewport, scheme, violation) {
   return `${route} [${viewport}, ${scheme}] ${violation.id} (${violation.impact ?? 'unknown'}): ${targets}`;
 }
 
+// Expressive Code makes a code block that scrolls sideways focusable from the
+// browser, not in the HTML: a ResizeObserver waits 250ms and an idle callback
+// before it sets tabindex. axe run at `load` can read the page before that and
+// report scrollable-region-focusable on a block that is about to be fixed --
+// measured at 320 and 375px, where the same block had no tabindex at load and
+// had one a second later. So wait, up to five seconds, for every overflowing
+// block to carry it; a block that never gets one is still there for axe.
+//
+// The fonts come first: until the web fonts load, the fallback monospace is
+// narrower, no block overflows yet, and the wait below would pass at once.
+async function codeBlocksSettled(page) {
+  await page.evaluate(() => document.fonts.ready);
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll('.expressive-code pre')].every(
+          (pre) => pre.scrollWidth <= pre.clientWidth || pre.hasAttribute('tabindex'),
+        ),
+      null,
+      { timeout: 5_000 },
+    )
+    .catch(() => {});
+}
+
 async function axeViolations(page) {
   const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   return violations;
@@ -131,6 +155,7 @@ async function main() {
         const page = await context.newPage();
         for (const route of routes) {
           await page.goto(`${origin}${built.base}${route}`, { waitUntil: 'load' });
+          await codeBlocksSettled(page);
           const violations = await axeViolations(page);
           problems.push(...violations.map((violation) => formatViolation(route, viewport.name, scheme, violation)));
         }
