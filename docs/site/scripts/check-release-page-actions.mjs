@@ -6,13 +6,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateBuildInfo } from './check-build-info.mjs';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
+import { mountFixture, mountProblems, pickerRoute, readPicker } from './lib/version-picker-check.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = resolve(scriptDir, '..');
 const fullCommit = /^[0-9a-f]{40}$/;
 const releaseVersion = /^v\d+\.\d+\.\d+$/;
 
-export function releaseActionProblems({ version, sourceCommit, authored, generated, breadcrumb }) {
+export function releaseActionProblems({ version, sourceCommit, authored, generated, breadcrumb, picker }) {
   const problems = [];
   if (!releaseVersion.test(version)) problems.push('version must use vMAJOR.MINOR.PATCH');
   if (!fullCommit.test(sourceCommit)) problems.push('sourceCommit must be a full lowercase Git SHA');
@@ -101,6 +102,10 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
   if (breadcrumb?.arrived !== expectedBreadcrumb) {
     problems.push(`authored release: parent breadcrumb arrived at ${breadcrumb?.arrived}, want ${expectedBreadcrumb}`);
   }
+  // The version picker reaches a release only through the mount point the
+  // overlay puts in its header, and only if that mount point loads the picker
+  // from the Pages root.
+  problems.push(...mountProblems(picker ?? {}, { version }).map((problem) => `version picker: ${problem}`));
   return problems;
 }
 
@@ -158,6 +163,7 @@ function selftest() {
       href: `/${version}/versioned/overview/`,
       arrived: `/${version}/versioned/overview/`,
     },
+    picker: mountFixture(version),
   };
   assert(releaseActionProblems(valid).length === 0, 'valid release actions failed');
   const directGeneratedEdit = structuredClone(valid);
@@ -180,7 +186,15 @@ function selftest() {
     releaseActionProblems(inertBreadcrumb).some((problem) => problem.includes('parent breadcrumb is not a link')),
     'non-clickable release parent breadcrumb passed',
   );
-  console.log('check-release-page-actions.mjs --selftest: OK (authored/generated tag source and generator edit routing)');
+  const builtInPicker = structuredClone(valid);
+  builtInPicker.picker = { ...mountFixture(version), mounts: 0, scripts: [], stylesheets: [] };
+  assert(
+    releaseActionProblems(builtInPicker).some((problem) => problem.startsWith('version picker:')),
+    'a release without the version picker mount point passed',
+  );
+  console.log(
+    'check-release-page-actions.mjs --selftest: OK (authored/generated tag source, generator edit routing, version picker)',
+  );
 }
 
 function parseArguments(arguments_) {
@@ -271,6 +285,11 @@ async function readVersionedBreadcrumb(page, built) {
   return { label, href, arrived: new URL(page.url()).pathname };
 }
 
+async function readReleasePicker(page, built) {
+  await page.goto(`http://127.0.0.1:${built.port}${built.base}/versioned/generate/`, { waitUntil: 'load' });
+  return readPicker(page);
+}
+
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   if (options.selftest) {
@@ -288,7 +307,9 @@ async function main() {
 
   const chromium = await loadChromium('check-release-page-actions.mjs');
   if (!chromium) return;
-  const built = await startBuiltSite(options.dist);
+  // The picker's two files are served at the root from this checkout, which is
+  // where the deploy publishes them from.
+  const built = await startBuiltSite(options.dist, undefined, pickerRoute());
   let browser;
   try {
     browser = await chromium.launch();
@@ -299,13 +320,14 @@ async function main() {
       authored: await readPageActions(page, built, '/versioned/generate/'),
       generated: await readPageActions(page, built, '/reference/command-flags/'),
       breadcrumb: await readVersionedBreadcrumb(page, built),
+      picker: await readReleasePicker(page, built),
     });
     if (problems.length > 0) throw new Error(problems.join('; '));
   } finally {
     if (browser) await browser.close();
     await new Promise((resolveClose) => built.server.close(resolveClose));
   }
-  console.log(`release page actions: OK (${options.version} at ${options.sourceCommit}; authored and generated)`);
+  console.log(`release page actions: OK (${options.version} at ${options.sourceCommit}; authored, generated and the version picker)`);
 }
 
 main().catch((error) => {

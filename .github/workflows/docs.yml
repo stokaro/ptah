@@ -427,6 +427,7 @@ jobs:
           npm run check:glossary-coverage:selftest
           npm run check:accessibility:selftest
           npm run check:visual-snapshots:selftest
+          npm run check:version-picker:selftest
           npm run check:navigation:selftest
           npm run check:search-ranking:selftest
           npm run check:heading-anchors:selftest
@@ -439,6 +440,7 @@ jobs:
           npm run check:glossary-coverage
           npm run check:accessibility
           npm run check:visual-snapshots -- --output "$RUNNER_TEMP/ptah-docs-visual-snapshots"
+          npm run check:version-picker
           npm run check:navigation
           npm run check:search-ranking
           npm run check:heading-anchors

@@ -1,9 +1,9 @@
 ---
 /**
  * The brand row of the header: the mark and "Ptah" link to the documentation
- * root, "Docs" names it beside them, and the version pill switches
- * documentation versions. It replaces Starlight's SiteTitle so the row reads
- * the same as the header of ptah.run (stokaro/ptah#2893).
+ * root, "Docs" names it beside them, and the version picker sits at the row's
+ * end. It replaces Starlight's SiteTitle so the row reads the same as the
+ * header of ptah.run (stokaro/ptah#2893).
  *
  * The mark is the control a reader reaches for to go home, so it goes to the
  * documentation root rather than to ptah.run. It pointed outward once, and
@@ -11,19 +11,14 @@
  * a phone with no way back to the documentation and one link that looked like
  * the way back and was not (stokaro/ptah#2930). ptah.run stays a header link;
  * HeaderLinks.astro renders it first.
+ *
+ * The picker itself is served from the Pages root and shared by every version;
+ * VersionPicker.astro is only its mount point.
  */
 import logo from '../assets/logo.svg';
+import VersionPicker from './VersionPicker.astro';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
-
-const base = import.meta.env.BASE_URL;
-const segments = base.split('/').filter(Boolean);
-const currentVersion = segments[segments.length - 1] || 'edge';
-const versionSuffix = `${currentVersion}/`;
-const versionsRoot = base.endsWith(versionSuffix)
-  ? base.slice(0, -versionSuffix.length)
-  : base;
-const versionsJsonUrl = `${versionsRoot}versions.json`;
 ---
 
 <div class="ptah-brand">
@@ -32,14 +27,7 @@ const versionsJsonUrl = `${versionsRoot}versions.json`;
     Ptah
   </a>
   <a class="ptah-brand__docs" href={siteTitleHref}>Docs</a>
-
-  <div class="version-switcher" data-current={currentVersion} data-versions-url={versionsJsonUrl}>
-    <label class="sr-only" for="docs-version-switcher">Select documentation version</label>
-    <select id="docs-version-switcher">
-      <option value={currentVersion} selected>{currentVersion}</option>
-    </select>
-    <span class="version-switcher__caret" aria-hidden="true">&#9662;</span>
-  </div>
+  <VersionPicker />
 </div>
 
 <style>
@@ -92,139 +80,12 @@ const versionsJsonUrl = `${versionsRoot}versions.json`;
     color: var(--sl-color-text-accent);
   }
 
-  /* The version pill: `padding: 2px 7px; border 1px hairline; radius 2px; font
-   * 12px mono; color gray-2`, reading "edge" with a small triangle after it.
-   * It is a native select with its own arrow removed, so the triangle is a
-   * glyph laid over the pill's end padding, in the pill's color and size. */
-  .version-switcher {
-    position: relative;
-    display: flex;
-    align-items: center;
-    margin-inline-start: auto;
-  }
-  .version-switcher select {
-    appearance: none;
-    padding: 2px 1.25rem 2px 7px;
-    border: 1px solid var(--sl-color-hairline);
-    border-radius: 2px;
-    background: transparent;
-    color: var(--sl-color-gray-2);
-    font-family: var(--sl-font-mono);
-    font-size: 0.75rem;
-    line-height: 1.3;
-    cursor: pointer;
-    max-width: 9rem;
-  }
-  .version-switcher select:hover {
-    border-color: var(--sl-color-gray-4);
-    color: var(--sl-color-white);
-  }
-  .version-switcher select:focus-visible {
-    outline: 2px solid var(--sl-color-accent);
-    outline-offset: 2px;
-  }
-  .version-switcher__caret {
-    position: absolute;
-    inset-inline-end: 7px;
-    color: var(--sl-color-gray-2);
-    font-family: var(--sl-font-mono);
-    font-size: 0.75rem;
-    line-height: 1;
-    pointer-events: none;
-  }
-  .version-switcher select:hover + .version-switcher__caret {
-    color: var(--sl-color-white);
-  }
-
-  /* Phone: mark, "Ptah" and the pill at 11.5px mono, `padding: 1px 6px`; no
-   * "Docs", the header has three 44px controls to fit at the right. */
+  /* Phone: the mark and "Ptah"; no "Docs", the header has three 44px controls
+   * to fit at the right. */
   @media (width < 50rem) {
     .ptah-brand__docs {
       display: none;
     }
-    .version-switcher select {
-      padding: 1px 1.125rem 1px 6px;
-      font-size: 0.71875rem;
-    }
-    .version-switcher__caret {
-      inset-inline-end: 6px;
-      font-size: 0.6875rem;
-    }
   }
 
 </style>
-
-<script>
-  (() => {
-    const root = document.querySelector<HTMLElement>('.version-switcher');
-    if (!root) return;
-    const select = root.querySelector<HTMLSelectElement>('select');
-    if (!select) return;
-
-    const current = root.dataset.current || 'edge';
-    const versionsUrl = root.dataset.versionsUrl;
-    const base = import.meta.env.BASE_URL;
-    const suffix = `${current}/`;
-    const versionsRoot = base.endsWith(suffix) ? base.slice(0, -suffix.length) : base;
-
-    function relativePagePath(): string {
-      let path = window.location.pathname;
-      if (path.startsWith(base)) path = path.slice(base.length);
-      return path.replace(/^\//, '');
-    }
-
-    async function hydrate() {
-      if (!versionsUrl) return;
-      let data: { default?: string; versions?: Array<{ slug: string; label?: string }> };
-      try {
-        const res = await fetch(versionsUrl, { headers: { Accept: 'application/json' } });
-        if (!res.ok) return;
-        data = await res.json();
-      } catch {
-        return;
-      }
-      const versions = Array.isArray(data.versions) ? data.versions : [];
-      if (versions.length === 0) return;
-
-      select.innerHTML = '';
-      let matchedCurrent = false;
-      for (const v of versions) {
-        if (!v || typeof v.slug !== 'string') continue;
-        const opt = document.createElement('option');
-        opt.value = v.slug;
-        opt.textContent = v.label || v.slug;
-        if (v.slug === current) {
-          opt.selected = true;
-          matchedCurrent = true;
-        }
-        select.appendChild(opt);
-      }
-      if (!matchedCurrent) {
-        const opt = document.createElement('option');
-        opt.value = current;
-        opt.textContent = current;
-        opt.selected = true;
-        select.insertBefore(opt, select.firstChild);
-      }
-    }
-
-    select.addEventListener('change', async () => {
-      const target = select.value;
-      if (!target || target === current) return;
-      const page = relativePagePath();
-      const targetBase = `${versionsRoot}${target}/`;
-      const candidate = `${targetBase}${page}`;
-
-      let dest = candidate;
-      try {
-        const head = await fetch(candidate, { method: 'HEAD' });
-        if (!head.ok) dest = targetBase;
-      } catch {
-        dest = targetBase;
-      }
-      window.location.assign(dest);
-    });
-
-    hydrate();
-  })();
-</script>

@@ -22,6 +22,11 @@ const requiredFiles = new Set([
   'docs/site/scripts/data/release-ui-overlay.json',
   'docs/site/src/components/PageActions.astro',
   'docs/site/src/components/PageTitle.astro',
+  // The brand row and the version picker's mount point. The picker itself is
+  // served from the Pages root, and a release reaches it only through the
+  // mount point these two files put in its header.
+  'docs/site/src/components/SiteTitle.astro',
+  'docs/site/src/components/VersionPicker.astro',
   'docs/site/src/lib/page-context.mjs',
   'docs/site/src/lib/page-furniture.mjs',
   'docs/site/src/lib/source-context.mjs',

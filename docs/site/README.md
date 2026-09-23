@@ -296,6 +296,8 @@ at the root itself and address the site as a whole:
 | `index.html` | `scripts/gen-versions.mjs` | The redirect from the root to the default version |
 | `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
 | `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
+| `version-picker.js` | `scripts/publish-root-assets.mjs` | The version picker every version loads, from `public/version-picker.js` |
+| `version-picker.css` | `scripts/publish-root-assets.mjs` | The picker's stylesheet, from `public/version-picker.css` |
 
 That default is `edge` while Ptah is pre-GA. A release is a snapshot of what
 shipped; edge is what master documents, and before v1 the difference between
@@ -392,6 +394,47 @@ already requires the rest.
 `docs.yml` filters its jobs on `docs/**` and `docs/site/**`. A file under
 `scripts/` would change the installer without running the workflow on the pull
 request and without deploying on merge.
+
+### The version picker
+
+The picker in the header is shared by every documentation version, so it is
+served once, from the root: `https://docs.ptah.run/version-picker.js` and
+`https://docs.ptah.run/version-picker.css`. A version carries only
+`src/components/VersionPicker.astro`, the mount point. It names the version the
+page belongs to, the root, and the version index, and it shows the version as
+text until the script replaces that text with the control. The stylesheet gives
+the text the same box as the control, so the header does not move when it
+loads.
+
+The release UI overlay copies the mount point and `SiteTitle.astro`, which
+renders it, into every release it rebuilds, and every deploy rebuilds every
+release in the window. So a change to the two root files reaches edge and each
+overlaid release on the next deploy. Releases older than the overlay's
+`minimumRelease` keep the picker they were built with; it reads the same
+`versions.json`.
+
+Two constraints follow from where the files run:
+
+- `version-picker.js` is published as written, with no build step, so it is
+  plain script with no imports.
+- `version-picker.css` reads only Starlight's `--sl-*` custom properties. Every
+  version carries those; Ptah's own tokens are the ones the page's release was
+  built with, and an older release may not have them.
+
+The mount point is built inside each overlaid release, so whatever it imports
+has to exist in the oldest of them. That is why it imports nothing, and why the
+picker's markup and styles live in the root files rather than here.
+
+`npm run dev` serves `public/` under the version's base rather than at the root,
+so in dev the mount point loads the picker from `/edge/` and reads the version
+list from the published site. The list is real; the other versions are not
+served locally, so choosing one leads to a 404.
+
+`scripts/check-version-picker.mjs` runs the picker in a browser against the
+built site: the list and its order, the selected version, a version the list
+does not name, a missing list, and where a choice leads.
+`scripts/check-release-page-actions.mjs` requires each overlaid release to carry
+the mount point and to load the picker from the root.
 
 ## Brand assets
 

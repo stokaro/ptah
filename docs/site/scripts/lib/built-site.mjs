@@ -26,9 +26,21 @@ export function detectBase(distRoot) {
   return match ? match[1] : '';
 }
 
-export function startBuiltSite(distRoot, base = detectBase(distRoot)) {
+// startBuiltSite serves one version's build under its base. `route`, when
+// given, answers first: it receives the decoded path and the method, and
+// returns { status, body, type } for a request it owns or undefined for one it
+// does not. The deploy puts files beside the version directories -- the version
+// index, the version picker -- and a check that reads them from the page it
+// renders serves them here, the way the Pages root does.
+export function startBuiltSite(distRoot, base = detectBase(distRoot), route = undefined) {
   const server = createServer((request, response) => {
     let url = decodeURIComponent((request.url ?? '/').split('?')[0]);
+    const routed = route?.(url, request.method ?? 'GET');
+    if (routed) {
+      response.writeHead(routed.status, routed.type ? { 'content-type': routed.type } : {});
+      response.end(request.method === 'HEAD' ? undefined : routed.body);
+      return;
+    }
     if (base && url.startsWith(base)) url = url.slice(base.length) || '/';
 
     let filePath = join(distRoot, url);
@@ -52,6 +64,11 @@ export function startBuiltSite(distRoot, base = detectBase(distRoot)) {
       resolve({ base, server, port: server.address().port });
     });
   });
+}
+
+// mimeType is the content type the server above gives a path.
+export function mimeType(path) {
+  return mimeTypes[extname(path)] ?? 'application/octet-stream';
 }
 
 export async function loadChromium(checkName) {
