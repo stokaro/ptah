@@ -3,12 +3,18 @@
  * The navigation rail. Registered in astro.config.mjs as the override of
  * Starlight's Sidebar (stokaro/ptah#2893).
  *
- * The same three parts as Starlight's own component, in the same order:
- * SidebarPersister (session storage for the open groups and the scroll
- * position), the list of groups, and the mobile menu footer below it. The one
- * part that differs is the list: the site's SidebarSublist renders a nested
- * group as a label above its pages instead of a second disclosure, which is
- * why the whole component is overridden rather than restyled.
+ * The same three parts as Starlight's own component: SidebarPersister
+ * (session storage for the open groups and the scroll position), the list of
+ * groups, and the mobile menu footer. The list differs: the site's
+ * SidebarSublist renders a nested group as a label above its pages instead of
+ * a second disclosure, which is why the whole component is overridden rather
+ * than restyled.
+ *
+ * The order differs too. The footer holds the header's links -- ptah.run,
+ * Install, the Playground, the operator, the blog, GitHub -- and on a phone
+ * the drawer is the only place they appear. Below the whole documentation
+ * tree they sat under some thirty rows a reader had to scroll past, so they
+ * open the drawer instead, the way ptah.run's menu lists its own.
  *
  * SidebarPersister and MobileMenuFooter come from the package's public
  * `components/*` export; nothing here reaches into Starlight's internals. If
@@ -23,13 +29,49 @@ import SidebarSublist from './SidebarSublist.astro';
 const { sidebar } = Astro.locals.starlightRoute;
 ---
 
+<div class="md:sl-hidden">
+  <MobileMenuFooter />
+</div>
+
 <SidebarPersister>
   <SidebarSublist sublist={sidebar} />
 </SidebarPersister>
 
-<div class="md:sl-hidden">
-  <MobileMenuFooter />
-</div>
+<style is:global>
+  /* The mobile menu footer, drawn at the top of the drawer: the header's
+   * links, one per row, the way ptah.run's menu lists its own -- 16px, a 44px
+   * target -- and a hairline between them and the documentation tree below.
+   *
+   * These rules live here rather than in sidebar.css because the release UI
+   * overlay copies this file into every release it rebuilds, and a release's
+   * stylesheets are its own: the order above and the look below have to
+   * travel together. */
+  .sidebar-content .mobile-preferences {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 0.75rem;
+    padding: 0 0 0.5rem;
+    border-top: 0;
+    border-bottom: 1px solid var(--sl-color-hairline);
+  }
+
+  .sidebar-content .mobile-preferences .social-icons {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .sidebar-content .mobile-preferences .ptah-nav-link {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding-block: 0;
+    font-size: 1rem;
+  }
+</style>
 
 <script>
   /* The groups' open-and-close transition (sidebar.css) is armed one frame

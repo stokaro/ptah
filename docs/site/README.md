@@ -120,10 +120,10 @@ change renames it while cached pages keep the old link. Delete
 `node_modules/.astro` and `.astro` before the next build or dev server after
 editing `code-theme.mjs` or the `expressiveCode` option.
 
-`PageTitle.astro` and `PageActions.astro` carry their own styles rather than
-a file under `src/styles/ptah/`, because `scripts/apply-release-ui-overlay.mjs`
-copies them into the checkout of a released version, whose stylesheets are its
-own. There
+`PageTitle.astro`, `PageActions.astro` and `Sidebar.astro` carry their own
+styles rather than a file under `src/styles/ptah/`, because
+`scripts/apply-release-ui-overlay.mjs` copies them into the checkout of a
+released version, whose stylesheets are its own. There
 the heading also carries the page actions and the source links, since that
 checkout registers neither the contents-rail nor the footer override.
 
@@ -233,6 +233,14 @@ to have `type: landing` and renders a descendant of every top-level group to
 verify that the parent breadcrumb links back to it. `collapsed: true` hides a
 subgroup's items until the reader opens it, and opens the group anyway whenever
 the current page is inside it.
+
+Below 50rem the header has no room for its links -- ptah.run, Install, the
+Playground, the operator, the blog, GitHub -- so they appear only in the
+drawer the menu button opens. `Sidebar.astro` puts them first there, above the
+documentation tree, one per row with a 44px target, the way ptah.run's menu
+lists its own. `check-navigation.mjs` opens the drawer at 390px and requires
+the same links the wide header shows, each above the tree and at least 44px
+tall.
 
 ## Page context and actions
 
