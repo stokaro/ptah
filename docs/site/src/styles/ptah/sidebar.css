@@ -245,11 +245,6 @@
 	}
 }
 
-/* The mobile menu footer: the header's links and the toggle, one row. */
-.mobile-preferences {
-	border-top: 1px solid var(--sl-color-hairline);
-}
-
 /* The phone header carries the theme and layout toggles (header.css), so the
  * drawer's footer does not show a second pair; they are the same elements
  * and stay in step, these are just not drawn. */

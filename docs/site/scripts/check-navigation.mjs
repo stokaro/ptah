@@ -385,6 +385,48 @@ async function checkVersionedInferenceDownloads(page, built, problems) {
   }
 }
 
+// On a phone the header has no room for its links, so the drawer carries them,
+// first, above the documentation tree, the way ptah.run's menu lists its own.
+// Below the tree they sat under some thirty rows a reader had to scroll past.
+// The links are the header's own, so the drawer is compared with the header a
+// wide screen shows rather than with a list written here.
+async function checkPhoneDrawer(browser, built, problems) {
+  const route = `http://127.0.0.1:${built.port}${built.base}/versioned/generate/`;
+  const wide = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await wide.goto(route, { waitUntil: 'load' });
+  const header = await wide.locator('header .social-icons .ptah-nav-link').allTextContents();
+  await wide.close();
+
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  await page.goto(route, { waitUntil: 'load' });
+  await page.locator('button.sl-menu-button').click();
+  const drawer = await page.evaluate(() => {
+    const tree = document.querySelector('.sidebar-content .top-level');
+    return {
+      treeTop: tree ? tree.getBoundingClientRect().top : null,
+      links: [...document.querySelectorAll('.sidebar-content .mobile-preferences .ptah-nav-link')].map((link) => {
+        const box = link.getBoundingClientRect();
+        return { text: link.textContent, top: box.top, height: box.height, visible: link.checkVisibility() };
+      }),
+    };
+  });
+  await context.close();
+
+  const texts = drawer.links.map((link) => link.text);
+  if (header.length === 0) problems.push('phone drawer: the wide header shows no links to compare with');
+  if (JSON.stringify(texts) !== JSON.stringify(header)) {
+    problems.push(`phone drawer: carries ${JSON.stringify(texts)}, the header carries ${JSON.stringify(header)}`);
+  }
+  for (const link of drawer.links) {
+    if (!link.visible) problems.push(`phone drawer: ${link.text.trim()} is not visible`);
+    if (link.height < 44) problems.push(`phone drawer: ${link.text.trim()} is ${Math.round(link.height)}px tall, want at least 44`);
+    if (drawer.treeTop === null || link.top > drawer.treeTop) {
+      problems.push(`phone drawer: ${link.text.trim()} sits below the documentation tree`);
+    }
+  }
+}
+
 async function main() {
   if (process.argv.includes('--selftest')) {
     selftest();
@@ -473,6 +515,8 @@ async function main() {
     if (!(await page.getByText('Evidence verified', { exact: false }).count())) {
       problems.push('/databases/support-matrix/: evidence verification date is absent');
     }
+
+    await checkPhoneDrawer(browser, built, problems);
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => built.server.close(resolve));
@@ -485,7 +529,7 @@ async function main() {
     return;
   }
   console.log(
-    `check-navigation.mjs: OK (${model.journeys.length} section landings, linked breadcrumbs, and keyboard page actions)`,
+    `check-navigation.mjs: OK (${model.journeys.length} section landings, linked breadcrumbs, keyboard page actions, and the phone drawer)`,
   );
 }
 
