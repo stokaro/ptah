@@ -6,6 +6,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
+import { WCAG_TAGS } from './lib/wcag.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -21,7 +22,6 @@ const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 900 },
 ];
-const wcagTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 // Both, because the site ships both and the palettes are separate declarations.
 // This ran in the default context once, which resolves to the light theme, so
 // every dark color the design introduced was unmeasured while the code and the
@@ -34,7 +34,7 @@ function formatViolation(route, viewport, scheme, violation) {
 }
 
 async function axeViolations(page) {
-  const { violations } = await new AxeBuilder({ page }).withTags(wcagTags).analyze();
+  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   return violations;
 }
 
