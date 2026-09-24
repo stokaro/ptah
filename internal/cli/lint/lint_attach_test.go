@@ -74,9 +74,9 @@ func TestRunLint_AttachesFailedOCIReportBeforeLintExit(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Contains, `"failed": true`)
-	c.Assert(registry.attachmentPayload(c), qt.DeepEquals, []byte(stderr))
+	c.Assert(stdout, qt.Contains, `"failed": true`)
+	c.Assert(stderr, qt.Not(qt.Contains), `"failed"`)
+	c.Assert(registry.attachmentPayload(c), qt.DeepEquals, []byte(stdout))
 }
 
 func TestRunLint_AttachmentFailureIsCommandErrorWithCleanJSONStdout(t *testing.T) {

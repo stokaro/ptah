@@ -209,27 +209,19 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		}
 	}
 
-	writer := lintReportWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report)
-	if err := migrationlintreport.Write(writer, opts.format, report); err != nil {
+	// The report goes to stdout whatever the outcome, and the notices to
+	// stderr. A notice is prose and the report may be JSON, SARIF or a GitLab
+	// artifact, so sharing a stream puts a sentence inside a document a
+	// consumer decodes. The outcome is the exit code: a caller that redirects
+	// stdout to a file gets the report on the run that fails too, which is the
+	// run it exists to publish (stokaro/ptah#3500).
+	if err := migrationlintreport.Write(cmd.OutOrStdout(), opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
-	if err := writeServerVersionNotice(
-		lintNoticeWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report), opts.format, report,
-	); err != nil {
+	if err := writeServerVersionNotice(cmd.ErrOrStderr(), opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
-	// Whichever stream the report did NOT take. The notice is prose and the
-	// report may be JSON, so sharing a stream with it puts a sentence inside a
-	// document a consumer decodes -- and a failing report goes to stderr, which
-	// is where a fixed choice of stderr would have put both.
-	//
-	// It was a fixed stderr until a rule common enough to fire on an ordinary
-	// migration declared the baseline input, and then `ptah migrations lint
-	// --format json` on a failing directory stopped being decodable
-	// (stokaro/ptah#1632, stokaro/ptah#2394).
-	if err := migrationlintreport.WriteUnmetInputNotice(
-		lintNoticeWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report), report,
-	); err != nil {
+	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
 	if report.Failed {
@@ -345,29 +337,12 @@ func reportOptions(cmd *cobra.Command, opts runOptions) migrationlintreport.Opti
 // JSON is the one that does, and a sentence printed beside a document is a
 // sentence a consumer has to strip. The rest render findings and nothing else,
 // so a SARIF or GitLab run would otherwise analyze against a preset the
-// operator did not name and say nothing about it. The stream is the one the
-// report did not take, for the reason the unmet-input notice does.
+// operator did not name and say nothing about it.
 func writeServerVersionNotice(w io.Writer, format string, report migrationlintreport.Report) error {
 	if format == migrationlintreport.FormatJSON {
 		return nil
 	}
 	return migrationlintreport.WriteServerVersionNotice(w, report)
-}
-
-func lintReportWriter(stdout, stderr io.Writer, report migrationlintreport.Report) io.Writer {
-	if report.Failed {
-		return stderr
-	}
-	return stdout
-}
-
-// lintNoticeWriter returns the stream the report did not take, so prose and a
-// machine-readable document never share one.
-func lintNoticeWriter(stdout, stderr io.Writer, report migrationlintreport.Report) io.Writer {
-	if report.Failed {
-		return stdout
-	}
-	return stderr
 }
 
 func writeError(w io.Writer, format, failOn, msg string) error {

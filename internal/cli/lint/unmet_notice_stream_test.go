@@ -5,36 +5,36 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/cli/internal/exitcode"
 )
 
-// TestRunLint_TheNoticeNeverSharesAStreamWithTheReport is the property the
-// notice's placement rests on.
+// TestRunLint_AFailingReportStaysOnStdout is the contract a CI step relies
+// on: redirect stdout to a file, and the file holds the report whatever the
+// outcome, while the exit code carries the verdict.
 //
-// A failing report goes to stderr and a passing one to stdout, so a fixed
-// stream for the notice puts prose inside the JSON document half the time. That
-// is not hypothetical: it happened the moment a rule common enough to fire on
-// an ordinary migration declared the baseline input, and `--format json` on a
-// failing directory stopped decoding (stokaro/ptah#1632, stokaro/ptah#2394).
-func TestRunLint_TheNoticeNeverSharesAStreamWithTheReport(t *testing.T) {
+// A failing run is the one that matters. It is the run with findings, so a
+// report that moves to another stream on failure leaves the file holding the
+// unmet-input notice on exactly the run it exists to publish -- which is what
+// the GitHub Action showed as "Lint JSON (unavailable)" (stokaro/ptah#3500).
+func TestRunLint_AFailingReportStaysOnStdout(t *testing.T) {
 	c := qt.New(t)
 
 	stdout, stderr, err := execute("--dir", "testdata/bad", "--format", "json")
 
-	// The fixture carries DS errors, so the report is the failing one and takes
-	// stderr.
-	c.Assert(err, qt.IsNotNil)
+	// The fixture carries DS errors, so this is the failing report.
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	var report map[string]any
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil,
-		qt.Commentf("stderr is not a decodable document:\n%s", stderr))
-	c.Assert(stdout, qt.Contains, "DS110P",
-		qt.Commentf("the unmet-input notice is not on the other stream"))
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
+		qt.Commentf("stdout is not a decodable document:\n%s", stdout))
+	c.Assert(report["failed"], qt.Equals, true)
+	c.Assert(stderr, qt.Contains, "DS110P",
+		qt.Commentf("the unmet-input notice is not on stderr"))
+	c.Assert(stderr, qt.Not(qt.Contains), `"findings"`)
 }
 
-// TestRunLint_ThePassingReportKeepsTheNoticeOffStdout is the other half.
-//
-// A passing report takes stdout, so the notice has to take stderr. Without this
-// row a rule that always wrote the notice to stdout would satisfy the test
-// above and put prose into the document of every clean run.
+// TestRunLint_ThePassingReportKeepsTheNoticeOffStdout is the other half: the
+// stream does not depend on the outcome in either direction.
 func TestRunLint_ThePassingReportKeepsTheNoticeOffStdout(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -50,5 +50,5 @@ func TestRunLint_ThePassingReportKeepsTheNoticeOffStdout(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
 		qt.Commentf("stdout is not a decodable document:\n%s", stdout))
 	c.Assert(stderr, qt.Contains, "DS110P",
-		qt.Commentf("the unmet-input notice is not on the other stream"))
+		qt.Commentf("the unmet-input notice is not on stderr"))
 }

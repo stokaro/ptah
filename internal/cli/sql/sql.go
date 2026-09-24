@@ -188,11 +188,10 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	writer := cmd.OutOrStdout()
-	if report.Failed {
-		writer = cmd.ErrOrStderr()
-	}
-	if err := writeSQLLintReport(writer, opts.format, report); err != nil {
+	// Stdout whatever the outcome, as `ptah migrations lint` does: the exit
+	// code carries the verdict, and a caller that redirects stdout gets the
+	// report on the run that has findings.
+	if err := writeSQLLintReport(cmd.OutOrStdout(), opts.format, report); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if report.Failed {

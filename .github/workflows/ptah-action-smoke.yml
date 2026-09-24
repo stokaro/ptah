@@ -97,6 +97,42 @@ jobs:
           comment: "false"
           lint: "true"
 
+      # A failing lint is the run whose report a reviewer acts on, and the clean
+      # fixture above never produces one. The action fails the job on a lint
+      # failure, so this step continues on error and the next one reads the
+      # report the action wrote and the comment and check run are built from
+      # (stokaro/ptah#3500).
+      - name: Run local Ptah action over a directory lint fails
+        id: failing-lint
+        continue-on-error: true
+        uses: ./.github/actions/ptah
+        with:
+          binary-path: ${{ runner.temp }}/ptah
+          setup-go: "false"
+          dir: ${{ runner.temp }}/ptah-action-models
+          db-url: sqlite:///${{ runner.temp }}/ptah-action-failing-lint.db
+          dialect: sqlite
+          migration-dir: internal/cli/lint/testdata/bad
+          output-dir: ${{ runner.temp }}/ptah-action-failing-lint
+          comment: "false"
+          lint: "true"
+
+      - name: Read the failing lint report the action wrote
+        env:
+          OUTCOME: ${{ steps.failing-lint.outcome }}
+          LINT_PATH: ${{ runner.temp }}/ptah-action-failing-lint/ptah-lint.json
+        run: |
+          test "$OUTCOME" = failure
+          node - <<'NODE'
+          const fs = require("fs");
+          const report = JSON.parse(fs.readFileSync(process.env.LINT_PATH, "utf8"));
+          if (report.failed !== true || !Array.isArray(report.findings) || report.findings.length === 0) {
+            console.error(`the lint path holds no failing report: ${JSON.stringify(report).slice(0, 200)}`);
+            process.exit(1);
+          }
+          console.log(`lint report: failed, ${report.findings.length} finding(s)`);
+          NODE
+
       # The action's own setup-go step was unreachable from CI while every smoke
       # invocation passed setup-go: "false", so its Go version default rotted
       # with a green board. This second invocation leaves setup-go at its default

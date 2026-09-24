@@ -97,7 +97,7 @@ report.
 A version Ptah recognizes but has not measured resolves to the nearest release
 line it has, and the run says so. `--format json` carries it as
 `server_version_note`; every other format renders findings and nothing else, so
-there the sentence is printed on whichever stream the report did not take:
+there the sentence is printed on stderr, beside the report on stdout:
 
 ```text
 warning: postgres 99 is newer than the newest measured release line 18.x; capabilities were planned as 18.x
