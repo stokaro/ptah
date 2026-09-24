@@ -2001,7 +2001,7 @@ func postgresFamilyAtlasURL(t *testing.T, engine dbtarget.Engine, dialect string
 	if !strings.HasPrefix(dbURL, dialect+"://") {
 		t.Skipf("%s URL required for Atlas migration integration test", dialect)
 	}
-	return dbURL
+	return pinPublicSchema(t, dbURL)
 }
 
 func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {

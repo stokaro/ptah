@@ -235,8 +235,8 @@
         "/migrate-from/atlas/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8380,
-      "sourceBytes": 59011
+      "visibleWords": 8391,
+      "sourceBytes": 59085
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -844,8 +844,8 @@
       "inboundLinks": [
         "/versioned/overview/"
       ],
-      "visibleWords": 1701,
-      "sourceBytes": 12047
+      "visibleWords": 1759,
+      "sourceBytes": 12396
     },
     {
       "path": "docs/site/src/content/docs/databases/capability-status.md",

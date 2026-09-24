@@ -71,7 +71,10 @@ func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
 func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, MigrationsSchemaFlagName, "", "Schema for Ptah's migration tracking table. Empty uses the connection default schema.")
+	flags.StringVar(target, MigrationsSchemaFlagName, "",
+		"Schema for the migration tracking table. Empty uses the connection default schema, except that "+
+			"--revision-format atlas on a PostgreSQL-family URL with no search_path uses atlas_schema_revisions, as Atlas does.",
+	)
 }
 
 // RegisterMigrationsTableFlag registers the migration tracking table name flag.
