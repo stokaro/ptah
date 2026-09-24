@@ -32,6 +32,36 @@ import (
 
 const envPrefix = "PTAH"
 
+// withBanner draws the Ptah identity above the root command's own help.
+//
+// Cobra reaches the help three ways -- a bare `ptah`, `ptah --help` and `ptah
+// help` -- and routes all three through one function, so the decision lives
+// here once rather than at each entry. What keeps it out of a pipeline is the
+// terminal half of the condition: a conformance run capturing stdout, a script
+// reading the command list and an editor client all get the help alone.
+//
+// The banner is scoped to the root's own help. Cobra hands a child's help to
+// the same function, and a wordmark above `ptah schema render --help` is
+// chrome between the reader and the flags they asked for.
+func withBanner(cmd *cobra.Command, release string) {
+	help := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(target *cobra.Command, args []string) {
+		out := target.OutOrStdout()
+		banner.PrintIf(out, helpDrawsBanner(cmd, target) && banner.Wanted(out), "ptah", release)
+		help(target, args)
+	})
+}
+
+// helpDrawsBanner reports whether a help call is the root's own.
+//
+// It is separate from the terminal question so that each half can be measured.
+// banner.Wanted answers false for every writer a test can hand it, so a
+// combined predicate would assert "writes nothing" and stay green against a
+// routing rule that had stopped selecting anything at all.
+func helpDrawsBanner(root, target *cobra.Command) bool {
+	return target == root
+}
+
 // NewRootCommand returns the root Ptah command with every subcommand registered.
 func NewRootCommand() *cobra.Command {
 	info := buildinfo.Resolve()
@@ -43,17 +73,16 @@ func NewRootCommand() *cobra.Command {
 		// template below is what makes those spellings answer with the same
 		// bytes as the `version` subcommand (stokaro/ptah#1064).
 		Version: info.Version,
-		// The banner goes above the help this returns, and only when a
-		// person is reading it -- see banner.Print. Here rather than in a
-		// help function because `--help` and `help` are explicit requests
-		// whose output scripts already parse, while a bare `ptah` is the
-		// entry screen and the one place the identity belongs.
+		// A bare `ptah` is the entry screen, and the entry screen is the
+		// help. The banner belongs to whoever is reading it, so the help
+		// function below decides whether to draw it and this reaches the
+		// help like every other path into it.
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			banner.Print(cmd.OutOrStdout(), "ptah", info.Version)
 			return cmd.Help()
 		},
 	}
 	cmd.SetVersionTemplate(versionTemplate(info))
+	withBanner(cmd, info.Version)
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 
 	cmd.AddCommand(inference.NewCommand())
