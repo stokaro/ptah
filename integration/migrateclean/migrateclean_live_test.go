@@ -30,7 +30,14 @@ import (
 // invisible under stokaro/ptah#1252's PostgreSQL table.
 //
 // Each expected string was produced by the pinned community binary v1.3.0
-// against PostgreSQL 17 on 2026-08-07; the state is named on each row.
+// against PostgreSQL 17 on 2026-08-07; the state is named on each row. The rows
+// about extensions and partitions were measured against PostgreSQL 18 on
+// 2026-09-24 (stokaro/ptah#3533).
+//
+// An extension's objects are made with ALTER EXTENSION ... ADD, which gives a
+// schema or table the same pg_depend row CREATE EXTENSION gives the objects it
+// creates. hstore is the extension because it creates no schema or table of
+// its own, so the row states exactly the object it is about.
 
 const migratecleanRevisionTable = "atlas_schema_revisions"
 
@@ -86,6 +93,24 @@ func TestInspectLive_SchemaScopeClean(t *testing.T) {
 		{
 			name:  "the run's own revisions table alone",
 			setup: []string{"CREATE TABLE atlas_schema_revisions " + migratecleanRevisionColumns},
+		},
+		{
+			// PostGIS's spatial_ref_sys in `public` is this shape.
+			name: "a table an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE TABLE owned_by_extension (id integer PRIMARY KEY)",
+				"ALTER EXTENSION hstore ADD TABLE owned_by_extension",
+			},
+		},
+		{
+			// The parent is what the binary counts, and it lives in `extra`.
+			name: "a partition whose parent lives in another schema",
+			setup: []string{
+				"CREATE SCHEMA extra",
+				"CREATE TABLE extra.parted (id integer NOT NULL) PARTITION BY RANGE (id)",
+				"CREATE TABLE part_low PARTITION OF extra.parted FOR VALUES FROM (0) TO (10)",
+			},
 		},
 	}
 
@@ -149,11 +174,43 @@ func TestInspectLive_SchemaScopeUnclean(t *testing.T) {
 			wantErr:         `sql/migrate: connected database is not clean: found table "legacy_stuff" in schema "public". baseline version or allow-dirty is required`,
 		},
 		{
-			// A partitioned table is a table. Its partitions are too, and both
-			// relkinds are in the probe.
+			// A partitioned table is a table, counted where it lives.
 			name: "a partitioned table counts",
 			setup: []string{
 				"CREATE TABLE parted (id integer NOT NULL, part integer NOT NULL) PARTITION BY RANGE (part)",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found table "atlas_schema_revisions" in schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// The control for the partition row of the clean table: the parent
+			// still counts when only its partition lives elsewhere.
+			name: "a partitioned table whose partition lives in another schema",
+			setup: []string{
+				"CREATE SCHEMA extra",
+				"CREATE TABLE parted (id integer NOT NULL) PARTITION BY RANGE (id)",
+				"CREATE TABLE extra.part_low PARTITION OF parted FOR VALUES FROM (0) TO (10)",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found table "atlas_schema_revisions" in schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// aaa_part sorts first and is not counted, so the refusal names
+			// the revisions table rather than the partition.
+			name: "a partition sorting first is not the table reported",
+			setup: []string{
+				"CREATE TABLE parted (id integer NOT NULL) PARTITION BY RANGE (id)",
+				"CREATE TABLE aaa_part PARTITION OF parted FOR VALUES FROM (0) TO (10)",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found table "atlas_schema_revisions" in schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// A user table still refuses beside an extension's table, and the
+			// extension's table, sorting first, is not the one reported.
+			name: "a user table beside a table an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE TABLE aaa_owned (id integer PRIMARY KEY)",
+				"ALTER EXTENSION hstore ADD TABLE aaa_owned",
+				"CREATE TABLE zzz_user (id integer PRIMARY KEY)",
 			},
 			wantErr: `sql/migrate: connected database is not clean: found table "atlas_schema_revisions" in schema "public". baseline version or allow-dirty is required`,
 		},
@@ -231,6 +288,35 @@ func TestInspectLive_RealmScopeClean(t *testing.T) {
 			setup:           []string{"CREATE TABLE atlas_schema_revisions " + migratecleanRevisionColumns},
 			revisionsSchema: "public",
 		},
+		{
+			// TimescaleDB's seven schemas are this shape.
+			name: "a schema an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE SCHEMA owned_by_extension",
+				"ALTER EXTENSION hstore ADD SCHEMA owned_by_extension",
+			},
+		},
+		{
+			// The binary does not look inside a schema an extension owns, so
+			// a table the user created there does not refuse either.
+			name: "a user table inside a schema an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE SCHEMA owned_by_extension",
+				"ALTER EXTENSION hstore ADD SCHEMA owned_by_extension",
+				"CREATE TABLE owned_by_extension.user_table (id integer PRIMARY KEY)",
+			},
+		},
+		{
+			// PostGIS's spatial_ref_sys in `public` is this shape.
+			name: "a table in public an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE TABLE owned_by_extension (id integer PRIMARY KEY)",
+				"ALTER EXTENSION hstore ADD TABLE owned_by_extension",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -286,6 +372,18 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 			name: "a partitioned table in public",
 			setup: []string{
 				"CREATE TABLE parted (id integer NOT NULL, part integer NOT NULL) PARTITION BY RANGE (part)",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "public". baseline version or allow-dirty is required`,
+		},
+		{
+			// The control for the extension rows of the clean table: a table
+			// an extension owns does not hide the user's table beside it.
+			name: "a user table in public beside a table an extension owns",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE TABLE owned_by_extension (id integer PRIMARY KEY)",
+				"ALTER EXTENSION hstore ADD TABLE owned_by_extension",
+				"CREATE TABLE legacy_stuff (id integer PRIMARY KEY)",
 			},
 			wantErr: `sql/migrate: connected database is not clean: found schema "public". baseline version or allow-dirty is required`,
 		},
@@ -381,6 +479,51 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 	}
 }
 
+// TestInspectLive_TimescaleDBRealmClean runs the gate against the extension
+// that found stokaro/ptah#3533. One CREATE EXTENSION timescaledb adds seven
+// schemas and the tables of the extension's catalog, and the pinned binary
+// v1.3.0 applies against that database through a plain URL: none of it is the
+// user's.
+func TestInspectLive_TimescaleDBRealmClean(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn := newMigratecleanLiveConnectionOn(
+		c, ctx, migratecleanAdminURL(c, dbtarget.TimescaleDB), "",
+		[]string{"CREATE EXTENSION IF NOT EXISTS timescaledb"},
+	)
+
+	scope, err := migrateclean.Inspect(ctx, conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scope.Realm, qt.IsTrue)
+	c.Assert(scope.Schemas, qt.DeepEquals, []migrateclean.RealmSchema{{Name: "public"}})
+	c.Assert(scope.ForRevisions("", migratecleanRevisionTable).Refusal(), qt.IsNil)
+}
+
+// TestInspectLive_TimescaleDBRealmUnclean is the control for the test above:
+// the extension's schemas leave the realm, and the user's table in `public`
+// still refuses, as it does on the pinned binary.
+func TestInspectLive_TimescaleDBRealmUnclean(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn := newMigratecleanLiveConnectionOn(
+		c, ctx, migratecleanAdminURL(c, dbtarget.TimescaleDB), "",
+		[]string{
+			"CREATE EXTENSION IF NOT EXISTS timescaledb",
+			"CREATE TABLE metrics (id integer PRIMARY KEY)",
+		},
+	)
+
+	scope, err := migrateclean.Inspect(ctx, conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scope.Realm, qt.IsTrue)
+	refusal := scope.ForRevisions("", migratecleanRevisionTable).Refusal()
+	c.Assert(refusal, qt.IsNotNil)
+	c.Assert(refusal.Error(), qt.Equals,
+		`sql/migrate: connected database is not clean: found schema "public". baseline version or allow-dirty is required`)
+}
+
 // TestInspectLive_ScopeSelection pins what selects the scope, which is the URL
 // and not the session. A `search_path` set through libpq's `options` moves
 // `current_schema()` without moving the binary out of realm scope.
@@ -443,7 +586,18 @@ func newMigratecleanLiveConnection(
 	setup []string,
 ) *dbschema.DatabaseConnection {
 	c.Helper()
-	adminURL := requireMigratecleanLiveURL(c)
+	return newMigratecleanLiveConnectionOn(c, ctx, migratecleanAdminURL(c, dbtarget.PostgreSQL), query, setup)
+}
+
+// newMigratecleanLiveConnectionOn is newMigratecleanLiveConnection against the
+// server adminURL names.
+func newMigratecleanLiveConnectionOn(
+	c *qt.C,
+	ctx context.Context,
+	adminURL, query string,
+	setup []string,
+) *dbschema.DatabaseConnection {
+	c.Helper()
 	admin, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(admin.PingContext(ctx), qt.IsNil)
@@ -507,14 +661,14 @@ func migratecleanQuery(base, extra string) string {
 	}
 }
 
-func requireMigratecleanLiveURL(c *qt.C) string {
+func migratecleanAdminURL(c *qt.C, engine dbtarget.Engine) string {
 	c.Helper()
-	// dbtarget answers with the address as configured, and this helper has
-	// always handed its callers the postgres:// spelling. The fold stays here
-	// rather than moving into the registry, where it would rewrite the address
-	// every PostgreSQL consumer receives on the strength of what three
-	// integration tests happen to want.
-	parsed, err := url.Parse(dbtarget.URL(c, dbtarget.PostgreSQL))
+	// dbtarget answers with the address as configured, and this helper hands
+	// its callers the postgres:// spelling. The fold stays here rather than
+	// moving into the registry, where it would rewrite the address every
+	// PostgreSQL consumer receives on the strength of what these integration
+	// tests happen to want.
+	parsed, err := url.Parse(dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
 	parsed.Scheme = "postgres"
 	return parsed.String()
