@@ -36,17 +36,31 @@ func (m *Migrator) WithDefaultTimeouts(timeouts migrationfile.Timeouts) *Migrato
 	return &tmp
 }
 
+// timeoutScope is what a migration's timeouts are attached to: the
+// transaction the migration runs in, or the pinned session that runs a
+// migration outside one.
+type timeoutScope uint8
+
+const (
+	// timeoutScopeTransaction bounds the statements of one transaction.
+	timeoutScopeTransaction timeoutScope = iota
+	// timeoutScopeSession bounds every statement on one pinned session, which
+	// is what a no_transaction migration runs on.
+	timeoutScopeSession
+)
+
 func (m *Migrator) applyTimeoutsWithRestore(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	timeouts migrationfile.Timeouts,
+	scope timeoutScope,
 ) (restoreTimeoutsFunc, error) {
 	if timeouts.IsZero() {
 		return noopRestoreTimeouts, nil
 	}
 
 	setupStatements, restoreStatements, err := timeoutStatements(
-		conn.Info().Dialect, conn.Info().Capabilities, timeouts)
+		conn.Info().Dialect, conn.Info().Capabilities, timeouts, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +79,46 @@ func (m *Migrator) applyTimeoutsWithRestore(
 		}
 		return nil
 	}, nil
+}
+
+// refuseTimeoutsTheTargetCannotCarry refuses a migration that declares
+// timeouts this target has no statement for, before anything runs.
+//
+// Whether a target can carry a timeout does not depend on the transaction
+// mode, only how it is spelled does, so the question is asked once for every
+// mode rather than discovered by the first migration that reaches the server.
+func (m *Migrator) refuseTimeoutsTheTargetCannotCarry(migration *Migration, timeouts migrationfile.Timeouts) error {
+	if timeouts.IsZero() {
+		return nil
+	}
+	info := m.conn.Info()
+	if _, _, err := timeoutStatements(info.Dialect, info.Capabilities, timeouts, timeoutScopeSession); err != nil {
+		return fmt.Errorf("migration %d declares timeouts: %w", migration.Version, err)
+	}
+	return nil
+}
+
+// applySessionTimeouts bounds the statements of a migration that runs outside
+// a transaction, on the session that runs them.
+//
+// It has to be the first statement on that session. A resumed attempt replays
+// the session state its committed prefix set, and a `SET lock_timeout` the
+// file runs itself must land after this one, as it did the first time.
+//
+// The setting outlives each statement, which is what a transaction-local one
+// cannot do here. It does not outlive the migration: the caller restores it
+// after the last statement, and the pinned session is discarded afterward
+// either way.
+func (m *Migrator) applySessionTimeouts(
+	ctx context.Context,
+	migration *Migration,
+	timeouts migrationfile.Timeouts,
+) (restoreTimeoutsFunc, error) {
+	restore, err := m.applyTimeoutsWithRestore(ctx, m.noTransactionConnection(), timeouts, timeoutScopeSession)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+	}
+	return restore, nil
 }
 
 func noopRestoreTimeouts(_ context.Context) error {
@@ -106,10 +160,18 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 // sets two transaction-local GUCs, and the MySQL family sets and restores two
 // session variables. A target that carries the key and has no spelling here is
 // a programming error rather than an unsupported engine, and it says so.
+//
+// The scope matters only to the PostgreSQL family. `SET LOCAL` outside a
+// transaction block is a warning and changes nothing -- measured on PostgreSQL
+// 18.6 and CockroachDB v26.3.1 -- so a migration that runs outside a
+// transaction takes the session spelling instead, and RESET returns the session
+// to the value it started with. The MySQL family's spelling is session-scoped
+// already and serves both.
 func timeoutStatements(
 	dialect string,
 	caps capability.Capabilities,
 	timeouts migrationfile.Timeouts,
+	scope timeoutScope,
 ) (setupStatements, restoreStatements []string, err error) {
 	normalized := platform.NormalizeDialect(dialect)
 
@@ -122,6 +184,10 @@ func timeoutStatements(
 
 	switch normalized {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		if scope == timeoutScopeSession {
+			setup, restore := postgresSessionTimeoutStatements(timeouts)
+			return setup, restore, nil
+		}
 		return postgresTimeoutStatements(timeouts), nil, nil
 	case platform.MySQL:
 		return mysqlTimeoutStatements(timeouts)
@@ -144,6 +210,20 @@ func postgresTimeoutStatements(timeouts migrationfile.Timeouts) []string {
 		statements = append(statements, "SET LOCAL statement_timeout = '"+durationMillisLiteral(timeouts.StatementTimeout)+"'")
 	}
 	return statements
+}
+
+func postgresSessionTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string) {
+	setup := make([]string, 0, 2)
+	restore := make([]string, 0, 2)
+	if timeouts.HasLockTimeout {
+		setup = append(setup, "SET lock_timeout = '"+durationMillisLiteral(timeouts.LockTimeout)+"'")
+		restore = append(restore, "RESET lock_timeout")
+	}
+	if timeouts.HasStatementTimeout {
+		setup = append(setup, "SET statement_timeout = '"+durationMillisLiteral(timeouts.StatementTimeout)+"'")
+		restore = append(restore, "RESET statement_timeout")
+	}
+	return setup, reverseStrings(restore)
 }
 
 func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {

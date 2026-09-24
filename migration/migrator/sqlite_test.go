@@ -228,7 +228,7 @@ func TestFSMigratorSQLiteTxModeNoneRejectsTimeoutsBeforeWrites(t *testing.T) {
 	if err == nil {
 		t.Fatalf("MigrateUp unexpectedly succeeded")
 	}
-	if err.Error() != "migration 1 has timeouts and cannot run with tx-mode none" {
+	if err.Error() != `migration 1 declares timeouts: migration timeouts are not supported for dialect "sqlite": this target has no session or transaction timeout Ptah sets and restores around a migration` {
 		t.Fatalf("MigrateUp error = %v", err)
 	}
 	if sqliteTableExists(t, conn, "tx_none_timeout") {

@@ -9,6 +9,7 @@ readerQuestion: "What does `online: require` prove about a migration, and what d
 goal: "Read the online mode's guarantee and its limits before relying on it."
 sourceOfTruth:
   - "migration/lint"
+  - "internal/cli/migrateup"
 generated: false
 overlaps: []
 disposition: keep
@@ -80,7 +81,15 @@ long as somebody else's `SELECT` runs. Set `--lock-timeout`, or
 `migration.lock_timeout` in the project config, and a wait becomes a failed
 statement somebody can retry.
 
-The requirement lifts where nothing can take a timeout: a run under
-`--tx-mode none`, or a directory whose every migration opted out of the
-transaction, because the migrator refuses a timeout on those outright and
-requiring one would leave the configuration with no successful invocation.
+The requirement holds in every transaction mode. A migration marked
+`no_transaction`, and every migration under `--tx-mode none`, takes the timeout
+on the database session that runs its statements. That is where the constraint
+form `diff.online_alter` generates lives: its `ADD CONSTRAINT ... NOT VALID`
+takes `ACCESS EXCLUSIVE` for an instant, in a file marked `no_transaction` so
+that the `VALIDATE CONSTRAINT` after it scans under the weaker lock.
+
+The timeout also bounds a concurrent index build while it waits for open write
+transactions on the table. When it runs out, the build stops and leaves an
+invalid index behind;
+[Rewrite each operation into the form that does not block](../../operate/zero-downtime-changes/#rewrite-each-operation-into-the-form-that-does-not-block)
+says how to recover.

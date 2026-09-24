@@ -31,7 +31,7 @@ func TestNoTransactionTimeoutValidation_UpLeavesNoRevision(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
+	c.Assert(err, qt.ErrorMatches, `migration 1 declares timeouts: migration timeouts are not supported for dialect "sqlite": .*`)
 	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 
@@ -59,7 +59,7 @@ func TestNoTransactionTimeoutValidation_DownPreservesAppliedRevision(t *testing.
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	err = mig.MigrateDownTo(ctx, 0)
-	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
+	c.Assert(err, qt.ErrorMatches, `migration 1 declares timeouts: migration timeouts are not supported for dialect "sqlite": .*`)
 	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
 	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
 	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
@@ -91,7 +91,7 @@ func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *te
 	})
 
 	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
+	c.Assert(err, qt.ErrorMatches, `migration 1 declares timeouts: migration timeouts are not supported for dialect "sqlite": .*`)
 	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 

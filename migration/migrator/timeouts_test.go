@@ -120,7 +120,7 @@ func TestTimeoutStatements(t *testing.T) {
 			c := qt.New(t)
 
 			gotSetup, gotRestore, err := timeoutStatements(
-				tt.dialect, capability.ForDialect(tt.dialect), tt.timeouts)
+				tt.dialect, capability.ForDialect(tt.dialect), tt.timeouts, timeoutScopeTransaction)
 			if tt.wantErr != "" {
 				c.Assert(err, qt.ErrorMatches, tt.wantErr)
 				return

@@ -2890,33 +2890,28 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 		}
 	}
 
-	switch m.txMode {
-	case MigrationTxModeAll:
-		if err := m.validateTxModeAllDialect(); err != nil {
+	if m.txMode != MigrationTxModeAll {
+		for _, migration := range migrations {
+			if err := m.refuseTimeoutsTheTargetCannotCarry(migration, resolvedTimeouts[migration]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := m.validateTxModeAllDialect(); err != nil {
+		return err
+	}
+	for _, migration := range migrations {
+		if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
 			return err
 		}
-		for _, migration := range migrations {
-			if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
-				return err
-			}
-			if !resolvedTimeouts[migration].IsZero() {
-				return fmt.Errorf(
-					"migration %d declares timeouts, which cannot run with tx-mode all: "+
-						"%s", migration.Version, txModeAllExclusionAdvice)
-			}
-			if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
-				return err
-			}
+		if !resolvedTimeouts[migration].IsZero() {
+			return fmt.Errorf(
+				"migration %d declares timeouts, which cannot run with tx-mode all: "+
+					"%s", migration.Version, txModeAllExclusionAdvice)
 		}
-	case MigrationTxModeNone:
-		for _, migration := range migrations {
-			fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
-			if fileMode.Mode == migrationfile.FileTxModeFile || fileMode.Err != nil {
-				continue
-			}
-			if !resolvedTimeouts[migration].IsZero() {
-				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode none", migration.Version)
-			}
+		if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -2932,6 +2927,15 @@ func (m *Migrator) effectiveUpTimeouts(migration *Migration) (migrationfile.Time
 		)
 	}
 	return mergeMigrationTimeouts(m.defaultTimeouts, timeouts), nil
+}
+
+// effectiveTimeouts resolves the timeouts that bound a migration's statements
+// in one direction.
+func (m *Migrator) effectiveTimeouts(migration *Migration, direction MigrationDirection) (migrationfile.Timeouts, error) {
+	if direction == MigrationDirectionDown {
+		return m.effectiveDownTimeouts(migration)
+	}
+	return m.effectiveUpTimeouts(migration)
 }
 
 func (m *Migrator) effectiveDownTimeouts(migration *Migration) (migrationfile.Timeouts, error) {
@@ -2987,16 +2991,6 @@ func (m *Migrator) applyUpMigrationObserved(
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
 	if txMode == MigrationTxModeNone {
-		timeouts, timeoutErr := m.effectiveUpTimeouts(migration)
-		if timeoutErr != nil {
-			return false, timeoutErr
-		}
-		if err := ensureNoTransactionHasNoTimeouts(
-			migration.Version,
-			timeouts,
-		); err != nil {
-			return false, err
-		}
 		if err := m.validateNoTransactionSQL(migration, MigrationDirectionUp); err != nil {
 			return false, err
 		}
@@ -3114,7 +3108,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	if err != nil {
 		return err
 	}
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
 	if err != nil {
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
@@ -3230,7 +3224,7 @@ func (m *Migrator) applyUpMigrationTransactionalOnSession(
 	}
 	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
 	if err != nil {
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
@@ -3399,17 +3393,27 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 	startedAt time.Time,
 	plan upRetryPlan,
 ) error {
+	timeouts, err := m.effectiveUpTimeouts(migration)
+	if err != nil {
+		return err
+	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
+		if err != nil {
+			return err
+		}
 		if err := scoped.restoreNoTransactionSessionPrefix(
 			ctx,
 			migration,
 			MigrationDirectionUp,
 			plan.resumeFrom,
 		); err != nil {
-			return fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
-			return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if plan.resumeFrom > 1 {
 			scoped.logger.Info(
@@ -3419,7 +3423,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 			)
 		}
 		executionCtx := withMigrationResume(ctx, plan.resumeFrom)
-		return scoped.applyUpMigrationNoTransactionOnSession(executionCtx, migration, startedAt)
+		return scoped.applyUpMigrationNoTransactionOnSession(executionCtx, migration, startedAt, restoreTimeouts)
 	})
 }
 
@@ -3427,6 +3431,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
+	restoreTimeouts restoreTimeoutsFunc,
 ) error {
 	executionConn := m.noTransactionConnection()
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
@@ -3442,13 +3447,26 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
-		return m.failMigrationWithDirtyStateWithMode(
+		failure := m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
 			err,
 			migration.UpSQL,
 			fmt.Sprintf("failed to apply migration %d", migration.Version),
+			MigrationTxModeNone,
+			MigrationDirectionUp,
+		)
+		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
+	}
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return m.failMigrationWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			"",
 			MigrationTxModeNone,
 			MigrationDirectionUp,
 		)
@@ -3642,7 +3660,7 @@ func (m *Migrator) rollbackMigrationTransactionalOnSession(
 	}
 	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
 	if err != nil {
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
@@ -3725,11 +3743,20 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
+	timeouts, err := m.effectiveDownTimeouts(migration)
+	if err != nil {
+		return err
+	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
-		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+		restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
+		if err != nil {
+			return err
 		}
-		return scoped.rollbackMigrationNoTransactionOnSession(ctx, migration, startedAt, deleteSQL)
+		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
+		}
+		return scoped.rollbackMigrationNoTransactionOnSession(ctx, migration, startedAt, deleteSQL, restoreTimeouts)
 	})
 }
 
@@ -3738,6 +3765,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 	migration *Migration,
 	startedAt time.Time,
 	deleteSQL string,
+	restoreTimeouts restoreTimeoutsFunc,
 ) error {
 	executionConn := m.noTransactionConnection()
 	m.startPostgresIndexObservation()
@@ -3752,7 +3780,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 	)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	if err := migration.executeDown(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
-		return m.failRollbackWithDirtyStateWithMode(
+		failure := m.failRollbackWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
@@ -3761,6 +3789,10 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 			fmt.Sprintf("failed to revert migration %d", migration.Version),
 			MigrationTxModeNone,
 		)
+		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
+	}
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, "", MigrationTxModeNone)
 	}
 	if err := m.refuseRollbackCompletionOverUnsafeIndexOn(ctx, executionConn, migration); err != nil {
 		return m.failRollbackWithDirtyStateWithMode(
@@ -3858,13 +3890,6 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 		return failure
 	}
 	return fmt.Errorf("%s: %w", prefix, failure)
-}
-
-func ensureNoTransactionHasNoTimeouts(version int64, timeouts migrationfile.Timeouts) error {
-	if timeouts.IsZero() {
-		return nil
-	}
-	return fmt.Errorf("migration %d is marked no_transaction, so migration timeouts cannot be applied safely", version)
 }
 
 // migrationsToApply decides which pending migrations an up run may apply under
@@ -4125,23 +4150,17 @@ func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 		if err != nil {
 			return err
 		}
+		if err := m.refuseTimeoutsTheTargetCannotCarry(migration, timeouts); err != nil {
+			return err
+		}
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{
 				Version:     migration.Version,
 				Description: migration.Description,
 			}
 		}
-		txMode, err := m.resolveDownMigrationTxMode(migration)
-		if err != nil {
+		if _, err := m.resolveDownMigrationTxMode(migration); err != nil {
 			return err
-		}
-		if txMode == MigrationTxModeNone {
-			if err := ensureNoTransactionHasNoTimeouts(
-				migration.Version,
-				timeouts,
-			); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
