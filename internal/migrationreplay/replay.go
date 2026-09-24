@@ -285,11 +285,15 @@ func replayMigrations(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	baseline, err := devclean.CaptureBaseline(ctx, conn)
+	if err != nil {
+		return err
+	}
 	replaySucceeded := false
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failedReplayCleanupTimeout)
 		defer cancel()
-		if cleanupErr := devclean.DatabaseRealm(cleanupCtx, conn); cleanupErr != nil {
+		if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, conn, baseline); cleanupErr != nil {
 			label := "clean dev database after replay"
 			if !replaySucceeded {
 				label = "clean dev database after failed replay"
@@ -297,7 +301,7 @@ func replayMigrations(
 			resultErr = errors.Join(resultErr, fmt.Errorf("%s: %w", label, cleanupErr))
 		}
 	}()
-	if err := devclean.DatabaseRealm(ctx, conn); err != nil {
+	if err := devclean.DatabaseRealmKeeping(ctx, conn, baseline); err != nil {
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	for _, migration := range migrations {

@@ -101,10 +101,14 @@ exercise a real server dialect — see
   extension omitted from desired state remains an explicit global removal.
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
-  in the selected database as one dependency graph. The cleanup drops each
-  user extension, and that drop removes the schemas the extension owns and its
-  member tables, so the cleanup does not queue their objects one by one;
-  TimescaleDB's catalog schemas are this shape. MySQL, MariaDB, and
+  in the selected database as one dependency graph. Extensions the dev
+  database already held when the run started are its environment and stay
+  installed, with everything they own, so a migration may use a type from one
+  without creating it, as it may under Atlas. A schema such an extension is
+  installed in is emptied where it stands. An extension the run created is
+  dropped, and that drop removes the schemas it owns and its member tables,
+  so the cleanup does not queue their objects one by one; TimescaleDB's
+  catalog schemas are this shape. MySQL, MariaDB, and
   ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
   supported user schemas in the selected database. SQLite cleanup owns `main`
   on one pinned session.

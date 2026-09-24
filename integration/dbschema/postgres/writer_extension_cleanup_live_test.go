@@ -177,3 +177,76 @@ func TestWriterDropDatabaseRealm_LiveTimescaleDB(t *testing.T) {
 		})
 	}
 }
+
+// postgresWriterLiveRelationsLike counts the relations whose name matches
+// pattern, in any schema.
+func postgresWriterLiveRelationsLike(c *qt.C, ctx context.Context, db *sql.DB, pattern string) int {
+	c.Helper()
+	var count int
+	c.Assert(db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM pg_class WHERE relname LIKE $1 AND relkind IN ('r', 'p')", pattern,
+	).Scan(&count), qt.IsNil)
+	return count
+}
+
+// TestWriterDropDatabaseRealmKeeping_LivePostgres keeps one extension and not
+// another. The kept one stays installed with everything it owns, including a
+// member table in the schema the cleanup empties in place; the other goes, and
+// so does every object the user made (stokaro/ptah#3542).
+func TestWriterDropDatabaseRealmKeeping_LivePostgres(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE EXTENSION hstore;
+		CREATE EXTENSION pg_trgm;
+		CREATE TABLE public.member_table (id integer PRIMARY KEY);
+		ALTER EXTENSION hstore ADD TABLE public.member_table;
+		CREATE TABLE public.user_table (id integer PRIMARY KEY, attrs hstore);
+		CREATE INDEX user_table_attrs ON public.user_table USING gist (attrs);
+		CREATE SCHEMA user_schema;
+		CREATE TABLE user_schema.t (id integer);
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, []string{"hstore"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "plpgsql"})
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "user_schema"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "user_table"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "member_table"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveRoutineCount(c, ctx, db, "public", "hstore_in"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveRoutineCount(c, ctx, db, "public", "similarity"), qt.Equals, 0)
+}
+
+// TestWriterDropDatabaseRealmKeeping_LiveTimescaleDB keeps timescaledb while a
+// hypertable holds a row: the extension and its schemas stay, and the
+// hypertable goes with its chunk.
+func TestWriterDropDatabaseRealmKeeping_LiveTimescaleDB(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.TimescaleDB))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE EXTENSION IF NOT EXISTS timescaledb;
+		CREATE TABLE public.metrics (at timestamptz NOT NULL, value integer);
+		SELECT create_hypertable('public.metrics', 'at');
+		INSERT INTO public.metrics VALUES (now(), 1);
+	`)
+	c.Assert(err, qt.IsNil)
+	extensionSchemas := postgresWriterLiveSchemasLike(c, ctx, db, "%timescaledb%")
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, []string{"timescaledb"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"plpgsql", "timescaledb"})
+	c.Assert(postgresWriterLiveSchemasLike(c, ctx, db, "%timescaledb%"), qt.DeepEquals, extensionSchemas)
+	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "\\_hyper\\_%"), qt.Equals, 0)
+}
