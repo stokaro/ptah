@@ -71,9 +71,11 @@ type File struct {
 }
 
 // RevisionVersion returns the token this file uses as its revision-table
-// identity. Native Ptah files and ordinary Atlas files return the decimal
-// numeric version. Atlas repeatable files return Atlas's opaque R-suffixed
-// token.
+// identity. Native Ptah files return the decimal numeric version. Ordinary
+// Atlas files return the version exactly as the file name spells it, leading
+// zeros included: Atlas records 001_init.sql as 001 and compares versions as
+// strings, so 1 would read as a different revision. Atlas repeatable files
+// return Atlas's opaque R-suffixed token.
 func (f File) RevisionVersion() string {
 	if f.atlasRevisionVersion != "" {
 		return f.atlasRevisionVersion
@@ -203,7 +205,7 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		Direction:            direction,
 		Extension:            ".sql",
 		Format:               DirFormatAtlas,
-		atlasRevisionVersion: strconv.FormatInt(version, 10),
+		atlasRevisionVersion: versionDigits,
 		RevisionDescription:  rawName,
 	}, nil
 }

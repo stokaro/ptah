@@ -138,6 +138,10 @@ type FSMigrationProvider struct {
 	atlasRevisionChecksums map[int64]string
 	atlasRevisionTypes     map[int64]AtlasRevisionType
 	atlasRepeatable        map[int64]bool
+	// atlasSpellings is the version token each ordinary Atlas file spells, by
+	// numeric version. A native revision table stores only the number, and
+	// this is how a row read from one finds the key its file compares under.
+	atlasSpellings map[int64]string
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -292,6 +296,15 @@ func (p *FSMigrationProvider) hasAtlasRevisionVersionMap() bool {
 	return p.atlasRevisionVersions != nil
 }
 
+// atlasVersionSpelling returns the version token an ordinary Atlas file in
+// this directory spells for version, such as 001 for 1. It reports false for
+// a native directory, for a version no file carries, and for a repeatable or
+// mapped file, whose identity is not a spelling of its number.
+func (p *FSMigrationProvider) atlasVersionSpelling(version int64) (string, bool) {
+	spelling, ok := p.atlasSpellings[version]
+	return spelling, ok
+}
+
 func (p *FSMigrationProvider) load() error {
 	files, err := migrationfile.Discover(p.fsys, p.format)
 	if err != nil {
@@ -377,15 +390,15 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	}
 	maxVersion := atlasMaxNumericVersion(files)
 	partsByRevision := make(map[string]*atlasParts)
+	spellings := make(map[int64]migrationfile.File)
 	for i := range files {
 		migrationFile := files[i]
 		runtimeVersion := atlasRuntimeVersion(migrationFile, maxVersion)
-		revisionVersion := migrationFile.RevisionVersion()
-		repeatable := revisionVersion == "R" || strings.HasSuffix(revisionVersion, "R") ||
-			p.atlasRepeatable[migrationFile.Version]
-		mappedRevisionVersion, mapped := p.atlasRevisionVersions[migrationFile.Version]
-		if mapped {
-			revisionVersion = mappedRevisionVersion
+		revisionVersion, repeatable, mapped := p.atlasFileIdentity(migrationFile)
+		if !repeatable && !mapped {
+			if err := recordAtlasSpelling(spellings, migrationFile); err != nil {
+				return err
+			}
 		}
 		parts := partsByRevision[revisionVersion]
 		if parts != nil && parts.migration.Version != runtimeVersion &&
@@ -454,7 +467,49 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 
 	p.migrations = migrations
 	sortMigrations(p.migrations)
+	p.atlasSpellings = make(map[int64]string, len(spellings))
+	for version, file := range spellings {
+		p.atlasSpellings[version] = file.RevisionVersion()
+	}
 	return nil
+}
+
+// atlasFileIdentity returns the revision identity an Atlas file is recorded
+// under, and whether that identity is a repeatable's or one a compatibility
+// adapter mapped from a source tool's token.
+func (p *FSMigrationProvider) atlasFileIdentity(
+	migrationFile migrationfile.File,
+) (revisionVersion string, repeatable, mapped bool) {
+	revisionVersion = migrationFile.RevisionVersion()
+	repeatable = revisionVersion == "R" || strings.HasSuffix(revisionVersion, "R") ||
+		p.atlasRepeatable[migrationFile.Version]
+	if mappedRevisionVersion, ok := p.atlasRevisionVersions[migrationFile.Version]; ok {
+		return mappedRevisionVersion, repeatable, true
+	}
+	return revisionVersion, repeatable, false
+}
+
+// recordAtlasSpelling refuses a directory that spells one version two ways,
+// such as 1_a.sql beside 001_b.sql.
+//
+// Atlas keys its revision table on the spelling, so the two files are two
+// revisions there, while Ptah orders migrations by number and the pair ties.
+// Keeping one of them would apply the other in an order nothing declared.
+func recordAtlasSpelling(spellings map[int64]migrationfile.File, file migrationfile.File) error {
+	previous, seen := spellings[file.Version]
+	if !seen {
+		spellings[file.Version] = file
+		return nil
+	}
+	if previous.RevisionVersion() == file.RevisionVersion() {
+		return nil
+	}
+	return fmt.Errorf(
+		"Atlas migration files %s and %s spell version %d two ways, %q and %q: "+
+			"the revision table records the spelling and migrations run in numeric order, "+
+			"so one version needs one spelling",
+		previous.Path, file.Path, file.Version, previous.RevisionVersion(), file.RevisionVersion(),
+	)
 }
 
 func atlasMaxNumericVersion(files []migrationfile.File) int64 {

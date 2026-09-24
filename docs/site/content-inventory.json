@@ -511,7 +511,7 @@
       "generated": false,
       "generator": null,
       "editSource": null,
-      "lastVerified": "2026-08-30",
+      "lastVerified": "2026-09-24",
       "evidence": [
         "internal/cli/atlas/compat_1241_retained_divergence_test.go",
         "stokaro/ptah#1241"
@@ -532,11 +532,12 @@
         "/atlas/overview/",
         "/atlas/schema-commands/",
         "/atlas/strict-ce-mode/",
+        "/concepts/migration-directory/",
         "/migrate-from/atlas/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 6447,
-      "sourceBytes": 44802
+      "visibleWords": 6674,
+      "sourceBytes": 46310
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
@@ -831,6 +832,7 @@
       "outboundLinks": [
         "/atlas/migrate-commands/",
         "/atlas/overview/",
+        "/atlas/retained-divergences/",
         "/operate/oci-registry/",
         "/versioned/apply/",
         "/versioned/checkpoints/",
@@ -842,8 +844,8 @@
       "inboundLinks": [
         "/versioned/overview/"
       ],
-      "visibleWords": 1612,
-      "sourceBytes": 11479
+      "visibleWords": 1701,
+      "sourceBytes": 12047
     },
     {
       "path": "docs/site/src/content/docs/databases/capability-status.md",

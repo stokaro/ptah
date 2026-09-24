@@ -56,7 +56,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(
 			conn.QueryRow(`
 				SELECT applied, total, COALESCE(error, ''), COALESCE(partial_hashes, '')
-				FROM atlas_schema_revisions WHERE version = '1'
+				FROM atlas_schema_revisions WHERE version = '000001'
 			`).Scan(&applied, &total, &failure, &partialHashes),
 			qt.IsNil,
 		)
@@ -184,7 +184,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		var applied, total int
 		c.Assert(conn.QueryRow(`
 			SELECT applied, total, COALESCE(error, ''), COALESCE(error_stmt, '')
-			FROM atlas_schema_revisions WHERE version = '1'
+			FROM atlas_schema_revisions WHERE version = '000001'
 		`).Scan(&applied, &total, &failure, &failureStatement), qt.IsNil)
 		c.Assert(applied, qt.Equals, 0)
 		c.Assert(total, qt.Equals, 2)
@@ -209,7 +209,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		var failure, operatorVersion string
 		var applied, total int
 		c.Assert(
-			conn.QueryRow("SELECT applied, total, COALESCE(error, ''), operator_version FROM atlas_schema_revisions WHERE version = '1'").
+			conn.QueryRow("SELECT applied, total, COALESCE(error, ''), operator_version FROM atlas_schema_revisions WHERE version = '000001'").
 				Scan(&applied, &total, &failure, &operatorVersion),
 			qt.IsNil,
 		)
