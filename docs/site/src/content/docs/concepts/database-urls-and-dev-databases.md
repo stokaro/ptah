@@ -101,7 +101,10 @@ exercise a real server dialect — see
   extension omitted from desired state remains an explicit global removal.
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
-  in the selected database as one dependency graph. MySQL, MariaDB, and
+  in the selected database as one dependency graph. The cleanup drops each
+  user extension, and that drop removes the schemas the extension owns and its
+  member tables, so the cleanup does not queue their objects one by one;
+  TimescaleDB's catalog schemas are this shape. MySQL, MariaDB, and
   ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
   supported user schemas in the selected database. SQLite cleanup owns `main`
   on one pinned session.

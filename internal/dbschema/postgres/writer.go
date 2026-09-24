@@ -332,6 +332,11 @@ type postgresCleanupScope struct {
 	schemas                []string
 	extensionNamespaceJoin string
 	systemExtensions       []string
+	// dropsExtensions reports that the cleanup drops every user extension,
+	// which is what lets it leave an extension's members to the extension. A
+	// schema-scoped cleanup refuses a schema that owns an extension instead,
+	// so there nothing is left to a drop that never runs.
+	dropsExtensions bool
 }
 
 func inspectCleanupCapabilities(
@@ -426,6 +431,7 @@ func postgresDatabaseCleanupScope(
 		schemas:                schemas,
 		extensionNamespaceJoin: "JOIN pg_namespace n ON n.oid = e.extnamespace",
 		systemExtensions:       systemExtensions,
+		dropsExtensions:        true,
 	}
 }
 
@@ -550,7 +556,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM pg_constraint con
 			JOIN pg_class c ON c.oid = con.conrelid
 			JOIN managed_namespaces n ON n.oid = c.relnamespace
-			WHERE con.contype = 'f'
+			WHERE con.contype = 'f'{{EXTENSION_MEMBER_CONSTRAINT_FILTER}}
 
 			UNION ALL
 
@@ -642,6 +648,8 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	query = applyCleanupBranches(query, w.caps)
 	query = strings.ReplaceAll(
 		query, "{{EXTENSION_OWNED_ROUTINE_FILTER}}", extensionOwnedRoutineFilter(w.caps))
+	query = strings.ReplaceAll(
+		query, "{{EXTENSION_MEMBER_CONSTRAINT_FILTER}}", extensionMemberConstraintFilter(scope, w.caps))
 	query = strings.ReplaceAll(
 		query, "{{DEFAULT_PRIVILEGE_OBJECTS}}", defaultPrivilegeObjects(w.caps))
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -760,6 +768,32 @@ func extensionOwnedRoutineFilter(caps capability.Capabilities) string {
 				WHERE d.classid = 'pg_proc'::regclass
 				  AND d.objid = p.oid
 				  AND d.deptype = 'i'
+			  )`
+}
+
+// extensionMemberConstraintFilter returns the clause that keeps the foreign
+// keys of an extension's member tables out of a cleanup that drops the
+// extension, or an empty string where the cleanup does not drop it or the
+// catalog cannot answer the question.
+//
+// The extension drop removes its member tables and their constraints with
+// them. A constraint drop is an ALTER TABLE that names the table, and IF
+// EXISTS covers only the constraint, so once the extension is gone the queued
+// statement fails on the table: `relation "public.member_child" does not
+// exist`. A table drop names the table itself and survives the same order.
+// This is what failed on a dev database holding timescaledb, whose catalog
+// tables carry foreign keys (stokaro/ptah#3540).
+func extensionMemberConstraintFilter(scope postgresCleanupScope, caps capability.Capabilities) string {
+	if !scope.dropsExtensions || !caps.Has(capability.CatalogDependencies) {
+		return ""
+	}
+	return `
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM pg_depend d
+				WHERE d.classid = 'pg_class'::regclass
+				  AND d.objid = c.oid
+				  AND d.deptype = 'e'
 			  )`
 }
 
@@ -1671,7 +1705,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
-	schemas, err := collectUserSchemas(ctx, tx)
+	schemas, err := collectCleanupSchemas(ctx, tx, w.caps)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
@@ -1768,15 +1802,61 @@ func verifyCompletedPostgresDatabaseCleanup(
 	return nil
 }
 
+// collectUserSchemas returns every schema outside the server's own, including
+// one an extension owns. The check that a cleanup finished reads it, because
+// an extension's schema still standing afterwards is a leftover like any
+// other.
 func collectUserSchemas(ctx context.Context, tx *sql.Tx) ([]string, error) {
-	rows, err := tx.QueryContext(ctx, `
+	return queryUserSchemas(ctx, tx, userSchemasQuery)
+}
+
+// collectCleanupSchemas returns the schemas a realm cleanup empties and drops
+// one object at a time: the user schemas, less those an extension owns.
+//
+// An extension's schema is the extension's. The cleanup drops the extension,
+// and DROP EXTENSION takes its schemas and everything in them. Queued
+// separately, a statement that names the schema itself runs after the schema
+// is gone and fails on it, which IF EXISTS cannot cover: the revoke of a
+// default grant in the schema is one. Leaving the schema out is also how the
+// reader and the clean gate see it
+// ([systemschema.PostgresDescribedSchemasPredicate]).
+//
+// The filter reads pg_depend and is gated on [capability.CatalogDependencies],
+// like the other extension filters of this cleanup.
+func collectCleanupSchemas(ctx context.Context, tx *sql.Tx, caps capability.Capabilities) ([]string, error) {
+	if !caps.Has(capability.CatalogDependencies) {
+		return queryUserSchemas(ctx, tx, userSchemasQuery)
+	}
+	return queryUserSchemas(ctx, tx, userSchemasWithoutExtensionSchemasQuery)
+}
+
+const userSchemasQuery = `
 		SELECT n.nspname
 		FROM pg_namespace n
 		WHERE n.nspname <> 'information_schema'
 		  AND n.nspname <> 'crdb_internal'
 		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 		ORDER BY n.nspname
-	`)
+	`
+
+const userSchemasWithoutExtensionSchemasQuery = `
+		SELECT n.nspname
+		FROM pg_namespace n
+		WHERE n.nspname <> 'information_schema'
+		  AND n.nspname <> 'crdb_internal'
+		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM pg_depend d
+			WHERE d.classid = 'pg_namespace'::regclass
+			  AND d.objid = n.oid
+			  AND d.deptype = 'e'
+		  )
+		ORDER BY n.nspname
+	`
+
+func queryUserSchemas(ctx context.Context, tx *sql.Tx, query string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query PostgreSQL user schemas: %w", err)
 	}
