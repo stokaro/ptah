@@ -64,7 +64,12 @@ ptah migrations validate --dir ./migrations --dir-format atlas
 ```
 
 Atlas-format directories use `atlas.sum` as their integrity file and can be
-tracked with Atlas revision-table metadata (`--revision-format atlas`). The
+tracked with Atlas revision-table metadata (`--revision-format atlas`). On
+PostgreSQL, through a URL that sets no `search_path`, that table lives in the
+`atlas_schema_revisions` schema, where Atlas reads it, unless
+`--migrations-schema` names another. A table of that name in the connection's
+schema is then refused rather than read as an empty history, because reading
+it as empty would apply the whole directory again. The
 Atlas-compatible command surface — the `ptah-compat` drop-in binary — operates
 on the same directories through its `migrate ...` commands; see the
 [Atlas compatibility overview](../../atlas/overview/).

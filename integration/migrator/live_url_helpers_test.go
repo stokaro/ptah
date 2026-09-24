@@ -25,7 +25,24 @@ import (
 func postgresTestURL(t *testing.T) string {
 	t.Helper()
 
-	return dbtarget.URL(t, dbtarget.PostgreSQL)
+	return pinPublicSchema(t, dbtarget.URL(t, dbtarget.PostgreSQL))
+}
+
+// pinPublicSchema adds search_path=public to a PostgreSQL-family URL. The tests
+// in this package write and read the Atlas revision table unqualified, in
+// public. Through a URL that pins no schema the migrator keeps that table in
+// the atlas_schema_revisions schema instead, as Atlas does, and
+// atlas_placement_live_test.go is the test of that placement. A test that
+// needs another search_path sets it on the returned URL.
+func pinPublicSchema(t *testing.T, dbURL string) string {
+	t.Helper()
+
+	parsed, err := url.Parse(dbURL)
+	qt.New(t).Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", "public")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // mySQLFamilyTestURL resolves one MySQL-family engine and keeps the dialect

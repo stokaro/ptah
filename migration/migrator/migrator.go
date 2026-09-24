@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
 )
@@ -208,6 +209,10 @@ type Migrator struct {
 	defaultTimeouts      migrationfile.Timeouts
 	migrationsTable      string
 	migrationsSchema     string
+	// atlasPlacedSchema reports that migrationsSchema holds Atlas's placement
+	// for its revision table rather than a schema the caller named. See
+	// placeAtlasRevisionTable.
+	atlasPlacedSchema    bool
 	migrationsEngine     string
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
@@ -853,16 +858,21 @@ func revisionEngineClauseFor(dialect, engine string) string {
 }
 
 // WithMigrationsTable returns a copy of the migrator that records applied
-// migrations in the named schema and table. An empty schema puts the table in
-// the connection's default schema, and an empty table name falls back to the
-// revision-table format's default name.
+// migrations in the named schema and table. An empty table name falls back to
+// the revision-table format's default name. An empty schema puts the table in
+// the connection's default schema, with one exception: Atlas's own table, the
+// Atlas layout under its default name, goes where Atlas keeps it, which on the
+// PostgreSQL family through a URL that pins no search_path is the
+// atlas_schema_revisions schema.
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp := *m
 	tmp.migrationsSchema = strings.TrimSpace(schema)
+	tmp.atlasPlacedSchema = false
 	tmp.migrationsTable = strings.TrimSpace(table)
 	if tmp.migrationsTable == "" {
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
+	tmp.placeAtlasRevisionTable()
 	tmp.initialized = false
 	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
@@ -872,7 +882,8 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 
 // WithRevisionTableFormat returns a copy of the migrator that uses the given
 // database table layout for migration revisions; a default table name follows
-// the format to its own default. Both layouts retain Ptah's dirty-state
+// the format to its own default, and so does a default schema (see
+// [Migrator.WithMigrationsTable]). Both layouts retain Ptah's dirty-state
 // protection; the Atlas layout encodes rollback direction in its existing
 // operator_version column.
 func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
@@ -881,11 +892,44 @@ func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator
 	if tmp.migrationsTable == "" || tmp.migrationsTable == defaultPtahMigrationsTable {
 		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
+	tmp.placeAtlasRevisionTable()
 	tmp.initialized = false
 	tmp.initializedDryRun = false
 	tmp.metadataAvailable = false
 	tmp.legacyRevisionTable = false
 	return &tmp
+}
+
+// placeAtlasRevisionTable puts Atlas's own revision table where Atlas keeps it
+// when the caller named no schema, and takes the placement back when the
+// format or the table stops being Atlas's. The rule is
+// [revisiontable.Schema], the one the Atlas-compatible verbs apply to their
+// own flag: the atlas_schema_revisions schema on the PostgreSQL family through
+// a URL that pins no search_path, and the connection's schema otherwise.
+//
+// Applying it here gives every native verb and every embedder the answer the
+// Atlas-compatible verbs give. Without it a history written through the native
+// binary sits in the connection's schema, where Atlas does not look, and each
+// tool reports the other's database as never migrated.
+//
+// A table under another name is left in the connection's schema. Atlas reads
+// only its own table name, so moving one it cannot read gains no reader and
+// surprises the caller who named it.
+func (m *Migrator) placeAtlasRevisionTable() {
+	if m.atlasPlacedSchema {
+		m.migrationsSchema = ""
+		m.atlasPlacedSchema = false
+	}
+	if !m.revisionTableFormat.isAtlas() || m.migrationsSchema != "" ||
+		m.migrationsTable != defaultAtlasRevisionsTable || m.conn == nil {
+		return
+	}
+	placed := revisiontable.Schema("", m.conn.Info().URL)
+	if placed == "" {
+		return
+	}
+	m.migrationsSchema = placed
+	m.atlasPlacedSchema = true
 }
 
 func (m *Migrator) defaultMigrationsTable() string {
@@ -1170,6 +1214,12 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// squatter's SQL during a SELECT. A refusal that only covered writes would
 	// describe a protection the read path does not have.
 	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
+		return err
+	}
+
+	// Before the dry run as well: a status or a plan that read the empty
+	// placed table would report a migrated database as never migrated.
+	if err := m.refuseStrandedAtlasHistory(ctx); err != nil {
 		return err
 	}
 

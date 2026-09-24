@@ -905,8 +905,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--revision-format` ptah|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows.",
-    "evidence": "/tmp/ptah migrations up --help (--revision-format default ptah, --migrations-table, --migrations-schema); conformance gaps-migrate-runtime.md `sqlite/project-config-apply-oracle` and `postgres/custom-revisions-schema`"
+    "note": "`--revision-format` ptah|atlas plus `--migrations-table` and `--migrations-schema`. Both binaries place the Atlas layout as Atlas does: `atlas_schema_revisions` on PostgreSQL without `search_path`.",
+    "evidence": "/tmp/ptah migrations up --help (--revision-format default ptah, --migrations-table, --migrations-schema); conformance gaps-migrate-runtime.md `sqlite/project-config-apply-oracle` and `postgres/custom-revisions-schema`. The native placement follows revisiontable.Schema, measured on PostgreSQL 18 against the pinned v1.3.0 (stokaro/ptah#3534): with --revision-format atlas and no --migrations-schema, native up writes atlas_schema_revisions.atlas_schema_revisions and Atlas reads that history as applied, and native up and status read a history Atlas wrote as applied; a table of that name left in the connection schema is refused rather than read as an empty history."
   },
   {
     "area": "Safety gates",

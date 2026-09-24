@@ -244,7 +244,7 @@ seven of them as open capabilities regardless.
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❌ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
 | Repair dirty or partial revision state | ✅ | ❌ | ❌ | Under the migration advisory lock, `--resume-from` verifies the committed prefix, then finishes up before marking applied or down before removing the revision. Atlas CE has no repair verb. |
 | Report of an ignored `--dir` URL query key | ✅ | ❌ | ❌ | Only `?format=` selects a layout. On the eight verbs accepting a `--dir` query, other keys are ignored, named on stderr, exit 0 unchanged; `PTAH_STRICT_DIR_QUERY=1` refuses. Six verbs take no query. |
-| Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
+| Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`. Both binaries place the Atlas layout as Atlas does: `atlas_schema_revisions` on PostgreSQL without `search_path`. |
 | Roll back applied migrations (down) | ✅ | ❌ | ✅ | Ptah validates all down bodies before changing state, dry-run reports separate preflight rejection from attempted rollback, and `--plan`, `--to-tag` and `--skip-checks` are implemented. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
