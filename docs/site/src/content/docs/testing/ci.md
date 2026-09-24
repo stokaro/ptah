@@ -311,11 +311,12 @@ Azure DevOps, CircleCI and Bitbucket Pipelines have no findings format of their
 own here, so the report is published as a plain build artifact. Each takes two
 runs: one that writes the file and one that decides the outcome.
 
-One run cannot do both. Above the threshold the report goes to stderr and the
-command exits `1`, so a step that redirects stdout and relies on the exit code
-publishes an empty artifact on exactly the run it exists to report. `--fail-on
-none` puts the report on stdout and exits `0`; a second run at the real
-threshold is what fails the step.
+The report is on stdout whatever the outcome, so one run can write the file
+and fail the step. The two runs below keep publishing apart from the verdict:
+the first, with `--fail-on none`, writes the report and exits `0`, and the
+second, at the real threshold, is the one that fails the job. On a platform that
+skips later steps once one fails, that order is what keeps the publishing step
+running.
 
 ### Azure DevOps
 
@@ -404,11 +405,10 @@ with stable rule identifiers:
 ```
 
 The upload step needs the `security-events: write` permission. Use
-`--fail-on none` when code scanning owns the failure policy — above the
-threshold the report goes to stderr and the command exits `1`, so a plain
-stdout redirect would capture an empty file. Prefer
-`--format github-actions` when inline annotations are wanted without the
-code-scanning permission model.
+`--fail-on none` when code scanning owns the failure policy: the report is on
+stdout either way, and exit `0` lets the upload step run when there are
+findings. Prefer `--format github-actions` when inline annotations are wanted
+without the code-scanning permission model.
 
 ## Report findings on a GitLab merge request
 
@@ -432,9 +432,10 @@ Ptah's three severities map onto GitLab's scale as `error` to `major`,
 line, and GitLab requires one, so those anchor to the first line of the file
 they name.
 
-Use `--fail-on none` when the report owns the outcome, for the same reason as
-the SARIF step above: above the threshold the findings go to stderr and the
-command exits `1`, so a plain stdout redirect would capture an empty file.
+Use `--fail-on none` when the merge request widget owns the outcome. Without
+it the same run also fails the job on findings at the threshold, and the report
+still reaches the merge request, because GitLab uploads an `artifacts:reports`
+file whatever the job's result.
 
 A run that fails before it can lint is reported as one `blocker` entry rather
 than as an empty report, because an empty Code Quality artifact is

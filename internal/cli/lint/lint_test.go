@@ -189,7 +189,7 @@ func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
 func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	c := qt.New(t)
 
-	_, stderr, err := execute("--dir", "testdata/bad", "--format", "json")
+	stdout, _, err := execute("--dir", "testdata/bad", "--format", "json")
 
 	// The fixture contains DS errors, so the default --fail-on=error exits 1.
 	c.Assert(err, qt.IsNotNil)
@@ -199,7 +199,7 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 		Failed   bool                    `json:"failed"`
 		Findings []migrationlint.Finding `json:"findings"`
 	}
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
 
 	rules := make(map[string]int)
@@ -215,13 +215,13 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 func TestRunLint_GitHubActionsFormatAnnotatesFileAndLine(t *testing.T) {
 	c := qt.New(t)
 
-	_, stderr, err := execute("--dir", "testdata/bad", "--format", "github-actions")
+	stdout, _, err := execute("--dir", "testdata/bad", "--format", "github-actions")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stderr, qt.Contains, "::error file=testdata/bad/0000000002_bad_stuff.up.sql,line=2::DS101:")
-	c.Assert(stderr, qt.Contains, "::warning file=testdata/bad/0000000002_bad_stuff.up.sql,line=10::PG101:")
-	c.Assert(stderr, qt.Contains, "::warning file=testdata/bad/misnamed.sql::MF103:")
+	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/0000000002_bad_stuff.up.sql,line=2::DS101:")
+	c.Assert(stdout, qt.Contains, "::warning file=testdata/bad/0000000002_bad_stuff.up.sql,line=10::PG101:")
+	c.Assert(stdout, qt.Contains, "::warning file=testdata/bad/misnamed.sql::MF103:")
 }
 
 func TestRunLint_SARIFFormat(t *testing.T) {
@@ -282,7 +282,7 @@ func TestRunLint_SARIFCleanOutputValidatesForUpload(t *testing.T) {
 func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 	c := qt.New(t)
 
-	_, stderr, err := execute("--dir", "testdata/with-config", "--format", "json")
+	stdout, _, err := execute("--dir", "testdata/with-config", "--format", "json")
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("DS errors remain, so the run still fails"))
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -291,7 +291,7 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 		Dialect  string                  `json:"dialect"`
 		Findings []migrationlint.Finding `json:"findings"`
 	}
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
 
 	for _, f := range report.Findings {
@@ -549,12 +549,12 @@ func TestRunLint_GitBaseHonorsExplicitAtlasDirFormat(t *testing.T) {
 		c.Assert(os.Chdir(originalWD), qt.IsNil)
 	}()
 
-	_, stderr, err := execute("--dir", "migrations", "--dir-format", "atlas", "--git-base", "master")
+	stdout, _, err := execute("--dir", "migrations", "--dir-format", "atlas", "--git-base", "master")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(stderr, qt.Contains, "DS101")
-	c.Assert(stderr, qt.Contains, "migrations/2_drop_users.sql")
-	c.Assert(stderr, qt.Not(qt.Contains), "migrations/1_base.sql")
+	c.Assert(stdout, qt.Contains, "DS101")
+	c.Assert(stdout, qt.Contains, "migrations/2_drop_users.sql")
+	c.Assert(stdout, qt.Not(qt.Contains), "migrations/1_base.sql")
 }
 
 func TestRunLint_GitBaseRejectsOptionShapedRef(t *testing.T) {
@@ -628,12 +628,12 @@ func TestRunLint_LatestHonorsExplicitAtlasDirFormat(t *testing.T) {
 	writeLintTestFile(c, dir, "1_init.sql", "CREATE TABLE users (id INT);\n")
 	writeLintTestFile(c, dir, "2_drop_users.sql", "DROP TABLE users;\n")
 
-	_, stderr, err := execute("--dir", dir, "--dir-format", "atlas", "--latest", "1")
+	stdout, _, err := execute("--dir", dir, "--dir-format", "atlas", "--latest", "1")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(stderr, qt.Contains, "DS101")
-	c.Assert(stderr, qt.Contains, "2_drop_users.sql")
-	c.Assert(stderr, qt.Not(qt.Contains), "1_init.sql")
+	c.Assert(stdout, qt.Contains, "DS101")
+	c.Assert(stdout, qt.Contains, "2_drop_users.sql")
+	c.Assert(stdout, qt.Not(qt.Contains), "1_init.sql")
 }
 
 func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
@@ -653,7 +653,7 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 		c.Assert(os.Chdir(originalWD), qt.IsNil)
 	}()
 
-	_, stderr, err := execute("--dir", badDir, "--format", "json")
+	stdout, _, err := execute("--dir", badDir, "--format", "json")
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("DS errors remain, so the run still fails"))
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -662,7 +662,7 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 		Dialect  string                  `json:"dialect"`
 		Findings []migrationlint.Finding `json:"findings"`
 	}
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
 	for _, f := range report.Findings {
 		c.Assert(f.Rule, qt.Not(qt.Contains), "MF",
@@ -1157,7 +1157,7 @@ func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
 
 	// The config sets dialect: postgres; an explicit --dialect "" must win
 	// and re-enable the MY family.
-	_, stderr, err := execute("--dir", "testdata/with-config", "--format", "json", "--dialect", "")
+	stdout, _, err := execute("--dir", "testdata/with-config", "--format", "json", "--dialect", "")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -1166,7 +1166,7 @@ func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
 		Dialect  string                  `json:"dialect"`
 		Findings []migrationlint.Finding `json:"findings"`
 	}
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "")
 
 	rules := make(map[string]int)

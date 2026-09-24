@@ -4822,8 +4822,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7596,
-      "sourceBytes": 51166
+      "visibleWords": 7555,
+      "sourceBytes": 50927
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -6455,8 +6455,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 1977,
-      "sourceBytes": 17943
+      "visibleWords": 1981,
+      "sourceBytes": 18005
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
@@ -6914,8 +6914,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3986,
-      "sourceBytes": 28504
+      "visibleWords": 3985,
+      "sourceBytes": 28499
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",

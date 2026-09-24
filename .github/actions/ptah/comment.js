@@ -147,11 +147,13 @@ function readJSON(text) {
   }
 }
 
+// formatSafety names the highest severity. The report's destructive flag is
+// true exactly when that severity is destructive, so the name already says it.
 function formatSafety(report) {
   if (!report) {
     return `unknown (destructive output: ${process.env.PTAH_DESTRUCTIVE || "unknown"})`;
   }
-  return `${report.highest || "unknown"}${report.destructive ? ", destructive" : ""}`;
+  return report.highest || "unknown";
 }
 
 function lintSummary(report) {

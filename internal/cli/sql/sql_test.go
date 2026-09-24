@@ -91,12 +91,12 @@ func TestSQLLint_JSONOutputForUnsupportedSQLExitsOne(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "")
 	var report struct {
 		Failed   bool              `json:"failed"`
 		Findings []sqllint.Finding `json:"findings"`
 	}
-	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, sqllint.RuleUnsupportedStatement)
@@ -122,12 +122,12 @@ func TestSQLLint_CapabilityAwareRuleUsesVersion(t *testing.T) {
 	c := qt.New(t)
 	path := writeSQLFile(c, t.TempDir(), "index.sql", "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);")
 
-	_, stderr, err := execute("lint", "--dialect", "cockroachdb", "--server-version", "CockroachDB CCL v23.1.0", path)
+	stdout, _, err := execute("lint", "--dialect", "cockroachdb", "--server-version", "CockroachDB CCL v23.1.0", path)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stderr, qt.Contains, "error CAP001")
-	c.Assert(stderr, qt.Contains, "create_index_concurrently")
+	c.Assert(stdout, qt.Contains, "error CAP001")
+	c.Assert(stdout, qt.Contains, "create_index_concurrently")
 }
 
 func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
@@ -332,12 +332,12 @@ func TestSQLLint_RefusesABannerFromAnotherServer(t *testing.T) {
 func TestSQLLint_AcceptsAMatchingBanner(t *testing.T) {
 	c := qt.New(t)
 
-	_, stderr, err := executeWithStdin(concurrentIndexSQL,
+	stdout, stderr, err := executeWithStdin(concurrentIndexSQL,
 		"lint", "--dialect", "mariadb", "--server-version", "10.11.6-MariaDB", "--stdin")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version")
-	c.Assert(stderr, qt.Contains, "CAP001")
+	c.Assert(stdout, qt.Contains, "CAP001")
 }
 
 const concurrentIndexSQL = "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"
