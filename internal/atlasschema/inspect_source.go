@@ -497,20 +497,24 @@ func withMaterializedDevSchema(
 	}()
 
 	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
+		baseline, err := devclean.CaptureBaseline(ctx, materializedConn)
+		if err != nil {
+			return fmt.Errorf("reset dev database: %w", err)
+		}
 		defer func() {
 			cleanupCtx, cancel := context.WithTimeout(
 				context.WithoutCancel(ctx),
 				inspectDevCleanupTimeout,
 			)
 			defer cancel()
-			if cleanupErr := devclean.DatabaseRealm(cleanupCtx, materializedConn); cleanupErr != nil {
+			if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, materializedConn, baseline); cleanupErr != nil {
 				resultErr = errors.Join(
 					resultErr,
 					fmt.Errorf("clean dev database after schema inspection: %w", cleanupErr),
 				)
 			}
 		}()
-		if err := devclean.DatabaseRealm(ctx, materializedConn); err != nil {
+		if err := devclean.DatabaseRealmKeeping(ctx, materializedConn, baseline); err != nil {
 			return fmt.Errorf("reset dev database: %w", err)
 		}
 		if err := materializeOnDev(ctx, materializedConn, desired, diag); err != nil {

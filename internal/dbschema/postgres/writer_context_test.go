@@ -235,7 +235,10 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	})
 	c.Assert(catalogArgs[7], qt.HasLen, 0)
 	c.Assert(catalogArgs[8], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
-	c.Assert(catalogArgs[9], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "public"}})
+	c.Assert(catalogArgs[9], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "public"},
+		{Ordinal: 2, Value: "plpgsql"},
+	})
 	c.Assert(catalogArgs[10], qt.HasLen, 0)
 	c.Assert(execQueries, qt.DeepEquals, []string{
 		`SAVEPOINT ptah_cleanup_object`,
@@ -267,15 +270,15 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
 
-// TestWriterDropDatabaseRealm_LeavesExtensionMembersToTheExtension names the
-// two queries a realm cleanup narrows, and the one it must not. The cleanup
-// drops every user extension, and DROP EXTENSION takes the extension's schemas
-// and member tables with it, so the plan leaves both out: statements queued for
-// them run after they are gone and fail (stokaro/ptah#3540). The check that the
-// cleanup finished reads every schema, because an extension schema standing
-// afterwards is a leftover. TestWriterDropAllTables_CommitsAllCatalogObjects
-// holds the schema-scoped cleanup to no filter at all: it drops no extension.
-func TestWriterDropDatabaseRealm_LeavesExtensionMembersToTheExtension(t *testing.T) {
+// TestWriterDropDatabaseRealm_LeavesExtensionOwnedObjectsToTheExtension names
+// the queries a realm cleanup narrows to what an extension does not own. An
+// extension's drop takes its schemas and members with it, so statements queued
+// for them run after they are gone and fail (stokaro/ptah#3540); a kept
+// extension refuses them (stokaro/ptah#3542). The check that the cleanup
+// finished leaves them out for the second reason and reads the extensions
+// themselves by name. TestWriterDropAllTables_CommitsAllCatalogObjects holds
+// the schema-scoped cleanup to no filter at all: it drops no extension.
+func TestWriterDropDatabaseRealm_LeavesExtensionOwnedObjectsToTheExtension(t *testing.T) {
 	c := qt.New(t)
 	var catalogQueries []string
 	queryHandler := newPostgresRealmMetadataQuery()
@@ -290,12 +293,67 @@ func TestWriterDropDatabaseRealm_LeavesExtensionMembersToTheExtension(t *testing
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(catalogQueries, qt.HasLen, 11)
-	planned, objects, verified := catalogQueries[5], catalogQueries[6], catalogQueries[7]
-	c.Assert(planned, qt.Contains, "d.classid = 'pg_namespace'::regclass")
-	c.Assert(planned, qt.Contains, "d.deptype = 'e'")
-	c.Assert(objects, qt.Contains, "d.classid = 'pg_class'::regclass")
-	c.Assert(verified, qt.Contains, "n.nspname NOT LIKE 'pg\\_%'")
-	c.Assert(verified, qt.Not(qt.Contains), "pg_depend")
+	planned, objects, verified, residual := catalogQueries[5], catalogQueries[6], catalogQueries[7], catalogQueries[9]
+	for _, schemas := range []string{planned, verified} {
+		c.Assert(schemas, qt.Contains, "d.classid = 'pg_namespace'::regclass")
+		c.Assert(schemas, qt.Contains, "d.deptype = 'e'")
+	}
+	for _, query := range []string{objects, residual} {
+		c.Assert(query, qt.Contains, "WITH RECURSIVE")
+		c.Assert(query, qt.Contains, "extension_owned(classid, objid) AS (")
+		c.Assert(query, qt.Contains, "d.deptype IN ('i', 'a')")
+	}
+	for _, catalog := range []string{"pg_constraint", "pg_class", "pg_proc", "pg_type", "pg_collation"} {
+		c.Assert(objects, qt.Contains, "owned.classid = '"+catalog+"'::regclass")
+	}
+	c.Assert(residual, qt.Contains, "owned.classid = residual.classid")
+}
+
+// TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions pins where the
+// kept names go: to the lookup of the schemas they live in, past the extension
+// drop, past the check that no user extension survived, and past the residual
+// extension rows. The server's own plpgsql joins them, sorted, everywhere but
+// the lookup.
+func TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions(t *testing.T) {
+	c := qt.New(t)
+	var catalogQueries []string
+	var catalogArgs [][]driver.NamedValue
+	queryHandler := newPostgresRealmMetadataQuery()
+	db := dbtest.OpenWithExec(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		catalogQueries = append(catalogQueries, query)
+		catalogArgs = append(catalogArgs, args)
+		return queryHandler.query(query, args)
+	}, func(string, []driver.NamedValue) (driver.Result, error) {
+		return driver.RowsAffected(0), nil
+	})
+
+	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealmKeeping(t.Context(), []string{"vector", "hstore"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(catalogQueries, qt.HasLen, 12)
+	c.Assert(catalogQueries[6], qt.Contains, "JOIN pg_namespace n ON n.oid = e.extnamespace")
+	c.Assert(catalogArgs[6], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "vector"},
+		{Ordinal: 2, Value: "hstore"},
+	})
+	c.Assert(catalogArgs[7], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "audit"},
+		{Ordinal: 2, Value: "public"},
+		{Ordinal: 3, Value: "hstore"},
+		{Ordinal: 4, Value: "plpgsql"},
+		{Ordinal: 5, Value: "vector"},
+	})
+	c.Assert(catalogArgs[9], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "hstore"},
+		{Ordinal: 2, Value: "plpgsql"},
+		{Ordinal: 3, Value: "vector"},
+	})
+	c.Assert(catalogArgs[10], qt.DeepEquals, []driver.NamedValue{
+		{Ordinal: 1, Value: "public"},
+		{Ordinal: 2, Value: "hstore"},
+		{Ordinal: 3, Value: "plpgsql"},
+		{Ordinal: 4, Value: "vector"},
+	})
 }
 
 func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {

@@ -703,8 +703,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1462,
-      "sourceBytes": 11502
+      "visibleWords": 1512,
+      "sourceBytes": 11783
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",

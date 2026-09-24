@@ -332,11 +332,12 @@ type postgresCleanupScope struct {
 	schemas                []string
 	extensionNamespaceJoin string
 	systemExtensions       []string
-	// dropsExtensions reports that the cleanup drops every user extension,
-	// which is what lets it leave an extension's members to the extension. A
-	// schema-scoped cleanup refuses a schema that owns an extension instead,
-	// so there nothing is left to a drop that never runs.
-	dropsExtensions bool
+	// realm reports that the cleanup owns the database realm and drops every
+	// extension it does not keep. That is what lets it leave each object an
+	// extension owns to the extension: removed by the extension's drop, or
+	// kept with it. A schema-scoped cleanup refuses a schema that owns an
+	// extension instead, so there nothing is left to a drop that never runs.
+	realm bool
 }
 
 func inspectCleanupCapabilities(
@@ -431,7 +432,7 @@ func postgresDatabaseCleanupScope(
 		schemas:                schemas,
 		extensionNamespaceJoin: "JOIN pg_namespace n ON n.oid = e.extnamespace",
 		systemExtensions:       systemExtensions,
-		dropsExtensions:        true,
+		realm:                  true,
 	}
 }
 
@@ -454,6 +455,55 @@ type postgresDatabaseCleanupPlan struct {
 	rootMetadata postgresSchemaMetadata
 	schemas      []string
 	objects      []postgresCleanupObject
+	// keptExtensions are the extensions the cleanup leaves installed: the
+	// server's own and the ones the caller asked to keep.
+	keptExtensions []string
+	// inPlaceSchemas are the schemas a kept extension is installed in. The
+	// cleanup empties them where they stand instead of dropping and
+	// recreating them: DROP SCHEMA is refused while the extension depends on
+	// the schema.
+	inPlaceSchemas []string
+}
+
+// keptExtensionSchemas returns the schemas the named extensions are installed
+// in, less the server's own, sorted. The cleanup empties those in place.
+func keptExtensionSchemas(ctx context.Context, tx *sql.Tx, keep []string) ([]string, error) {
+	if len(keep) == 0 {
+		return nil, nil
+	}
+	// #nosec G202 -- Only placeholders are built here; the names are bound.
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT n.nspname
+		FROM pg_extension e
+		JOIN pg_namespace n ON n.oid = e.extnamespace
+		WHERE e.extname IN (`+postgresPlaceholders(len(keep))+`)
+		ORDER BY n.nspname`, stringsToAny(keep)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the schemas of the kept extensions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var schemas []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, fmt.Errorf("failed to scan the schema of a kept extension: %w", err)
+		}
+		if !isPostgresSystemSchema(schema) {
+			schemas = append(schemas, schema)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read the schemas of the kept extensions: %w", err)
+	}
+	return schemas, nil
+}
+
+// keptCleanupExtensions joins the server's own extensions and the caller's,
+// sorted and without repeats, which is the set a realm cleanup leaves.
+func keptCleanupExtensions(system, keep []string) []string {
+	kept := append(slices.Clone(system), keep...)
+	slices.Sort(kept)
+	return slices.Compact(kept)
 }
 
 func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx cleanupConn) error {
@@ -504,7 +554,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			SELECT n.oid, n.nspname
 			FROM pg_namespace n
 			WHERE {{SCHEMA_PREDICATE}}
-		),
+		),{{EXTENSION_OWNED_CTE}}
 		managed_views AS (
 			SELECT c.oid
 			FROM pg_class c
@@ -556,7 +606,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM pg_constraint con
 			JOIN pg_class c ON c.oid = con.conrelid
 			JOIN managed_namespaces n ON n.oid = c.relnamespace
-			WHERE con.contype = 'f'{{EXTENSION_MEMBER_CONSTRAINT_FILTER}}
+			WHERE con.contype = 'f'{{EXTENSION_OWNED_CONSTRAINT_FILTER}}
 
 			UNION ALL
 
@@ -584,7 +634,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM pg_class c
 			JOIN managed_namespaces n ON n.oid = c.relnamespace
 			LEFT JOIN view_order ON view_order.oid = c.oid
-			WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S', 'i')
+			WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S', 'i'){{EXTENSION_OWNED_RELATION_FILTER}}
 
 			UNION ALL
 
@@ -602,7 +652,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				{{DROP_EXPR_4}}
 			FROM pg_proc p
 			JOIN managed_namespaces n ON n.oid = p.pronamespace
-			WHERE (p.prokind = 'f' OR p.prokind = 'p' OR p.prokind = 'a' OR p.prokind = 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}{{BRANCH_ROUTINE_END}}
+			WHERE (p.prokind = 'f' OR p.prokind = 'p' OR p.prokind = 'a' OR p.prokind = 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}{{EXTENSION_OWNED_PROC_FILTER}}{{BRANCH_ROUTINE_END}}
 
 			UNION ALL
 
@@ -620,7 +670,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			WHERE (
 				t.typtype IN ('e', 'd', 'r')
 				OR (t.typtype = 'c' AND c.relkind = 'c')
-			  ){{BRANCH_USERTYPE_END}}
+			  ){{EXTENSION_OWNED_TYPE_FILTER}}{{BRANCH_USERTYPE_END}}
 
 			UNION ALL
 
@@ -633,7 +683,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				NULL::text,
 				{{DROP_EXPR_6}}
 			FROM pg_collation c
-			JOIN managed_namespaces n ON n.oid = c.collnamespace
+			JOIN managed_namespaces n ON n.oid = c.collnamespace{{EXTENSION_OWNED_COLLATION_FILTER}}
 
 {{DEFAULT_PRIVILEGE_OBJECTS}}
 		)
@@ -648,8 +698,11 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	query = applyCleanupBranches(query, w.caps)
 	query = strings.ReplaceAll(
 		query, "{{EXTENSION_OWNED_ROUTINE_FILTER}}", extensionOwnedRoutineFilter(w.caps))
-	query = strings.ReplaceAll(
-		query, "{{EXTENSION_MEMBER_CONSTRAINT_FILTER}}", extensionMemberConstraintFilter(scope, w.caps))
+	if scope.realm && extensionOwnershipReadable(w.caps) {
+		query = withExtensionOwnedFilters(query)
+	} else {
+		query = withoutExtensionOwnedFilters(query)
+	}
 	query = strings.ReplaceAll(
 		query, "{{DEFAULT_PRIVILEGE_OBJECTS}}", defaultPrivilegeObjects(w.caps))
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -771,29 +824,88 @@ func extensionOwnedRoutineFilter(caps capability.Capabilities) string {
 			  )`
 }
 
-// extensionMemberConstraintFilter returns the clause that keeps the foreign
-// keys of an extension's member tables out of a cleanup that drops the
-// extension, or an empty string where the cleanup does not drop it or the
-// catalog cannot answer the question.
+// extensionOwnedCTE names every object an extension owns: its members, and
+// what depends on a member internally or automatically, such as a member
+// table's indexes, constraints, row type and TOAST table. It is the set a
+// realm cleanup leaves to the extension. For an extension it drops, the
+// extension's drop removes the set, and statements queued for it separately
+// would run after it was gone: a dev database holding timescaledb failed on
+// the foreign keys of _timescaledb_catalog (stokaro/ptah#3540). For an
+// extension it keeps, dropping any of it is refused while the extension
+// stands.
 //
-// The extension drop removes its member tables and their constraints with
-// them. A constraint drop is an ALTER TABLE that names the table, and IF
-// EXISTS covers only the constraint, so once the extension is gone the queued
-// statement fails on the table: `relation "public.member_child" does not
-// exist`. A table drop names the table itself and survives the same order.
-// This is what failed on a dev database holding timescaledb, whose catalog
-// tables carry foreign keys (stokaro/ptah#3540).
-func extensionMemberConstraintFilter(scope postgresCleanupScope, caps capability.Capabilities) string {
-	if !scope.dropsExtensions || !caps.Has(capability.CatalogDependencies) {
+// It starts with a newline and ends with a comma so it slots between the CTEs
+// around it.
+const extensionOwnedCTE = `
+		extension_owned(classid, objid) AS (
+			SELECT d.classid, d.objid
+			FROM pg_depend d
+			WHERE d.deptype = 'e'
+
+			UNION
+
+			SELECT d.classid, d.objid
+			FROM pg_depend d
+			JOIN extension_owned owned
+			  ON owned.classid = d.refclassid
+			 AND owned.objid = d.refobjid
+			WHERE d.deptype IN ('i', 'a')
+		),`
+
+// extensionOwnershipReadable reports whether the catalog can answer what an
+// extension owns: the closure reads pg_depend and needs a recursive query.
+// These are the two keys the recursive view ordering already reads, so a server
+// that orders views flat reads no ownership either.
+func extensionOwnershipReadable(caps capability.Capabilities) bool {
+	return caps.Has(capability.CatalogRecursiveCTE) && caps.Has(capability.CatalogDependencies)
+}
+
+// recursiveKeyword returns the keyword a query needs when it carries the
+// recursive ownership CTE.
+func recursiveKeyword(ownedCTE string) string {
+	if ownedCTE == "" {
 		return ""
 	}
+	return "RECURSIVE "
+}
+
+// withoutExtensionOwnedFilters empties the cleanup query's ownership
+// placeholders, which is the query a schema-scoped cleanup, or a server that
+// cannot read ownership, runs.
+func withoutExtensionOwnedFilters(query string) string {
+	return strings.NewReplacer(
+		"{{EXTENSION_OWNED_CTE}}", "",
+		"{{EXTENSION_OWNED_CONSTRAINT_FILTER}}", "",
+		"{{EXTENSION_OWNED_RELATION_FILTER}}", "",
+		"{{EXTENSION_OWNED_PROC_FILTER}}", "",
+		"{{EXTENSION_OWNED_TYPE_FILTER}}", "",
+		"{{EXTENSION_OWNED_COLLATION_FILTER}}", "",
+	).Replace(query)
+}
+
+// withExtensionOwnedFilters fills the cleanup query's ownership placeholders:
+// the CTE, and one clause per branch that keeps what an extension owns out of
+// the plan.
+func withExtensionOwnedFilters(query string) string {
+	return strings.NewReplacer(
+		"{{EXTENSION_OWNED_CTE}}", extensionOwnedCTE,
+		"{{EXTENSION_OWNED_CONSTRAINT_FILTER}}", notExtensionOwned("AND", "pg_constraint", "con.oid"),
+		"{{EXTENSION_OWNED_RELATION_FILTER}}", notExtensionOwned("AND", "pg_class", "c.oid"),
+		"{{EXTENSION_OWNED_PROC_FILTER}}", notExtensionOwned("AND", "pg_proc", "p.oid"),
+		"{{EXTENSION_OWNED_TYPE_FILTER}}", notExtensionOwned("AND", "pg_type", "t.oid"),
+		"{{EXTENSION_OWNED_COLLATION_FILTER}}", notExtensionOwned("WHERE", "pg_collation", "c.oid"),
+	).Replace(query)
+}
+
+// notExtensionOwned returns the clause that leaves out the rows of
+// catalogTable whose oid is in the ownership closure.
+func notExtensionOwned(keyword, catalogTable, oid string) string {
 	return `
-			  AND NOT EXISTS (
+			  ` + keyword + ` NOT EXISTS (
 				SELECT 1
-				FROM pg_depend d
-				WHERE d.classid = 'pg_class'::regclass
-				  AND d.objid = c.oid
-				  AND d.deptype = 'e'
+				FROM extension_owned owned
+				WHERE owned.classid = '` + catalogTable + `'::regclass
+				  AND owned.objid = ` + oid + `
 			  )`
 }
 
@@ -1374,7 +1486,23 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
 // DropDatabaseRealm removes every user schema and recreates the configured
 // root schema. CockroachDB's immutable public schema is preserved in place,
 // but its user objects are removed and verified like every other realm object.
+// It drops every user extension; [PostgreSQLWriter.DropDatabaseRealmKeeping]
+// leaves named ones in place.
 func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
+	return w.DropDatabaseRealmKeeping(ctx, nil)
+}
+
+// DropDatabaseRealmKeeping is DropDatabaseRealm that leaves the named
+// extensions installed, together with every object they own: their schemas,
+// their member tables and routines, and what those carry, such as a member
+// table's indexes. The check that the cleanup finished accepts exactly those.
+//
+// A dev database is the caller: the extensions it held before a replay are its
+// environment rather than the replay's state. Dropped, they took with them a
+// type a migration used without creating it, and TimescaleDB, created again in
+// the same session by the replay's first migration, answered `schema
+// "_timescaledb_functions" does not exist` (stokaro/ptah#3542).
+func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensions []string) error {
 	if w.dryRun {
 		return nil
 	}
@@ -1387,7 +1515,37 @@ func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
 			w.schema,
 		)
 	}
-	return w.dropDatabaseRealm(ctx)
+	return w.dropDatabaseRealm(ctx, extensions)
+}
+
+// InstalledExtensions returns the extensions installed in the database, sorted
+// by name. It is what a caller records before a run in order to keep it with
+// [PostgreSQLWriter.DropDatabaseRealmKeeping]. A server whose catalog has no
+// pg_depend has no extension machinery to report, and returns none.
+func (w *PostgreSQLWriter) InstalledExtensions(ctx context.Context) ([]string, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	if !w.caps.Has(capability.CatalogDependencies) {
+		return nil, nil
+	}
+	rows, err := w.db.QueryContext(ctx, "SELECT extname FROM pg_extension ORDER BY extname")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list PostgreSQL extensions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan PostgreSQL extension: %w", err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list PostgreSQL extensions: %w", err)
+	}
+	return names, nil
 }
 
 func rejectProtectedPostgresDatabase(
@@ -1652,7 +1810,7 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	return nil
 }
 
-func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context) (resultErr error) {
+func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep []string) (resultErr error) {
 	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -1661,7 +1819,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context) (resultErr err
 		finishPostgresCleanupTransaction(sqlTx, &resultErr)
 	}()
 
-	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx)
+	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep)
 	if err != nil {
 		return err
 	}
@@ -1669,7 +1827,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context) (resultErr err
 	if err != nil {
 		return err
 	}
-	if err := verifyCompletedPostgresDatabaseCleanup(ctx, sqlTx, preservedSchemas, plan.capabilities); err != nil {
+	if err := verifyCompletedPostgresDatabaseCleanup(ctx, sqlTx, preservedSchemas, plan, w.caps); err != nil {
 		return err
 	}
 	if err := sqlTx.Commit(); err != nil {
@@ -1688,6 +1846,7 @@ func finishPostgresCleanupTransaction(tx *sql.Tx, resultErr *error) {
 func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	ctx context.Context,
 	tx *sql.Tx,
+	keep []string,
 ) (postgresDatabaseCleanupPlan, error) {
 	capabilities, err := inspectCleanupCapabilities(ctx, tx)
 	if err != nil {
@@ -1709,10 +1868,15 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
+	keptExtensions := keptCleanupExtensions(capabilities.systemExtensions, keep)
+	inPlaceSchemas, err := keptExtensionSchemas(ctx, tx, keep)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
 	objects, err := w.collectAllObjects(
 		ctx,
 		tx,
-		postgresDatabaseCleanupScope(schemas, capabilities.systemExtensions),
+		postgresDatabaseCleanupScope(schemas, keptExtensions),
 	)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
@@ -1723,10 +1887,12 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		}
 	}
 	return postgresDatabaseCleanupPlan{
-		capabilities: capabilities,
-		rootMetadata: rootMetadata,
-		schemas:      schemas,
-		objects:      objects,
+		capabilities:   capabilities,
+		rootMetadata:   rootMetadata,
+		schemas:        schemas,
+		objects:        objects,
+		keptExtensions: keptExtensions,
+		inPlaceSchemas: inPlaceSchemas,
 	}, nil
 }
 
@@ -1747,14 +1913,18 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 
 	preservedSchemas := []string{w.schema}
 	droppableSchemas := plan.schemas
+	inPlace := slices.Clone(plan.inPlaceSchemas)
 	if plan.capabilities.preservePublicSchema {
-		preservedSchemas = appendUniqueString(preservedSchemas, "public")
-		droppableSchemas = excludeString(droppableSchemas, "public")
+		inPlace = appendUniqueString(inPlace, "public")
+	}
+	for _, schema := range inPlace {
+		preservedSchemas = appendUniqueString(preservedSchemas, schema)
+		droppableSchemas = excludeString(droppableSchemas, schema)
 	}
 	if err := dropPostgresUserSchemas(ctx, tx, droppableSchemas); err != nil {
 		return nil, err
 	}
-	if !plan.capabilities.preservePublicSchema || w.schema != "public" {
+	if !slices.Contains(inPlace, w.schema) {
 		if err := restorePostgresRootSchema(ctx, tx, w.schema, plan.rootMetadata); err != nil {
 			return nil, err
 		}
@@ -1771,7 +1941,11 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	// Emptying it is the point of a realm cleanup; removing it is not. Every
 	// PostgreSQL database is created with it, and DDL that names no schema
 	// resolves there for any caller who did not select another one.
-	if postgresCleanupDroppedPublicSchema(w.schema, plan) {
+	//
+	// Only a "public" this cleanup dropped comes back: one that did not exist
+	// was never the caller's, the root is restored above with its owner and
+	// grants, and one emptied in place was never dropped.
+	if w.schema != "public" && slices.Contains(droppableSchemas, "public") {
 		if err := restorePostgresPublicSchema(ctx, tx); err != nil {
 			return nil, err
 		}
@@ -1784,17 +1958,19 @@ func verifyCompletedPostgresDatabaseCleanup(
 	ctx context.Context,
 	tx *sql.Tx,
 	preservedSchemas []string,
-	capabilities postgresCleanupCapabilities,
+	plan postgresDatabaseCleanupPlan,
+	caps capability.Capabilities,
 ) error {
 	if err := verifyPostgresDatabaseRealm(
 		ctx,
 		tx,
 		preservedSchemas,
-		capabilities.systemExtensions,
+		plan.keptExtensions,
+		caps,
 	); err != nil {
 		return err
 	}
-	if capabilities.cleanupLargeObjects {
+	if plan.capabilities.cleanupLargeObjects {
 		if err := verifyPostgresLargeObjects(ctx, tx); err != nil {
 			return err
 		}
@@ -1802,24 +1978,18 @@ func verifyCompletedPostgresDatabaseCleanup(
 	return nil
 }
 
-// collectUserSchemas returns every schema outside the server's own, including
-// one an extension owns. The check that a cleanup finished reads it, because
-// an extension's schema still standing afterwards is a leftover like any
-// other.
-func collectUserSchemas(ctx context.Context, tx *sql.Tx) ([]string, error) {
-	return queryUserSchemas(ctx, tx, userSchemasQuery)
-}
-
 // collectCleanupSchemas returns the schemas a realm cleanup empties and drops
 // one object at a time: the user schemas, less those an extension owns.
 //
-// An extension's schema is the extension's. The cleanup drops the extension,
-// and DROP EXTENSION takes its schemas and everything in them. Queued
-// separately, a statement that names the schema itself runs after the schema
-// is gone and fails on it, which IF EXISTS cannot cover: the revoke of a
-// default grant in the schema is one. Leaving the schema out is also how the
+// An extension's schema is the extension's. A kept extension keeps it, and
+// DROP EXTENSION takes a dropped extension's schemas and everything in them.
+// Queued separately, a statement that names the schema itself runs after the
+// schema is gone and fails on it, which IF EXISTS cannot cover: the revoke of
+// a default grant in the schema is one. Leaving the schema out is also how the
 // reader and the clean gate see it
-// ([systemschema.PostgresDescribedSchemasPredicate]).
+// ([systemschema.PostgresDescribedSchemasPredicate]). The check that a cleanup
+// finished reads the same list, and answers for extension schemas through the
+// extensions that own them.
 //
 // The filter reads pg_depend and is gated on [capability.CatalogDependencies],
 // like the other extension filters of this cleanup.
@@ -2062,9 +2232,13 @@ func verifyPostgresDatabaseRealm(
 	ctx context.Context,
 	tx *sql.Tx,
 	preservedSchemas,
-	systemExtensions []string,
+	keptExtensions []string,
+	caps capability.Capabilities,
 ) error {
-	schemas, err := collectUserSchemas(ctx, tx)
+	// A schema an extension owns is checked through the extension: the
+	// extension check below refuses any extension the cleanup was not asked to
+	// keep, and a dropped extension takes its schemas with it.
+	schemas, err := collectCleanupSchemas(ctx, tx, caps)
 	if err != nil {
 		return err
 	}
@@ -2087,96 +2261,15 @@ func verifyPostgresDatabaseRealm(
 			schema,
 		)
 	}
-	if err := verifyPostgresUserExtensions(ctx, tx, systemExtensions); err != nil {
+	if err := verifyPostgresUserExtensions(ctx, tx, keptExtensions); err != nil {
 		return err
 	}
 
-	query := strings.ReplaceAll(`
-		WITH managed_namespaces AS (
-			SELECT n.oid, n.nspname
-			FROM pg_namespace n
-			WHERE n.nspname IN ({{SCHEMA_PLACEHOLDERS}})
-		),
-		residual_objects AS (
-			SELECT 'relation'::text AS object_kind, n.nspname, c.relname
-			FROM pg_class c
-			JOIN managed_namespaces n ON n.oid = c.relnamespace
-
-			UNION ALL
-			SELECT 'routine', n.nspname, p.proname
-			FROM pg_proc p
-			JOIN managed_namespaces n ON n.oid = p.pronamespace
-
-			UNION ALL
-			SELECT 'type', n.nspname, t.typname
-			FROM pg_type t
-			JOIN managed_namespaces n ON n.oid = t.typnamespace
-
-			UNION ALL
-			SELECT 'collation', n.nspname, c.collname
-			FROM pg_collation c
-			JOIN managed_namespaces n ON n.oid = c.collnamespace
-
-			UNION ALL
-			SELECT 'conversion', n.nspname, c.conname
-			FROM pg_conversion c
-			JOIN managed_namespaces n ON n.oid = c.connamespace
-
-			UNION ALL
-			SELECT 'operator', n.nspname, o.oprname
-			FROM pg_operator o
-			JOIN managed_namespaces n ON n.oid = o.oprnamespace
-
-			UNION ALL
-			SELECT 'operator class', n.nspname, o.opcname
-			FROM pg_opclass o
-			JOIN managed_namespaces n ON n.oid = o.opcnamespace
-
-			UNION ALL
-			SELECT 'operator family', n.nspname, o.opfname
-			FROM pg_opfamily o
-			JOIN managed_namespaces n ON n.oid = o.opfnamespace
-
-			UNION ALL
-			SELECT 'text search configuration', n.nspname, c.cfgname
-			FROM pg_ts_config c
-			JOIN managed_namespaces n ON n.oid = c.cfgnamespace
-
-			UNION ALL
-			SELECT 'text search dictionary', n.nspname, d.dictname
-			FROM pg_ts_dict d
-			JOIN managed_namespaces n ON n.oid = d.dictnamespace
-
-			UNION ALL
-			SELECT 'text search parser', n.nspname, p.prsname
-			FROM pg_ts_parser p
-			JOIN managed_namespaces n ON n.oid = p.prsnamespace
-
-			UNION ALL
-			SELECT 'text search template', n.nspname, t.tmplname
-			FROM pg_ts_template t
-			JOIN managed_namespaces n ON n.oid = t.tmplnamespace
-
-			UNION ALL
-			SELECT 'extension', n.nspname, e.extname
-			FROM pg_extension e
-			JOIN managed_namespaces n ON n.oid = e.extnamespace
-
-			UNION ALL
-			SELECT 'default privilege', n.nspname, d.oid::text
-			FROM pg_default_acl d
-			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
-		)
-		SELECT object_kind, nspname, relname
-		FROM residual_objects
-		ORDER BY object_kind, nspname, relname
-		LIMIT 1
-	`, "{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(preservedSchemas)))
-
+	query, args := residualObjectsQuery(preservedSchemas, keptExtensions, caps)
 	var kind string
 	var schema string
 	var name string
-	err = tx.QueryRowContext(ctx, query, stringsToAny(preservedSchemas)...).Scan(
+	err = tx.QueryRowContext(ctx, query, args...).Scan(
 		&kind,
 		&schema,
 		&name,
@@ -2193,6 +2286,124 @@ func verifyPostgresDatabaseRealm(
 		schema,
 		name,
 	)
+}
+
+// residualObjectsQuery lists what is left in the preserved schemas after a
+// realm cleanup, less what a kept extension owns. The kept extensions' own
+// rows are left out by name; their members, and what those carry, through
+// [extensionOwnedCTE].
+func residualObjectsQuery(
+	preservedSchemas,
+	keptExtensions []string,
+	caps capability.Capabilities,
+) (string, []any) {
+	args := stringsToAny(preservedSchemas)
+	keptFilter := ""
+	if len(keptExtensions) > 0 {
+		keptFilter = "\n\t\t\tWHERE e.extname NOT IN (" +
+			postgresPlaceholdersFrom(len(args)+1, len(keptExtensions)) + ")"
+		args = append(args, stringsToAny(keptExtensions)...)
+	}
+	ownedCTE, ownedFilter := "", ""
+	if extensionOwnershipReadable(caps) {
+		ownedCTE = extensionOwnedCTE
+		ownedFilter = `
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM extension_owned owned
+			WHERE owned.classid = residual.classid
+			  AND owned.objid = residual.objid
+		)`
+	}
+	query := strings.NewReplacer(
+		"{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(preservedSchemas)),
+		"{{KEPT_EXTENSION_FILTER}}", keptFilter,
+		"{{EXTENSION_OWNED_CTE}}", ownedCTE,
+		"{{RECURSIVE}}", recursiveKeyword(ownedCTE),
+		"{{EXTENSION_OWNED_FILTER}}", ownedFilter,
+	).Replace(`
+		WITH {{RECURSIVE}}managed_namespaces AS (
+			SELECT n.oid, n.nspname
+			FROM pg_namespace n
+			WHERE n.nspname IN ({{SCHEMA_PLACEHOLDERS}})
+		),{{EXTENSION_OWNED_CTE}}
+		residual_objects AS (
+			SELECT 'relation'::text AS object_kind, 'pg_class'::regclass AS classid, c.oid AS objid,
+				n.nspname, c.relname
+			FROM pg_class c
+			JOIN managed_namespaces n ON n.oid = c.relnamespace
+
+			UNION ALL
+			SELECT 'routine', 'pg_proc'::regclass, p.oid, n.nspname, p.proname
+			FROM pg_proc p
+			JOIN managed_namespaces n ON n.oid = p.pronamespace
+
+			UNION ALL
+			SELECT 'type', 'pg_type'::regclass, t.oid, n.nspname, t.typname
+			FROM pg_type t
+			JOIN managed_namespaces n ON n.oid = t.typnamespace
+
+			UNION ALL
+			SELECT 'collation', 'pg_collation'::regclass, c.oid, n.nspname, c.collname
+			FROM pg_collation c
+			JOIN managed_namespaces n ON n.oid = c.collnamespace
+
+			UNION ALL
+			SELECT 'conversion', 'pg_conversion'::regclass, c.oid, n.nspname, c.conname
+			FROM pg_conversion c
+			JOIN managed_namespaces n ON n.oid = c.connamespace
+
+			UNION ALL
+			SELECT 'operator', 'pg_operator'::regclass, o.oid, n.nspname, o.oprname
+			FROM pg_operator o
+			JOIN managed_namespaces n ON n.oid = o.oprnamespace
+
+			UNION ALL
+			SELECT 'operator class', 'pg_opclass'::regclass, o.oid, n.nspname, o.opcname
+			FROM pg_opclass o
+			JOIN managed_namespaces n ON n.oid = o.opcnamespace
+
+			UNION ALL
+			SELECT 'operator family', 'pg_opfamily'::regclass, o.oid, n.nspname, o.opfname
+			FROM pg_opfamily o
+			JOIN managed_namespaces n ON n.oid = o.opfnamespace
+
+			UNION ALL
+			SELECT 'text search configuration', 'pg_ts_config'::regclass, c.oid, n.nspname, c.cfgname
+			FROM pg_ts_config c
+			JOIN managed_namespaces n ON n.oid = c.cfgnamespace
+
+			UNION ALL
+			SELECT 'text search dictionary', 'pg_ts_dict'::regclass, d.oid, n.nspname, d.dictname
+			FROM pg_ts_dict d
+			JOIN managed_namespaces n ON n.oid = d.dictnamespace
+
+			UNION ALL
+			SELECT 'text search parser', 'pg_ts_parser'::regclass, p.oid, n.nspname, p.prsname
+			FROM pg_ts_parser p
+			JOIN managed_namespaces n ON n.oid = p.prsnamespace
+
+			UNION ALL
+			SELECT 'text search template', 'pg_ts_template'::regclass, t.oid, n.nspname, t.tmplname
+			FROM pg_ts_template t
+			JOIN managed_namespaces n ON n.oid = t.tmplnamespace
+
+			UNION ALL
+			SELECT 'extension', 'pg_extension'::regclass, e.oid, n.nspname, e.extname
+			FROM pg_extension e
+			JOIN managed_namespaces n ON n.oid = e.extnamespace{{KEPT_EXTENSION_FILTER}}
+
+			UNION ALL
+			SELECT 'default privilege', 'pg_default_acl'::regclass, d.oid, n.nspname, d.oid::text
+			FROM pg_default_acl d
+			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
+		)
+		SELECT object_kind, nspname, relname
+		FROM residual_objects residual{{EXTENSION_OWNED_FILTER}}
+		ORDER BY object_kind, nspname, relname
+		LIMIT 1
+	`)
+	return query, args
 }
 
 func verifyPostgresUserExtensions(
@@ -2260,22 +2471,6 @@ func (w *PostgreSQLWriter) SetDryRun(dryRun bool) {
 // IsDryRun returns whether dry run mode is enabled
 func (w *PostgreSQLWriter) IsDryRun() bool {
 	return w.dryRun
-}
-
-// postgresCleanupDroppedPublicSchema reports whether the realm cleanup dropped
-// "public" without restoring it, which is true only when it existed, is not the
-// root schema, and the server does not preserve it in place.
-//
-// The three exclusions are each a case that is already handled: a database with
-// no "public" schema has nothing to put back, and recreating one would hand the
-// caller a schema they never had; "public" as the root is restored by
-// restorePostgresRootSchema with its recorded owner and grants; and a server
-// that preserves it never dropped it.
-func postgresCleanupDroppedPublicSchema(rootSchema string, plan postgresDatabaseCleanupPlan) bool {
-	if rootSchema == "public" || plan.capabilities.preservePublicSchema {
-		return false
-	}
-	return slices.Contains(plan.schemas, "public")
 }
 
 // restorePostgresPublicSchema recreates "public" after a realm cleanup dropped
