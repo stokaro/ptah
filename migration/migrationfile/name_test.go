@@ -286,6 +286,51 @@ func TestParseAtlasFileName(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
 }
 
+// TestParseAtlasFileName_RevisionVersionKeepsTheSpelling pins the version
+// token an Atlas file is recorded under. Atlas writes the file name's digits
+// as they stand and compares them as strings, so 001 and 1 are two revisions
+// to it, and the numeric Version is only the order Ptah runs them in.
+func TestParseAtlasFileName_RevisionVersionKeepsTheSpelling(t *testing.T) {
+	tests := []struct {
+		name         string
+		fileName     string
+		wantVersion  int64
+		wantRevision string
+	}{
+		{name: "leading zeros", fileName: "001_initial.sql", wantVersion: 1, wantRevision: "001"},
+		{name: "no leading zeros", fileName: "1_initial.sql", wantVersion: 1, wantRevision: "1"},
+		{name: "bare version", fileName: "0010.sql", wantVersion: 10, wantRevision: "0010"},
+		{name: "up half", fileName: "000001_create_users.up.sql", wantVersion: 1, wantRevision: "000001"},
+		{name: "down half", fileName: "000001_create_users.down.sql", wantVersion: 1, wantRevision: "000001"},
+		{name: "dotted description", fileName: "02.10.x-20_description.sql", wantVersion: 2, wantRevision: "02"},
+		{name: "timestamp", fileName: "20220318104614_team_A.sql", wantVersion: 20220318104614, wantRevision: "20220318104614"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			explicit, err := migrationfile.ParseAtlasFileName(test.fileName)
+			c.Assert(err, qt.IsNil)
+			c.Assert(explicit.Version, qt.Equals, test.wantVersion)
+			c.Assert(explicit.RevisionVersion(), qt.Equals, test.wantRevision)
+
+			detected, err := migrationfile.ParseAtlasFileNameForAutoDetection(test.fileName)
+			c.Assert(err, qt.IsNil)
+			c.Assert(detected.RevisionVersion(), qt.Equals, test.wantRevision)
+		})
+	}
+}
+
+// TestParseFileName_RevisionVersionIsTheNumber is the control for the test
+// above: a native file pads its version to ten digits by rule, and the native
+// revision table stores the number, so the padding is not part of its identity.
+func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
+	c := qt.New(t)
+	migrationFile, err := migrationfile.ParseFileName("0000000001_initial.up.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(1))
+	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "1")
+}
+
 func TestFileName(t *testing.T) {
 	tests := []struct {
 		name        string

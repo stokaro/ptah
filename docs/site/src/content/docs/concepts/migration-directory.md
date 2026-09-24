@@ -69,6 +69,15 @@ Atlas-compatible command surface — the `ptah-compat` drop-in binary — operat
 on the same directories through its `migrate ...` commands; see the
 [Atlas compatibility overview](../../atlas/overview/).
 
+An Atlas file keeps its version as the file name spells it. `001_init.sql` is
+recorded as `001` in an Atlas revision table, which is what Atlas writes, and
+Atlas compares versions as text. The number decides the order migrations run
+in. A native revision table stores the number, and each row is matched to the
+file that carries it. A directory that spells one number two ways, such as
+`1_a.sql` beside `001_b.sql`, is refused: the two files would tie in numeric
+order. See
+[Compatibility differences](../../atlas/retained-divergences/#one-version-spelled-two-ways).
+
 ## Stable local snapshots
 
 Native `migrations up`, `migrations down`, `migrations status`,

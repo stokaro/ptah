@@ -62,7 +62,7 @@ func TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver(t *t
 		var snapshot clickHouseRevisionProgress
 		err := conn.QueryRowContext(
 			ctx,
-			"SELECT applied, total, COALESCE(error, '') FROM "+revisionsTable+" WHERE version = '1'",
+			"SELECT applied, total, COALESCE(error, '') FROM "+revisionsTable+" WHERE version = '000001'",
 		).Scan(&snapshot.Applied, &snapshot.Total, &snapshot.Failure)
 		progress = append(progress, snapshot)
 		return err
@@ -92,7 +92,7 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
 	_, err := conn.ExecContext(t.Context(), `ALTER TABLE `+revisionsTable+`
 		UPDATE applied = 0, error = 'statement execution outcome is unknown after process interruption', error_stmt = 'SELECT 1'
-		WHERE version = '1'
+		WHERE version = '000001'
 		SETTINGS mutations_sync = 1`)
 	c.Assert(err, qt.IsNil)
 
@@ -102,7 +102,7 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 	var failure string
 	c.Assert(conn.QueryRowContext(
 		t.Context(),
-		"SELECT applied, total, COALESCE(error, '') FROM "+revisionsTable+" WHERE version = '1'",
+		"SELECT applied, total, COALESCE(error, '') FROM "+revisionsTable+" WHERE version = '000001'",
 	).Scan(&applied, &total, &failure), qt.IsNil)
 	c.Assert(applied, qt.Equals, 2)
 	c.Assert(total, qt.Equals, 2)

@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
-lastVerified: "2026-08-30"
+lastVerified: "2026-09-24"
 evidence:
   - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
@@ -129,6 +129,7 @@ own measurement conditions.
 | [`schema inspect --include`](#schema-inspect---include) | positively selects top-level resources through the apply and diff engine | does not register the flag: `Error: unknown flag: --include` |
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
+| [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 
 ## A `--config` selection naming more than one file
 
@@ -751,6 +752,35 @@ The integration contour pins the file-diff result in
 the schema glob, the final resource type, and the surviving non-table objects.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
+
+## One version spelled two ways
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` refuses an Atlas directory that spells one
+version number two ways, such as `1_a.sql` beside `001_b.sql`. The pinned
+community binary v1.3.0 applies both files as two revisions.
+
+Measured on PostgreSQL 18 on 2026-09-24, with the directory hashed by that
+binary:
+
+| | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | exit `0`, applies `001` and then `1` | exit `1`, names both files and both spellings |
+| revision rows afterwards | `001`, `1` | none, and no revision table |
+
+Both binaries record a version as the file name spells it, so `001_b.sql` is
+revision `001` on each. The order is where they part. That binary orders files
+by name, and Ptah runs migrations in numeric order, where both files are `1`.
+Nothing in the directory says which of the two should run first, so the refusal
+names the files instead of choosing. Renaming one of them to a number of its
+own gives a directory both binaries apply the same way.
+
+`TestCompatMigrateApply_OneVersionSpelledTwoWaysRefuses` pins the refusal and
+that nothing reaches the database, and the migrator's own tests pin the same
+refusal for a pair of up and down files spelled apart.
+
+**Tracking.** [`stokaro/ptah#3532`](https://github.com/stokaro/ptah/issues/3532)
 
 ## Not on this page
 

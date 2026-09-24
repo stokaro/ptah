@@ -68,6 +68,11 @@ type MigrationRevision struct {
 	ChecksumCurrent string    `json:"checksum_current,omitempty"`
 	hasAtlasVersion bool
 	partialHashes   []string
+	// fileSpelling is the version token the directory's Atlas file spells for
+	// this native row's number, such as 001 for 1. A native table stores only
+	// the number, and without this the row and its file 001_init.sql would
+	// compare under two keys and the file would read as missing.
+	fileSpelling string
 }
 
 // MarshalJSON preserves the presence of an exact empty Atlas revision
@@ -107,11 +112,15 @@ func (r *MigrationRevision) UnmarshalJSON(data []byte) error {
 }
 
 // RevisionVersion returns the exact revision-table version token when the
-// revision came from an Atlas-format table, and the decimal numeric version
-// otherwise.
+// revision came from an Atlas-format table. A row from a native table returns
+// the version as the migration directory's file name spells it when an Atlas
+// file carries it, such as 001, and the decimal numeric version otherwise.
 func (r MigrationRevision) RevisionVersion() string {
 	if r.hasAtlasVersion || r.AtlasVersion != "" {
 		return r.AtlasVersion
+	}
+	if r.fileSpelling != "" {
+		return r.fileSpelling
 	}
 	return strconv.FormatInt(r.Version, 10)
 }
@@ -1466,6 +1475,7 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	revision.AppliedAt = parsedAppliedAt
 	revision.ExecutionTime = time.Duration(executionTimeMs) * time.Millisecond
 	revision.Dirty = revision.State != migrationStateApplied
+	revision.fileSpelling = m.atlasVersionSpelling(revision.Version)
 	return revision, nil
 }
 
@@ -1550,6 +1560,22 @@ func (m *Migrator) hasAtlasRevisionVersionMap() bool {
 		hasAtlasRevisionVersionMap() bool
 	})
 	return ok && source.hasAtlasRevisionVersionMap()
+}
+
+// atlasVersionSpelling returns the token the provider's Atlas file spells for
+// version, or "" when no ordinary Atlas file carries it.
+func (m *Migrator) atlasVersionSpelling(version int64) string {
+	if m.migrationProvider == nil {
+		return ""
+	}
+	source, ok := m.migrationProvider.(interface {
+		atlasVersionSpelling(version int64) (string, bool)
+	})
+	if !ok {
+		return ""
+	}
+	spelling, _ := source.atlasVersionSpelling(version)
+	return spelling
 }
 
 func atlasRevisionDirection(operatorVersion string) MigrationDirection {
