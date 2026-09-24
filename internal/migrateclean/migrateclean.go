@@ -36,6 +36,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/systemschema"
@@ -171,7 +172,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, err
 	if realmScoped(dialect, conn.Info().URL, scope.Schema) {
 		return inspectRealm(ctx, conn, scope)
 	}
-	query, args := tableProbe(dialect, scope.Schema)
+	query, args := tableProbe(dialect, conn.Info().Capabilities, scope.Schema)
 	if query == "" {
 		// Governs said yes and this function has no probe for it. Reporting a
 		// clean database would be a gate that passes without running, so it
@@ -251,7 +252,7 @@ func inspectRealm(
 	conn *dbschema.DatabaseConnection,
 	scope Scope,
 ) (Scope, error) {
-	query := realmProbe(scope.Dialect)
+	query := realmProbe(scope.Dialect, conn.Info().Capabilities)
 	if query == "" {
 		// Governs said yes, the connection selected realm scope, and this
 		// function has no probe for it. Reporting a clean database would be a
@@ -475,7 +476,7 @@ func scanProbeRow(dialect string, row probeRow) (schema, name string, err error)
 //
 // An unrecognized dialect returns an empty query rather than falling through to
 // another dialect's catalog; Inspect turns that into an error.
-func tableProbe(dialect, schema string) (string, []any) {
+func tableProbe(dialect string, caps capability.Capabilities, schema string) (string, []any) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
 		// The ESCAPE clause matters: in LIKE, `_` matches any single
@@ -498,13 +499,15 @@ func tableProbe(dialect, schema string) (string, []any) {
 		// relkind 'r' and 'p' are ordinary and partitioned tables. Views,
 		// sequences, materialized views and indexes are excluded on purpose:
 		// measured on PostgreSQL 17, a database holding only a view or only a
-		// sequence applies at exit 0.
+		// sequence applies at exit 0. postgresUserTable says which tables of
+		// those the binary does not count.
 		return `
 			SELECT n.nspname, c.relname
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			WHERE n.nspname = COALESCE(NULLIF($1, ''), current_schema())
 			  AND c.relkind IN ('r', 'p')
+			  AND ` + postgresUserTable(caps) + `
 			ORDER BY c.relname`, []any{schema}
 	default:
 		return "", nil
@@ -526,20 +529,58 @@ func tableProbe(dialect, schema string) (string, []any) {
 // no database never reaches this package: dbschema refuses it while reading
 // DATABASE(). Writing that probe would be writing code no test could reach, so
 // this returns nothing and Inspect fails loudly instead.
-func realmProbe(dialect string) string {
+func realmProbe(dialect string, caps capability.Capabilities) string {
 	if platform.NormalizeDialect(dialect) != platform.Postgres {
 		return ""
 	}
 	// Which schemas belong to the realm is
-	// [systemschema.PostgresNonSystemSchemasPredicate], shared so this gate
-	// and `schema inspect` cannot disagree about it. What this probe adds is
-	// the tables, which the gate needs and inspection does not.
+	// [systemschema.PostgresDescribedSchemasPredicate], shared so this gate
+	// and `schema inspect` cannot disagree about it. It leaves out a schema
+	// an extension created, and everything in it: measured, the binary applies
+	// against a schema an extension owns even while that schema holds a table
+	// the user created. What this probe adds is the tables, which the gate
+	// needs and inspection does not.
 	return `
 		SELECT n.nspname, COALESCE(c.relname, '')
 		FROM pg_namespace n
 		LEFT JOIN pg_class c
 		  ON c.relnamespace = n.oid
 		 AND c.relkind IN ('r', 'p')
-		WHERE ` + systemschema.PostgresNonSystemSchemasPredicate(dialect) + `
+		 AND ` + postgresUserTable(caps) + `
+		WHERE ` + systemschema.PostgresDescribedSchemasPredicate(dialect, caps) + `
 		ORDER BY n.nspname, c.relname`
+}
+
+// postgresUserTable returns the predicate over a `pg_class c` that keeps the
+// tables the pinned binary counts, which is fewer than every table in the
+// catalog. Measured against v1.3.0 on PostgreSQL 18 with its inspector's own
+// table query as the reference:
+//
+//   - A table an extension owns is not counted. TimescaleDB keeps its catalog
+//     in tables of its own and PostGIS puts spatial_ref_sys in `public`, and
+//     the binary applies against either database. A table the user adds to an
+//     extension with ALTER EXTENSION ... ADD TABLE reads the same way, which
+//     is what makes the rule testable on a server with no such extension.
+//   - A partition is not counted. Its parent is, where the parent lives: with
+//     the parent in `extra` and the partition in `public`, a URL that pins
+//     `search_path=public` applies at exit 0.
+//
+// Both change which table a schema-scope refusal names as well as whether it
+// refuses, because the refusal names the first counted table by name.
+//
+// The extension arm reads pg_depend and is gated on
+// [capability.CatalogDependencies] for the reason
+// [systemschema.PostgresDescribedSchemasPredicate] gives.
+func postgresUserTable(caps capability.Capabilities) string {
+	predicate := `NOT c.relispartition`
+	if !caps.Has(capability.CatalogDependencies) {
+		return predicate
+	}
+	return predicate + `
+			  AND NOT EXISTS (
+			        SELECT 1
+			        FROM pg_depend d
+			        WHERE d.classid = 'pg_class'::regclass
+			          AND d.objid = c.oid
+			          AND d.deptype = 'e')`
 }

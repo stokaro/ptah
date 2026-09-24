@@ -463,6 +463,13 @@ Only the `search_path` query parameter selects schema scope. A search path set
 through libpq's `options=-c search_path=…` moves the session but leaves the run
 at realm scope, which is what Atlas does.
 
+On PostgreSQL, what an extension created is not counted at either scope, as in
+Atlas. A database holding TimescaleDB's schemas, or PostGIS's `spatial_ref_sys`
+in `public`, applies, and so does a user table inside a schema an extension
+owns. A partition is not counted either; its parent is, in the schema the
+parent lives in. The first table a schema-scope refusal names is the first
+table that counts.
+
 The check is an adoption gate, not a standing drift check. It runs only while
 the revision table holds no rows, so it fires on the first apply against a
 database somebody else's tooling owns and never again — a managed database that

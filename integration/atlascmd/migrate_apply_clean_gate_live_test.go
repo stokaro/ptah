@@ -143,6 +143,27 @@ func TestMigrateApplyCleanGateAppliesLivePostgres(t *testing.T) {
 				"CREATE TABLE extra.legacy_stuff (id integer PRIMARY KEY)",
 			},
 		},
+		{
+			// An extension's schema is not the user's. Measured against
+			// PostgreSQL 18 on 2026-09-24 (stokaro/ptah#3533); ALTER EXTENSION
+			// ... ADD gives the schema the pg_depend row CREATE EXTENSION gives
+			// the schemas it creates.
+			name: "a schema an extension owns applies",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE SCHEMA owned_by_extension",
+				"ALTER EXTENSION hstore ADD SCHEMA owned_by_extension",
+			},
+		},
+		{
+			name:  "a table an extension owns applies when the URL pins a schema",
+			query: "search_path=public",
+			setup: []string{
+				"CREATE EXTENSION hstore",
+				"CREATE TABLE owned_by_extension (id integer PRIMARY KEY)",
+				"ALTER EXTENSION hstore ADD TABLE owned_by_extension",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -155,6 +176,21 @@ func TestMigrateApplyCleanGateAppliesLivePostgres(t *testing.T) {
 			c.Assert(out, qt.Contains, "20240101000000")
 		})
 	}
+}
+
+// TestMigrateApplyCleanGateAppliesOverTimescaleDBLive is the state
+// stokaro/ptah#3533 was found in: a project whose CI creates the timescaledb
+// extension and then runs `migrate apply` through a plain URL. The pinned
+// binary applies there, because the seven schemas and the catalog tables the
+// extension creates are not the user's.
+func TestMigrateApplyCleanGateAppliesOverTimescaleDBLive(t *testing.T) {
+	c := qt.New(t)
+	adminURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+
+	out, err := runCleanGateApply(c, adminURL, "", []string{"CREATE EXTENSION IF NOT EXISTS timescaledb"})
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(out, qt.Contains, "20240101000000")
 }
 
 // TestMigrateApplyCleanGateRealmScopeRefusesLivePostgres pins the message the

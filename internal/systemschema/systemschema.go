@@ -47,10 +47,12 @@ import (
 // than assumed. Omitting the arm there costs nothing, because that target has
 // no CREATE EXTENSION to own a schema with.
 //
-// The gate that decides whether a realm is empty enough to clean keeps
-// [PostgresNonSystemSchemasPredicate] instead. It answers a different question
-// -- is anything here -- and an extension's schema is something that is here.
-// Moving it is a parity measurement of its own.
+// The gate that decides whether a realm is clean enough for a first
+// `migrate apply` reads the realm through this predicate too. Its question is
+// whether anything the user made is here, and the pinned binary answers it
+// from the same inspection: measured on PostgreSQL 18, v1.3.0 applies against
+// a database whose only schemas besides `public` are TimescaleDB's, or one an
+// ALTER EXTENSION ... ADD SCHEMA handed to an extension.
 func PostgresDescribedSchemasPredicate(dialect string, caps capability.Capabilities) string {
 	predicate := PostgresNonSystemSchemasPredicate(dialect)
 	if !caps.Has(capability.CatalogDependencies) {
