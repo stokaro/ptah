@@ -267,6 +267,37 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
 
+// TestWriterDropDatabaseRealm_LeavesExtensionMembersToTheExtension names the
+// two queries a realm cleanup narrows, and the one it must not. The cleanup
+// drops every user extension, and DROP EXTENSION takes the extension's schemas
+// and member tables with it, so the plan leaves both out: statements queued for
+// them run after they are gone and fail (stokaro/ptah#3540). The check that the
+// cleanup finished reads every schema, because an extension schema standing
+// afterwards is a leftover. TestWriterDropAllTables_CommitsAllCatalogObjects
+// holds the schema-scoped cleanup to no filter at all: it drops no extension.
+func TestWriterDropDatabaseRealm_LeavesExtensionMembersToTheExtension(t *testing.T) {
+	c := qt.New(t)
+	var catalogQueries []string
+	queryHandler := newPostgresRealmMetadataQuery()
+	db := dbtest.OpenWithExec(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		catalogQueries = append(catalogQueries, query)
+		return queryHandler.query(query, args)
+	}, func(string, []driver.NamedValue) (driver.Result, error) {
+		return driver.RowsAffected(0), nil
+	})
+
+	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(catalogQueries, qt.HasLen, 11)
+	planned, objects, verified := catalogQueries[5], catalogQueries[6], catalogQueries[7]
+	c.Assert(planned, qt.Contains, "d.classid = 'pg_namespace'::regclass")
+	c.Assert(planned, qt.Contains, "d.deptype = 'e'")
+	c.Assert(objects, qt.Contains, "d.classid = 'pg_class'::regclass")
+	c.Assert(verified, qt.Contains, "n.nspname NOT LIKE 'pg\\_%'")
+	c.Assert(verified, qt.Not(qt.Contains), "pg_depend")
+}
+
 func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 	c := qt.New(t)
 	var execQueries []string
