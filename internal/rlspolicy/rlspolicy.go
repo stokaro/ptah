@@ -8,7 +8,12 @@
 // which is the argument for it living here rather than beside a caller.
 package rlspolicy
 
-import "strings"
+import (
+	"slices"
+	"strings"
+
+	"ptah.run/core/platform"
+)
 
 // Command folds a declared or observed FOR clause onto one spelling.
 //
@@ -38,6 +43,55 @@ func Command(policyFor string) string {
 	}
 	return folded
 }
+
+// Roles folds a declared or observed TO clause onto one spelling, for a
+// comparison against the named target.
+//
+// On the PostgreSQL family a policy with no TO clause applies to PUBLIC, and
+// the catalog reports it that way. Measured on PostgreSQL 18.6, CockroachDB
+// 26.3.2 and YugabyteDB 2026.1: `CREATE POLICY p ON t USING (true)` stores
+// polroles {0}, which is PUBLIC. Every role is a member of PUBLIC, so a list
+// naming PUBLIC applies to everyone whatever else it names; PostgreSQL and
+// YugabyteDB store `TO PUBLIC, app` as {0} and warn, and CockroachDB keeps both
+// entries. The order of the list means nothing, and the reader joins it
+// without spaces while a declaration usually writes them. So the fold reads the
+// clause as a set: an empty clause or one naming PUBLIC in any case is PUBLIC,
+// and otherwise the names are sorted and joined one way.
+//
+// Without the fold a policy declared without TO was dropped and created again
+// on every comparison, and so was one naming two roles
+// (stokaro/ptah#3572).
+//
+// Any other target is returned unchanged. The empty clause does not mean
+// PUBLIC everywhere: a ClickHouse row policy with no TO applies to nobody, and
+// its reader reports it as empty for that reason.
+//
+// The fold is for comparison only, like [Command]: a declaration that omitted
+// TO keeps rendering without one.
+func Roles(dialect, roles string) string {
+	if !platform.IsPostgresFamily(dialect) {
+		return roles
+	}
+	var names []string
+	for part := range strings.SplitSeq(roles, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if strings.EqualFold(name, publicRole) {
+			return publicRole
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return publicRole
+	}
+	slices.Sort(names)
+	return strings.Join(slices.Compact(names), ", ")
+}
+
+// publicRole is the pseudo-role every role belongs to.
+const publicRole = "PUBLIC"
 
 // AsClause names the AS clause a restrictive flag stands for.
 //
