@@ -836,9 +836,9 @@ func applyPendingMigrations(
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions
 		},
-		// Nil when --expect-sequence was not given. It runs before every hook
-		// above, so no dump, lint or external command acts on a selection
-		// nobody approved.
+		// Nil when --expect-sequence was not given. It runs right after the
+		// plan observer and before the preflight hook, so no dump, lint or
+		// external command acts on a selection nobody approved.
 		PlanGuard: expected.guard(),
 	})
 

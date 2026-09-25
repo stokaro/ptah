@@ -180,6 +180,33 @@ func TestMigrateUpExpectSequence(t *testing.T) {
 	})
 }
 
+// TestMigrateUpExpectSequenceHistoryMovedBelowTheApproval covers the one move
+// the selection cannot show: deployment B records a migration below the one
+// deployment A approved, so A still selects exactly [5]. The comparison with the
+// approved sequence passes, and the run is refused anyway, because A's
+// directory has no file for what B recorded. That refusal is why the approval
+// file carries no digest of the whole history: every move that leaves the
+// selection unchanged is one this check or the modified and dirty checks
+// already refuse.
+func TestMigrateUpExpectSequenceHistoryMovedBelowTheApproval(t *testing.T) {
+	c := qt.New(t)
+	dirA, dirB := c.TempDir(), c.TempDir()
+	dbPath := filepath.Join(c.TempDir(), "shared.db")
+	seqWriteMigrations(c, dirA, 1, 2)
+	_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dirA)
+	c.Assert(err, qt.IsNil)
+	seqWriteMigrations(c, dirA, 5)
+	seqWriteMigrations(c, dirB, 1, 2, 3)
+	_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dirB)
+	c.Assert(err, qt.IsNil)
+
+	_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dirA,
+		"--expect-sequence", seqWriteExpected(c, 5))
+	c.Assert(err, qt.ErrorMatches, `.*migration 3 is recorded as applied and this directory has no file for it.*`)
+	c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1, 2, 3})
+	c.Assert(seqTableExists(c, dbPath, seqTable(5)), qt.IsFalse)
+}
+
 func TestMigrateUpExpectSequenceRefusesAFileItCannotRead(t *testing.T) {
 	for _, row := range []struct {
 		name    string
