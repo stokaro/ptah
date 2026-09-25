@@ -119,7 +119,14 @@ func hasDriveLetter(value string) bool {
 // order written, so a reader sees the document in the order the file lists it.
 // visited holds the absolute paths already on this branch of the chain, which is
 // what makes a cycle an error rather than a hang.
-func loadSQLWithImports(root, path string, opts Options, visited map[string]struct{}, depth int) (*schemamodel.Database, error) {
+//
+// earlier is what the document declared before this file, nil for the entry
+// point. Each file is read against it and against the imports already merged,
+// so a file may add a column to a table a file before it created, as it may in a
+// schema directory.
+func loadSQLWithImports(
+	root, path string, opts Options, visited map[string]struct{}, depth int, earlier *schemamodel.Database,
+) (*schemamodel.Database, error) {
 	if depth > maxSQLImportDepth {
 		return nil, fmt.Errorf("%s chain is deeper than %d files", sqlImportMarker, maxSQLImportDepth)
 	}
@@ -138,7 +145,7 @@ func loadSQLWithImports(root, path string, opts Options, visited map[string]stru
 		return nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
 
-	merged, err := loadSQLFile(path, opts)
+	merged, _, err := loadSQLFileWithStatements(path, opts, earlier)
 	if err != nil {
 		return nil, err
 	}
@@ -161,13 +168,26 @@ func loadSQLWithImports(root, path string, opts Options, visited map[string]stru
 			return nil, fmt.Errorf(
 				"%s %q: only %s files can be imported", sqlImportMarker, value, dirSQLExtension)
 		}
-		imported, err := loadSQLWithImports(root, resolved, opts, visited, depth+1)
+		imported, err := loadSQLWithImports(root, resolved, opts, visited, depth+1, precedingDeclarations(earlier, merged))
 		if err != nil {
 			return nil, err
 		}
 		appendDatabase(merged, imported)
 	}
 	return merged, nil
+}
+
+// precedingDeclarations is what a file imported after merged sees: everything
+// declared before the importing file, then the importing file and the imports
+// merged so far. It is a new database, so the merge that follows never writes
+// into either input's slices.
+func precedingDeclarations(earlier, merged *schemamodel.Database) *schemamodel.Database {
+	preceding := &schemamodel.Database{}
+	if earlier != nil {
+		appendDatabase(preceding, earlier)
+	}
+	appendDatabase(preceding, merged)
+	return preceding
 }
 
 // loadSQLFileTree is the SQL arm of [parseSchemaFile]: one file plus everything
@@ -192,7 +212,7 @@ func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, erro
 	if len(imports) == 0 {
 		return loadSQLFile(resolved, opts)
 	}
-	merged, err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0)
+	merged, err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, nil)
 	if err != nil {
 		return nil, err
 	}

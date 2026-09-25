@@ -519,7 +519,13 @@ Declares a database function.
 | `schema` | No | Target schema/namespace. |
 | `security` | No | Security mode, such as DEFINER. |
 | `settings` | No | Routine configuration settings, `name=value`, separated by `;`. |
+| `strict` | No | Marks the function `STRICT`. `true`/`false`. |
 | `volatility` | No | Volatility class. |
+
+`strict` makes the function return NULL without running its body when any
+argument is NULL. PostgreSQL also spells it `RETURNS NULL ON NULL INPUT`, and
+`false` is `CALLED ON NULL INPUT`, the server's default, which is left out of the
+rendered statement.
 
 `leakproof` and `parallel` decide how the query planner may use the routine, and
 the first decides it across a security boundary: a filter using a leakproof

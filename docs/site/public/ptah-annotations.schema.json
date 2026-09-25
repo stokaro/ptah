@@ -772,6 +772,14 @@
               "description": "Routine configuration settings, `name=value`, separated by `;`; pin `search_path` on a DEFINER routine.",
               "type": "string"
             },
+            "strict": {
+              "description": "Marks the function STRICT: it returns NULL without running when any argument is NULL.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "volatility": {
               "description": "Volatility class.",
               "type": "string"

@@ -1215,6 +1215,15 @@ func (r *Renderer) notValidClause(constraint *ast.ConstraintNode) string {
 	return " NOT VALID"
 }
 
+// addColumnClause is the ADD COLUMN keyword pair, guarded when the operation
+// asks for IF NOT EXISTS.
+func addColumnClause(op *ast.AddColumnOperation) string {
+	if op.IfNotExists {
+		return "ADD COLUMN IF NOT EXISTS"
+	}
+	return "ADD COLUMN"
+}
+
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	r.w.WriteLine("-- ALTER statements: --")
@@ -1228,7 +1237,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", r.escapeQualifiedIdentifier(node.Name), line)
+			r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(node.Name), addColumnClause(op), line)
 		case *ast.AddConstraintOperation:
 			if err := r.writeAddConstraint(node.Name, op.Constraint); err != nil {
 				return err
@@ -2341,6 +2350,9 @@ func routineAttributes(node *ast.CreateFunctionNode) []string {
 	}
 	if node.Leakproof {
 		attributes = append(attributes, "LEAKPROOF")
+	}
+	if node.Strict {
+		attributes = append(attributes, "STRICT")
 	}
 	if node.Parallel != "" {
 		attributes = append(attributes, "PARALLEL "+node.Parallel)

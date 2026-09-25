@@ -489,7 +489,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Ptah documentation.** [Capabilities](../../reference/capabilities/), [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial and not product-identical. Ptah models objects Atlas gates behind Pro. The kinds are no longer carried in their minimal form: a sequence names its owning column by reference, a row-security declaration binds the table's owner, a policy is permissive or restrictive, a routine carries its configuration settings, its `LEAKPROOF` and `PARALLEL` properties and a set- or table-returning result, and a view names its output columns. What keeps this Partial is that the remaining gap has not been measured attribute by attribute rather than any named attribute being absent.
+**Implementation status.** Partial and not product-identical. Ptah models objects Atlas gates behind Pro. The kinds are no longer carried in their minimal form: a sequence names its owning column by reference, a row-security declaration binds the table's owner, a policy is permissive or restrictive, a routine carries its configuration settings, its `LEAKPROOF`, `STRICT` and `PARALLEL` properties and a set- or table-returning result, and a view names its output columns. What keeps this Partial is that the remaining gap has not been measured attribute by attribute rather than any named attribute being absent.
 
 **Conformance status.** Partially measured.
 

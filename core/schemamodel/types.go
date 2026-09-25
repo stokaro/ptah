@@ -1021,6 +1021,13 @@ type Function struct {
 	// a catalog reporting the default.
 	Parallel string `json:",omitempty"`
 
+	// Strict declares STRICT, which PostgreSQL also spells RETURNS NULL ON NULL
+	// INPUT: the routine returns NULL without running when any argument is
+	// NULL. False is CALLED ON NULL INPUT, the server's default, so a
+	// declaration that states neither is the same routine as one that states
+	// the default. A procedure takes none of them, as it takes no LEAKPROOF.
+	Strict bool `json:",omitempty"`
+
 	Body    string // Function body/implementation
 	Comment string // Optional comment for documentation
 

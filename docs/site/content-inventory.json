@@ -181,8 +181,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5466,
-      "sourceBytes": 45785
+      "visibleWords": 5468,
+      "sourceBytes": 45795
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -4613,8 +4613,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5157,
-      "sourceBytes": 39931
+      "visibleWords": 5212,
+      "sourceBytes": 40251
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -5635,8 +5635,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1470,
-      "sourceBytes": 12043
+      "visibleWords": 1580,
+      "sourceBytes": 12773
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
