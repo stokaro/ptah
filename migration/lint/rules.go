@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/txrequire"
 )
 
 var registeredRules = struct {
@@ -1210,6 +1211,7 @@ func postgresRules() []Rule {
 		postgresCreateIndexRule(),
 		postgresEnumAddValueRule(),
 		postgresConcurrentIndexRule(),
+		postgresPerChunkIndexInTransactionRule(),
 		postgresAddPrimaryKeyRule(),
 		postgresAddUniqueConstraintRule(),
 		postgresDropIndexRule(),
@@ -1265,7 +1267,8 @@ func postgresCreateIndexRule() Rule {
 // File-level: an index on a table this same migration created is built on an
 // empty table, so there is no lock hazard. A CONCURRENTLY build takes no lock
 // that blocks writes, and neither does a TimescaleDB per-chunk build on the
-// table as a whole; see [buildsIndexPerChunk].
+// table as a whole; see [txrequire.PerChunkIndexBuild]. Both are refused inside
+// a transaction, which PG103 and PG103P report.
 func postgresLockingIndexBuilds(file *File) []int {
 	if !file.IsUp {
 		return nil
@@ -1278,7 +1281,7 @@ func postgresLockingIndexBuilds(file *File) []int {
 			created[ref] = true
 			continue
 		}
-		if !isCreateIndex(stmt.Words) || slices.Contains(stmt.Words, "CONCURRENTLY") || buildsIndexPerChunk(stmt.Words) {
+		if !isCreateIndex(stmt.Words) || slices.Contains(stmt.Words, "CONCURRENTLY") || txrequire.PerChunkIndexBuild(stmt.Words) {
 			continue
 		}
 		if refersToCreated(created, indexTargetRef(stmt.Words)) {
@@ -1334,96 +1337,6 @@ func indexTarget(stmt *Statement) tableReference {
 	return tableReference{}
 }
 
-// buildsIndexPerChunk reports whether a CREATE INDEX sets TimescaleDB's
-// `transaction_per_chunk` storage parameter to true.
-//
-// The parameter is TimescaleDB's own remedy for the lock PG101 reports, so
-// reporting it would flag the advice the rule gives on a hypertable. Only a
-// true value counts. Measured on TimescaleDB 2.30.1: `= false`, `= off` and
-// `= 0` take the plain build's lock on the hypertable and every chunk, so
-// reading the name alone would clear a statement that still blocks every
-// write. The value is read with PostgreSQL's boolean grammar, which the
-// extension applies here; see [postgresBoolTrue].
-//
-// On an ordinary table the parameter is refused (`unrecognized parameter
-// namespace "timescaledb"`), so a statement carrying it either builds per chunk
-// or does not run at all.
-func buildsIndexPerChunk(w []string) bool {
-	depth := 0
-	for i := range w {
-		switch w[i] {
-		case "(":
-			depth++
-			continue
-		case ")":
-			depth--
-			continue
-		}
-		if depth != 0 || w[i] != "WITH" || i+1 >= len(w) || w[i+1] != "(" {
-			continue
-		}
-		return storageParameterTrue(w, i+2, "TIMESCALEDB", "TRANSACTION_PER_CHUNK")
-	}
-	return false
-}
-
-// storageParameterTrue reads the storage parameter list that starts at
-// w[start] and reports whether it sets namespace.name to a true value. A
-// parameter written without a value is true, as PostgreSQL reads it.
-func storageParameterTrue(w []string, start int, namespace, name string) bool {
-	for i := start; i < len(w) && w[i] != ")"; {
-		matches := i+2 < len(w) && normalizeIdent(w[i]) == namespace && w[i+1] == "." && normalizeIdent(w[i+2]) == name
-		next := i + 1
-		for next < len(w) && w[next] != "," && w[next] != ")" {
-			next++
-		}
-		if matches {
-			return storageParameterValueTrue(w[i+3 : next])
-		}
-		i = next
-		if i < len(w) && w[i] == "," {
-			i++
-		}
-	}
-	return false
-}
-
-// storageParameterValueTrue reads the words after a parameter's name: nothing,
-// or `=` and a value.
-func storageParameterValueTrue(rest []string) bool {
-	if len(rest) == 0 {
-		return true
-	}
-	if len(rest) != 2 || rest[0] != "=" {
-		return false
-	}
-	return postgresBoolTrue(strings.Trim(rest[1], "'"))
-}
-
-// postgresBoolTrue reports whether PostgreSQL's boolean input reads value as
-// true: `on`, `1`, and `true` or `yes` or any prefix of either, in any case.
-//
-// Measured on TimescaleDB 2.30.1 for `transaction_per_chunk`: `t`, `tru`,
-// `yes`, `on` and `1` each build per chunk; `o` and `maybe` are refused as not
-// a valid bool. A refused value reads as false here, so the statement keeps
-// its finding and the engine reports the rest.
-func postgresBoolTrue(value string) bool {
-	v := strings.ToLower(strings.TrimSpace(value))
-	if v == "" {
-		return false
-	}
-	if v == "on" || v == "1" {
-		return true
-	}
-	// A prefix of the word, however short: parse_bool reads `t` as true.
-	for _, word := range []string{"true", "yes"} {
-		if len(v) <= len(word) && word[:len(v)] == v {
-			return true
-		}
-	}
-	return false
-}
-
 func postgresEnumAddValueRule() Rule {
 	return postgresStatementRule("PG102", "enum value added inside a transaction", func(stmt *Statement) (bool, string) {
 		if !hasWordPrefix(stmt.Words, "ALTER", "TYPE") || !hasWordSeq(stmt.Words, "ADD", "VALUE") {
@@ -1460,6 +1373,56 @@ func postgresConcurrentIndexRule() Rule {
 					Line:     stmt.Line,
 					Message:  "CONCURRENTLY cannot run inside PostgreSQL's normal migration transaction; mark the migration non-transactional before applying",
 					Context:  statementFindingContext(i),
+				})
+			}
+			return findings
+		},
+	}
+}
+
+// postgresPerChunkIndexInTransactionRule is PG103 for TimescaleDB's per-chunk
+// index build: WITH (timescaledb.transaction_per_chunk) commits one transaction
+// per chunk, so TimescaleDB refuses it inside a transaction block, the same way
+// PostgreSQL refuses CONCURRENTLY (SQLSTATE 25001, measured on TimescaleDB
+// 2.30.1 over PostgreSQL 18.6).
+//
+// It is a rule of its own rather than a wider PG103 because PG103 reports the
+// Atlas check for a concurrent operation without the txmode header, and a
+// per-chunk build is not a concurrent operation. Folding it in would put a
+// TimescaleDB statement under an Atlas identifier that does not describe it,
+// and `atlas:nolint PG103` would silence both.
+//
+// The recognition is [txrequire.PerChunkIndexBuild], the predicate the
+// migrator's transaction preflight uses, so a file this reports is the file
+// `migrations up` refuses, and a statement PG101 leaves alone as the per-chunk
+// remedy is the statement this reports when it sits in a transaction.
+func postgresPerChunkIndexInTransactionRule() Rule {
+	return Rule{
+		Code:     "PG103P",
+		Title:    "per-chunk index build in a transactional migration",
+		Severity: SeverityWarning,
+		Dialects: []string{"postgres"},
+		// Either direction, as PG103: the migrator wraps a down file in the
+		// same transaction it wraps an up file in.
+		CheckFile: func(file *File) []Finding {
+			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
+				return nil
+			}
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if !txrequire.PerChunkIndexBuild(stmt.Words) {
+					continue
+				}
+				findings = append(findings, Finding{
+					Rule:     "PG103P",
+					Title:    "per-chunk index build in a transactional migration",
+					Severity: SeverityWarning,
+					File:     file.Path,
+					Line:     stmt.Line,
+					Message: "WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk, so TimescaleDB " +
+						"refuses it inside the migration's transaction; mark the migration non-transactional before applying",
+					Context: statementFindingContext(i),
 				})
 			}
 			return findings

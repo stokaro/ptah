@@ -305,6 +305,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "CONCURRENTLY cannot run inside the migration's transaction",
 		AtlasCode: "PG103",
 	},
+	"PG103P": {
+		Summary: "a TimescaleDB per-chunk index build cannot run inside the migration's transaction",
+	},
 	"PG104": {
 		Summary:   "adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows",
 		AtlasCode: "PG104",
