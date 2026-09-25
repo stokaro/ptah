@@ -312,40 +312,6 @@ func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.Dom
 	return domain
 }
 
-// applyRoleComment attaches a COMMENT ON ROLE statement to the role it names.
-// PostgreSQL has no inline role comment, so Ptah's renderer emits the comment
-// as a second statement; reading it back is what keeps the pair round-tripping.
-func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode, sourcePlatform string) {
-	name, comment, ok := parseRoleComment(node.Text, sourcePlatform)
-	if !ok {
-		return
-	}
-	for index := range database.Roles {
-		if database.Roles[index].Name == name {
-			database.Roles[index].Comment = comment
-			return
-		}
-	}
-}
-
-// parseRoleComment recognizes the COMMENT ON ROLE text that
-// Parser.parseCommentStatement builds. The shape is fixed by that function, so
-// this reads a known format rather than arbitrary SQL.
-func parseRoleComment(text, sourcePlatform string) (name, comment string, ok bool) {
-	const prefix = "COMMENT ON ROLE "
-	if !strings.HasPrefix(text, prefix) {
-		return "", "", false
-	}
-	rest := text[len(prefix):]
-	separator := strings.LastIndex(rest, " IS ")
-	if separator < 0 {
-		return "", "", false
-	}
-	name = roleName(sourcePlatform, rest[:separator])
-	comment = strings.TrimSpace(rest[separator+len(" IS "):])
-	return name, unquoteSQLStringLiteral(comment), true
-}
-
 func unquoteSQLStringLiteral(value string) string {
 	if len(value) < 2 || value[0] != '\'' || value[len(value)-1] != '\'' {
 		return value
