@@ -224,6 +224,11 @@ func sqlitePlan() plan {
 		),
 		// Declared in the CREATE TABLE, because SQLite has no ALTER TABLE ADD
 		// CONSTRAINT to hang the clause on.
+		acceptance(capability.ForeignKeyDeleteColumnList,
+			[]string{"CREATE TABLE fdc_parent (id INTEGER PRIMARY KEY)"},
+			"CREATE TABLE fdc_child (parent_id INTEGER, CONSTRAINT fdc_c FOREIGN KEY (parent_id) "+
+				"REFERENCES fdc_parent (id) ON DELETE SET NULL (parent_id))",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{"CREATE TABLE dfc_parent (id INTEGER PRIMARY KEY)"},
 			"CREATE TABLE dfc_child (parent_id INTEGER, CONSTRAINT dfc_c FOREIGN KEY (parent_id) "+

@@ -109,6 +109,17 @@ func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []st
 	}
 }
 
+// deleteColumnListExperiment asks for the column list on ON DELETE SET NULL,
+// which PostgreSQL grew in 15. A single-column key naming its own column is the
+// smallest statement that carries the list, and the older lines refuse it at
+// the "(" (stokaro/ptah#3562).
+func deleteColumnListExperiment(t tableSpelling) experiment {
+	return acceptance(capability.ForeignKeyDeleteColumnList,
+		append(t.uniquelyReferenced("fdp", "fdp_uq", "id"), t.table("fdc", "n int, id int", "n")),
+		"ALTER TABLE fdc ADD CONSTRAINT fdc_fk FOREIGN KEY (id) REFERENCES fdp (id) ON DELETE SET NULL (id)",
+	)
+}
+
 // postgresFamilyPlan is the statement table for the PostgreSQL wire family.
 //
 // The experiments are one list for every dialect in it. What varies is how a
@@ -428,6 +439,7 @@ func postgresFamilyPlan(dialect string) plan {
 			[]string{t.table("aal", "n int", "n")},
 			"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
 		),
+		deleteColumnListExperiment(t),
 		acceptance(capability.DeferrableConstraints,
 			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
@@ -694,6 +706,14 @@ func mysqlFamilyPlan(dialect string) plan {
 		),
 		// The MySQL family spells the table the same way, so the statement is
 		// the same question.
+		// The PostgreSQL column list on ON DELETE SET NULL (stokaro/ptah#3562).
+		acceptance(capability.ForeignKeyDeleteColumnList,
+			[]string{
+				"CREATE TABLE fdp (id int NOT NULL, CONSTRAINT fdp_uq UNIQUE (id))",
+				"CREATE TABLE fdc (n int, id int)",
+			},
+			"ALTER TABLE fdc ADD CONSTRAINT fdc_fk FOREIGN KEY (id) REFERENCES fdp (id) ON DELETE SET NULL (id)",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{
 				"CREATE TABLE dfp (id int NOT NULL, CONSTRAINT dfp_uq UNIQUE (id))",

@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"maps"
 	"strings"
 
 	"ptah.run/catalog"
@@ -48,6 +49,14 @@ func foreignKeyConstraintChanged(
 
 	// Compare update rule
 	if normalizeReferentialAction(genConstraint.OnUpdate, dialect) != normalizeReferentialAction(getStringValue(dbConstraint.UpdateRule), dialect) {
+		return true
+	}
+
+	// Compare the columns ON DELETE SET NULL or SET DEFAULT changes. Without
+	// this a declaration that limits the action to one column compares equal
+	// to a key that clears them all, and the plan never narrows it
+	// (stokaro/ptah#3562).
+	if !sameDeleteColumnSet(semantics, genConstraint.Columns, genConstraint.OnDeleteColumns, dbConstraint.OnDeleteColumns) {
 		return true
 	}
 
@@ -105,6 +114,29 @@ func foreignTableRefMatches(
 	// compared unequal (stokaro/ptah#2219).
 	return semantics.QualifiedTableIdentityKey(desired) ==
 		semantics.QualifiedTableIdentityKey(dbConstraint.QualifiedForeignTableName())
+}
+
+// sameDeleteColumnSet reports whether two ON DELETE column lists change the
+// same columns of a key whose columns are keyColumns.
+//
+// The list is a set, not a sequence: PostgreSQL 18.6 keeps the order it was
+// written in and drops a repeated name, and `SET NULL (a, x)` sets the same
+// columns as `SET NULL (x, a)`. No list means every column of the key, so a
+// list naming all of them is the same declaration; pg_get_constraintdef prints
+// such a list back rather than dropping it.
+func sameDeleteColumnSet(semantics identifier.Semantics, keyColumns, left, right []string) bool {
+	return maps.Equal(deleteColumnSet(semantics, keyColumns, left), deleteColumnSet(semantics, keyColumns, right))
+}
+
+func deleteColumnSet(semantics identifier.Semantics, keyColumns, listed []string) map[string]struct{} {
+	if len(listed) == 0 {
+		listed = keyColumns
+	}
+	set := make(map[string]struct{}, len(listed))
+	for _, column := range listed {
+		set[semantics.ColumnIdentityKey(column)] = struct{}{}
+	}
+	return set
 }
 
 // sameColumnNames compares two column lists in order, under the dialect's

@@ -52,6 +52,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Constraint.Name", Disposition: DDL},
 	{Field: "schemamodel.Constraint.NullsDistinct", Disposition: DDL},
 	{Field: "schemamodel.Constraint.OnDelete", Disposition: DDL},
+	{Field: "schemamodel.Constraint.OnDeleteColumns", Disposition: DDL},
 	{Field: "schemamodel.Constraint.OnUpdate", Disposition: DDL},
 	{Field: "schemamodel.Constraint.RequiresExtensions", Disposition: Planning, Reason: "which extensions must exist before this constraint can be created; it orders the statements and appears in none of them"},
 	{Field: "schemamodel.Constraint.StructName", Disposition: DDL},

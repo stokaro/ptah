@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-375 fields are reachable from the desired schema, and each one carries
+376 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 314 | reaches rendered SQL on at least one target |
+| `ddl` | 315 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -110,6 +110,7 @@ None.
 | `schemamodel.Constraint.Name` | `ddl` | — |
 | `schemamodel.Constraint.NullsDistinct` | `ddl` | — |
 | `schemamodel.Constraint.OnDelete` | `ddl` | — |
+| `schemamodel.Constraint.OnDeleteColumns` | `ddl` | — |
 | `schemamodel.Constraint.OnUpdate` | `ddl` | — |
 | `schemamodel.Constraint.RequiresExtensions` | `planning` | which extensions must exist before this constraint can be created; it orders the statements and appears in none of them |
 | `schemamodel.Constraint.StructName` | `ddl` | — |

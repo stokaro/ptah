@@ -129,6 +129,7 @@ func Fixtures() []Fixture {
 		{Name: "foreign-key-self-constraint", Schema: selfReferencingForeignKeyConstraintFixture()},
 		{Name: "constraint-deferrable-only", Schema: constraintDeferrableOnlyFixture()},
 		{Name: "constraint-initially-only", Schema: constraintInitiallyOnlyFixture()},
+		{Name: "constraint-delete-column-list", Schema: constraintDeleteColumnListFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
 		{Name: "domain-default-only", Schema: domainDefaultOnlyFixture()},
@@ -790,6 +791,17 @@ func foreignKeyCompositeFixture() schemamodel.Database {
 			ForeignColumns: []string{"tenant", "id"},
 		}},
 	}
+}
+
+// constraintDeleteColumnListFixture limits ON DELETE SET NULL to one column of
+// a composite key, the PostgreSQL 15 form. Both columns stay nullable, so the
+// ablated declaration is a valid key that clears both rather than a refusal:
+// a refusal would answer every ablation the same way.
+func constraintDeleteColumnListFixture() schemamodel.Database {
+	db := foreignKeyCompositeFixture()
+	db.Constraints[0].OnDelete = "SET NULL"
+	db.Constraints[0].OnDeleteColumns = []string{"parent_id"}
+	return db
 }
 
 func constraintCheckFixture() schemamodel.Database {

@@ -88,6 +88,13 @@ type ForeignKeyRef struct {
 	// thing the engine defaults to -- IMMEDIATE -- spelled as "the author did
 	// not say".
 	Initially string
+	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
+	// referencing columns (PostgreSQL 15 and later); the other referencing
+	// columns keep their values. Empty means every referencing column, which
+	// is also what a list naming all of them means. A renderer for a target
+	// without the clause refuses a non-empty list rather than widen the
+	// action to every column.
+	OnDeleteColumns []string
 }
 
 // ReferencedColumns returns the referenced column list, falling back to Column
