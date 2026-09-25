@@ -115,6 +115,17 @@ A `schema diff` whose `--from` is a schema file has no server behind that side
 and compares by text (stokaro/ptah#3658). One whose two sides are both
 databases or directories needs no server: both hold the server's spelling.
 
+A view or materialized view body is compared by folding, not by asking the
+server. The server expands a `*` into the column list when it creates the view,
+so `SELECT * FROM orders WHERE total > 100` reads back as
+`SELECT id, total FROM orders WHERE (total > 100)`. Ptah expands each top-level
+`*` of a view that reads one table into that table's declared columns before it
+compares, so the declaration and its read-back match. Because the declared
+columns are used, a view created before its table gained a column is replaced,
+and the new column appears in it. A `*` over a join or inside a subquery is
+compared as written, so such a view is replaced on every plan; list its
+columns instead.
+
 ## Unnamed constraints in a SQL file
 
 PostgreSQL names a table-level `UNIQUE` or a `FOREIGN KEY` that the SQL leaves
@@ -142,17 +153,6 @@ that adds one to an existing column writes `ADD CONSTRAINT` under the same
 `<table>_<column>_key` name, without a number, because the plan cannot see
 which names the target already holds. Other engines keep Ptah's own name for
 an unnamed foreign key, `fk_<table>_<column>`.
-
-A view or materialized view body is compared by folding, not by asking the
-server. The server expands a `*` into the column list when it creates the view,
-so `SELECT * FROM orders WHERE total > 100` reads back as
-`SELECT id, total FROM orders WHERE (total > 100)`. Ptah expands each top-level
-`*` of a view that reads one table into that table's declared columns before it
-compares, so the declaration and its read-back match. Because the declared
-columns are used, a view created before its table gained a column is replaced,
-and the new column appears in it. A `*` over a join or inside a subquery is
-compared as written, so such a view is replaced on every plan; list its
-columns instead.
 
 ## Object comments
 
