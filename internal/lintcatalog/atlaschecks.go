@@ -226,7 +226,11 @@ var atlasChecks = []AtlasCheck{
 
 	{Code: "LT101", Meaning: "modifying a nullable column to non-nullable without a DEFAULT", PtahRules: []string{"LT101"}, Status: StatusCovered},
 
-	{Code: "PG101", Meaning: "index created without CONCURRENTLY", Pro: true, PtahRules: []string{"PG101"}, Status: StatusCovered},
+	{
+		Code: "PG101", Meaning: "index created without CONCURRENTLY", Pro: true,
+		PtahRules: []string{"PG101"}, Status: StatusCovered,
+		Note: "on a TimescaleDB hypertable, which refuses CONCURRENTLY, the message names the per-chunk build instead when the dev database shows the table is one; that build is not reported",
+	},
 	{Code: "PG102", Meaning: "index dropped without CONCURRENTLY", Pro: true, PtahRules: []string{"PG106"}, Status: StatusCovered},
 	{
 		Code: "PG103", Meaning: "concurrent operation without the atlas:txmode none header", Pro: true,

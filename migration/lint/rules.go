@@ -1231,39 +1231,197 @@ func postgresCreateIndexRule() Rule {
 		Title:    "index built with a table lock",
 		Severity: SeverityWarning,
 		Dialects: []string{"postgres"},
-		// File-level: an index on a table this same migration created is
-		// built on an empty table, so there is no lock hazard.
+		// The text says the build blocks writes. Only the starting state can
+		// say the table is a TimescaleDB hypertable, where the remedy the
+		// ordinary message names is refused, so the state refines the advice
+		// and a run without it keeps the ordinary one.
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: postgresLockingIndexBuilds,
 		CheckFile: func(file *File) []Finding {
-			if !file.IsUp {
-				return nil
-			}
 			var findings []Finding
-			created := make(map[string]bool)
-			for i := range file.Statements {
+			for _, i := range postgresLockingIndexBuilds(file) {
 				stmt := &file.Statements[i]
-				if ref := createdTableRef(stmt.Words); ref != "" {
-					created[ref] = true
-					continue
-				}
-				if !isCreateIndex(stmt.Words) || slices.Contains(stmt.Words, "CONCURRENTLY") {
-					continue
-				}
-				if refersToCreated(created, indexTargetRef(stmt.Words)) {
-					continue
-				}
 				findings = append(findings, Finding{
 					Rule:     "PG101",
 					Title:    "index built with a table lock",
 					Severity: SeverityWarning,
 					File:     file.Path,
 					Line:     stmt.Line,
-					Message:  "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction",
+					Message:  postgresLockingIndexAdvice(file, stmt),
 					Context:  statementFindingContext(i),
 				})
 			}
 			return findings
 		},
 	}
+}
+
+// postgresLockingIndexBuilds returns the CREATE INDEX statements PG101
+// reports, and it is also the rule's answer to which statements want the
+// starting state. One predicate for both, because a statement requested but
+// never reported costs a dev-database read for nothing, and one reported but
+// never requested is refined on no run at all.
+//
+// File-level: an index on a table this same migration created is built on an
+// empty table, so there is no lock hazard. A CONCURRENTLY build takes no lock
+// that blocks writes, and neither does a TimescaleDB per-chunk build on the
+// table as a whole; see [buildsIndexPerChunk].
+func postgresLockingIndexBuilds(file *File) []int {
+	if !file.IsUp {
+		return nil
+	}
+	var indexes []int
+	created := make(map[string]bool)
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if ref := createdTableRef(stmt.Words); ref != "" {
+			created[ref] = true
+			continue
+		}
+		if !isCreateIndex(stmt.Words) || slices.Contains(stmt.Words, "CONCURRENTLY") || buildsIndexPerChunk(stmt.Words) {
+			continue
+		}
+		if refersToCreated(created, indexTargetRef(stmt.Words)) {
+			continue
+		}
+		indexes = append(indexes, i)
+	}
+	return indexes
+}
+
+// postgresLockingIndexAdvice is PG101's message for one statement: the
+// ordinary advice, or the hypertable advice when the starting state says the
+// table is one.
+//
+// Measured on TimescaleDB 2.30.1 over PostgreSQL 18.6, on a hypertable of three
+// populated chunks:
+//
+//	CREATE INDEX CONCURRENTLY                refused: hypertables do not support
+//	                                         concurrent index creation
+//	CREATE INDEX                             SHARE on the hypertable and on every
+//	                                         chunk for the whole build; an INSERT
+//	                                         waits
+//	CREATE INDEX ... WITH                    SHARE on one chunk at a time; an
+//	  (timescaledb.transaction_per_chunk)    INSERT into another chunk, or into a
+//	                                         new one, proceeds; refused inside a
+//	                                         transaction block
+//	the per-chunk build, canceled            the hypertable's index stays with
+//	                                         indisvalid = false and the chunks
+//	                                         not yet built have none; a rerun
+//	                                         with IF NOT EXISTS skips it
+func postgresLockingIndexAdvice(file *File, stmt *Statement) string {
+	target := indexTarget(stmt)
+	if !file.baseline.hypertable(target.normalized) {
+		return "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; " +
+			"on a populated table use CREATE INDEX CONCURRENTLY outside a transaction"
+	}
+	return "CREATE INDEX on the hypertable " + target.name + " blocks writes to it and to every chunk for the whole " +
+		"build, and TimescaleDB refuses CONCURRENTLY on a hypertable; " +
+		"WITH (timescaledb.transaction_per_chunk) in a no_transaction migration builds one chunk at a time, so only " +
+		"writes to the chunk being indexed wait. A per-chunk build that is interrupted leaves the index invalid, and " +
+		"IF NOT EXISTS then skips it, so drop the index before you retry"
+}
+
+// indexTarget is the table a CREATE INDEX statement builds on, in the source
+// spelling and the normalized one; see [indexTargetRef].
+func indexTarget(stmt *Statement) tableReference {
+	for k := range stmt.Words {
+		if stmt.Words[k] == "ON" {
+			ref, _ := tableRefAt(stmt.Words, stmt.sourceWords, k+1)
+			return ref
+		}
+	}
+	return tableReference{}
+}
+
+// buildsIndexPerChunk reports whether a CREATE INDEX sets TimescaleDB's
+// `transaction_per_chunk` storage parameter to true.
+//
+// The parameter is TimescaleDB's own remedy for the lock PG101 reports, so
+// reporting it would flag the advice the rule gives on a hypertable. Only a
+// true value counts. Measured on TimescaleDB 2.30.1: `= false`, `= off` and
+// `= 0` take the plain build's lock on the hypertable and every chunk, so
+// reading the name alone would clear a statement that still blocks every
+// write. The value is read with PostgreSQL's boolean grammar, which the
+// extension applies here; see [postgresBoolTrue].
+//
+// On an ordinary table the parameter is refused (`unrecognized parameter
+// namespace "timescaledb"`), so a statement carrying it either builds per chunk
+// or does not run at all.
+func buildsIndexPerChunk(w []string) bool {
+	depth := 0
+	for i := range w {
+		switch w[i] {
+		case "(":
+			depth++
+			continue
+		case ")":
+			depth--
+			continue
+		}
+		if depth != 0 || w[i] != "WITH" || i+1 >= len(w) || w[i+1] != "(" {
+			continue
+		}
+		return storageParameterTrue(w, i+2, "TIMESCALEDB", "TRANSACTION_PER_CHUNK")
+	}
+	return false
+}
+
+// storageParameterTrue reads the storage parameter list that starts at
+// w[start] and reports whether it sets namespace.name to a true value. A
+// parameter written without a value is true, as PostgreSQL reads it.
+func storageParameterTrue(w []string, start int, namespace, name string) bool {
+	for i := start; i < len(w) && w[i] != ")"; {
+		matches := i+2 < len(w) && normalizeIdent(w[i]) == namespace && w[i+1] == "." && normalizeIdent(w[i+2]) == name
+		next := i + 1
+		for next < len(w) && w[next] != "," && w[next] != ")" {
+			next++
+		}
+		if matches {
+			return storageParameterValueTrue(w[i+3 : next])
+		}
+		i = next
+		if i < len(w) && w[i] == "," {
+			i++
+		}
+	}
+	return false
+}
+
+// storageParameterValueTrue reads the words after a parameter's name: nothing,
+// or `=` and a value.
+func storageParameterValueTrue(rest []string) bool {
+	if len(rest) == 0 {
+		return true
+	}
+	if len(rest) != 2 || rest[0] != "=" {
+		return false
+	}
+	return postgresBoolTrue(strings.Trim(rest[1], "'"))
+}
+
+// postgresBoolTrue reports whether PostgreSQL's boolean input reads value as
+// true: `on`, `1`, and `true` or `yes` or any prefix of either, in any case.
+//
+// Measured on TimescaleDB 2.30.1 for `transaction_per_chunk`: `t`, `tru`,
+// `yes`, `on` and `1` each build per chunk; `o` and `maybe` are refused as not
+// a valid bool. A refused value reads as false here, so the statement keeps
+// its finding and the engine reports the rest.
+func postgresBoolTrue(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return false
+	}
+	if v == "on" || v == "1" {
+		return true
+	}
+	// A prefix of the word, however short: parse_bool reads `t` as true.
+	for _, word := range []string{"true", "yes"} {
+		if len(v) <= len(word) && word[:len(v)] == v {
+			return true
+		}
+	}
+	return false
 }
 
 func postgresEnumAddValueRule() Rule {

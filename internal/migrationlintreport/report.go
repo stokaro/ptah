@@ -527,6 +527,7 @@ func lintDirectory(
 	lintOptions.Baseline = baseline.columns
 	lintOptions.BaselineIndexes = baseline.indexes
 	lintOptions.BaselineDependents = baseline.dependents
+	lintOptions.BaselineHypertables = baseline.hypertables
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
@@ -765,7 +766,9 @@ type baselineCollector struct {
 	// dependents is what reads each of those columns, resolved from the same
 	// read rather than a second round trip.
 	dependents []lint.BaselineDependent
-	dialect    string
+	// hypertables are the TimescaleDB hypertables of the same read.
+	hypertables []lint.BaselineHypertable
+	dialect     string
 }
 
 // setDialect records which routine-body parser the dependents are resolved
@@ -812,6 +815,7 @@ func (c *baselineCollector) observe(
 	c.columns = append(c.columns, state.columns...)
 	c.indexes = append(c.indexes, state.indexes...)
 	c.dependents = append(c.dependents, state.dependents...)
+	c.hypertables = append(c.hypertables, state.hypertables...)
 	return nil
 }
 

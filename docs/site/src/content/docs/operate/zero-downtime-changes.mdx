@@ -281,6 +281,11 @@ and the ones you will meet most are `PG101` and `PG106` for index builds and
 drops, `PG104` and `PG105` for primary keys and unique constraints, `PG303` for
 `SET NOT NULL`, `PG305` for `CHECK`, and `PG301` for a column type change.
 
+The command also prints a warning on stderr that names `PG101`. The rule can
+read a dev database, given with `--dev-url`, to tell whether the table is a
+TimescaleDB hypertable, and this run gave none. For an ordinary table the
+finding is the same either way.
+
 Findings are warnings, so the command still exits zero. `--fail-on any` is what
 turns the catalog into a gate, because it fails on every finding rather than on
 errors alone; [run checks in CI](../../testing/ci/) covers that side.

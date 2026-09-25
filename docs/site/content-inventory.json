@@ -1154,8 +1154,8 @@
         "/direct/inspect/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6362,
-      "sourceBytes": 45064
+      "visibleWords": 6585,
+      "sourceBytes": 46433
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4220,8 +4220,8 @@
       "inboundLinks": [
         "/versioned/online-mode/"
       ],
-      "visibleWords": 1396,
-      "sourceBytes": 15003
+      "visibleWords": 1444,
+      "sourceBytes": 15263
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -4708,8 +4708,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5884,
-      "sourceBytes": 39118
+      "visibleWords": 5970,
+      "sourceBytes": 39655
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
