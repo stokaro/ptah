@@ -88,7 +88,10 @@ func GrantsWithSemantics(
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
 			databaseGrantMapForAdditions[key] = ref
 		}
-		if managedRoles[ref.Role] || revokedGrants[key] {
+		// A revoke of a table privilege takes it off every column too, as
+		// PostgreSQL does, so it reaches the column rows. A column the schema
+		// grants the privilege on is kept by the check below.
+		if managedRoles[ref.Role] || revokedGrants[key] || revokedGrants[key.onWholeObject()] {
 			databaseGrantMapForRemovals[key] = ref
 		}
 	}
@@ -237,7 +240,10 @@ func revokeOnCreatedTargets(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
-	type target struct{ role, objectType, object, arguments string }
+	// The column is part of the group: a column privilege and the table
+	// privilege of the same name are two privileges, so a column revoke never
+	// counts towards a REVOKE ALL on the table.
+	type target struct{ role, objectType, object, arguments, column string }
 	var order []target
 	revoked := make(map[target][]difftypes.GrantRef)
 	for _, grant := range desired.RevokedGrants {
@@ -248,7 +254,7 @@ func revokeOnCreatedTargets(
 			if !revokedTargetCreated(ref, desired, database, semantics) {
 				continue
 			}
-			key := target{ref.Role, ref.ObjectType, ref.ObjectName, ref.Arguments}
+			key := target{ref.Role, ref.ObjectType, ref.ObjectName, ref.Arguments, ref.Column}
 			if _, seen := revoked[key]; !seen {
 				order = append(order, key)
 			}
@@ -303,16 +309,23 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 		objectName = grant.OnRoutine
 		arguments = grant.RoutineArguments
 	}
-	refs := make([]difftypes.GrantRef, 0, len(grant.Privileges))
+	columns := grant.Columns
+	if len(columns) == 0 {
+		columns = []string{""}
+	}
+	refs := make([]difftypes.GrantRef, 0, len(grant.Privileges)*len(columns))
 	for _, privilege := range grant.Privileges {
-		refs = append(refs, difftypes.GrantRef{
-			Role:       grant.Role,
-			Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
-			ObjectType: objectType,
-			ObjectName: objectName,
-			Arguments:  arguments,
-			WithOption: grant.WithOption,
-		})
+		for _, column := range columns {
+			refs = append(refs, difftypes.GrantRef{
+				Role:       grant.Role,
+				Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
+				ObjectType: objectType,
+				ObjectName: objectName,
+				Arguments:  arguments,
+				Column:     column,
+				WithOption: grant.WithOption,
+			})
+		}
 	}
 	return refs
 }
@@ -329,6 +342,7 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		ObjectType: objectType,
 		ObjectName: objectName,
 		Arguments:  grant.Arguments,
+		Column:     strings.TrimSpace(grant.Column),
 		WithOption: grant.WithOption,
 	}
 }
@@ -356,6 +370,17 @@ type grantIdentity struct {
 	objectType string
 	object     tableIdentity
 	arguments  string
+	// column is the column a table privilege is limited to, empty for the
+	// whole object. A column privilege and the table privilege of the same
+	// name are two rows in the catalog, so they are two identities.
+	column string
+}
+
+// onWholeObject is key without its column: the table privilege a revoke of
+// which also takes the column privilege.
+func (key grantIdentity) onWholeObject() grantIdentity {
+	key.column = ""
+	return key
 }
 
 func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) grantIdentity {
@@ -377,6 +402,7 @@ func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) gr
 		objectType: objectType,
 		object:     object,
 		arguments:  arguments,
+		column:     strings.TrimSpace(ref.Column),
 	}
 }
 
@@ -390,6 +416,9 @@ func sortGrantRefs(refs []difftypes.GrantRef) {
 		}
 		if refs[i].Arguments != refs[j].Arguments {
 			return refs[i].Arguments < refs[j].Arguments
+		}
+		if refs[i].Column != refs[j].Column {
+			return refs[i].Column < refs[j].Column
 		}
 		if refs[i].Role != refs[j].Role {
 			return refs[i].Role < refs[j].Role

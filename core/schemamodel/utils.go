@@ -1746,7 +1746,11 @@ type grantKey struct {
 	// f(text) are two grants.
 	onRoutine        string
 	routineArguments string
-	withOption       bool
+	// columns is the column list, joined with NUL, which a column name
+	// cannot carry: two grants of one privilege on different columns are two
+	// grants.
+	columns    string
+	withOption bool
 }
 
 func newGrantKey(g Grant) grantKey {
@@ -1760,6 +1764,7 @@ func newGrantKey(g Grant) grantKey {
 		onSequence:       g.OnSequence,
 		onRoutine:        g.OnRoutine,
 		routineArguments: g.RoutineArguments,
+		columns:          strings.Join(g.Columns, "\x00"),
 		withOption:       g.WithOption,
 	}
 }

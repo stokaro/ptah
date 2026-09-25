@@ -840,6 +840,9 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 	if grant.Role == "" {
 		return p.blockError(block, "permission requires to")
 	}
+	if err := p.grantColumns(block, "permission", &grant); err != nil {
+		return err
+	}
 	p.db.Grants = append(p.db.Grants, grant)
 	return nil
 }
@@ -858,6 +861,7 @@ func (p *parser) parseRevoke(block *hclsyntax.Block) error {
 		"from":       true,
 		"for":        true,
 		"privileges": true,
+		"columns":    true,
 		"comment":    true,
 	}, "revoke"); err != nil {
 		return err
@@ -880,7 +884,28 @@ func (p *parser) parseRevoke(block *hclsyntax.Block) error {
 	if revoked.Role == "" {
 		return p.blockError(block, "revoke requires from")
 	}
+	if err := p.grantColumns(block, "revoke", &revoked); err != nil {
+		return err
+	}
 	p.db.RevokedGrants = append(p.db.RevokedGrants, revoked)
+	return nil
+}
+
+// grantColumns reads the `columns` a `permission` or `revoke` block limits its
+// privileges to, a Ptah attribute: GRANT UPDATE (a, b) ON t is
+// `columns = ["a", "b"]`. Only a table has columns.
+func (p *parser) grantColumns(block *hclsyntax.Block, label string, grant *schemamodel.Grant) error {
+	columns, err := p.rawListAttr(block, "columns")
+	if err != nil {
+		return err
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	if grant.OnTable == "" {
+		return p.blockError(block, "%s columns need a table target: column privileges apply to a table", label)
+	}
+	grant.Columns = columns
 	return nil
 }
 
@@ -1308,6 +1333,7 @@ func (p *parser) rejectUnsupportedPermissionAttrs(block *hclsyntax.Block) error 
 		"to":         true,
 		"for":        true,
 		"privileges": true,
+		"columns":    true,
 		"grantable":  true,
 		"comment":    true,
 	}, "permission")

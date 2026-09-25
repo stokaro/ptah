@@ -4006,6 +4006,12 @@ func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]
 		}
 		grants = append(grants, tableGrants...)
 
+		columnGrants, err := r.readColumnGrantsForSchema(ctx, schemaName)
+		if err != nil {
+			return nil, err
+		}
+		grants = append(grants, columnGrants...)
+
 		schemaGrants, err := r.readSchemaGrantsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
@@ -4111,6 +4117,61 @@ func standaloneSequenceSet(sequences []catalog.Sequence) map[string]bool {
 		set[sequence.QualifiedName()] = true
 	}
 	return set
+}
+
+// readColumnGrantsForSchema reads the privileges granted on columns, one row
+// per privilege and column, from pg_attribute.attacl.
+//
+// information_schema.column_privileges is not read: measured on PostgreSQL 18,
+// it also reports a row per column for a table-level GRANT SELECT, and those
+// rows would read as column grants nobody wrote. attacl holds only what was
+// granted on the column itself; a REVOKE of the table privilege empties it too.
+// The grantees are filtered as readTableGrantsForSchema filters them, and the
+// relation kinds are the ones a column privilege applies to.
+func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
+	const query = `
+		SELECT
+			COALESCE(grantee.rolname, 'PUBLIC'),
+			acl.privilege_type,
+			c.relname,
+			a.attname,
+			acl.is_grantable,
+			COALESCE(grantor.rolname, '')
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		CROSS JOIN LATERAL aclexplode(a.attacl) acl
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		LEFT JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE n.nspname = $1
+		AND c.relkind IN ('r', 'v', 'f', 'p', 'm')
+		AND a.attnum > 0
+		AND NOT a.attisdropped
+		AND a.attacl IS NOT NULL
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY c.relname, a.attname, 1, 2`
+
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query column grants for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var grants []catalog.Grant
+	for rows.Next() {
+		grant := catalog.Grant{ObjectType: "TABLE", Schema: r.outputSchema(schemaName)}
+		if err := rows.Scan(
+			&grant.Role, &grant.Privilege, &grant.ObjectName, &grant.Column, &grant.WithOption, &grant.GrantedBy,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan column grant for schema %s: %w", schemaName, err)
+		}
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read column grants for schema %s: %w", schemaName, err)
+	}
+	return grants, nil
 }
 
 func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {

@@ -800,10 +800,31 @@ func ValidateRevokedGrants(db *Database) error {
 	if err := validateRevokedDefaultPrivileges(db.DefaultPrivileges); err != nil {
 		return err
 	}
-	for _, revoked := range db.RevokedGrants {
-		target := revoked.TargetKey()
-		for _, grant := range db.Grants {
-			if grant.Role != revoked.Role || grant.TargetKey() != target || !dialectScopesOverlap(grant.Dialects, revoked.Dialects) {
+	for _, declared := range db.RevokedGrants {
+		for _, revoked := range declared.ByColumn() {
+			if err := contradictedRevoke(revoked, db.Grants); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// contradictedRevoke reports a grant of a privilege revoked names, column by
+// column. A table privilege also contradicts a revoke of the same privilege on
+// one of its columns, which PostgreSQL cannot take out of it; a column grant
+// does not contradict a revoke of the table privilege, which leaves the column
+// privilege to be granted after it.
+func contradictedRevoke(revoked Grant, grants []Grant) error {
+	target := revoked.TargetKey()
+	tableTarget := Grant{OnTable: revoked.OnTable}.TargetKey()
+	for _, declared := range grants {
+		for _, grant := range declared.ByColumn() {
+			if grant.Role != revoked.Role || !dialectScopesOverlap(grant.Dialects, revoked.Dialects) {
+				continue
+			}
+			key := grant.TargetKey()
+			if key != target && (len(revoked.Columns) == 0 || key != tableTarget || revoked.OnTable == "") {
 				continue
 			}
 			for _, privilege := range revoked.Privileges {

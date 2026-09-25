@@ -10,7 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
-	"ptah.run/core/renderer/internal/dialects/internal/routinegrant"
+	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -831,7 +831,10 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // Emitting it would render a statement the server refuses, which is worse than
 // refusing it here -- the plan would fail halfway through.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	if err := routinegrant.Refusal("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+	if err := grantrefusal.Routine("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns("oracle", "GRANT", node.ObjectName, node.Columns); err != nil {
 		return err
 	}
 	if node.WithOption {
@@ -851,7 +854,10 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // renderRevokePrivilege mirrors the grant, with the same two shapes.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	if err := routinegrant.Refusal("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+	if err := grantrefusal.Routine("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns("oracle", "REVOKE", node.ObjectName, node.Columns); err != nil {
 		return err
 	}
 	if node.Comment != "" {

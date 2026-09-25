@@ -2049,16 +2049,27 @@ func (p *Planner) removeRoles(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
+// grantColumns is the column list of the statement for grant: its column, or
+// none for a privilege on the whole object.
+func grantColumns(grant difftypes.GrantRef) []string {
+	if grant.Column == "" {
+		return nil
+	}
+	return []string{grant.Column}
+}
+
 func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsAdded {
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetArguments(grant.Arguments).
+			SetColumns(grantColumns(grant)).
 			SetWithOption(grant.WithOption)
 		result = append(result, node)
 	}
 	for _, grant := range diff.GrantOptionsAdded {
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetArguments(grant.Arguments).
+			SetColumns(grantColumns(grant)).
 			SetWithOption(true)
 		result = append(result, node)
 	}
@@ -2068,7 +2079,8 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsRemoved {
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetArguments(grant.Arguments)
+			SetArguments(grant.Arguments).
+			SetColumns(grantColumns(grant))
 		result = append(result, node)
 	}
 	return result
@@ -2078,6 +2090,7 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 	for _, grant := range diff.GrantOptionsRevoked {
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetArguments(grant.Arguments).
+			SetColumns(grantColumns(grant)).
 			SetGrantOptionFor(true)
 		result = append(result, node)
 	}

@@ -83,6 +83,10 @@ func ScopeOf(grant schemamodel.Grant, defaultDatabase string) (Scope, error) {
 		return Scope{}, fmt.Errorf(
 			"grant to role %q names on_sequence %q: ClickHouse has no sequences",
 			grant.Role, grant.OnSequence)
+	case len(grant.Columns) > 0:
+		return Scope{}, fmt.Errorf(
+			"grant to role %q names columns of %q: column privileges are modeled for PostgreSQL only",
+			grant.Role, grant.OnTable)
 	case grant.OnSchema != "" && grant.OnTable != "":
 		return Scope{}, fmt.Errorf(
 			"grant to role %q names both on_schema %q and on_table %q: a ClickHouse grant has one scope",

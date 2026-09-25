@@ -718,6 +718,7 @@ func grantAnnotation(grant schemamodel.Grant) string {
 		attr{name: "on_schema", value: grant.OnSchema, set: grant.OnSchema != ""},
 		attr{name: "on_sequence", value: grant.OnSequence, set: grant.OnSequence != ""},
 		routineTargetAttr(grant),
+		attr{name: "columns", value: strings.Join(grant.Columns, ","), set: len(grant.Columns) > 0},
 		attr{name: "with_option", value: strconv.FormatBool(grant.WithOption), set: grant.WithOption},
 		attr{name: "comment", value: grant.Comment, set: grant.Comment != ""},
 		dialectsAttr(grant.Dialects),
@@ -733,6 +734,7 @@ func revokeAnnotation(revoked schemamodel.Grant) string {
 		attr{name: "on_schema", value: revoked.OnSchema, set: revoked.OnSchema != ""},
 		attr{name: "on_sequence", value: revoked.OnSequence, set: revoked.OnSequence != ""},
 		routineTargetAttr(revoked),
+		attr{name: "columns", value: strings.Join(revoked.Columns, ","), set: len(revoked.Columns) > 0},
 		attr{name: "comment", value: revoked.Comment, set: revoked.Comment != ""},
 		dialectsAttr(revoked.Dialects),
 	)
@@ -1084,6 +1086,7 @@ func grantSortKey(grant schemamodel.Grant) string {
 		grant.OnSequence,
 		grant.OnRoutine,
 		grant.RoutineArguments,
+		strings.Join(grant.Columns, ","),
 		strings.Join(grant.Privileges, ","),
 		strconv.FormatBool(grant.WithOption),
 	}, "\x00")

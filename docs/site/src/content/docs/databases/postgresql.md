@@ -229,11 +229,29 @@ global default. In Go the same declaration is the `revoked` attribute of
 `default_privilege` block, and in YAML the `revoked` key of a
 `default_privileges` entry.
 
+A privilege can be limited to columns of a table: `GRANT UPDATE (state,
+decided_at) ON proposals TO app`. Each column is compared on its own against
+`pg_attribute.attacl`, and a column privilege and the table privilege of the
+same name are two privileges, as they are in the catalog. A `REVOKE` of the
+table privilege also takes it off every column, as PostgreSQL does, so
+
+```sql
+REVOKE UPDATE ON proposals FROM app;
+GRANT UPDATE (state, decided_at) ON proposals TO app;
+```
+
+leaves `app` able to update those two columns and no other, and Ptah plans the
+`REVOKE` before the `GRANT`. In Go the column list is the `columns` attribute of
+`//ptah:schema:grant` and `//ptah:schema:revoke`, and in HCL the `columns`
+attribute of a `permission` or `revoke` block.
+
 Some forms are refused rather than approximated, each with a message that
 names the form:
 
-- column privileges, such as `GRANT UPDATE (state) ON t TO app`, because a
-  grant here covers a whole object;
+- a statement whose privileges name different column lists, such as
+  `GRANT SELECT (a), UPDATE (a, b) ON t`: write one statement per list;
+- a column `REVOKE` of a privilege the file grants on the whole table, which
+  covers every column and which a column revoke does not take away;
 - `ON ALL TABLES IN SCHEMA`, which applies to whatever objects exist when it
   runs;
 - `REVOKE ... CASCADE`, `REVOKE ... GRANTED BY` and a list of grantees;
@@ -246,7 +264,10 @@ names the form:
 A privilege on a function or procedure is modeled for PostgreSQL only; the
 other renderers refuse the statement by name. HCL has no spelling for a routine
 target, because a `function.<name>` reference cannot name an overload, so
-`ptah schema export --to hcl` reports such a grant or revoke as an export loss. New-role SQL fails closed when the role already
+`ptah schema export --to hcl` reports such a grant or revoke as an export
+loss. Column privileges are modeled for PostgreSQL only too.
+
+New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with
 unverified security attributes. Role descriptions are applied with
 `COMMENT ON ROLE` after successful creation.

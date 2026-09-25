@@ -3322,7 +3322,7 @@ func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
 
 // renderGrantPrivilege renders a GRANT statement for PostgreSQL.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	privileges := strings.Join(node.Privileges, ", ")
+	privileges := r.privilegeList(node.Privileges, node.Columns)
 	if privileges == "" {
 		return fmt.Errorf("GRANT requires at least one privilege")
 	}
@@ -3364,9 +3364,28 @@ func (r *Renderer) grantTarget(objectType, objectName, arguments string) string 
 	}
 }
 
+// privilegeList renders the privileges of a GRANT or REVOKE, each followed by
+// the column list it is limited to when there is one: UPDATE (a, b). It is
+// empty when there are no privileges.
+func (r *Renderer) privilegeList(privileges, columns []string) string {
+	if len(columns) == 0 {
+		return strings.Join(privileges, ", ")
+	}
+	quoted := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quoted = append(quoted, r.escapeIdentifier(column))
+	}
+	list := " (" + strings.Join(quoted, ", ") + ")"
+	named := make([]string, 0, len(privileges))
+	for _, privilege := range privileges {
+		named = append(named, privilege+list)
+	}
+	return strings.Join(named, ", ")
+}
+
 // renderRevokePrivilege renders a REVOKE statement for PostgreSQL.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	privileges := strings.Join(node.Privileges, ", ")
+	privileges := r.privilegeList(node.Privileges, node.Columns)
 	if privileges == "" {
 		return fmt.Errorf("REVOKE requires at least one privilege")
 	}

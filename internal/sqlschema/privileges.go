@@ -101,8 +101,22 @@ func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) schemamodel.Gr
 		Comment:    node.Comment,
 	}
 	setGrantTarget(&grant, node.ObjectType, node.ObjectName, node.Arguments)
+	grant.Columns = normalizeColumns(node.Columns)
 	grant.Canonicalize()
 	return grant
+}
+
+// normalizeColumns unquotes a column list, as a column name is compared with
+// the name the catalog reports.
+func normalizeColumns(columns []string) []string {
+	if len(columns) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(columns))
+	for _, column := range columns {
+		normalized = append(normalized, normalizeSQLIdentifier(column))
+	}
+	return normalized
 }
 
 // appendGrant records a GRANT, taking the privileges it names out of the
@@ -123,9 +137,13 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode, sourcePlatform string) error {
 	revoked := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
 	setGrantTarget(&revoked, node.ObjectType, node.ObjectName, node.Arguments)
+	revoked.Columns = normalizeColumns(node.Columns)
 	revoked.Canonicalize()
 	target := revoked.TargetKey()
 	privileges := expandAll(node.Privileges, node.ObjectType)
+	if err := refuseColumnRevokeUnderTableGrant(database, revoked, privileges); err != nil {
+		return err
+	}
 	if privilegefold.HeldAsAll(database.Grants, revoked.Role, target) {
 		return fmt.Errorf(
 			"REVOKE ON %s FROM %s follows a GRANT ALL on it, which this schema keeps as ALL rather than as the "+
@@ -232,6 +250,27 @@ func revokeDefaultPrivilegeOption(database *schemamodel.Database, revoked schema
 				revoked.Grantor, revoked.Schema, privilege, revoked.ObjectType, revoked.Grantee)
 		}
 		database.DefaultPrivileges[index].Privileges[held].WithOption = false
+	}
+	return nil
+}
+
+// refuseColumnRevokeUnderTableGrant refuses a revoke on columns of a privilege
+// an earlier statement grants on the whole table. The table privilege covers
+// every column and a column revoke does not take it away -- measured on
+// PostgreSQL 18, has_column_privilege still answers true after GRANT UPDATE ON
+// t and REVOKE UPDATE (a) ON t -- so the statement would change nothing.
+func refuseColumnRevokeUnderTableGrant(database *schemamodel.Database, revoked schemamodel.Grant, privileges []string) error {
+	if len(revoked.Columns) == 0 {
+		return nil
+	}
+	for _, privilege := range privileges {
+		privilege = strings.ToUpper(strings.TrimSpace(privilege))
+		if privilegefold.HeldOnTable(database.Grants, revoked.Role, revoked.OnTable, privilege) {
+			return fmt.Errorf(
+				"REVOKE %s (%s) ON %s FROM %s follows a GRANT of %s on the whole table, which covers every column, "+
+					"so revoking it on columns takes nothing away; grant it on the columns that keep it instead",
+				privilege, strings.Join(revoked.Columns, ", "), revoked.OnTable, revoked.Role, privilege)
+		}
 	}
 	return nil
 }

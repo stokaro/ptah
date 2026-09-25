@@ -10,11 +10,13 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// TestParser_ParseGrantOnRoutine_HappyPath pins what a GRANT on a function,
-// procedure or routine parses into. The argument types are part of the node
-// because PostgreSQL overloads a routine name by them, and a node that dropped
-// them could not say which overload the privilege is on.
-func TestParser_ParseGrantOnRoutine_HappyPath(t *testing.T) {
+// TestParser_ParseGrant_HappyPath pins what a GRANT on a function, procedure
+// or routine, or on columns of a table, parses into. The argument types are
+// part of the node because PostgreSQL overloads a routine name by them, and a
+// node that dropped them could not say which overload the privilege is on.
+// The column list is part of it because without it the privilege would cover
+// the whole table.
+func TestParser_ParseGrant_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		sql  string
@@ -34,6 +36,22 @@ func TestParser_ParseGrantOnRoutine_HappyPath(t *testing.T) {
 			want: ast.GrantPrivilegeNode{
 				Role: "app_role", Privileges: []string{"EXECUTE"},
 				ObjectType: "PROCEDURE", ObjectName: "app.archive",
+			},
+		},
+		{
+			name: "the column grant wpmgr writes",
+			sql:  "GRANT UPDATE (state, decided_at, decided_by_user_id) ON assistant_update_proposals TO wpmgr_app;",
+			want: ast.GrantPrivilegeNode{
+				Role: "wpmgr_app", Privileges: []string{"UPDATE"}, ObjectType: "TABLE", ObjectName: "assistant_update_proposals",
+				Columns: []string{"state", "decided_at", "decided_by_user_id"},
+			},
+		},
+		{
+			name: "two privileges sharing a quoted column list",
+			sql:  `GRANT SELECT ("Label"), UPDATE ("Label") ON TABLE app.t TO r;`,
+			want: ast.GrantPrivilegeNode{
+				Role: "r", Privileges: []string{"SELECT", "UPDATE"}, ObjectType: "TABLE", ObjectName: "app.t",
+				Columns: []string{`"Label"`},
 			},
 		},
 		{
@@ -103,6 +121,14 @@ func TestParser_ParseRevoke_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "a column privilege",
+			sql:  "REVOKE SELECT (secret) ON accounts FROM r;",
+			want: ast.RevokePrivilegeNode{
+				Role: "r", Privileges: []string{"SELECT"}, ObjectType: "TABLE", ObjectName: "accounts",
+				Columns: []string{"secret"},
+			},
+		},
+		{
 			name: "a sequence",
 			sql:  "REVOKE USAGE, SELECT ON SEQUENCE order_seq FROM r;",
 			want: ast.RevokePrivilegeNode{
@@ -147,14 +173,19 @@ func TestParser_ParseObjectPrivileges_FailurePath(t *testing.T) {
 			wantErr: `REVOKE \.\.\. ON PROCEDURE archive needs the argument types .*`,
 		},
 		{
-			name:    "a column privilege in a GRANT",
-			sql:     "GRANT UPDATE (state, decided_at) ON assistant_update_proposals TO wpmgr_app;",
-			wantErr: `column privileges are not supported: GRANT UPDATE \(\.\.\.\) at position \d+ grants on columns, and a grant here covers a whole object`,
+			name:    "privileges naming different column lists",
+			sql:     "GRANT SELECT (a), UPDATE (a, b) ON t TO r;",
+			wantErr: `GRANT names a different column list for UPDATE at position \d+: one statement here limits all of its privileges to the same columns, so write one statement per column list`,
 		},
 		{
-			name:    "a column privilege in a REVOKE",
-			sql:     "REVOKE SELECT (secret) ON accounts FROM r;",
-			wantErr: `column privileges are not supported: REVOKE SELECT \(\.\.\.\) .*`,
+			name:    "one privilege naming columns and another not",
+			sql:     "REVOKE SELECT, UPDATE (a) ON t FROM r;",
+			wantErr: `REVOKE names a different column list for UPDATE at position \d+: .*`,
+		},
+		{
+			name:    "columns on a target that has none",
+			sql:     "GRANT USAGE (a) ON SCHEMA app TO r;",
+			wantErr: `GRANT names columns on SCHEMA app: column privileges apply to a table`,
 		},
 		{
 			name:    "ALL ... IN SCHEMA",

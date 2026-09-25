@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 7852,
-      "sourceBytes": 54654
+      "visibleWords": 8006,
+      "sourceBytes": 55644
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4617,8 +4617,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5508,
-      "sourceBytes": 42551
+      "visibleWords": 5546,
+      "sourceBytes": 42821
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4665,8 +4665,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 2201,
-      "sourceBytes": 17445
+      "visibleWords": 2217,
+      "sourceBytes": 17536
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",

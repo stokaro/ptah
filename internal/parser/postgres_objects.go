@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -286,13 +287,16 @@ func (p *Parser) parseGrantStatement() (*ast.GrantPrivilegeNode, error) {
 	}
 	p.skipWhitespace()
 
-	privileges, err := p.parseObjectPrivileges("GRANT")
+	privileges, columns, err := p.parseObjectPrivileges("GRANT")
 	if err != nil {
 		return nil, err
 	}
 
 	target, err := p.parseGrantTarget("GRANT")
 	if err != nil {
+		return nil, err
+	}
+	if err := requireColumnTarget("GRANT", target, columns); err != nil {
 		return nil, err
 	}
 
@@ -307,7 +311,8 @@ func (p *Parser) parseGrantStatement() (*ast.GrantPrivilegeNode, error) {
 	}
 
 	grant := ast.NewGrantPrivilege(role, target.objectType, target.objectName, privileges).
-		SetArguments(target.arguments)
+		SetArguments(target.arguments).
+		SetColumns(columns)
 	withOption, err := p.parseGrantOptionSuffix()
 	if err != nil {
 		return nil, err
@@ -332,13 +337,16 @@ func (p *Parser) parseRevokeStatement() (*ast.RevokePrivilegeNode, error) {
 	}
 	p.skipWhitespace()
 
-	privileges, err := p.parseObjectPrivileges("REVOKE")
+	privileges, columns, err := p.parseObjectPrivileges("REVOKE")
 	if err != nil {
 		return nil, err
 	}
 
 	target, err := p.parseGrantTarget("REVOKE")
 	if err != nil {
+		return nil, err
+	}
+	if err := requireColumnTarget("REVOKE", target, columns); err != nil {
 		return nil, err
 	}
 
@@ -356,7 +364,8 @@ func (p *Parser) parseRevokeStatement() (*ast.RevokePrivilegeNode, error) {
 	}
 
 	revoke := ast.NewRevokePrivilege(role, target.objectType, target.objectName, privileges).
-		SetArguments(target.arguments)
+		SetArguments(target.arguments).
+		SetColumns(columns)
 	return revoke.SetGrantOptionFor(grantOptionFor), nil
 }
 
@@ -406,21 +415,22 @@ func (p *Parser) parseGrantPrivileges() ([]string, error) {
 }
 
 // parseObjectPrivileges reads the privilege list of a GRANT or REVOKE on an
-// object, with ON consumed.
+// object, with ON consumed, and the column list its privileges are limited to.
 //
 // It differs from [Parser.parseGrantPrivileges], which ALTER DEFAULT
 // PRIVILEGES also uses, in two places. ALL PRIVILEGES is read as the ALL it
-// spells, so the noise word does not fail the statement. A column list after a
-// privilege -- UPDATE (a, b) -- is refused by name: the model keys a grant by
-// object, and reading the privilege without its columns would widen it to the
-// whole table.
-func (p *Parser) parseObjectPrivileges(statement string) ([]string, error) {
-	var privileges []string
+// spells, so the noise word does not fail the statement. And a privilege may
+// name columns -- UPDATE (a, b) -- which limits it to them. PostgreSQL lets
+// each privilege of one statement name its own list; the model keeps one list
+// per statement, so a statement whose privileges name different lists, or
+// where some name columns and others do not, is refused rather than read as
+// one of them.
+func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []string, err error) {
 	for {
 		p.skipWhitespace()
 		privilege, err := p.expectIdentifier()
 		if err != nil {
-			return nil, fmt.Errorf("expected privilege name: %w", err)
+			return nil, nil, fmt.Errorf("expected privilege name: %w", err)
 		}
 		privilege = strings.ToUpper(privilege)
 		p.skipWhitespace()
@@ -428,11 +438,17 @@ func (p *Parser) parseObjectPrivileges(statement string) ([]string, error) {
 			p.advance()
 			p.skipWhitespace()
 		}
-		if p.current.MatchOperatorValue("(") {
-			return nil, fmt.Errorf(
-				"column privileges are not supported: %s %s (...) at position %d grants on columns, and a grant "+
-					"here covers a whole object", statement, privilege, p.current.Start)
+		start := p.current.Start
+		named, err := p.parsePrivilegeColumns(statement)
+		if err != nil {
+			return nil, nil, err
 		}
+		if len(privileges) > 0 && !slices.Equal(named, columns) {
+			return nil, nil, fmt.Errorf(
+				"%s names a different column list for %s at position %d: one statement here limits all of its "+
+					"privileges to the same columns, so write one statement per column list", statement, privilege, start)
+		}
+		columns = named
 		privileges = append(privileges, privilege)
 		if p.current.MatchOperatorValue(",") {
 			p.advance()
@@ -440,10 +456,50 @@ func (p *Parser) parseObjectPrivileges(statement string) ([]string, error) {
 		}
 		if p.current.MatchIdentifierValue("ON") {
 			p.advance()
-			return privileges, nil
+			return privileges, columns, nil
 		}
-		return nil, fmt.Errorf("expected ',' or ON in %s privileges at position %d", statement, p.current.Start)
+		return nil, nil, fmt.Errorf("expected ',' or ON in %s privileges at position %d", statement, p.current.Start)
 	}
+}
+
+// parsePrivilegeColumns reads the column list that may follow a privilege
+// name, and returns nil when there is none.
+func (p *Parser) parsePrivilegeColumns(statement string) ([]string, error) {
+	if !p.current.MatchOperatorValue("(") {
+		return nil, nil
+	}
+	p.advance()
+	var columns []string
+	for {
+		p.skipWhitespace()
+		column, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected column name in %s privilege columns: %w", statement, err)
+		}
+		columns = append(columns, column)
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			p.advance()
+			p.skipWhitespace()
+			return columns, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in %s privilege columns at position %d", statement, p.current.Start)
+	}
+}
+
+// requireColumnTarget refuses a column list on a target that has no columns.
+// PostgreSQL accepts one only on a table, a view or a foreign table, which a
+// grant here names as a TABLE.
+func requireColumnTarget(statement string, target grantTarget, columns []string) error {
+	if len(columns) == 0 || target.objectType == "TABLE" {
+		return nil
+	}
+	return fmt.Errorf("%s names columns on %s %s: column privileges apply to a table", statement,
+		target.objectType, target.objectName)
 }
 
 // grantObjectTypes are the GRANT target kinds Ptah models. A GRANT that omits
