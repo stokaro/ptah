@@ -256,6 +256,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"DS109": {
 		Summary: "DISABLE ROW LEVEL SECURITY removes an access-control protection",
 	},
+	"DS111P": {
+		Summary: "NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table",
+	},
 	"CD101": {
 		Summary:   "dropping a foreign key removes referential-integrity enforcement",
 		AtlasCode: "CD101",

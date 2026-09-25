@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/migrationlintreport"
 	migrationlint "ptah.run/migration/lint"
@@ -97,7 +98,7 @@ func runAtlasMigrateLint(
 	policy atlascompatpolicy.Policy,
 	opts atlasMigrateLintOptions,
 ) (runErr error) {
-	// Both variables this verb owns are resolved first, before the project file
+	// The variables this verb owns are resolved first, before the project file
 	// is opened and before any directory or dev database is touched. Resolving
 	// them at their use sites left each one dormant on the runs that did not need
 	// it -- a lint that named a scope never read PTAH_ATLAS_LINT_ALL_VERSIONS,
@@ -109,6 +110,10 @@ func runAtlasMigrateLint(
 		return cmdutil.Fail(cmd, err)
 	}
 	withoutDevURL, err := lintWithoutDevURL()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -248,6 +253,9 @@ func runAtlasMigrateLint(
 		FailOn:        migrationlintreport.FailOnError,
 		Latest:        opts.latest,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		// What the operator declared about the server DevURL names; see
+		// devdocker.DisposableServerEnvVar.
+		DevServerDisposable: devServerDisposable,
 		// `.Schema.Current` and `.Schema.Desired` exist only in the templated
 		// output, so only a run that renders a template pays for reading them.
 		CaptureSchema: formatOutput,

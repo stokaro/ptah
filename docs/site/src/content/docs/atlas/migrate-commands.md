@@ -1089,6 +1089,9 @@ container is started, used and removed by the command. Because the whole server
 is the run's own, replay on it also runs a `DO` block, a routine definition, a
 role and a privilege on a schema or database, which a server URL refuses; see
 [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
+`PTAH_DEV_SERVER_DISPOSABLE=1` gives a server started some other way, such as
+a CI service container, the same treatment; see
+[a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
 
 ### The publication boundary
 

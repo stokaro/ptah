@@ -48,6 +48,12 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own, as
+	// [ptah.run/internal/devdocker.DisposableServerDeclared] resolved it. A
+	// migration-directory replay then runs the statements whose effect reaches
+	// past the dev database.
+	DevServerDisposable bool
 	// SchemaScope and SchemaScopeFlag limit an HCL desired state to one schema;
 	// see [ptah.run/internal/schemafile.Options]. They are passed in
 	// rather than derived from DevURL here because a verb with a target URL --
@@ -322,7 +328,9 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	// normalization above is this path's, and it applies to the answer. See
 	// [devdocker.Parse]: a leading space is not a docker URL with whitespace on
 	// it, it is a value the pinned binary cannot parse.
-	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{
+		DeclaredDisposable: opts.DevServerDisposable,
+	})
 	if err != nil {
 		return State{}, err
 	}

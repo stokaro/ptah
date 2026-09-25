@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/devdocker"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -87,6 +88,12 @@ of reporting a synced schema to a CI check.`,
 }
 
 func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
+	// Resolved before the project file is read, so a malformed declaration
+	// fails every diff and not only one that replays a migration directory.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -122,16 +129,17 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	}
 
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
-		FromURLs:       opts.fromURLs,
-		ToURLs:         opts.toURLs,
-		DevURL:         opts.devURL,
-		ServerVersion:  opts.serverVersion,
-		Exclude:        opts.exclude,
-		Schemas:        dbcli.ParseSchemas(opts.schemas),
-		Include:        opts.include,
-		Policy:         policy,
-		ConnectTimeout: connectTimeout,
-		Diagnostics:    cmd.ErrOrStderr(),
+		FromURLs:            opts.fromURLs,
+		ToURLs:              opts.toURLs,
+		DevURL:              opts.devURL,
+		ServerVersion:       opts.serverVersion,
+		Exclude:             opts.exclude,
+		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Include:             opts.include,
+		Policy:              policy,
+		ConnectTimeout:      connectTimeout,
+		Diagnostics:         cmd.ErrOrStderr(),
+		DevServerDisposable: devServerDisposable,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

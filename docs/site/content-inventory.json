@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14079,
-      "sourceBytes": 98441
+      "visibleWords": 14104,
+      "sourceBytes": 98677
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -696,6 +696,7 @@
         "/databases/support-matrix/",
         "/operate/overview/",
         "/reference/atlas-commands/",
+        "/reference/configuration/",
         "/schema/security/",
         "/schema/stats/",
         "/start/adopt-an-existing-database/",
@@ -704,8 +705,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2065,
-      "sourceBytes": 15037
+      "visibleWords": 2234,
+      "sourceBytes": 16099
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -4411,6 +4412,7 @@
       "outboundLinks": [
         "/atlas/adoption/",
         "/atlas/project-config/",
+        "/concepts/database-urls-and-dev-databases/",
         "/databases/sqlite/",
         "/reference/hcl-schema/"
       ],
@@ -4432,8 +4434,8 @@
         "/schema/orm-and-external/",
         "/versioned/apply/"
       ],
-      "visibleWords": 3288,
-      "sourceBytes": 23352
+      "visibleWords": 3332,
+      "sourceBytes": 23690
     },
     {
       "path": "docs/site/src/content/docs/reference/exit-codes.md",
@@ -4711,8 +4713,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 5984,
-      "sourceBytes": 39766
+      "visibleWords": 6004,
+      "sourceBytes": 39888
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6864,8 +6866,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5535,
-      "sourceBytes": 38998
+      "visibleWords": 5559,
+      "sourceBytes": 39136
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

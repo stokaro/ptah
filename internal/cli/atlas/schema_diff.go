@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -107,6 +108,12 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	// malformed suppression is refused on every diff rather than on the ones
 	// that ask for the diagram.
 	web, skipOpen, err := atlasWebRequest(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// Only a side that is a migration directory replays; the declaration is
+	// resolved on every diff so a malformed value cannot wait for one.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -205,6 +212,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		ProjectEnv:  projectEnv,
 		Diagnostics: cmd.ErrOrStderr(),
 
+		DevServerDisposable:       devServerDisposable,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateSchema:            opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,

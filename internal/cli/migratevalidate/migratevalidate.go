@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationvalidate"
 	"ptah.run/internal/ociartifact"
@@ -79,6 +80,9 @@ type source struct {
 	// on the scheme alone because the two constructors above disagree about it,
 	// and the disagreement is the compatibility policy rather than an accident.
 	registryBacked bool
+	// devServerDisposable is what [devdocker.DisposableServerDeclared]
+	// resolved for this run.
+	devServerDisposable bool
 }
 
 // FailAtlasChecksumMismatch writes the Atlas CE checksum-mismatch guidance for
@@ -135,6 +139,13 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Resolved before either runner starts, so a malformed declaration
+			// fails every validate, including one with no --dev-url to replay on.
+			disposable, err := devdocker.DisposableServerDeclared()
+			if err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
+			src.devServerDisposable = disposable
 			return run(cmd, src)
 		},
 	}
@@ -298,9 +309,10 @@ func validate(ctx context.Context, src *source) (checkedSource, error) {
 	}
 
 	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
-		Dir:       src.dir,
-		DirFormat: dirFormat,
-		DevURL:    src.devURL,
+		Dir:                 src.dir,
+		DirFormat:           dirFormat,
+		DevURL:              src.devURL,
+		DevServerDisposable: src.devServerDisposable,
 	})
 	return checkedSource{result: result}, err
 }
@@ -330,10 +342,11 @@ func validateArtifact(ctx context.Context, src *source) (checkedSource, error) {
 	}
 
 	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
-		Dir:       resolved.Display,
-		FS:        resolved.FileSystem,
-		DirFormat: resolved.DirFormat,
-		DevURL:    src.devURL,
+		Dir:                 resolved.Display,
+		FS:                  resolved.FileSystem,
+		DirFormat:           resolved.DirFormat,
+		DevURL:              src.devURL,
+		DevServerDisposable: src.devServerDisposable,
 	})
 	return checkedSource{result: result, resolved: &resolved}, err
 }

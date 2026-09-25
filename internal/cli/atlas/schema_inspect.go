@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/devdocker"
 )
 
 type atlasSchemaInspectOptions struct {
@@ -160,6 +161,12 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// Resolved beside it, for the same reason: only an inspect of a migration
+	// directory replays, and a malformed declaration must fail the others too.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	mode := ignoreMissingEnvSelection
 	if needsAtlasSchemaInspectConfig(cmd) {
@@ -241,6 +248,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		DevServerDisposable:       devServerDisposable,
 		// Strict mode refuses a rendering that drops a SQLite virtual table's
 		// module declaration; outside it the same condition is a diagnostic.
 		// See stokaro/ptah#1028.

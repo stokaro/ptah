@@ -88,6 +88,28 @@ func EffectivePrimaryKey(table schemamodel.Table, fields []schemamodel.Field) []
 	return pk
 }
 
+// PrimaryKeySet is [EffectivePrimaryKey] as a membership set, keyed by column
+// name.
+func PrimaryKeySet(table schemamodel.Table, fields []schemamodel.Field) map[string]bool {
+	set := make(map[string]bool)
+	for _, name := range EffectivePrimaryKey(table, fields) {
+		set[name] = true
+	}
+	return set
+}
+
+// Nullable reports whether a column reads as nullable in an export of its
+// table.
+//
+// A column of the table's effective primary key is NOT NULL by SQL rule,
+// whatever its own declaration says, and the rendered DDL writes it that way.
+// Every export describes nullability through this one rule, so the OpenAPI
+// document, the GraphQL schema, the Markdown table and the HTML page say the
+// same thing about the same column. Pass the set from [PrimaryKeySet].
+func Nullable(field schemamodel.Field, primaryKey map[string]bool) bool {
+	return field.Nullable && !primaryKey[field.Name]
+}
+
 // EnumIndex maps enum type names to their allowed values, for resolving fields
 // that reference a named enum type instead of carrying inline values.
 func EnumIndex(db *schemamodel.Database) map[string][]string {

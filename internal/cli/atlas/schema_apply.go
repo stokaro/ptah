@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemafile"
@@ -68,6 +69,9 @@ type atlasSchemaApplyOptions struct {
 	// so this is the only way an atlas.hcl `data "hcl_schema" { vars }` reaches
 	// it.
 	toSources []schemafile.Source
+	// devServerDisposable is what devdocker.DisposableServerDeclared resolved
+	// for this run.
+	devServerDisposable bool
 }
 
 type atlasSchemaApplyDisplayError struct {
@@ -284,6 +288,14 @@ executed, and a finding the policy rates as an error refuses the apply.
 --skip-lint runs the apply without that check. A project with no lint policy
 has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Resolved before any early return: only an apply whose desired
+			// state is a migration directory replays, and a malformed
+			// declaration must fail the others too.
+			disposable, err := devdocker.DisposableServerDeclared()
+			if err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
+			opts.devServerDisposable = disposable
 			if opts.policy.IsStrictCE() && cmd.Flags().Changed("plan") {
 				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --plan")
 			}
@@ -513,7 +525,6 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
@@ -570,6 +581,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		ValidateMigrationSource:   migrationSourceValidator,
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		Vars:                      schemaVars,
+		DevServerDisposable:       opts.devServerDisposable,
 	})
 	if err != nil {
 		// The pinned community binary v1.3.0 reports the HCL diagnostic itself

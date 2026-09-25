@@ -240,10 +240,32 @@ scheduler runs it during the rest of the command.
 The decision reads what Ptah recorded when it started the server, not the
 spelling of the URL. A server URL keeps the whole list, because such a server
 may hold databases and roles that are not the run's: a role a replay created
-there would outlive the command. That holds for a disposable container
-started some other way, such as a CI service, too
-([`stokaro/ptah#3564`](https://github.com/stokaro/ptah/issues/3564) tracks a
-way to declare one).
+there would outlive the command.
+
+### A server declared disposable
+
+A server Ptah did not start can be as disposable: a CI service container
+the job throws away, or a container running an image `docker://` cannot name,
+such as TimescaleDB. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
+`--dev-url` names is the run's own. Replay then runs the statements listed
+above on it, as on a server Ptah provisions, and refuses the same rest.
+
+```bash
+PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
+```
+
+The declaration covers the whole server, and Ptah cleans only the dev
+database after a replay. A role or database a replay creates stays on the
+server until the container is removed. A later command that replays the same
+directory on the same server meets it, so a migration that creates a role
+without checking for it first fails the second time. Declare only a server
+that nothing else uses.
+
+Every command that replays a migration directory on a dev database reads the
+variable, on both binaries. A value that is not a boolean fails the command
+before it does any work, whether or not that run replays. Strict Atlas
+compatibility keeps the variable, because the pinned community binary runs
+these statements on any dev database.
 
 ## Where it appears
 

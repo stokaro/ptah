@@ -167,7 +167,8 @@ second list to forget.
 These opt-in correctness controls remain available because they do not add an
 Atlas capability: `PTAH_ALLOW_EXTERNAL_TEST_COMMAND`,
 `PTAH_ALLOW_NONINTERACTIVE_EDIT`,
-`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_HCL_STRICT_REDECLARATIONS`,
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_DEV_SERVER_DISPOSABLE`,
+`PTAH_HCL_STRICT_REDECLARATIONS`,
 `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
 
@@ -183,6 +184,12 @@ refused before any database is provisioned when the variable is absent.
 
 `PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
 process; it does not add an editor or migration capability.
+
+`PTAH_DEV_SERVER_DISPOSABLE` declares the `--dev-url` server the run's own, so
+replay runs a `DO` block, a routine or a role on it; the pinned community binary
+runs those on any dev database. See
+[a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
+
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned
 community binary plans for a SQLite virtual table anyway, and
 `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE` lifts a refusal that is Ptah's

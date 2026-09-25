@@ -86,6 +86,7 @@ func build(db *schemamodel.Database, opts Options) document {
 	}
 
 	fields := schemamodel.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
+	primaryKeys := primaryKeysOf(byStruct, fields)
 	columns := make(map[string][]columnDoc, len(selected))
 	var relations []relation
 	for _, field := range fields {
@@ -93,7 +94,7 @@ func build(db *schemamodel.Database, opts Options) document {
 		if !known {
 			continue
 		}
-		columns[table.Name] = append(columns[table.Name], columnOf(field))
+		columns[table.Name] = append(columns[table.Name], columnOf(field, primaryKeys[table.Name]))
 		if target, ok := foreignTarget(field.Foreign); ok && included[target] {
 			relations = append(relations, relation{From: table.Name, To: target})
 		}
@@ -114,12 +115,29 @@ func build(db *schemamodel.Database, opts Options) document {
 	return doc
 }
 
-func columnOf(field schemamodel.Field) columnDoc {
+// primaryKeysOf resolves each selected table's effective primary key over the
+// same field set the columns are drawn from, so a table-level PRIMARY KEY marks
+// its columns as a column flag would.
+func primaryKeysOf(byStruct map[string]schemamodel.Table, fields []schemamodel.Field) map[string]map[string]bool {
+	byTable := make(map[string][]schemamodel.Field, len(byStruct))
+	for _, field := range fields {
+		if table, known := byStruct[field.StructName]; known {
+			byTable[table.Name] = append(byTable[table.Name], field)
+		}
+	}
+	keys := make(map[string]map[string]bool, len(byStruct))
+	for _, table := range byStruct {
+		keys[table.Name] = schemaexport.PrimaryKeySet(table, byTable[table.Name])
+	}
+	return keys
+}
+
+func columnOf(field schemamodel.Field, primaryKey map[string]bool) columnDoc {
 	return columnDoc{
 		Name:     field.Name,
 		Type:     field.Type,
-		Nullable: field.Nullable,
-		Key:      keyOf(field),
+		Nullable: schemaexport.Nullable(field, primaryKey),
+		Key:      keyOf(field, primaryKey),
 		Default:  defaultOf(field),
 		Foreign:  field.Foreign,
 		Comment:  field.Comment,
@@ -128,9 +146,9 @@ func columnOf(field schemamodel.Field) columnDoc {
 
 // keyOf names the strongest key role a column carries, because a column that is
 // both primary and unique is described by the first alone.
-func keyOf(field schemamodel.Field) string {
+func keyOf(field schemamodel.Field, primaryKey map[string]bool) string {
 	switch {
-	case field.Primary:
+	case primaryKey[field.Name]:
 		return "primary"
 	case field.Unique:
 		return "unique"
