@@ -1,10 +1,8 @@
 package compare
 
-// White-box testing required: the signature normalizer and the overload pairing
-// are unexported by design — they are an implementation detail of how the
-// comparator keys routines, and the exported surface only shows their effect on
-// a diff. Pinning the normalizer directly is what makes the measured catalog
-// answers a regression set rather than a comment.
+// White-box testing required: the overload pairing is unexported by design --
+// it is an implementation detail of how the comparator keys routines, and the
+// exported surface only shows its effect on a diff.
 
 import (
 	"testing"
@@ -14,71 +12,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 )
-
-// TestNormalizeRoutineSignatureAgreesWithTheCatalog is the measured regression
-// set: every row is a declaration and the identity arguments PostgreSQL 18
-// actually reported for the function created from it.
-//
-// The normalizer's job is to make the two sides comparable, not to reproduce
-// the catalog, so the assertion is that both sides normalize to ONE value
-// rather than to any particular spelling.
-func TestNormalizeRoutineSignatureAgreesWithTheCatalog(t *testing.T) {
-	tests := []struct {
-		name     string
-		declared string
-		identity string
-	}{
-		{name: "a canonical type is unchanged", declared: "a integer", identity: "a integer"},
-		{name: "the int alias", declared: "a int", identity: "a integer"},
-		{name: "the int4 alias", declared: "a int4", identity: "a integer"},
-		{name: "a type modifier is dropped", declared: "a varchar(50)", identity: "a character varying"},
-		{name: "a default is dropped", declared: "a text DEFAULT (quote_literal('x'))", identity: "a text"},
-		{name: "the redundant IN mode is dropped and OUT is kept", declared: "IN a int, OUT b int", identity: "a integer, OUT b integer"},
-		{name: "no arguments", declared: "", identity: ""},
-		{name: "variadic keeps its mode and array", declared: "VARIADIC a int[]", identity: "VARIADIC a integer[]"},
-		{name: "two arguments with modifiers", declared: "a bool, b numeric(10,2)", identity: "a boolean, b numeric"},
-		{name: "inout is kept", declared: "INOUT a int", identity: "INOUT a integer"},
-		{name: "a quoted type survives", declared: `a timestamptz, b "char"`, identity: `a timestamp with time zone, b "char"`},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(normalizeRoutineSignature(test.declared), qt.Equals,
-				normalizeRoutineSignature(test.identity))
-		})
-	}
-}
-
-// TestNormalizeRoutineSignatureKeepsDistinctSignaturesApart is the control for
-// the table above.
-//
-// A normalizer that reduced everything to one value would satisfy every row
-// there and make every overload compare equal, which is the defect this exists
-// to fix rather than a stricter version of it.
-func TestNormalizeRoutineSignatureKeepsDistinctSignaturesApart(t *testing.T) {
-	tests := []struct {
-		name  string
-		left  string
-		right string
-	}{
-		{name: "different types", left: "a integer", right: "a text"},
-		{name: "different arity", left: "a integer", right: "a integer, b integer"},
-		{name: "an array is not its element", left: "a integer", right: "a integer[]"},
-		{name: "a mode is part of the identity", left: "a integer", right: "INOUT a integer"},
-		{name: "no arguments is not one argument", left: "", right: "a integer"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(normalizeRoutineSignature(test.left), qt.Not(qt.Equals),
-				normalizeRoutineSignature(test.right))
-		})
-	}
-}
 
 func declaredFn(parameters, body string) schemamodel.Function {
 	return schemamodel.Function{Name: "f", Parameters: parameters, Body: body}

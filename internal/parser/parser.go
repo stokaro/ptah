@@ -175,6 +175,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseDropStatement()
 	case "GRANT":
 		return p.parseGrantStatement()
+	case "REVOKE":
+		return p.parseRevokeStatement()
 	case "DO":
 		return p.parseDoStatement()
 	case "GO":

@@ -172,6 +172,12 @@ func (s *scopeSelection) databaseGrantSelected(
 		return named
 	case strings.EqualFold(grant.ObjectType, "SEQUENCE"):
 		return databaseSequenceNameKept(out.Sequences, grant.Schema, grant.ObjectName)
+	case routineGrantObjectTypes[strings.ToUpper(grant.ObjectType)]:
+		// A routine grant rides its routine, which the projection keeps by
+		// name, every overload together.
+		return slices.ContainsFunc(out.Functions, func(function catalog.Function) bool {
+			return function.Schema == grant.Schema && function.Name == grant.ObjectName
+		})
 	default:
 		return s.tableKept(keptTables, grant.Schema, grant.ObjectName)
 	}

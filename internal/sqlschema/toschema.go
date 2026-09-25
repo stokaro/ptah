@@ -700,8 +700,8 @@ func appendStatement(
 	if appendRoutine(database, stmt) {
 		return nil
 	}
-	if appendPrivilegeDeclaration(database, stmt) {
-		return nil
+	if handled, err := appendPrivilegeDeclaration(database, stmt); handled {
+		return err
 	}
 	if handled, err := appendRowSecurity(database, stmt); handled {
 		return err
@@ -829,7 +829,8 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
 }
 
 // appendPrivilegeDeclaration records the statements that declare access, and
-// reports whether it recognized one.
+// reports whether it recognized one. A REVOKE can be refused; see
+// [appendRevoke].
 //
 // Separate from the statement switch for the reason [appendRoutine] is: two
 // more cases take that function past the cyclomatic threshold, and these two
@@ -840,16 +841,18 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
 // neither function is refused by that switch's default, so nothing is dropped
 // by falling through; a node kind this package decides not to model says so
 // there, in a case of its own.
-func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node) bool {
+func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.GrantPrivilegeNode:
-		database.Grants = append(database.Grants, toGrant(node))
+		appendGrant(database, node)
+	case *ast.RevokePrivilegeNode:
+		return true, appendRevoke(database, node)
 	case *ast.DefaultPrivilegeNode:
 		database.DefaultPrivileges = append(database.DefaultPrivileges, toDefaultPrivilege(node))
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 func appendCreateTable(

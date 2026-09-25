@@ -145,11 +145,61 @@ own, `REFRESH EVERY|AFTER`, is engine-native DDL and is managed — see
 `//ptah:schema:role` and `//ptah:schema:grant` declare roles and their
 privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 `ALTER ROLE` for attribute changes, and `GRANT`/`REVOKE` as declared grants
-change. Grants target a table, a schema, or a sequence, and table grants are
-compared per individual privilege, so a `privilege="SELECT,INSERT"` list
-round-trips cleanly through introspection. A grant on a standalone sequence is
-described with `on_sequence`, so the description compares equal to the
-database it was read from. New-role SQL fails closed when the role already
+change. Grants target a table, a schema, a sequence, a function or a
+procedure, and grants are compared per individual privilege, so a
+`privilege="SELECT,INSERT"` list round-trips cleanly through introspection. A
+grant on a standalone sequence is described with `on_sequence`, so the
+description compares equal to the database it was read from.
+
+A function or procedure is named with its argument types, because PostgreSQL
+tells overloads apart by them: `on_function="purge_workspace(uuid)"` in Go,
+`GRANT EXECUTE ON FUNCTION purge_workspace(uuid) TO app` in a SQL schema file.
+A name without the types is refused. The types are matched against the
+catalog without parameter names or `OUT` arguments, so `purge_workspace(uuid)`
+and `purge_workspace(p_id uuid)` name the same function.
+
+### Revoking privileges nobody granted
+
+PostgreSQL gives some privileges without a `GRANT`: every role can execute a
+new function through `PUBLIC`, and `ALTER DEFAULT PRIVILEGES` hands a role its
+privileges on each new table. A revoke declaration says such a privilege must
+be absent, whoever holds it:
+
+```sql
+REVOKE ALL ON FUNCTION purge_workspace(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION purge_workspace(uuid) TO app;
+REVOKE INSERT, UPDATE, DELETE ON plugin_signatures FROM app;
+```
+
+In Go the same declaration is `//ptah:schema:revoke`, and in HCL a `revoke`
+block. Ptah plans the `REVOKE` whenever the database holds the privilege,
+including the implicit `EXECUTE` a function's default ACL gives `PUBLIC`, and
+also in the same plan that creates the table or function, since the privilege
+arrives with the object. A revoke of a privilege the role does not hold
+changes nothing on the server, so the statement is safe either way.
+
+A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
+statement order, and the later statement about one privilege of one role on
+one object wins. Go annotations and HCL have no statement order, so declaring
+the same privilege both granted and revoked is refused.
+
+Some forms are refused rather than approximated, each with a message that
+names the form:
+
+- column privileges, such as `GRANT UPDATE (state) ON t TO app`, because a
+  grant here covers a whole object;
+- `ON ALL TABLES IN SCHEMA`, which applies to whatever objects exist when it
+  runs;
+- `REVOKE ... CASCADE`, `REVOKE ... GRANTED BY` and a list of grantees;
+- `REVOKE GRANT OPTION FOR` on a privilege the same file does not grant;
+- a `REVOKE` of one privilege after `GRANT ALL` on a table, because the members
+  of a table's `ALL` depend on the server version. Name the privileges in the
+  `GRANT` instead.
+
+A privilege on a function or procedure is modeled for PostgreSQL only; the
+other renderers refuse the statement by name. HCL has no spelling for a routine
+target, because a `function.<name>` reference cannot name an overload, so
+`ptah schema export --to hcl` reports such a grant or revoke as an export loss. New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with
 unverified security attributes. Role descriptions are applied with
 `COMMENT ON ROLE` after successful creation.
@@ -274,7 +324,8 @@ Ptah never drops a role automatically. A role that disappears from the desired
 schema stays in the database, because roles may be shared with DBAs,
 infrastructure, or other applications; remove one manually with `DROP ROLE`
 when you are certain it is safe. `REVOKE` is narrower: Ptah revokes only
-privileges attached to roles that are still declared in the desired schema.
+privileges attached to roles that are still declared in the desired schema,
+and privileges a revoke declaration names.
 :::
 
 Do not put plaintext passwords in `password` attributes. Ptah recognizes

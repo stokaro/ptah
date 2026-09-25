@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/routinegrant"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -89,6 +90,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 
 // renderGrantPrivilege renders GRANT.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := routinegrant.Refusal(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("grant", node.Role)
 		return nil
@@ -122,6 +126,9 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 }
 
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := routinegrant.Refusal(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("revoke", node.Role)
 		return nil

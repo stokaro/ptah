@@ -512,12 +512,13 @@ func ensureTestDevDialect(set atlassource.Set, dbURL, sourceFlag string) (string
 // --report html are consumed by machines, and a note printed alongside them
 // leaves a passing run unparseable while still exiting 0.
 func dropClusterScopedTestState(diag io.Writer, schema *schemamodel.Database) error {
-	roles, grants := len(schema.Roles), len(schema.Grants)
+	roles, grants := len(schema.Roles), len(schema.Grants)+len(schema.RevokedGrants)
 	if roles == 0 && grants == 0 {
 		return nil
 	}
 	schema.Roles = nil
 	schema.Grants = nil
+	schema.RevokedGrants = nil
 	if _, err := fmt.Fprintf(diag,
 		"note: dropped %s and %s introspected from the desired-state database;"+
 			" schema tests do not apply cluster-scoped security state\n",

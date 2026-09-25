@@ -45,26 +45,6 @@ func toRole(node *ast.CreateRoleNode) schemamodel.Role {
 	}
 }
 
-func toGrant(node *ast.GrantPrivilegeNode) schemamodel.Grant {
-	grant := schemamodel.Grant{
-		Role:       normalizeSQLIdentifier(node.Role),
-		Privileges: node.Privileges,
-		WithOption: node.WithOption,
-		Comment:    node.Comment,
-	}
-	target := normalizeSQLTableReference(node.ObjectName)
-	switch strings.ToUpper(node.ObjectType) {
-	case "SCHEMA":
-		grant.OnSchema = normalizeSQLIdentifier(node.ObjectName)
-	case "SEQUENCE":
-		grant.OnSequence = target
-	default:
-		grant.OnTable = target
-	}
-	grant.Canonicalize()
-	return grant
-}
-
 // toDefaultPrivilege converts an ALTER DEFAULT PRIVILEGES ... GRANT statement
 // into the declaration the model holds.
 //

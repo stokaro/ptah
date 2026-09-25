@@ -1670,13 +1670,26 @@ func (d DefaultPrivilege) QualifiedName() string {
 
 // Grant represents a privilege grant read from the database.
 type Grant struct {
-	Role       string `json:"role"`                 // Role receiving the privilege
+	Role       string `json:"role"`                 // Role receiving the privilege; PUBLIC for every role
 	Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
-	ObjectType string `json:"object_type"`          // TABLE, SCHEMA, or SEQUENCE
+	ObjectType string `json:"object_type"`          // TABLE, SCHEMA, SEQUENCE, FUNCTION, or PROCEDURE
 	Schema     string `json:"schema,omitempty"`     // Schema containing the target object
-	ObjectName string `json:"object_name"`          // Target table or schema name
+	ObjectName string `json:"object_name"`          // Target table, schema, or routine name
 	WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
 	GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
+
+	// Arguments are a routine target's input argument types as the catalog
+	// spells them (oidvectortypes of pg_proc.proargtypes), such as
+	// `uuid` or `integer[], text`. A routine's identity includes them. Empty
+	// for every other target.
+	Arguments string `json:"arguments,omitempty"`
+
+	// Implicit marks a privilege the object holds by default rather than by a
+	// GRANT: PostgreSQL lets PUBLIC execute a routine whose pg_proc.proacl is
+	// NULL, meaning nobody has granted or revoked anything on it. The row is
+	// reported so a declaration that revokes it can see it is there; a
+	// description of the database leaves it out, because nobody wrote it.
+	Implicit bool `json:"implicit,omitempty"`
 
 	// IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather
 	// than adding one. Only ClickHouse produces it, and only the ClickHouse
@@ -1694,8 +1707,9 @@ type Grant struct {
 	IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 }
 
-// QualifiedTarget returns schema.object for table grants and the schema name
-// itself for schema grants.
+// QualifiedTarget returns schema.object for table, sequence and routine
+// grants, and the schema name itself for schema grants. A routine's argument
+// types are not part of it; see [Grant.Arguments].
 func (g Grant) QualifiedTarget() string {
 	if strings.EqualFold(g.ObjectType, "SCHEMA") {
 		return g.ObjectName

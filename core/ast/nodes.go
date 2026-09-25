@@ -3375,10 +3375,16 @@ type GrantPrivilegeNode struct {
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
-	// ObjectType is the target kind, such as TABLE, SCHEMA, or SEQUENCE.
+	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
 	ObjectType string
-	// ObjectName is the target table or schema name.
+	// ObjectName is the target table, schema or routine name.
 	ObjectName string
+	// Arguments are a routine target's argument types, comma-separated, as the
+	// statement wrote them between the parentheses. A routine's identity
+	// includes them, because PostgreSQL overloads a name by its argument
+	// types. Empty for every other target.
+	Arguments string
 	// WithOption controls WITH GRANT OPTION.
 	WithOption bool
 	// Comment is an optional comment for the grant operation.
@@ -3393,6 +3399,12 @@ func NewGrantPrivilege(role, objectType, objectName string, privileges []string)
 		ObjectType: objectType,
 		ObjectName: objectName,
 	}
+}
+
+// SetArguments sets a routine target's argument types.
+func (n *GrantPrivilegeNode) SetArguments(arguments string) *GrantPrivilegeNode {
+	n.Arguments = arguments
+	return n
 }
 
 // SetWithOption enables or disables WITH GRANT OPTION.
@@ -3416,10 +3428,14 @@ type RevokePrivilegeNode struct {
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
-	// ObjectType is the target kind, such as TABLE, SCHEMA, or SEQUENCE.
+	// ObjectType is the target kind, such as TABLE, SCHEMA, SEQUENCE, or one of
+	// the routine kinds FUNCTION, PROCEDURE and ROUTINE.
 	ObjectType string
-	// ObjectName is the target table or schema name.
+	// ObjectName is the target table, schema or routine name.
 	ObjectName string
+	// Arguments are a routine target's argument types; see
+	// [GrantPrivilegeNode.Arguments].
+	Arguments string
 	// GrantOptionFor controls REVOKE GRANT OPTION FOR.
 	GrantOptionFor bool
 	// Comment is an optional comment for the revoke operation.
@@ -3434,6 +3450,12 @@ func NewRevokePrivilege(role, objectType, objectName string, privileges []string
 		ObjectType: objectType,
 		ObjectName: objectName,
 	}
+}
+
+// SetArguments sets a routine target's argument types.
+func (n *RevokePrivilegeNode) SetArguments(arguments string) *RevokePrivilegeNode {
+	n.Arguments = arguments
+	return n
 }
 
 // SetGrantOptionFor enables or disables REVOKE GRANT OPTION FOR.

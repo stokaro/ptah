@@ -821,6 +821,14 @@
               "type": "string",
               "x-ptah-alias-for": "with_option"
             },
+            "on_function": {
+              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+              "type": "string"
+            },
+            "on_procedure": {
+              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+              "type": "string"
+            },
             "on_schema": {
               "description": "Target schema.",
               "type": "string"
@@ -1194,6 +1202,70 @@
         },
         "directive": {
           "const": "ptah:schema:range"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.revoke": {
+      "additionalProperties": false,
+      "description": "Declares privileges a role does not hold, including ones it holds without a grant: PUBLIC's EXECUTE on a new function, or what ALTER DEFAULT PRIVILEGES gave a role on a new table.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
+            "on_function": {
+              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+              "type": "string"
+            },
+            "on_procedure": {
+              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+              "type": "string"
+            },
+            "on_schema": {
+              "description": "Target schema.",
+              "type": "string"
+            },
+            "on_sequence": {
+              "description": "Target sequence.",
+              "type": "string"
+            },
+            "on_table": {
+              "description": "Target table.",
+              "type": "string"
+            },
+            "privilege": {
+              "description": "Privilege or comma-separated privileges.",
+              "type": "string"
+            },
+            "privileges": {
+              "description": "Alias for privilege.",
+              "type": "string",
+              "x-ptah-alias-for": "privilege"
+            },
+            "role": {
+              "description": "Role the privileges are taken from; PUBLIC names every role.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "role"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:revoke"
         }
       },
       "required": [
@@ -1881,6 +1953,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.grant"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.revoke"
     },
     {
       "$ref": "#/$defs/ptah.schema.defaultprivilege"

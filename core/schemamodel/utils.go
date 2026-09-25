@@ -352,14 +352,16 @@ func NormalizeTableScopedNames(r *Database) {
 			rlsEnabled.Table = table.QualifiedName()
 		}
 	}
-	for i := range r.Grants {
-		grant := &r.Grants[i]
-		grant.Canonicalize()
-		if grant.OnTable == "" {
-			continue
-		}
-		if table := resolveTableReference(r.Tables, grant.StructName, grant.OnTable); table != nil {
-			grant.OnTable = table.QualifiedName()
+	for _, grants := range [][]Grant{r.Grants, r.RevokedGrants} {
+		for i := range grants {
+			grant := &grants[i]
+			grant.Canonicalize()
+			if grant.OnTable == "" {
+				continue
+			}
+			if table := resolveTableReference(r.Tables, grant.StructName, grant.OnTable); table != nil {
+				grant.OnTable = table.QualifiedName()
+			}
 		}
 	}
 	for i := range r.DefaultPrivileges {
@@ -1548,6 +1550,7 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Triggers = deduplicateTriggers(r.Triggers)
 	r.Constraints = deduplicateConstraints(r.Constraints)
 	r.Grants = deduplicateGrants(r.Grants)
+	r.RevokedGrants = deduplicateGrants(r.RevokedGrants)
 	r.DefaultPrivileges = deduplicateDefaultPrivileges(r.DefaultPrivileges)
 	r.Roles = deduplicateRoles(r.Roles)
 }
@@ -1737,19 +1740,26 @@ type grantKey struct {
 	onTable    string
 	onSchema   string
 	onSequence string
-	withOption bool
+	// onRoutine and routineArguments together name a routine: PostgreSQL
+	// overloads a name by its argument types, so two grants on f(uuid) and
+	// f(text) are two grants.
+	onRoutine        string
+	routineArguments string
+	withOption       bool
 }
 
 func newGrantKey(g Grant) grantKey {
 	privileges := append([]string(nil), g.Privileges...)
 	sort.Strings(privileges)
 	return grantKey{
-		role:       g.Role,
-		privileges: strings.Join(privileges, "\x00"),
-		onTable:    g.OnTable,
-		onSchema:   g.OnSchema,
-		onSequence: g.OnSequence,
-		withOption: g.WithOption,
+		role:             g.Role,
+		privileges:       strings.Join(privileges, "\x00"),
+		onTable:          g.OnTable,
+		onSchema:         g.OnSchema,
+		onSequence:       g.OnSequence,
+		onRoutine:        g.OnRoutine,
+		routineArguments: g.RoutineArguments,
+		withOption:       g.WithOption,
 	}
 }
 

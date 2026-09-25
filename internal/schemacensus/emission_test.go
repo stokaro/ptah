@@ -135,8 +135,11 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"END",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
+		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT USAGE ON",
+		// A privilege taken away, which creates no object either.
+		"REVOKE INSERT ON",
 		// TimescaleDB converts a table that CREATE TABLE already made.
 		"SELECT CREATE_HYPERTABLE('T', BY_RANGE('AT'),",
 		"SELECT CREATE_HYPERTABLE('T', BY_RANGE('AT',",

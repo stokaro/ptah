@@ -3585,11 +3585,16 @@ type GrantRef struct {
 	// Privilege is the individual privilege, e.g. SELECT, INSERT, or USAGE.
 	Privilege string `json:"privilege"`
 
-	// ObjectType is the target kind: TABLE, SCHEMA, or SEQUENCE.
+	// ObjectType is the target kind: TABLE, SCHEMA, SEQUENCE, or a routine
+	// kind (FUNCTION, PROCEDURE, ROUTINE).
 	ObjectType string `json:"object_type"`
 
-	// ObjectName is the target table or schema name.
+	// ObjectName is the target table, schema or routine name.
 	ObjectName string `json:"object_name"`
+
+	// Arguments are a routine target's argument types, which are part of its
+	// identity; empty for every other target.
+	Arguments string `json:"arguments,omitempty"`
 
 	// WithOption records whether the grant has WITH GRANT OPTION.
 	WithOption bool `json:"with_option"`

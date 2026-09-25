@@ -1710,19 +1710,41 @@ func FromRole(role schemamodel.Role) *ast.CreateRoleNode {
 // FromGrant converts a schemamodel.Grant to an ast.GrantPrivilegeNode.
 func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 	grant.Canonicalize()
-	objectType := "TABLE"
-	objectName := grant.OnTable
-	switch {
-	case grant.OnSchema != "":
-		objectType = "SCHEMA"
-		objectName = grant.OnSchema
-	case grant.OnSequence != "":
-		objectType = "SEQUENCE"
-		objectName = grant.OnSequence
-	}
+	objectType, objectName, arguments := grantObject(grant)
 	return ast.NewGrantPrivilege(grant.Role, objectType, objectName, grant.Privileges).
+		SetArguments(arguments).
 		SetWithOption(grant.WithOption).
 		SetComment(grant.Comment)
+}
+
+// FromRevokedGrant converts a privilege the schema asserts absent to an
+// ast.RevokePrivilegeNode.
+//
+// A schema rendered from nothing needs it as much as one compared against a
+// database: PostgreSQL lets PUBLIC execute a function from the moment it is
+// created, so `REVOKE ALL ON FUNCTION f(uuid) FROM PUBLIC` is what makes the
+// rendered schema the declared one.
+func FromRevokedGrant(grant schemamodel.Grant) *ast.RevokePrivilegeNode {
+	grant.Canonicalize()
+	objectType, objectName, arguments := grantObject(grant)
+	return ast.NewRevokePrivilege(grant.Role, objectType, objectName, grant.Privileges).
+		SetArguments(arguments).
+		SetComment(grant.Comment)
+}
+
+// grantObject is the object a grant or a revoked grant is about, as the AST
+// spells it.
+func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments string) {
+	switch {
+	case grant.OnSchema != "":
+		return "SCHEMA", grant.OnSchema, ""
+	case grant.OnSequence != "":
+		return "SEQUENCE", grant.OnSequence, ""
+	case grant.OnRoutine != "":
+		return grant.RoutineKind, grant.OnRoutine, grant.RoutineArguments
+	default:
+		return "TABLE", grant.OnTable, ""
+	}
 }
 
 // FromDefaultPrivilege converts a schemamodel.DefaultPrivilege to an
@@ -2252,6 +2274,13 @@ func appendPostTableObjectStatements(
 	}
 	for _, grant := range database.Grants {
 		if err := visit(FromGrant(grant)); err != nil {
+			return err
+		}
+	}
+	// After the grants, which never name the same privilege: the schema reader
+	// folds a later GRANT and REVOKE of one privilege into one of the two.
+	for _, revoked := range database.RevokedGrants {
+		if err := visit(FromRevokedGrant(revoked)); err != nil {
 			return err
 		}
 	}

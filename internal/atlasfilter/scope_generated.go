@@ -103,6 +103,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database)
 	out.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return s.generatedGrantSelected(out, grant)
 	})
+	out.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
+		return s.generatedGrantSelected(out, grant)
+	})
 	// Same order and the same reason as the database side: the roles below keep
 	// a role a surviving statement names, and a default privilege names two.
 	out.DefaultPrivileges = keep(db.DefaultPrivileges,
@@ -200,6 +203,12 @@ func (s *scopeSelection) generatedGrantSelected(out *schemamodel.Database, grant
 		return generatedTableNameKept(out.Tables, grant.OnTable)
 	case grant.OnSequence != "":
 		return generatedSequenceNameKept(out.Sequences, grant.OnSequence)
+	case grant.OnRoutine != "":
+		// A routine grant rides its routine, which the projection keeps by
+		// name, every overload together.
+		return slices.ContainsFunc(out.Functions, func(function schemamodel.Function) bool {
+			return function.Name == grant.OnRoutine
+		})
 	case grant.OnSchema != "":
 		if !s.schemaAllowed(grant.OnSchema) {
 			return false

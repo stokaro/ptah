@@ -668,6 +668,7 @@ type schemaParseState struct {
 	continuousAggregates  []schemamodel.ContinuousAggregate
 	roles                 []schemamodel.Role
 	grants                []schemamodel.Grant
+	revokedGrants         []schemamodel.Grant
 	defaultPrivileges     []schemamodel.DefaultPrivilege
 	managedData           []schemamodel.ManagedData
 	schemas               []schemamodel.Schema
@@ -790,6 +791,7 @@ var sharedDirectiveParsers = map[string]sharedDirectiveParser{
 	"ptah:schema:rls:enable":          (*schemaParseState).parseRLSEnableComment,
 	"ptah:schema:role":                (*schemaParseState).parseRoleComment,
 	"ptah:schema:grant":               (*schemaParseState).parseGrantComment,
+	"ptah:schema:revoke":              (*schemaParseState).parseRevokeComment,
 	"ptah:schema:defaultprivilege":    (*schemaParseState).parseDefaultPrivilegeComment,
 	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
 	"ptah:schema:notdescribed":        ignoringStruct((*schemaParseState).parseNotDescribedComment),
@@ -970,6 +972,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamode
 		ContinuousAggregates: state.continuousAggregates,
 		Roles:                state.roles,
 		Grants:               state.grants,
+		RevokedGrants:        state.revokedGrants,
 		DefaultPrivileges:    state.defaultPrivileges,
 		ManagedData:          state.managedData,
 		NotDescribed:         coverage.Set{}.With(state.notDescribed...),
@@ -2033,8 +2036,88 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 		Comment:    kv["comment"],
 		Dialects:   scope,
 	}
+	if err := setRoutineTarget(&grant, kv, ctx); err != nil {
+		return err
+	}
 	grant.Canonicalize()
 	s.grants = append(s.grants, grant)
+	return nil
+}
+
+// parseRevokeComment reads one //ptah:schema:revoke directive: privileges the
+// role is declared not to hold, one [schemamodel.Grant] per directive in
+// [schemamodel.Database.RevokedGrants].
+func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:revoke", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+	privileges := splitCommaList(kv["privilege"])
+	if len(privileges) == 0 {
+		privileges = splitCommaList(kv["privileges"])
+	}
+	if len(privileges) == 0 {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "privilege",
+			Err:       ptaherr.ErrMissingRequiredAttribute,
+			Message:   fmt.Sprintf("missing required annotation attribute %q on %s at %s", "privilege", ctx.directive, ctx.location),
+		}
+	}
+	revoked := schemamodel.Grant{
+		StructName: structName,
+		Role:       kv["role"],
+		Privileges: privileges,
+		OnTable:    kv["on_table"],
+		OnSchema:   kv["on_schema"],
+		OnSequence: kv["on_sequence"],
+		Comment:    kv["comment"],
+		Dialects:   scope,
+	}
+	if err := setRoutineTarget(&revoked, kv, ctx); err != nil {
+		return err
+	}
+	revoked.Canonicalize()
+	s.revokedGrants = append(s.revokedGrants, revoked)
+	return nil
+}
+
+// setRoutineTarget reads on_function or on_procedure, whose value names the
+// routine and its argument types: purge(uuid). The types are required because
+// PostgreSQL overloads a name by them, and a directive that named only the
+// routine could not say which one it means.
+func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annotationErrorContext) error {
+	for _, attribute := range []struct{ key, kind string }{{"on_function", "FUNCTION"}, {"on_procedure", "PROCEDURE"}} {
+		value := strings.TrimSpace(kv[attribute.key])
+		if value == "" {
+			continue
+		}
+		open := strings.Index(value, "(")
+		if open <= 0 || !strings.HasSuffix(value, ")") {
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: strings.TrimPrefix(ctx.directive, "//"),
+				Attribute: attribute.key,
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message: fmt.Sprintf("%s=%q on %s at %s needs the argument types in parentheses, as in purge(uuid): "+
+					"PostgreSQL tells overloaded routines apart by them", attribute.key, value, ctx.directive, ctx.location),
+			}
+		}
+		grant.OnRoutine = strings.TrimSpace(value[:open])
+		grant.RoutineArguments = strings.TrimSpace(value[open+1 : len(value)-1])
+		grant.RoutineKind = attribute.kind
+	}
 	return nil
 }
 

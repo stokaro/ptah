@@ -110,6 +110,7 @@ var representationMatchers = map[string]representationMatcher{
 	"ptah:schema:rls:enable":       rlsEnableRepresented,
 	"ptah:schema:role":             roleRepresented,
 	"ptah:schema:grant":            grantRepresented,
+	"ptah:schema:revoke":           revokeRepresented,
 	"ptah:schema:defaultprivilege": defaultPrivilegeRepresented,
 	"ptah:schema:data":             dataRepresented,
 }
@@ -211,12 +212,33 @@ func roleRepresented(removal removedLine, _, exportedDB *schemamodel.Database) b
 }
 
 func grantRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
-	return slices.ContainsFunc(exportedDB.Grants, func(grant schemamodel.Grant) bool {
+	return privilegeRepresented(removal, exportedDB.Grants)
+}
+
+func revokeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return privilegeRepresented(removal, exportedDB.RevokedGrants)
+}
+
+// privilegeRepresented reports whether grants carries the role, privileges and
+// target a removed grant or revoke directive declared. The target is compared
+// by [schemamodel.Grant.TargetKey], so a routine's argument types are part of
+// it.
+func privilegeRepresented(removal removedLine, grants []schemamodel.Grant) bool {
+	declared := schemamodel.Grant{
+		OnTable:    removal.values["on_table"],
+		OnSchema:   removal.values["on_schema"],
+		OnSequence: removal.values["on_sequence"],
+	}
+	for _, key := range []string{"on_function", "on_procedure"} {
+		if name, arguments, ok := strings.Cut(removal.values[key], "("); ok {
+			declared.OnRoutine = name
+			declared.RoutineArguments = strings.TrimSuffix(arguments, ")")
+		}
+	}
+	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
 		return grant.Role == removal.values["role"] &&
 			slices.Equal(grant.Privileges, splitGrantPrivileges(removal.values)) &&
-			grant.OnTable == removal.values["on_table"] &&
-			grant.OnSchema == removal.values["on_schema"] &&
-			grant.OnSequence == removal.values["on_sequence"]
+			grant.TargetKey() == declared.TargetKey()
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/routinegrant"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -869,6 +870,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // `Incorrect syntax near 'USAGE'` -- PostgreSQL's schema-access privilege has
 // no T-SQL counterpart, so it is reported rather than emitted.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := routinegrant.Refusal("sqlserver", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if r.refuses(capability.RoleManagement, "GRANT", node.Role) {
 		return nil
 	}
@@ -901,6 +905,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 // ... CASCADE`, and the CASCADE is not optional in practice: the option let the
 // grantee grant onward, so those grants have to go with it.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := routinegrant.Refusal("sqlserver", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if r.refuses(capability.RoleManagement, "REVOKE", node.Role) {
 		return nil
 	}

@@ -77,10 +77,12 @@ func (p *parser) resolveDocumentTableRefs() {
 		data.Schema = ref.Schema
 		data.Table = ref.Name
 	}
-	for i := range p.db.Grants {
-		grant := &p.db.Grants[i]
-		grant.OnTable = p.qualifyFromRelationBlock(grant.OnTable)
-		grant.OnSequence = p.qualifyFromRelationBlock(grant.OnSequence)
+	for _, grants := range [][]schemamodel.Grant{p.db.Grants, p.db.RevokedGrants} {
+		for i := range grants {
+			grant := &grants[i]
+			grant.OnTable = p.qualifyFromRelationBlock(grant.OnTable)
+			grant.OnSequence = p.qualifyFromRelationBlock(grant.OnSequence)
+		}
 	}
 	for i := range p.db.Triggers {
 		trigger := &p.db.Triggers[i]

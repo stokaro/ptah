@@ -146,6 +146,17 @@ func scopedKinds() []scopedKind {
 			},
 			count: func(db *schemamodel.Database) int { return len(db.DefaultPrivileges) },
 		},
+		{
+			name: "RevokedGrants",
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.RevokedGrants = []schemamodel.Grant{{
+					Role: "PUBLIC", Privileges: []string{"EXECUTE"},
+					OnRoutine: "public.purge", RoutineArguments: "uuid", RoutineKind: "FUNCTION",
+					Dialects: scope,
+				}}
+			},
+			count: func(db *schemamodel.Database) int { return len(db.RevokedGrants) },
+		},
 	}
 }
 

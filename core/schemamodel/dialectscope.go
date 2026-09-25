@@ -77,6 +77,7 @@ func ScopeToDialect(db *Database, dialect string) *Database {
 	scoped.Roles = keepScoped(db.Roles, dialect, func(v Role) []string { return v.Dialects })
 	scoped.Grants = keepScoped(db.Grants, dialect, func(v Grant) []string { return v.Dialects })
 	scoped.DefaultPrivileges = keepScoped(db.DefaultPrivileges, dialect, func(v DefaultPrivilege) []string { return v.Dialects })
+	scoped.RevokedGrants = keepScoped(db.RevokedGrants, dialect, func(v Grant) []string { return v.Dialects })
 
 	// Everything the projection does not filter is still shared with the
 	// caller's database by value, so the slices it can reorder are cloned
@@ -192,6 +193,9 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 	for _, v := range db.Grants {
 		collect("grant", v.Role, v.Dialects)
 	}
+	for _, v := range db.RevokedGrants {
+		collect("revoked grant", v.Role, v.Dialects)
+	}
 	for _, v := range db.DefaultPrivileges {
 		// The collected name has to separate two declarations that differ only
 		// in grantor or object type, because the suppression that consumes it
@@ -222,7 +226,8 @@ func hasDialectScope(db *Database) bool {
 		anyScoped(db.RLSEnabledTables, func(v RLSEnabledTable) []string { return v.Dialects }) ||
 		anyScoped(db.Roles, func(v Role) []string { return v.Dialects }) ||
 		anyScoped(db.Grants, func(v Grant) []string { return v.Dialects }) ||
-		anyScoped(db.DefaultPrivileges, func(v DefaultPrivilege) []string { return v.Dialects })
+		anyScoped(db.DefaultPrivileges, func(v DefaultPrivilege) []string { return v.Dialects }) ||
+		anyScoped(db.RevokedGrants, func(v Grant) []string { return v.Dialects })
 }
 
 func anyScoped[T any](values []T, scopeOf func(T) []string) bool {

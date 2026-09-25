@@ -154,6 +154,17 @@ func roundTripRows() []roundTripRow {
 			count: func(d *schemamodel.Database) int { return len(d.Grants) },
 		},
 		{
+			// PUBLIC is the grantee a revoke names most often, and it is not a
+			// role the document can declare.
+			field: "RevokedGrants",
+			seed: func(d *schemamodel.Database) {
+				d.RevokedGrants = append(d.RevokedGrants, schemamodel.Grant{
+					StructName: "RG", Role: "PUBLIC", Privileges: []string{"TRUNCATE"}, OnTable: "users",
+				})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.RevokedGrants) },
+		},
+		{
 			// The grantor is what forces the family its own block. It is part of
 			// a default privilege's identity, and the `permission` block reports
 			// a grantor as an export loss rather than writing one, so a family

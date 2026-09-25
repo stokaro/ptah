@@ -191,6 +191,11 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 		return nil, err
 	}
 	schemamodel.Finalize(p.db)
+	// After Finalize, which resolves the table a `permission` or `revoke`
+	// names, so the two are compared by the same name.
+	if err := schemamodel.ValidateRevokedGrants(p.db); err != nil {
+		return nil, fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
+	}
 	// A document's own account of its limits is part of the document. It rides
 	// in the leading comment header rather than in a block, because it has to
 	// survive being read by tools that are not Ptah -- the pinned Atlas
@@ -338,6 +343,7 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"policy":               (*parser).parsePolicy,
 	"role":                 (*parser).parseRole,
 	"permission":           (*parser).parsePermission,
+	"revoke":               (*parser).parseRevoke,
 	"default_privilege":    (*parser).parseDefaultPrivilege,
 	"data":                 (*parser).parseManagedData,
 }

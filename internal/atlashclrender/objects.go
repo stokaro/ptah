@@ -2,6 +2,7 @@ package atlashclrender
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -523,22 +524,7 @@ func (r *renderer) renderGrants() {
 	// declare a `schema` block for a `permission` block the document does not
 	// contain -- a declaration of nothing, which is the failure this render's
 	// collected schema set exists to avoid in the other direction.
-	grants := make([]schemamodel.Grant, 0, len(r.db.Grants))
-	for _, grant := range r.db.Grants {
-		grant.Canonicalize()
-		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
-			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
-			continue
-		}
-		grants = append(grants, grant)
-	}
-	slices.SortFunc(grants, func(a, b schemamodel.Grant) int {
-		return cmp.Or(
-			cmp.Compare(a.Role, b.Role),
-			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
-			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
-		)
-	})
+	grants := r.renderableGrants(r.db.Grants, "grants", "grant")
 	for _, grant := range grants {
 		target := r.grantTarget(grant)
 		r.line("permission {")
@@ -555,6 +541,66 @@ func (r *renderer) renderGrants() {
 		r.line("}")
 		r.line("")
 	}
+}
+
+// renderRevokedGrants writes one `revoke` block per revoked grant: privileges
+// the role is declared not to hold on the object.
+//
+// It is a block of its own rather than a `permission` with a flag, because the
+// two say opposite things and a reader that missed the flag would grant what
+// the document revokes. `from` names the role for the same reason the SQL
+// statement does. The pinned Atlas community binary v1.3.0 drops a top-level
+// block it does not model and carries on at exit 0, as it does for
+// `default_privilege`, so the block costs that binary nothing.
+func (r *renderer) renderRevokedGrants() {
+	revoked := r.renderableGrants(r.db.RevokedGrants, "revoked_grants", "revoked grant")
+	for _, grant := range revoked {
+		r.line("revoke {")
+		r.rawAttr(1, "from", r.roleTarget(grant.Role))
+		r.rawAttr(1, "for", r.grantTarget(grant))
+		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
+		r.stringAttr(1, "comment", grant.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
+// renderableGrants returns the grants a `permission` or `revoke` block can
+// write, sorted, and reports each one it leaves out.
+//
+// Incomplete grants are dropped BEFORE the sort, because the sort key is
+// [renderer.grantTarget] and rendering a target records the schema reference
+// it writes. Asking it about a grant that is then skipped would declare a
+// `schema` block for a block the document does not contain.
+//
+// A grant on a function or procedure is left out with its own diagnostic. The
+// routine's identity includes its argument types, and a `function.<name>`
+// reference names a block by its label alone, so it cannot say which overload
+// the privilege is on.
+func (r *renderer) renderableGrants(grants []schemamodel.Grant, path, noun string) []schemamodel.Grant {
+	renderable := make([]schemamodel.Grant, 0, len(grants))
+	for _, grant := range grants {
+		grant.Canonicalize()
+		if grant.OnRoutine != "" {
+			r.warn(path+"."+grant.Role, fmt.Sprintf(
+				"%s on %s %s(%s) cannot be represented in HCL: a routine reference cannot name an overload",
+				noun, strings.ToLower(grant.RoutineKind), grant.OnRoutine, grant.RoutineArguments))
+			continue
+		}
+		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
+			r.warn(path+"."+grant.Role, noun+" requires role, table, schema, or sequence target, and at least one privilege")
+			continue
+		}
+		renderable = append(renderable, grant)
+	}
+	slices.SortFunc(renderable, func(a, b schemamodel.Grant) int {
+		return cmp.Or(
+			cmp.Compare(a.Role, b.Role),
+			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
+			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
+		)
+	})
+	return renderable
 }
 
 // renderDefaultPrivileges writes one `default_privilege` block per declaration:

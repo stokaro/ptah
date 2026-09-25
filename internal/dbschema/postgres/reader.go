@@ -3245,6 +3245,34 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	return triggers, nil
 }
 
+// describedRoutinePredicate says which rows of pg_proc are routines this
+// reader describes, joined to pg_namespace as n and pg_language as l.
+//
+// It is one predicate for two reads, the routines and their privileges,
+// because a privilege is reported on an object the description has: two
+// copies would agree when the second was written and drift when the first
+// learned a new exclusion, and a grant would then name a routine the
+// description never mentions.
+const describedRoutinePredicate = `
+		-- Functions and procedures, which are the two routine kinds a schema
+		-- can declare. Aggregates ('a') and window functions ('w') are left
+		-- out on purpose: both are defined by naming other routines rather
+		-- than by a body a schema can carry, and neither has a Ptah
+		-- declaration to compare against (stokaro/ptah#1722).
+		AND p.prokind IN ('f', 'p')
+		AND l.lanname != 'internal'  -- Exclude internal functions
+		-- Escaped for the same reason as the role filters above: a bare _
+		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
+		-- functions such as ptahxtriggery (stokaro/ptah#1291).
+		AND p.proname NOT LIKE 'ptah\_trigger\_%' ESCAPE '\'
+		-- Exclude extension-owned functions to prevent migration issues
+		-- Extension functions cannot be dropped independently and should be managed by the extension
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend d
+			JOIN pg_extension e ON e.oid = d.refobjid
+			WHERE d.objid = p.oid AND d.deptype = 'e'
+		)`
+
 func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) ([]catalog.Function, error) {
 	functionsQuery := `
 		SELECT
@@ -3279,27 +3307,7 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
-		WHERE n.nspname = $1
-		-- Functions and procedures, which are the two routine kinds a schema
-		-- can declare. Aggregates ('a') and window functions ('w') are left
-		-- out on purpose: both are defined by naming other routines rather
-		-- than by a body a schema can carry, and neither has a Ptah
-		-- declaration to compare against. They were excluded before this
-		-- comment existed and nothing said so, which is the silence
-		-- stokaro/ptah#1722 is about.
-		AND p.prokind IN ('f', 'p')
-		AND l.lanname != 'internal'  -- Exclude internal functions
-		-- Escaped for the same reason as the role filters above: a bare _
-		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
-		-- functions such as ptahxtriggery (stokaro/ptah#1291).
-		AND p.proname NOT LIKE 'ptah\_trigger\_%' ESCAPE '\'
-		-- Exclude extension-owned functions to prevent migration issues
-		-- Extension functions cannot be dropped independently and should be managed by the extension
-		AND NOT EXISTS (
-			SELECT 1 FROM pg_depend d
-			JOIN pg_extension e ON e.oid = d.refobjid
-			WHERE d.objid = p.oid AND d.deptype = 'e'
-		)
+		WHERE n.nspname = $1` + describedRoutinePredicate + `
 		ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`
 
 	rows, err := r.db.QueryContext(ctx, functionsQuery, schemaName)
@@ -3935,6 +3943,85 @@ func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]
 			}
 			grants = append(grants, sequenceGrants...)
 		}
+
+		if r.caps.Has(capability.Functions) {
+			routineGrants, err := r.readRoutineGrantsForSchema(ctx, schemaName)
+			if err != nil {
+				return nil, err
+			}
+			grants = append(grants, routineGrants...)
+		}
+	}
+	return grants, nil
+}
+
+// readRoutineGrantsForSchema reads the privileges on the routines
+// [describedRoutinePredicate] describes, one row per privilege.
+//
+// A routine whose pg_proc.proacl is NULL holds its default ACL, which nobody
+// wrote: measured on PostgreSQL 18, a new function is executable by PUBLIC and
+// by its owner, and the first GRANT or REVOKE on it materializes the ACL, so
+// `REVOKE ALL ... FROM PUBLIC` leaves `{owner=X/owner}`. CockroachDB 26.3
+// answers the same way: proacl is NULL on a new function, SHOW GRANTS lists
+// public EXECUTE, and the first REVOKE writes the ACL. The owner half of the
+// default is left out, as a table's is by readTableGrantsForSchema. The PUBLIC
+// half is reported as one [catalog.Grant] marked Implicit, because a schema
+// that revokes it has to see it is there. It is synthesized here rather than
+// read through acldefault, which a PostgreSQL-shaped catalog is not bound to
+// have.
+//
+// The argument types come from pg_get_function_identity_arguments, which the
+// routine read already asks for, so the two reads name a routine the same way.
+func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
+	query := `
+		SELECT
+			p.proname,
+			pg_get_function_identity_arguments(p.oid),
+			CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+			p.proacl IS NULL,
+			COALESCE(grantee.rolname, 'PUBLIC'),
+			COALESCE(acl.privilege_type, ''),
+			COALESCE(acl.is_grantable, false),
+			COALESCE(grantor.rolname, '')
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		JOIN pg_language l ON l.oid = p.prolang
+		LEFT JOIN LATERAL aclexplode(p.proacl) acl ON true
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		LEFT JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE n.nspname = $1` + describedRoutinePredicate + `
+		-- An ACL emptied by revoking everything explodes to no rows, and the
+		-- LEFT JOIN would still yield one with no privilege in it.
+		AND (p.proacl IS NULL OR acl.grantee IS NOT NULL)
+		-- The same roles the table grant read leaves out.
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY p.proname, 2, 5, 6`
+
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query routine grants for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var grants []catalog.Grant
+	for rows.Next() {
+		grant := catalog.Grant{Schema: r.outputSchema(schemaName)}
+		var defaultACL bool
+		if err := rows.Scan(
+			&grant.ObjectName, &grant.Arguments, &grant.ObjectType, &defaultACL,
+			&grant.Role, &grant.Privilege, &grant.WithOption, &grant.GrantedBy,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan routine grant for schema %s: %w", schemaName, err)
+		}
+		if defaultACL {
+			grant.Role, grant.Privilege, grant.WithOption, grant.GrantedBy = "PUBLIC", "EXECUTE", false, ""
+			grant.Implicit = true
+		}
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read routine grants for schema %s: %w", schemaName, err)
 	}
 	return grants, nil
 }

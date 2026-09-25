@@ -704,8 +704,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1685,
-      "sourceBytes": 12779
+      "visibleWords": 2015,
+      "sourceBytes": 14770
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1157,8 +1157,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6684,
-      "sourceBytes": 47013
+      "visibleWords": 7101,
+      "sourceBytes": 49654
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4615,8 +4615,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5212,
-      "sourceBytes": 40251
+      "visibleWords": 5468,
+      "sourceBytes": 42283
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4663,8 +4663,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 2117,
-      "sourceBytes": 16934
+      "visibleWords": 2166,
+      "sourceBytes": 17225
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -6864,8 +6864,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5482,
-      "sourceBytes": 38618
+      "visibleWords": 5535,
+      "sourceBytes": 38998
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

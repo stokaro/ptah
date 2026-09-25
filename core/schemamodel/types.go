@@ -61,6 +61,20 @@ type Database struct {
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
 	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
 
+	// RevokedGrants are privileges the schema says a grantee does not hold,
+	// one privilege per entry. A SQL schema file writes them as REVOKE.
+	//
+	// They are separate from Grants because absence is a statement of its
+	// own. A grant the schema does not list is only unasserted, unless the
+	// grantee is a role the schema manages; a revoked one is asserted
+	// absent whoever the grantee is, including PUBLIC and a role the schema
+	// does not create. A privilege is never in both lists. A SQL schema file
+	// composes them in statement order, so a later GRANT takes a privilege
+	// out of this list and a later REVOKE takes it out of Grants; a source
+	// with no statement order that lists one in both is refused, see
+	// [ValidateRevokedGrants].
+	RevokedGrants []Grant `json:",omitempty"`
+
 	// EmbeddedSources retains source-only helper declarations needed to
 	// materialize embedded columns again after a schema is merged or finalized.
 	EmbeddedSources EmbeddedSources
@@ -1704,12 +1718,23 @@ type Grant struct {
 	StructName string   // Name of the Go struct this grant is associated with
 	Role       string   // Role receiving the privilege
 	Privileges []string // Privileges to grant, e.g. SELECT, INSERT, USAGE
-	OnTable    string   // Target table, mutually exclusive with OnSchema/OnSequence
-	OnSchema   string   // Target schema, mutually exclusive with OnTable/OnSequence
-	OnSequence string   // Target sequence, mutually exclusive with OnTable/OnSchema
+	OnTable    string   // Target table, mutually exclusive with the other targets
+	OnSchema   string   // Target schema, mutually exclusive with the other targets
+	OnSequence string   // Target sequence, mutually exclusive with the other targets
 	WithOption bool     // Whether the grant includes WITH GRANT OPTION
 	GrantedBy  string   // Grantor reported by database introspection, if available
 	Comment    string   // Optional comment for documentation
+
+	// OnRoutine names a function or procedure target, mutually exclusive with
+	// the other targets. RoutineArguments are its argument types,
+	// comma-separated as the declaration wrote them; they are part of the
+	// target, because PostgreSQL overloads a routine name by its argument
+	// types. RoutineKind is the keyword the declaration used: FUNCTION,
+	// PROCEDURE or ROUTINE. It decides only how the grant is spelled, not
+	// which routine it names.
+	OnRoutine        string `json:",omitempty"`
+	RoutineArguments string `json:",omitempty"`
+	RoutineKind      string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
@@ -1737,6 +1762,36 @@ func (g *Grant) Canonicalize() {
 	g.OnTable = strings.TrimSpace(g.OnTable)
 	g.OnSchema = strings.TrimSpace(g.OnSchema)
 	g.OnSequence = strings.TrimSpace(g.OnSequence)
+	g.OnRoutine = strings.TrimSpace(g.OnRoutine)
+	g.RoutineArguments = strings.TrimSpace(g.RoutineArguments)
+	g.RoutineKind = strings.ToUpper(strings.TrimSpace(g.RoutineKind))
+	if g.OnRoutine != "" && g.RoutineKind == "" {
+		g.RoutineKind = "FUNCTION"
+	}
+}
+
+// TargetKey names the object a grant is about, for telling whether two grants
+// of one schema name the same object. It is not a SQL spelling.
+//
+// The key carries the kind of target and its name as written, so a table and a
+// schema of one name stay apart. A routine's key includes its argument types,
+// compared without regard to case or spacing; FUNCTION, PROCEDURE and ROUTINE
+// name the same routine and share a key. Names are not resolved against a
+// schema search path, so `users` and `public.users` have different keys; a
+// comparison against a database normalizes both sides on its own.
+func (g Grant) TargetKey() string {
+	switch {
+	case strings.TrimSpace(g.OnSchema) != "":
+		return "SCHEMA " + strings.TrimSpace(g.OnSchema)
+	case strings.TrimSpace(g.OnSequence) != "":
+		return "SEQUENCE " + strings.TrimSpace(g.OnSequence)
+	case strings.TrimSpace(g.OnRoutine) != "":
+		arguments := strings.Join(strings.Fields(strings.ToLower(g.RoutineArguments)), " ")
+		arguments = strings.ReplaceAll(arguments, " ,", ",")
+		return "ROUTINE " + strings.TrimSpace(g.OnRoutine) + "(" + arguments + ")"
+	default:
+		return "TABLE " + strings.TrimSpace(g.OnTable)
+	}
 }
 
 // DefaultPrivilege is a PostgreSQL default privilege: the privileges an object

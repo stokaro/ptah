@@ -278,19 +278,20 @@ func (p *Parser) applyRolePassword(role *ast.CreateRoleNode) error {
 }
 
 // parseGrantStatement parses GRANT priv[, ...] ON [objtype] name TO role
-// [WITH GRANT OPTION].
+// [WITH GRANT OPTION], where a routine target carries its argument types:
+// ON FUNCTION name(argtypes).
 func (p *Parser) parseGrantStatement() (*ast.GrantPrivilegeNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "GRANT"); err != nil {
 		return nil, err
 	}
 	p.skipWhitespace()
 
-	privileges, err := p.parseGrantPrivileges()
+	privileges, err := p.parseObjectPrivileges("GRANT")
 	if err != nil {
 		return nil, err
 	}
 
-	objectType, objectName, err := p.parseGrantTarget()
+	target, err := p.parseGrantTarget("GRANT")
 	if err != nil {
 		return nil, err
 	}
@@ -305,12 +306,81 @@ func (p *Parser) parseGrantStatement() (*ast.GrantPrivilegeNode, error) {
 		return nil, fmt.Errorf("expected grantee role: %w", err)
 	}
 
-	grant := ast.NewGrantPrivilege(role, objectType, objectName, privileges)
+	grant := ast.NewGrantPrivilege(role, target.objectType, target.objectName, privileges).
+		SetArguments(target.arguments)
 	withOption, err := p.parseGrantOptionSuffix()
 	if err != nil {
 		return nil, err
 	}
 	return grant.SetWithOption(withOption), nil
+}
+
+// parseRevokeStatement parses REVOKE [GRANT OPTION FOR] priv[, ...] ON
+// [objtype] name FROM role [RESTRICT].
+//
+// Three forms PostgreSQL accepts are refused, each because its effect reaches
+// past what one statement in a desired-state file can say: CASCADE also revokes
+// whatever the role granted onward, GRANTED BY names a grantor the model does
+// not key grants by, and a grantee list would be read as its first name.
+func (p *Parser) parseRevokeStatement() (*ast.RevokePrivilegeNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "REVOKE"); err != nil {
+		return nil, err
+	}
+	grantOptionFor, err := p.parseRevokeGrantOptionForPrefix()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	privileges, err := p.parseObjectPrivileges("REVOKE")
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := p.parseGrantTarget("REVOKE")
+	if err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "FROM"); err != nil {
+		return nil, fmt.Errorf("expected FROM after REVOKE target: %w", err)
+	}
+	p.skipWhitespace()
+	role, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected grantee role: %w", err)
+	}
+	if err := p.parseRevokeSuffix(); err != nil {
+		return nil, err
+	}
+
+	revoke := ast.NewRevokePrivilege(role, target.objectType, target.objectName, privileges).
+		SetArguments(target.arguments)
+	return revoke.SetGrantOptionFor(grantOptionFor), nil
+}
+
+// parseRevokeSuffix reads what may follow the grantee of a REVOKE. RESTRICT is
+// PostgreSQL's default and changes nothing; see [Parser.parseRevokeStatement]
+// for the rest.
+func (p *Parser) parseRevokeSuffix() error {
+	p.skipWhitespace()
+	switch {
+	case p.current.MatchOperatorValue(","):
+		return fmt.Errorf(
+			"REVOKE names one grantee here, not a list, at position %d: write one statement per role", p.current.Start)
+	case p.current.MatchIdentifierValue("GRANTED"):
+		return fmt.Errorf(
+			"REVOKE ... GRANTED BY is not supported at position %d: grants are not keyed by grantor here",
+			p.current.Start)
+	case p.current.MatchIdentifierValue("CASCADE"):
+		return fmt.Errorf(
+			"REVOKE ... CASCADE is not supported at position %d: it also revokes what the role granted onward, "+
+				"which a desired-state file cannot see", p.current.Start)
+	case p.current.MatchIdentifierValue("RESTRICT"):
+		p.advance()
+	}
+	return nil
 }
 
 func (p *Parser) parseGrantPrivileges() ([]string, error) {
@@ -335,26 +405,109 @@ func (p *Parser) parseGrantPrivileges() ([]string, error) {
 	}
 }
 
+// parseObjectPrivileges reads the privilege list of a GRANT or REVOKE on an
+// object, with ON consumed.
+//
+// It differs from [Parser.parseGrantPrivileges], which ALTER DEFAULT
+// PRIVILEGES also uses, in two places. ALL PRIVILEGES is read as the ALL it
+// spells, so the noise word does not fail the statement. A column list after a
+// privilege -- UPDATE (a, b) -- is refused by name: the model keys a grant by
+// object, and reading the privilege without its columns would widen it to the
+// whole table.
+func (p *Parser) parseObjectPrivileges(statement string) ([]string, error) {
+	var privileges []string
+	for {
+		p.skipWhitespace()
+		privilege, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected privilege name: %w", err)
+		}
+		privilege = strings.ToUpper(privilege)
+		p.skipWhitespace()
+		if privilege == "ALL" && p.current.MatchIdentifierValue("PRIVILEGES") {
+			p.advance()
+			p.skipWhitespace()
+		}
+		if p.current.MatchOperatorValue("(") {
+			return nil, fmt.Errorf(
+				"column privileges are not supported: %s %s (...) at position %d grants on columns, and a grant "+
+					"here covers a whole object", statement, privilege, p.current.Start)
+		}
+		privileges = append(privileges, privilege)
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
+		if p.current.MatchIdentifierValue("ON") {
+			p.advance()
+			return privileges, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ON in %s privileges at position %d", statement, p.current.Start)
+	}
+}
+
 // grantObjectTypes are the GRANT target kinds Ptah models. A GRANT that omits
 // the keyword entirely targets a table, which is PostgreSQL's own default.
-var grantObjectTypes = map[string]bool{"TABLE": true, "SCHEMA": true, "SEQUENCE": true}
+var grantObjectTypes = map[string]bool{
+	"TABLE": true, "SCHEMA": true, "SEQUENCE": true,
+	"FUNCTION": true, "PROCEDURE": true, "ROUTINE": true,
+}
 
-func (p *Parser) parseGrantTarget() (objectType, objectName string, err error) {
+// grantRoutineTypes are the target kinds whose identity includes argument
+// types.
+var grantRoutineTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "ROUTINE": true}
+
+// grantTarget is the object a GRANT or REVOKE names.
+type grantTarget struct {
+	objectType string
+	objectName string
+	arguments  string
+}
+
+// parseGrantTarget reads the object after ON.
+//
+// A routine target must name its argument types. PostgreSQL resolves a bare
+// name when exactly one routine carries it, which is a fact about the database
+// at the moment the statement runs; a desired-state file is read without one,
+// so the grant could not be tied to a routine and is refused instead. The
+// ALL ... IN SCHEMA form is refused for the same reason: it grants on whatever
+// objects exist when it runs, and a file cannot say which those are.
+func (p *Parser) parseGrantTarget(statement string) (grantTarget, error) {
 	p.skipWhitespace()
-	objectType = "TABLE"
+	target := grantTarget{objectType: "TABLE"}
+	if p.current.MatchIdentifierValue("ALL") {
+		return grantTarget{}, fmt.Errorf(
+			"%s ... ON ALL ... IN SCHEMA is not supported at position %d: it applies to the objects that exist "+
+				"when it runs, so name each object instead", statement, p.current.Start)
+	}
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		if grantObjectTypes[keyword] {
-			objectType = keyword
+			target.objectType = keyword
 			p.advance()
 			p.skipWhitespace()
 		}
 	}
-	objectName, err = p.parseQualifiedIdentifier("GRANT object name")
+	objectName, err := p.parseQualifiedIdentifier(statement + " object name")
 	if err != nil {
-		return "", "", err
+		return grantTarget{}, err
 	}
-	return objectType, objectName, nil
+	target.objectName = objectName
+	if !grantRoutineTypes[target.objectType] {
+		return target, nil
+	}
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("(") {
+		return grantTarget{}, fmt.Errorf(
+			"%s ... ON %s %s needs the argument types at position %d, as in %s(uuid): a routine's identity "+
+				"includes them", statement, target.objectType, objectName, p.current.Start, objectName)
+	}
+	arguments, err := p.collectParenthesizedBody(strings.ToLower(target.objectType) + " arguments")
+	if err != nil {
+		return grantTarget{}, err
+	}
+	target.arguments = arguments
+	return target, nil
 }
 
 func (p *Parser) parseGrantOptionSuffix() (bool, error) {

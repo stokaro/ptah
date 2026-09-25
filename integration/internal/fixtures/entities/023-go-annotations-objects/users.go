@@ -79,6 +79,7 @@ type UserTrigger struct{}
 //ptah:schema:grant role="fixture_app_user" privileges="SELECT, INSERT" on_table="users" with_option="true" comment="Grant option fixture"
 //ptah:schema:grant role="fixture_app_user" privilege="USAGE" on_schema="public" comment="Schema usage"
 //ptah:schema:grant role="fixture_app_user" privilege="USAGE,SELECT" on_sequence="fixture_order_seq" comment="Sequence usage for fixture_app_user"
+//ptah:schema:revoke role="fixture_app_user" privilege="TRUNCATE" on_table="users" comment="Nothing grants it here; the revoke says it stays absent"
 type AccessControlMarker struct{}
 
 //ptah:schema:defaultprivilege for_role="fixture_owner" schema="public" object_type="TABLES" grantee="fixture_app_user" privileges="SELECT,INSERT" grantable="INSERT" comment="Future tables readable, insertable and re-grantable"

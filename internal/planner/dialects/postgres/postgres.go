@@ -2052,11 +2052,13 @@ func (p *Planner) removeRoles(result []ast.Node, diff *difftypes.SchemaDiff) []a
 func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsAdded {
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetArguments(grant.Arguments).
 			SetWithOption(grant.WithOption)
 		result = append(result, node)
 	}
 	for _, grant := range diff.GrantOptionsAdded {
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetArguments(grant.Arguments).
 			SetWithOption(true)
 		result = append(result, node)
 	}
@@ -2065,7 +2067,8 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 
 func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsRemoved {
-		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege})
+		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetArguments(grant.Arguments)
 		result = append(result, node)
 	}
 	return result
@@ -2074,6 +2077,7 @@ func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantOptionsRevoked {
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetArguments(grant.Arguments).
 			SetGrantOptionFor(true)
 		result = append(result, node)
 	}
