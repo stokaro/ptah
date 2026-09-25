@@ -2321,37 +2321,21 @@ func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.Column
 	}
 }
 
-// getDefaultValueForType returns a sensible default value for a column type when setting NOT NULL
-func (r *Renderer) getDefaultValueForType(columnType string) string {
-	switch {
-	case strings.Contains(strings.ToLower(columnType), "timestamp"):
-		return "CURRENT_TIMESTAMP"
-	case strings.Contains(strings.ToLower(columnType), "date"):
-		return "CURRENT_DATE"
-	case strings.Contains(strings.ToLower(columnType), "time"):
-		return "CURRENT_TIME"
-	case strings.Contains(strings.ToLower(columnType), "text") || strings.Contains(strings.ToLower(columnType), "varchar"):
-		return "''"
-	case strings.Contains(strings.ToLower(columnType), "int") || strings.Contains(strings.ToLower(columnType), "serial"):
-		return "0"
-	case strings.Contains(strings.ToLower(columnType), "decimal") || strings.Contains(strings.ToLower(columnType), "numeric"):
-		return "0.0"
-	case strings.Contains(strings.ToLower(columnType), "bool"):
-		return "false"
-	default:
-		return "" // No default available, let the constraint fail if there are NULLs
-	}
-}
-
-// updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
-// This prevents "column contains null values" errors during migrations
+// updateNullValuesBeforeNotNull fills a column's NULL rows with its declared
+// default before SET NOT NULL, the value the author wrote for a row that
+// states none.
 //
-// Where there is no value to write, nothing is written: the block would test
-// for NULLs and then do nothing about them, and SET NOT NULL reports them the
-// same way on its own.
+// A column with no declared default is not filled. A value chosen by the
+// column's type, such as 0, false, CURRENT_TIMESTAMP or the empty string, is
+// data nobody wrote: filled with it, a change the server refuses reports
+// success and leaves the rows rewritten. Atlas CE v1.3.0 lets the statement
+// fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). The plan
+// says so in a comment beside the statement.
 func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
 	value := r.nullBackfillValue(column)
 	if value == "" {
+		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; the column declares no default to fill it with.",
+			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 		return
 	}
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
@@ -2367,13 +2351,10 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 }
 
 // nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a
-// NULL row: the column's default, or else one chosen by its type, or empty
-// when there is neither. The value chosen by type is one the author never
-// wrote (stokaro/ptah#3648).
+// NULL row: the column's declared default, or empty when it declares none.
 func (r *Renderer) nullBackfillValue(column *ast.ColumnNode) string {
 	if column.Default == nil {
-		// If no default is specified, use a sensible default based on column type
-		return r.getDefaultValueForType(column.Type)
+		return ""
 	}
 	if column.Default.Expression != "" {
 		return column.Default.Expression
