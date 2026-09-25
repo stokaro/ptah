@@ -799,9 +799,13 @@ var directives = []Directive{
 				"without IN SCHEMA, has no spelling here.", valueString, true, false),
 			attr("object_type", "TABLES, SEQUENCES, FUNCTIONS or TYPES.", valueString, true, false),
 			attr("grantee", "Role receiving the privileges; PUBLIC names every role.", valueString, true, false),
-			attr("privileges", "Comma-separated privileges, such as SELECT,INSERT.", valueList, true, false),
+			attr("privileges", "Comma-separated privileges, such as SELECT,INSERT. Required unless revoked is set.",
+				valueList, false, false),
 			attr("grantable", "The subset of privileges carrying WITH GRANT OPTION. A name "+
 				"outside privileges is refused.", valueList, false, false),
+			attr("revoked", "Comma-separated privileges the grantee must not hold by default, such as "+
+				"INSERT,UPDATE; ALL names every privilege of the object type. A name also in privileges is refused.",
+				valueList, false, false),
 			attr("comment", "Default privilege comment.", valueString, false, false),
 			dialectsAttr(),
 		},

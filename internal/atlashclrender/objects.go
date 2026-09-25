@@ -628,7 +628,7 @@ func (r *renderer) renderDefaultPrivileges() {
 		if !defaultPrivilegeComplete(privilege) {
 			r.warn("default_privileges."+privilege.Grantee,
 				"default privilege requires a grantor, a schema, an object type, "+
-					"a grantee, and at least one privilege")
+					"a grantee, and at least one privilege granted or revoked")
 			continue
 		}
 		privileges = append(privileges, privilege)
@@ -648,6 +648,7 @@ func (r *renderer) renderDefaultPrivileges() {
 				strings.Join(privilegeNames(a.Privileges), ","),
 				strings.Join(privilegeNames(b.Privileges), ","),
 			),
+			cmp.Compare(strings.Join(a.Revoked, ","), strings.Join(b.Revoked, ",")),
 		)
 	})
 	for _, privilege := range privileges {
@@ -661,8 +662,11 @@ func (r *renderer) renderDefaultPrivileges() {
 		// bare, TABLES is an HCL variable reference with nothing behind it.
 		r.stringAttr(1, "object_type", privilege.ObjectType)
 		r.rawAttr(1, "to", r.roleTarget(privilege.Grantee))
-		r.rawAttr(1, "privileges", privilegeList(privilegeNames(privilege.Privileges)))
+		r.rawAttr(1, "privileges", optionalPrivilegeList(privilegeNames(privilege.Privileges)))
 		r.rawAttr(1, "grantable", optionalPrivilegeList(grantablePrivilegeNames(privilege.Privileges)))
+		// Privileges the identity must not hold: a schema file's ALTER DEFAULT
+		// PRIVILEGES ... REVOKE.
+		r.rawAttr(1, "revoked", optionalPrivilegeList(privilege.Revoked))
 		r.stringAttr(1, "comment", privilege.Comment)
 		r.line("}")
 		r.line("")
@@ -676,7 +680,7 @@ func defaultPrivilegeComplete(privilege schemamodel.DefaultPrivilege) bool {
 		privilege.Schema != "" &&
 		privilege.ObjectType != "" &&
 		privilege.Grantee != "" &&
-		len(privilege.Privileges) > 0
+		len(privilege.Privileges)+len(privilege.Revoked) > 0
 }
 
 // privilegeNames is every privilege a declaration grants, grantable or not.

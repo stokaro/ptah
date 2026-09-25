@@ -29,6 +29,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/privilegefold"
 )
 
 // ToField converts an ast.ColumnNode to a schemamodel.Field with comprehensive attribute extraction.
@@ -743,15 +744,13 @@ func appendStatement(
 	case *ast.CommentNode:
 		applyRoleComment(database, node, sourcePlatform)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
-		*ast.RevokeDefaultPrivilegeNode, *ast.PostgresDoBlockNode, *ast.RawSQLNode:
+		*ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
 		// schemamodel.Database is what a schema SHOULD contain, and none of
 		// these names an object it would contain. A CREATE DATABASE names the
 		// database this model already is; a DROP names an object by its
-		// absence, which the desired schema expresses by not declaring it; an
-		// ALTER DEFAULT PRIVILEGES ... REVOKE names a privilege the same way,
-		// by taking it back; a DO block and a raw statement do work rather than
-		// declare a thing.
+		// absence, which the desired schema expresses by not declaring it; a
+		// DO block and a raw statement do work rather than declare a thing.
 		//
 		// Written out rather than left to fall through, so that the default
 		// below means "nobody decided" and not "somebody decided not to".
@@ -848,7 +847,11 @@ func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, s
 	case *ast.RevokePrivilegeNode:
 		return true, appendRevoke(database, node, sourcePlatform)
 	case *ast.DefaultPrivilegeNode:
-		database.DefaultPrivileges = append(database.DefaultPrivileges, toDefaultPrivilege(node, sourcePlatform))
+		database.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(
+			database.DefaultPrivileges, []schemamodel.DefaultPrivilege{toDefaultPrivilege(node, sourcePlatform)},
+		)
+	case *ast.RevokeDefaultPrivilegeNode:
+		return true, appendDefaultPrivilegeRevoke(database, node, sourcePlatform)
 	default:
 		return false, nil
 	}

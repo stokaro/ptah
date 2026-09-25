@@ -44,13 +44,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-376 fields are reachable from the desired schema, and each one carries
+377 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
 | `ddl` | 315 | reaches rendered SQL on at least one target |
-| `comparison` | 7 | read when two schemas are compared, and written into no statement |
+| `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 16 | identifies the source text the declaration was read from |
@@ -162,6 +162,7 @@ None.
 | `schemamodel.DefaultPrivilege.Grantor` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.ObjectType` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Privileges` | `ddl` | — |
+| `schemamodel.DefaultPrivilege.Revoked` | `comparison` | privileges the identity must not hold; a database the schema creates has none to revoke, so only a comparison plans the REVOKE |
 | `schemamodel.DefaultPrivilege.Schema` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Domain.BaseType` | `ddl` | — |

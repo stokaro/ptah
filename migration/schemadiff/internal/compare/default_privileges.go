@@ -65,7 +65,8 @@ func DefaultPrivileges(desired *schemamodel.Database, current *catalog.Database,
 //
 // A row that satisfies neither belongs to a role nobody declared and is left
 // alone, which is the rule the grant comparator applies to a role it does not
-// manage.
+// manage -- unless the declaration revokes it. A revoked privilege says the
+// privilege is absent, so it is removed whoever the grantor is.
 func DefaultPrivilegesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -90,6 +91,8 @@ func DefaultPrivilegesWithSemantics(
 		}
 	}
 
+	revoked := revokedDefaultPrivileges(desired, semantics)
+
 	managedGrantors := make(map[string]bool, len(desired.Roles))
 	for _, role := range desired.Roles {
 		managedGrantors[semantics.TableIdentityKey(strings.TrimSpace(role.Name))] = true
@@ -104,7 +107,7 @@ func DefaultPrivilegesWithSemantics(
 			ref.WithOption = ref.WithOption || previous.WithOption
 		}
 		described[key] = ref
-		if managedGrantors[key.object.grantor] || declaredObjects[key.object] {
+		if managedGrantors[key.object.grantor] || declaredObjects[key.object] || revokes(revoked, key) {
 			removable[key] = ref
 		}
 	}
@@ -197,6 +200,35 @@ func declaredDefaultPrivilege(
 		return false
 	}
 	return slices.Contains(pgprivilege.All(key.object.objectType), key.privilege)
+}
+
+// revokedDefaultPrivileges keys every default privilege the declaration
+// revokes. A revoked privilege is removed wherever the database holds it,
+// whoever the grantor is: it says the privilege is absent, which a
+// declaration that only leaves it out does not. A revoked ALL is keyed as ALL
+// and matches every privilege of its object.
+func revokedDefaultPrivileges(
+	desired *schemamodel.Database,
+	semantics identifier.Semantics,
+) map[defaultPrivilegeIdentity]bool {
+	revoked := make(map[defaultPrivilegeIdentity]bool)
+	for _, privilege := range desired.DefaultPrivileges {
+		privilege.Canonicalize()
+		for _, name := range privilege.Revoked {
+			ref := difftypes.DefaultPrivilegeRef{
+				Grantor: privilege.Grantor, Schema: privilege.Schema, ObjectType: privilege.ObjectType,
+				Grantee: privilege.Grantee, Privilege: name,
+			}
+			revoked[newDefaultPrivilegeIdentity(ref, semantics)] = true
+		}
+	}
+	return revoked
+}
+
+// revokes reports whether the declaration revokes the privilege key names,
+// by its own name or by ALL on the same object.
+func revokes(revoked map[defaultPrivilegeIdentity]bool, key defaultPrivilegeIdentity) bool {
+	return revoked[key] || revoked[defaultPrivilegeIdentity{object: key.object, privilege: allPrivilege}]
 }
 
 // defaultPrivilegeRefsFromDeclaration explodes one declaration into the

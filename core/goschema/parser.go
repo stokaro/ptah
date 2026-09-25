@@ -2158,6 +2158,18 @@ func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
+	revoked := splitCommaList(kv["revoked"])
+	if len(privileges) == 0 && len(revoked) == 0 {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "privileges",
+			Err:       ptaherr.ErrMissingRequiredAttribute,
+			Message: fmt.Sprintf("missing required annotation attribute %q on %s at %s: "+
+				"a default privilege grants privileges, revokes them, or both", "privileges", ctx.directive, ctx.location),
+		}
+	}
 	privilege := schemamodel.DefaultPrivilege{
 		StructName: structName,
 		Grantor:    kv["for_role"],
@@ -2165,6 +2177,7 @@ func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, st
 		ObjectType: objectType,
 		Grantee:    kv["grantee"],
 		Privileges: privileges,
+		Revoked:    revoked,
 		Comment:    kv["comment"],
 		Dialects:   scope,
 	}

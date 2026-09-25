@@ -60,6 +60,12 @@
     "reason": "The generated reference is exhaustive by design and provides a keyboard-accessible filter across all command and flag rows."
   },
   {
+    "route": "/reference/go-annotations/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The reference records every directive with its full attribute table under a stable anchor, so an attribute is found where its directive is; splitting it would scatter lookups for one annotation language."
+  },
+  {
     "route": "/reference/lint-rules/",
     "check": "page-length",
     "target": "page",

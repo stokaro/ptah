@@ -1787,6 +1787,7 @@ func deduplicateDefaultPrivileges(privileges []DefaultPrivilege) []DefaultPrivil
 		}
 		merged := deduplicated[index]
 		merged.Privileges = append(merged.Privileges, privilege.Privileges...)
+		merged.Revoked = append(merged.Revoked, privilege.Revoked...)
 		merged.Canonicalize()
 		deduplicated[index] = merged
 	}
