@@ -126,3 +126,39 @@ func TestRenderRefusesANilSchema(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "schema database is nil")
 }
+
+// keyedSchema declares a column-level key without NOT NULL, the shape a SQL
+// schema file's `id BIGINT PRIMARY KEY` reads as, and a table whose key is
+// declared at table level, beside an ordinary nullable column as the control.
+func keyedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Note", Name: "notes"},
+			{StructName: "Membership", Name: "memberships", PrimaryKey: []string{"org_id", "user_id"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Note", Name: "id", Type: "BIGINT", Primary: true, Nullable: true},
+			{StructName: "Note", Name: "body", Type: "TEXT", Nullable: true},
+			{StructName: "Membership", Name: "org_id", Type: "BIGINT", Nullable: true},
+			{StructName: "Membership", Name: "user_id", Type: "BIGINT", Nullable: true},
+		},
+	}
+}
+
+// TestRenderMarksAPrimaryKeyColumnNotNullable holds the Markdown table to the
+// rule every export shares: a key column is NOT NULL whatever its own
+// declaration says, as the rendered DDL writes it and as the OpenAPI and
+// GraphQL exports already said. A key declared at table level marks its
+// columns as key columns too.
+func TestRenderMarksAPrimaryKeyColumnNotNullable(t *testing.T) {
+	c := qt.New(t)
+
+	result, err := docsrender.Render(keyedSchema(), docsrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	doc := string(result.Data)
+	c.Assert(doc, qt.Contains, "| id | BIGINT | no | — | PK | — |")
+	c.Assert(doc, qt.Contains, "| org_id | BIGINT | no | — | PK | — |")
+	c.Assert(doc, qt.Contains, "| user_id | BIGINT | no | — | PK | — |")
+	c.Assert(doc, qt.Contains, "| body | TEXT | yes | — | — | — |")
+}
