@@ -147,6 +147,7 @@ func TestParse_AlterColumnSetDefault(t *testing.T) {
 		{name: "a literal", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT 5;", wantValue: "5"},
 		{name: "a string", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT 'x';", wantValue: "'x'"},
 		{name: "a function", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT now();", wantExpression: "now()"},
+		{name: "a function with arguments", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT nextval('s'::regclass);", wantExpression: "nextval('s'::regclass)"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
