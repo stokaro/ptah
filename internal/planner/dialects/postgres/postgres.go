@@ -802,6 +802,17 @@ func (p *Planner) modifyExistingTableColumns(
 			continue
 		}
 
+		// A change no ALTER COLUMN clause carries, a UNIQUE or PRIMARY KEY
+		// flag, is reported by the comment and nothing else. Restated for
+		// it, the column gets a TYPE, a NOT NULL and a DEFAULT clause that
+		// change nothing and do not add the key either; adding it is
+		// stokaro/ptah#3649.
+		changed := changedColumnProperties(colDiff)
+		if !changed.Any() {
+			result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
+			continue
+		}
+
 		// Only the statements below render the COLUMN. A comment transition and
 		// a NOT NULL constraint rename are written from the diff alone, so they
 		// are emitted above this and reach a column the diff carries no
@@ -812,6 +823,11 @@ func (p *Planner) modifyExistingTableColumns(
 			continue
 		}
 
+		// The comment goes before the statements it describes. Written after
+		// them, it is the last fragment of a plan that ends on a column
+		// change, and every writer terminates it: `-- Modify column ... --;`.
+		result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
+
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
 			Name: tableDiff.TableName,
@@ -820,21 +836,41 @@ func (p *Planner) modifyExistingTableColumns(
 				PreviousType:        previousColumnType(colDiff.Changes["type"]),
 				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 				HasPreviousNullable: colDiff.Changes["nullable"] != "",
+				Changed:             changed,
+				HasChanged:          true,
 			}},
 		}
 		result = append(result, alterNode)
-
-		// Add a comment showing what changes are being made. Iterate the
-		// changes in sorted key order so migration output is deterministic
-		// (issue #59).
-		changesList := make([]string, 0, len(colDiff.Changes))
-		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
-			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
-		}
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
-		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+// changedColumnProperties names the properties a column diff changes that an
+// ALTER COLUMN clause carries, so the renderer writes a clause for those and
+// for nothing else (stokaro/ptah#3645).
+//
+// The keys are the comparator's: a default is recorded under "default" or
+// "default_expr", depending on how the live side spelled it.
+func changedColumnProperties(colDiff difftypes.ColumnDiff) ast.ColumnProperties {
+	_, typeChanged := colDiff.Changes["type"]
+	_, nullabilityChanged := colDiff.Changes["nullable"]
+	_, literalDefaultChanged := colDiff.Changes["default"]
+	_, expressionDefaultChanged := colDiff.Changes["default_expr"]
+	return ast.ColumnProperties{
+		Type:        typeChanged,
+		Nullability: nullabilityChanged,
+		Default:     literalDefaultChanged || expressionDefaultChanged,
+	}
+}
+
+// modifyColumnComment describes a column's changes. The changes are listed in
+// sorted key order so migration output is deterministic (issue #59).
+func modifyColumnComment(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+	changesList := make([]string, 0, len(colDiff.Changes))
+	for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+		changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
+	}
+	return ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 }
 
 // columnNodeFor renders the column a modification carries, and reports whether
