@@ -51,7 +51,7 @@ func validatePostgresReplayStatementBase(dialect string, tokens []lexer.Token) e
 	return nil
 }
 
-func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token) error {
+func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token, realm ReplayRealm) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -73,6 +73,11 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 		containsIdentifier(tokens, "DUMPFILE") ||
 		containsIdentifier(tokens, "SONAME") {
 		return unsafeReplayStatement(dialect, "external file operation")
+	}
+	// Another database is the realm's own concern: on a server the run owns,
+	// a table written in another database is removed with the server.
+	if realm == ReplayRealmServer {
+		return nil
 	}
 	if err := rejectMySQLRenameDestinations(dialect, database, tokens); err != nil {
 		return err
@@ -428,12 +433,20 @@ func usesTemporaryObject(tokens []lexer.Token) bool {
 }
 
 func definesMySQLExecutableBody(tokens []lexer.Token) bool {
+	return mysqlExecutableBodyKind(tokens) != ""
+}
+
+// mysqlExecutableBodyKind names the kind of executable object a CREATE or
+// ALTER defines -- FUNCTION, PROCEDURE, TRIGGER or EVENT -- or returns "" for
+// any other statement. It is the one reading of that shape: the database realm
+// refuses every kind it names, and the server realm lifts every kind but EVENT.
+func mysqlExecutableBodyKind(tokens []lexer.Token) string {
 	if !isDDLAction(tokens) {
-		return false
+		return ""
 	}
 	first := normalizedIdentifier(tokens[0])
 	if first != "CREATE" && first != "ALTER" {
-		return false
+		return ""
 	}
 	index := 1
 	if first == "CREATE" && tokenSequenceAt(tokens, index, "OR", "REPLACE") {
@@ -443,12 +456,14 @@ func definesMySQLExecutableBody(tokens []lexer.Token) bool {
 		index = skipMySQLDefiner(tokens, index+1)
 	}
 	if tokenSequenceAt(tokens, index, "AGGREGATE", "FUNCTION") {
-		return true
+		return "FUNCTION"
 	}
-	return tokenSequenceAt(tokens, index, "EVENT") ||
-		tokenSequenceAt(tokens, index, "FUNCTION") ||
-		tokenSequenceAt(tokens, index, "PROCEDURE") ||
-		tokenSequenceAt(tokens, index, "TRIGGER")
+	for _, kind := range []string{"EVENT", "FUNCTION", "PROCEDURE", "TRIGGER"} {
+		if tokenSequenceAt(tokens, index, kind) {
+			return kind
+		}
+	}
+	return ""
 }
 
 func skipMySQLDefiner(tokens []lexer.Token, index int) int {

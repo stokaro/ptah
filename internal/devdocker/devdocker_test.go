@@ -861,3 +861,35 @@ func parseRefusedTheValueAsNotADockerURL(err error, rawURL string) bool {
 		(strings.HasPrefix(err.Error(), "parse docker --dev-url: ") ||
 			err.Error() == fmt.Sprintf("not a docker --dev-url: %q", rawURL))
 }
+
+// TestProvisionedRecordsAServerUntilItIsRemoved pins the record a replay reads
+// to decide how much of a dev server it may change. It is keyed on the URL
+// the provisioner returned, which carries the per-instance password, so a URL
+// naming the same published port with any other password is not the server.
+func TestProvisionedRecordsAServerUntilItIsRemoved(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
+	resolved, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner: runner,
+		Ready:  alwaysReady,
+	})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(devdocker.Provisioned(resolved), qt.IsTrue)
+	c.Assert(devdocker.Provisioned("postgres://postgres:guessed@127.0.0.1:15432/dev?sslmode=disable"), qt.IsFalse)
+	release()
+	c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
+}
+
+// TestProvisionedIsFalseForAServerTheOperatorNamed is the control: a URL that
+// Resolve hands back untouched was never provisioned.
+func TestProvisionedIsFalseForAServerTheOperatorNamed(t *testing.T) {
+	c := qt.New(t)
+	resolved, release, err := devdocker.Resolve(t.Context(), "postgres://u:p@localhost:5432/db", devdocker.Options{
+		Runner: &fakeRunner{hostPort: "127.0.0.1:15432"},
+		Ready:  alwaysReady,
+	})
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(release)
+	c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
+}
