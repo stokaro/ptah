@@ -118,6 +118,11 @@ type Options struct {
 	// that renders those values sets it; the two introspections are not paid by
 	// a run with no reader for them.
 	CaptureSchema bool
+
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see
+	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 }
 
 // ChangedOptions records which CLI values were explicitly provided. This lets
@@ -474,15 +479,16 @@ func lintDirectory(
 	capture := newReplaySchemaCapture(opts, analysis)
 	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
-		Dir:               opts.Dir,
-		DirFormat:         dirFormat,
-		DevURL:            opts.DevURL,
-		FS:                analysis.SnapshotFS(),
-		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
-		RevisionVersions:  opts.RevisionVersions,
-		ObserveVersion:    replayVersionObserver(baseline, capture),
-		ObserveReplayed:   capture.replayedObserver(ctx),
-		ObserveServer:     server.observe,
+		Dir:                 opts.Dir,
+		DirFormat:           dirFormat,
+		DevURL:              opts.DevURL,
+		DevServerDisposable: opts.DevServerDisposable,
+		FS:                  analysis.SnapshotFS(),
+		AtlasTemplateData:   migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
+		RevisionVersions:    opts.RevisionVersions,
+		ObserveVersion:      replayVersionObserver(baseline, capture),
+		ObserveReplayed:     capture.replayedObserver(ctx),
+		ObserveServer:       server.observe,
 	}); err != nil {
 		// A version the connection refused is reported as itself: the replay
 		// error that follows it is downstream of an input that was already

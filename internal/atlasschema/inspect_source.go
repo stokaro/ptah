@@ -41,6 +41,10 @@ type InspectSourceOptions struct {
 	// dev database is reset destructively before the source is materialized
 	// on it.
 	DevURL string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see
+	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 	// Schemas restricts inspection to the named schema scopes.
 	Schemas []string
 	// Include positively selects the top-level resources inspection keeps,
@@ -371,7 +375,9 @@ func inspectOnDev(
 	// promoted exactly that into a started container and an exit 0 -- the one
 	// direction compatibility policy (a) forbids. The normalization this path
 	// wants still happens; it happens to the answer.
-	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{
+		DeclaredDisposable: opts.DevServerDisposable,
+	})
 	if err != nil {
 		return InspectResult{}, err
 	}

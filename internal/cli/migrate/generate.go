@@ -279,11 +279,71 @@ func planGeneratedMigrationByReplay(
 	return plan, err
 }
 
+// generateVariables are the `PTAH_*` variables generate owns, resolved
+// together before any early return so a malformed value fails every generate
+// and not only the one that would have read it.
+type generateVariables struct {
+	integrity migrationintegrity.Policy
+	// devServerDisposable is what [devdocker.DisposableServerDeclared]
+	// resolved; only a --replay run reads it.
+	devServerDisposable bool
+}
+
+func resolveGenerateVariables() (generateVariables, error) {
+	integrity, err := migrationintegrity.Resolve()
+	if err != nil {
+		return generateVariables{}, err
+	}
+	disposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return generateVariables{}, err
+	}
+	return generateVariables{integrity: integrity, devServerDisposable: disposable}, nil
+}
+
+// generateDatabases are the dev and shadow URLs a generate connects with.
+type generateDatabases struct {
+	devURL, shadowDB string
+	// release removes what was provisioned, shadow first.
+	release func()
+}
+
+// resolveGenerateDatabases provisions a `docker://` dev and shadow database and
+// passes any other URL through, recording the dev server as the run's own when
+// the operator declared it disposable. On a failed second resolution the first
+// is released before returning.
+func resolveGenerateDatabases(
+	ctx context.Context,
+	devURL, shadowDB string,
+	devServerDisposable bool,
+) (generateDatabases, error) {
+	resolvedDevURL, releaseDev, err := devdocker.Resolve(ctx, devURL, devdocker.Options{
+		DeclaredDisposable: devServerDisposable,
+	})
+	if err != nil {
+		return generateDatabases{}, err
+	}
+	resolvedShadowDB, releaseShadow, err := devdocker.Resolve(ctx, shadowDB, devdocker.Options{})
+	if err != nil {
+		releaseDev()
+		return generateDatabases{}, err
+	}
+	return generateDatabases{
+		devURL:   resolvedDevURL,
+		shadowDB: resolvedShadowDB,
+		release: func() {
+			releaseShadow()
+			releaseDev()
+		},
+	}, nil
+}
+
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
-	integrityPolicy, err := migrationintegrity.Resolve()
+	variables, err := resolveGenerateVariables()
 	if err != nil {
 		return err
 	}
+	integrityPolicy := variables.integrity
 	rootDirs, err := cmd.Flags().GetStringArray(generateRootDirFlag)
 	if err != nil {
 		return err
@@ -422,16 +482,12 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	// be refused never starts a container -- the order migrate checkpoint
 	// already holds. A directly connectable URL passes through untouched, which
 	// is why both calls are unconditional.
-	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), devURL, devdocker.Options{})
+	databases, err := resolveGenerateDatabases(cmd.Context(), devURL, shadowDB, variables.devServerDisposable)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	defer releaseDev()
-	shadowDB, releaseShadow, err := devdocker.Resolve(cmd.Context(), shadowDB, devdocker.Options{})
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	defer releaseShadow()
+	defer databases.release()
+	devURL, shadowDB = databases.devURL, databases.shadowDB
 
 	targetURL := dbURL
 	if replay {

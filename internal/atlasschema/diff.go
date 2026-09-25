@@ -80,6 +80,11 @@ type DiffOptions struct {
 	// ValidateLocalSchemaSource applies a caller-selected policy to each local
 	// schema path before parsing or dev-database work.
 	ValidateLocalSchemaSource func(string) error
+
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see
+	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 }
 
 // DiffReportingChanges computes the Atlas schema diff between two
@@ -132,11 +137,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:         dialect,
-		DialectFlag:     prepared.dialectFlag,
-		DevURL:          opts.DevURL,
-		SchemaScope:     schemaScope,
-		SchemaScopeFlag: schemaScopeFlag,
+		Dialect:             dialect,
+		DialectFlag:         prepared.dialectFlag,
+		DevURL:              opts.DevURL,
+		DevServerDisposable: opts.DevServerDisposable,
+		SchemaScope:         schemaScope,
+		SchemaScopeFlag:     schemaScopeFlag,
 		// Both sides introspect exactly the schemas --schema asked for. Without
 		// this the read is scoped to the connection default and the scope
 		// projection below filters a universe that never contained the

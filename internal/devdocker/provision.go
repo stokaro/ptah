@@ -70,6 +70,13 @@ type Options struct {
 	ReleaseAttempts int
 	// ReleaseRetryDelay spaces those attempts. Defaults to one second.
 	ReleaseRetryDelay time.Duration
+	// DeclaredDisposable is the operator's statement that a URL which is not a
+	// docker:// one names a server the run owns as a whole, as a server
+	// [Provision] starts is. [Resolve] records such a URL for [RunOwned] until
+	// its release runs. It is what [DisposableServerDeclared] resolved, and it
+	// changes nothing for a docker:// URL, whose server is the run's own
+	// already.
+	DeclaredDisposable bool
 }
 
 func (o Options) releaseAttempts() int {
@@ -158,46 +165,55 @@ func (i *Instance) Close() error {
 		return fmt.Errorf("remove dev database container %s: %w", i.container, err)
 	}
 	i.closed = true
-	forgetProvisioned(i.url)
+	forgetRunOwned(i.url)
 	return nil
 }
 
-// provisioned records the connectable URL of every server this process started
-// and has not yet removed. [Provisioned] reads it.
-var provisioned = struct {
-	sync.Mutex
-	urls map[string]struct{}
-}{urls: make(map[string]struct{})}
-
-func recordProvisioned(rawURL string) {
-	provisioned.Lock()
-	defer provisioned.Unlock()
-	provisioned.urls[rawURL] = struct{}{}
-}
-
-func forgetProvisioned(rawURL string) {
-	provisioned.Lock()
-	defer provisioned.Unlock()
-	delete(provisioned.urls, rawURL)
-}
-
-// Provisioned reports whether rawURL is the connectable URL [Provision] returned
-// for a server this process started and has not yet removed.
+// runOwned records the connectable URL of every server this run owns as a
+// whole: each one this process started and has not yet removed, and each one
+// the operator declared disposable, until the release [Resolve] returned for
+// it runs. [RunOwned] reads it.
 //
-// It answers from what Provision recorded, not from the shape of the URL. A
-// consumer that received the URL from [Resolve] and handed it on still gets
-// the answer, and an ordinary server URL never does, whatever it points at:
-// the recorded URL carries the per-instance password, which nothing outside
-// this process knows.
+// A URL is counted rather than stored once, because one command can resolve
+// the same declared URL twice, one call inside the other, and the inner
+// release must not end the outer one's declaration.
+var runOwned = struct {
+	sync.Mutex
+	urls map[string]int
+}{urls: make(map[string]int)}
+
+func recordRunOwned(rawURL string) {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	runOwned.urls[rawURL]++
+}
+
+func forgetRunOwned(rawURL string) {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	runOwned.urls[rawURL]--
+	if runOwned.urls[rawURL] <= 0 {
+		delete(runOwned.urls, rawURL)
+	}
+}
+
+// RunOwned reports whether rawURL connects to a server this run owns as a
+// whole: one [Provision] started and has not yet removed, or one the operator
+// declared disposable (see [DisposableServerEnvVar]) whose [Resolve] release
+// has not yet run.
+//
+// It answers from what was recorded, not from the shape of the URL. A consumer
+// that received the URL from [Resolve] and handed it on still gets the answer.
+// A provisioned server's URL carries the per-instance password, which nothing
+// outside this process knows, so an ordinary server URL never matches one.
 //
 // A dev database replay reads it to decide how much of the server a migration
-// may change. A server this run created and removes afterwards is disposable
-// as a whole; a server the operator named may hold other databases and roles.
-func Provisioned(rawURL string) bool {
-	provisioned.Lock()
-	defer provisioned.Unlock()
-	_, ok := provisioned.urls[rawURL]
-	return ok
+// may change. A server the run owns is disposable as a whole; any other server
+// may hold databases and roles that are not the run's.
+func RunOwned(rawURL string) bool {
+	runOwned.Lock()
+	defer runOwned.Unlock()
+	return runOwned.urls[rawURL] > 0
 }
 
 // Provision starts a dev database for rawURL and waits until it accepts
@@ -257,21 +273,28 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		releaseInstance(instance, opts)
 		return nil, fmt.Errorf("dev database %s did not become ready: %w", spec.Image, err)
 	}
-	recordProvisioned(instance.url)
+	recordRunOwned(instance.url)
 	return instance, nil
 }
 
 // Resolve returns a directly connectable dev database URL for rawURL, together
 // with a release function the caller must always call.
 //
-// A URL that is not a `docker://` one is returned untouched with a release that
-// does nothing, so a consumer can call this unconditionally on whatever value
-// its `--dev-url` carries. That is deliberate: this is the one seam every dev
-// database consumer shares, and a consumer that had to decide first would be a
-// consumer that could forget to.
+// A URL that is not a `docker://` one is returned untouched, so a consumer can
+// call this unconditionally on whatever value its `--dev-url` carries. That is
+// deliberate: this is the one seam every dev database consumer shares, and a
+// consumer that had to decide first would be a consumer that could forget to.
+// With [Options.DeclaredDisposable] set, such a URL is recorded for [RunOwned]
+// in the form a consumer connects with, trimmed of surrounding space, and the
+// release ends the record. Without it the release does nothing.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
 	if !IsURL(rawURL) {
-		return rawURL, func() {}, nil
+		if !opts.DeclaredDisposable {
+			return rawURL, func() {}, nil
+		}
+		declared := strings.TrimSpace(rawURL)
+		recordRunOwned(declared)
+		return rawURL, sync.OnceFunc(func() { forgetRunOwned(declared) }), nil
 	}
 	instance, err := Provision(ctx, rawURL, opts)
 	if err != nil {

@@ -57,6 +57,10 @@ type ApplyOptions struct {
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
 	DevURL string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see
+	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 	// ProjectEnv expands env:// desired-state references.
 	ProjectEnv atlassource.ProjectEnv
 	// PreparedTo carries a classified desired source whose migration-directory
@@ -119,6 +123,10 @@ type ApplyRuntimeOptions struct {
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own; see
+	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 	// ProjectRoot bounds the files a desired state may make this process read;
 	// see [ApplyOptions.ProjectRoot].
 	ProjectRoot string
@@ -671,6 +679,7 @@ func loadDesiredApplySchema(
 		Dialect:                   conn.Info().Dialect,
 		DialectFlag:               "--url",
 		DevURL:                    opts.DevURL,
+		DevServerDisposable:       opts.DevServerDisposable,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
@@ -747,6 +756,7 @@ func PrepareApply(
 		Policy:                    opts.Policy,
 		ProtectedTables:           opts.ProtectedTables,
 		DevURL:                    opts.DevURL,
+		DevServerDisposable:       opts.DevServerDisposable,
 		ProjectEnv:                opts.ProjectEnv,
 		PreparedTo:                opts.PreparedTo,
 		Desired:                   opts.Desired,

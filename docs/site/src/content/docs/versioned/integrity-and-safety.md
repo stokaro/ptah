@@ -618,7 +618,9 @@ Replay refuses a statement whose effect would reach past the dev database,
 such as a `DO` block that creates a role, before the migration runs. A
 `docker://` dev URL gives the run a server of its own, where those statements
 replay; [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions)
-lists what that lifts and what stays refused.
+lists what that lifts and what stays refused. `PTAH_DEV_SERVER_DISPOSABLE=1`
+declares a server started some other way, such as a CI service container, the
+run's own in the same sense.
 
 ## The bytes a command runs are captured once
 

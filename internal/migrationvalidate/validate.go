@@ -30,6 +30,9 @@ type Options struct {
 	FS        fs.FS
 	DirFormat migrationfile.DirFormat
 	DevURL    string
+	// DevServerDisposable declares the server DevURL names the run's own; see
+	// [migrationreplay.Options.DevServerDisposable].
+	DevServerDisposable bool
 }
 
 // Result is the validated integrity result plus optional dev-database replay
@@ -56,10 +59,11 @@ func Validate(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
-		Dir:       opts.Dir,
-		FS:        opts.FS,
-		DirFormat: migrationFormatForSum(integrity),
-		DevURL:    opts.DevURL,
+		Dir:                 opts.Dir,
+		FS:                  opts.FS,
+		DirFormat:           migrationFormatForSum(integrity),
+		DevURL:              opts.DevURL,
+		DevServerDisposable: opts.DevServerDisposable,
 	}); err != nil {
 		return result, fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}

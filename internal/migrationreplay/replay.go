@@ -27,6 +27,11 @@ type Options struct {
 	Dir       string
 	DirFormat migrationfile.DirFormat
 	DevURL    string
+	// DevServerDisposable is the operator's declaration that the server
+	// DevURL names is the run's own, as [devdocker.DisposableServerDeclared]
+	// resolved it. The replay then runs the statements whose effect reaches
+	// past the dev database; see replayRealm.
+	DevServerDisposable bool
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
 	AtlasTemplateData any
@@ -75,7 +80,9 @@ func Replay(ctx context.Context, opts Options) error {
 	// The operator's spelling is what decides, not the trimmed copy above:
 	// see [devdocker.Parse] for why a leading space is a different value and
 	// not the same one with whitespace on it.
-	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{
+		DeclaredDisposable: opts.DevServerDisposable,
+	})
 	if err != nil {
 		return err
 	}
@@ -274,16 +281,19 @@ func replayOnLockedConnection(
 }
 
 // replayRealm is how much of the dev server this replay may change: the whole
-// server when this process provisioned it for the run and removes it
-// afterwards, and the dev database otherwise.
+// server when the run owns it, and the dev database otherwise. The run owns a
+// server this process provisioned and removes afterwards, and a server the
+// operator declared disposable with [devdocker.DisposableServerEnvVar].
 //
-// The answer is the one [devdocker.Provisioned] recorded when it started the
-// server, read from the URL the connection was opened with. It is not
-// re-derived from the operator's `--dev-url` spelling, because every consumer
-// resolves a docker URL before it connects and hands the connectable URL on,
-// so by the time a replay runs no docker URL is left to read.
+// Both answers come from the one record [devdocker.RunOwned] reads, keyed on
+// the URL the connection was opened with, and the two cases cannot be asked
+// apart: a second question here would be a second place for the next consumer
+// to forget. The answer is not re-derived from the operator's `--dev-url`
+// spelling, because every consumer resolves a docker URL before it connects
+// and hands the connectable URL on, so by the time a replay runs no docker URL
+// is left to read.
 func replayRealm(info catalog.ServerInfo) devclean.ReplayRealm {
-	if devdocker.Provisioned(info.URL) {
+	if devdocker.RunOwned(info.URL) {
 		return devclean.ReplayRealmServer
 	}
 	return devclean.ReplayRealmDatabase

@@ -140,6 +140,13 @@ func runAtlasMigrateDiff(
 	name string,
 	run atlasMigrateDiffRunner,
 ) (runErr error) {
+	// Resolved before the first early return: every diff replays its directory
+	// on the dev database, and a malformed declaration must not wait for a run
+	// that gets that far.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -302,7 +309,9 @@ func runAtlasMigrateDiff(
 	// The dev database is provisioned here, after every refusal this verb can
 	// answer from its flags and its directory. The release is deferred before
 	// the connection is opened so it runs after the connection is closed.
-	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), opts.devURL, devdocker.Options{})
+	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), opts.devURL, devdocker.Options{
+		DeclaredDisposable: devServerDisposable,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

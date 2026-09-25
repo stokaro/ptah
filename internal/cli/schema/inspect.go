@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemaartifact"
@@ -120,6 +121,12 @@ inspected output never references an object it omitted.`,
 }
 
 func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
+	// Resolved before the project file is read, so a malformed declaration
+	// fails every inspect and not only one that replays a migration directory.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -174,15 +181,16 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	}
 
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
-		URLs:           sourceURLs,
-		URLFlag:        inspectSourceFlag(opts),
-		DevURL:         opts.devURL,
-		Schemas:        dbcli.ParseSchemas(opts.schemas),
-		Include:        opts.include,
-		Exclude:        opts.exclude,
-		Format:         locals.format,
-		Diagnostics:    cmd.ErrOrStderr(),
-		ConnectTimeout: locals.connectTimeout,
+		URLs:                sourceURLs,
+		URLFlag:             inspectSourceFlag(opts),
+		DevURL:              opts.devURL,
+		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Include:             opts.include,
+		Exclude:             opts.exclude,
+		Format:              locals.format,
+		Diagnostics:         cmd.ErrOrStderr(),
+		ConnectTimeout:      locals.connectTimeout,
+		DevServerDisposable: devServerDisposable,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

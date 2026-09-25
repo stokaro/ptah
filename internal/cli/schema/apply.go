@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/schemaroot"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -72,6 +73,9 @@ type schemaApplyOptions struct {
 	connectTimeout  string
 	configPath      string
 	envName         string
+	// devServerDisposable is what [devdocker.DisposableServerDeclared]
+	// resolved for this run.
+	devServerDisposable bool
 }
 
 // schemaApplyLockSession runs one apply with the lock held. The callback is
@@ -205,6 +209,14 @@ func runSchemaApplyWithLockSession(
 	opts schemaApplyOptions,
 	lockSession schemaApplyLockSession,
 ) error {
+	// Resolved before the project file is read, so a malformed declaration
+	// fails every apply and not only one whose desired state is a migration
+	// directory.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	opts.devServerDisposable = devServerDisposable
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -364,18 +376,19 @@ func runSchemaApplyOnLockedSession(
 	txMode migrator.MigrationTxMode,
 ) (applied bool, resultErr error) {
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ProjectRoot:     schemaroot.Of(opts.rootDirs),
-		DevURL:          opts.devURL,
-		ToURLs:          opts.toURLs,
-		Desired:         desired,
-		Exclude:         opts.exclude,
-		Schemas:         dbcli.ParseSchemas(opts.schemas),
-		Include:         opts.include,
-		Policy:          nativeDiffPolicy(projectCfg),
-		ProtectedTables: opts.protectedTables,
-		TxMode:          txMode,
-		DryRun:          opts.dryRun,
-		Diagnostics:     cmd.ErrOrStderr(),
+		ProjectRoot:         schemaroot.Of(opts.rootDirs),
+		DevURL:              opts.devURL,
+		DevServerDisposable: opts.devServerDisposable,
+		ToURLs:              opts.toURLs,
+		Desired:             desired,
+		Exclude:             opts.exclude,
+		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Include:             opts.include,
+		Policy:              nativeDiffPolicy(projectCfg),
+		ProtectedTables:     opts.protectedTables,
+		TxMode:              txMode,
+		DryRun:              opts.dryRun,
+		Diagnostics:         cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return false, err
