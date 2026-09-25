@@ -1908,8 +1908,11 @@ func WalkDatabase(
 	}
 
 	// 5. Roles and functions precede the objects that name them: a grant names
-	// a role, and a trigger names a function.
-	if err := appendRoleAndFunctionStatements(visit, database); err != nil {
+	// a role, and a trigger names a function. A routine that names a relation
+	// waits for it among the view-likes at step 8; the placement is the one a
+	// migration plan uses, so a render and a plan agree.
+	placements := declaredRoutinePlacements(database, targetPlatform)
+	if err := appendRoleAndFunctionStatements(visit, database, placements); err != nil {
 		return err
 	}
 
@@ -1935,7 +1938,7 @@ func WalkDatabase(
 	}
 
 	// 8. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, placements); err != nil {
 		return err
 	}
 
@@ -2225,13 +2228,20 @@ func createStructToViewMap(views []schemamodel.MaterializedView) map[string]stri
 
 // appendRoleAndFunctionStatements appends every declared role and function, for
 // every target. A target that cannot host one says so through its renderer.
-func appendRoleAndFunctionStatements(visit func(ast.Node) error, database schemamodel.Database) error {
+func appendRoleAndFunctionStatements(
+	visit func(ast.Node) error,
+	database schemamodel.Database,
+	placements map[string]deporder.RoutinePlacement,
+) error {
 	for _, role := range database.Roles {
 		if err := visit(FromRole(role)); err != nil {
 			return err
 		}
 	}
 	for _, function := range database.Functions {
+		if placements[function.Name] == deporder.RoutineWithRelations {
+			continue
+		}
 		if err := visit(FromFunction(function)); err != nil {
 			return err
 		}
@@ -2251,6 +2261,7 @@ func appendPostTableObjectStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
+	placements map[string]deporder.RoutinePlacement,
 ) error {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
@@ -2261,7 +2272,7 @@ func appendPostTableObjectStatements(
 			}
 		}
 	}
-	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform); err != nil {
+	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements); err != nil {
 		return err
 	}
 	for _, rlsEnabled := range database.RLSEnabledTables {
@@ -2336,10 +2347,26 @@ func appendOrderedViewLikeStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
+	placements map[string]deporder.RoutinePlacement,
 ) error {
 	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
 	viewsByName := make(map[string]schemamodel.View, len(database.Views))
 	materializedViewsByName := make(map[string]schemamodel.MaterializedView, len(database.MaterializedViews))
+	routinesByName := make(map[string][]schemamodel.Function)
+	for _, function := range database.Functions {
+		if placements[function.Name] != deporder.RoutineWithRelations {
+			continue
+		}
+		if _, seen := routinesByName[function.Name]; !seen {
+			objects = append(objects, deporder.ViewLike{
+				Name:      function.Name,
+				Body:      deporder.RoutineOrderingBody(function, targetPlatform),
+				Routine:   true,
+				DependsOn: database.FunctionDependencies[function.Name],
+			})
+		}
+		routinesByName[function.Name] = append(routinesByName[function.Name], function)
+	}
 	for _, view := range database.Views {
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, DependsOn: view.DependsOn})
 		viewsByName[view.Name] = view
@@ -2350,6 +2377,14 @@ func appendOrderedViewLikeStatements(
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, targetPlatform) {
+		if object.Routine {
+			for _, function := range routinesByName[object.Name] {
+				if err := visit(FromFunction(function)); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		if object.Materialized {
 			if err := visit(FromMaterializedView(materializedViewsByName[object.Name])); err != nil {
 				return err
@@ -2361,6 +2396,35 @@ func appendOrderedViewLikeStatements(
 		}
 	}
 	return nil
+}
+
+// declaredRoutinePlacements places every declared routine against everything
+// the database declares, which is what a render creates; see
+// [deporder.PlaceRoutines].
+func declaredRoutinePlacements(database schemamodel.Database, targetPlatform string) map[string]deporder.RoutinePlacement {
+	var created deporder.RoutineCreation
+	for _, enum := range database.Enums {
+		created.Types = append(created.Types, enum.Name)
+	}
+	for _, domain := range database.Domains {
+		created.Types = append(created.Types, domain.Name)
+	}
+	for _, composite := range database.CompositeTypes {
+		created.Types = append(created.Types, composite.Name)
+	}
+	for _, rangeType := range database.Ranges {
+		created.Types = append(created.Types, rangeType.Name)
+	}
+	for _, table := range database.Tables {
+		created.Relations = append(created.Relations, table.Name)
+	}
+	for _, view := range database.Views {
+		created.Relations = append(created.Relations, view.Name)
+	}
+	for _, view := range database.MaterializedViews {
+		created.Relations = append(created.Relations, view.Name)
+	}
+	return deporder.PlaceRoutines(database.Functions, database.FunctionDependencies, created, targetPlatform)
 }
 
 func isSQLiteTarget(targetPlatform string) bool {

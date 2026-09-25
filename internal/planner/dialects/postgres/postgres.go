@@ -1704,15 +1704,20 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
 	result = p.addNewRoles(result, diff)
 
-	// 2. Add new functions (functions may be used by RLS policies)
-	result = p.addNewFunctions(result, diff)
+	// 2. Add the routines whose definitions name nothing this plan creates.
+	// They go first because a domain CHECK, a column DEFAULT, a policy or a
+	// trigger may call them. A routine that names a type or a relation this plan
+	// creates waits for it, at step 4b or among the view-likes at step 6.6; see
+	// deporder.PlaceRoutines.
+	placements := p.routinePlacements(diff)
+	result = p.addNewFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
 	// without affecting policies or triggers that reference the function. A
 	// change the server refuses to replace is a drop and a create instead; see
 	// replacementIsRefused.
-	result = p.modifyExistingFunctions(result, diff)
+	result = p.modifyExistingFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
@@ -1736,6 +1741,11 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff)
 
+	// 4b. The routines whose signatures name a type created above, before the
+	// tables whose defaults may call them.
+	result = p.addNewFunctions(result, diff, placements, deporder.RoutineAfterTypes)
+	result = p.modifyExistingFunctions(result, diff, placements, deporder.RoutineAfterTypes)
+
 	// 5. Add new tables
 	result = p.addNewTables(result, diff)
 
@@ -1750,8 +1760,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.addSequenceOwnership(result, diff)
 	result = p.modifyExistingSequences(result, diff)
 
-	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
-	result = p.addNewViewLikeObjects(result, diff)
+	// 6.6. Add and modify views, materialized views, and triggers after their
+	// tables/functions exist. The routines that name a relation this plan
+	// creates are ordered with the views, since either may read the other.
+	result = p.addNewViewLikeObjects(result, diff, placements)
 	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
@@ -2209,54 +2221,36 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 	return result
 }
 
-func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, fn := range deporder.FunctionsForCreateWithOrdering(
-		diff.FunctionsAdded.Declarations(),
-		diff.DeclaredFunctions.Order,
-		diff.DeclaredFunctions.Dependencies,
-	) {
-		result = append(result, modelast.FromFunction(fn))
-	}
-	return result
-}
-
-func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The definition travels WITH the change (stokaro/ptah#2315). Without it
-	// there is no faithful CREATE OR REPLACE to emit -- the change map records
-	// what differs, never the whole body and attribute set -- so a change
-	// carrying none is skipped.
-	for _, fnDiff := range diff.FunctionsModified {
-		target := fnDiff.Desired
-		if target.Name == "" {
-			continue
+// modifiedFunctionNodes is the statements that replace one routine: CREATE OR
+// REPLACE, or a drop and a create where the server refuses the replacement.
+func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
+	target := fnDiff.Desired
+	var result []ast.Node
+	if replacementIsRefused(fnDiff) {
+		// Not IF EXISTS: the routine was just read from the database, so a
+		// drop that matches nothing means the signature is wrong, and
+		// saying so here is clearer than the 42P13 the create would answer.
+		// Not CASCADE either: a view, policy or trigger that uses the
+		// routine makes the server refuse the drop, which stops the plan
+		// rather than removing an object nobody asked to remove.
+		drop := ast.NewDropFunction(target.Name).
+			SetKind(target.Kind).
+			SetComment(fmt.Sprintf(
+				"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
+				target.Name,
+			))
+		// An empty list is still a list: the routine that takes no
+		// arguments is dropped as `f()`, and only a change that recorded
+		// no identity at all leaves the statement naming the routine.
+		if fnDiff.CurrentSignature != nil {
+			drop.SetParameters(*fnDiff.CurrentSignature)
 		}
-
-		if replacementIsRefused(fnDiff) {
-			// Not IF EXISTS: the routine was just read from the database, so a
-			// drop that matches nothing means the signature is wrong, and
-			// saying so here is clearer than the 42P13 the create would answer.
-			// Not CASCADE either: a view, policy or trigger that uses the
-			// routine makes the server refuse the drop, which stops the plan
-			// rather than removing an object nobody asked to remove.
-			drop := ast.NewDropFunction(target.Name).
-				SetKind(target.Kind).
-				SetComment(fmt.Sprintf(
-					"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
-					target.Name,
-				))
-			// An empty list is still a list: the routine that takes no
-			// arguments is dropped as `f()`, and only a change that recorded
-			// no identity at all leaves the statement naming the routine.
-			if fnDiff.CurrentSignature != nil {
-				drop.SetParameters(*fnDiff.CurrentSignature)
-			}
-			result = append(result, drop)
-		}
-
-		functionNode := modelast.FromFunction(target)
-		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
-		result = append(result, functionNode)
+		result = append(result, drop)
 	}
+
+	functionNode := modelast.FromFunction(target)
+	functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
+	result = append(result, functionNode)
 	return result
 }
 
@@ -2456,9 +2450,13 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 	return ref.Schema, ref.Name
 }
 
-func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) addNewViewLikeObjects(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	placements map[string]deporder.RoutinePlacement,
+) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
+	objects, routineNodes := p.relationRoutineViewLikes(diff, placements)
 	for _, view := range diff.ViewsAdded {
 		// The body travels WITH the change, so the dependency order this
 		// computes does not depend on finding the view again.
@@ -2476,6 +2474,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 	// dependency edge, and is created AFTER the view that reads it, so the plan
 	// renders cleanly and fails when it runs.
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
+		if object.Routine {
+			// Every overload of the name and its replacement statements, once.
+			result = append(result, routineNodes[object.Name]...)
+			delete(routineNodes, object.Name)
+			continue
+		}
 		if object.Materialized {
 			if view := findMaterializedView(diff.DeclaredViewLikes.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, modelast.FromMaterializedView(*view))
