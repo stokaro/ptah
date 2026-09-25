@@ -103,24 +103,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 	}
 }
 
-// A change no ALTER COLUMN clause carries is reported by the comment alone.
-// Restated for a UNIQUE flag, the column gets a TYPE, a NOT NULL and a DEFAULT
-// clause, none of which adds the constraint. The plan adding it is
-// stokaro/ptah#3649, and this test changes with it.
-func TestGenerateSchemaDiffSQLStatements_UniqueOnlyChangeRestatesNothing(t *testing.T) {
-	c := qt.New(t)
-	desired := schemamodel.Field{Name: "code", Type: "TEXT", StructName: "Flag", Nullable: true, Unique: true}
-
-	got, err := planner.GenerateSchemaDiffSQLStatements(
-		oneModifiedColumn(desired, map[string]string{"unique": "false -> true"}), platform.Postgres,
-	)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, []string{
-		"-- Add/modify columns for table: flags --\n-- Modify column flags.code: unique: false -> true --",
-	})
-}
-
 // The MySQL family writes its column comment before the MODIFY it describes,
 // for the reason the PostgreSQL plan does: after it, a plan that ends on a
 // column change ends on a comment the writers terminate as `--;`. MODIFY

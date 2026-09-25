@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/rlsscope"
@@ -802,23 +803,13 @@ func (p *Planner) modifyExistingTableColumns(
 			continue
 		}
 
-		// A change no ALTER COLUMN clause carries, a UNIQUE or PRIMARY KEY
-		// flag, is reported by the comment and nothing else. Restated for
-		// it, the column gets a TYPE, a NOT NULL and a DEFAULT clause that
-		// change nothing and do not add the key either; adding it is
-		// stokaro/ptah#3649.
-		changed := changedColumnProperties(colDiff)
-		if !changed.Any() {
-			result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
-			continue
-		}
-
 		// Only the statements below render the COLUMN. A comment transition and
 		// a NOT NULL constraint rename are written from the diff alone, so they
 		// are emitted above this and reach a column the diff carries no
 		// definition for.
-		columnNode, ok := columnNodeFor(colDiff, vocabulary)
-		if !ok {
+		changed := changedColumnProperties(colDiff)
+		_, uniqueChanged := colDiff.Changes["unique"]
+		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
 			continue
 		}
@@ -828,21 +819,56 @@ func (p *Planner) modifyExistingTableColumns(
 		// change, and every writer terminates it: `-- Modify column ... --;`.
 		result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
 
-		// Generate ALTER COLUMN statements using AST
-		alterNode := &ast.AlterTableNode{
-			Name: tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
-				Column:              columnNode,
-				PreviousType:        previousColumnType(colDiff.Changes["type"]),
-				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-				HasPreviousNullable: colDiff.Changes["nullable"] != "",
-				Changed:             changed,
-				HasChanged:          true,
-			}},
+		if changed.Any() {
+			columnNode, _ := columnNodeFor(colDiff, vocabulary)
+			result = append(result, &ast.AlterTableNode{
+				Name: tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+					Column:              columnNode,
+					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+					Changed:             changed,
+					HasChanged:          true,
+				}},
+			})
 		}
-		result = append(result, alterNode)
+		if node := addedColumnUnique(tableDiff.TableName, colDiff); node != nil {
+			result = append(result, node)
+		}
 	}
 	return result
+}
+
+// addedColumnUnique is the ADD CONSTRAINT for a column that gains a
+// column-level UNIQUE, or nil when it gains none.
+//
+// No ALTER COLUMN clause carries uniqueness, so the column's own statements
+// leave it out, and without this the plan says `unique: false -> true` and
+// adds nothing (stokaro/ptah#3649). The constraint takes the name PostgreSQL
+// gives the same UNIQUE inside CREATE TABLE, which is also what Atlas CE
+// v1.3.0 writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`.
+//
+// The other direction needs nothing here. The live UNIQUE is a constraint the
+// desired schema does not have, so the plan drops it by its name as a removed
+// constraint. A column declaring unique_expr gets no constraint: uniqueness
+// over the raw column is not what it asked for, and no target renders the
+// expression.
+func addedColumnUnique(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+	if _, changed := colDiff.Changes["unique"]; !changed || !colDiff.Desired.Unique ||
+		strings.TrimSpace(colDiff.Desired.UniqueExpr) != "" {
+		return nil
+	}
+	table := tableName
+	if ref, ok := tableref.Parse(tableName); ok {
+		table = ref.Name
+	}
+	return &ast.AlterTableNode{
+		Name: tableName,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{
+			Constraint: ast.NewUniqueConstraint(pgname.ColumnKey(table, colDiff.ColumnName), colDiff.ColumnName),
+		}},
+	}
 }
 
 // changedColumnProperties names the properties a column diff changes that an
