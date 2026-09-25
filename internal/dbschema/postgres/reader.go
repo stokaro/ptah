@@ -4121,7 +4121,11 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			table_schema,
 			table_name,
 			is_grantable = 'YES' AS with_option,
-			grantor
+			-- CockroachDB reports every grantor here as NULL (measured on
+			-- 26.3.1 and 26.3.2), and scanning one failed the whole read. An
+			-- empty grantor says the engine did not name one, as the routine
+			-- grant read reports a grantor it cannot resolve.
+			COALESCE(grantor, '') AS grantor
 		FROM information_schema.role_table_grants g
 		WHERE table_schema = $1
 		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
