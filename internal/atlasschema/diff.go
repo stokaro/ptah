@@ -9,9 +9,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
@@ -159,10 +161,38 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}
-	fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, resolveOpts)
+	var (
+		report  atlasreport.SchemaDiff
+		changes *difftypes.SchemaDiff
+	)
+	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
+		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
+			var diffErr error
+			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect, target.Capabilities, opts)
+			return diffErr
+		})
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
+	return report, changes, nil
+}
+
+// diffResolvedStates is the part of a schema diff that runs once both sides
+// are resolved: scoping, the refusals, the comparison and the plan.
+//
+// conn is the connection the --from side was read on, while it is still open,
+// or nil when the --from side is not a database or a replayed migration
+// directory. With it, the comparison asks that server how it spells each
+// expression the --to side declares; without it, the two are compared as
+// text. See [withResolvedDiffSources] for when it is held.
+func diffResolvedStates(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fromState, toState atlassource.State,
+	dialect string,
+	capabilities capability.Capabilities,
+	opts DiffOptions,
+) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
 	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -193,6 +223,11 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = dialect
+	// A comparison on a held connection runs the SQLite virtual-table guard
+	// itself, and the guard reads the drop policy from here: without it, a
+	// project that skips `drop_table` is refused for a DROP the policy deletes
+	// (stokaro/ptah#1028). schema apply sets the same field.
+	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
@@ -224,7 +259,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// schema this target cannot host would otherwise reach the planner
 	// (stokaro/ptah#2315).
 	if err := validateDesiredDiffComparison(
-		to, fromSide.database, dialect, target.Capabilities,
+		to, fromSide.database, dialect, capabilities,
 	); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -232,7 +267,10 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// The comparison reports what the --from document's coverage record made
 	// undecidable alongside what it decided. The list is empty for every --from
 	// that is a database, because only a document declares limits about itself.
-	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromSide.database, compareOpts)
+	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts)
+	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	ReportUndecidedAdditions(opts.Diagnostics, undecided, "--from", "--to")
 	// Same second half the native seam applies, applied here for the same
 	// reason the refusal above is: this surface reaches the comparator through
@@ -250,12 +288,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{
 
-			Capabilities:         target.Capabilities,
+			Capabilities:         capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-				opts.Policy, diff, to, fromSide.database, dialect, target.Capabilities,
+				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
 			),
 		})
 
@@ -264,6 +302,33 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		}
 	}
 	return atlasreport.NewSchemaDiff(from, to, statements), diff, nil
+}
+
+// compareDiffSides runs the comparison on conn when there is one, and offline
+// otherwise.
+//
+// Without a connection, an expression the server rewrites -- a CHECK, a policy
+// clause, an index predicate, a column default -- is compared as the text each
+// side carries, and a --from database or replayed directory holds the server's
+// text while a --to file holds the author's. Compared offline, a diff between a
+// migration directory and the schema file it was written from drops and
+// re-creates every one of them (stokaro/ptah#3651).
+func compareDiffSides(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	opts *config.CompareOptions,
+) (*difftypes.SchemaDiff, []coverage.Object, error) {
+	if conn == nil {
+		compared, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, opts)
+		return compared, undecided, nil
+	}
+	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return compared, undecided, nil
 }
 
 // Diff is DiffReportingChanges for the callers that render statements and
@@ -334,6 +399,65 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 		return fmt.Errorf("validate %s schema: %w", flag, err)
 	}
 	return nil
+}
+
+// withResolvedDiffSources resolves both sides and calls use with them. When
+// the comparison has a server to ask, use runs while that server's connection
+// is still open, and receives it.
+//
+// That is when --from is a database or a migration directory and --to is
+// neither. The --from state is then what the server stored, and --to is what
+// an author wrote, so the two spell a rewritten expression differently. The
+// connection is the one --from was read on: its own database, or the session
+// the directory was replayed on, before the replay's cleanup drops the schema.
+// A docker:// dev server the replay provisioned serves the comparison too,
+// because the comparison runs inside the replay.
+//
+// --to is resolved inside that scope, after --from, which is the order
+// [resolveDiffSources] keeps. It cannot need the held server: a --to that is a
+// database or a directory takes the other branch. When both sides are
+// databases or directories, both hold the server's spelling and nothing is
+// held; when --from is a file, there is no server behind it to ask
+// (stokaro/ptah#3658).
+func withResolvedDiffSources(
+	ctx context.Context,
+	fromSet, toSet atlassource.Set,
+	opts atlassource.ResolveOptions,
+	use func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error,
+) error {
+	if !holdsServerForComparison(fromSet, toSet) {
+		fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, opts)
+		if err != nil {
+			return err
+		}
+		return use(fromState, toState, nil)
+	}
+	var useErr error
+	err := fromSet.ResolveHolding(ctx, opts, func(fromState atlassource.State, conn *dbschema.DatabaseConnection) error {
+		toState, err := resolveDiffSource(ctx, toSet, opts)
+		if err != nil {
+			useErr = err
+			return nil
+		}
+		useErr = use(fromState, toState, conn)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("load %s schema: %w", fromSet.Flag, err)
+	}
+	return useErr
+}
+
+// holdsServerForComparison reports whether --from has a server behind it and
+// --to does not; see [withResolvedDiffSources].
+func holdsServerForComparison(fromSet, toSet atlassource.Set) bool {
+	return readsServer(fromSet.Kind) && !readsServer(toSet.Kind)
+}
+
+// readsServer reports whether a source kind's state is read from a server,
+// and therefore carries the server's spelling of what it holds.
+func readsServer(kind atlassource.Kind) bool {
+	return kind == atlassource.KindDatabase || kind == atlassource.KindMigrationDir
 }
 
 func resolveDiffSources(
