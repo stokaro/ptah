@@ -1411,9 +1411,22 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 			t.relname as tablename,
 			i.relname as indexname,
 			pg_get_indexdef(i.oid) as indexdef,
+			-- A key that is a column is read as the column's name, and only an
+			-- expression key as the text pg_get_indexdef prints for it. That
+			-- text quotes a name the way it has to be written, so a column
+			-- "ParentId", "order" or "my col" arrived with its quotes and never
+			-- matched the declared column: every comparison dropped the index
+			-- and created it again (stokaro/ptah#3615).
 			COALESCE((
-				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				SELECT json_agg(
+					CASE WHEN keys.attnum > 0 THEN keyatt.attname::text
+					ELSE pg_get_indexdef(i.oid, keys.ordinality::integer, true) END
+					ORDER BY keys.ordinality
+				)::text
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				LEFT JOIN pg_attribute keyatt
+					ON keyatt.attrelid = ix.indrelid
+					AND keyatt.attnum = keys.attnum
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_columns,
 			-- pg_index.indkey holds 0 for a key that is an expression rather
@@ -1482,9 +1495,15 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 			-- absent from indclass and indoption, which cover key columns
 			-- only, so they are read separately rather than filtered out of
 			-- the key list afterwards.
+			--
+			-- A payload entry is always a column, read by its name for the
+			-- reason the key columns above are.
 			COALESCE((
-				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				SELECT json_agg(includeatt.attname::text ORDER BY keys.ordinality)::text
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				JOIN pg_attribute includeatt
+					ON includeatt.attrelid = ix.indrelid
+					AND includeatt.attnum = keys.attnum
 				WHERE keys.ordinality > ix.indnkeyatts
 			), '[]') as index_include_columns,
 			-- The access method. Losing it is not always the quiet
