@@ -69,6 +69,29 @@ Several of these are features Atlas keeps out of its open-source core; Ptah
 provides them as open, local, no-account capabilities. The sections below
 summarize behavior that affects how you plan changes.
 
+## How a declaration is compared with what the server stored
+
+PostgreSQL does not keep the text that declared a type, a default or an
+expression. It stores what it parsed and prints that back, so a declaration and
+its own read-back rarely match as text:
+
+| Declared | Read back |
+| --- | --- |
+| `varchar(10)[]` | `character varying(10)[]` |
+| `DEFAULT '2020-01-01'::timestamp with time zone` | `'2020-01-01 00:00:00+00'::timestamp with time zone` |
+| `DEFAULT 'x'::text::character varying` | `('x'::text)::character varying` |
+| `CHECK (price >= 0)` on a numeric column | `(price >= (0)::numeric)` |
+
+When a comparison has a connection, Ptah asks that server to spell each declared
+column type and default, CHECK, policy clause, index expression and domain the
+way its catalog does. It creates a temporary object inside a transaction that is
+rolled back, reads the stored form, and compares like with like. A column is
+asked only when its default is declared or its type is not written the way the
+catalog reports it. A declaration the server refuses is compared with Ptah's own
+folding instead. So is every comparison without a connection, and one on a
+connection pinned to a session, where the rollback would discard the session's
+work.
+
 ## Unlogged tables
 
 A table declared `unlogged = true` renders `CREATE UNLOGGED TABLE`. Its writes

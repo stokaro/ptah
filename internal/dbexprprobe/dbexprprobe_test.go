@@ -47,6 +47,9 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 
 	_, err = dbexprprobe.ResolveContinuousAggregateBodies(ctx, nil, []dbexprprobe.ContinuousAggregateProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve continuous aggregate bodies: database connection is nil`)
+
+	_, err = dbexprprobe.ResolveColumnSpellings(ctx, nil, []dbexprprobe.ColumnSpellingProbe{{Table: "t"}})
+	c.Assert(err, qt.ErrorMatches, `resolve column spellings: database connection is nil`)
 }
 
 // TestResolversAnswerNilForAnEmptyProbeList pins the no-work fast path: no
@@ -68,6 +71,10 @@ func TestResolversAnswerNilForAnEmptyProbeList(t *testing.T) {
 	aggregates, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.IsNil)
+
+	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.IsNil)
 }
 
 // TestResolversAnswerNilForADialectThatStoresWhatItWasGiven pins the dialect
@@ -112,6 +119,12 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 			Create: "CREATE TABLE p (id INTEGER)", Generated: []string{"g"}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(desired, qt.IsNil)
+
+	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn,
+		[]dbexprprobe.ColumnSpellingProbe{{Table: "p", Statement: "CREATE TABLE p (a INTEGER DEFAULT 1)",
+			Columns: []dbexprprobe.ColumnSpellingColumn{{Key: "t.a", Name: "a"}}}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.IsNil)
 }
 
 // TestGeneratedExpressionProbeTable pins the two facts the name exists for:

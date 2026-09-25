@@ -7,12 +7,15 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
+	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
@@ -91,6 +94,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
+	columns, err := resolveColumnSpellings(ctx, conn, desired, database, semantics)
+	if err != nil {
+		return nil, nil, err
+	}
 	// Every resolver's answer reaches the comparison the same way: a copy of
 	// the options carrying the maps that have something in them. The copy is
 	// what keeps the caller's options untouched, which matters because a
@@ -101,6 +108,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		checks:     checks,
 		policies:   policies,
 		indexes:    indexes,
+		columns:    columns,
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -116,13 +124,14 @@ type resolvedExpressions struct {
 	checks     map[string]config.CheckExpression
 	policies   map[string]config.PolicyExpression
 	indexes    map[string]config.IndexExpression
+	columns    map[string]config.ColumnSpelling
 }
 
 // empty reports that no server answered for anything, which is every offline
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
-		len(r.policies) == 0 && len(r.indexes) == 0
+		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.columns) == 0
 }
 
 // withResolvedExpressions returns the options the comparison should run under.
@@ -156,7 +165,127 @@ func withResolvedExpressions(
 	if len(resolved.indexes) > 0 {
 		merged.IndexExpressions = resolved.indexes
 	}
+	if len(resolved.columns) > 0 {
+		merged.ColumnSpellings = resolved.columns
+	}
 	return merged
+}
+
+// resolveColumnSpellings asks the server to spell the type and default of
+// every declared column the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: a column being
+// added carries its declaration into the ALTER statement unchanged.
+//
+// Each probe is the CREATE TABLE the renderer writes for the declared columns,
+// on a pg_temp table, so the server reads exactly the text a plan would send.
+// Everything that is not the type or the default -- keys, CHECKs, foreign keys,
+// generation, comments -- is left out, because the probe table stands alone
+// and none of it changes how a type or a default is spelled.
+func resolveColumnSpellings(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) (map[string]config.ColumnSpelling, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	dialect := conn.Info().Dialect
+	held := make(map[string]map[string]string, len(database.Tables))
+	for _, table := range database.Tables {
+		columns := make(map[string]string, len(table.Columns))
+		for _, column := range table.Columns {
+			columns[semantics.ColumnIdentityKey(column.Name)] = column.RawType()
+		}
+		held[exprkey.TableParts(semantics, table.Schema, table.Name)] = columns
+	}
+
+	var probes []dbexprprobe.ColumnSpellingProbe
+	for _, table := range desired.Tables {
+		liveColumns, exists := held[exprkey.TableParts(semantics, table.Schema, table.Name)]
+		if !exists {
+			continue
+		}
+		var fields []schemamodel.Field
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
+			liveType, live := liveColumns[semantics.ColumnIdentityKey(field.Name)]
+			if live && needsColumnSpelling(field, liveType) {
+				fields = append(fields, field)
+			}
+		}
+		if probe, ok := columnSpellingProbe(desired, table, fields, len(probes), dialect); ok {
+			probes = append(probes, probe)
+		}
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	spellings, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return spellings, nil
+}
+
+// needsColumnSpelling reports whether a column's comparison can depend on the
+// server's spelling: it declares a default, or its type is not written the way
+// the catalog reports it. Every other column is compared as before, which keeps
+// the probe to the columns that need it -- on a large schema, most do not.
+func needsColumnSpelling(field schemamodel.Field, liveType string) bool {
+	return field.Default != "" || field.DefaultExpr != "" ||
+		!strings.EqualFold(strings.TrimSpace(field.Type), strings.TrimSpace(liveType))
+}
+
+// columnSpellingProbe renders the probe for one table's columns, or reports
+// that the renderer refused them, in which case the columns stay unresolved.
+func columnSpellingProbe(
+	desired *schemamodel.Database,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	index int,
+	dialect string,
+) (dbexprprobe.ColumnSpellingProbe, bool) {
+	if len(fields) == 0 {
+		return dbexprprobe.ColumnSpellingProbe{}, false
+	}
+	probe := dbexprprobe.ColumnSpellingProbe{Table: fmt.Sprintf("pg_temp.ptah_column_probe_%d", index)}
+	tableNode := ast.NewCreateTable(probe.Table)
+	for position, field := range fields {
+		column := modelast.FromFieldWithoutForeignKeys(typeAndDefaultOnly(field), desired.Enums, dialect)
+		tableNode.AddColumn(column)
+		columnTable := fmt.Sprintf("%s_%d", probe.Table, position)
+		statement, err := renderer.RenderSQL(dialect, &ast.CreateTableNode{Name: columnTable, Columns: []*ast.ColumnNode{column}})
+		if err != nil {
+			continue
+		}
+		probe.Columns = append(probe.Columns, dbexprprobe.ColumnSpellingColumn{
+			Key:       exprkey.Column(dialect, table.Schema, table.Name, field.Name),
+			Name:      column.Name,
+			Table:     columnTable,
+			Statement: statement,
+		})
+	}
+	statement, err := renderer.RenderSQL(dialect, tableNode)
+	if err != nil || len(probe.Columns) == 0 {
+		return dbexprprobe.ColumnSpellingProbe{}, false
+	}
+	probe.Statement = statement
+	return probe, true
+}
+
+// typeAndDefaultOnly strips a field to what its probe column needs.
+func typeAndDefaultOnly(field schemamodel.Field) schemamodel.Field {
+	field.Nullable = true
+	field.NotNullConstraintName = ""
+	field.Primary, field.Unique = false, false
+	field.Check, field.CheckName = "", ""
+	field.Foreign, field.ForeignKeyName = "", ""
+	field.GeneratedExpression, field.GeneratedKind = "", ""
+	field.IdentityGeneration = ""
+	field.Comment = ""
+	return field
 }
 
 // resolveDomainExpressions normalizes the declared CHECK and DEFAULT of every

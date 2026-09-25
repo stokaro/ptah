@@ -126,7 +126,7 @@ func TableColumnsWithSemantics(
 		dialect,
 		semantics,
 		nil,
-		nil,
+		ServerSpellings{},
 	)
 }
 
@@ -137,7 +137,7 @@ func tableColumnsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	objectOwnedUniqueColumns map[columnIdentity]struct{},
-	generatedExpressions map[string]config.GeneratedExpression,
+	spellings ServerSpellings,
 ) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{
 		TableName: genTable.QualifiedName(),
@@ -191,7 +191,8 @@ func tableColumnsWithSemantics(
 			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
 				schema:               genTable.Schema,
 				table:                genTable.Name,
-				generatedExpressions: generatedExpressions,
+				generatedExpressions: spellings.Generated,
+				columnSpellings:      spellings.Columns,
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -362,6 +363,16 @@ type columnContext struct {
 	table  string
 	// generatedExpressions is that map, nil when nobody asked a server.
 	generatedExpressions map[string]config.GeneratedExpression
+	// columnSpellings is [config.CompareOptions.ColumnSpellings], nil when
+	// nobody asked a server.
+	columnSpellings map[string]config.ColumnSpelling
+}
+
+// columnSpelling returns the server's spelling of the column's type and
+// default, or false when no server answered for it.
+func (ctx columnContext) columnSpelling(dialect, column string) (config.ColumnSpelling, bool) {
+	spelling, ok := ctx.columnSpellings[exprkey.Column(dialect, ctx.schema, ctx.table, column)]
+	return spelling, ok && spelling.Resolved
 }
 
 func columnsWithDesiredDomains(
@@ -412,7 +423,13 @@ func columnsWithDesiredDomains(
 	// under the DESIRED type, for the reason stated there.
 	genType, _ := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 
-	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {
+	// A type the server spells the way the catalog does is the same type,
+	// whatever the declaration wrote: varchar(10)[] is stored and read back as
+	// character varying(10)[]. A spelling that differs is not decided here; the
+	// comparison below still folds what it knows how to fold.
+	spelling, spelled := ctx.columnSpelling(dialect, genCol.Name)
+	sameType := spelled && strings.EqualFold(spelling.Type, strings.TrimSpace(dbRawType))
+	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" && !sameType {
 		colDiff.Changes["type"] = change
 	}
 
@@ -450,6 +467,22 @@ func columnsWithDesiredDomains(
 		colDiff.Changes["generated"] = diff
 	}
 
+	if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled); change != "" {
+		colDiff.Changes[key] = change
+	}
+
+	return colDiff
+}
+
+// columnDefaultChange compares a column's declared default with the live one
+// and returns the change key and text, or an empty change.
+func columnDefaultChange(
+	genCol schemamodel.Field,
+	dbCol catalog.Column,
+	genType, dialect string,
+	spelling config.ColumnSpelling,
+	spelled bool,
+) (key, change string) {
 	// Compare default values (simplified)
 	genDefault := genCol.Default
 	if genDefault == "" {
@@ -472,7 +505,11 @@ func columnsWithDesiredDomains(
 	// model does not declare is still reported as drift.
 	skipImplicitSequenceDefault := genDefault == "" &&
 		(dbCol.IsAutoIncrement || strings.Contains(strings.ToUpper(genCol.Type), "SERIAL"))
-	if !skipImplicitSequenceDefault {
+	// A default the server spells as the catalog reports it is the same
+	// default: '2020-01-01'::timestamp with time zone is stored with its time
+	// and zone filled in.
+	sameDefault := spelled && spelling.Default == strings.TrimSpace(dbDefault)
+	if !skipImplicitSequenceDefault && !sameDefault {
 		// Both sides are normalized under the DESIRED type, not each under its
 		// own. A default's meaning depends on the column's type -- `0` is
 		// `false` on a boolean and `0` on an integer -- and after this plan
@@ -499,11 +536,11 @@ func columnsWithDesiredDomains(
 		normalizeGenDefaultFn := normalize.DefaultValue(genDefault, genType)
 
 		if normalizeGenDefaultFn != normalizedDbDefault {
-			colDiff.Changes[idxName] = fmt.Sprintf("%s -> %s", dbDefault, genDefault)
+			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
 		}
 	}
 
-	return colDiff
+	return "", ""
 }
 
 // primaryKeyImpliesNotNull reports whether the dialect makes a primary key
