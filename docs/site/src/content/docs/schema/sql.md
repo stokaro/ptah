@@ -132,6 +132,49 @@ every column: PostgreSQL before 15, YugabyteDB 2024.2, CockroachDB, and the
 other engines. The Go annotation and Atlas HCL exports refuse such a key for
 the same reason, because neither format can write the list.
 
+## Change a table after creating it
+
+A schema file is read as the script it is. An `ALTER TABLE` after the
+`CREATE TABLE`, in the same file, in a later file of a schema directory or in
+an imported file, changes the table the way the server would:
+
+```sql
+CREATE TABLE items (id integer NOT NULL, qty integer, note text, legacy text);
+ALTER TABLE items ADD PRIMARY KEY (id);
+ALTER TABLE items ALTER COLUMN qty SET DEFAULT 1, ALTER COLUMN qty SET NOT NULL;
+ALTER TABLE items ALTER COLUMN note TYPE varchar(200);
+ALTER TABLE items DROP COLUMN legacy;
+```
+
+These operations are read:
+
+- `ADD COLUMN`, `ADD PRIMARY KEY` and `ADD CONSTRAINT` (`UNIQUE`, `CHECK`,
+  `FOREIGN KEY`);
+- `ALTER [COLUMN] ... SET DEFAULT`, `DROP DEFAULT`, `SET NOT NULL`,
+  `DROP NOT NULL` and `[SET DATA] TYPE`, with an optional `USING`;
+- `DROP [COLUMN] [IF EXISTS]` and `RENAME [COLUMN] ... TO`;
+- `DROP CONSTRAINT [IF EXISTS]` and `RENAME CONSTRAINT`, by the name the
+  declaration gave the constraint;
+- the MySQL family's `MODIFY [COLUMN]`, `DROP PRIMARY KEY`, `DROP FOREIGN KEY`,
+  `DROP CHECK` and `DROP INDEX`, and SQL Server's `ALTER COLUMN` with a new
+  definition.
+
+Anything else is refused by name rather than read as nothing: an `ALTER COLUMN`
+action other than those above, `RENAME TO`, `CASCADE`, and an operation on a
+table the document does not declare. So is an operation the server would
+refuse:
+
+- a second primary key;
+- `DROP NOT NULL` or `DROP COLUMN` on a primary key column;
+- a column or constraint the table does not have.
+
+Dropping or renaming a column that an index, a constraint, an expression or
+another table's foreign key still names is refused too, and the message names
+that object. PostgreSQL drops or follows such an object with the column, while
+the schema file keeps its text, which would then name a column that is no
+longer there. Drop the object first, or declare the column under its final
+name.
+
 ## Row-level security
 
 A PostgreSQL schema file declares row-level security with the statements a
@@ -326,8 +369,8 @@ CREATE TABLE "pets" (
   as it is for the same keyword inside a table body.
 - `ALTER TABLE ... ADD PRIMARY KEY` is read onto the table it names, with its
   prefix length and direction, exactly as the same key written inside the
-  `CREATE TABLE` would be. A statement naming a table the file does not declare
-  is refused rather than dropped:
+  `CREATE TABLE` would be. A statement naming a table the document does not
+  declare is refused rather than dropped:
 
   ```sql
   ALTER TABLE nosuch ADD PRIMARY KEY (a);
@@ -339,8 +382,9 @@ CREATE TABLE "pets" (
   ```
 
   A primary key has nowhere to live without its table, and the document is not
-  one any engine would run either. Declare the table in the same file, or drop
-  the statement.
+  one any engine would run either. Declare the table first, in the same file or
+  in an earlier one, or drop the statement. Every other `ALTER TABLE` operation
+  is refused the same way.
 
 - A routine whose body Ptah did not parse is refused rather than dropped. The
   parser understands the outer boundary of every `CREATE PROCEDURE` and

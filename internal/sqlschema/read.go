@@ -29,9 +29,12 @@ func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList
 // what the directory's earlier files declared.
 //
 // A directory is one script run in file order, so a later file may add a
-// column to a table an earlier file created. The result holds only what this
-// file contributes, the added column included; the caller merges it with base.
-// A nil base reads the file alone, as [Read] does.
+// column to a table an earlier file created, or change one of its columns or
+// constraints. The result holds only what this file adds, the added column
+// included, and the caller merges it with base. A change to an object base
+// declares is made to base, in place, so base must be the caller's own
+// accumulated document rather than a copy. A nil base reads the file alone, as
+// [Read] does.
 func ReadOnto(
 	data []byte, dialect string, base *schemamodel.Database,
 ) (schemamodel.Database, *ast.StatementList, error) {

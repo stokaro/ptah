@@ -120,74 +120,60 @@ func hasDriveLetter(value string) bool {
 // visited holds the absolute paths already on this branch of the chain, which is
 // what makes a cycle an error rather than a hang.
 //
-// earlier is what the document declared before this file, nil for the entry
-// point. Each file is read against it and against the imports already merged,
-// so a file may add a column to a table a file before it created, as it may in a
-// schema directory.
+// document is everything the chain declared before this file. The whole chain
+// is one script, so each file is read against it -- a file may add a column to
+// a table a file before it created, or change one, as it may in a schema
+// directory -- and what the file adds is merged into it.
 func loadSQLWithImports(
-	root, path string, opts Options, visited map[string]struct{}, depth int, earlier *schemamodel.Database,
-) (*schemamodel.Database, error) {
+	root, path string, opts Options, visited map[string]struct{}, depth int, document *schemamodel.Database,
+) error {
 	if depth > maxSQLImportDepth {
-		return nil, fmt.Errorf("%s chain is deeper than %d files", sqlImportMarker, maxSQLImportDepth)
+		return fmt.Errorf("%s chain is deeper than %d files", sqlImportMarker, maxSQLImportDepth)
 	}
 	if _, seen := visited[path]; seen {
-		return nil, fmt.Errorf("%w: %s imports itself", ErrSQLImportCycle, path)
+		return fmt.Errorf("%w: %s imports itself", ErrSQLImportCycle, path)
 	}
 	visited[path] = struct{}{}
 	defer delete(visited, path)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read SQL schema file: %w", err)
+		return fmt.Errorf("read SQL schema file: %w", err)
 	}
 	imports, err := sqlImportPaths(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse SQL schema file %s: %w", path, err)
+		return fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
 
-	merged, _, err := loadSQLFileWithStatements(path, opts, earlier)
+	own, _, err := loadSQLFileWithStatements(path, opts, document)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	appendDatabase(document, own)
 	for _, value := range imports {
 		resolved, err := resolveSQLImport(root, path, value)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		info, err := os.Stat(resolved)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("%s %q: schema file does not exist: %s", sqlImportMarker, value, resolved)
+				return fmt.Errorf("%s %q: schema file does not exist: %s", sqlImportMarker, value, resolved)
 			}
-			return nil, fmt.Errorf("%s %q: %w", sqlImportMarker, value, err)
+			return fmt.Errorf("%s %q: %w", sqlImportMarker, value, err)
 		}
 		if info.IsDir() {
-			return nil, isDirectoryError(resolved)
+			return isDirectoryError(resolved)
 		}
 		if !strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"%s %q: only %s files can be imported", sqlImportMarker, value, dirSQLExtension)
 		}
-		imported, err := loadSQLWithImports(root, resolved, opts, visited, depth+1, precedingDeclarations(earlier, merged))
-		if err != nil {
-			return nil, err
+		if err := loadSQLWithImports(root, resolved, opts, visited, depth+1, document); err != nil {
+			return err
 		}
-		appendDatabase(merged, imported)
 	}
-	return merged, nil
-}
-
-// precedingDeclarations is what a file imported after merged sees: everything
-// declared before the importing file, then the importing file and the imports
-// merged so far. It is a new database, so the merge that follows never writes
-// into either input's slices.
-func precedingDeclarations(earlier, merged *schemamodel.Database) *schemamodel.Database {
-	preceding := &schemamodel.Database{}
-	if earlier != nil {
-		appendDatabase(preceding, earlier)
-	}
-	appendDatabase(preceding, merged)
-	return preceding
+	return nil
 }
 
 // loadSQLFileTree is the SQL arm of [parseSchemaFile]: one file plus everything
@@ -212,8 +198,8 @@ func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, erro
 	if len(imports) == 0 {
 		return loadSQLFile(resolved, opts)
 	}
-	merged, err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, nil)
-	if err != nil {
+	merged := &schemamodel.Database{}
+	if err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged); err != nil {
 		return nil, err
 	}
 	schemamodel.Finalize(merged)

@@ -179,6 +179,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.ModifyColumnOperation,
 		*ast.RenameColumnOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,
+		*ast.AlterColumnOperation,
 		*ast.AddConstraintOperation,
 		*ast.ValidateConstraintOperation,
 		*ast.DropConstraintOperation,

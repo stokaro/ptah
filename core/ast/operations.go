@@ -43,6 +43,10 @@ type DropColumnOperation struct {
 	ColumnName string
 	// Cascade indicates whether to automatically drop dependent objects
 	Cascade bool
+	// IfExists makes the operation do nothing for a column the table does not
+	// have. The PostgreSQL family renders it; a renderer for a target that
+	// does not refuses the operation rather than drop the guard.
+	IfExists bool
 }
 
 // Accept implements the Node interface for DropColumnOperation.
@@ -96,6 +100,57 @@ func (op *ModifyColumnOperation) Accept(visitor Visitor) error { return visitor.
 
 // alterOperation implements the marker method for type safety.
 func (op *ModifyColumnOperation) alterOperation() {}
+
+// AlterColumnAction names the one property an [AlterColumnOperation] changes.
+type AlterColumnAction string
+
+// The actions of ALTER TABLE ... ALTER [COLUMN] that an [AlterColumnOperation]
+// carries.
+const (
+	// AlterColumnSetDefault sets the column's default to Default.
+	AlterColumnSetDefault AlterColumnAction = "SET DEFAULT"
+	// AlterColumnDropDefault removes the column's default.
+	AlterColumnDropDefault AlterColumnAction = "DROP DEFAULT"
+	// AlterColumnSetNotNull makes the column NOT NULL.
+	AlterColumnSetNotNull AlterColumnAction = "SET NOT NULL"
+	// AlterColumnDropNotNull makes the column nullable.
+	AlterColumnDropNotNull AlterColumnAction = "DROP NOT NULL"
+	// AlterColumnSetType changes the column's type to Type.
+	AlterColumnSetType AlterColumnAction = "SET DATA TYPE"
+)
+
+// AlterColumnOperation is one action of ALTER TABLE ... ALTER [COLUMN] name:
+// it changes one property of an existing column and leaves the rest of its
+// definition alone. PostgreSQL spells every action here; MySQL and MariaDB
+// spell SET DEFAULT and DROP DEFAULT the same way.
+//
+// It differs from [ModifyColumnOperation], which carries a whole new column
+// definition, the way MySQL's MODIFY and SQL Server's ALTER COLUMN state one.
+// The PostgreSQL family renders it; other renderers refuse it.
+type AlterColumnOperation struct {
+	// ColumnName is the column to change.
+	ColumnName string
+	// Action is the property the operation changes.
+	Action AlterColumnAction
+	// Default is the new default for [AlterColumnSetDefault], nil otherwise.
+	Default *DefaultValue
+	// Type is the new type for [AlterColumnSetType], empty otherwise.
+	Type string
+	// Using is the conversion expression of [AlterColumnSetType], without the
+	// USING keyword, or empty. It says how existing rows are converted, which
+	// a desired schema does not describe.
+	Using string
+}
+
+// Accept implements the Node interface for AlterColumnOperation.
+//
+// An operation is not a statement. A renderer reached with one standing alone
+// has no table to alter and refuses it; the operation is rendered as part of the
+// ALTER TABLE that carries it.
+func (op *AlterColumnOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *AlterColumnOperation) alterOperation() {}
 
 // AlterGeneratedColumnExpressionOperation changes the expression of an existing
 // generated column without dropping the column and its dependents.
