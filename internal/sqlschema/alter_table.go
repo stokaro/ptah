@@ -32,25 +32,27 @@ type alterTarget struct {
 }
 
 // findAlterTarget looks the table up in database, then in base.
+//
+// The table is found by the name the statement resolves to, and its columns and
+// constraints through the struct name that table carries. A struct name derived
+// from the statement's own spelling is not an identity: it camel-cases and
+// singularizes, so matched by it, `ALTER TABLE docs` changes a table created
+// as "Docs", a statement PostgreSQL refuses (stokaro/ptah#3642).
 func findAlterTarget(database, base *schemamodel.Database, written, sourcePlatform string) (alterTarget, bool) {
-	schemaName, tableName := normalizeSQLTableIdentifier(sourcePlatform, written)
 	target := alterTarget{
 		written:        written,
-		structName:     tableStructName(sourcePlatform, written),
-		qualified:      schemamodel.QualifyTableName(schemaName, tableName),
+		qualified:      normalizeSQLTableReference(sourcePlatform, written),
 		databases:      []*schemamodel.Database{database},
 		sourcePlatform: sourcePlatform,
 	}
 	if base != nil {
 		target.databases = append(target.databases, base)
 	}
-	for _, candidate := range target.databases {
-		for i := range candidate.Tables {
-			if candidate.Tables[i].StructName == target.structName {
-				target.table = &candidate.Tables[i]
-				return target, true
-			}
-		}
+	if table := resolveTable(target.databases, target.qualified, sourcePlatform); table != nil {
+		target.table = table
+		target.structName = table.StructName
+		target.qualified = table.QualifiedName()
+		return target, true
 	}
 	return target, false
 }
@@ -60,26 +62,39 @@ func undeclaredTableError(written, clause string) error {
 		ErrUnmodeledStatement, written, clause)
 }
 
-// field returns the table's column name, or nil.
+// field returns the table's column that name reaches, or nil. See
+// [resolveColumn].
 func (t alterTarget) field(name string) *schemamodel.Field {
-	name = normalizeSQLIdentifier(t.sourcePlatform, name)
-	for _, database := range t.databases {
-		for i := range database.Fields {
-			if database.Fields[i].StructName == t.structName && database.Fields[i].Name == name {
-				return &database.Fields[i]
-			}
-		}
-	}
-	return nil
+	return resolveColumn(t.databases, t.structName, name, t.sourcePlatform)
 }
 
-// ownsIndex reports whether index belongs to the table. A CREATE INDEX keys its
-// index by the table's name and an ALTER TABLE ... ADD INDEX by its struct
-// name, so both are accepted, as is the qualified name.
+// reachesColumn reports whether a column name another declaration of the
+// table records reaches column, by the rule [alterTarget.field] used to reach
+// column itself.
+func (t alterTarget) reachesColumn(name, column string) bool {
+	_, names := tableColumns(t.databases, t.structName)
+	index := resolveDeclaredName(t.sourcePlatform, name, names)
+	return index >= 0 && names[index] == column
+}
+
+// reachesTable reports whether a table name another declaration records
+// reaches the target table, by the rule [findAlterTarget] used to reach it.
+func (t alterTarget) reachesTable(name string) bool {
+	if name == "" {
+		return false
+	}
+	table := resolveTable(t.databases, normalizeSQLTableReference("", name), t.sourcePlatform)
+	return table != nil && table.QualifiedName() == t.table.QualifiedName()
+}
+
+// ownsIndex reports whether index belongs to the table. Every index the reader
+// records names its table; one that does not is matched by the struct name an
+// ALTER TABLE ... ADD INDEX gives it, or by its bare table name.
 func (t alterTarget) ownsIndex(index schemamodel.Index) bool {
-	_, tableName := normalizeSQLTableIdentifier(t.sourcePlatform, t.written)
-	return index.StructName == t.structName || index.StructName == tableName ||
-		(index.TableName != "" && normalizeSQLTableReference("", index.TableName) == t.qualified)
+	if index.TableName != "" {
+		return t.reachesTable(index.TableName)
+	}
+	return index.StructName == t.structName || t.reachesTable(index.StructName)
 }
 
 // isPrimaryKeyColumn reports whether the column belongs to the table's primary
@@ -231,6 +246,12 @@ func applyRenameColumn(target alterTarget, operation *ast.RenameColumnOperation)
 // columnReference names the first object other than the column itself and the
 // table's primary key that refers to column, or returns "".
 //
+// A name in another declaration refers to column when it reaches column by the
+// rule the ALTER TABLE used to reach it, [resolveDeclaredName]. Compared
+// exactly, SQLite's `CHECK (length(note) > 0)` lets `DROP COLUMN Note`
+// through, a statement SQLite refuses, and the render keeps a CHECK over a
+// column the document no longer declares.
+//
 // Expressions are searched by identifier, so a CHECK, an index expression or a
 // generated column that mentions the name counts even inside a string literal.
 // That errs toward refusing. Views, policies, triggers and routine bodies are
@@ -244,7 +265,7 @@ func columnReference(target alterTarget, column string) string {
 			}
 		}
 		for _, index := range database.Indexes {
-			if target.ownsIndex(index) && indexMentions(target.sourcePlatform, index, column) {
+			if target.ownsIndex(index) && indexMentions(target, index, column) {
 				return fmt.Sprintf("index %s", index.Name)
 			}
 		}
@@ -262,40 +283,42 @@ func constraintColumnReference(target alterTarget, constraint schemamodel.Constr
 	if name == "" {
 		name = "(unnamed)"
 	}
+	reaches := func(name string) bool { return target.reachesColumn(name, column) }
 	if constraint.StructName == target.structName &&
-		(slices.Contains(constraint.Columns, column) || slices.Contains(constraint.IncludeColumns, column) ||
-			expressionMentions(target.sourcePlatform, constraint.CheckExpression, column) ||
-			expressionMentions(target.sourcePlatform, constraint.ExcludeElements, column) ||
-			expressionMentions(target.sourcePlatform, constraint.WhereCondition, column)) {
+		(slices.ContainsFunc(constraint.Columns, reaches) || slices.ContainsFunc(constraint.IncludeColumns, reaches) ||
+			expressionMentions(target, constraint.CheckExpression, column) ||
+			expressionMentions(target, constraint.ExcludeElements, column) ||
+			expressionMentions(target, constraint.WhereCondition, column)) {
 		return fmt.Sprintf("%s constraint %s", strings.ToLower(constraint.Type), name)
 	}
 	if strings.EqualFold(constraint.Type, "FOREIGN KEY") &&
-		normalizeSQLTableReference("", constraint.ForeignTable) == target.qualified &&
-		slices.Contains(constraint.ForeignColumnsOrDefault(), column) {
+		target.reachesTable(constraint.ForeignTable) &&
+		slices.ContainsFunc(constraint.ForeignColumnsOrDefault(), reaches) {
 		return fmt.Sprintf("the foreign key %s of %s", name, constraint.Table)
 	}
 	return ""
 }
 
-func indexMentions(sourcePlatform string, index schemamodel.Index, column string) bool {
+func indexMentions(target alterTarget, index schemamodel.Index, column string) bool {
 	for _, element := range index.Fields {
-		if element == column || expressionMentions(sourcePlatform, element, column) {
+		if target.reachesColumn(element, column) || expressionMentions(target, element, column) {
 			return true
 		}
 	}
 	for _, part := range index.Parts {
-		if part.Name == column || expressionMentions(sourcePlatform, part.Expr, column) {
+		if target.reachesColumn(part.Name, column) || expressionMentions(target, part.Expr, column) {
 			return true
 		}
 	}
-	return slices.Contains(index.IncludeColumns, column) || expressionMentions(sourcePlatform, index.Condition, column)
+	return slices.ContainsFunc(index.IncludeColumns, func(name string) bool { return target.reachesColumn(name, column) }) ||
+		expressionMentions(target, index.Condition, column)
 }
 
 func fieldColumnReference(target alterTarget, field schemamodel.Field, column string) string {
 	if field.StructName == target.structName && field.Name != column &&
-		(expressionMentions(target.sourcePlatform, field.Check, column) ||
-			expressionMentions(target.sourcePlatform, field.GeneratedExpression, column) ||
-			expressionMentions(target.sourcePlatform, field.DefaultExpr, column)) {
+		(expressionMentions(target, field.Check, column) ||
+			expressionMentions(target, field.GeneratedExpression, column) ||
+			expressionMentions(target, field.DefaultExpr, column)) {
 		return fmt.Sprintf("column %s", field.Name)
 	}
 	if field.Foreign == "" {
@@ -305,23 +328,24 @@ func fieldColumnReference(target alterTarget, field schemamodel.Field, column st
 	if open < 0 || !strings.HasSuffix(field.Foreign, ")") {
 		return ""
 	}
-	// Foreign holds names the read already resolved, so they are compared as
-	// they are rather than folded again.
-	if normalizeSQLTableReference("", field.Foreign[:open]) != target.qualified {
+	// Foreign holds names the read already folded, so they are not folded
+	// again; they are resolved as any other name the table's declarations
+	// record.
+	if !target.reachesTable(field.Foreign[:open]) {
 		return ""
 	}
 	for referenced := range strings.SplitSeq(field.Foreign[open+1:len(field.Foreign)-1], ",") {
-		if normalizeSQLIdentifier("", strings.TrimSpace(referenced)) == column {
+		if target.reachesColumn(normalizeSQLIdentifier("", strings.TrimSpace(referenced)), column) {
 			return fmt.Sprintf("the foreign key on column %s", field.Name)
 		}
 	}
 	return ""
 }
 
-// expressionMentions reports whether expression contains column as an
-// identifier, quoted or not. An expression is SQL as written, so each token is
-// read the way the source dialect reads a name.
-func expressionMentions(sourcePlatform, expression, column string) bool {
+// expressionMentions reports whether expression contains, quoted or not, an
+// identifier that reaches column. An expression is SQL as written, so each
+// token is read the way the source dialect reads a name.
+func expressionMentions(target alterTarget, expression, column string) bool {
 	if expression == "" || column == "" {
 		return false
 	}
@@ -330,7 +354,7 @@ func expressionMentions(sourcePlatform, expression, column string) bool {
 			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 	}
 	for _, token := range strings.FieldsFunc(expression, func(r rune) bool { return !isIdentifierByte(r) }) {
-		if normalizeSQLIdentifier(sourcePlatform, token) == column {
+		if target.reachesColumn(normalizeSQLIdentifier(target.sourcePlatform, token), column) {
 			return true
 		}
 	}

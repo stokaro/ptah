@@ -727,7 +727,7 @@ func appendStatement(
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
 	case *ast.CreateTableNode:
-		return appendCreateTable(database, node, sourcePlatform)
+		return appendCreateTable(database, base, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
 	case *ast.AlterTableNode:
@@ -868,9 +868,14 @@ func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, s
 }
 
 func appendCreateTable(
-	database *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string,
+	database, base *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string,
 ) error {
 	tableSchema := ToTable(node, sourcePlatform)
+	declared := []*schemamodel.Database{database}
+	if base != nil {
+		declared = append(declared, base)
+	}
+	tableSchema.StructName = uniqueStructName(declared, tableSchema)
 	database.Tables = append(database.Tables, tableSchema)
 
 	// Extract fields from table columns
@@ -1122,16 +1127,26 @@ func applyAlterTableAddColumn(
 	if base != nil {
 		known = append(slices.Clip(base.Fields), database.Fields...)
 	}
+	var columns []schemamodel.Field
+	var names []string
 	for _, existing := range known {
-		if existing.StructName != structName || existing.Name != field.Name {
-			continue
+		if existing.StructName == structName {
+			columns = append(columns, existing)
+			names = append(names, existing.Name)
 		}
+	}
+	if index := resolveDeclaredName(sourcePlatform, field.Name, names); index >= 0 {
+		existing := columns[index]
 		if !operation.IfNotExists {
 			return fmt.Errorf(
 				"ALTER TABLE %s ADD COLUMN %s names a column the table already declares",
 				tableName, operation.Column.Name)
 		}
-		if !reflect.DeepEqual(existing, field) {
+		// The spelling reached the column, so it is the definitions that have
+		// to agree, not the case they were written in.
+		restated := field
+		restated.Name = existing.Name
+		if !reflect.DeepEqual(existing, restated) {
 			return fmt.Errorf(
 				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s declares the column differently from the "+
 					"table's own declaration; the server keeps the first and ignores this one, so the "+
