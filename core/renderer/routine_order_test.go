@@ -57,6 +57,20 @@ CREATE FUNCTION next_code() RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT md5(
 			order: []string{`ROLE "app_reader"`, `FUNCTION "next_code"`},
 		},
 		{
+			name: "a column default calls a LANGUAGE sql routine reading a table declared after it",
+			sql: `CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());
+CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce((SELECT pct FROM rates WHERE code = 'std'), 0) $$;`,
+			order: []string{`CREATE TABLE "rates"`, `FUNCTION "default_pct"`, `CREATE TABLE "invoices"`},
+		},
+		{
+			name: "a CHECK calls a LANGUAGE sql routine reading another table",
+			sql: `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION has_rate(c text) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM rates WHERE code = c) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, code text NOT NULL CONSTRAINT invoices_code_rated CHECK (has_rate(code)));`,
+			order: []string{`CREATE TABLE "rates"`, `FUNCTION "has_rate"`, `CREATE TABLE "invoices"`},
+		},
+		{
 			name: "a routine reads a view another view reads it through",
 			sql: `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
 CREATE VIEW big AS SELECT id, total FROM orders WHERE total > 100;
@@ -93,4 +107,21 @@ CREATE POLICY docs_member ON docs USING (is_member(owner));`,
 			c.Assert(slices.IsSorted(found), qt.IsTrue, qt.Commentf("%s", sql))
 		})
 	}
+}
+
+// TestGetOrderedCreateStatements_CreatesATableCalledRoutineOnce pins that a
+// routine the render creates between the tables is not created again among the
+// views.
+func TestGetOrderedCreateStatements_CreatesATableCalledRoutineOnce(t *testing.T) {
+	c := qt.New(t)
+	database, _, err := sqlschema.Read([]byte(`CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce((SELECT pct FROM rates WHERE code = 'std'), 0) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());`), platform.Postgres)
+	c.Assert(err, qt.IsNil)
+
+	statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(strings.Count(sql, `FUNCTION "default_pct"`), qt.Equals, 1, qt.Commentf("%s", sql))
 }

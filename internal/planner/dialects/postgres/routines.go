@@ -101,27 +101,60 @@ func (p *Planner) modifyExistingFunctions(
 	return result
 }
 
-// relationRoutineViewLikes are the routines placed with the relations, as
-// entries in the view-like ordering, together with the statements each name
-// stands for. Added routines come first, in call order, and replaced ones after
-// them, so a routine that neither reads a view nor is called by one keeps the
-// place it had among the routines.
-func (p *Planner) relationRoutineViewLikes(
+// relationRoutines are the routines placed with the relations, and where each
+// of them is created.
+type relationRoutines struct {
+	// objects are the routines as entries in the view-like ordering. Added
+	// routines come first, in call order, and replaced ones after them, so a
+	// routine that neither reads a view nor is called by one keeps the place it
+	// had among the routines.
+	objects []deporder.ViewLike
+	// nodes are the statements each routine name stands for: every overload,
+	// and a replacement's drop where it needs one.
+	nodes map[string][]ast.Node
+	// tableSteps is the table phase: every new table, and the routines among
+	// objects that a table's column default or CHECK calls, moved in between;
+	// see [deporder.TablesWithRoutinesForCreate].
+	tableSteps []deporder.TableStep
+}
+
+// viewLikes are the routines left for the view-like ordering: the ones the
+// table phase does not create.
+func (r relationRoutines) viewLikes() []deporder.ViewLike {
+	inTablePhase := make(map[string]bool)
+	for _, step := range r.tableSteps {
+		if step.Routine {
+			inTablePhase[step.Name] = true
+		}
+	}
+	objects := make([]deporder.ViewLike, 0, len(r.objects))
+	for _, object := range r.objects {
+		if !inTablePhase[object.Name] {
+			objects = append(objects, object)
+		}
+	}
+	return objects
+}
+
+// relationRoutines collects the routines placed with the relations and decides
+// which of them the table phase creates.
+func (p *Planner) relationRoutines(
 	diff *difftypes.SchemaDiff,
 	placements map[string]deporder.RoutinePlacement,
-) ([]deporder.ViewLike, map[string][]ast.Node) {
-	var objects []deporder.ViewLike
-	nodes := make(map[string][]ast.Node)
+) relationRoutines {
+	routines := relationRoutines{nodes: make(map[string][]ast.Node)}
+	var declarations []schemamodel.Function
 	add := func(routine schemamodel.Function, statements []ast.Node) {
-		if _, seen := nodes[routine.Name]; !seen {
-			objects = append(objects, deporder.ViewLike{
+		if _, seen := routines.nodes[routine.Name]; !seen {
+			routines.objects = append(routines.objects, deporder.ViewLike{
 				Name:      routine.Name,
 				Body:      deporder.RoutineOrderingBody(routine, p.targetDialect()),
 				Routine:   true,
 				DependsOn: diff.DeclaredFunctions.Dependencies[routine.Name],
 			})
 		}
-		nodes[routine.Name] = append(nodes[routine.Name], statements...)
+		routines.nodes[routine.Name] = append(routines.nodes[routine.Name], statements...)
+		declarations = append(declarations, routine)
 	}
 	for _, fn := range orderedAddedRoutines(diff) {
 		if placements[fn.Name] == deporder.RoutineWithRelations {
@@ -133,5 +166,36 @@ func (p *Planner) relationRoutineViewLikes(
 			add(fnDiff.Desired, modifiedFunctionNodes(fnDiff))
 		}
 	}
-	return objects, nodes
+	routines.tableSteps = deporder.TablesWithRoutinesForCreate(
+		tableCreations(diff),
+		declarations,
+		diff.DeclaredFunctions.Dependencies,
+		p.targetDialect(),
+	)
+	return routines
+}
+
+// tableCreations are the tables the table phase creates, in dependency order,
+// and the existing tables gaining columns: their column defaults are added
+// before the view-likes too, so a routine one calls has to come first as well.
+func tableCreations(diff *difftypes.SchemaDiff) []deporder.TableCreation {
+	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder()
+	tables := make([]deporder.TableCreation, 0, len(creations)+len(diff.TablesModified))
+	for _, creation := range creations {
+		tables = append(tables, deporder.TableCreation{
+			Name:        creation.Name,
+			Expressions: deporder.TableExpressions(creation.Table.Checks, creation.Fields, creation.Constraints),
+		})
+	}
+	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsAdded) == 0 {
+			continue
+		}
+		tables = append(tables, deporder.TableCreation{
+			Name:        tableDiff.TableName,
+			Expressions: deporder.TableExpressions(nil, tableDiff.ColumnsAdded, nil),
+			Existing:    true,
+		})
+	}
+	return tables
 }
