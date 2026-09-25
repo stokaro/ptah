@@ -830,7 +830,12 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			COALESCE(a.attidentity, '') AS identity_kind,
 			` + r.columnCommentExpr() + `,
 			` + r.notNullConstraintNameExpr() + `,
-			` + r.ownedSequenceExpr() + `
+			` + r.ownedSequenceExpr() + `,
+			-- udt_name says which type a user-defined column has and not
+			-- which schema holds it, so a declaration naming the schema could
+			-- not be told from one naming a same-named type elsewhere
+			-- (stokaro/ptah#3620).
+			COALESCE(col.udt_schema, '') AS udt_schema
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
 			AND tbl.table_name = col.table_name
@@ -882,6 +887,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			&col.Comment,
 			&col.NotNullConstraintName,
 			&ownedSequenceName,
+			&col.UDTSchema,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)

@@ -423,9 +423,14 @@ func QualifyTableName(schema, table string) string {
 // answer from DataType, which reports the base type and drops the domain's
 // constraints with it. See stokaro/ptah#1242.
 type Column struct {
-	Name               string  `json:"name"`
-	DataType           string  `json:"data_type"`
-	UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
+	Name     string `json:"name"`
+	DataType string `json:"data_type"`
+	UDTName  string `json:"udt_name"` // For PostgreSQL enum types
+	// UDTSchema is the schema that holds the column's type, as
+	// information_schema reports it: pg_catalog for a built-in type, and the
+	// schema of an enum, domain or extension type. Empty from a reader that
+	// does not report it.
+	UDTSchema          string  `json:"udt_schema,omitempty"`
 	FormattedType      string  `json:"formatted_type,omitempty"` // Server's own spelling, where the catalog cannot express it
 	ColumnType         string  `json:"column_type"`              // For MySQL ENUM syntax
 	IsNullable         string  `json:"is_nullable"`              // YES/NO

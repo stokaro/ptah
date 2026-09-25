@@ -66,10 +66,10 @@ func rlsStrengthFakeServer(
 					"character_maximum_length", "numeric_precision", "numeric_scale",
 					"datetime_precision", "collation_name", "ordinal_position",
 					"generated_kind", "generated_expression", "identity_kind",
-					"column_comment", "not_null_constraint_name", "owned_sequence_name",
+					"column_comment", "not_null_constraint_name", "owned_sequence_name", "udt_schema",
 				},
 				Rows: [][]driver.Value{
-					{"docs", "id", "integer", "int4", "", "", "", "NO", nil, nil, nil, nil, nil, "", int64(1), "", "", "", "", "", ""},
+					{"docs", "id", "integer", "int4", "", "", "", "NO", nil, nil, nil, nil, nil, "", int64(1), "", "", "", "", "", "", "pg_catalog"},
 				},
 			}, nil
 		default:

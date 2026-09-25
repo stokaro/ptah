@@ -53,6 +53,12 @@ CREATE SCHEMA IF NOT EXISTS "extensions";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" VERSION '1.3';
 ```
 
+A column type may name its schema, quoted or not, the way `pg_dump` writes a
+type outside the search path: `m app.mood`, `m "app"."Mood"[]`,
+`g public.geometry(Point, 4326)`. A comparison matches it to the type the
+database reports by schema and name. A column moved to a type of the same name
+in another schema plans the change.
+
 ## Render it
 
 ```bash

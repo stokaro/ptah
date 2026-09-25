@@ -3173,12 +3173,18 @@ func (p *Parser) handlePostgresArrayNotation(typeName string) string {
 
 // parseColumnType parses a column data type (e.g., INTEGER, VARCHAR(255), DECIMAL(10,2), DOUBLE PRECISION).
 func (p *Parser) parseColumnType() (string, error) {
-	if p.current.Type != lexer.TokenIdentifier {
+	if p.current.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(p.current) {
 		return "", fmt.Errorf("expected column type, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
-	typeName := p.current.Value
-	p.advance()
+	// A type may be schema-qualified and quoted, `app.mood` or
+	// `"app"."Mood"`, which is how pg_dump writes every type outside the
+	// search path. Read as one word, the name stopped at the dot and the
+	// column list failed on what was left.
+	typeName, err := p.parseQualifiedIdentifier("column type")
+	if err != nil {
+		return "", err
+	}
 
 	// Handle multi-word types like DOUBLE PRECISION, CHARACTER VARYING, etc.
 	typeName = p.handleMultiWordType(typeName)
