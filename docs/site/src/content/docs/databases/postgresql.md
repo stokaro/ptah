@@ -126,6 +126,17 @@ Measured on PostgreSQL 18.6:
 A column-level `UNIQUE` is compared by its columns, not by its name. Other
 engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
 
+A view or materialized view body is compared by folding, not by asking the
+server. The server expands a `*` into the column list when it creates the view,
+so `SELECT * FROM orders WHERE total > 100` reads back as
+`SELECT id, total FROM orders WHERE (total > 100)`. Ptah expands each top-level
+`*` of a view that reads one table into that table's declared columns before it
+compares, so the declaration and its read-back match. Because the declared
+columns are used, a view created before its table gained a column is replaced,
+and the new column appears in it. A `*` over a join or inside a subquery is
+compared as written, so such a view is replaced on every plan; list its
+columns instead.
+
 ## Object comments
 
 Ptah writes the comment of a view, a sequence, a domain, a composite or range
