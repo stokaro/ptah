@@ -1261,7 +1261,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			r.writeColumnOperation(node.Name, operation)
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
-			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
+			r.renderPostgreSQLModifyColumn(node.Name, op)
 		case *ast.AlterGeneratedColumnExpressionOperation:
 			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
 				// Name the capability, not the version. The gate is the
@@ -2214,15 +2214,42 @@ func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]str
 	}
 }
 
-// renderPostgreSQLModifyColumn renders PostgreSQL-specific column modifications
-func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.ColumnNode) {
-	// PostgreSQL requires separate ALTER statements for different column properties
+// renderPostgreSQLModifyColumn renders a column modification as PostgreSQL
+// spells it: one ALTER COLUMN statement per property.
+//
+// Only the properties the operation names are written. A clause for a property
+// that did not change is not harmless: a TYPE clause naming the type the column
+// already has takes an ACCESS EXCLUSIVE lock on the table, and SET NOT NULL on
+// a column that is NOT NULL brings the NULL backfill with it, a DO block a
+// confined dev replay refuses. Atlas CE writes one SET DEFAULT for a
+// default-only change, and so does this (stokaro/ptah#3645). An operation that
+// does not say which properties changed restates every one, which is what a
+// parsed `ALTER TABLE ... MODIFY` asks for.
+func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	changed := ast.ColumnProperties{Type: true, Nullability: true, Default: true}
+	if op.HasChanged {
+		changed = op.Changed
+	}
+	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
+		return
+	}
+	if changed.Nullability {
+		r.writeColumnNullabilityChange(tableName, column)
+	}
+	if changed.Default {
+		r.writeColumnDefaultChange(tableName, column)
+	}
+}
 
+// writeColumnTypeChange writes the TYPE clause of a column modification, and
+// reports whether the type could be rendered at all.
+func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNode) bool {
 	// Process the column type with enum support
 	columnType, err := r.processFieldType(column.Type, r.currentEnums)
 	if err != nil {
 		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
-		return
+		return false
 	}
 
 	// Change the column type. An enum target needs an explicit USING cast:
@@ -2248,7 +2275,12 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
 			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)
 	}
+	return true
+}
 
+// writeColumnNullabilityChange writes the NOT NULL clause of a column
+// modification, with the NULL backfill that has to run before SET NOT NULL.
+func (r *Renderer) writeColumnNullabilityChange(tableName string, column *ast.ColumnNode) {
 	// Change nullability.
 	//
 	// A primary key column is NOT NULL on every engine this renderer serves --
@@ -2267,8 +2299,11 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.updateNullValuesBeforeNotNull(tableName, column)
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
+}
 
-	// Change default value
+// writeColumnDefaultChange writes the SET DEFAULT or DROP DEFAULT clause of a
+// column modification.
+func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.ColumnNode) {
 	switch {
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
@@ -2305,31 +2340,43 @@ func (r *Renderer) getDefaultValueForType(columnType string) string {
 
 // updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
 // This prevents "column contains null values" errors during migrations
+//
+// Where there is no value to write, nothing is written: the block would test
+// for NULLs and then do nothing about them, and SET NOT NULL reports them the
+// same way on its own.
 func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
+	value := r.nullBackfillValue(column)
+	if value == "" {
+		return
+	}
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
 	r.w.WriteLinef("DO $$")
 	r.w.WriteLinef("BEGIN")
 	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
 	columnIdentifier := r.escapeIdentifier(column.Name)
 	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier)
-
-	if column.Default != nil {
-		if column.Default.Expression != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, column.Default.Expression, columnIdentifier)
-		} else if column.Default.HasLiteral() {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, r.renderDefaultLiteral(column.Default.Value), columnIdentifier)
-		}
-	} else {
-		// If no default is specified, use a sensible default based on column type
-		defaultValue := r.getDefaultValueForType(column.Type)
-		if defaultValue != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, defaultValue, columnIdentifier)
-		}
-	}
-
+	r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier)
 	r.w.WriteLinef("    END IF;")
 	r.w.WriteLinef("END")
 	r.w.WriteLinef("$$;")
+}
+
+// nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a
+// NULL row: the column's default, or else one chosen by its type, or empty
+// when there is neither. The value chosen by type is one the author never
+// wrote (stokaro/ptah#3648).
+func (r *Renderer) nullBackfillValue(column *ast.ColumnNode) string {
+	if column.Default == nil {
+		// If no default is specified, use a sensible default based on column type
+		return r.getDefaultValueForType(column.Type)
+	}
+	if column.Default.Expression != "" {
+		return column.Default.Expression
+	}
+	if column.Default.HasLiteral() {
+		return r.renderDefaultLiteral(column.Default.Value)
+	}
+	return ""
 }
 
 func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {

@@ -563,10 +563,27 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 	if op.PreviousType != "" && !sameType(op.PreviousType, op.Column.Type) {
 		return Warning, fmt.Sprintf("column type changes from %s to %s", op.PreviousType, op.Column.Type)
 	}
-	if !op.Column.Nullable {
+	// A modification that says which properties it changes is judged by
+	// those. Judged by the column alone, every NOT NULL column reads as a SET
+	// NOT NULL, and a plan whose only statement is SET DEFAULT is reported as
+	// one that can fail on NULL rows (stokaro/ptah#3645).
+	if !op.Column.Nullable && (!op.HasChanged || op.Changed.Nullability) {
 		return Warning, "SET NOT NULL can fail when existing rows contain NULL"
 	}
+	if op.HasChanged && op.Changed.Default && !op.Changed.Type && !op.Changed.Nullability {
+		return classifyDefaultChange(op.Column)
+	}
 	return Warning, "column modification needs manual review"
+}
+
+// classifyDefaultChange judges a modification that changes only the default.
+// Neither direction touches a stored row; dropping one changes what an INSERT
+// that leaves the column out writes, and on a NOT NULL column makes it fail.
+func classifyDefaultChange(column *ast.ColumnNode) (Severity, string) {
+	if column.Default == nil {
+		return Warning, "DROP DEFAULT can break writers that leave the column out"
+	}
+	return Safe, "SET DEFAULT changes only rows inserted later"
 }
 
 func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
