@@ -21,8 +21,8 @@ stdin and stdout.
 This is not a command to run by hand: an MCP client starts it and speaks the
 protocol to it. Point one at the Ptah binary with "mcp" as the argument.
 
-Without --workspace it serves six reading tools and nothing else. None of them
-applies a migration, writes a file, or changes a database:
+Without --workspace it serves these reading tools and nothing else. None of
+them applies a migration, writes a file, or changes a database:
 
   describe_session  what this session may do and what it can reach
   validate_schema   structural problems in a declared schema, no database
@@ -30,6 +30,8 @@ applies a migration, writes a file, or changes a database:
   schema_lineage    which base columns feed each view column
   search_docs       what Ptah's own documentation says, with its source
   read_database     the schema a configured database currently holds
+  inference_plan    what changing an embedding model would do to a database
+  inference_status  what a generation run has done and what it waits for
 
 Every one of them asks the capability policy first. A session always has a
 policy; a workspace only adds the artifact half.
@@ -56,7 +58,7 @@ schema diff and migrations lint -- because each needs a scratch database it
 resets destructively, and a destructive capability must not sit behind a
 read-only name on a surface an agent drives.
 
-With --workspace it also serves three artifact tools, confined to the directories
+With --workspace it also serves these artifact tools, confined to the directories
 you name:
 
   read_artifact       one artifact directory, or one file inside it

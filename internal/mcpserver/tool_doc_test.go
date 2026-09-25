@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"ptah.run/internal/agentpolicy"
+	mcpcommand "ptah.run/internal/cli/mcp"
 	"ptah.run/internal/mcpserver"
 )
 
@@ -67,7 +68,37 @@ func TestToolDocs_TheCommandReferenceListsExactlyTheReadingTools(t *testing.T) {
 		qt.Commentf("the reading table and the served tools disagree; update %s", commandReferencePage))
 }
 
-// TestToolDocs_TablesAreFound is the control on the three tests above.
+// The paragraphs of `ptah mcp --help` that introduce each tool list. The list
+// is the paragraph that follows one of them.
+const (
+	helpReadingLeadIn  = "Without --workspace it serves"
+	helpArtifactLeadIn = "With --workspace it also serves"
+)
+
+// TestToolDocs_TheCommandHelpListsExactlyTheReadingTools holds the command's
+// own help to the served surface.
+//
+// The help carried a third copy of the list, and it said six reading tools
+// while the server served eight: the two inference tools were never added to
+// it. The reference pages are held above; the help is what an operator reads
+// before deciding what to expose, and nothing held it.
+func TestToolDocs_TheCommandHelpListsExactlyTheReadingTools(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(helpTools(c, helpReadingLeadIn), qt.DeepEquals, readingTools(c),
+		qt.Commentf("the reading list in `ptah mcp --help` and the served tools disagree; update internal/cli/mcp/mcp.go"))
+}
+
+// TestToolDocs_TheCommandHelpListsExactlyTheArtifactTools is the same check for
+// the half a workspace adds.
+func TestToolDocs_TheCommandHelpListsExactlyTheArtifactTools(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(helpTools(c, helpArtifactLeadIn), qt.DeepEquals, artifactTools(c),
+		qt.Commentf("the artifact list in `ptah mcp --help` and the served tools disagree; update internal/cli/mcp/mcp.go"))
+}
+
+// TestToolDocs_TablesAreFound is the control on the list tests above.
 //
 // A parser that stopped finding a table would compare two lists it read as
 // empty and report success, which is how a documentation check stops checking
@@ -80,6 +111,8 @@ func TestToolDocs_TablesAreFound(t *testing.T) {
 		"MCP reference reading":     documentedTools(c, mcpToolReferencePage, readingToolsHeading),
 		"MCP reference artifact":    documentedTools(c, mcpToolReferencePage, artifactToolsHeading),
 		"command reference reading": documentedTools(c, commandReferencePage, mcpSectionHeading),
+		"command help reading":      helpTools(c, helpReadingLeadIn),
+		"command help artifact":     helpTools(c, helpArtifactLeadIn),
 	}
 	for name, documented := range tables {
 		t.Run(name, func(t *testing.T) {
@@ -90,6 +123,8 @@ func TestToolDocs_TablesAreFound(t *testing.T) {
 	c.Assert(tables["MCP reference reading"], qt.Contains, "schema_lineage")
 	c.Assert(tables["MCP reference artifact"], qt.Contains, "preview_patch")
 	c.Assert(tables["command reference reading"], qt.Contains, "schema_lineage")
+	c.Assert(tables["command help reading"], qt.Contains, "inference_status")
+	c.Assert(tables["command help artifact"], qt.Contains, "preview_patch")
 }
 
 // TestToolDocs_TheDocsDoNotNameAToolTheServerDoesNotServe pins one name in
@@ -148,6 +183,37 @@ func servedNames(c *qt.C, cfg mcpserver.Config) []string {
 	names := make([]string, 0, len(result.Tools))
 	for _, tool := range result.Tools {
 		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// helpToolLine matches one row of a tool list in the command help: two spaces,
+// the tool name, and at least two spaces before its summary.
+var helpToolLine = regexp.MustCompile(`^  ([a-z_]+)  +\S`)
+
+// helpTools reads the tool list in `ptah mcp --help` that follows the paragraph
+// opening with leadIn.
+//
+// The help has other indented two-column lists -- the database classes are one
+// -- so the list is found by the paragraph that introduces it rather than by
+// its shape, and a lead-in that is reworded is a failure here rather than an
+// empty list compared with an empty list.
+func helpTools(c *qt.C, leadIn string) []string {
+	c.Helper()
+
+	paragraphs := strings.Split(mcpcommand.NewCommand().Long, "\n\n")
+	index := slices.IndexFunc(paragraphs, func(paragraph string) bool {
+		return strings.HasPrefix(paragraph, leadIn)
+	})
+	c.Assert(index >= 0 && index+1 < len(paragraphs), qt.IsTrue,
+		qt.Commentf("no paragraph opens with %q in `ptah mcp --help`", leadIn))
+
+	names := make([]string, 0, 8)
+	for line := range strings.SplitSeq(paragraphs[index+1], "\n") {
+		if match := helpToolLine.FindStringSubmatch(line); match != nil {
+			names = append(names, match[1])
+		}
 	}
 	slices.Sort(names)
 	return names
