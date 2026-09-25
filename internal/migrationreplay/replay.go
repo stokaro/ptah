@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -22,8 +21,6 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
-
-const failedReplayCleanupTimeout = 30 * time.Second
 
 // Options configures a migration replay run.
 type Options struct {
@@ -263,8 +260,8 @@ func replayOnLockedConnection(
 			return err
 		}
 		defer func() {
-			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failedReplayCleanupTimeout)
-			defer cancel()
+			restoreCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
+			defer release()
 			resultErr = errors.Join(resultErr, restoreSession(restoreCtx))
 		}()
 		return replayMigrations(
@@ -307,8 +304,8 @@ func replayMigrations(
 	}
 	replaySucceeded := false
 	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failedReplayCleanupTimeout)
-		defer cancel()
+		cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
+		defer release()
 		if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, conn, baseline); cleanupErr != nil {
 			label := "clean dev database after replay"
 			if !replaySucceeded {
