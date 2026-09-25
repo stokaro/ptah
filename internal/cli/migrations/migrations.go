@@ -50,13 +50,11 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateCommand(), "Plan migration SQL from schema differences", "Plan migration SQL from schema differences without writing migration files."))
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateGenerateCommand(), "Generate migration files from schema differences", "Generate migration files from schema differences and write them to the migrations directory."))
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateCreateCommand(), "Create empty migration files for manual SQL", "Create empty migration files for manual SQL."))
-	cmd.AddCommand(migrationCommand(
-		migratedata.NewMigrateDataCommand(),
-		"Generate a migration from reference/seed data drift",
-		"Generate an ordinary migration from the drift between declarative reference/seed data "+
-			"(//ptah:schema:data) and a live database. It applies no safety/risk gating of its own "+
-			"(a deferred follow-up); review the generated file before applying.",
-	))
+	// Registered with its own help. The text beside the flags is the one that
+	// says which of them gate the generated migration, and a namespace summary
+	// written apart from them said the command gated nothing while it refused
+	// destructive and protected-table changes.
+	cmd.AddCommand(migratedata.NewMigrateDataCommand())
 	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format."))
 	cmd.AddCommand(migrationCommand(migrationspush.NewMigrationsPushCommand(), "Push a migration directory to an OCI registry", "Push a migration directory to an OCI-compliant registry as an immutable artifact."))
 	cmd.AddCommand(migrationCommand(migrationspull.NewMigrationsPullCommand(), "Pull a migration directory from an OCI registry", "Pull and reconstruct a migration directory from an OCI-compliant registry."))
