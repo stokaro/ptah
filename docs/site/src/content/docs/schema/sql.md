@@ -181,6 +181,24 @@ the schema file keeps its text, which would then name a column that is no
 longer there. Drop the object first, or declare the column under its final
 name.
 
+## Comments
+
+A comment can be set with a separate `COMMENT ON`, the way `pg_dump` writes
+one, in the same file or in a later file of a schema directory:
+
+```sql
+CREATE TABLE notes (id integer PRIMARY KEY, body text);
+COMMENT ON TABLE notes IS 'what users wrote';
+COMMENT ON COLUMN notes.body IS 'the text, as typed';
+```
+
+`COMMENT ON` is read for a table, a column, an index, a schema and a role. For
+a view, a sequence, a domain, a type or an extension it is refused, because
+Ptah does not yet write those comments to the database
+([stokaro/ptah#3627](https://github.com/stokaro/ptah/issues/3627)). Reading one
+would drop it silently. A comment on an object the document does not declare
+is refused too, as is `IS NULL`.
+
 ## Row-level security
 
 A PostgreSQL schema file declares row-level security with the statements a

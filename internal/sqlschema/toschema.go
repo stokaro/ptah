@@ -751,7 +751,7 @@ func appendStatement(
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
 	case *ast.CommentNode:
-		applyRoleComment(database, node, sourcePlatform)
+		return applyComment(database, base, node, sourcePlatform)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
 		*ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
