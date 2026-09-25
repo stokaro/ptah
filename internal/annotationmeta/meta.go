@@ -707,7 +707,7 @@ var directives = []Directive{
 			attr("name", "Policy name.", valueString, false, false),
 			attr("table", "Target table.", valueString, false, false),
 			attr("for", "Policy command, such as ALL or SELECT.", valueString, false, false),
-			attr("to", "Comma-separated roles.", valueList, false, false),
+			attr("to", "Comma-separated roles; omitted means PUBLIC on PostgreSQL.", valueList, false, false),
 			attr("using", "USING expression.", valueSQL, false, false),
 			attr("with_check", "WITH CHECK expression.", valueSQL, false, false),
 			attr("as", "PERMISSIVE (the default) or RESTRICTIVE.", valueString, false, false),
