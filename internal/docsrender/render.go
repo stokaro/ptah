@@ -95,13 +95,14 @@ func writeTable(out *strings.Builder, db *schemamodel.Database, table schemamode
 	}
 	out.WriteString("\n| Column | Type | Null | Default | Key | Comment |\n")
 	out.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	primaryKey := schemaexport.PrimaryKeySet(table, schemaexport.FieldsFor(db, table))
 	for _, field := range db.Fields {
 		if field.StructName != table.StructName {
 			continue
 		}
 		fmt.Fprintf(out, "| %s | %s | %s | %s | %s | %s |\n",
-			cell(field.Name), cell(field.Type), nullability(field),
-			cell(defaultOf(field)), cell(keyOf(field)), cell(field.Comment))
+			cell(field.Name), cell(field.Type), nullability(field, primaryKey),
+			cell(defaultOf(field)), cell(keyOf(field, primaryKey)), cell(field.Comment))
 	}
 	writeIndexes(out, db, table)
 }
@@ -161,10 +162,12 @@ func defaultOf(field schemamodel.Field) string {
 	return ""
 }
 
-// keyOf names what makes the column special, most significant first.
-func keyOf(field schemamodel.Field) string {
+// keyOf names what makes the column special, most significant first. A column
+// of a table-level PRIMARY KEY is a key column too, which the field's own flag
+// does not say.
+func keyOf(field schemamodel.Field, primaryKey map[string]bool) string {
 	var parts []string
-	if field.Primary {
+	if primaryKey[field.Name] {
 		parts = append(parts, "PK")
 	}
 	if field.Unique || field.UniqueExpr != "" {
@@ -176,9 +179,10 @@ func keyOf(field schemamodel.Field) string {
 	return strings.Join(parts, ", ")
 }
 
-// nullability spells a column's nullability for the table.
-func nullability(field schemamodel.Field) string {
-	if field.Nullable {
+// nullability spells a column's nullability for the table, by the rule every
+// export shares: a primary-key column is not nullable.
+func nullability(field schemamodel.Field, primaryKey map[string]bool) string {
+	if schemaexport.Nullable(field, primaryKey) {
 		return "yes"
 	}
 	return "no"

@@ -213,7 +213,7 @@ func renderTableSchema(
 	if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI); err != nil {
 		return tableSchemaResult{}, err
 	}
-	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
+	pk := schemaexport.PrimaryKeySet(table, fields)
 	obj := &schemaObject{Type: "object", Description: table.Comment}
 	properties := newOrderedMap()
 	var required []string
@@ -240,11 +240,10 @@ func renderTableSchema(
 		property.WriteOnly = writeOnly[field.Name]
 		apiName := schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI)
 		properties.set(apiName, property)
-		// A primary-key column is NOT NULL by SQL rule, regardless of how the
-		// nullability was declared on the source annotation. The membership
-		// test stays on the COLUMN name: the primary key is a property of
-		// the table, not of what the column is published as.
-		if !field.Nullable || pk[field.Name] {
+		// The membership test inside stays on the COLUMN name: the primary
+		// key is a property of the table, not of what the column is
+		// published as.
+		if !schemaexport.Nullable(field, pk) {
 			required = append(required, apiName)
 		}
 	}
@@ -263,9 +262,7 @@ func renderTableSchema(
 // mapping the SQL type. It returns a diagnostic when a type could not be
 // resolved and was defaulted to string.
 func columnSchema(table schemamodel.Table, field schemamodel.Field, enums map[string][]string, pk map[string]bool) (*schemaObject, *schemaexport.Diagnostic) {
-	// A primary-key column is NOT NULL by SQL rule, regardless of how the
-	// nullability was declared on the source annotation.
-	nullable := field.Nullable && !pk[field.Name]
+	nullable := schemaexport.Nullable(field, pk)
 
 	// An array column maps to an array schema whose items are the element type.
 	if element, isArray := schemaexport.ElementType(field.Type); isArray {
@@ -326,12 +323,4 @@ func firstNonEmpty(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func toSet(values []string) map[string]bool {
-	set := make(map[string]bool, len(values))
-	for _, value := range values {
-		set[value] = true
-	}
-	return set
 }

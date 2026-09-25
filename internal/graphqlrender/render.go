@@ -389,7 +389,7 @@ func (b *builder) addTable(db *schemamodel.Database, table schemamodel.Table, po
 	}
 	b.diagnostics = append(b.diagnostics, diagnostics...)
 	fields, inObject, inInput := unionShapes(readable, writable)
-	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
+	pk := schemaexport.PrimaryKeySet(table, fields)
 	typeName := b.typeNames[table.QualifiedName()]
 
 	built, err := b.buildTableColumns(
@@ -709,7 +709,7 @@ func (b *builder) columnField(
 	if err != nil {
 		return gqlField{}, err
 	}
-	nonNull := !field.Nullable || pk[field.Name]
+	nonNull := !schemaexport.Nullable(field, pk)
 	return gqlField{
 		name:        name,
 		typ:         gt,
@@ -876,14 +876,6 @@ func isServerOwned(field schemamodel.Field) bool {
 func hasDefault(field schemamodel.Field) bool {
 	return field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "" ||
 		strings.TrimSpace(field.Default) != ""
-}
-
-func toSet(values []string) map[string]bool {
-	set := make(map[string]bool, len(values))
-	for _, value := range values {
-		set[value] = true
-	}
-	return set
 }
 
 // sortedKeys returns the keys of a set sorted, for deterministic emission.

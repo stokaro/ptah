@@ -360,3 +360,55 @@ func TestRender_IgnoresAMarkItDoesNotKnow(t *testing.T) {
 	c.Assert(page, qt.Not(qt.Contains), `<span class="chg `)
 	c.Assert(page, qt.Not(qt.Contains), `<div class="erd-legend">`)
 }
+
+// keyedSchema declares a column-level key without NOT NULL, the shape a SQL
+// schema file's `id BIGINT PRIMARY KEY` reads as, and a table whose key is
+// declared at table level, beside an ordinary nullable column as the control.
+func keyedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Note", Name: "notes"},
+			{StructName: "Membership", Name: "memberships", PrimaryKey: []string{"org_id", "user_id"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Note", Name: "id", Type: "BIGINT", Primary: true, Nullable: true},
+			{StructName: "Note", Name: "body", Type: "TEXT", Nullable: true},
+			{StructName: "Membership", Name: "org_id", Type: "BIGINT", Nullable: true},
+			{StructName: "Membership", Name: "user_id", Type: "BIGINT", Nullable: true},
+		},
+	}
+}
+
+// columnCells returns the null and key cells of one column's row.
+func columnCells(c *qt.C, page, column string) (null, key string) {
+	c.Helper()
+	row := regexp.MustCompile(`<td class="name">` + regexp.QuoteMeta(column) +
+		`</td><td class="type">[^<]*</td><td>(.*?)</td><td>(.*?)</td>`)
+	match := row.FindStringSubmatch(page)
+	c.Assert(match, qt.HasLen, 3, qt.Commentf("no row for column %q", column))
+	return match[1], match[2]
+}
+
+// TestRender_MarksAPrimaryKeyColumnNotNullable holds the HTML page to the rule
+// every export shares: a key column is NOT NULL whatever its own declaration
+// says, and a key declared at table level marks its columns as key columns.
+func TestRender_MarksAPrimaryKeyColumnNotNullable(t *testing.T) {
+	tests := []struct {
+		column   string
+		wantNull string
+		wantKey  string
+	}{
+		{column: "id", wantNull: `<span class="none">—</span>`, wantKey: `<span class="tag key">primary</span>`},
+		{column: "org_id", wantNull: `<span class="none">—</span>`, wantKey: `<span class="tag key">primary</span>`},
+		{column: "user_id", wantNull: `<span class="none">—</span>`, wantKey: `<span class="tag key">primary</span>`},
+		{column: "body", wantNull: `<span class="tag null">null</span>`, wantKey: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.column, func(t *testing.T) {
+			c := qt.New(t)
+			null, key := columnCells(c, render(c, keyedSchema(), schemadoc.Options{}), test.column)
+			c.Assert(null, qt.Equals, test.wantNull)
+			c.Assert(key, qt.Equals, test.wantKey)
+		})
+	}
+}
