@@ -137,6 +137,68 @@ func TestPostgresIncludeColumnsFromDefinition(t *testing.T) {
 	}
 }
 
+// The definitions below are what pg_get_constraintdef printed on PostgreSQL
+// 18.6 for the keys in stokaro/ptah#3562, plus the shapes a quoted name can
+// take.
+func TestPostgresDeleteColumnsFromDefinition(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition string
+		expected   []string
+	}{
+		{
+			name:       "SET NULL on one column",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON DELETE SET NULL (a)`,
+			expected:   []string{"a"},
+		},
+		{
+			name:       "SET DEFAULT",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON DELETE SET DEFAULT (a)`,
+			expected:   []string{"a"},
+		},
+		{
+			name:       "after ON UPDATE, in the order written",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON UPDATE CASCADE ON DELETE SET NULL (a, x)`,
+			expected:   []string{"a", "x"},
+		},
+		{
+			name:       "before DEFERRABLE",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON DELETE SET NULL (a) DEFERRABLE INITIALLY DEFERRED`,
+			expected:   []string{"a"},
+		},
+		{
+			name:       "quoted, with a comma and a parenthesis in the name",
+			definition: `FOREIGN KEY ("X", "a,(b)") REFERENCES p(a, b) ON DELETE SET NULL ("a,(b)")`,
+			expected:   []string{"a,(b)"},
+		},
+		{
+			// An unbalanced parenthesis inside a quoted name does not close
+			// the list.
+			name:       "a quoted name holding a closing parenthesis",
+			definition: `FOREIGN KEY ("x", "a)b") REFERENCES p(a, b) ON DELETE SET NULL ("a)b")`,
+			expected:   []string{"a)b"},
+		},
+		{
+			name:       "no list",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON DELETE SET NULL`,
+		},
+		{
+			name:       "SET NULL on update only",
+			definition: `FOREIGN KEY (x, a) REFERENCES p(a, b) ON UPDATE SET NULL`,
+		},
+		{
+			name:       "no action at all",
+			definition: `FOREIGN KEY (x) REFERENCES p(a)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(postgresDeleteColumnsFromDefinition(test.definition), qt.DeepEquals, test.expected)
+		})
+	}
+}
+
 func TestExtractPostgresIndexColumns(t *testing.T) {
 	tests := []struct {
 		name       string

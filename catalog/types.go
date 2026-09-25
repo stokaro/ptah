@@ -874,8 +874,13 @@ type Constraint struct {
 	// "immediate" -- read from pg_constraint.condeferred. It is empty for a
 	// constraint that is not deferrable, so a schema that never asked for one
 	// reads back exactly as it did before (stokaro/ptah#1624).
-	Initially   string  `json:"initially,omitempty"`
-	CheckClause *string `json:"check_clause"` // For CHECK constraints
+	Initially string `json:"initially,omitempty"`
+	// OnDeleteColumns are the referencing columns an ON DELETE SET NULL or
+	// SET DEFAULT action changes, as the definition lists them. It is empty
+	// when the definition lists none, which means every referencing column
+	// (stokaro/ptah#3562).
+	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
+	CheckClause     *string  `json:"check_clause"` // For CHECK constraints
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

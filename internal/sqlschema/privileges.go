@@ -7,21 +7,9 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/privilegefold"
 )
-
-// allPrivileges is what ALL names for each target kind, measured on
-// PostgreSQL 18 with aclexplode after GRANT ALL. MAINTAIN exists from
-// PostgreSQL 17; naming it in a REVOKE on an older server asserts the absence
-// of a privilege that server cannot hold, which is true.
-var allPrivileges = map[string][]string{
-	"TABLE":     {"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"},
-	"SCHEMA":    {"USAGE", "CREATE"},
-	"SEQUENCE":  {"USAGE", "SELECT", "UPDATE"},
-	"FUNCTION":  {"EXECUTE"},
-	"PROCEDURE": {"EXECUTE"},
-	"ROUTINE":   {"EXECUTE"},
-}
 
 // expandGrantedAll replaces ALL in a GRANT with the privileges it names on a
 // routine, which is EXECUTE on every server. A table's ALL depends on the
@@ -37,11 +25,10 @@ func expandGrantedAll(privileges []string, objectType string) []string {
 // expands every kind, because asserting the absence of a privilege the server
 // does not have is harmless.
 func expandAll(privileges []string, objectType string) []string {
-	kind := strings.ToUpper(objectType)
 	expanded := make([]string, 0, len(privileges))
 	for _, privilege := range privileges {
 		if strings.EqualFold(privilege, "ALL") {
-			expanded = append(expanded, allPrivileges[kind]...)
+			expanded = append(expanded, pgprivilege.All(objectType)...)
 			continue
 		}
 		expanded = append(expanded, privilege)

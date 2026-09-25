@@ -637,6 +637,7 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			ForeignColumns:  append([]string(nil), declared.ForeignColumnsOrDefault()...),
 			OnDelete:        declared.OnDelete,
 			OnUpdate:        declared.OnUpdate,
+			OnDeleteColumns: append([]string(nil), declared.OnDeleteColumns...),
 			Deferrable:      declared.Deferrable,
 			Initially:       declared.Initially,
 		})
@@ -836,6 +837,11 @@ type ConstraintAdditionInfo struct {
 	// (stokaro/ptah#2216).
 	Deferrable bool   `json:"deferrable,omitempty"`
 	Initially  string `json:"initially,omitempty"`
+	// OnDeleteColumns carries the columns an ON DELETE SET NULL or SET DEFAULT
+	// is limited to, for the same reason: an addition built without it sets
+	// every referencing column where the declaration named some
+	// (stokaro/ptah#3562).
+	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
 	// Comment is the constraint's description, carried for the same reason
 	// Deferrable is: a fact the comparator saw on the desired constraint has to
 	// reach the statement that creates it, or the ALTER builds a constraint the

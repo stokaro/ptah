@@ -1174,6 +1174,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			fk.ForeignColumns = normalizeSQLIdentifiers(ref.Columns)
 			fk.OnDelete = ref.OnDelete
 			fk.OnUpdate = ref.OnUpdate
+			fk.OnDeleteColumns = normalizeSQLIdentifiers(ref.OnDeleteColumns)
 		}
 		return fk, true
 	case ast.CheckConstraint:

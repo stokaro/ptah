@@ -357,7 +357,7 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPoliciesWithSemantics(
-		desired, database, diff, identifierSemantics, cov, opts.PolicyExpressions,
+		desired, database, diff, identifierSemantics, opts.Dialect, cov, opts.PolicyExpressions,
 	)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)

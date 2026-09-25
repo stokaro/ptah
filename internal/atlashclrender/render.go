@@ -144,6 +144,18 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
+	// Atlas HCL has no attribute for the column list of ON DELETE SET NULL or
+	// SET DEFAULT. Writing the key without it would set every referencing
+	// column where the schema sets some, so the export refuses instead
+	// (stokaro/ptah#3562).
+	for _, constraint := range db.Constraints {
+		if constraint.NarrowsDeleteAction() {
+			return Result{}, fmt.Errorf(
+				"foreign key %q limits ON DELETE %s to columns %s, which Atlas HCL cannot represent",
+				constraint.Name, constraint.OnDelete, strings.Join(constraint.OnDeleteColumns, ", "),
+			)
+		}
+	}
 
 	// Resolved once, here, rather than per index. A malformed value has to fail
 	// the export whether or not this particular schema happens to carry an

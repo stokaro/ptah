@@ -704,8 +704,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2015,
-      "sourceBytes": 14770
+      "visibleWords": 2065,
+      "sourceBytes": 15037
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -4615,8 +4615,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5468,
-      "sourceBytes": 42283
+      "visibleWords": 5473,
+      "sourceBytes": 42319
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -5639,8 +5639,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1713,
-      "sourceBytes": 14040
+      "visibleWords": 1921,
+      "sourceBytes": 15433
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

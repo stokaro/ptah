@@ -532,6 +532,9 @@ type Constraint struct {
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
 	Initially string
+	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
+	// referencing columns. See [ptah.run/core/ast.ForeignKeyRef.OnDeleteColumns].
+	OnDeleteColumns []string
 
 	// RequiresExtensions names the extensions the index backing this constraint
 	// cannot be built without, as the catalog resolved them rather than as
@@ -557,6 +560,23 @@ func (c Constraint) ForeignColumnsOrDefault() []string {
 		return []string{c.ForeignColumn}
 	}
 	return nil
+}
+
+// NarrowsDeleteAction reports whether OnDeleteColumns limits the ON DELETE
+// action to some of the key's columns. An empty list and a list naming every
+// column in Columns both mean the action applies to all of them, so both
+// report false. Names compare exactly, and a nil or zero Constraint reports
+// false.
+func (c Constraint) NarrowsDeleteAction() bool {
+	if len(c.OnDeleteColumns) == 0 {
+		return false
+	}
+	for _, column := range c.Columns {
+		if !slices.Contains(c.OnDeleteColumns, column) {
+			return true
+		}
+	}
+	return false
 }
 
 // Extension represents a PostgreSQL extension definition parsed from Go struct annotations.

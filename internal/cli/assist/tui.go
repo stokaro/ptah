@@ -297,6 +297,9 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// prompt. The 2 is the width of the "> " this surface draws itself.
 		m.width = msg.Width
 		m.input.SetWidth(max(msg.Width, 24))
+		if m.form != nil {
+			m.form = m.form.WithWidth(msg.Width)
+		}
 		return m, nil
 	}
 
@@ -372,10 +375,14 @@ func (m *tuiModel) openForm(request *approvalRequest) tea.Cmd {
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("esc", "ctrl+c"))
 
+	// The request's own text is not the title: huh draws a select's title on
+	// one line and cuts it at the form's width, which dropped the digests and
+	// the sentence saying what the approval covers. View draws the text above
+	// the form instead, wrapped rather than cut.
 	m.form = huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title(request.message).
+				Title("Allow this?").
 				Options(
 					huh.NewOption("Allow once", decisionOnce),
 					huh.NewOption("Allow for this session", decisionSession),
@@ -384,6 +391,10 @@ func (m *tuiModel) openForm(request *approvalRequest) tea.Cmd {
 				Value(m.decision),
 		),
 	).WithKeyMap(keys).WithShowHelp(true)
+	// Without a width the form draws itself 80 columns wide whatever the
+	// terminal is: it learns the size from a WindowSizeMsg, and the one the
+	// terminal sent arrived before the form existed.
+	m.form = m.form.WithWidth(m.width)
 
 	// The defaults are tea.Quit and tea.Interrupt, which would take the host
 	// program down with the form.
@@ -588,7 +599,7 @@ func (m *tuiModel) View() tea.View {
 	// No AltScreen anywhere: inline is the default in this version, and the
 	// conversation belongs in the scrollback.
 	if m.form != nil {
-		return tea.NewView(m.form.View())
+		return tea.NewView(approvalText(m.pending.message, m.width) + "\n\n" + m.form.View())
 	}
 	switch m.phase {
 	case thinking, awaitingApproval:

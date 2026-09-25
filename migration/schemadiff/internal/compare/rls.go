@@ -81,7 +81,7 @@ func RLSPolicies(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect(""), cov, nil)
+	RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect(""), "", cov, nil)
 }
 
 // RLSPoliciesWithSemantics is [RLSPolicies] told which identifier rules the
@@ -104,11 +104,15 @@ func RLSPolicies(
 // spellings of one table. Only the MATCHING is normalized -- what each side is
 // reported as stays the string that side supplied, because the planner renders
 // those names.
+//
+// dialect names the target, which decides what a policy without a TO clause
+// applies to; see [rlspolicy.Roles].
 func RLSPoliciesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+	dialect string,
 	cov Coverage,
 	policies map[string]config.PolicyExpression,
 ) {
@@ -166,7 +170,7 @@ func RLSPoliciesWithSemantics(
 	for key, generatedPolicy := range generatedPolicyMap {
 		if databasePolicy, policyExists := databasePolicyMap[key]; policyExists {
 			policyComparison := RLSPolicyDefinitionsWithExpressions(
-				generatedPolicy, databasePolicy,
+				generatedPolicy, databasePolicy, dialect,
 				policies[exprkey.Policy(semantics, generatedPolicy.Table, generatedPolicy.Name)])
 			if len(policyComparison.Changes) > 0 {
 				policyComparison.Desired = generatedPolicy
@@ -481,15 +485,16 @@ func RLSEnabledTablesWithSemantics(
 //  1. DROP POLICY policy_name ON table_name
 //  2. CREATE POLICY policy_name ON table_name with new definition
 func RLSPolicyDefinitions(genPolicy schemamodel.RLSPolicy, dbPolicy catalog.RLSPolicy) difftypes.RLSPolicyDiff {
-	return RLSPolicyDefinitionsWithExpressions(genPolicy, dbPolicy, config.PolicyExpression{})
+	return RLSPolicyDefinitionsWithExpressions(genPolicy, dbPolicy, "", config.PolicyExpression{})
 }
 
-// RLSPolicyDefinitionsWithExpressions is [RLSPolicyDefinitions] told what the
-// server makes of the declared clauses. An unresolved value leaves the textual
-// comparison in charge, which is every offline path.
+// RLSPolicyDefinitionsWithExpressions is [RLSPolicyDefinitions] told the target
+// dialect and what the server makes of the declared clauses. An unresolved
+// value leaves the textual comparison in charge, which is every offline path.
 func RLSPolicyDefinitionsWithExpressions(
 	genPolicy schemamodel.RLSPolicy,
 	dbPolicy catalog.RLSPolicy,
+	dialect string,
 	resolved config.PolicyExpression,
 ) difftypes.RLSPolicyDiff {
 	policyDiff := difftypes.RLSPolicyDiff{
@@ -504,8 +509,9 @@ func RLSPolicyDefinitionsWithExpressions(
 		policyDiff.Changes["policy_for"] = fmt.Sprintf("%s -> %s", dbPolicy.PolicyFor, genPolicy.PolicyFor)
 	}
 
-	// Compare target roles (TO clause)
-	if genPolicy.ToRoles != dbPolicy.ToRoles {
+	// Compare target roles (TO clause), folded so an omitted clause and the
+	// PUBLIC the catalog reports for it are one value; see [rlspolicy.Roles].
+	if rlspolicy.Roles(dialect, genPolicy.ToRoles) != rlspolicy.Roles(dialect, dbPolicy.ToRoles) {
 		policyDiff.Changes["to_roles"] = fmt.Sprintf("%s -> %s", dbPolicy.ToRoles, genPolicy.ToRoles)
 	}
 

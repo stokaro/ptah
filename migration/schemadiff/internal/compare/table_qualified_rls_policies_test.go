@@ -77,6 +77,7 @@ func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 				test.database,
 				diff,
 				identifier.ForDialect("postgres"),
+				"postgres",
 				compare.Coverage{},
 				nil,
 			)
@@ -144,7 +145,7 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.RLSPoliciesWithSemantics(desired, test.database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+			compare.RLSPoliciesWithSemantics(desired, test.database, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 			c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, test.want)
 			c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
@@ -178,7 +179,7 @@ func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) 
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesModified[0].PolicyName, qt.Equals, "tenant_isolation")
@@ -211,7 +212,7 @@ func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
@@ -272,7 +273,7 @@ func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	// The pairs rather than the whole entries: this test is about the ORDER,
 	// and an addition also carries the declaration it renders from, which
@@ -326,7 +327,7 @@ func TestRLSPoliciesWithSemantics_AnAdditionCarriesItsDeclaration(t *testing.T) 
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSPoliciesWithSemantics(
-		desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+		desired, database, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesAdded[0].Desired.UsingExpression, qt.Equals, "tenant_id = 1")
@@ -359,7 +360,7 @@ func TestRLSPoliciesWithSemantics_TwoDeclarationsOfOneIdentityAreRecorded(t *tes
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSPoliciesWithSemantics(
-		desired, &catalog.Database{}, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+		desired, &catalog.Database{}, diff, identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPolicyIdentityConflicts, qt.HasLen, 1)
 	c.Assert(diff.RLSPolicyIdentityConflicts[0].First.UsingExpression, qt.Equals, "a = 1")
@@ -383,7 +384,7 @@ func TestRLSPoliciesWithSemantics_TwoTablesShareAPolicyNameWithoutConflict(t *te
 
 	compare.RLSPoliciesWithSemantics(
 		generatedSharedPolicyName(), &catalog.Database{}, diff,
-		identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+		identifier.ForDialect("postgres"), "postgres", compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPolicyIdentityConflicts, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 2)

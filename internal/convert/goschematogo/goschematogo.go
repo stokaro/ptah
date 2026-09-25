@@ -53,6 +53,9 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
 		return nil, err
 	}
+	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {
+		return nil, err
+	}
 
 	ctx := newRenderContext(db, opts)
 	if opts.SingleFile {
@@ -63,6 +66,22 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 		return []File{file}, nil
 	}
 	return ctx.renderPerTableFiles()
+}
+
+// refuseNarrowedDeleteActions refuses a foreign key whose ON DELETE action is
+// limited to some of its columns. The foreign_key annotation has no attribute
+// for the list, and writing the key without it would set every referencing
+// column where the schema sets some (stokaro/ptah#3562).
+func refuseNarrowedDeleteActions(constraints []schemamodel.Constraint) error {
+	for _, constraint := range constraints {
+		if constraint.NarrowsDeleteAction() {
+			return fmt.Errorf(
+				"foreign key %q limits ON DELETE %s to columns %s, which a Go annotation cannot represent",
+				constraint.Name, constraint.OnDelete, strings.Join(constraint.OnDeleteColumns, ", "),
+			)
+		}
+	}
+	return nil
 }
 
 func validateIndexIncludeColumns(indexes []schemamodel.Index) error {

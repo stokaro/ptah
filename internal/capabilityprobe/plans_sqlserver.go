@@ -219,6 +219,7 @@ func sqlServerPlan() plan {
 			[]string{"CREATE TABLE ndc (n int)"},
 			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
 		),
+		sqlServerDeleteColumnListExperiment(),
 		acceptance(capability.DeferrableConstraints,
 			[]string{
 				"CREATE TABLE dfc_parent (id int PRIMARY KEY)",
@@ -336,4 +337,18 @@ func sqlServerDDLInsideTransaction() experiment {
 			return verdicts{capability.DDLInsideTransaction: decided(attempts[1].Accepted)}, attempts
 		},
 	}
+}
+
+// sqlServerDeleteColumnListExperiment asks for PostgreSQL's column list on
+// ON DELETE SET NULL, which SQL Server is not expected to have
+// (stokaro/ptah#3562).
+func sqlServerDeleteColumnListExperiment() experiment {
+	return acceptance(capability.ForeignKeyDeleteColumnList,
+		[]string{
+			"CREATE TABLE fdc_parent (id int PRIMARY KEY)",
+			"CREATE TABLE fdc_child (parent_id int)",
+		},
+		"ALTER TABLE fdc_child ADD CONSTRAINT fdc_c FOREIGN KEY (parent_id) "+
+			"REFERENCES fdc_parent (id) ON DELETE SET NULL (parent_id)",
+	)
 }

@@ -2149,6 +2149,9 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 		}
 		constraint.NullsDistinct = postgresNullsDistinctFromDefinition(constraintDefinition)
 		constraint.IncludeColumns = postgresIncludeColumnsFromDefinition(constraintDefinition)
+		if constraint.Type == "FOREIGN KEY" {
+			constraint.OnDeleteColumns = postgresDeleteColumnsFromDefinition(constraintDefinition)
+		}
 
 		constraints = append(constraints, constraint)
 	}
@@ -2194,6 +2197,75 @@ func postgresIncludeColumnsFromDefinition(definition string) []string {
 		}
 	}
 	return nil
+}
+
+// postgresDeleteColumnsFromDefinition reads the column list of an ON DELETE
+// SET NULL or SET DEFAULT out of a foreign key's pg_get_constraintdef, or nil
+// where the definition has none.
+//
+// The definition is read rather than pg_constraint.confdelsetcols because the
+// column does not exist before PostgreSQL 15, nor on CockroachDB, and this
+// query serves every line of the family. The server prints the list after the
+// action, before any DEFERRABLE, and only when one was written: measured on
+// PostgreSQL 18.6, `FOREIGN KEY (x, a) REFERENCES p(a, b) ON UPDATE CASCADE ON
+// DELETE SET NULL (a)` (stokaro/ptah#3562).
+func postgresDeleteColumnsFromDefinition(definition string) []string {
+	for _, action := range []string{" ON DELETE SET NULL", " ON DELETE SET DEFAULT"} {
+		index := strings.LastIndex(definition, action)
+		if index < 0 {
+			continue
+		}
+		remaining := strings.TrimLeft(definition[index+len(action):], " ")
+		if !strings.HasPrefix(remaining, "(") {
+			return nil
+		}
+		end := closingParenthesis(remaining)
+		if end < 0 {
+			return nil
+		}
+		return unquotePostgresIdentifiers(splitQuotedIdentifierList(remaining[1:end]))
+	}
+	return nil
+}
+
+// splitQuotedIdentifierList splits a comma-separated identifier list, keeping
+// a comma inside a quoted identifier as part of its name.
+func splitQuotedIdentifierList(list string) []string {
+	var identifiers []string
+	quoted := false
+	start := 0
+	for i := range len(list) {
+		switch {
+		case list[i] == '"':
+			quoted = !quoted
+		case list[i] == ',' && !quoted:
+			identifiers = append(identifiers, strings.TrimSpace(list[start:i]))
+			start = i + 1
+		}
+	}
+	return append(identifiers, strings.TrimSpace(list[start:]))
+}
+
+// closingParenthesis returns the index of the parenthesis that closes the one
+// text opens with, skipping any inside a quoted identifier, or -1.
+func closingParenthesis(text string) int {
+	depth := 0
+	quoted := false
+	for i := range len(text) {
+		switch {
+		case text[i] == '"':
+			quoted = !quoted
+		case quoted:
+		case text[i] == '(':
+			depth++
+		case text[i] == ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func unquotePostgresIdentifiers(identifiers []string) []string {
@@ -3382,8 +3454,12 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 				WHEN 'd' THEN 'DELETE'
 				WHEN '*' THEN 'ALL'
 			END AS policy_for,
+			-- Role 0 is PUBLIC, which has no pg_roles row. A list that names it
+			-- applies to everyone whatever else it names. PostgreSQL stores
+			-- such a list as {0} alone; CockroachDB 26.3 keeps {0, app}, and
+			-- the join below would read that back as app alone.
 			CASE
-				WHEN array_length(pol.polroles, 1) = 1 AND 0 = ANY(pol.polroles) THEN 'PUBLIC'
+				WHEN 0 = ANY(pol.polroles) THEN 'PUBLIC'
 				ELSE array_to_string(ARRAY(
 					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
 				), ',')
@@ -4065,7 +4141,33 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			AND c.relname = g.table_name
 			AND c.relacl IS NOT NULL
 		)
-		ORDER BY table_schema, table_name, grantee, privilege_type`
+		UNION ALL
+		-- MAINTAIN, which PostgreSQL 17 added, is left out of
+		-- information_schema.table_privileges: measured on PostgreSQL 18,
+		-- GRANT ALL writes arwdDxtm to relacl and role_table_grants reports
+		-- seven rows. Without this branch a declared MAINTAIN was never seen
+		-- held and was granted again on every run. The rows are read from the
+		-- ACL under the view's own conditions: the relation kinds it covers,
+		-- and a grantor or grantee the reading role is a member of.
+		SELECT
+			COALESCE(grantee.rolname, 'PUBLIC'),
+			acl.privilege_type,
+			n.nspname,
+			c.relname,
+			acl.is_grantable,
+			grantor.rolname
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		CROSS JOIN LATERAL aclexplode(c.relacl) acl
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE n.nspname = $1
+		AND c.relkind IN ('r', 'v', 'f', 'p')
+		AND acl.privilege_type = 'MAINTAIN'
+		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY 3, 4, 1, 2`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {

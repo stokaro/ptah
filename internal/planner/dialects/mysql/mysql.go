@@ -2023,6 +2023,9 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		Columns:  add.ForeignColumns,
 		OnDelete: add.OnDelete,
 		OnUpdate: add.OnUpdate,
+		// Carried so the renderer refuses the list this family cannot write,
+		// rather than the planner dropping it here.
+		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
 	}
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }
