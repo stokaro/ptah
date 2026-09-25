@@ -3633,13 +3633,14 @@ func (p *Planner) appendScopedDrop(
 // that re-derived the table from a Go struct name.
 func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.AlterTableNode {
 	fkRef := &ast.ForeignKeyRef{
-		Table:      add.ForeignTable,
-		Column:     add.ForeignColumn,
-		Columns:    add.ForeignColumns,
-		OnDelete:   add.OnDelete,
-		OnUpdate:   add.OnUpdate,
-		Deferrable: add.Deferrable,
-		Initially:  add.Initially,
+		Table:           add.ForeignTable,
+		Column:          add.ForeignColumn,
+		Columns:         add.ForeignColumns,
+		OnDelete:        add.OnDelete,
+		OnUpdate:        add.OnUpdate,
+		Deferrable:      add.Deferrable,
+		Initially:       add.Initially,
+		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
 	}
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }

@@ -776,6 +776,24 @@ const (
 	// constraint spelling and still has unique indexes, so coupling them would
 	// make a valid preset invalid (stokaro/ptah#2820).
 	UniqueNullsDistinctClause Capability = "unique_nulls_distinct_clause"
+	// ForeignKeyDeleteColumnList is whether the target takes a column list on
+	// a foreign key's `ON DELETE SET NULL` or `ON DELETE SET DEFAULT`, which
+	// limits the action to the listed referencing columns.
+	//
+	// Like UniqueNullsDistinctClause it moves with the release line. Measured
+	// 2026-09-25 with `FOREIGN KEY (x, a) REFERENCES p (a, b) ON DELETE SET
+	// NULL (a)` and the SET DEFAULT spelling:
+	//
+	//	PostgreSQL 15.19, 18.6            accepts, sets only a, reads back
+	//	YugabyteDB 2025.2                 accepts, sets only a, reads back
+	//	PostgreSQL 14.24                  syntax error at or near "("
+	//	YugabyteDB 2024.2 LTS             syntax error at or near "("
+	//	CockroachDB v26.3.1               42601 syntax error at or near "("
+	//
+	// The other engines have no such clause. A target without it refuses the
+	// list: rendering the action without it would clear every referencing
+	// column where the document asked for some (stokaro/ptah#3562).
+	ForeignKeyDeleteColumnList Capability = "foreign_key_delete_column_list"
 	// AlterTableAlgorithmLock is whether the target takes the MySQL-family
 	// `ALGORITHM=` and `LOCK=` clauses on ALTER TABLE.
 	//
@@ -1008,6 +1026,11 @@ var registry = map[Capability]spec{
 	UniqueNullsDistinctClause: {
 		doc: "NULLS [NOT] DISTINCT accepted on a unique constraint or index (PostgreSQL 15+ and YugabyteDB 2025+ only)",
 	},
+	ForeignKeyDeleteColumnList: {
+		doc: "a column list on ON DELETE SET NULL or SET DEFAULT, limiting the action to those columns (PostgreSQL 15+ and YugabyteDB 2025+ only)",
+		// Deliberately no `requires: ForeignKeys`, for the reason
+		// DeferrableConstraints gives above.
+	},
 	AlterTableAlgorithmLock: {
 		doc: "ALGORITHM= and LOCK= clauses on ALTER TABLE, which the server refuses when it cannot honor them (MySQL, MariaDB)",
 	},
@@ -1230,6 +1253,7 @@ func MySQL84() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
 	}
@@ -1371,6 +1395,7 @@ func MariaDB1011() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		AddConstraintNotValid:           false,
 	}
@@ -1457,6 +1482,7 @@ func Postgres16() Capabilities {
 		DeferrableConstraints:           true,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       true,
+		ForeignKeyDeleteColumnList:      true,
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           true,
 	}
@@ -1498,7 +1524,11 @@ func Postgres18() Capabilities {
 // unique_nulls_distinct_clause, on master, because the ladder sent every major
 // at or above 14 to Postgres16 (stokaro/ptah#2820).
 func Postgres14() Capabilities {
-	return Postgres16().With(UniqueNullsDistinctClause, false)
+	return Postgres16().
+		With(UniqueNullsDistinctClause, false).
+		// PostgreSQL grew the ON DELETE SET NULL (columns) list in 15 as well.
+		// Measured on 14.24: syntax error at or near "(" (stokaro/ptah#3562).
+		With(ForeignKeyDeleteColumnList, false)
 }
 
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
@@ -1506,8 +1536,10 @@ func Postgres14() Capabilities {
 // PostgreSQL 14.
 func Postgres13() Capabilities {
 	return Postgres16().
-		// PostgreSQL grew NULLS [NOT] DISTINCT in 15.
+		// PostgreSQL grew NULLS [NOT] DISTINCT and the ON DELETE column list
+		// in 15.
 		With(UniqueNullsDistinctClause, false).
+		With(ForeignKeyDeleteColumnList, false).
 		With(CreateOrReplaceTrigger, false).
 		With(IndexIncludeSPGiST, false)
 }
@@ -1664,6 +1696,7 @@ func ClickHouse24() Capabilities {
 		DeferrableConstraints:           false,
 		UniqueConstraints:               false,
 		UniqueNullsDistinctClause:       false,
+		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         false,
 		AddConstraintNotValid:           false,
 	}
@@ -1764,9 +1797,10 @@ func SQLite3() Capabilities {
 		// SQLite has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one
 		// (stokaro/ptah#2820).
-		UniqueNullsDistinctClause: false,
-		AlterTableAlgorithmLock:   false,
-		AddConstraintNotValid:     false,
+		UniqueNullsDistinctClause:  false,
+		ForeignKeyDeleteColumnList: false,
+		AlterTableAlgorithmLock:    false,
+		AddConstraintNotValid:      false,
 	}
 }
 
@@ -1947,9 +1981,10 @@ func SQLServer2022() Capabilities {
 		// already treats nulls as equal, which is why the renderer refuses
 		// both spellings rather than dropping whichever one is the default
 		// (stokaro/ptah#2820).
-		UniqueNullsDistinctClause: false,
-		AlterTableAlgorithmLock:   false,
-		AddConstraintNotValid:     false,
+		UniqueNullsDistinctClause:  false,
+		ForeignKeyDeleteColumnList: false,
+		AlterTableAlgorithmLock:    false,
+		AddConstraintNotValid:      false,
 	}
 }
 
@@ -1996,6 +2031,9 @@ func CockroachDB23() Capabilities {
 		// PostgreSQL renderer serves this dialect, so without this the clause
 		// was emitted into SQL CockroachDB cannot parse (stokaro/ptah#2820).
 		With(UniqueNullsDistinctClause, false).
+		// Measured on v26.3.1: `42601 syntax error at or near "("` for
+		// ON DELETE SET NULL (a) (stokaro/ptah#3562).
+		With(ForeignKeyDeleteColumnList, false).
 		// CockroachDB is the one PostgreSQL-family target without this, and it
 		// is a whole absence rather than a partial one: v26.2.5 answers
 		// `unimplemented: this syntax` to DEFERRABLE, to DEFERRABLE INITIALLY
@@ -2157,6 +2195,10 @@ func YugabyteDB24() Capabilities {
 		// 2025.2 and 2026.1 accept, honor and read them back
 		// (stokaro/ptah#2820).
 		With(UniqueNullsDistinctClause, false).
+		// The same engine swap: measured 2026-09-25, 2024.2 answers `syntax
+		// error at or near "("` to ON DELETE SET NULL (a), which 2025.2 accepts
+		// and honors (stokaro/ptah#3562).
+		With(ForeignKeyDeleteColumnList, false).
 		With(AdvisoryLocks, false).
 		With(CreateOrReplaceTrigger, false).
 		With(GeneratedColumns, false)
@@ -2200,6 +2242,10 @@ func SpannerPostgres() Capabilities {
 		// clause on it cannot be reached, and its renderer already errors on
 		// this shape (stokaro/ptah#2820).
 		With(UniqueNullsDistinctClause, false).
+		// Unmeasured against a live emulator and false on the conservative
+		// side: the list is PostgreSQL 15 grammar, and Spanner's foreign keys
+		// take neither SET NULL nor SET DEFAULT at all.
+		With(ForeignKeyDeleteColumnList, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
 		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
 		// reads back from information_schema.tables. It is the one row-expiry
@@ -2465,11 +2511,12 @@ func Oracle23() Capabilities {
 		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
 		GeneratedColumns: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
-		DeferrableConstraints:     true,
-		UniqueConstraints:         true,
-		UniqueNullsDistinctClause: false,
-		AlterTableAlgorithmLock:   false,
-		AddConstraintNotValid:     false,
+		DeferrableConstraints:      true,
+		UniqueConstraints:          true,
+		UniqueNullsDistinctClause:  false,
+		ForeignKeyDeleteColumnList: false,
+		AlterTableAlgorithmLock:    false,
+		AddConstraintNotValid:      false,
 	}
 }
 

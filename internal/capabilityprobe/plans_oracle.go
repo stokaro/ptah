@@ -206,6 +206,16 @@ func oraclePlan() plan {
 			[]string{"CREATE TABLE ndc (n NUMBER(10))"},
 			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
 		),
+		// The PostgreSQL column list on ON DELETE SET NULL, which Oracle is
+		// not expected to have (stokaro/ptah#3562).
+		acceptance(capability.ForeignKeyDeleteColumnList,
+			[]string{
+				"CREATE TABLE fdc_parent (id NUMBER(10) PRIMARY KEY)",
+				"CREATE TABLE fdc_child (parent_id NUMBER(10))",
+			},
+			"ALTER TABLE fdc_child ADD CONSTRAINT fdc_c FOREIGN KEY (parent_id) "+
+				"REFERENCES fdc_parent (id) ON DELETE SET NULL (parent_id)",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{
 				"CREATE TABLE dfc_parent (id NUMBER(10) PRIMARY KEY)",

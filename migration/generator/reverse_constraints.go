@@ -199,6 +199,9 @@ func foreignKeyAdditionFromDBConstraint(
 		Type:      "FOREIGN KEY",
 		OnDelete:  derefString(dbFK.DeleteRule),
 		OnUpdate:  derefString(dbFK.UpdateRule),
+		// The down migration restores the list too, or it would set every
+		// referencing column where the prior key set some.
+		OnDeleteColumns: append([]string(nil), dbFK.OnDeleteColumns...),
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)

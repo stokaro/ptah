@@ -1695,6 +1695,7 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
 		constraint.OnDelete,
 		constraint.OnUpdate,
+		strings.Join(constraint.OnDeleteColumns, "\x01"),
 	}, "\x00")
 }
 

@@ -317,6 +317,7 @@ func appendConstraintAddition(
 		ForeignColumns:  append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
 		OnDelete:        genConstraint.OnDelete,
 		OnUpdate:        genConstraint.OnUpdate,
+		OnDeleteColumns: append([]string(nil), genConstraint.OnDeleteColumns...),
 		Deferrable:      genConstraint.Deferrable,
 		Initially:       genConstraint.Initially,
 		Identity:        constraintIdentity(genConstraint.Table, genConstraint.Name, semantics),

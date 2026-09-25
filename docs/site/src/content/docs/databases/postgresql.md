@@ -43,13 +43,16 @@ server — see
 
 ## Version-dependent behavior
 
-Three PostgreSQL preset lines exist: 12–13, 14–16, and 17+. The differences
-that reach generated SQL:
+PostgreSQL release lines differ in grammar that reaches generated SQL:
 
 - Trigger modification uses single-statement `CREATE OR REPLACE TRIGGER` on
   PostgreSQL 14+; older lines get an explicit drop-and-create sequence.
 - In-place `ALTER COLUMN ... SET EXPRESSION` for generated columns requires
   PostgreSQL 17+.
+- A column list on `ON DELETE SET NULL` or `ON DELETE SET DEFAULT` requires
+  PostgreSQL 15+. On an older line Ptah refuses the declaration rather than
+  render an action that clears every column of the key; see
+  [Limit ON DELETE to some columns](../../schema/sql/#limit-on-delete-to-some-columns).
 
 ## Schema objects
 

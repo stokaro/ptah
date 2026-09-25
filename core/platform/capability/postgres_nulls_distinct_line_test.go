@@ -52,22 +52,26 @@ func TestPostgresNullsDistinctClauseArrivesIn15(t *testing.T) {
 	}
 }
 
-// TestPostgres14IsPostgres16WithOneKeyFlipped is the control that keeps the
-// repair from being "PostgreSQL 14 lost a preset".
+// TestPostgres14IsPostgres16WithoutThePostgres15Grammar is the control that
+// keeps the repair from being "PostgreSQL 14 lost a preset".
 //
 // 14 cannot take Postgres13 either: CREATE OR REPLACE TRIGGER and SP-GiST
 // INCLUDE columns both arrived in 14, and Postgres13 is the preset that lacks
-// them. So the new preset has to differ from Postgres16 in exactly one key,
-// which this asserts by construction rather than by counting differences --
-// the equality is the whole claim, and it fails on a preset that took away
-// anything else.
-func TestPostgres14IsPostgres16WithOneKeyFlipped(t *testing.T) {
+// them. So the new preset has to differ from Postgres16 in exactly the clauses
+// PostgreSQL 15 added -- NULLS [NOT] DISTINCT and the ON DELETE column list
+// (stokaro/ptah#3562) -- which this asserts by construction rather than by
+// counting differences: the equality is the whole claim, and it fails on a
+// preset that took away anything else.
+func TestPostgres14IsPostgres16WithoutThePostgres15Grammar(t *testing.T) {
 	c := qt.New(t)
 
 	fourteen := capability.Postgres14()
 
 	c.Assert(fourteen, qt.DeepEquals,
-		capability.Postgres16().With(capability.UniqueNullsDistinctClause, false))
+		capability.Postgres16().
+			With(capability.UniqueNullsDistinctClause, false).
+			With(capability.ForeignKeyDeleteColumnList, false),
+	)
 	c.Assert(fourteen.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(fourteen.Has(capability.IndexIncludeSPGiST), qt.IsTrue)
 }

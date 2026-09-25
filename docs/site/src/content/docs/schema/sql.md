@@ -97,6 +97,41 @@ refused, as the server refuses it. One declared again with `IF NOT EXISTS` but
 differently is refused too: the server keeps the first declaration and ignores
 the second, so either reading would drop what the other one says.
 
+## Limit ON DELETE to some columns
+
+PostgreSQL 15 and later take a column list after `ON DELETE SET NULL` and
+`ON DELETE SET DEFAULT`. The action then changes only the listed columns, so
+the other columns of a composite key may be `NOT NULL`:
+
+```sql
+CREATE TABLE parents (tenant integer, id integer, PRIMARY KEY (tenant, id));
+CREATE TABLE children (
+  id integer PRIMARY KEY,
+  tenant integer NOT NULL,
+  parent_id integer,
+  FOREIGN KEY (tenant, parent_id) REFERENCES parents (tenant, id)
+    ON DELETE SET NULL (parent_id)
+);
+```
+
+Deleting a parent row sets `parent_id` to NULL and keeps `tenant`. The list is
+compared as a set of columns, and a list that names every column of the key
+means the same as no list.
+
+A declaration the server would refuse, or would accept and then fail on when a
+parent row is deleted, is refused:
+
+- a `NOT NULL` column in the list, or a `NOT NULL` key column with no list;
+- a list after any action other than `SET NULL` or `SET DEFAULT`, or after
+  `ON UPDATE`;
+- a column that is not part of the key. A column-level `REFERENCES` can list
+  only its own column.
+
+A target without the clause refuses the list instead of widening the action to
+every column: PostgreSQL before 15, YugabyteDB 2024.2, CockroachDB, and the
+other engines. The Go annotation and Atlas HCL exports refuse such a key for
+the same reason, because neither format can write the list.
+
 ## Row-level security
 
 A PostgreSQL schema file declares row-level security with the statements a

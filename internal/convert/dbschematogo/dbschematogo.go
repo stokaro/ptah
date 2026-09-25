@@ -827,6 +827,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
 		OnDelete:        derefString(dbConstraint.DeleteRule),
 		OnUpdate:        derefString(dbConstraint.UpdateRule),
+		OnDeleteColumns: slices.Clone(dbConstraint.OnDeleteColumns),
 		Deferrable:      dbConstraint.Deferrable,
 		Initially:       dbConstraint.Initially,
 		// The index backing this constraint is dropped above so the constraint
@@ -1175,6 +1176,8 @@ func indexForeignKeysByColumn(dbSchema *catalog.Database) map[tableMemberKey]for
 		if foreignColumn != "" {
 			foreign = foreignTable + "(" + foreignColumn + ")"
 		}
+		// An ON DELETE column list on a one-column key can name only that
+		// column, which is what no list means, so the field needs none.
 		result[tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}] = foreignKeyInfo{
 			name:       c.Name,
 			foreign:    foreign,

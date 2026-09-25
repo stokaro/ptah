@@ -2066,6 +2066,11 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
+		// The shared renderer has refused a list the target cannot take, so
+		// one that reaches here is written rather than dropped.
+		if len(ref.OnDeleteColumns) > 0 {
+			result += fmt.Sprintf(" (%s)", strings.Join(r.escapeIdentifierList(ref.OnDeleteColumns), ", "))
+		}
 	}
 
 	if ref.OnUpdate != "" {
