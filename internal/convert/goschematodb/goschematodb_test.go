@@ -237,3 +237,60 @@ func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
+
+// TestToDBSchema_KeepsForceAndRestrictive covers the model-to-catalog half of
+// the flags. A comparison of two models goes through this conversion, so a flag
+// it drops is a flag that comparison reports as changed on every run, or never.
+func TestToDBSchema_KeepsForceAndRestrictive(t *testing.T) {
+	tests := []struct {
+		name            string
+		enablements     []schemamodel.RLSEnabledTable
+		restrictive     bool
+		wantEnabled     bool
+		wantForced      bool
+		wantRestrictive bool
+	}{{
+		name:            "forced and restrictive",
+		enablements:     []schemamodel.RLSEnabledTable{{Table: "app.users", Forced: true}},
+		restrictive:     true,
+		wantEnabled:     true,
+		wantForced:      true,
+		wantRestrictive: true,
+	}, {
+		name:            "enabled and permissive",
+		enablements:     []schemamodel.RLSEnabledTable{{Table: "app.users"}},
+		restrictive:     false,
+		wantEnabled:     true,
+		wantForced:      false,
+		wantRestrictive: false,
+	}, {
+		name:            "not enabled",
+		enablements:     nil,
+		restrictive:     false,
+		wantEnabled:     false,
+		wantForced:      false,
+		wantRestrictive: false,
+	}}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := &schemamodel.Database{
+				Tables:           []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+				Fields:           []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+				RLSEnabledTables: test.enablements,
+				RLSPolicies: []schemamodel.RLSPolicy{{
+					Name: "tenant", Table: "app.users", PolicyFor: "ALL", UsingExpression: "true",
+					Restrictive: test.restrictive,
+				}},
+			}
+
+			got := goschematodb.ToDBSchema(db, platform.Postgres)
+
+			c.Assert(got.Tables, qt.HasLen, 1)
+			c.Assert(got.Tables[0].RLSEnabled, qt.Equals, test.wantEnabled)
+			c.Assert(got.Tables[0].RLSForced, qt.Equals, test.wantForced)
+			c.Assert(got.RLSPolicies, qt.HasLen, 1)
+			c.Assert(got.RLSPolicies[0].Restrictive, qt.Equals, test.wantRestrictive)
+		})
+	}
+}

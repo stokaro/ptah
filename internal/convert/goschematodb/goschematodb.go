@@ -95,13 +95,15 @@ func toDBTables(
 
 	out := make([]catalog.Table, 0, len(tables))
 	for _, table := range tables {
+		enablement, rlsEnabled := tableRLSEnablement(table, rlsEnabledTables)
 		out = append(out, catalog.Table{
 			Name:         table.Name,
 			Schema:       table.Schema,
 			Type:         "TABLE",
 			Comment:      table.Comment,
 			Columns:      toDBColumns(fieldsByStruct[table.StructName]),
-			RLSEnabled:   tableRLSEnabled(table, rlsEnabledTables),
+			RLSEnabled:   rlsEnabled,
+			RLSForced:    rlsEnabled && enablement.Forced,
 			Strict:       table.Strict,
 			WithoutRowID: table.WithoutRowID,
 			Unlogged:     table.Unlogged,
@@ -115,12 +117,22 @@ func toDBTables(
 	return out
 }
 
-func tableRLSEnabled(table schemamodel.Table, enabledTables []schemamodel.RLSEnabledTable) bool {
-	return slices.ContainsFunc(enabledTables, func(enabled schemamodel.RLSEnabledTable) bool {
+// tableRLSEnablement finds the enablement a table declares, if any. Both flags
+// the catalog carries -- enabled and forced -- are read off the one entry this
+// finds, so the two cannot be matched to different declarations.
+func tableRLSEnablement(
+	table schemamodel.Table,
+	enabledTables []schemamodel.RLSEnabledTable,
+) (schemamodel.RLSEnabledTable, bool) {
+	index := slices.IndexFunc(enabledTables, func(enabled schemamodel.RLSEnabledTable) bool {
 		return enabled.StructName != "" && enabled.StructName == table.StructName ||
 			enabled.Table == table.QualifiedName() ||
 			table.Schema == "" && enabled.Table == table.Name
 	})
+	if index < 0 {
+		return schemamodel.RLSEnabledTable{}, false
+	}
+	return enabledTables[index], true
 }
 
 func toDBColumns(fields []schemamodel.Field) []catalog.Column {
@@ -589,6 +601,7 @@ func toDBRLSPolicies(policies []schemamodel.RLSPolicy) []catalog.RLSPolicy {
 			ToRoles:             policy.ToRoles,
 			UsingExpression:     policy.UsingExpression,
 			WithCheckExpression: policy.WithCheckExpression,
+			Restrictive:         policy.Restrictive,
 			Comment:             policy.Comment,
 		})
 	}

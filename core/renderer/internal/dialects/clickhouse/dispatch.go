@@ -129,6 +129,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTableEnableRLS(n)
 	case *ast.AlterTableDisableRLSNode:
 		return r.renderAlterTableDisableRLS(n)
+	case *ast.AlterTableForceRLSNode:
+		return r.renderAlterTableForceRLS(n)
 
 	// Objects another engine owns. Each is named and skipped so the reader of
 	// a render sees what the target left out.

@@ -69,7 +69,7 @@ func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSEnabledTablesWithSemantics(
-		desired, &catalog.Database{}, diff, unresolvedTargetSemantics(),
+		desired, &catalog.Database{}, diff, unresolvedTargetSemantics(), "",
 	)
 
 	c.Assert(diff.RLSEnabledTablesAdded.Names(), qt.DeepEquals, []string{"alpha", "beta"})

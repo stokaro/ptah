@@ -97,6 +97,34 @@ refused, as the server refuses it. One declared again with `IF NOT EXISTS` but
 differently is refused too: the server keeps the first declaration and ignores
 the second, so either reading would drop what the other one says.
 
+## Row-level security
+
+A PostgreSQL schema file declares row-level security with the statements a
+migration would run:
+
+```sql
+CREATE TABLE sites (id uuid PRIMARY KEY, tenant_id uuid NOT NULL);
+ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sites FORCE ROW LEVEL SECURITY;
+CREATE POLICY sites_tenant ON sites
+  USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+CREATE POLICY sites_scope ON sites AS RESTRICTIVE
+  USING (current_setting('app.site_scope', true) = 'all');
+```
+
+`FORCE` binds the table's owner to its policies; without it the owner reads and
+writes past every one of them. `ENABLE` and `FORCE` may come in either order.
+`AS RESTRICTIVE` narrows what the permissive policies admit, and `AS
+PERMISSIVE` is the default. Both flags are compared with the database and
+planned in both directions; [PostgreSQL](../../databases/postgresql/#row-level-security)
+has the details.
+
+Three spellings are refused rather than read. `DISABLE ROW LEVEL SECURITY` and
+`NO FORCE ROW LEVEL SECURITY` take a protection away, and a schema file says a
+table has none by not declaring it. A `FORCE` for a table the file never
+enables is refused too: PostgreSQL accepts it, and it changes nothing until the
+table enables row-level security.
+
 ## API export metadata
 
 SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,

@@ -7,6 +7,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -318,7 +319,7 @@ func declaredPolicyClauses(
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func RLSEnabledTables(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
-	RLSEnabledTablesWithSemantics(desired, current, diff, identifier.ForDialect(""))
+	RLSEnabledTablesWithSemantics(desired, current, diff, identifier.ForDialect(""), "")
 }
 
 // RLSEnabledTablesWithSemantics is [RLSEnabledTables] told which identifier
@@ -336,11 +337,17 @@ func RLSEnabledTables(desired *schemamodel.Database, current *catalog.Database, 
 //
 // The reported names stay the strings each side supplied, because they are what
 // the planner renders. Only the matching is normalized.
+//
+// FORCE is compared too, on the targets that have it: the PostgreSQL family,
+// and the dialect-neutral comparison whose both sides come from Ptah's own
+// models. Anywhere else the reader has no flag to report, so a declaration
+// asking for FORCE would differ from the database on every run.
 func RLSEnabledTablesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+	dialect string,
 ) {
 	// Create sets for comparison
 	// The declaration rather than its name: the enablement travels with the
@@ -358,10 +365,27 @@ func RLSEnabledTablesWithSemantics(
 		}
 	}
 
-	// Find tables that need RLS enabled
+	dbForcedTables := make(map[tableIdentity]bool)
+	for _, table := range database.Tables {
+		if table.RLSForced {
+			dbForcedTables[newTableIdentity(table.Schema, table.Name, semantics)] = true
+		}
+	}
+	comparesForce := dialect == "" || platform.IsPostgresFamily(dialect)
+
+	// Find tables that need RLS enabled, and tables whose FORCE flag moves.
 	for identity, declared := range genRLSTables {
-		if _, enabled := dbRLSTables[identity]; !enabled {
+		_, enabled := dbRLSTables[identity]
+		if !enabled {
 			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, declared)
+		}
+		// A table this diff enables is enabled with the FORCE its declaration
+		// asks for, so only the other direction is left for it: a flag the
+		// database kept from an earlier enablement and the declaration does not
+		// want. FORCE survives DISABLE in PostgreSQL, so that state is ordinary.
+		forced := dbForcedTables[identity]
+		if comparesForce && declared.Forced != forced && (enabled || !declared.Forced) {
+			diff.RLSForceChanged = append(diff.RLSForceChanged, declared)
 		}
 	}
 
@@ -403,6 +427,9 @@ func RLSEnabledTablesWithSemantics(
 	// Sort for consistent output
 	sortRLSEnabledTables(diff.RLSEnabledTablesAdded)
 	sortRLSEnabledTables(diff.RLSEnabledTablesRemoved)
+	sort.Slice(diff.RLSForceChanged, func(i, j int) bool {
+		return diff.RLSForceChanged[i].Table < diff.RLSForceChanged[j].Table
+	})
 }
 
 // RLSPolicyDefinitions performs detailed comparison between generated and database RLS policy definitions.

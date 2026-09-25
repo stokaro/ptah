@@ -133,6 +133,54 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			},
 		},
 		{
+			name: "force turned on for an enabled table",
+			diff: &difftypes.SchemaDiff{
+				RLSForceChanged: difftypes.RLSForceChanges{{Table: "public.secured", Forced: true}},
+			},
+			desired: &schemamodel.Database{},
+			want: []string{
+				"-- Apply the policies of public.secured to its owner",
+				`ALTER TABLE "public"."secured" FORCE ROW LEVEL SECURITY;`,
+			},
+		},
+		{
+			name: "force turned off for an enabled table",
+			diff: &difftypes.SchemaDiff{
+				RLSForceChanged: difftypes.RLSForceChanges{{Table: "public.secured", Forced: false}},
+			},
+			desired: &schemamodel.Database{},
+			want: []string{
+				"-- Exempt the owner of public.secured from its policies",
+				`ALTER TABLE "public"."secured" NO FORCE ROW LEVEL SECURITY;`,
+			},
+		},
+		{
+			name: "an enablement that forces renders both flags",
+			diff: &difftypes.SchemaDiff{
+				RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "public.secured", Forced: true}},
+			},
+			desired: &schemamodel.Database{},
+			want: []string{
+				"-- Enable RLS for public.secured table",
+				`ALTER TABLE "public"."secured" ENABLE ROW LEVEL SECURITY;`,
+				`ALTER TABLE "public"."secured" FORCE ROW LEVEL SECURITY;`,
+			},
+		},
+		{
+			name: "a leftover force goes after the enablement",
+			diff: &difftypes.SchemaDiff{
+				RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "public.secured"}},
+				RLSForceChanged:       difftypes.RLSForceChanges{{Table: "public.secured", Forced: false}},
+			},
+			desired: &schemamodel.Database{},
+			want: []string{
+				"-- Enable RLS for public.secured table",
+				`ALTER TABLE "public"."secured" ENABLE ROW LEVEL SECURITY;`,
+				"-- Exempt the owner of public.secured from its policies",
+				`ALTER TABLE "public"."secured" NO FORCE ROW LEVEL SECURITY;`,
+			},
+		},
+		{
 			name: "an existing table keeps its enablement when only a policy changes",
 			diff: &difftypes.SchemaDiff{
 				RLSPoliciesModified: []difftypes.RLSPolicyDiff{

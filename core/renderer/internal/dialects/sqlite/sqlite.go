@@ -516,6 +516,11 @@ func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode
 	return nil
 }
 
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	r.notSupported("row-level security", node.Table)
+	return nil
+}
+
 func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	r.notSupported("roles", node.Name)
 	return nil

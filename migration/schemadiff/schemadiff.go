@@ -361,7 +361,7 @@ func CompareReportingUndecidedAdditions(
 	)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
-	compare.RLSEnabledTablesWithSemantics(desired, database, diff, identifierSemantics)
+	compare.RLSEnabledTablesWithSemantics(desired, database, diff, identifierSemantics, opts.Dialect)
 
 	// Compare roles (PostgreSQL-specific feature)
 	compare.Roles(desired, database, diff, cov)

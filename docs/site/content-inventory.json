@@ -1143,6 +1143,7 @@
         "/reference/configuration/",
         "/reference/go-annotations/",
         "/reference/lint-rules/",
+        "/schema/sql/",
         "/versioned/apply/",
         "/versioned/lint/"
       ],
@@ -1153,10 +1154,11 @@
         "/databases/overview/",
         "/databases/support-matrix/",
         "/direct/inspect/",
+        "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6585,
-      "sourceBytes": 46433
+      "visibleWords": 6684,
+      "sourceBytes": 47013
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -5617,6 +5619,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/overview/",
+        "/databases/postgresql/",
         "/reference/native-commands/",
         "/schema/composite/",
         "/schema/document/",
@@ -5629,14 +5632,15 @@
       ],
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
+        "/databases/postgresql/",
         "/faq/",
         "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1580,
-      "sourceBytes": 12773
+      "visibleWords": 1713,
+      "sourceBytes": 14040
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

@@ -380,6 +380,8 @@ func modifyNodeObject(node ast.Node) (object string, ok bool) {
 		return n.Table, true
 	case *ast.AlterTableDisableRLSNode:
 		return n.Table, true
+	case *ast.AlterTableForceRLSNode:
+		return n.Table, true
 	case *ast.CommentNode:
 		// A COMMENT ON … statement modifies an object's comment. Bare SQL
 		// comments never reach here; the scanner drops them before parsing.
