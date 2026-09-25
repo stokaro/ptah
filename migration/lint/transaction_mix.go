@@ -36,7 +36,7 @@ func checkTransactionMix(file *File) []Finding {
 			SQL:   statement.SQL,
 		})
 	}
-	result := txrequire.Analyze(platform.Postgres, capability.Postgres16(), statements)
+	result := txrequire.Analyze(platform.Postgres, transactionMixCapabilities, statements)
 	if !result.RequiresAutocommit() {
 		return nil
 	}
@@ -63,6 +63,17 @@ func checkTransactionMix(file *File) []Finding {
 		Context: statementFindingContext(first.Statement.Index),
 	}}
 }
+
+// transactionMixCapabilities is the server a file is judged against offline.
+//
+// PostgreSQL 16 carries the concurrent-index keys. Hypertables is added
+// because [txrequire.Analyze] keys the per-chunk build on it, and the linter
+// has no connection to ask: a statement that names TimescaleDB's own storage
+// parameter is the evidence that the target has the extension, the way a
+// schema that declares the extension is for the renderer
+// ([capability.WithDeclaredExtensions]). On a server without it the statement
+// is refused whatever the transaction, so no file is misjudged by assuming it.
+var transactionMixCapabilities = capability.Postgres16().With(capability.Hypertables, true)
 
 func isReportedStatement(result txrequire.Result, index int) bool {
 	for _, finding := range result.Findings {

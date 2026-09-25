@@ -904,7 +904,17 @@ populated chunks:
 `ptah migrations lint` and `ptah-compat migrate lint` report a plain build as
 [`PG101`](../../reference/lint-rules/). With `--dev-url` the replay shows which
 tables are hypertables, and on one the finding names the per-chunk build instead
-of `CONCURRENTLY`. The per-chunk build itself is not reported.
+of `CONCURRENTLY`. The per-chunk build is not reported as a blocking build, but
+in a migration that runs inside a transaction it is reported as `PG103P`, the
+way `PG103` reports `CONCURRENTLY` there.
+
+On a server with the extension, `ptah migrations up` refuses such a migration
+before it sends a statement, and names the line and the marker:
+
+```text illustration
+error: error running migrations: failed to apply migration 2: 0000000002_kind.up.sql cannot run inside a transaction: line 1 CREATE INDEX ... WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk and is refused inside a transaction block; mark the file `-- +ptah no_transaction`, or move the per-chunk build into a migration of its own
+SQL: CREATE INDEX events_kind_idx ON events (kind) WITH (timescaledb.transaction_per_chunk)
+```
 
 #### What cannot be undone
 

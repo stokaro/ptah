@@ -26,6 +26,11 @@
 //	       CREATE TABLE t (c m DEFAULT 'b'); COMMIT;                 -> accepted
 //	BEGIN; CREATE INDEX CONCURRENTLY i ON t (c); COMMIT;             -> 25001
 //
+// and on TimescaleDB 2.30.1 over PostgreSQL 18.6, for a hypertable h:
+//
+//	BEGIN; CREATE INDEX i ON h (c)
+//	       WITH (timescaledb.transaction_per_chunk); COMMIT;         -> 25001
+//
 // So the enum constraint is not "ALTER TYPE ADD VALUE needs autocommit". It is
 // "a value added to a type that already existed cannot be USED until the
 // transaction commits", and that is why this package looks at the file rather
@@ -48,6 +53,10 @@ const (
 	// ReasonEnumValueUsed is a value added to a pre-existing enum type and then
 	// used before the transaction commits.
 	ReasonEnumValueUsed Reason = "enum_value_used"
+	// ReasonPerChunkIndex is a TimescaleDB per-chunk index build, which
+	// commits one transaction per chunk and so is refused inside a
+	// transaction block; see [PerChunkIndexBuild].
+	ReasonPerChunkIndex Reason = "per_chunk_index"
 )
 
 // Statement is one statement of an authored migration file.
@@ -115,6 +124,10 @@ func Analyze(dialect string, caps capability.Capabilities, statements []Statemen
 			findings = append(findings, concurrentIndexFinding(statement))
 			continue
 		}
+		if PerChunkIndexBuild(words) && caps.Has(capability.Hypertables) {
+			findings = append(findings, perChunkIndexFinding(statement))
+			continue
+		}
 		if usesPendingValue(words, pending) {
 			findings = append(findings, enumValueFinding(dialect, statement, pending))
 			continue
@@ -139,6 +152,21 @@ func concurrentIndexFinding(statement Statement) Finding {
 		Message:   "CREATE or DROP INDEX CONCURRENTLY is refused inside a transaction block",
 		Remedy: "mark the file `-- +ptah no_transaction`, or move the concurrent index " +
 			"into a migration of its own",
+	}
+}
+
+// perChunkIndexFinding is keyed on [capability.Hypertables], which a
+// connection sets when the server has TimescaleDB. On a server without it the
+// statement is refused for its storage parameter, in a transaction or out of
+// one, so telling the operator to take it out of the transaction would send
+// them to a second refusal.
+func perChunkIndexFinding(statement Statement) Finding {
+	return Finding{
+		Statement: statement,
+		Reason:    ReasonPerChunkIndex,
+		Message: "CREATE INDEX ... WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk " +
+			"and is refused inside a transaction block",
+		Remedy: "mark the file `-- +ptah no_transaction`, or move the per-chunk build into a migration of its own",
 	}
 }
 
