@@ -83,10 +83,12 @@ func TestPostgres_ModifyColumn_RendersOnlyTheChangedProperties(t *testing.T) {
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n",
 		},
 		{
-			name:    "NOT NULL set with nothing to backfill with",
-			column:  ast.NewColumn("c", "JSONB").SetNotNull(),
+			name:    "NOT NULL set on a column that declares no default",
+			column:  ast.NewColumn("c", "INTEGER").SetNotNull(),
 			changed: ast.ColumnProperties{Nullability: true},
-			want:    "-- ALTER statements: --\nALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n",
+			want: "-- ALTER statements: --\n" +
+				"-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; the column declares no default to fill it with.\n" +
+				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n",
 		},
 		{
 			name:    "a type changed",

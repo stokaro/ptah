@@ -152,6 +152,21 @@ A comment on a function, a materialized view, a trigger or a policy is not
 written yet, and an enum type has no comment in the model
 ([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)).
 
+## Making a column NOT NULL
+
+A plan that makes an existing column `NOT NULL` writes
+`ALTER COLUMN ... SET NOT NULL`. PostgreSQL checks every row when the statement
+runs, and fails it with SQLSTATE 23502 if a row holds `NULL`.
+
+- **The column declares a default.** The plan fills the `NULL` rows with that
+  default first, then sets `NOT NULL`. The value is one the schema states.
+  Atlas CE fails this change on a `NULL` row, so here Ptah is deliberately more
+  permissive, with the author's own value.
+- **The column declares no default.** Nothing is filled. The plan carries a
+  comment saying the statement fails on a `NULL` row, and the safety report
+  lists it as a warning. Update those rows in a migration of their own first,
+  or declare a default.
+
 ## Unlogged tables
 
 A table declared `unlogged = true` renders `CREATE UNLOGGED TABLE`. Its writes
