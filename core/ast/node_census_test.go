@@ -46,6 +46,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.AlterSequenceNode{}},
 	{node: &ast.AlterTableDisableRLSNode{}},
 	{node: &ast.AlterTableEnableRLSNode{}},
+	{node: &ast.AlterTableForceRLSNode{}},
 	{node: &ast.AlterTableNode{}},
 	{node: &ast.AlterTypeNode{}},
 	{node: &ast.ColumnNode{}},

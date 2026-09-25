@@ -739,6 +739,11 @@ func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode
 	return nil
 }
 
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	r.notSupported("row-level security", node.Table)
+	return nil
+}
+
 // renderCreateRole renders Oracle's CREATE ROLE, and refuses a declaration that
 // describes a user rather than a role.
 //

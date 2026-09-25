@@ -307,6 +307,16 @@ RESTRICTIVE`, read back from `pg_policy.polpermissive`. Permissive policies are
 OR-ed with each other and restrictive ones AND-ed over the result, so a row
 passes when some permissive policy admits it and every restrictive one does.
 `PERMISSIVE` is the server's default and stays out of the rendered statement.
+A [SQL schema file](../../schema/sql/#row-level-security) writes the same two
+flags as `ALTER TABLE ... FORCE ROW LEVEL SECURITY` and `CREATE POLICY ... AS
+RESTRICTIVE`.
+
+FORCE is compared on its own as well. A table that stays enabled while your
+schema adds or drops FORCE gets `ALTER TABLE ... FORCE ROW LEVEL SECURITY` or
+`ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`. FORCE survives `DISABLE`, so a
+table that is enabled again without it also gets `NO FORCE`. A policy whose
+kind changes is dropped and created again, because PostgreSQL cannot alter a
+policy's kind in place.
 
 Which table a policy belongs to is decided under the target's identifier rules
 rather than by spelling, so a policy declared on `orders` and a table created

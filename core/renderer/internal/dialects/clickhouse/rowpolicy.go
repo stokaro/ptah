@@ -137,6 +137,19 @@ func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode
 	return nil
 }
 
+// renderAlterTableForceRLS names the switch ClickHouse does not have: a row
+// policy binds the users and roles it names, and no table owner is exempt from
+// it for FORCE to take back.
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	if !r.caps.Has(capability.RowLevelSecurity) {
+		r.notSupported("ALTER TABLE FORCE ROW LEVEL SECURITY", node.Table)
+		return nil
+	}
+	r.w.WriteLinef("-- CLICKHOUSE: table %q has no FORCE ROW LEVEL SECURITY switch; "+
+		"a row policy binds the users and roles it names.", node.Table)
+	return nil
+}
+
 // rowPolicyOperationConverges reports whether a declared FOR clause is one this
 // target can carry without replanning itself forever.
 //

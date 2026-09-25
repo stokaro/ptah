@@ -66,6 +66,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RLSPoliciesModified = slices.Clone(diff.RLSPoliciesModified)
 	clone.RLSEnabledTablesAdded = slices.Clone(diff.RLSEnabledTablesAdded)
 	clone.RLSEnabledTablesRemoved = slices.Clone(diff.RLSEnabledTablesRemoved)
+	clone.RLSForceChanged = slices.Clone(diff.RLSForceChanged)
 	clone.RolesAdded = slices.Clone(diff.RolesAdded)
 	clone.RolesRemoved = slices.Clone(diff.RolesRemoved)
 	clone.RolesModified = slices.Clone(diff.RolesModified)

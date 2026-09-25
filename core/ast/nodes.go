@@ -3074,6 +3074,60 @@ func (n *AlterTableDisableRLSNode) SetComment(comment string) *AlterTableDisable
 // Accept implements the Node interface for AlterTableDisableRLSNode.
 func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
+// AlterTableForceRLSNode represents an ALTER TABLE ... FORCE ROW LEVEL SECURITY
+// or ALTER TABLE ... NO FORCE ROW LEVEL SECURITY statement.
+//
+// FORCE subjects the table's owner to its policies, which enabling row-level
+// security alone does not do. It is a flag of its own on the relation
+// (pg_class.relforcerowsecurity), independent of enablement, so it has its own
+// node: a statement that only forces must not read as one that enables.
+// [AlterTableEnableRLSNode.Force] is the other spelling, for a table that is
+// enabled and forced in one step.
+type AlterTableForceRLSNode struct {
+	// Table is the name of the table whose flag changes.
+	Table string
+	// NoForce selects NO FORCE, which returns the owner to reading and writing
+	// past the table's policies. The zero value is FORCE.
+	NoForce bool
+	// Comment is an optional comment for the operation.
+	Comment string
+}
+
+// NewAlterTableForceRLS creates a new ALTER TABLE FORCE ROW LEVEL SECURITY node.
+//
+// Example:
+//
+//	forceRLS := NewAlterTableForceRLS("users").
+//		SetComment("Apply the policies to the table owner too")
+func NewAlterTableForceRLS(table string) *AlterTableForceRLSNode {
+	return &AlterTableForceRLSNode{
+		Table: table,
+	}
+}
+
+// SetNoForce turns the node into NO FORCE ROW LEVEL SECURITY.
+//
+// Example:
+//
+//	forceRLS.SetNoForce()
+func (n *AlterTableForceRLSNode) SetNoForce() *AlterTableForceRLSNode {
+	n.NoForce = true
+	return n
+}
+
+// SetComment sets a comment for the ALTER TABLE FORCE RLS operation.
+//
+// Example:
+//
+//	forceRLS.SetComment("Owner is subject to policies")
+func (n *AlterTableForceRLSNode) SetComment(comment string) *AlterTableForceRLSNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterTableForceRLSNode.
+func (n *AlterTableForceRLSNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
 // CreateRoleNode represents a CREATE ROLE statement for PostgreSQL role management.
 //
 // This node contains the complete definition of a PostgreSQL role including

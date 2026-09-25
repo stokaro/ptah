@@ -42,7 +42,7 @@ func TestRLSEnabledTables_AnAdditionCarriesItsDeclaration(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSEnabledTablesWithSemantics(
-		desired, database, diff, identifier.ForDialect("postgres"))
+		desired, database, diff, identifier.ForDialect("postgres"), "postgres")
 
 	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 1)
 	c.Assert(diff.RLSEnabledTablesAdded[0].Table, qt.Equals, "guarded")

@@ -526,6 +526,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTableEnableRLS(n)
 	case *ast.AlterTableDisableRLSNode:
 		return r.renderAlterTableDisableRLS(n)
+	case *ast.AlterTableForceRLSNode:
+		return r.renderAlterTableForceRLS(n)
 
 	// TimescaleDB objects, which only a PostgreSQL target carrying the
 	// extension can host.
@@ -3136,6 +3138,22 @@ func (r *Renderer) renderDropPolicy(node *ast.DropPolicyNode) error {
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
+	return nil
+}
+
+// renderAlterTableForceRLS renders ALTER TABLE ... [NO] FORCE ROW LEVEL SECURITY.
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	keyword := "FORCE"
+	if node.NoForce {
+		keyword = "NO FORCE"
+	}
+	r.w.WriteLinef("ALTER TABLE %s %s ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table), keyword)
 	return nil
 }
 

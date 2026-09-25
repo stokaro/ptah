@@ -1682,6 +1682,13 @@ func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode
 	return nil
 }
 
+// renderAlterTableForceRLS names the FORCE change Ptah does not generate for
+// this target, matching the two above.
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	r.notGenerated("FORCE ROW LEVEL SECURITY on", node.Table)
+	return nil
+}
+
 // notGenerated records that Ptah does not generate the named operation for
 // this MySQL-family target, in the same sentence the SQL Server renderer uses.
 //

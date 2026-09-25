@@ -481,6 +481,7 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
 		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
+		{"RLSForceChanged", &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}}, &schemamodel.Database{}},
 		{
 			"RolesAdded",
 			&difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app"}}},

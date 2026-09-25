@@ -138,9 +138,13 @@ func TestLoadAll_SQLSchemaFileStillRefusesStatementsOutsideTheGrammar(t *testing
 		statement: `ALTER TABLE t1 DISABLE ROW LEVEL SECURITY;`,
 		wantError: `unsupported ALTER operation: DISABLE ROW LEVEL SECURITY`,
 	}, {
-		name:      "restrictive policy changes what the policy means",
-		statement: `CREATE POLICY p1 ON t1 AS RESTRICTIVE FOR SELECT USING (true);`,
-		wantError: `unsupported CREATE POLICY clause: AS RESTRICTIVE`,
+		name:      "no force row level security has no representation",
+		statement: `ALTER TABLE t1 NO FORCE ROW LEVEL SECURITY;`,
+		wantError: `unsupported ALTER operation: NO FORCE ROW LEVEL SECURITY`,
+	}, {
+		name:      "a policy kind other than permissive or restrictive",
+		statement: `CREATE POLICY p1 ON t1 AS SOMETIMES FOR SELECT USING (true);`,
+		wantError: `expected PERMISSIVE or RESTRICTIVE after AS, got SOMETIMES`,
 	}}
 
 	for _, tc := range tests {

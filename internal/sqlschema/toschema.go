@@ -670,6 +670,9 @@ func toDatabase(
 			return schemamodel.Database{}, err
 		}
 	}
+	if err := applyForcedRowSecurity(&database, statements.Statements, sourcePlatform); err != nil {
+		return schemamodel.Database{}, err
+	}
 
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
 	// pair so the function is not also carried as a standalone object.
@@ -699,6 +702,9 @@ func appendStatement(
 	}
 	if appendPrivilegeDeclaration(database, stmt) {
 		return nil
+	}
+	if handled, err := appendRowSecurity(database, stmt); handled {
+		return err
 	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
@@ -734,8 +740,6 @@ func appendStatement(
 		database.Roles = append(database.Roles, toRole(node))
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node))
-	case *ast.AlterTableEnableRLSNode:
-		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
 	case *ast.CommentNode:
 		applyRoleComment(database, node)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,

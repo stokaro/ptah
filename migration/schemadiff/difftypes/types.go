@@ -1339,6 +1339,14 @@ type SchemaDiff struct {
 	// removed is one no declaration describes.
 	RLSEnabledTablesRemoved RLSEnabledTableChanges `json:"rls_enabled_tables_removed"`
 
+	// RLSForceChanged is the tables whose FORCE ROW LEVEL SECURITY flag
+	// changes. Each entry carries the declaration, and its Forced is the state
+	// the change reaches: true plans FORCE, false plans NO FORCE. A table this
+	// diff also enables is listed here only when the flag has to go off, since
+	// the enablement itself carries a FORCE the declaration asks for; see
+	// [RLSForceChanges].
+	RLSForceChanged RLSForceChanges `json:"rls_force_changed"`
+
 	// RolesAdded is the PostgreSQL roles that exist in the target schema and
 	// not in the current database, each carrying its attributes; see
 	// [RoleChanges].
@@ -1702,7 +1710,8 @@ func (d *SchemaDiff) hasRLSChanges() bool {
 		len(d.RLSPoliciesRemoved) > 0 ||
 		len(d.RLSPoliciesModified) > 0 ||
 		len(d.RLSEnabledTablesAdded) > 0 ||
-		len(d.RLSEnabledTablesRemoved) > 0
+		len(d.RLSEnabledTablesRemoved) > 0 ||
+		len(d.RLSForceChanged) > 0
 }
 
 // hasRoleChanges returns true if there are any role-related changes.
@@ -3499,6 +3508,45 @@ func (r RLSEnabledTableChanges) MarshalJSON() ([]byte, error) {
 // A REMOVED entry carries nothing else: the enablement is one the database
 // reports and no declaration describes, so the name is all there is to carry.
 func (r RLSEnabledTableChanges) Names() []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r))
+	for _, table := range r {
+		names = append(names, table.Table)
+	}
+	return names
+}
+
+// RLSForceChanges is a list of FORCE ROW LEVEL SECURITY changes a diff makes.
+//
+// FORCE subjects a table's owner to its policies. It is a flag of its own,
+// independent of enablement, so a table can keep row-level security on while
+// the owner starts or stops being bound by it. Each entry is the declaration,
+// whose Forced is the state to reach.
+type RLSForceChanges []schemamodel.RLSEnabledTable
+
+// rlsForceChangeJSON is how one entry is written: the table and the state it
+// reaches, since the name alone would not say which way the flag moves.
+type rlsForceChangeJSON struct {
+	Table string `json:"table"`
+	Force bool   `json:"force"`
+}
+
+// MarshalJSON writes each change as its table and the FORCE state it reaches.
+func (r RLSForceChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	out := make([]rlsForceChangeJSON, 0, len(r))
+	for _, change := range r {
+		out = append(out, rlsForceChangeJSON{Table: change.Table, Force: change.Forced})
+	}
+	return json.Marshal(out)
+}
+
+// Names is the table names this change applies to.
+func (r RLSForceChanges) Names() []string {
 	if r == nil {
 		return nil
 	}

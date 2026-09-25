@@ -108,6 +108,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderAlterTableEnableRLS(n)
 	case *ast.AlterTableDisableRLSNode:
 		return r.renderAlterTableDisableRLS(n)
+	case *ast.AlterTableForceRLSNode:
+		return r.renderAlterTableForceRLS(n)
 	case *ast.CreateRoleNode:
 		return r.renderCreateRole(n)
 	case *ast.DropRoleNode:

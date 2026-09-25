@@ -203,6 +203,7 @@ func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	}
 	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesAdded.Names(), "missing_rls_enablement", "missing RLS enablement")...)
 	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesRemoved.Names(), "extra_rls_enablement", "extra RLS enablement")...)
+	mismatches = append(mismatches, rlsForceMismatches(diff.RLSForceChanged)...)
 	mismatches = append(mismatches, namedMismatches(diff.RolesAdded.Names(), "missing_role", "missing role")...)
 	mismatches = append(mismatches, namedMismatches(diff.RolesRemoved.Names(), "extra_role", "extra role")...)
 	mismatches = append(mismatches, changedObjectMismatches(
@@ -272,6 +273,25 @@ func tableMismatches(names []string, kind, label string) []Mismatch {
 		mismatches = append(mismatches, Mismatch{Kind: kind, Table: name, Object: name, Message: label + " " + name})
 	}
 	return mismatches
+}
+
+// rlsForceMismatches reports a FORCE flag the declaration and the replayed
+// database disagree on. The change's Forced is what the declaration asks for,
+// so a true one is a FORCE the database lacks and a false one is a FORCE it
+// carries and should not.
+func rlsForceMismatches(changes difftypes.RLSForceChanges) []Mismatch {
+	var missing, extra []string
+	for _, change := range changes {
+		if change.Forced {
+			missing = append(missing, change.Table)
+			continue
+		}
+		extra = append(extra, change.Table)
+	}
+	return append(
+		tableMismatches(missing, "missing_rls_force", "missing FORCE ROW LEVEL SECURITY on"),
+		tableMismatches(extra, "extra_rls_force", "extra FORCE ROW LEVEL SECURITY on")...,
+	)
 }
 
 func namedMismatches(names []string, kind, label string) []Mismatch {

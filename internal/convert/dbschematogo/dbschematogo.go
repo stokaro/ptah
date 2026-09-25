@@ -332,7 +332,10 @@ func convertRLSPolicies(
 			ToRoles:             dbPolicy.ToRoles,
 			UsingExpression:     dbPolicy.UsingExpression,
 			WithCheckExpression: dbPolicy.WithCheckExpression,
-			Comment:             dbPolicy.Comment,
+			// Without it a description of a restrictive policy declares a
+			// permissive one, which widens the access it was written to narrow.
+			Restrictive: dbPolicy.Restrictive,
+			Comment:     dbPolicy.Comment,
 		}
 		database.RLSPolicies = append(database.RLSPolicies, policy)
 	}
@@ -633,6 +636,9 @@ func convertRLSEnabledTables(
 				// (stokaro/ptah#2201).
 				Table:   dbTable.QualifiedName(),
 				Comment: "", // Comment not available in Table for RLS enablement
+				// Without it a description of a forced table declares a
+				// table whose owner reads past every policy.
+				Forced: dbTable.RLSForced,
 			}
 			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
 		}

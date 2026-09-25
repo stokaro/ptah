@@ -117,6 +117,13 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			sql:  "GRANT SELECT ON users TO app;",
 			want: []changeProjection{{lint.SchemaChangeAdd, "users"}},
 		},
+		{
+			// FORCE changes the table in place, as ENABLE does; it is not an
+			// operational statement that contributes nothing.
+			name: "force row level security is one change",
+			sql:  "ALTER TABLE users FORCE ROW LEVEL SECURITY;",
+			want: []changeProjection{{lint.SchemaChangeModify, "users"}},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

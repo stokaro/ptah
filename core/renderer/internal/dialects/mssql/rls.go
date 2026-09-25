@@ -175,6 +175,16 @@ func (r *Renderer) renderAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode
 	return nil
 }
 
+// renderAlterTableForceRLS names a third switch SQL Server does not have.
+func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) error {
+	if r.refuses(capability.RowLevelSecurity, "row-level security", node.Table) {
+		return nil
+	}
+	r.w.WriteLinef("-- SQLSERVER: table %q has no FORCE ROW LEVEL SECURITY switch; "+
+		"a security policy carries its own STATE and there is no table-level switch.", node.Table)
+	return nil
+}
+
 // blockPredicateOperation maps a declared FOR clause onto the operation a BLOCK
 // predicate accepts, and returns "" for a declaration that names none of them.
 //
