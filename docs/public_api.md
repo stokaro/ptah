@@ -332,6 +332,13 @@ is a metadata-only observer and cannot abort execution. `Preflight` remains the
 abort-capable hook after validation, so user-facing start output is not emitted
 for a statically invalid migration.
 
+`MigrateUpOptions.PlanGuard` receives the same plan right after the observer
+and can refuse it. It runs for every selection, including an empty one, and a
+non-nil error stops the run before transaction-mode validation, `Preflight`, or
+any schema or revision change. It exists for a caller that approved a plan
+earlier and has to know that the run executes that plan and nothing more;
+`Preflight` cannot carry that check, because it is skipped for an empty plan.
+
 `MigrateUpOptions.AllowDirty` authorizes a verified retry only when the current
 provider still owns the dirty migration's exact identity and body. A dirty
 exact-history row whose source file was removed remains blocking: without that

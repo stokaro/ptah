@@ -136,6 +136,12 @@ type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 // metadata capture only; unlike PreMigrationHook, it cannot abort execution.
 type MigrationPlanObserver func(ctx context.Context, plan MigrationPlan)
 
+// MigrationPlanGuard decides whether a selected plan may run at all. It runs
+// under the migration lock for every selection, the empty one included, before
+// transaction-mode validation, any pre-migration hook and any change, so a
+// refusal leaves the schema and the revision table exactly as they were.
+type MigrationPlanGuard func(ctx context.Context, plan MigrationPlan) error
+
 // MigrateUpOptions selects the pending up migration plan.
 type MigrateUpOptions struct {
 	// TargetVersion limits the run to pending migrations at or below this
@@ -178,6 +184,11 @@ type MigrateUpOptions struct {
 	// transaction-mode validation. It runs even for an empty plan so callers
 	// can replace metadata captured before lock acquisition.
 	PlanObserver MigrationPlanObserver
+	// PlanGuard refuses a selected plan before anything else acts on it. Unlike
+	// Preflight it runs for an empty selection too: a caller that approved one
+	// exact plan has not approved "nothing to do", and a run that selected
+	// nothing where work was approved is a history that moved, not a success.
+	PlanGuard MigrationPlanGuard
 	// ChecksDeferredObserver receives the versions whose checks were parsed
 	// and statically validated but not evaluated against the database, because
 	// a dry run cannot produce the state they are about. A postcondition is
@@ -2200,11 +2211,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		Versions:             migrationVersions(migrationsToApply),
 		VersionKeys:          migrationVersionKeys(migrationsToApply),
 	}
-	notifyMigrationPlanObserver(ctx, opts.PlanObserver, plan)
-	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
-		return err
-	}
-	if err := runPreMigrationHook(ctx, opts.Preflight, plan); err != nil {
+	if err := m.admitUpPlan(ctx, opts, plan, migrationsToApply); err != nil {
 		return err
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
@@ -2658,6 +2665,36 @@ func notifyChecksDeferredObserver(ctx context.Context, observer ChecksDeferredOb
 		return
 	}
 	observer(ctx, slices.Clone(versions))
+}
+
+// admitUpPlan runs everything that may refuse a selected up plan before any
+// of it executes, in this order: the observer sees the plan, the guard decides
+// whether it may run at all, the transaction modes are validated, and the
+// pre-migration hook runs last. The observer comes first so that it still
+// records a plan the steps after it refuse.
+func (m *Migrator) admitUpPlan(
+	ctx context.Context,
+	opts MigrateUpOptions,
+	plan MigrationPlan,
+	migrations []*Migration,
+) error {
+	notifyMigrationPlanObserver(ctx, opts.PlanObserver, plan)
+	if err := runMigrationPlanGuard(ctx, opts.PlanGuard, plan); err != nil {
+		return err
+	}
+	if err := m.validateUpTransactionMode(migrations); err != nil {
+		return err
+	}
+	return runPreMigrationHook(ctx, opts.Preflight, plan)
+}
+
+func runMigrationPlanGuard(ctx context.Context, guard MigrationPlanGuard, plan MigrationPlan) error {
+	if guard == nil {
+		return nil
+	}
+	plan.Versions = slices.Clone(plan.Versions)
+	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	return guard(ctx, plan)
 }
 
 func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan MigrationPlan) error {

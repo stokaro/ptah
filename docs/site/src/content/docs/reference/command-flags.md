@@ -1124,6 +1124,7 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
+| `--expect-sequence` | `string` | — | `PTAH_EXPECT_SEQUENCE` | — |
 | `--json` | `bool` | `false` | `PTAH_JSON` | — |
 | `--limit` | `uint64` | `0` | `PTAH_LIMIT` | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
