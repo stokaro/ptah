@@ -56,6 +56,12 @@ type BaselineColumn struct {
 	// and a changed one costs an index rebuild or a copy (stokaro/ptah#2957).
 	Collation      string
 	TableCollation string
+	// TablePartitioned reports that the owning table is a PostgreSQL
+	// declaratively partitioned table (relkind 'p'): a parent, or a partition
+	// that is partitioned itself. Nothing in the migration text that indexes it
+	// can say so, and the answer decides which index builds PostgreSQL
+	// accepts: it refuses CREATE INDEX CONCURRENTLY on one.
+	TablePartitioned bool
 	// NotNull reports whether the column rejects NULL.
 	NotNull bool
 	// HasDefault reports whether the column carries a DEFAULT expression.
@@ -339,6 +345,14 @@ func (b baselineColumns) hypertable(tableRef string) bool {
 		}
 	}
 	return false
+}
+
+// partitioned reports whether tableRef names a PostgreSQL partitioned table in
+// this state. The table is placed through [baselineColumns.tableColumns], so it
+// fails closed on the same ambiguity every other lookup does.
+func (b baselineColumns) partitioned(tableRef string) bool {
+	columns := b.tableColumns(tableRef)
+	return len(columns) > 0 && columns[0].TablePartitioned
 }
 
 func (b baselineColumns) exactTableIndexes(tableRef string) []BaselineIndex {

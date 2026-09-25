@@ -3,6 +3,8 @@ package lint
 import (
 	"slices"
 	"strings"
+
+	"ptah.run/internal/txrequire"
 )
 
 // The rules in this file close the gaps a refresh of the Atlas analyzer
@@ -551,41 +553,32 @@ func atlasGapPostgresRules() []Rule {
 			// CockroachDB or YugabyteDB here would be a cost claim about a
 			// server this rule has never been run against.
 			Dialects: []string{"postgres"},
-			// File-level because the statement alone cannot say the table is
-			// partitioned. The evidence is a CREATE TABLE … PARTITION BY
-			// earlier in the same file; without it the rule is silent rather
-			// than guessing, and PG101 still reports the ordinary index build.
+			// PG101's remedy is CONCURRENTLY, which PostgreSQL refuses on a
+			// partitioned table, so where this rule fires PG101 has nothing
+			// right to add.
+			Subsumes: []string{"PG101"},
+			// The statement alone cannot say the table is partitioned. A
+			// CREATE TABLE … PARTITION BY earlier in the same file says so
+			// from the text; for a table an earlier migration created, the
+			// starting state says so. Without either the rule is silent
+			// rather than guessing, and PG101 reports the ordinary build.
+			Input:            InputBaselineRefinement,
+			BaselineSubjects: partitionedIndexStateRequests,
 			CheckFile: func(file *File) []Finding {
-				if !file.IsUp {
-					return nil
-				}
-				partitioned := make(map[string]bool)
 				var findings []Finding
-				for i := range file.Statements {
-					stmt := &file.Statements[i]
-					if ref := createdTableRef(stmt.Words); ref != "" && hasWordSeq(stmt.Words, "PARTITION", "BY") {
-						partitioned[ref] = true
+				for _, site := range partitionedIndexSites(file) {
+					if !site.partitionedInFile && (!site.earlier || !file.baseline.partitioned(site.target.normalized)) {
 						continue
 					}
-					if !isCreateIndex(stmt.Words) {
-						continue
-					}
-					target := atlasGapIndexTargetRef(stmt.Words)
-					if target == "" || !refersToCreated(partitioned, target) {
-						continue
-					}
+					stmt := &file.Statements[site.index]
 					findings = append(findings, Finding{
 						Rule:     "PG108",
 						Title:    "index on a partitioned table locks every partition",
 						Severity: SeverityWarning,
 						File:     file.Path,
 						Line:     stmt.Line,
-						Message: "building this index takes a SHARE lock on " + target + " and on every one of its " +
-							"partitions at once, so writes stop across the whole set rather than one partition at a " +
-							"time; CONCURRENTLY is refused on a partitioned table, so the way to keep writes going " +
-							"is to build the index on each partition concurrently and attach it to a parent index " +
-							"created ONLY",
-						Context: statementFindingContext(i),
+						Message:  partitionedIndexMessage(stmt, site.target.name),
+						Context:  statementFindingContext(site.index),
 					})
 				}
 				return findings
@@ -877,14 +870,89 @@ func atlasGapMySQLRules() []Rule {
 	}
 }
 
-// atlasGapIndexTargetRef returns the table a CREATE INDEX targets, or "".
-func atlasGapIndexTargetRef(w []string) string {
-	for i := 0; i+1 < len(w); i++ {
-		if strings.EqualFold(w[i], "ON") {
-			return w[i+1]
+// partitionedIndexSite is one CREATE INDEX that PG108 judges.
+type partitionedIndexSite struct {
+	index  int
+	target tableReference
+	// partitionedInFile reports a target this file creates PARTITION BY.
+	partitionedInFile bool
+	// earlier reports a target this file does not create, so only the state
+	// the version starts from can say whether it is partitioned.
+	earlier bool
+}
+
+// partitionedIndexSites lists the index builds of an up file that PG108 can
+// judge: every CREATE INDEX except the ON ONLY form, which builds the parent's
+// index alone and is the first step of the remedy this rule names, and a
+// TimescaleDB per-chunk build, which a partitioned table refuses outright
+// (`unrecognized parameter namespace "timescaledb"`, measured on PostgreSQL
+// 18.6 with TimescaleDB 2.30.1 installed). It is the
+// one walk both halves of the rule read, the state request and the report, so
+// the two cannot disagree about which statements are candidates.
+func partitionedIndexSites(file *File) []partitionedIndexSite {
+	if !file.IsUp {
+		return nil
+	}
+	created := make(map[string]bool)
+	partitioned := make(map[string]bool)
+	var sites []partitionedIndexSite
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if ref := createdTableRef(stmt.Words); ref != "" {
+			created[ref] = true
+			if hasWordSeq(stmt.Words, "PARTITION", "BY") {
+				partitioned[ref] = true
+			}
+			continue
+		}
+		if !isCreateIndex(stmt.Words) {
+			continue
+		}
+		target, only := createIndexTarget(stmt.Words, stmt.sourceWords)
+		if only || target.normalized == "" || txrequire.PerChunkIndexBuild(stmt.Words) {
+			continue
+		}
+		sites = append(sites, partitionedIndexSite{
+			index:             i,
+			target:            target,
+			partitionedInFile: refersToCreated(partitioned, target.normalized),
+			earlier:           !refersToCreated(created, target.normalized),
+		})
+	}
+	return sites
+}
+
+// partitionedIndexStateRequests is PG108's answer to which statements want the
+// starting state: the index builds on a table an earlier migration created.
+func partitionedIndexStateRequests(file *File) []int {
+	var indexes []int
+	for _, site := range partitionedIndexSites(file) {
+		if site.earlier {
+			indexes = append(indexes, site.index)
 		}
 	}
-	return ""
+	return indexes
+}
+
+// partitionedIndexMessage is PG108's message, spelling the table the way the
+// migration does.
+//
+// Measured on PostgreSQL 18.6, on a parent with a partition that is itself
+// partitioned: a plain build takes SHARE on the parent and on every partition
+// at every level for the whole build, and an INSERT into any of them waits;
+// CONCURRENTLY is refused on the parent, on the partitioned partition and with
+// ON ONLY (`cannot create index on partitioned table ... concurrently`); the
+// parent index created ON ONLY, each leaf built concurrently and attached,
+// and the partitioned partition's own ON ONLY index attached in turn, leave
+// every index valid.
+func partitionedIndexMessage(stmt *Statement, table string) string {
+	remedy := "build the index on each partition concurrently and attach it to a parent index created with ON ONLY"
+	if slices.Contains(stmt.Words, "CONCURRENTLY") {
+		return "PostgreSQL refuses CREATE INDEX CONCURRENTLY on the partitioned table " + table + "; " + remedy
+	}
+	return "building this index takes a SHARE lock on " + table + " and on every one of its partitions at once, " +
+		"so writes stop across the whole set rather than one partition at a time; CONCURRENTLY is refused on a " +
+		"partitioned table, so the way to keep writes going is to " + remedy
 }
 
 // atlasGapAddsEnforcedCheck reports an ADD clause whose CHECK will be

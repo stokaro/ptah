@@ -101,6 +101,13 @@ so with the state in hand the finding names the extension's per-chunk build
 instead. It still reports from the statement text without a dev database, and
 the notice above then names it on both surfaces.
 
+`PG108` reads the same state to learn whether a table an earlier migration
+created is partitioned, where PostgreSQL refuses `CONCURRENTLY` and the build
+locks every partition. It reports from the text alone when the migration creates
+the parent itself. Where it fires it replaces `PG101`, and with the state in
+hand `PG101` also leaves `CREATE INDEX ... ON ONLY` a partitioned parent alone,
+because that creates the parent's index without reading a row.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix
@@ -401,7 +408,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `PG309` | a STORED generated column rewrites the table | yes | `PG309` | covered |
 | `PG310` | an identity column rewrites the table | yes | `PG310` | covered |
 | `PG311` | an access-method change rewrites the table | yes | `PG311` | covered |
-| `PG108` | an index on a partitioned table blocks writes on all its partitions | yes | `PG108` | partial — reported where the migration itself declares the parent PARTITION BY; the statement alone cannot say a table is partitioned, so an index on aparent created in an earlier release is left to PG101, whose CONCURRENTLY remedy the server refuses here |
+| `PG108` | an index on a partitioned table blocks writes on all its partitions | yes | `PG108` | partial — reported where the migration declares the parent PARTITION BY, or the dev database shows an earlier parent partitioned; without a dev database PG101 reports it instead |
 | `PG109` | an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table | yes | `PG109` | covered |
 | `PG312` | redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock | yes | `PG312` | covered — distinct from Ptah's own PG312P, which is about a SECURITY DEFINER routine and keeps its trailing P; the USING INDEX form builds nothing under the lock and is not reported |
 | `PG314` | changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup | yes | `PG314` | covered — FULL and NOTHING carry different consequences and are reported with different messages; DEFAULT and USING INDEX keep a usable row identity and are not reported |

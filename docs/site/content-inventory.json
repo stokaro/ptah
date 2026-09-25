@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 7668,
-      "sourceBytes": 53555
+      "visibleWords": 7731,
+      "sourceBytes": 53919
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4713,8 +4713,8 @@
         "/testing/overview/",
         "/versioned/lint/"
       ],
-      "visibleWords": 6004,
-      "sourceBytes": 39888
+      "visibleWords": 6064,
+      "sourceBytes": 40265
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",

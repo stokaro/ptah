@@ -72,18 +72,19 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineC
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
 			columns = append(columns, lint.BaselineColumn{
-				Version:        version,
-				Schema:         table.Schema,
-				Table:          table.Name,
-				Name:           column.Name,
-				DataType:       compatColumnDataType(column),
-				ColumnType:     baselineTypeSpelling(column),
-				Charset:        column.Charset,
-				TableCharset:   table.Charset,
-				Collation:      column.Collate,
-				TableCollation: table.Collate,
-				NotNull:        strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
-				HasDefault:     column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
+				Version:          version,
+				Schema:           table.Schema,
+				Table:            table.Name,
+				Name:             column.Name,
+				DataType:         compatColumnDataType(column),
+				ColumnType:       baselineTypeSpelling(column),
+				Charset:          column.Charset,
+				TableCharset:     table.Charset,
+				Collation:        column.Collate,
+				TableCollation:   table.Collate,
+				TablePartitioned: table.Partitioned,
+				NotNull:          strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
+				HasDefault:       column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
 			})
 		}
 	}

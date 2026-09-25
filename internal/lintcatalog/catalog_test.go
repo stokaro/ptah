@@ -633,8 +633,9 @@ func TestAtlasCatalogNamesEveryRowThatIsNotCovered(t *testing.T) {
 	// accepts ALGORITHM=INSTANT on every MySQL line this repository declares,
 	// so a rule would be a false positive wherever Ptah is tested.
 	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.DeepEquals, []string{"MY142"})
-	// PG108 needs the migration to declare the parent partitioned; MY148 needs
-	// the dev database to prove the copy. Each note says which input is missing.
+	// PG108 needs the migration or the dev database to show the parent
+	// partitioned; MY148 needs the dev database to prove the copy. Each note says
+	// which input is missing.
 	c.Assert(byStatus[lintcatalog.StatusPartial], qt.DeepEquals, []string{"MY148", "PG108"})
 	// The two account-bound rows, and no others. A third waiver would be a way
 	// to make the count green without implementing anything.

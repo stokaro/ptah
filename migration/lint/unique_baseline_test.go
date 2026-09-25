@@ -269,16 +269,16 @@ func TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 }
 
 // TestUniqueRules_AskForNothingWhereNothingIsBuilt: a file with no unique
-// index costs this family no catalog read. PG101 is disabled because it asks
-// for the state of every blocking index build on PostgreSQL, a request of its
-// own that pg101_hypertable_test.go pins.
+// index costs this family no catalog read. PG101 and PG108 are disabled because
+// each asks for the state of an index build on an earlier table, a request of
+// its own that pg101_hypertable_test.go and pg108_baseline_test.go pin.
 func TestUniqueRules_AskForNothingWhereNothingIsBuilt(t *testing.T) {
 	c := qt.New(t)
 	analysis, err := lint.AnalyzeFS(fixture(uniqueFS("CREATE INDEX orders_email_idx ON orders (email);")), lint.Options{
 		Dialect:   "postgres",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Disabled:  []string{"PG101"},
+		Disabled:  []string{"PG101", "PG108"},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.BaselineVersions(), qt.HasLen, 0)
