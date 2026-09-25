@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 )
@@ -72,6 +73,36 @@ func catalogPostgresTableReference(value string) string {
 		strings.Join(parts[:len(parts)-1], "."),
 		parts[len(parts)-1],
 	)
+}
+
+// roleName reads one role name the way the source dialect's server resolves
+// it.
+//
+// The PostgreSQL family folds an unquoted name to lower case, so `CREATE ROLE
+// App_A` creates the role `app_a` and `TO App_A` names it. Kept as written, the
+// name was rendered quoted and named a role nobody created: measured on
+// PostgreSQL 18.6, a policy read from `TO App_A` was applied as `TO "App_A"`
+// and refused with `role "App_A" does not exist` (stokaro/ptah#3574).
+//
+// The engines differ on the rest. PostgreSQL and YugabyteDB 2026.1 lower ASCII
+// letters only and keep a quoted name as written. CockroachDB 26.3.2 lowers
+// every role name, quoted or not and past ASCII: `CREATE ROLE "Ärger_Q"`
+// creates `ärger_q`.
+//
+// Every place this package records a role reads it through here, so a file
+// that creates a role and names it elsewhere names one role. Other dialects
+// keep the name as written: MySQL and MariaDB spell a role with its host, and
+// SQL Server compares names under the database collation.
+func roleName(sourcePlatform, value string) string {
+	value = strings.TrimSpace(value)
+	switch {
+	case platform.NormalizeDialect(sourcePlatform) == platform.CockroachDB:
+		return identifier.ComparisonUnicodeInsensitive.IdentityKey(unquoteSQLIdentifierPart(value))
+	case platform.IsPostgresFamily(sourcePlatform):
+		return catalogPostgresIdentifierPart(value)
+	default:
+		return normalizeSQLIdentifier(value)
+	}
 }
 
 // catalogPostgresIdentifierPart folds one component the way PostgreSQL does:

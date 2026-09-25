@@ -175,7 +175,7 @@ The dialect selects the tokenizer as well as the renderer: whether a backslash
 escapes inside a string, whether `E'...'` is an escape string, whether `--x`
 without a space is a comment, and whether `[name]` is an identifier.
 
-Two consequences are worth knowing before you pick one.
+Each of these follows from the dialect you name.
 
 **A file that the named engine would reject is rejected here.** PostgreSQL runs
 with `standard_conforming_strings` on, so a backslash is an ordinary character
@@ -191,6 +191,16 @@ now reaches the schema. The rest of a guard is not read: those spans hold
 version-conditional fragments Ptah does not model, and `mariadb-dump` opens
 every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
 executes, because no server is version 999999.
+
+**A role name folds the way the engine folds it.** On PostgreSQL and
+YugabyteDB an unquoted name loses its ASCII case, so `TO App_Reader` in a
+policy names `app_reader`, the role `CREATE ROLE App_Reader` created, and a
+quoted `"App_Reader"` keeps its case. CockroachDB lowers every role name,
+quoted or not, so read with `--dialect cockroachdb` the quoted spelling names
+`app_reader` as well, and `"PUBLIC"` is the `PUBLIC` keyword. This holds
+wherever the file names a role: `CREATE ROLE`, `COMMENT ON ROLE`, `GRANT`,
+`REVOKE`, `ALTER DEFAULT PRIVILEGES` and a policy's `TO`. Other dialects keep a
+role name as written.
 
 **Omitting `--dialect` keeps a permissive reader.** No dialect means no
 dialect's rules, which is what lets one file mixing conventions be read at all.

@@ -700,7 +700,7 @@ func appendStatement(
 	if appendRoutine(database, stmt) {
 		return nil
 	}
-	if handled, err := appendPrivilegeDeclaration(database, stmt); handled {
+	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
 		return err
 	}
 	if handled, err := appendRowSecurity(database, stmt); handled {
@@ -737,11 +737,11 @@ func appendStatement(
 	case *ast.CreateSequenceNode:
 		database.Sequences = append(database.Sequences, toSequence(node))
 	case *ast.CreateRoleNode:
-		database.Roles = append(database.Roles, toRole(node))
+		database.Roles = append(database.Roles, toRole(node, sourcePlatform))
 	case *ast.CreatePolicyNode:
-		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node))
+		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
 	case *ast.CommentNode:
-		applyRoleComment(database, node)
+		applyRoleComment(database, node, sourcePlatform)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
 		*ast.RevokeDefaultPrivilegeNode, *ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
@@ -841,14 +841,14 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
 // neither function is refused by that switch's default, so nothing is dropped
 // by falling through; a node kind this package decides not to model says so
 // there, in a case of its own.
-func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node) (bool, error) {
+func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.GrantPrivilegeNode:
-		appendGrant(database, node)
+		appendGrant(database, node, sourcePlatform)
 	case *ast.RevokePrivilegeNode:
-		return true, appendRevoke(database, node)
+		return true, appendRevoke(database, node, sourcePlatform)
 	case *ast.DefaultPrivilegeNode:
-		database.DefaultPrivileges = append(database.DefaultPrivileges, toDefaultPrivilege(node))
+		database.DefaultPrivileges = append(database.DefaultPrivileges, toDefaultPrivilege(node, sourcePlatform))
 	default:
 		return false, nil
 	}

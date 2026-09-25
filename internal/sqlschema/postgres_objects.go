@@ -31,9 +31,9 @@ func toSequence(node *ast.CreateSequenceNode) schemamodel.Sequence {
 	}
 }
 
-func toRole(node *ast.CreateRoleNode) schemamodel.Role {
+func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
 	return schemamodel.Role{
-		Name:        normalizeSQLIdentifier(node.Name),
+		Name:        roleName(sourcePlatform, node.Name),
 		Login:       node.Login,
 		Password:    node.Password,
 		Superuser:   node.Superuser,
@@ -58,7 +58,7 @@ func toRole(node *ast.CreateRoleNode) schemamodel.Role {
 // Canonicalize then upper-cases the privilege names and merges a name that
 // appears twice, which is what makes the renderer's two statements -- one per
 // grantability -- fold back into the one object they came from.
-func toDefaultPrivilege(node *ast.DefaultPrivilegeNode) schemamodel.DefaultPrivilege {
+func toDefaultPrivilege(node *ast.DefaultPrivilegeNode, sourcePlatform string) schemamodel.DefaultPrivilege {
 	privileges := make([]schemamodel.PrivilegeGrant, 0, len(node.Privileges))
 	for _, privilege := range node.Privileges {
 		privileges = append(privileges, schemamodel.PrivilegeGrant{
@@ -67,10 +67,10 @@ func toDefaultPrivilege(node *ast.DefaultPrivilegeNode) schemamodel.DefaultPrivi
 		})
 	}
 	defaultPrivilege := schemamodel.DefaultPrivilege{
-		Grantor:    normalizeSQLIdentifier(node.Grantor),
+		Grantor:    roleName(sourcePlatform, node.Grantor),
 		Schema:     normalizeSQLIdentifier(node.Schema),
 		ObjectType: node.ObjectType,
-		Grantee:    normalizeSQLIdentifier(node.Grantee),
+		Grantee:    roleTarget(sourcePlatform, node.Grantee),
 		Privileges: privileges,
 		Comment:    node.Comment,
 	}
@@ -87,12 +87,12 @@ func toDefaultPrivilege(node *ast.DefaultPrivilegeNode) schemamodel.DefaultPrivi
 // ORDERS` name different relations, so keeping the raw spelling left the rest
 // of the pipeline to guess -- and the guess secured a relation the author did
 // not name (stokaro/ptah#1311).
-func toRLSPolicy(node *ast.CreatePolicyNode) schemamodel.RLSPolicy {
+func toRLSPolicy(node *ast.CreatePolicyNode, sourcePlatform string) schemamodel.RLSPolicy {
 	return schemamodel.RLSPolicy{
 		Name:                normalizeSQLIdentifier(node.Name),
 		Table:               catalogPostgresTableReference(node.Table),
 		PolicyFor:           node.PolicyFor,
-		ToRoles:             normalizeRoleList(node.ToRoles),
+		ToRoles:             normalizeRoleList(sourcePlatform, node.ToRoles),
 		UsingExpression:     node.UsingExpression,
 		WithCheckExpression: node.WithCheckExpression,
 		Restrictive:         node.Restrictive,
@@ -100,15 +100,15 @@ func toRLSPolicy(node *ast.CreatePolicyNode) schemamodel.RLSPolicy {
 	}
 }
 
-// normalizeRoleList unquotes each role in a policy's TO list while keeping the
-// separator the renderer expects.
-func normalizeRoleList(roles string) string {
+// normalizeRoleList reads each role in a policy's TO list through
+// [roleTarget] while keeping the separator the renderer expects.
+func normalizeRoleList(sourcePlatform, roles string) string {
 	if strings.TrimSpace(roles) == "" {
 		return ""
 	}
 	parts := strings.Split(roles, ",")
 	for index, part := range parts {
-		parts[index] = normalizeSQLIdentifier(strings.TrimSpace(part))
+		parts[index] = roleTarget(sourcePlatform, part)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -315,8 +315,8 @@ func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.Dom
 // applyRoleComment attaches a COMMENT ON ROLE statement to the role it names.
 // PostgreSQL has no inline role comment, so Ptah's renderer emits the comment
 // as a second statement; reading it back is what keeps the pair round-tripping.
-func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode) {
-	name, comment, ok := parseRoleComment(node.Text)
+func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode, sourcePlatform string) {
+	name, comment, ok := parseRoleComment(node.Text, sourcePlatform)
 	if !ok {
 		return
 	}
@@ -331,7 +331,7 @@ func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode) {
 // parseRoleComment recognizes the COMMENT ON ROLE text that
 // Parser.parseCommentStatement builds. The shape is fixed by that function, so
 // this reads a known format rather than arbitrary SQL.
-func parseRoleComment(text string) (name, comment string, ok bool) {
+func parseRoleComment(text, sourcePlatform string) (name, comment string, ok bool) {
 	const prefix = "COMMENT ON ROLE "
 	if !strings.HasPrefix(text, prefix) {
 		return "", "", false
@@ -341,7 +341,7 @@ func parseRoleComment(text string) (name, comment string, ok bool) {
 	if separator < 0 {
 		return "", "", false
 	}
-	name = normalizeSQLIdentifier(strings.TrimSpace(rest[:separator]))
+	name = roleName(sourcePlatform, rest[:separator])
 	comment = strings.TrimSpace(rest[separator+len(" IS "):])
 	return name, unquoteSQLStringLiteral(comment), true
 }
