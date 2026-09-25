@@ -82,6 +82,7 @@ DROP TYPE old_status;
 DROP POLICY tenant_isolation ON accounts;
 TRUNCATE TABLE audit_log;
 ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ledger NO FORCE ROW LEVEL SECURITY;
 `)},
 		"0000000002_next.down.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE users ADD COLUMN legacy TEXT;\n"),
@@ -90,8 +91,12 @@ ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;
 
 	findings, err := lintPendingDestructive(fsys, []int64{2}, "postgres", "")
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 5)
-	c.Assert([]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule}, qt.DeepEquals, []string{"DS102", "DS107", "DS107", "DS108", "DS109"})
+	c.Assert(findings, qt.HasLen, 6)
+	c.Assert(
+		[]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule, findings[5].Rule},
+		qt.DeepEquals,
+		[]string{"DS102", "DS107", "DS107", "DS108", "DS109", "DS111P"},
+	)
 	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
 }
 

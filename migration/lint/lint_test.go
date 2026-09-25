@@ -324,6 +324,14 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		{"truncate table keyword", "TRUNCATE TABLE audit_log;", []string{"DS108"}},
 		{"truncate without table keyword", "TRUNCATE audit_log;", []string{"DS108"}},
 		{"disable row level security", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;", []string{"DS109"}},
+		// NO FORCE leaves row-level security enabled and exempts the owner, so
+		// it is DS111P and not DS109. FORCE and ENABLE add a protection.
+		{"no force row level security", "ALTER TABLE accounts NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
+		{"no force on a qualified table", "ALTER TABLE IF EXISTS ONLY app.accounts NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
+		{"no force beside enable", "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
+		{"no force beside disable", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"DS109", "DS111P"}},
+		{"force row level security", "ALTER TABLE accounts FORCE ROW LEVEL SECURITY;", nil},
+		{"enable row level security", "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;", nil},
 
 		// Top-level commas separate clauses; commas in parens do not.
 		{"comma-adjacent drop clause", "ALTER TABLE t ADD COLUMN a NUMERIC(10,2),DROP COLUMN b;", []string{"BC104", "DS102"}},
@@ -350,6 +358,7 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 		{"comment glued between keywords", "DROP/*hidden*/TABLE users;", []string{"BC103", "DS101"}},
 		{"comment inside alter clause", "ALTER TABLE users DROP/*hidden*/COLUMN email;", []string{"BC104", "DS102"}},
 		{"hazard text inside a string literal", "ALTER TABLE t ADD COLUMN note TEXT DEFAULT 'use DROP COLUMN x';", nil},
+		{"no force inside a comment", "ALTER TABLE accounts /* NO FORCE ROW LEVEL SECURITY */ FORCE ROW LEVEL SECURITY;", nil},
 		{"concurrently in a literal is no guard", "CREATE INDEX i ON t (a) WHERE b = 'CONCURRENTLY';", []string{"PG101"}},
 		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"MF101", "PG103"}},
 	}

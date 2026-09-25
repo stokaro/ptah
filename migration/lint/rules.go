@@ -198,6 +198,7 @@ func dataSafetyRules() []Rule {
 		immutableRoutineReadsTheClockRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
+		rlsForceRemovedRule(),
 	}
 }
 
@@ -938,6 +939,25 @@ func rlsDisabledRule() Rule {
 				return false, ""
 			}
 			return true, "DISABLE ROW LEVEL SECURITY removes an access-control protection; verify replacement authorization before applying"
+		},
+	}
+}
+
+// rlsForceRemovedRule reports the other way to take row-level security away
+// from a table. NO FORCE leaves the policies in force for every role but the
+// table's owner, which then reads and writes past all of them -- and the owner
+// is often the role an application connects as. DS109 does not cover it: its
+// title says row-level security is disabled, and here it stays enabled.
+func rlsForceRemovedRule() Rule {
+	return Rule{
+		Code:     "DS111P",
+		Title:    "row-level security no longer forced",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !hasWordSeq(stmt.Words, "NO", "FORCE", "ROW", "LEVEL", "SECURITY") {
+				return false, ""
+			}
+			return true, "NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table; verify the owner is not a role the policies must hold before applying"
 		},
 	}
 }

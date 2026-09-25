@@ -381,6 +381,13 @@ table that is enabled again without it also gets `NO FORCE`. A policy whose
 kind changes is dropped and created again, because PostgreSQL cannot alter a
 policy's kind in place.
 
+Both ways of taking the protection away are lint findings at error severity:
+`DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is
+`DS111P`. `ptah migrations up` refuses a pending migration that holds either
+statement until you rerun it with `--allow-destructive`, and `plan` and
+`generate --check-destructive` refuse a plan that disables row-level security
+or removes FORCE. See [Lint and gate unsafe SQL](../../versioned/lint/).
+
 A policy with no `TO` clause applies to `PUBLIC`, and the catalog reports it
 that way, so an omitted `TO`, `TO PUBLIC` and `TO public` compare as one policy.
 The comparison reads the role list as a set: the order of the roles and the
