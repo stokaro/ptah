@@ -26,7 +26,7 @@ func TestApplyPendingMigrationsAppliesUnderALiveCommandContext(t *testing.T) {
 	c := qt.New(t)
 	mig := newInterruptContextMigrator(c)
 
-	outcome := applyPendingMigrations(interruptContextCommand(context.Background()), mig, &options{}, 0, nil)
+	outcome := applyPendingMigrations(interruptContextCommand(context.Background()), mig, &options{}, 0, nil, nil)
 
 	c.Assert(outcome.runErr, qt.IsNil)
 	c.Assert(outcome.statusErr, qt.IsNil)
@@ -44,7 +44,7 @@ func TestApplyPendingMigrationsStopsWhenTheCommandIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	outcome := applyPendingMigrations(interruptContextCommand(ctx), mig, &options{}, 0, nil)
+	outcome := applyPendingMigrations(interruptContextCommand(ctx), mig, &options{}, 0, nil, nil)
 
 	c.Assert(outcome.runErr, qt.ErrorIs, context.Canceled)
 	c.Assert(outcome.statusErr, qt.IsNil)
