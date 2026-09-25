@@ -132,3 +132,37 @@ func TestNewMigrationsCommand_ForwardsUpFlagErrors(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, "unknown flag: --bogus-flag")
 }
+
+// TestNewMigrationsCommand_DataHelpNamesItsGates holds `ptah migrations data
+// --help` to the flags that refuse a change.
+//
+// The namespace once replaced the command's help with a summary saying it
+// applied no gating of its own, while the command refused updates and deletes
+// of existing rows without --allow-destructive and any change to a
+// --protected-table without --allow-prod. Each gating flag has to exist on the
+// command and be named in the help the command prints.
+func TestNewMigrationsCommand_DataHelpNamesItsGates(t *testing.T) {
+	for _, flag := range []string{"allow-destructive", "protected-table", "allow-prod"} {
+		t.Run(flag, func(t *testing.T) {
+			c := qt.New(t)
+			data, _, err := migrations.NewMigrationsCommand().Find([]string{"data"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(data.Flags().Lookup(flag), qt.IsNotNil)
+			c.Assert(data.Long, qt.Contains, "--"+flag)
+		})
+	}
+}
+
+// TestNewMigrationsCommand_DataHelpDoesNotDenyItsGates is the other half: the
+// sentence that denied the gates is gone from the help the command prints.
+func TestNewMigrationsCommand_DataHelpDoesNotDenyItsGates(t *testing.T) {
+	c := qt.New(t)
+	data, _, err := migrations.NewMigrationsCommand().Find([]string{"data"})
+	c.Assert(err, qt.IsNil)
+
+	var help bytes.Buffer
+	data.SetOut(&help)
+	c.Assert(data.Help(), qt.IsNil)
+	c.Assert(help.String(), qt.Not(qt.Contains), "no safety/risk gating")
+	c.Assert(help.String(), qt.Contains, "--allow-destructive")
+}
