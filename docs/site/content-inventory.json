@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 8006,
-      "sourceBytes": 55644
+      "visibleWords": 8056,
+      "sourceBytes": 56091
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4665,8 +4665,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 2217,
-      "sourceBytes": 17536
+      "visibleWords": 2225,
+      "sourceBytes": 17589
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -4961,8 +4961,8 @@
         "/schema/overview/",
         "/schema/yaml/"
       ],
-      "visibleWords": 1484,
-      "sourceBytes": 11813
+      "visibleWords": 1526,
+      "sourceBytes": 12060
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",

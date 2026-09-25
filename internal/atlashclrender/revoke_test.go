@@ -52,27 +52,6 @@ func TestRenderedRevokeRoundTrips(t *testing.T) {
 	}
 }
 
-// TestRenderRoutinePrivilegeReportsTheLoss pins that a grant or revoke on a
-// function is reported rather than dropped in silence. A `function.<name>`
-// reference names a block by its label, so it cannot say which overload the
-// privilege is on, and the document leaves the privilege out.
-func TestRenderRoutinePrivilegeReportsTheLoss(t *testing.T) {
-	c := qt.New(t)
-	db := inspectedTable("public")
-	db.Grants = []schemamodel.Grant{{Role: "app", Privileges: []string{"EXECUTE"}, OnRoutine: "purge", RoutineArguments: "uuid"}}
-	db.RevokedGrants = []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"EXECUTE"}, OnRoutine: "purge", RoutineArguments: "uuid"}}
-
-	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(diagnosticMessages(result.Diagnostics), qt.DeepEquals, []string{
-		"grant on function purge(uuid) cannot be represented in HCL: a routine reference cannot name an overload",
-		"revoked grant on function purge(uuid) cannot be represented in HCL: a routine reference cannot name an overload",
-	})
-	c.Assert(string(result.Data), qt.Not(qt.Contains), "permission {")
-	c.Assert(string(result.Data), qt.Not(qt.Contains), "revoke {")
-}
-
 // TestParseRevoke_FailurePath pins the `revoke` blocks refused, the
 // contradiction with a `permission` block among them: a document has no
 // statement order, so neither block could win.

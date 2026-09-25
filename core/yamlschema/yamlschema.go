@@ -28,7 +28,7 @@
 //
 // The top level is a set of object collections, each keyed by name: tables,
 // indexes, constraints, enums, extensions, functions, rls_policies,
-// rls_enabled_tables (also accepted as rls_enabled), roles, grants,
+// rls_enabled_tables (also accepted as rls_enabled), roles, grants, revokes,
 // default_privileges, views, matviews, and triggers. A table carries its
 // columns in declaration order, along with its primary key, checks, engine,
 // comment, and per-platform overrides. A column carries the type, its
@@ -37,6 +37,12 @@
 // collation, and its own per-platform overrides. Tables and columns can also
 // declare shared and per-target API names; columns additionally carry API-only
 // type and exposure metadata.
+//
+// A grant or revoke names its target with on_table, on_schema, on_sequence,
+// or on_function and on_procedure, whose value carries the argument types:
+// purge(uuid). A revokes entry says the role must not hold the privileges,
+// and a privilege both granted and revoked to one role on one object is
+// refused.
 //
 // A default_privileges key is a label rather than a default name, because a
 // default privilege has no name. The role whose new objects it covers, the
@@ -69,6 +75,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/routineargs"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -130,6 +137,7 @@ type document struct {
 	RLSEnabled        map[string]rlsEnableSpec        `yaml:"rls_enabled"`
 	Roles             map[string]roleSpec             `yaml:"roles"`
 	Grants            map[string]grantSpec            `yaml:"grants"`
+	Revokes           map[string]revokeSpec           `yaml:"revokes"`
 	DefaultPrivileges map[string]defaultPrivilegeSpec `yaml:"default_privileges"`
 	Views             map[string]viewSpec             `yaml:"views"`
 	MaterializedViews map[string]matViewSpec          `yaml:"matviews"`
@@ -344,8 +352,30 @@ type grantSpec struct {
 	Privileges stringList   `yaml:"privileges"`
 	OnTable    stringScalar `yaml:"on_table"`
 	OnSchema   stringScalar `yaml:"on_schema"`
-	WithOption bool         `yaml:"with_option"`
-	Comment    stringScalar `yaml:"comment"`
+	OnSequence stringScalar `yaml:"on_sequence"`
+	// OnFunction and OnProcedure name a routine with its argument types,
+	// `purge(uuid)`, as the Go annotations do: PostgreSQL overloads a name by
+	// them.
+	OnFunction  stringScalar `yaml:"on_function"`
+	OnProcedure stringScalar `yaml:"on_procedure"`
+	WithOption  bool         `yaml:"with_option"`
+	Comment     stringScalar `yaml:"comment"`
+}
+
+// revokeSpec is one entry under `revokes`: privileges a role is declared not
+// to hold on an object, the YAML spelling of a schema file's REVOKE. It names
+// its target as a grant does and has no grant option.
+type revokeSpec struct {
+	StructName  stringScalar `yaml:"struct_name"`
+	Role        stringScalar `yaml:"role"`
+	Privilege   stringList   `yaml:"privilege"`
+	Privileges  stringList   `yaml:"privileges"`
+	OnTable     stringScalar `yaml:"on_table"`
+	OnSchema    stringScalar `yaml:"on_schema"`
+	OnSequence  stringScalar `yaml:"on_sequence"`
+	OnFunction  stringScalar `yaml:"on_function"`
+	OnProcedure stringScalar `yaml:"on_procedure"`
+	Comment     stringScalar `yaml:"comment"`
 }
 
 // defaultPrivilegeSpec is one entry under `default_privileges`: the privileges
@@ -419,15 +449,20 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	}
 	d.addRLS(db)
 	d.addRoles(db)
-	d.addGrants(db)
+	if err := d.addGrants(db); err != nil {
+		return nil, err
+	}
+	if err := d.addRevokes(db); err != nil {
+		return nil, err
+	}
 	if err := d.addDefaultPrivileges(db); err != nil {
 		return nil, err
 	}
 
 	schemamodel.Finalize(db)
-	// After Finalize, which merges the entries of one identity: a privilege
-	// one entry grants and another revokes is a contradiction a document with
-	// no statement order cannot resolve.
+	// After Finalize, which merges the entries of one identity and resolves the
+	// table a grant or revoke names: a document has no statement order, so a
+	// privilege one entry grants and another revokes cannot be resolved.
 	if err := schemamodel.ValidateRevokedGrants(db); err != nil {
 		return nil, fmt.Errorf("parse YAML schema: %w", err)
 	}
@@ -903,25 +938,73 @@ func (d document) addRoles(db *schemamodel.Database) {
 	}
 }
 
-func (d document) addGrants(db *schemamodel.Database) {
+func (d document) addGrants(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Grants) {
 		spec := d.Grants[key]
-		privileges := cleanStrings(spec.Privilege)
-		if len(privileges) == 0 {
-			privileges = cleanStrings(spec.Privileges)
+		grant, err := buildGrant("grant", key, revokeSpec{
+			StructName: spec.StructName, Role: spec.Role, Privilege: spec.Privilege, Privileges: spec.Privileges,
+			OnTable: spec.OnTable, OnSchema: spec.OnSchema, OnSequence: spec.OnSequence,
+			OnFunction: spec.OnFunction, OnProcedure: spec.OnProcedure, Comment: spec.Comment,
+		})
+		if err != nil {
+			return err
 		}
-		grant := schemamodel.Grant{
-			StructName: string(spec.StructName),
-			Role:       string(spec.Role),
-			Privileges: privileges,
-			OnTable:    string(spec.OnTable),
-			OnSchema:   string(spec.OnSchema),
-			WithOption: spec.WithOption,
-			Comment:    string(spec.Comment),
-		}
-		grant.Canonicalize()
+		grant.WithOption = spec.WithOption
 		db.Grants = append(db.Grants, grant)
 	}
+	return nil
+}
+
+// addRevokes reads the `revokes` entries into the model's revoked grants.
+func (d document) addRevokes(db *schemamodel.Database) error {
+	for _, key := range sortedKeys(d.Revokes) {
+		revoked, err := buildGrant("revoke", key, d.Revokes[key])
+		if err != nil {
+			return err
+		}
+		if revoked.Role == "" || len(revoked.Privileges) == 0 {
+			return fmt.Errorf("revoke %q requires role and privileges", key)
+		}
+		db.RevokedGrants = append(db.RevokedGrants, revoked)
+	}
+	return nil
+}
+
+// buildGrant reads the part a grant and a revoke share: the role, the
+// privileges and the target.
+func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
+	privileges := cleanStrings(spec.Privilege)
+	if len(privileges) == 0 {
+		privileges = cleanStrings(spec.Privileges)
+	}
+	grant := schemamodel.Grant{
+		StructName: string(spec.StructName),
+		Role:       string(spec.Role),
+		Privileges: privileges,
+		OnTable:    string(spec.OnTable),
+		OnSchema:   string(spec.OnSchema),
+		OnSequence: string(spec.OnSequence),
+		Comment:    string(spec.Comment),
+	}
+	for _, routine := range []struct {
+		attribute, kind, value string
+	}{
+		{"on_function", "FUNCTION", string(spec.OnFunction)},
+		{"on_procedure", "PROCEDURE", string(spec.OnProcedure)},
+	} {
+		if strings.TrimSpace(routine.value) == "" {
+			continue
+		}
+		name, arguments, ok := routineargs.SplitTarget(routine.value)
+		if !ok {
+			return schemamodel.Grant{}, fmt.Errorf(
+				"%s %q %s %q needs the argument types in parentheses, as in purge(uuid): "+
+					"PostgreSQL tells overloaded routines apart by them", kind, key, routine.attribute, routine.value)
+		}
+		grant.OnRoutine, grant.RoutineArguments, grant.RoutineKind = name, arguments, routine.kind
+	}
+	grant.Canonicalize()
+	return grant, nil
 }
 
 // addDefaultPrivileges reads the `default_privileges` entries into the model.

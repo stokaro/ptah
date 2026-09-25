@@ -2,12 +2,12 @@ package atlashclrender
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
 )
@@ -530,6 +530,7 @@ func (r *renderer) renderGrants() {
 		r.line("permission {")
 		r.rawAttr(1, "to", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", target)
+		r.rawAttr(1, "args", routineArgs(grant))
 		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
 		r.rawAttr(1, "columns", optionalPrivilegeList(grant.Columns))
 		if grant.WithOption {
@@ -559,6 +560,7 @@ func (r *renderer) renderRevokedGrants() {
 		r.line("revoke {")
 		r.rawAttr(1, "from", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", r.grantTarget(grant))
+		r.rawAttr(1, "args", routineArgs(grant))
 		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
 		r.rawAttr(1, "columns", optionalPrivilegeList(grant.Columns))
 		r.stringAttr(1, "comment", grant.Comment)
@@ -574,23 +576,13 @@ func (r *renderer) renderRevokedGrants() {
 // [renderer.grantTarget] and rendering a target records the schema reference
 // it writes. Asking it about a grant that is then skipped would declare a
 // `schema` block for a block the document does not contain.
-//
-// A grant on a function or procedure is left out with its own diagnostic. The
-// routine's identity includes its argument types, and a `function.<name>`
-// reference names a block by its label alone, so it cannot say which overload
-// the privilege is on.
 func (r *renderer) renderableGrants(grants []schemamodel.Grant, path, noun string) []schemamodel.Grant {
 	renderable := make([]schemamodel.Grant, 0, len(grants))
 	for _, grant := range grants {
 		grant.Canonicalize()
-		if grant.OnRoutine != "" {
-			r.warn(path+"."+grant.Role, fmt.Sprintf(
-				"%s on %s %s(%s) cannot be represented in HCL: a routine reference cannot name an overload",
-				noun, strings.ToLower(grant.RoutineKind), grant.OnRoutine, grant.RoutineArguments))
-			continue
-		}
 		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
-			r.warn(path+"."+grant.Role, noun+" requires role, table, schema, or sequence target, and at least one privilege")
+			r.warn(path+"."+grant.Role, noun+" requires role, table, schema, sequence or routine target, "+
+				"and at least one privilege")
 			continue
 		}
 		renderable = append(renderable, grant)
@@ -920,7 +912,47 @@ func (r *renderer) roleTarget(value string) string {
 // and nothing recorded. It answers "is this grant complete" without asking
 // [renderer.grantTarget], which has the side effect of declaring a schema.
 func grantTargetName(grant schemamodel.Grant) string {
-	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence)
+	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence, grant.OnRoutine)
+}
+
+// routineArgs renders the argument types of a routine target, a Ptah
+// attribute: the `for` reference names a block by its label, and PostgreSQL
+// tells overloaded routines apart by their argument types. It is empty for
+// every other target, so the attribute is left out; a routine with no
+// arguments writes `args = []`, which is a different routine from one whose
+// arguments nobody wrote.
+func routineArgs(grant schemamodel.Grant) string {
+	if grant.OnRoutine == "" {
+		return ""
+	}
+	return privilegeList(routineargs.Split(grant.RoutineArguments))
+}
+
+// routineRef renders the routine a `permission` or `revoke` block is about.
+//
+// The traversal `function.<label>` or `procedure.<label>` is written only
+// where the document declares exactly one routine block under that label in
+// the grant's schema, which is the one case it resolves and names one routine:
+// the Atlas community binary evaluates a permission body before it drops the
+// block, so a reference to a block the document does not declare fails the
+// whole file. Otherwise the routine is a quoted name, which Ptah's reader
+// takes as a routine because `args` is present, and whose kind it reads as
+// ROUTINE: PostgreSQL resolves GRANT ... ON ROUTINE to a function or a
+// procedure alike.
+func (r *renderer) routineRef(grant schemamodel.Grant) string {
+	schema := r.schemaFor(schemaNameFromQualified(grant.OnRoutine))
+	name := objectNameFromQualified(grant.OnRoutine)
+	var matched []schemamodel.Function
+	for _, function := range r.db.Functions {
+		if objectNameFromQualified(function.Name) == name &&
+			r.schemaFor(schemaNameFromQualified(function.Name)) == schema {
+			matched = append(matched, function)
+		}
+	}
+	if len(matched) != 1 {
+		return quote(grant.OnRoutine)
+	}
+	return routineBlock(matched[0]) + objectRefPart(name)
 }
 
 // grantTarget renders the object a `permission` block is about.
@@ -936,6 +968,9 @@ func grantTargetName(grant schemamodel.Grant) string {
 func (r *renderer) grantTarget(grant schemamodel.Grant) string {
 	if grant.OnSchema != "" {
 		return r.schemaRef(grant.OnSchema)
+	}
+	if grant.OnRoutine != "" {
+		return r.routineRef(grant)
 	}
 	if grant.OnTable != "" {
 		return r.relationRef(grant.OnTable, quote(grant.OnTable))

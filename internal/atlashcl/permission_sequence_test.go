@@ -105,5 +105,5 @@ permission {
   privileges = [SELECT]
 }
 `), "schema.hcl")
-	c.Assert(err, qt.ErrorMatches, `.*permission requires table, view, schema, or sequence target.*`)
+	c.Assert(err, qt.ErrorMatches, `.*permission requires table, view, schema, sequence, function or procedure target.*`)
 }

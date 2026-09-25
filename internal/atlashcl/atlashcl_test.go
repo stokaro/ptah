@@ -1513,14 +1513,14 @@ function "missing_body" {
 			match: `.*function "missing_body" requires as.*`,
 		},
 		{
-			name: "permission unsupported target",
+			name: "permission on a function without its argument types",
 			input: `
 permission {
   to         = role.app_user
   for        = function.get_tenant
   privileges = [EXECUTE]
 }`,
-			match: `.*permission requires table, view, schema, or sequence target.*`,
+			match: `.*permission on function get_tenant needs args, its argument types: a routine's identity includes them.*`,
 		},
 		{
 			name: "permission missing privileges",

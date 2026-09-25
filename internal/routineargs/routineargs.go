@@ -271,3 +271,33 @@ func withoutParameterName(text string) string {
 	}
 	return strings.Join(fields[1:], " ")
 }
+
+// SplitTarget splits a routine named with its argument types, `purge(uuid)`,
+// into the name and the argument list between the parentheses. It reports
+// false when the value names no argument list, which a grant target must
+// have: PostgreSQL tells overloaded routines apart by their argument types.
+// Every source that spells a routine target this way reads it here, so they
+// cannot come to disagree about where the name ends.
+func SplitTarget(value string) (name, arguments string, ok bool) {
+	value = strings.TrimSpace(value)
+	open := strings.Index(value, "(")
+	if open <= 0 || !strings.HasSuffix(value, ")") {
+		return "", "", false
+	}
+	return strings.TrimSpace(value[:open]), strings.TrimSpace(value[open+1 : len(value)-1]), true
+}
+
+// Split returns the arguments of an argument list one entry each, split on
+// the commas outside parentheses and string literals, so `numeric(10,2)`
+// stays one argument. Each entry is trimmed and empty entries are dropped;
+// joining the result with ", " gives back an equivalent list.
+func Split(arguments string) []string {
+	parts := splitTopLevel(arguments)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}

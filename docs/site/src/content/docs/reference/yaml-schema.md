@@ -78,7 +78,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies. |
 | `roles` | PostgreSQL role declarations. |
-| `grants` | Table or schema permission grants. |
+| `grants` | Permission grants on a table, schema, sequence, function or procedure. A routine is `on_function` or `on_procedure` with its argument types, such as `purge(uuid)`. |
+| `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but

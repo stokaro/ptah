@@ -834,8 +834,8 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 		return err
 	}
 	grant.WithOption = grantable
-	if !setGrantTargetFromRef(&grant, target) {
-		return p.blockError(block, "permission requires table, view, schema, or sequence target")
+	if err := p.setGrantTarget(block, "permission", &grant, target); err != nil {
+		return err
 	}
 	if grant.Role == "" {
 		return p.blockError(block, "permission requires to")
@@ -860,6 +860,7 @@ func (p *parser) parseRevoke(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedAttrs(block, map[string]bool{
 		"from":       true,
 		"for":        true,
+		"args":       true,
 		"privileges": true,
 		"columns":    true,
 		"comment":    true,
@@ -878,8 +879,8 @@ func (p *parser) parseRevoke(block *hclsyntax.Block) error {
 		Privileges: privileges,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 	}
-	if !setGrantTargetFromRef(&revoked, p.optionalRawExpr(block.Body.Attributes["for"])) {
-		return p.blockError(block, "revoke requires table, view, schema, or sequence target")
+	if err := p.setGrantTarget(block, "revoke", &revoked, p.optionalRawExpr(block.Body.Attributes["for"])); err != nil {
+		return err
 	}
 	if revoked.Role == "" {
 		return p.blockError(block, "revoke requires from")
@@ -907,6 +908,53 @@ func (p *parser) grantColumns(block *hclsyntax.Block, label string, grant *schem
 	}
 	grant.Columns = columns
 	return nil
+}
+
+// setGrantTarget sets the object a `permission` or `revoke` block is about.
+//
+// A routine is named by `for` and the Ptah attribute `args`, its argument
+// types: PostgreSQL overloads a routine name by them. `for` is the traversal
+// `function.<name>` or `procedure.<name>`, or a quoted name, which reads as a
+// routine only beside `args` and takes the kind ROUTINE. `args` on any other
+// target, and a routine traversal without it, are refused rather than read as
+// something the author did not write.
+func (p *parser) setGrantTarget(block *hclsyntax.Block, label string, grant *schemamodel.Grant, target string) error {
+	argsAttr := block.Body.Attributes["args"]
+	name, kind, isRoutine := routineRefName(target)
+	switch {
+	case argsAttr == nil && isRoutine:
+		return p.blockError(block, "%s on %s %s needs args, its argument types: a routine's identity includes them",
+			label, strings.ToLower(kind), name)
+	case argsAttr == nil:
+		if !setGrantTargetFromRef(grant, target) {
+			return p.blockError(block, "%s requires table, view, schema, sequence, function or procedure target", label)
+		}
+		return nil
+	case !isRoutine:
+		unquoted, err := strconv.Unquote(strings.TrimSpace(target))
+		if err != nil || unquoted == "" {
+			return p.blockError(block, "%s args need a function or procedure target", label)
+		}
+		name, kind = unquoted, "ROUTINE"
+	}
+	arguments, err := p.rawListAttr(block, "args")
+	if err != nil {
+		return err
+	}
+	grant.OnRoutine = name
+	grant.RoutineArguments = strings.Join(arguments, ", ")
+	grant.RoutineKind = kind
+	return nil
+}
+
+// routineRefName reads a `function.<name>` or `procedure.<name>` reference.
+func routineRefName(raw string) (name, kind string, ok bool) {
+	for _, routine := range []struct{ word, kind string }{{"function", "FUNCTION"}, {"procedure", "PROCEDURE"}} {
+		if name, found := traversalObjectRefName(strings.TrimSpace(raw), routine.word); found {
+			return name, routine.kind, true
+		}
+	}
+	return "", "", false
 }
 
 // setGrantTargetFromRef sets the object a `permission` or `revoke` block is
@@ -1332,6 +1380,7 @@ func (p *parser) rejectUnsupportedPermissionAttrs(block *hclsyntax.Block) error 
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"to":         true,
 		"for":        true,
+		"args":       true,
 		"privileges": true,
 		"columns":    true,
 		"grantable":  true,
@@ -2124,6 +2173,20 @@ func (p *parser) resolveTriggerExecuteFunctions() {
 			continue
 		}
 		p.db.Triggers[i].ExecuteFunction = candidates[0]
+	}
+	// The routine a `permission` or `revoke` block names carries the block's
+	// label, not its schema, for the same reason; resolved the same way, and
+	// only where the label names routines in one schema.
+	for _, grants := range [][]schemamodel.Grant{p.db.Grants, p.db.RevokedGrants} {
+		for i := range grants {
+			declared := strings.TrimSpace(grants[i].OnRoutine)
+			if declared == "" || strings.Contains(declared, ".") {
+				continue
+			}
+			if candidates := slices.Compact(slices.Sorted(slices.Values(qualifiedByBareName[declared]))); len(candidates) == 1 {
+				grants[i].OnRoutine = candidates[0]
+			}
+		}
 	}
 }
 
