@@ -52,12 +52,25 @@ func eventsColumns(schemas ...string) []lint.BaselineColumn {
 
 func analyzeEvents(c *qt.C, migration string, columns []lint.BaselineColumn, hypertables []lint.BaselineHypertable) lint.Analysis {
 	c.Helper()
+	return analyzeEventsWithout(c, migration, columns, hypertables)
+}
+
+// analyzeEventsWithout is [analyzeEvents] with the named rules disabled.
+func analyzeEventsWithout(
+	c *qt.C,
+	migration string,
+	columns []lint.BaselineColumn,
+	hypertables []lint.BaselineHypertable,
+	disabled ...string,
+) lint.Analysis {
+	c.Helper()
 	analysis, err := lint.AnalyzeFS(fixture(eventsFS(migration)), lint.Options{
 		Dialect:             "postgres",
 		DirFormat:           migrationfile.DirFormatAtlas,
 		Selection:           lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:            columns,
 		BaselineHypertables: hypertables,
+		Disabled:            disabled,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
@@ -220,7 +233,8 @@ func TestPG101_PerChunkBuildIsTheRemedy(t *testing.T) {
 // TestPG101_AsksForTheStateOfWhatItReports: the statements PG101 asks the
 // starting state for are the ones it reports, so a run without a dev database
 // names the refinement it went without, and a statement it does not report
-// costs no catalog read.
+// costs no catalog read. PG108 is disabled because it asks for the state of an
+// index build on an earlier table too, a request pg108_baseline_test.go pins.
 func TestPG101_AsksForTheStateOfWhatItReports(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -257,7 +271,7 @@ func TestPG101_AsksForTheStateOfWhatItReports(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis := analyzeEvents(c, test.migration, test.columns, nil)
+			analysis := analyzeEventsWithout(c, test.migration, test.columns, nil, "PG108")
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.wantVersions)
 			c.Assert(pg101Unmet(analysis), qt.DeepEquals, test.wantUnmet)
 		})

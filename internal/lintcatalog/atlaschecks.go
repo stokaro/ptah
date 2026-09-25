@@ -273,8 +273,8 @@ var atlasChecks = []AtlasCheck{
 	{
 		Code: "PG108", Meaning: "an index on a partitioned table blocks writes on all its partitions", Pro: true,
 		PtahRules: []string{"PG108"}, Status: StatusPartial,
-		Note: "reported where the migration itself declares the parent PARTITION BY; the statement alone cannot say a table is partitioned, so an index on a" +
-			"parent created in an earlier release is left to PG101, whose CONCURRENTLY remedy the server refuses here",
+		Note: "reported where the migration declares the parent PARTITION BY, or the dev database shows an earlier parent partitioned; " +
+			"without a dev database PG101 reports it instead",
 	},
 	{
 		Code: "PG109", Meaning: "an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table", Pro: true,
