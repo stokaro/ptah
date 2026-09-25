@@ -247,19 +247,25 @@ gives one. The file is read strictly: an unknown field, a second document, a
 missing `migrations` list or a version below one is an error, because a field
 this build did not read would be a constraint the caller believes it set.
 
-The second run below approves a migration the first run already applied:
+The database this page migrated already records `1785255952`, so an approval
+naming it again describes a history that has since moved: `up` selects nothing
+under the lock, and the approval says something should run. Write the approval:
 
-```sh
-mkdir -p migrations
-printf 'CREATE TABLE notes (id INTEGER PRIMARY KEY);\n' > migrations/1785255952_create_notes.up.sql
-printf 'DROP TABLE notes;\n' > migrations/1785255952_create_notes.down.sql
+```bash
 printf '{"migrations":[{"version":1785255952}]}\n' > expected.json
-ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --expect-sequence expected.json
+```
+
+```powershell
+Set-Content expected.json '{"migrations":[{"version":1785255952}]}'
+```
+
+Run it. The command exits with status 2 and changes nothing:
+
+```console exits=2
 ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --expect-sequence expected.json
 ```
 
-The first run applies `1785255952`. The second selects nothing, exits with
-status 2 and prints:
+Expected output on standard error:
 
 ```text
 error: error running migrations: the migrations selected under the migration lock are [], and the approved sequence is [1785255952]: the history moved after the sequence was approved, so nothing was run
