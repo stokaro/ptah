@@ -142,6 +142,13 @@ Generated 1 Go file(s) in .../models
 Imported 1 table(s), 3 field(s), 0 enum(s)
 ```
 
+Each table becomes one struct, in a file named after the table. Two tables can
+derive the same Go name and file name: PostgreSQL keeps `"Docs"` and `docs`
+apart, and both derive the struct `Docs` and the file `<schema>_docs.go`. The
+table whose schema-qualified name sorts second in byte order then takes a
+numbered name, the struct `Docs2` in `<schema>_docs2.go`, so each table keeps
+its own columns and its own file.
+
 Introspection is step one of bringing a database under Ptah management.
 [Adopt an existing database](../../start/adopt-an-existing-database/) continues
 from here: it verifies the round trip with a drift check, generates the initial

@@ -2,13 +2,13 @@ package sqlschema
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/uniquename"
 )
 
 // identifierPart reads one component of a name the way the source dialect's
@@ -239,7 +239,8 @@ func resolveColumn(databases []*schemamodel.Database, structName, name, sourcePl
 // everything that joins on it, and Finalize keeps a single `id` column for the
 // pair (stokaro/ptah#3642). So a table whose derived name another table
 // already holds takes the first numbered form that is free, Doc2 and then
-// Doc3, in the order the document declares them.
+// Doc3, in the order the document declares them: the rule [uniquename.Next]
+// holds for every reader.
 //
 // A table declared again under the same qualified name keeps the struct name
 // of the first declaration, so the repeat still collapses into one table.
@@ -257,11 +258,7 @@ func uniqueStructName(databases []*schemamodel.Database, table schemamodel.Table
 		}
 		return false
 	}
-	name := table.StructName
-	for suffix := 2; taken(name); suffix++ {
-		name = table.StructName + strconv.Itoa(suffix)
-	}
-	return name
+	return uniquename.Next(table.StructName, taken)
 }
 
 func normalizeSQLIdentifierReference(sourcePlatform, value string) string {
