@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 )
 
@@ -231,9 +232,9 @@ func privilegeRepresented(removal removedLine, grants []schemamodel.Grant) bool 
 		Columns:    splitAnnotationList(removal.values["columns"]),
 	}
 	for _, key := range []string{"on_function", "on_procedure"} {
-		if name, arguments, ok := strings.Cut(removal.values[key], "("); ok {
+		if name, arguments, ok := routineargs.SplitTarget(removal.values[key]); ok {
 			declared.OnRoutine = name
-			declared.RoutineArguments = strings.TrimSuffix(arguments, ")")
+			declared.RoutineArguments = arguments
 		}
 	}
 	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {

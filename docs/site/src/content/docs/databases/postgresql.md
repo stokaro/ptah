@@ -197,8 +197,8 @@ GRANT EXECUTE ON FUNCTION purge_workspace(uuid) TO app;
 REVOKE INSERT, UPDATE, DELETE ON plugin_signatures FROM app;
 ```
 
-In Go the same declaration is `//ptah:schema:revoke`, and in HCL a `revoke`
-block. Ptah plans the `REVOKE` whenever the database holds the privilege,
+In Go the same declaration is `//ptah:schema:revoke`, in HCL a `revoke`
+block, and in YAML a `revokes` entry. Ptah plans the `REVOKE` whenever the database holds the privilege,
 including the implicit `EXECUTE` a function's default ACL gives `PUBLIC`, and
 also in the same plan that creates the table or function, since the privilege
 arrives with the object. A revoke of a privilege the role does not hold
@@ -215,8 +215,26 @@ because PostgreSQL 16 refuses the word `MAINTAIN`.
 
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
-one object wins. Go annotations and HCL have no statement order, so declaring
-the same privilege both granted and revoked is refused.
+one object wins. Go annotations, HCL and YAML have no statement order, so
+declaring the same privilege both granted and revoked is refused.
+
+In HCL a function or procedure is named by `for` and its argument types by the
+Ptah attribute `args`:
+
+```hcl
+permission {
+  to         = role.app
+  for        = function.purge_workspace
+  args       = ["uuid"]
+  privileges = ["EXECUTE"]
+}
+```
+
+`ptah schema export --to hcl` writes `function.<name>` or `procedure.<name>`
+where the document declares one routine under that name, and a quoted name
+otherwise, because the Atlas community CLI evaluates the reference before it
+ignores the block. In YAML a grant or revoke names the routine as the Go
+annotations do, `on_function: purge_workspace(uuid)`.
 
 `ALTER DEFAULT PRIVILEGES ... REVOKE` composes the same way with the
 `ALTER DEFAULT PRIVILEGES ... GRANT` statements before it. A revoke with no
@@ -262,10 +280,8 @@ names the form:
   `GRANT` instead.
 
 A privilege on a function or procedure is modeled for PostgreSQL only; the
-other renderers refuse the statement by name. HCL has no spelling for a routine
-target, because a `function.<name>` reference cannot name an overload, so
-`ptah schema export --to hcl` reports such a grant or revoke as an export
-loss. Column privileges are modeled for PostgreSQL only too.
+other renderers refuse the statement by name. Column privileges are modeled for
+PostgreSQL only too.
 
 New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with

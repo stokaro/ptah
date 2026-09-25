@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 )
@@ -2130,8 +2131,8 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 		if value == "" {
 			continue
 		}
-		open := strings.Index(value, "(")
-		if open <= 0 || !strings.HasSuffix(value, ")") {
+		name, arguments, ok := routineargs.SplitTarget(value)
+		if !ok {
 			return &ptaherr.ParseError{
 				File:      ctx.file,
 				Line:      ctx.line,
@@ -2142,8 +2143,8 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 					"PostgreSQL tells overloaded routines apart by them", attribute.key, value, ctx.directive, ctx.location),
 			}
 		}
-		grant.OnRoutine = strings.TrimSpace(value[:open])
-		grant.RoutineArguments = strings.TrimSpace(value[open+1 : len(value)-1])
+		grant.OnRoutine = name
+		grant.RoutineArguments = arguments
 		grant.RoutineKind = attribute.kind
 	}
 	return nil
