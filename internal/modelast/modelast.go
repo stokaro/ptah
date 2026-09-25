@@ -1800,22 +1800,25 @@ func FromDefaultPrivilege(defaultPrivilege schemamodel.DefaultPrivilege) *ast.De
 //
 // The function generates statements in the following order to respect dependencies:
 //  1. Schema definitions (CREATE SCHEMA statements)
-//  2. Extension definitions
-//  3. Enum type definitions (CREATE TYPE statements)
-//  4. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
-//  5. PostgreSQL roles and functions
-//  6. Unique index definitions (CREATE UNIQUE INDEX statements), plus all
+//  2. Extension definitions, sequences and roles
+//  3. Routines whose definitions name no declared type or relation
+//  4. Enum and other user-defined type definitions (CREATE TYPE statements)
+//  5. Routines whose signatures name a declared type
+//  6. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
+//  7. Unique index definitions (CREATE UNIQUE INDEX statements), plus all
 //     MySQL-family indexes required before foreign-key creation
-//  7. Foreign key constraints (ALTER TABLE statements)
-//  8. Dialect-specific objects such as views, RLS policies, grants, default
+//  8. Foreign key constraints (ALTER TABLE statements)
+//  9. Dialect-specific objects such as views and the routines that name a
+//     declared relation, ordered together, then RLS policies, grants, default
 //     privileges, and triggers
-//  9. Non-unique index definitions (CREATE INDEX statements)
+//  10. Non-unique index definitions (CREATE INDEX statements)
 //
 // This ordering ensures that:
 //   - Schemas are created before tables that reference them
 //   - Extensions are created before tables, indexes, or functions that may use them
+//   - A routine is created after the types and relations its definition names,
+//     and before a domain, a column default, an index or a policy that calls it
 //   - Enum types are created before tables that reference them
-//   - PostgreSQL functions are created before indexes that may use them
 //   - Tables are created before indexes that reference them
 //   - Unique indexes are created before foreign keys because PostgreSQL can use
 //     a unique index as the referenced key
@@ -1897,26 +1900,23 @@ func WalkDatabase(
 	database = *schemaprep.QualifyDeclaredUserTypes(assigned, targetPlatform)
 	allFields := database.Fields
 
-	if err := appendPreTableStatements(visit, database, targetPlatform); err != nil {
+	// Routines are placed the way a migration plan places them, so a render
+	// and a plan agree; see deporder.PlaceRoutines. One that names nothing the
+	// render creates goes before the types, one whose signature names a type
+	// goes after them, and both precede the tables whose defaults may call
+	// them. One that names a relation waits for it among the view-likes.
+	placements := declaredRoutinePlacements(database, targetPlatform)
+	if err := appendPreTableStatements(visit, database, targetPlatform, placements); err != nil {
 		return err
 	}
 
-	// 4. Add table definitions (they may be referenced by indexes)
+	// 6. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
 	if err := appendTableStatements(visit, database, allFields, targetPlatform); err != nil {
 		return err
 	}
 
-	// 5. Roles and functions precede the objects that name them: a grant names
-	// a role, and a trigger names a function. A routine that names a relation
-	// waits for it among the view-likes at step 8; the placement is the one a
-	// migration plan uses, so a render and a plan agree.
-	placements := declaredRoutinePlacements(database, targetPlatform)
-	if err := appendRoleAndFunctionStatements(visit, database, placements); err != nil {
-		return err
-	}
-
-	// 6. Add unique indexes before foreign keys. PostgreSQL accepts a unique
+	// 7. Add unique indexes before foreign keys. PostgreSQL accepts a unique
 	// index as the referenced key for a foreign key, so it must exist before
 	// the FK constraint is added.
 	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
@@ -1930,24 +1930,24 @@ func WalkDatabase(
 		}
 	}
 
-	// 7. Add foreign key constraints after all tables and unique indexes exist.
+	// 8. Add foreign key constraints after all tables and unique indexes exist.
 	if !isSQLiteTarget(targetPlatform) {
 		if err := appendForeignKeyConstraintStatements(visit, database.Tables, allFields, database.Constraints, targetPlatform); err != nil {
 			return err
 		}
 	}
 
-	// 8. Everything that needs the tables to exist first.
+	// 9. Everything that needs the tables to exist first.
 	if err := appendPostTableObjectStatements(visit, database, targetPlatform, placements); err != nil {
 		return err
 	}
 
-	// 8a. A materialized view's indexes, once the view exists.
+	// 9a. A materialized view's indexes, once the view exists.
 	if err := appendMaterializedViewIndexStatements(visit, database, viewIndexes); err != nil {
 		return err
 	}
 
-	// 8b. Synonyms come after the objects a local target may name. A synonym
+	// 9b. Synonyms come after the objects a local target may name. A synonym
 	// pointing outside this database has nothing here to wait for, and one
 	// pointing at a local table or view has to follow it -- SQL Server does not
 	// require the target to exist when the synonym is created, but a script
@@ -1975,7 +1975,7 @@ func WalkDatabase(
 		return err
 	}
 
-	// 8c. Extended properties come after every object one can hang off.
+	// 9c. Extended properties come after every object one can hang off.
 	// sp_addextendedproperty resolves @level1name through the catalog and
 	// answers `Cannot find the object ... because it does not exist or you do
 	// not have permission` when the table is not there yet, so a property can
@@ -1984,7 +1984,7 @@ func WalkDatabase(
 		return err
 	}
 
-	// 9. Add non-unique indexes last, except on MySQL-family targets where both
+	// 10. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
 	if !mysqlFamily {
 		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
@@ -1999,6 +1999,7 @@ func appendPreTableStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
+	placements map[string]deporder.RoutinePlacement,
 ) error {
 	// Schemas come first because tables and extension installation clauses may
 	// reference them.
@@ -2022,6 +2023,18 @@ func appendPreTableStatements(
 		}
 	}
 
+	// Roles precede the objects that name them: a grant or a policy names a
+	// role. They go ahead of the routines, as in a migration plan.
+	if err := appendRoleStatements(visit, database); err != nil {
+		return err
+	}
+
+	// Before the types, so a domain CHECK can call the routine as a column
+	// default can.
+	if err := appendRoutineStatements(visit, database, placements, deporder.RoutineBeforeTypes); err != nil {
+		return err
+	}
+
 	// MySQL, MariaDB, SQLite, and SQL Server model enums on the column itself,
 	// so a top-level enum node would render no executable DDL there.
 	if schemaprep.EmitsStandaloneEnumDefinitions(targetPlatform) {
@@ -2034,7 +2047,10 @@ func appendPreTableStatements(
 
 	// User-defined types precede tables and are ordered by their references,
 	// rather than by kind. Enums are already out and reference nothing.
-	return visitDatabaseNodes(visit, orderedUserTypeStatements(database)...)
+	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
+		return err
+	}
+	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
 }
 
 // CollectDatabase collects the nodes [WalkDatabase] visits into an
@@ -2226,20 +2242,28 @@ func createStructToViewMap(views []schemamodel.MaterializedView) map[string]stri
 	return mapping
 }
 
-// appendRoleAndFunctionStatements appends every declared role and function, for
-// every target. A target that cannot host one says so through its renderer.
-func appendRoleAndFunctionStatements(
-	visit func(ast.Node) error,
-	database schemamodel.Database,
-	placements map[string]deporder.RoutinePlacement,
-) error {
+// appendRoleStatements appends every declared role, for every target. A target
+// that cannot host one says so through its renderer.
+func appendRoleStatements(visit func(ast.Node) error, database schemamodel.Database) error {
 	for _, role := range database.Roles {
 		if err := visit(FromRole(role)); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// appendRoutineStatements appends the declared routines placed at placement, in
+// declaration order, which the model keeps callees first. A target that cannot
+// host a routine says so through its renderer.
+func appendRoutineStatements(
+	visit func(ast.Node) error,
+	database schemamodel.Database,
+	placements map[string]deporder.RoutinePlacement,
+	placement deporder.RoutinePlacement,
+) error {
 	for _, function := range database.Functions {
-		if placements[function.Name] == deporder.RoutineWithRelations {
+		if placements[function.Name] != placement {
 			continue
 		}
 		if err := visit(FromFunction(function)); err != nil {
