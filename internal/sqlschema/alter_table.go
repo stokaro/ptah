@@ -25,16 +25,21 @@ type alterTarget struct {
 	qualified  string
 	table      *schemamodel.Table
 	databases  []*schemamodel.Database
+	// sourcePlatform decides how a name the statement writes is read; see
+	// [identifierPart]. A name already in the model was read that way once and
+	// is compared as it is.
+	sourcePlatform string
 }
 
 // findAlterTarget looks the table up in database, then in base.
-func findAlterTarget(database, base *schemamodel.Database, written string) (alterTarget, bool) {
-	schemaName, tableName := normalizeSQLTableIdentifier(written)
+func findAlterTarget(database, base *schemamodel.Database, written, sourcePlatform string) (alterTarget, bool) {
+	schemaName, tableName := normalizeSQLTableIdentifier(sourcePlatform, written)
 	target := alterTarget{
-		written:    written,
-		structName: tableStructName(written),
-		qualified:  schemamodel.QualifyTableName(schemaName, tableName),
-		databases:  []*schemamodel.Database{database},
+		written:        written,
+		structName:     tableStructName(sourcePlatform, written),
+		qualified:      schemamodel.QualifyTableName(schemaName, tableName),
+		databases:      []*schemamodel.Database{database},
+		sourcePlatform: sourcePlatform,
 	}
 	if base != nil {
 		target.databases = append(target.databases, base)
@@ -57,7 +62,7 @@ func undeclaredTableError(written, clause string) error {
 
 // field returns the table's column name, or nil.
 func (t alterTarget) field(name string) *schemamodel.Field {
-	name = normalizeSQLIdentifier(name)
+	name = normalizeSQLIdentifier(t.sourcePlatform, name)
 	for _, database := range t.databases {
 		for i := range database.Fields {
 			if database.Fields[i].StructName == t.structName && database.Fields[i].Name == name {
@@ -72,9 +77,9 @@ func (t alterTarget) field(name string) *schemamodel.Field {
 // index by the table's name and an ALTER TABLE ... ADD INDEX by its struct
 // name, so both are accepted, as is the qualified name.
 func (t alterTarget) ownsIndex(index schemamodel.Index) bool {
-	_, tableName := normalizeSQLTableIdentifier(t.written)
+	_, tableName := normalizeSQLTableIdentifier(t.sourcePlatform, t.written)
 	return index.StructName == t.structName || index.StructName == tableName ||
-		(index.TableName != "" && normalizeSQLTableReference(index.TableName) == t.qualified)
+		(index.TableName != "" && normalizeSQLTableReference("", index.TableName) == t.qualified)
 }
 
 // isPrimaryKeyColumn reports whether the column belongs to the table's primary
@@ -135,7 +140,7 @@ func applyModifyColumn(target alterTarget, operation *ast.ModifyColumnOperation,
 		return fmt.Errorf("ALTER TABLE %s MODIFY %s names a column the table does not declare",
 			target.written, operation.Column.Name)
 	}
-	replacement := ToField(operation.Column, target.structName, "")
+	replacement := fieldFromColumn(operation.Column, target.structName, sourcePlatform)
 	if platform.NormalizeDialect(sourcePlatform) == platform.SQLServer {
 		field.Type = replacement.Type
 		field.Nullable = replacement.Nullable
@@ -208,7 +213,7 @@ func applyRenameColumn(target alterTarget, operation *ast.RenameColumnOperation)
 				"declare the column under its new name",
 			target.written, operation.OldName, reference)
 	}
-	oldName, newName := field.Name, normalizeSQLIdentifier(operation.NewName)
+	oldName, newName := field.Name, normalizeSQLIdentifier(target.sourcePlatform, operation.NewName)
 	field.Name = newName
 	for i, column := range target.table.PrimaryKey {
 		if column == oldName {
@@ -239,7 +244,7 @@ func columnReference(target alterTarget, column string) string {
 			}
 		}
 		for _, index := range database.Indexes {
-			if target.ownsIndex(index) && indexMentions(index, column) {
+			if target.ownsIndex(index) && indexMentions(target.sourcePlatform, index, column) {
 				return fmt.Sprintf("index %s", index.Name)
 			}
 		}
@@ -259,37 +264,38 @@ func constraintColumnReference(target alterTarget, constraint schemamodel.Constr
 	}
 	if constraint.StructName == target.structName &&
 		(slices.Contains(constraint.Columns, column) || slices.Contains(constraint.IncludeColumns, column) ||
-			expressionMentions(constraint.CheckExpression, column) ||
-			expressionMentions(constraint.ExcludeElements, column) ||
-			expressionMentions(constraint.WhereCondition, column)) {
+			expressionMentions(target.sourcePlatform, constraint.CheckExpression, column) ||
+			expressionMentions(target.sourcePlatform, constraint.ExcludeElements, column) ||
+			expressionMentions(target.sourcePlatform, constraint.WhereCondition, column)) {
 		return fmt.Sprintf("%s constraint %s", strings.ToLower(constraint.Type), name)
 	}
 	if strings.EqualFold(constraint.Type, "FOREIGN KEY") &&
-		normalizeSQLTableReference(constraint.ForeignTable) == target.qualified &&
+		normalizeSQLTableReference("", constraint.ForeignTable) == target.qualified &&
 		slices.Contains(constraint.ForeignColumnsOrDefault(), column) {
 		return fmt.Sprintf("the foreign key %s of %s", name, constraint.Table)
 	}
 	return ""
 }
 
-func indexMentions(index schemamodel.Index, column string) bool {
+func indexMentions(sourcePlatform string, index schemamodel.Index, column string) bool {
 	for _, element := range index.Fields {
-		if element == column || expressionMentions(element, column) {
+		if element == column || expressionMentions(sourcePlatform, element, column) {
 			return true
 		}
 	}
 	for _, part := range index.Parts {
-		if part.Name == column || expressionMentions(part.Expr, column) {
+		if part.Name == column || expressionMentions(sourcePlatform, part.Expr, column) {
 			return true
 		}
 	}
-	return slices.Contains(index.IncludeColumns, column) || expressionMentions(index.Condition, column)
+	return slices.Contains(index.IncludeColumns, column) || expressionMentions(sourcePlatform, index.Condition, column)
 }
 
 func fieldColumnReference(target alterTarget, field schemamodel.Field, column string) string {
 	if field.StructName == target.structName && field.Name != column &&
-		(expressionMentions(field.Check, column) || expressionMentions(field.GeneratedExpression, column) ||
-			expressionMentions(field.DefaultExpr, column)) {
+		(expressionMentions(target.sourcePlatform, field.Check, column) ||
+			expressionMentions(target.sourcePlatform, field.GeneratedExpression, column) ||
+			expressionMentions(target.sourcePlatform, field.DefaultExpr, column)) {
 		return fmt.Sprintf("column %s", field.Name)
 	}
 	if field.Foreign == "" {
@@ -299,11 +305,13 @@ func fieldColumnReference(target alterTarget, field schemamodel.Field, column st
 	if open < 0 || !strings.HasSuffix(field.Foreign, ")") {
 		return ""
 	}
-	if normalizeSQLTableReference(field.Foreign[:open]) != target.qualified {
+	// Foreign holds names the read already resolved, so they are compared as
+	// they are rather than folded again.
+	if normalizeSQLTableReference("", field.Foreign[:open]) != target.qualified {
 		return ""
 	}
 	for referenced := range strings.SplitSeq(field.Foreign[open+1:len(field.Foreign)-1], ",") {
-		if normalizeSQLIdentifier(strings.TrimSpace(referenced)) == column {
+		if normalizeSQLIdentifier("", strings.TrimSpace(referenced)) == column {
 			return fmt.Sprintf("the foreign key on column %s", field.Name)
 		}
 	}
@@ -311,8 +319,9 @@ func fieldColumnReference(target alterTarget, field schemamodel.Field, column st
 }
 
 // expressionMentions reports whether expression contains column as an
-// identifier, quoted or not.
-func expressionMentions(expression, column string) bool {
+// identifier, quoted or not. An expression is SQL as written, so each token is
+// read the way the source dialect reads a name.
+func expressionMentions(sourcePlatform, expression, column string) bool {
 	if expression == "" || column == "" {
 		return false
 	}
@@ -321,7 +330,7 @@ func expressionMentions(expression, column string) bool {
 			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 	}
 	for _, token := range strings.FieldsFunc(expression, func(r rune) bool { return !isIdentifierByte(r) }) {
-		if normalizeSQLIdentifier(token) == column {
+		if normalizeSQLIdentifier(sourcePlatform, token) == column {
 			return true
 		}
 	}
@@ -343,7 +352,7 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		target.clearPrimaryKey()
 		return nil
 	}
-	name := normalizeSQLIdentifier(operation.ConstraintName)
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
 	if target.removeNamedConstraint(name) {
 		return nil
 	}
@@ -357,7 +366,8 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 
 // applyRenameConstraint renames a constraint the schema declares by name.
 func applyRenameConstraint(target alterTarget, operation *ast.RenameConstraintOperation) error {
-	from, to := normalizeSQLIdentifier(operation.From), normalizeSQLIdentifier(operation.To)
+	from, to := normalizeSQLIdentifier(target.sourcePlatform, operation.From),
+		normalizeSQLIdentifier(target.sourcePlatform, operation.To)
 	if target.renameNamedConstraint(from, to) {
 		return nil
 	}

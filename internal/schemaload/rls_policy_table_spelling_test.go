@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaload"
@@ -41,7 +42,7 @@ func TestLoad_SQLSchemaFileFoldsTwoSpellingsOfOnePolicysTable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicySpellings), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "p")
@@ -68,10 +69,10 @@ CREATE POLICY p ON ORDERS  FOR ALL TO PUBLIC USING (tenant_id = 2);
 `
 
 // TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable is the case-variant
-// half of the same surface. The SQL reader stores an identifier as it was
-// written, so `ORDERS` arrived as a table of its own: the render carried a
-// second CREATE POLICY and an ALTER TABLE against a table nothing declared,
-// and PostgreSQL answered `relation "ORDERS" does not exist`.
+// half of the same surface. Read as PostgreSQL, `ORDERS` is the table
+// `orders`. Kept as written, it arrived as a table of its own: the render
+// carried a second CREATE POLICY and an ALTER TABLE against a table nothing
+// declared, and PostgreSQL answered `relation "ORDERS" does not exist`.
 //
 // Every statement here must name `orders`, because that is the table the
 // schema declares and the only one the render may reach.
@@ -81,7 +82,7 @@ func TestLoad_SQLSchemaFileFoldsACaseVariantOfOnePolicysTable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(oneTableTwoPolicyCases), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
@@ -113,7 +114,7 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 2);
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 
@@ -125,14 +126,10 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 }
 
 // TestLoad_SQLSchemaFileDoesNotFoldOntoACasePreservingTable is the direction
-// the fold must not run. The SQL reader keeps `CREATE TABLE "ORDERS"` as
-// `ORDERS` and discards the quoting, so a declaration spelled `ORDERS` is
-// indistinguishable from one written `"ORDERS"` -- and to PostgreSQL those are
-// two different relations, only one of which a reference written `orders`
-// reaches. Folding the declaration up to meet the reference therefore has to be
-// wrong for one of two inputs Ptah cannot tell apart, and being wrong for the
-// quoted one moves an access-control declaration onto a relation the author did
-// not name.
+// the fold must not run. `CREATE TABLE "ORDERS"` keeps its case, so the table
+// is `ORDERS`, and a reference written `orders` names a different relation.
+// Matching the two would move an access-control declaration onto a relation
+// the author did not name.
 //
 // Measured on PostgreSQL 17.10 with `-v ON_ERROR_STOP=1`, this exact file exits
 // 3 with `relation "orders" does not exist`. The render must say the same thing:
@@ -147,7 +144,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
@@ -165,11 +162,10 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 }
 
 // TestLoad_SQLSchemaFileFoldsOntoALowerCaseTableDeclaredUnquoted is the other
-// half of the same boundary, and the reason the fold exists at all. The
-// declaration here is already its own folded form, so a reference written
-// `ORDERS` reaches it exactly as PostgreSQL says it does, and the render names
-// the declared table. The two tests differ only in the case of the CREATE
-// TABLE, which is what makes the rule one-directional rather than absent.
+// half of the same boundary, and the reason the fold exists at all. A
+// reference written `ORDERS` reaches the table `orders` exactly as PostgreSQL
+// says it does, and the render names the declared table. The two tests differ
+// only in whether the CREATE TABLE is quoted.
 func TestLoad_SQLSchemaFileFoldsOntoALowerCaseTableDeclaredUnquoted(t *testing.T) {
 	c := qt.New(t)
 
@@ -179,7 +175,7 @@ ALTER TABLE ORDERS ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "orders")
@@ -193,6 +189,34 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 	})
 	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
 		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
+	})
+}
+
+// TestLoad_SQLSchemaFileFoldsAnUnquotedDeclaration is the declaration's side
+// of the same rule. `CREATE TABLE ORDERS` creates `orders` on PostgreSQL, so a
+// later `orders` names it, and the render creates and secures one table
+// (stokaro/ptah#3592). Kept as written, the render created "ORDERS" and
+// enabled row-level security on "orders", which PostgreSQL refused.
+func TestLoad_SQLSchemaFileFoldsAnUnquotedDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE ORDERS (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
+	c.Assert(err, qt.IsNil)
+	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"orders"})
+
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
+		`ALTER TABLE "orders" ENABLE ROW LEVEL SECURITY;`,
+	})
+	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
+		"CREATE POLICY \"p\" ON \"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
 	})
 }
 
@@ -220,7 +244,7 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "ORDERS")
@@ -252,7 +276,7 @@ ALTER TABLE "App".ORDERS ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "App.orders")
@@ -273,7 +297,7 @@ CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 // uses, because the two candidates agree on every fixture that came before
 // this one.
 //
-// `catalogPostgresIdentifierPart` folds an unquoted component with
+// `identifierPart` folds an unquoted PostgreSQL component with
 // `identifier.ComparisonASCIIInsensitive`. Substituting
 // `identifier.ComparisonUnicodeInsensitive` -- `strings.ToLower`, which does
 // fold `Ä` to `ä` -- passed the entire suite. The two differ only outside
@@ -304,7 +328,7 @@ ALTER TABLE Ä ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p ON Ä FOR ALL TO PUBLIC USING (tenant_id = 1);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"Ä", "ä"})
@@ -340,7 +364,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 2);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
 
@@ -367,7 +391,7 @@ CREATE POLICY p ON alpha_orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 CREATE POLICY p ON zeta_orders  FOR ALL TO PUBLIC USING (tenant_id = 2);
 `), 0o600), qt.IsNil)
 
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}, Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
 

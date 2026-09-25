@@ -241,15 +241,19 @@ version-conditional fragments Ptah does not model, and `mariadb-dump` opens
 every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
 executes, because no server is version 999999.
 
-**A role name folds the way the engine folds it.** On PostgreSQL and
-YugabyteDB an unquoted name loses its ASCII case, so `TO App_Reader` in a
-policy names `app_reader`, the role `CREATE ROLE App_Reader` created, and a
-quoted `"App_Reader"` keeps its case. CockroachDB lowers every role name,
-quoted or not, so read with `--dialect cockroachdb` the quoted spelling names
-`app_reader` as well, and `"PUBLIC"` is the `PUBLIC` keyword. This holds
-wherever the file names a role: `CREATE ROLE`, `COMMENT ON ROLE`, `GRANT`,
-`REVOKE`, `ALTER DEFAULT PRIVILEGES` and a policy's `TO`. Other dialects keep a
-role name as written.
+**An unquoted name folds the way the engine folds it.** PostgreSQL and
+YugabyteDB lower the ASCII letters of an unquoted name, so `CREATE TABLE Docs
+(Id integer)` declares the table `docs` with the column `id`, and a later
+`ALTER TABLE DOCS` or `CREATE POLICY p ON docs` names that table. CockroachDB
+lowers every letter of an unquoted name, past ASCII too. A quoted name keeps
+its case on all three. The rule covers every name the file writes: tables,
+columns, indexes, constraints, policies, roles, and the object a statement such
+as `GRANT` or `CREATE INDEX` names. Other dialects, and a read with no dialect,
+keep a name as written.
+
+Role names differ on CockroachDB, which lowers every role name, quoted or not:
+read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
+and `"PUBLIC"` is the `PUBLIC` keyword.
 
 **Omitting `--dialect` keeps a permissive reader.** No dialect means no
 dialect's rules, which is what lets one file mixing conventions be read at all.

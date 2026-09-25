@@ -249,7 +249,10 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 func executeRenderedSchema(t *testing.T, dbURL, schemaPath string) error {
 	t.Helper()
 	c := qt.New(t)
-	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{schemaPath}})
+	// The file is rendered for PostgreSQL, so it is read as PostgreSQL: that is
+	// what `ptah schema render --dialect postgres` does, and the dialect
+	// decides how an unquoted name folds.
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{schemaPath}, Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
 	c.Assert(err, qt.IsNil)
