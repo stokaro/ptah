@@ -584,6 +584,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,
+		*ast.AlterColumnOperation,
 		*ast.CompositeAttributeOperation,
 		*ast.CompositeTypeDef,
 		*ast.DomainConstraintOperation,
@@ -1254,12 +1255,10 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			dropSQL += fmt.Sprintf(" %s", r.escapeIdentifier(op.ConstraintName))
 			r.w.WriteLinef("%s;", dropSQL)
-		case *ast.DropColumnOperation:
-			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.ColumnName))
-			if op.Cascade {
-				dropSQL += " CASCADE"
-			}
-			r.w.WriteLinef("%s;", dropSQL)
+		case *ast.DropColumnOperation, *ast.AlterColumnOperation:
+			// One arm for both, so this switch keeps its complexity budget;
+			// writeColumnOperation re-selects between them.
+			r.writeColumnOperation(node.Name, operation)
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
@@ -1325,6 +1324,47 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	r.w.WriteLine("")
 
 	return nil
+}
+
+// writeColumnOperation renders a DROP COLUMN or one ALTER COLUMN action.
+func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOperation) {
+	table := r.escapeQualifiedIdentifier(tableName)
+	switch op := operation.(type) {
+	case *ast.DropColumnOperation:
+		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN", table)
+		if op.IfExists {
+			dropSQL += " IF EXISTS"
+		}
+		dropSQL += " " + r.escapeIdentifier(op.ColumnName)
+		if op.Cascade {
+			dropSQL += " CASCADE"
+		}
+		r.w.WriteLinef("%s;", dropSQL)
+	case *ast.AlterColumnOperation:
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s %s;", table, r.escapeIdentifier(op.ColumnName), r.alterColumnAction(op))
+	}
+}
+
+// alterColumnAction spells the action of one ALTER COLUMN clause.
+func (r *Renderer) alterColumnAction(op *ast.AlterColumnOperation) string {
+	switch op.Action {
+	case ast.AlterColumnSetDefault:
+		if op.Default != nil && op.Default.HasLiteral() {
+			return "SET DEFAULT " + r.renderDefaultLiteral(op.Default.Value)
+		}
+		if op.Default != nil {
+			return "SET DEFAULT " + op.Default.Expression
+		}
+		return "DROP DEFAULT"
+	case ast.AlterColumnSetType:
+		clause := "TYPE " + op.Type
+		if op.Using != "" {
+			clause += " USING " + op.Using
+		}
+		return clause
+	default:
+		return string(op.Action)
+	}
 }
 
 // writeRename renders either rename PostgreSQL accepts on ALTER TABLE.

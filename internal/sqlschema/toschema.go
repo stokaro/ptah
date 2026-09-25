@@ -721,7 +721,7 @@ func appendStatement(
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node))
 	case *ast.AlterTableNode:
-		return appendAlterTable(database, base, node)
+		return appendAlterTable(database, base, node, sourcePlatform)
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node)
 	case *ast.ExtensionNode:
@@ -963,89 +963,132 @@ func unorderedElements(
 	return order
 }
 
-// appendAlterTable captures what ALTER TABLE adds to a table the document
-// declares: columns added by ADD COLUMN, and constraints added by ADD
-// CONSTRAINT, such as the foreign keys ORM schema exporters emit as separate
-// statements after the CREATE TABLEs.
+// appendAlterTable applies an ALTER TABLE to the table it names.
 //
-// base holds what earlier files of the same schema directory declared. A
-// directory is one script, so a later file may add a column to a table an
-// earlier file created; the column is this file's contribution and is kept
-// here, on the table's struct name, for the merge to place.
-func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode) error {
-	tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
-	qualifiedTableName := schemamodel.QualifyTableName(tableSchemaName, tableName)
-	structName := tableStructName(node.Name)
+// Every operation either changes the model or is refused. An operation that
+// parsed and changed nothing would leave a schema file describing a table the
+// server would not have after running it, and nothing downstream could tell.
+//
+// base holds what earlier files of the same document declared. A document is
+// one script, so a later file may add a column to a table an earlier file
+// created, or change one of its columns. An added object is this file's
+// contribution and stays in database for the merge to place; a change to an
+// object base declares is made to base, in place. See [alterTarget].
+func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode, sourcePlatform string) error {
+	target, declared := findAlterTarget(database, base, node.Name)
 	for _, op := range node.Operations {
-		switch typed := op.(type) {
-		case *ast.AddColumnOperation:
-			if err := applyAlterTableAddColumn(database, base, node.Name, structName, typed); err != nil {
-				return err
-			}
-		case *ast.AddConstraintOperation:
-			if typed.Constraint == nil {
-				continue
-			}
-			if typed.Constraint.Type == ast.PrimaryKeyConstraint {
-				if err := applyAlterTablePrimaryKey(
-					database, node.Name, structName, typed.Constraint,
-				); err != nil {
-					return err
-				}
-				continue
-			}
-			constraintSchema, ok := ToConstraint(
-				typed.Constraint,
-				structName,
-				qualifiedTableName,
-			)
-			if ok {
-				database.Constraints = append(database.Constraints, constraintSchema)
-			}
-		case *ast.AddIndexOperation:
-			// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
-			// statement carries the whole index. Dropped here it would parse
-			// and then vanish, which is the shape a render that exits 0 cannot
-			// show (stokaro/ptah#2778).
-			if typed.Index != nil {
-				index := ToIndex(typed.Index)
-				index.StructName = structName
-				index.TableName = qualifiedTableName
-				database.Indexes = append(database.Indexes, index)
-			}
-		case *ast.AddSkippingIndexOperation:
-			// ClickHouse's data-skipping index arrives as an ALTER because that
-			// is how the ClickHouse renderer writes one. Dropping it here left
-			// the statement parsed and then unrendered, which is the shape a
-			// parse-only check cannot see (stokaro/ptah#1574).
-			database.Indexes = append(database.Indexes, schemamodel.Index{
-				Name:       normalizeSQLIdentifier(typed.Name),
-				StructName: tableName,
-				// The expression is one element, not a column list: it can be
-				// a function call or a tuple, and splitting it on commas would
-				// turn `(a, b)` into two indexes on columns that may not exist.
-				Fields:      []string{typed.Expression},
-				Type:        typed.IndexType,
-				Granularity: typed.Granularity,
-				TableName:   qualifiedTableName,
-			})
+		if !declared {
+			return undeclaredTableError(node.Name, describeAlterOperation(op))
 		}
+		if err := applyAlterOperation(database, base, target, op, sourcePlatform); err != nil {
+			return err
+		}
+		// A primary key an operation added may have come from a table in
+		// base; the lookup is repeated so the next operation sees it.
+		target, _ = findAlterTarget(database, base, node.Name)
 	}
 	return nil
 }
 
-// applyAlterTableAddColumn puts a column added by ALTER TABLE ... ADD COLUMN on
-// the table the statement names.
-//
-// Without it the statement parsed and the column never reached the model, so a
-// schema file that declared a column this way rendered, planned and compared
-// as though the column did not exist.
-//
-// A column the table already declares is refused without IF NOT EXISTS, as the
-// server refuses it. With IF NOT EXISTS the server skips the second declaration
-// whatever it says and keeps the first, so the same definition is the same
-// schema and is accepted. A different definition is refused: keeping either
-// one would silently drop what the other says.
+func applyAlterOperation(
+	database, base *schemamodel.Database, target alterTarget, op ast.AlterOperation, sourcePlatform string,
+) error {
+	switch typed := op.(type) {
+	case *ast.AddColumnOperation:
+		return applyAlterTableAddColumn(database, base, target.written, target.structName, typed)
+	case *ast.AddConstraintOperation:
+		return applyAddConstraint(database, target, typed)
+	case *ast.AddIndexOperation:
+		// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
+		// statement carries the whole index (stokaro/ptah#2778).
+		if typed.Index != nil {
+			index := ToIndex(typed.Index)
+			index.StructName = target.structName
+			index.TableName = target.qualified
+			database.Indexes = append(database.Indexes, index)
+		}
+		return nil
+	case *ast.AddSkippingIndexOperation:
+		// ClickHouse's data-skipping index arrives as an ALTER because that
+		// is how the ClickHouse renderer writes one (stokaro/ptah#1574).
+		_, tableName := normalizeSQLTableIdentifier(target.written)
+		database.Indexes = append(database.Indexes, schemamodel.Index{
+			Name:       normalizeSQLIdentifier(typed.Name),
+			StructName: tableName,
+			// The expression is one element, not a column list: it can be
+			// a function call or a tuple, and splitting it on commas would
+			// turn `(a, b)` into two indexes on columns that may not exist.
+			Fields:      []string{typed.Expression},
+			Type:        typed.IndexType,
+			Granularity: typed.Granularity,
+			TableName:   target.qualified,
+		})
+		return nil
+	case *ast.AlterColumnOperation:
+		return applyAlterColumn(target, typed)
+	case *ast.ModifyColumnOperation:
+		return applyModifyColumn(target, typed, sourcePlatform)
+	case *ast.DropColumnOperation:
+		return applyDropColumn(target, typed)
+	case *ast.RenameColumnOperation:
+		return applyRenameColumn(target, typed)
+	case *ast.DropConstraintOperation:
+		return applyDropConstraint(target, typed)
+	case *ast.RenameConstraintOperation:
+		return applyRenameConstraint(target, typed)
+	case *ast.RenameTableOperation:
+		return fmt.Errorf(
+			"%w: ALTER TABLE %s RENAME TO %s: every other declaration names the table by its old name; "+
+				"declare the table under its new name",
+			ErrUnmodeledStatement, target.written, typed.NewName)
+	default:
+		return fmt.Errorf("%w: ALTER TABLE %s %s", ErrUnmodeledStatement, target.written, describeAlterOperation(op))
+	}
+}
+
+// applyAddConstraint adds a table constraint. A primary key lives on the
+// table rather than among the constraints.
+func applyAddConstraint(database *schemamodel.Database, target alterTarget, operation *ast.AddConstraintOperation) error {
+	if operation.Constraint == nil {
+		return nil
+	}
+	if operation.Constraint.Type == ast.PrimaryKeyConstraint {
+		return applyAlterTablePrimaryKey(target, operation.Constraint)
+	}
+	constraintSchema, ok := ToConstraint(operation.Constraint, target.structName, target.qualified)
+	if ok {
+		database.Constraints = append(database.Constraints, constraintSchema)
+	}
+	return nil
+}
+
+// describeAlterOperation names an operation the way the statement spells it,
+// for a refusal.
+func describeAlterOperation(op ast.AlterOperation) string {
+	switch typed := op.(type) {
+	case *ast.AddColumnOperation:
+		if typed.Column != nil {
+			return "ADD COLUMN " + typed.Column.Name
+		}
+		return "ADD COLUMN"
+	case *ast.AddConstraintOperation:
+		if typed.Constraint != nil && typed.Constraint.Type == ast.PrimaryKeyConstraint {
+			return "ADD PRIMARY KEY"
+		}
+		return "ADD CONSTRAINT"
+	case *ast.AlterColumnOperation:
+		return fmt.Sprintf("ALTER COLUMN %s %s", typed.ColumnName, typed.Action)
+	case *ast.DropColumnOperation:
+		return "DROP COLUMN " + typed.ColumnName
+	case *ast.DropConstraintOperation:
+		return "DROP CONSTRAINT " + typed.ConstraintName
+	case *ast.RenameColumnOperation:
+		return "RENAME COLUMN " + typed.OldName
+	default:
+		return strings.TrimPrefix(fmt.Sprintf("%T", op), "*ast.")
+	}
+}
+
 func applyAlterTableAddColumn(
 	database, base *schemamodel.Database,
 	tableName, structName string,
@@ -1125,25 +1168,19 @@ func markPrimaryFields(fields []schemamodel.Field, structName string, columns []
 // which is carried in the constraint list and refused later by the renderer,
 // "has no owning table" -- and answering it with silence would leave a second
 // hole of exactly the kind this function exists to close.
-func applyAlterTablePrimaryKey(
-	database *schemamodel.Database,
-	tableName, structName string,
-	constraint *ast.ConstraintNode,
-) error {
-	for i := range database.Tables {
-		if database.Tables[i].StructName != structName {
-			continue
-		}
-		database.Tables[i].PrimaryKeyName = constraint.Name
-		database.Tables[i].PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
-		database.Tables[i].PrimaryKeyParts = toPrimaryKeyParts(constraint)
-		database.Tables[i].PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
-		markPrimaryFields(database.Fields, structName, database.Tables[i].PrimaryKey)
-		return nil
+func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNode) error {
+	// PostgreSQL 18.6: `multiple primary keys for table "t" are not allowed`.
+	if len(target.table.PrimaryKey) > 0 || target.hasPrimaryField() {
+		return fmt.Errorf("ALTER TABLE %s ADD PRIMARY KEY: the table already declares a primary key", target.written)
 	}
-	return fmt.Errorf(
-		"%w: ALTER TABLE %s ADD PRIMARY KEY names a table this schema does not declare",
-		ErrUnmodeledStatement, tableName)
+	target.table.PrimaryKeyName = constraint.Name
+	target.table.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
+	target.table.PrimaryKeyParts = toPrimaryKeyParts(constraint)
+	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
+	for _, database := range target.databases {
+		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
+	}
+	return nil
 }
 
 func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (schemamodel.Constraint, bool) {

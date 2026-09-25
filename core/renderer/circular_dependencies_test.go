@@ -668,6 +668,7 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 	var renameTable *ast.RenameTableOperation
 	var addSkippingIndex *ast.AddSkippingIndexOperation
 	var modifyTTL *ast.ModifyTTLOperation
+	var alterColumn *ast.AlterColumnOperation
 	tests := []struct {
 		name      string
 		operation ast.AlterOperation
@@ -679,6 +680,7 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 		{name: "rename table", operation: renameTable},
 		{name: "add skipping index", operation: addSkippingIndex},
 		{name: "modify ttl", operation: modifyTTL},
+		{name: "alter column", operation: alterColumn},
 	}
 
 	for _, test := range tests {

@@ -3017,7 +3017,12 @@ func (p *Parser) parseColumnDefinition(table *ast.CreateTableNode) (*ast.ColumnN
 	}
 
 	p.skipWhitespace()
+	return p.parseColumnDefinitionAfterName(table, columnName)
+}
 
+// parseColumnDefinitionAfterName reads the rest of a column definition whose
+// name the caller has already read.
+func (p *Parser) parseColumnDefinitionAfterName(table *ast.CreateTableNode, columnName string) (*ast.ColumnNode, error) {
 	// Get column type. SQLite permits columns without an explicit type.
 	columnType, err := p.parseOptionalColumnType()
 	if err != nil {
@@ -5598,7 +5603,9 @@ func (p *Parser) parseAlterOperation() (ast.AlterOperation, error) {
 		return p.parseAddOperation()
 	case "DROP":
 		return p.parseDropOperation()
-	case "MODIFY", "ALTER":
+	case "ALTER":
+		return p.parseAlterColumnOperation()
+	case "MODIFY":
 		return p.parseModifyOperation()
 	case "RENAME":
 		return p.parseRenameOperation()
@@ -5616,8 +5623,13 @@ func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
 	if p.current.MatchIdentifierValue("COLUMN") {
 		return p.parseRenameColumnOperation()
 	}
+	if p.current.MatchIdentifierValue("CONSTRAINT") {
+		return p.parseRenameConstraintOperation()
+	}
 	if !p.current.MatchIdentifierValue("TO") {
-		return nil, fmt.Errorf("expected TO or COLUMN after RENAME at position %d", p.current.Start)
+		// PostgreSQL's COLUMN keyword is optional: RENAME a TO b renames a
+		// column.
+		return p.parseRenameColumnAfterKeyword()
 	}
 
 	p.advance()
@@ -5629,12 +5641,36 @@ func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
 	return &ast.RenameTableOperation{NewName: newName}, nil
 }
 
+// parseRenameConstraintOperation parses RENAME CONSTRAINT old TO new.
+func (p *Parser) parseRenameConstraintOperation() (*ast.RenameConstraintOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	from, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name after RENAME CONSTRAINT: %w", err)
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
+		return nil, fmt.Errorf("expected TO after the constraint name: %w", err)
+	}
+	p.skipWhitespace()
+	to, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected new constraint name: %w", err)
+	}
+	return &ast.RenameConstraintOperation{From: from, To: to}, nil
+}
+
 func (p *Parser) parseRenameColumnOperation() (*ast.RenameColumnOperation, error) {
 	if err := p.expect(lexer.TokenIdentifier, "COLUMN"); err != nil {
 		return nil, err
 	}
 	p.skipWhitespace()
+	return p.parseRenameColumnAfterKeyword()
+}
 
+// parseRenameColumnAfterKeyword reads old TO new after RENAME [COLUMN].
+func (p *Parser) parseRenameColumnAfterKeyword() (*ast.RenameColumnOperation, error) {
 	oldName, err := p.expectIdentifier()
 	if err != nil {
 		return nil, fmt.Errorf("expected old column name: %w", err)
@@ -5975,57 +6011,287 @@ func isMySQLFamilyDialect(dialect string) bool {
 }
 
 // parseDropOperation parses DROP COLUMN operations.
-func (p *Parser) parseDropOperation() (*ast.DropColumnOperation, error) {
+// parseDropOperation parses the DROP forms of ALTER TABLE: a column, a named
+// constraint, and the MySQL family's DROP PRIMARY KEY, DROP FOREIGN KEY,
+// DROP CHECK and DROP INDEX or KEY.
+//
+// CONSTRAINT, IF and the MySQL keywords are read as keywords here, so a column
+// that happens to carry one of those names has to be quoted, as it has to be on
+// the server.
+func (p *Parser) parseDropOperation() (ast.AlterOperation, error) {
 	if err := p.expect(lexer.TokenIdentifier, "DROP"); err != nil {
 		return nil, err
 	}
-
 	p.skipWhitespace()
 
+	switch {
+	case p.current.MatchIdentifierValue("CONSTRAINT"):
+		p.advance()
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{})
+	case p.current.MatchIdentifierValue("PRIMARY"):
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "KEY"); err != nil {
+			return nil, fmt.Errorf("expected KEY after DROP PRIMARY: %w", err)
+		}
+		return &ast.DropConstraintOperation{PrimaryKey: true}, nil
+	case p.current.MatchIdentifierValue("FOREIGN"):
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "KEY"); err != nil {
+			return nil, fmt.Errorf("expected KEY after DROP FOREIGN: %w", err)
+		}
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{ForeignKey: true})
+	case p.current.MatchIdentifierValue("CHECK"):
+		p.advance()
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Check: true})
+	case p.current.MatchIdentifierValue("INDEX"), p.current.MatchIdentifierValue("KEY"):
+		p.advance()
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Unique: true})
+	}
+
 	// Optional COLUMN keyword
-	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
+	if p.current.MatchIdentifierValue("COLUMN") {
 		p.advance()
 		p.skipWhitespace()
 	}
-
-	// Get column name
+	ifExists, err := p.parseOptionalIfExists()
+	if err != nil {
+		return nil, err
+	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
 		return nil, fmt.Errorf("expected column name: %w", err)
 	}
-
-	return &ast.DropColumnOperation{ColumnName: columnName}, nil
+	operation := &ast.DropColumnOperation{ColumnName: columnName, IfExists: ifExists}
+	operation.Cascade, err = p.parseOptionalDropBehavior()
+	if err != nil {
+		return nil, err
+	}
+	return operation, nil
 }
 
-// parseModifyOperation parses MODIFY/ALTER COLUMN operations.
-func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
-	operation := strings.ToUpper(p.current.Value)
-	p.advance()
-
+// parseDropNamedConstraint reads [IF EXISTS] name [CASCADE | RESTRICT] onto a
+// DROP CONSTRAINT operation whose kind the caller already set.
+func (p *Parser) parseDropNamedConstraint(operation *ast.DropConstraintOperation) (ast.AlterOperation, error) {
 	p.skipWhitespace()
-
-	// For ALTER COLUMN, expect COLUMN keyword
-	switch operation {
-	case "ALTER":
-		if err := p.expect(lexer.TokenIdentifier, "COLUMN"); err != nil {
-			return nil, fmt.Errorf("expected COLUMN after ALTER: %w", err)
-		}
-		p.skipWhitespace()
-	case "MODIFY":
-		// Optional COLUMN keyword for MODIFY
-		if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
-			p.advance()
-			p.skipWhitespace()
-		}
+	ifExists, err := p.parseOptionalIfExists()
+	if err != nil {
+		return nil, err
 	}
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name: %w", err)
+	}
+	operation.ConstraintName = name
+	operation.IfExists = ifExists
+	cascade, err := p.parseOptionalDropBehavior()
+	if err != nil {
+		return nil, err
+	}
+	if cascade {
+		return nil, fmt.Errorf(
+			"DROP CONSTRAINT %s CASCADE at position %d: CASCADE also drops the objects that depend on "+
+				"the constraint, which a schema file does not list; drop them by name",
+			name, p.previous.Start)
+	}
+	return operation, nil
+}
 
-	// Parse column definition
+// parseOptionalIfExists reads an optional IF EXISTS.
+func (p *Parser) parseOptionalIfExists() (bool, error) {
+	if !p.current.MatchIdentifierValue("IF") {
+		return false, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+		return false, fmt.Errorf("expected EXISTS after IF: %w", err)
+	}
+	p.skipWhitespace()
+	return true, nil
+}
+
+// parseOptionalDropBehavior reads an optional CASCADE or RESTRICT and reports
+// whether it was CASCADE. RESTRICT is the default either way.
+func (p *Parser) parseOptionalDropBehavior() (bool, error) {
+	p.skipWhitespace()
+	switch {
+	case p.current.MatchIdentifierValue("CASCADE"):
+		p.advance()
+		return true, nil
+	case p.current.MatchIdentifierValue("RESTRICT"):
+		p.advance()
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
+// parseModifyOperation parses the MySQL family's MODIFY [COLUMN], which states
+// a whole new column definition.
+func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("COLUMN") {
+		p.advance()
+		p.skipWhitespace()
+	}
 	column, err := p.parseColumnDefinition(nil)
 	if err != nil {
 		return nil, err
 	}
-
 	return &ast.ModifyColumnOperation{Column: column}, nil
+}
+
+// parseAlterColumnOperation parses ALTER [COLUMN] name.
+//
+// Two grammars share the words. PostgreSQL, and MySQL for its default, follow
+// the name with one action -- SET DEFAULT, DROP NOT NULL, TYPE -- that changes
+// one property. SQL Server follows it with a whole new definition, which is
+// what MODIFY states on MySQL. A document read without a dialect takes the
+// action form when an action keyword follows the name, and the definition
+// otherwise.
+func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("COLUMN") {
+		p.advance()
+		p.skipWhitespace()
+	} else if p.dialect == platform.SQLServer {
+		return nil, fmt.Errorf("expected COLUMN after ALTER at position %d", p.current.Start)
+	}
+	columnName, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected column name after ALTER COLUMN: %w", err)
+	}
+	p.skipWhitespace()
+	switch {
+	case p.dialect == platform.SQLServer:
+		column, err := p.parseColumnDefinitionAfterName(nil, columnName)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ModifyColumnOperation{Column: column}, nil
+	case p.current.Type == lexer.TokenIdentifier && alterColumnActionWords[strings.ToUpper(p.current.Value)]:
+		return p.parseAlterColumnAction(columnName)
+	case p.dialect == "":
+		column, err := p.parseColumnDefinitionAfterName(nil, columnName)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ModifyColumnOperation{Column: column}, nil
+	default:
+		return nil, fmt.Errorf(
+			"expected an ALTER COLUMN %s action (SET, DROP or TYPE) at position %d", columnName, p.current.Start)
+	}
+}
+
+// alterColumnActionWords are the words that open an ALTER COLUMN action. Every
+// one is recognized so that an action Ptah does not model is refused by name
+// rather than read as the start of a column definition.
+var alterColumnActionWords = map[string]bool{
+	"SET": true, "DROP": true, "TYPE": true, "ADD": true, "RESET": true, "RESTART": true, "OPTIONS": true,
+}
+
+// parseAlterColumnAction reads the one action after ALTER COLUMN name.
+//
+// The default, the NOT NULL and the type are read, because each is part of a
+// column's declaration. The rest -- statistics, storage, compression, identity,
+// generation, options -- are refused by name: a schema file that states them
+// here would otherwise parse and change nothing.
+func (p *Parser) parseAlterColumnAction(columnName string) (ast.AlterOperation, error) {
+	start := p.current.Start
+	first := strings.ToUpper(p.current.Value)
+	p.advance()
+	p.skipWhitespace()
+	switch first {
+	case "TYPE":
+		return p.parseAlterColumnType(columnName)
+	case "SET":
+		switch {
+		case p.current.MatchIdentifierValue("DEFAULT"):
+			p.advance()
+			p.skipWhitespace()
+			value, err := p.parseDefaultValue()
+			if err != nil {
+				return nil, fmt.Errorf("expected default value after ALTER COLUMN %s SET DEFAULT: %w", columnName, err)
+			}
+			return &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnSetDefault, Default: value}, nil
+		case p.current.MatchIdentifierValue("NOT"):
+			if err := p.expectWords("NOT", "NULL"); err != nil {
+				return nil, fmt.Errorf("expected SET NOT NULL: %w", err)
+			}
+			return &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnSetNotNull}, nil
+		case p.current.MatchIdentifierValue("DATA"):
+			if err := p.expectWords("DATA", "TYPE"); err != nil {
+				return nil, fmt.Errorf("expected SET DATA TYPE: %w", err)
+			}
+			return p.parseAlterColumnType(columnName)
+		}
+	case "DROP":
+		switch {
+		case p.current.MatchIdentifierValue("DEFAULT"):
+			p.advance()
+			return &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnDropDefault}, nil
+		case p.current.MatchIdentifierValue("NOT"):
+			if err := p.expectWords("NOT", "NULL"); err != nil {
+				return nil, fmt.Errorf("expected DROP NOT NULL: %w", err)
+			}
+			return &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnDropNotNull}, nil
+		}
+	}
+	action := first
+	if p.current.Type == lexer.TokenIdentifier {
+		action += " " + strings.ToUpper(p.current.Value)
+	}
+	return nil, fmt.Errorf(
+		"unsupported ALTER COLUMN %s %s at position %d: a schema file may set a column's default, "+
+			"NOT NULL or type this way; declare anything else on the column itself",
+		columnName, action, start)
+}
+
+// parseAlterColumnType reads the type of ALTER COLUMN ... [SET DATA] TYPE and
+// an optional USING expression, which runs to the end of the operation.
+func (p *Parser) parseAlterColumnType(columnName string) (ast.AlterOperation, error) {
+	p.skipWhitespace()
+	columnType, err := p.parseColumnType()
+	if err != nil {
+		return nil, fmt.Errorf("expected type after ALTER COLUMN %s TYPE: %w", columnName, err)
+	}
+	operation := &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnSetType, Type: columnType}
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("COLLATE") {
+		return nil, fmt.Errorf(
+			"unsupported COLLATE in ALTER COLUMN %s TYPE at position %d: declare the collation on the column itself",
+			columnName, p.current.Start)
+	}
+	if !p.current.MatchIdentifierValue("USING") {
+		return operation, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	start := p.current.Start
+	end := start
+	depth := 0
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if depth == 0 && p.current.MatchOperatorValue(",") {
+			break
+		}
+		switch {
+		case p.current.MatchOperatorValue("("):
+			depth++
+		case p.current.MatchOperatorValue(")"):
+			depth--
+		}
+		end = p.current.End
+		p.advance()
+	}
+	operation.Using = strings.TrimSpace(p.input[start:end])
+	if operation.Using == "" {
+		return nil, fmt.Errorf("expected an expression after USING at position %d", start)
+	}
+	return operation, nil
 }
 
 // parseCreateIndex parses CREATE INDEX statements.

@@ -633,8 +633,8 @@ func prepareAlterOperation(
 		if typed == nil {
 			return nil, invalidASTForeignKeyError(dialect, "add-column operation is nil")
 		}
-		if typed.IfNotExists && !rendersAddColumnIfNotExists(dialect) {
-			return nil, addColumnIfNotExistsUnsupportedError(dialect)
+		if typed.IfNotExists && !rendersColumnExistenceGuard(dialect) {
+			return nil, columnExistenceGuardUnsupportedError(dialect, "ADD COLUMN IF NOT EXISTS")
 		}
 		cloned := *typed
 		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
@@ -654,12 +654,62 @@ func prepareAlterOperation(
 		}
 		cloned.Column = column
 		return &cloned, nil
+	case *ast.DropColumnOperation, *ast.AlterColumnOperation:
+		// One arm for both, so this switch keeps its complexity budget;
+		// validateColumnOperation re-selects between them.
+		if err := validateColumnOperation(dialect, operation); err != nil {
+			return nil, err
+		}
+		return operation, nil
 	default:
 		if isNilInterface(operation) {
 			return nil, invalidASTForeignKeyError(dialect, "alter-table operation is nil")
 		}
 		return operation, nil
 	}
+}
+
+// validateColumnOperation refuses a DROP COLUMN guard the target cannot
+// render and an ALTER COLUMN action that cannot be rendered at all.
+func validateColumnOperation(dialect string, operation ast.AlterOperation) error {
+	if isNilInterface(operation) {
+		return invalidASTForeignKeyError(dialect, "alter-table operation is nil")
+	}
+	switch typed := operation.(type) {
+	case *ast.DropColumnOperation:
+		if typed.IfExists && !rendersColumnExistenceGuard(dialect) {
+			return columnExistenceGuardUnsupportedError(dialect, "DROP COLUMN IF EXISTS")
+		}
+	case *ast.AlterColumnOperation:
+		return validateAlterColumnOperation(dialect, typed)
+	}
+	return nil
+}
+
+// validateAlterColumnOperation refuses an ALTER COLUMN action that carries
+// no value to set, or one no renderer spells.
+func validateAlterColumnOperation(dialect string, operation *ast.AlterColumnOperation) error {
+	invalid := func(message string) error {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("ALTER COLUMN %s: %s", operation.ColumnName, message),
+		}
+	}
+	switch operation.Action {
+	case ast.AlterColumnSetDefault:
+		if operation.Default == nil || (!operation.Default.HasLiteral() && operation.Default.Expression == "") {
+			return invalid("SET DEFAULT carries no default")
+		}
+	case ast.AlterColumnSetType:
+		if strings.TrimSpace(operation.Type) == "" {
+			return invalid("SET DATA TYPE carries no type")
+		}
+	case ast.AlterColumnDropDefault, ast.AlterColumnSetNotNull, ast.AlterColumnDropNotNull:
+	default:
+		return invalid(fmt.Sprintf("unknown action %q", operation.Action))
+	}
+	return nil
 }
 
 func isNilInterface(value any) bool {
@@ -971,10 +1021,11 @@ func invalidASTForeignKeyError(dialect, message string) error {
 	}
 }
 
-// rendersAddColumnIfNotExists names the dialects whose ALTER TABLE takes
-// ADD COLUMN IF NOT EXISTS and whose renderer writes it. Spanner is left out
-// because its PostgreSQL interface has not been measured to accept the form.
-func rendersAddColumnIfNotExists(dialect string) bool {
+// rendersColumnExistenceGuard names the dialects whose ALTER TABLE takes
+// ADD COLUMN IF NOT EXISTS and DROP COLUMN IF EXISTS and whose renderer writes
+// them. Spanner is left out because its PostgreSQL interface has not been
+// measured to accept either form.
+func rendersColumnExistenceGuard(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return true
@@ -983,13 +1034,13 @@ func rendersAddColumnIfNotExists(dialect string) bool {
 	}
 }
 
-func addColumnIfNotExistsUnsupportedError(dialect string) error {
+func columnExistenceGuardUnsupportedError(dialect, clause string) error {
 	normalized := platform.NormalizeDialect(dialect)
 	return &ptaherr.CapabilityError{
 		Dialect: normalized,
-		Feature: "ADD COLUMN IF NOT EXISTS",
+		Feature: clause,
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s does not render ADD COLUMN IF NOT EXISTS", normalized),
+		Message: fmt.Sprintf("%s does not render %s", normalized, clause),
 	}
 }
 
