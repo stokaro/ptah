@@ -17,6 +17,7 @@ require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-extras/go-kit v1.2.0
 	github.com/go-sql-driver/mysql v1.10.1
+	github.com/google/go-cmp v0.7.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.11.0
@@ -54,7 +55,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	cloud.google.com/go/iam v1.14.0 // indirect
 	cloud.google.com/go/longrunning v1.3.0 // indirect
-	cloud.google.com/go/secretmanager v1.21.0 // indirect
+	cloud.google.com/go/secretmanager v1.22.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/ClickHouse/ch-go v0.74.0 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
@@ -106,7 +107,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/google/uuid v1.6.0 // indirect
