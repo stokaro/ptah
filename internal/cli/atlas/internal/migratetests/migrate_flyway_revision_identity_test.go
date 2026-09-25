@@ -833,12 +833,14 @@ func TestCompatMigrateApply_ExactIdentityMappingPreservesNumericSQLObject(t *tes
 	c.Assert(stdout+stderr+errorText(err), qt.Contains, runtime)
 }
 
-// TestCompatMigrateApply_ExactFlywayIdentityDoesNotNarrowOtherFormats pins the
-// other side of the dual-identity rule. Goose has no distinct source-token
-// identity: a zero-padded revision row and the migration's numeric prefix still
-// identify the same applied migration. Requiring Flyway's exact match here
-// would replay a non-idempotent CREATE TABLE on the second invocation.
-func TestCompatMigrateApply_ExactFlywayIdentityDoesNotNarrowOtherFormats(t *testing.T) {
+// TestCompatMigrateApply_ConvertedRowSpelledApartFromItsFileRefuses covers a
+// Goose history whose row spells the migration's version another way than the
+// file does, here 00001 for 1_init.sql. The pinned community binary records a
+// Goose file under the digits its name spells, as it does an Atlas file, so the
+// row names a different revision than the file. The apply refuses before any
+// migration runs, which keeps the non-idempotent CREATE TABLE from running a
+// second time, and leaves the row as it was.
+func TestCompatMigrateApply_ConvertedRowSpelledApartFromItsFileRefuses(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	dbPath := filepath.Join(c.TempDir(), "goose.db")
@@ -851,7 +853,10 @@ func TestCompatMigrateApply_ExactFlywayIdentityDoesNotNarrowOtherFormats(t *test
 	rewriteRevisionVersion(c, dbPath, "1", "00001")
 
 	stdout, stderr, err = compatApplyConverted(dir, "goose", dbPath)
-	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "No migration files to execute")
+	c.Assert(err, qt.ErrorMatches, `(?s).*revision table "atlas_schema_revisions" records 1 version under another `+
+		`spelling than its migration file: 00001 for 1; .*`+
+		`UPDATE "atlas_schema_revisions" SET version = '1' WHERE version = '00001';`)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+err.Error()+"\n")
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"00001"})
 }

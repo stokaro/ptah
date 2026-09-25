@@ -1668,8 +1668,13 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 }
 
 // GetRevisions returns every migration metadata row, including dirty rows.
+//
+// It refuses, with a *RevisionSpellingError, an Atlas-format table whose rows
+// spell a migration file's version another way, such as 1 for 001_init.sql.
+// Every command reads the table through here, so each one refuses that
+// history rather than answering from its own reading of it.
 func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error) {
-	return queryMigrationRows(
+	revisions, err := queryMigrationRows(
 		ctx,
 		m,
 		(*Migrator).getRevisionsSQL,
@@ -1678,6 +1683,13 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 		"failed to scan migration revision",
 		"error iterating migration revisions",
 	)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.refuseRespelledRevisions(revisions); err != nil {
+		return nil, err
+	}
+	return revisions, nil
 }
 
 func queryMigrationRows[T any](
