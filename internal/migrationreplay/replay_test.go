@@ -267,6 +267,10 @@ CREATE TABLE aux.outside_realm (id INTEGER PRIMARY KEY);
 	c.Assert(count, qt.Equals, 0)
 }
 
+// TestWithReplayedSnapshot_UsesPinnedSQLiteSessionAndRestoresState runs a
+// migration that opts out of the transaction, so its pragma changes the replay
+// session the way it changes an applied one, and the consumer reads it on the
+// same session before the replay restores it.
 func TestWithReplayedSnapshot_UsesPinnedSQLiteSessionAndRestoresState(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
@@ -282,7 +286,8 @@ func TestWithReplayedSnapshot_UsesPinnedSQLiteSessionAndRestoresState(t *testing
 		conn,
 		fstest.MapFS{
 			"1_create_users.sql": {
-				Data: []byte(`
+				Data: []byte(`-- atlas:txmode none
+
 PRAGMA foreign_keys = OFF;
 CREATE TABLE users (id INTEGER PRIMARY KEY);
 `),
@@ -311,6 +316,37 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 	c.Assert(err, qt.IsNil)
 	c.Assert(restoredForeignKeys, qt.Equals, 1)
 	assertSQLiteRealmObjectCount(c, conn, 0)
+}
+
+// TestWithReplayedSnapshot_TransactionalMigrationIgnoresAForeignKeysPragma is
+// the counterpart of the test above for a migration that runs in a
+// transaction. SQLite ignores a foreign_keys pragma inside a transaction, and
+// the executor applies this file in one, so the replay session keeps
+// enforcement on as an applied database would.
+func TestWithReplayedSnapshot_TransactionalMigrationIgnoresAForeignKeysPragma(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dev.db"))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	callbackForeignKeys := -1
+
+	err = migrationreplay.WithReplayedSnapshot(
+		ctx,
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": {
+				Data: []byte("PRAGMA foreign_keys = OFF;\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+			},
+		},
+		migrationfile.DirFormatAtlas,
+		func(replayConn *dbschema.DatabaseConnection) error {
+			return replayConn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&callbackForeignKeys)
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(callbackForeignKeys, qt.Equals, 1)
 }
 
 func TestWithReplayedSnapshot_CallbackFailureCleansDatabaseRealm(t *testing.T) {

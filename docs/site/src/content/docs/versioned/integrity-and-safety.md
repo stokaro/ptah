@@ -598,6 +598,11 @@ OK: migrations directory matches ptah.sum
 OK: migration SQL validated on dev database
 ```
 
+Replay runs each migration the way `migrations up` does: in one transaction,
+unless the file opts out with `-- +ptah no_transaction` or
+`-- atlas:txmode none`. So a statement whose meaning depends on the transaction,
+such as `SET LOCAL lock_timeout`, means the same thing in both.
+
 A migration that no longer executes — here one that alters a table dropped by
 an earlier edit — fails the replay (exit `2`):
 
