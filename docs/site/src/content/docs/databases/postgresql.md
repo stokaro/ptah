@@ -178,6 +178,15 @@ also in the same plan that creates the table or function, since the privilege
 arrives with the object. A revoke of a privilege the role does not hold
 changes nothing on the server, so the statement is safe either way.
 
+`ALL`, in a grant or in `ALTER DEFAULT PRIVILEGES`, is compared with what the
+server reports, which is one row per privilege. A role holds `ALL` on a table
+when it holds `SELECT`, `INSERT`,
+`UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` and `TRIGGER`. `MAINTAIN`, which
+PostgreSQL 17 added to `ALL`, is not required: the comparison does not know the
+server version, and PostgreSQL 16 has no `MAINTAIN` to report. A `REVOKE` of
+everything `ALL` names on a table the plan creates is planned as `REVOKE ALL`,
+because PostgreSQL 16 refuses the word `MAINTAIN`.
+
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
 one object wins. Go annotations and HCL have no statement order, so declaring
