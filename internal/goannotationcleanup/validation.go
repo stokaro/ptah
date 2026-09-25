@@ -258,6 +258,7 @@ func defaultPrivilegeRepresented(removal removedLine, _, exportedDB *schemamodel
 		ObjectType: removal.values["object_type"],
 		Grantee:    removal.values["grantee"],
 		Privileges: declaredPrivilegeGrants(removal.values),
+		Revoked:    splitAnnotationList(removal.values["revoked"]),
 	}
 	declared.Canonicalize()
 	return slices.ContainsFunc(exportedDB.DefaultPrivileges, func(privilege schemamodel.DefaultPrivilege) bool {
@@ -265,7 +266,8 @@ func defaultPrivilegeRepresented(removal removedLine, _, exportedDB *schemamodel
 			privilege.Schema == declared.Schema &&
 			privilege.ObjectType == declared.ObjectType &&
 			privilege.Grantee == declared.Grantee &&
-			slices.Equal(privilege.Privileges, declared.Privileges)
+			slices.Equal(privilege.Privileges, declared.Privileges) &&
+			slices.Equal(privilege.Revoked, declared.Revoked)
 	})
 }
 

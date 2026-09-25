@@ -751,7 +751,8 @@ other engine has the statement.
 | `grantable` | No | The subset of `privileges` carrying `WITH GRANT OPTION`. |
 | `grantee` | Yes | Role receiving the privileges; `PUBLIC` names every role. |
 | `object_type` | Yes | `TABLES`, `SEQUENCES`, `FUNCTIONS` or `TYPES`. |
-| `privileges` | Yes | Comma-separated privileges, such as `SELECT,INSERT`. |
+| `privileges` | No | Comma-separated privileges, such as `SELECT,INSERT`. Required unless `revoked` is set. |
+| `revoked` | No | Comma-separated privileges the grantee must not hold by default, such as `INSERT,UPDATE`; `ALL` names every privilege of the object type. A name also in `privileges` is refused. |
 | `schema` | Yes | Schema the default applies in. |
 
 The directive needs a holder struct. Written at file level, below the closing

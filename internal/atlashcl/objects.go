@@ -931,7 +931,11 @@ func (p *parser) parseDefaultPrivilege(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedDefaultPrivilegeAttrs(block); err != nil {
 		return err
 	}
-	privileges, err := p.defaultPrivilegeGrants(block)
+	revoked, err := p.rawListAttr(block, "revoked")
+	if err != nil {
+		return err
+	}
+	privileges, err := p.defaultPrivilegeGrants(block, revoked)
 	if err != nil {
 		return err
 	}
@@ -945,6 +949,7 @@ func (p *parser) parseDefaultPrivilege(block *hclsyntax.Block) error {
 		ObjectType: objectType,
 		Grantee:    roleTargetName(p.optionalRawExpr(block.Body.Attributes["to"])),
 		Privileges: privileges,
+		Revoked:    revoked,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 	}
 	if err := p.requireDefaultPrivilegeIdentity(block, privilege); err != nil {
@@ -987,13 +992,16 @@ func (p *parser) requireDefaultPrivilegeIdentity(
 // It is a contradiction the model cannot hold -- a privilege marked grantable
 // that is not granted at all renders nothing, and compares as a difference no
 // plan can resolve.
-func (p *parser) defaultPrivilegeGrants(block *hclsyntax.Block) ([]schemamodel.PrivilegeGrant, error) {
+//
+// A block may grant nothing when it revokes something: `revoked` alone says
+// which privileges the identity must not hold.
+func (p *parser) defaultPrivilegeGrants(block *hclsyntax.Block, revoked []string) ([]schemamodel.PrivilegeGrant, error) {
 	privileges, err := p.rawListAttr(block, "privileges")
 	if err != nil {
 		return nil, err
 	}
-	if len(privileges) == 0 {
-		return nil, p.blockError(block, "default_privilege requires privileges")
+	if len(privileges) == 0 && len(revoked) == 0 {
+		return nil, p.blockError(block, "default_privilege requires privileges or revoked")
 	}
 	grantable, err := p.rawListAttr(block, "grantable")
 	if err != nil {
@@ -1038,6 +1046,7 @@ func (p *parser) rejectUnsupportedDefaultPrivilegeAttrs(block *hclsyntax.Block) 
 		"schema":      true,
 		"object_type": true,
 		"to":          true,
+		"revoked":     true,
 		"privileges":  true,
 		"grantable":   true,
 		"comment":     true,

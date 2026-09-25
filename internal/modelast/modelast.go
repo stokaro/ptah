@@ -2291,6 +2291,13 @@ func appendPostTableObjectStatements(
 	// reflection reads it, so leaving the loop out gives a schema that parses,
 	// compares and renders at exit 0 with the declaration nowhere in the output.
 	for _, defaultPrivilege := range database.DefaultPrivileges {
+		if len(defaultPrivilege.Privileges) == 0 {
+			// Revoked privileges only. A schema-scoped default privilege is
+			// only ever added to the global ones, so on a database this
+			// schema creates there is nothing for a REVOKE to take back; a
+			// comparison plans one where the database holds the privilege.
+			continue
+		}
 		if err := visit(FromDefaultPrivilege(defaultPrivilege)); err != nil {
 			return err
 		}

@@ -324,7 +324,11 @@
               "type": "string"
             },
             "privileges": {
-              "description": "Comma-separated privileges, such as SELECT,INSERT.",
+              "description": "Comma-separated privileges, such as SELECT,INSERT. Required unless revoked is set.",
+              "type": "string"
+            },
+            "revoked": {
+              "description": "Comma-separated privileges the grantee must not hold by default, such as INSERT,UPDATE; ALL names every privilege of the object type. A name also in privileges is refused.",
               "type": "string"
             },
             "schema": {
@@ -336,7 +340,6 @@
             "for_role",
             "grantee",
             "object_type",
-            "privileges",
             "schema"
           ],
           "type": "object"

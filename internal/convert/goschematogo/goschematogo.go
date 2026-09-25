@@ -776,6 +776,7 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 		attr{name: "grantee", value: privilege.Grantee, set: true},
 		attr{name: "privileges", value: strings.Join(names, ","), set: len(names) > 0},
 		attr{name: "grantable", value: strings.Join(grantable, ","), set: len(grantable) > 0},
+		attr{name: "revoked", value: strings.Join(privilege.Revoked, ","), set: len(privilege.Revoked) > 0},
 		attr{name: "comment", value: privilege.Comment, set: privilege.Comment != ""},
 		dialectsAttr(privilege.Dialects),
 	)

@@ -104,6 +104,7 @@ var registry = []Entry{
 	{Field: "schemamodel.DefaultPrivilege.Grantor", Disposition: DDL},
 	{Field: "schemamodel.DefaultPrivilege.ObjectType", Disposition: DDL},
 	{Field: "schemamodel.DefaultPrivilege.Privileges", Disposition: DDL},
+	{Field: "schemamodel.DefaultPrivilege.Revoked", Disposition: Comparison, Reason: "privileges the identity must not hold; a database the schema creates has none to revoke, so only a comparison plans the REVOKE"},
 	{Field: "schemamodel.DefaultPrivilege.Schema", Disposition: DDL},
 	{Field: "schemamodel.DefaultPrivilege.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.Domain.BaseType", Disposition: DDL},

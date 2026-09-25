@@ -110,6 +110,7 @@ for the message and the flag it names.
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. A privilege on a function or procedure is reported as an export loss: a `function.<name>` reference cannot name an overload. |
 | `revoke` | Ptah block: privileges a role must not hold, with `from`, `for`, `privileges` and `comment`. The Atlas community CLI has no such block and ignores it. |
+| `default_privilege` | Ptah block: a PostgreSQL default privilege, with `for_role`, `schema`, `object_type`, `to`, `privileges`, `grantable`, `revoked` (privileges the grantee must not hold by default) and `comment`. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
 | `view` / `materialized` | SQL body plus schema and comments. |

@@ -514,7 +514,7 @@ default_privileges:
     object_type: TABLES
     grantee: app_user
 `,
-			want: `default privilege "owner_tables" requires privileges`,
+			want: `default privilege "owner_tables" requires privileges or revoked`,
 		},
 		{
 			name: "object type outside the four",

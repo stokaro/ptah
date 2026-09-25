@@ -102,3 +102,52 @@ func revokedPrivilege(revoked schemamodel.Grant) string {
 	}
 	return revoked.Privileges[0]
 }
+
+// MergeDefaultPrivileges returns dst with src's default privileges applied as
+// though src's statements ran after dst's, the default-privilege counterpart
+// of [Merge].
+//
+// Declarations are matched by their identity -- grantor, schema, object class
+// and grantee -- which is what schemamodel.Deduplicate keys them on. A
+// privilege src revokes leaves the matching declaration's Privileges and joins
+// its Revoked; a revoked ALL leaves none of its Privileges. A privilege src
+// grants leaves the matching declaration's Revoked, and a granted ALL clears
+// it. A declaration with no match in dst is appended. Neither input is
+// modified.
+func MergeDefaultPrivileges(dst, src []schemamodel.DefaultPrivilege) []schemamodel.DefaultPrivilege {
+	merged := slices.Clone(dst)
+	for _, declaration := range src {
+		declaration.Canonicalize()
+		index := slices.IndexFunc(merged, func(existing schemamodel.DefaultPrivilege) bool {
+			return sameDefaultPrivilege(existing, declaration)
+		})
+		if index < 0 {
+			merged = append(merged, declaration)
+			continue
+		}
+		existing := merged[index]
+		existing.Privileges = slices.DeleteFunc(slices.Clone(existing.Privileges), func(grant schemamodel.PrivilegeGrant) bool {
+			return slices.Contains(declaration.Revoked, grant.Privilege) || slices.Contains(declaration.Revoked, "ALL")
+		})
+		existing.Revoked = append(slices.Clone(existing.Revoked), declaration.Revoked...)
+		granted := make([]string, 0, len(declaration.Privileges))
+		for _, grant := range declaration.Privileges {
+			granted = append(granted, grant.Privilege)
+		}
+		existing.Revoked = slices.DeleteFunc(existing.Revoked, func(privilege string) bool {
+			return slices.Contains(granted, privilege) || slices.Contains(granted, "ALL")
+		})
+		existing.Privileges = append(existing.Privileges, declaration.Privileges...)
+		existing.Canonicalize()
+		merged[index] = existing
+	}
+	return merged
+}
+
+// sameDefaultPrivilege reports whether two declarations name one default
+// privilege object.
+func sameDefaultPrivilege(a, b schemamodel.DefaultPrivilege) bool {
+	a.Canonicalize()
+	b.Canonicalize()
+	return a.Grantor == b.Grantor && a.Schema == b.Schema && a.ObjectType == b.ObjectType && a.Grantee == b.Grantee
+}

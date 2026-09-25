@@ -1849,6 +1849,16 @@ type DefaultPrivilege struct {
 	Privileges []PrivilegeGrant
 	Comment    string // Optional comment for documentation
 
+	// Revoked are privileges this identity is declared not to hold: a SQL
+	// schema file's ALTER DEFAULT PRIVILEGES ... REVOKE. ALL names every
+	// privilege of the object class. A comparison revokes a revoked privilege
+	// wherever the database holds it, whether or not the grantor is a role the
+	// schema manages. A privilege is never both in Privileges and here: a SQL
+	// schema file composes the two in statement order, and a source with no
+	// statement order that lists one in both is refused, see
+	// [ValidateRevokedGrants].
+	Revoked []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
@@ -1888,6 +1898,14 @@ func (d *DefaultPrivilege) Canonicalize() {
 		privileges[index].WithOption = privileges[index].WithOption || privilege.WithOption
 	}
 	d.Privileges = privileges
+	var revoked []string
+	for _, privilege := range d.Revoked {
+		normalized := strings.ToUpper(strings.TrimSpace(privilege))
+		if normalized != "" && !slices.Contains(revoked, normalized) {
+			revoked = append(revoked, normalized)
+		}
+	}
+	d.Revoked = revoked
 	d.Grantor = strings.TrimSpace(d.Grantor)
 	d.Schema = strings.TrimSpace(d.Schema)
 	d.Grantee = strings.TrimSpace(d.Grantee)

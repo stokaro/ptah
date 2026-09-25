@@ -171,7 +171,7 @@ func TestRenderDefaultPrivilegeDropsAnIncompleteDeclaration(t *testing.T) {
 			c.Assert(string(rendered.Data), qt.Not(qt.Contains), "default_privilege {")
 			c.Assert(diagnosticMessages(rendered.Diagnostics), qt.Contains,
 				"default privilege requires a grantor, a schema, an object type, "+
-					"a grantee, and at least one privilege")
+					"a grantee, and at least one privilege granted or revoked")
 		})
 	}
 }

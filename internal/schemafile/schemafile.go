@@ -730,7 +730,7 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	// Grants and revoked grants compose in file order: a later file's REVOKE
 	// takes back an earlier file's GRANT, as it would in one file.
 	privilegefold.Merge(dst, src)
-	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
+	dst.DefaultPrivileges = privilegefold.MergeDefaultPrivileges(dst.DefaultPrivileges, src.DefaultPrivileges)
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)

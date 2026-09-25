@@ -785,7 +785,8 @@ func managedDataDefinitionIdentity(data ManagedData) string {
 }
 
 // ValidateRevokedGrants refuses a privilege db both grants and revokes to one
-// role on one object for a dialect both declarations reach.
+// role on one object for a dialect both declarations reach, and a default
+// privilege one identity both grants and revokes.
 //
 // A declarative source has no statement order, so neither declaration can win
 // the way a later statement of a SQL script does, and keeping either one would
@@ -795,6 +796,9 @@ func managedDataDefinitionIdentity(data ManagedData) string {
 func ValidateRevokedGrants(db *Database) error {
 	if db == nil {
 		return nil
+	}
+	if err := validateRevokedDefaultPrivileges(db.DefaultPrivileges); err != nil {
+		return err
 	}
 	for _, revoked := range db.RevokedGrants {
 		target := revoked.TargetKey()
@@ -820,4 +824,33 @@ func dialectScopesOverlap(a, b []string) bool {
 		return true
 	}
 	return slices.ContainsFunc(a, func(dialect string) bool { return dialectscope.Includes(b, dialect) })
+}
+
+// validateRevokedDefaultPrivileges refuses a default privilege listed both in
+// Privileges and in Revoked of one identity, across every declaration of it.
+// A revoked ALL contradicts any privilege granted to the identity.
+func validateRevokedDefaultPrivileges(privileges []DefaultPrivilege) error {
+	granted := make(map[defaultPrivilegeKey]map[string]bool)
+	for _, privilege := range privileges {
+		privilege.Canonicalize()
+		key := newDefaultPrivilegeKey(privilege)
+		if granted[key] == nil {
+			granted[key] = make(map[string]bool)
+		}
+		for _, grant := range privilege.Privileges {
+			granted[key][grant.Privilege] = true
+		}
+	}
+	for _, privilege := range privileges {
+		privilege.Canonicalize()
+		held := granted[newDefaultPrivilegeKey(privilege)]
+		for _, revoked := range privilege.Revoked {
+			if !held[revoked] && (revoked != "ALL" || len(held) == 0) {
+				continue
+			}
+			return fmt.Errorf("default privilege %s on %s in schema %s for role %s is both granted to and revoked from %q; "+
+				"declare one or the other", revoked, privilege.ObjectType, privilege.Schema, privilege.Grantor, privilege.Grantee)
+		}
+	}
+	return nil
 }

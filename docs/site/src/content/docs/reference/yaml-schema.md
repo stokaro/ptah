@@ -141,8 +141,9 @@ default privilege has no name of its own, and `for_role`, `schema`,
 | `schema` | Schema the default applies in. Required. |
 | `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`. Required. |
 | `grantee` | Role receiving the privileges. `PUBLIC` names every role. Required. |
-| `privileges` | Privileges granted, such as `SELECT`. Required. |
+| `privileges` | Privileges granted, such as `SELECT`. Required unless `revoked` is set. |
 | `grantable` | The subset of `privileges` carrying `WITH GRANT OPTION`. A name outside `privileges` is refused. |
+| `revoked` | Privileges the grantee must not hold by default, such as `INSERT`; `ALL` names every privilege of the object type. A name also in `privileges` is refused. |
 | `comment` | Default privilege comment. |
 | `dialects` | Target dialects this entry belongs to. Written with no dialect in it, it is refused rather than read as every dialect. |
 
@@ -161,6 +162,12 @@ default_privileges:
 PostgreSQL records grantability per privilege. The entry above renders two
 statements: `SELECT` plainly, and `INSERT` with the grant option. Reading the
 database back reports the same two rows, so the comparison converges.
+
+`revoked` is what a SQL schema file writes as `ALTER DEFAULT PRIVILEGES ...
+REVOKE`. The comparison revokes each listed privilege wherever the database
+holds it for that identity, whether or not the schema declares the role in
+`for_role`. A database the schema creates has nothing to revoke, so the entry
+renders no statement of its own.
 
 Writing the cluster-wide form, which omits `IN SCHEMA`, is not possible here.
 `schema` is required, and a default privilege with no schema is a different

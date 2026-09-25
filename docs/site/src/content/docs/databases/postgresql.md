@@ -218,6 +218,17 @@ statement order, and the later statement about one privilege of one role on
 one object wins. Go annotations and HCL have no statement order, so declaring
 the same privilege both granted and revoked is refused.
 
+`ALTER DEFAULT PRIVILEGES ... REVOKE` composes the same way with the
+`ALTER DEFAULT PRIVILEGES ... GRANT` statements before it. A revoke with no
+grant before it says the default privilege is absent, and Ptah revokes it
+wherever the database holds it for that grantor, schema, object type and
+grantee. A schema-scoped default is only ever added to the global defaults, so
+such a revoke takes back what a schema-scoped grant gave; it cannot take away a
+global default. In Go the same declaration is the `revoked` attribute of
+`//ptah:schema:defaultprivilege`, in HCL the `revoked` attribute of a
+`default_privilege` block, and in YAML the `revoked` key of a
+`default_privileges` entry.
+
 Some forms are refused rather than approximated, each with a message that
 names the form:
 
@@ -226,7 +237,8 @@ names the form:
 - `ON ALL TABLES IN SCHEMA`, which applies to whatever objects exist when it
   runs;
 - `REVOKE ... CASCADE`, `REVOKE ... GRANTED BY` and a list of grantees;
-- `REVOKE GRANT OPTION FOR` on a privilege the same file does not grant;
+- `REVOKE GRANT OPTION FOR`, on an object or in `ALTER DEFAULT PRIVILEGES`, on
+  a privilege the same file does not grant;
 - a `REVOKE` of one privilege after `GRANT ALL` on a table, because the members
   of a table's `ALL` depend on the server version. Name the privileges in the
   `GRANT` instead.

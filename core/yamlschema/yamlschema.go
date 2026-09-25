@@ -375,7 +375,10 @@ type defaultPrivilegeSpec struct {
 	Grantee    stringScalar `yaml:"grantee"`
 	Privileges stringList   `yaml:"privileges"`
 	Grantable  stringList   `yaml:"grantable"`
-	Comment    stringScalar `yaml:"comment"`
+	// Revoked are privileges the grantee must not hold by default: what a SQL
+	// schema file writes as ALTER DEFAULT PRIVILEGES ... REVOKE.
+	Revoked stringList   `yaml:"revoked"`
+	Comment stringScalar `yaml:"comment"`
 	// Dialects is a yaml.Node so that a key nobody wrote and a key written with
 	// nothing in it stay two answers. A stringList folds them into one: the
 	// decoder reports an empty list for both, and the empty scope that
@@ -422,6 +425,12 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 	}
 
 	schemamodel.Finalize(db)
+	// After Finalize, which merges the entries of one identity: a privilege
+	// one entry grants and another revokes is a contradiction a document with
+	// no statement order cannot resolve.
+	if err := schemamodel.ValidateRevokedGrants(db); err != nil {
+		return nil, fmt.Errorf("parse YAML schema: %w", err)
+	}
 	return db, nil
 }
 
@@ -990,6 +999,7 @@ func buildDefaultPrivilege(key string, spec defaultPrivilegeSpec) (schemamodel.D
 		ObjectType: objectType,
 		Grantee:    string(spec.Grantee),
 		Privileges: privileges,
+		Revoked:    cleanStrings(spec.Revoked),
 		Comment:    string(spec.Comment),
 		Dialects:   scope,
 	}
@@ -1007,8 +1017,8 @@ func buildDefaultPrivilege(key string, spec defaultPrivilegeSpec) (schemamodel.D
 // resolve.
 func defaultPrivilegeGrants(key string, spec defaultPrivilegeSpec) ([]schemamodel.PrivilegeGrant, error) {
 	privileges := cleanStrings(spec.Privileges)
-	if len(privileges) == 0 {
-		return nil, fmt.Errorf("default privilege %q requires privileges", key)
+	if len(privileges) == 0 && len(cleanStrings(spec.Revoked)) == 0 {
+		return nil, fmt.Errorf("default privilege %q requires privileges or revoked", key)
 	}
 
 	granted := make(map[string]bool, len(privileges))

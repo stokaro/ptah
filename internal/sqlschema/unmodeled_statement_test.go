@@ -61,9 +61,8 @@ func TestToDatabase_AModeledRoutineStillReachesTheModel(t *testing.T) {
 // becoming a refusal of everything this package does not append.
 //
 // Each of these is a decision rather than an omission: a DROP names an object
-// by its absence, which a desired schema expresses by not declaring it, an
-// ALTER DEFAULT PRIVILEGES ... REVOKE names a privilege the same way, and a DO
-// block does work rather than declare a thing. They have cases of their own, so
+// by its absence, which a desired schema expresses by not declaring it, and a
+// DO block does work rather than declare a thing. They have cases of their own, so
 // the default means "nobody decided" and not "somebody decided not to".
 func TestToDatabase_AStatementThatNamesNoObjectIsNotRefused(t *testing.T) {
 	tests := []struct {
@@ -74,12 +73,6 @@ func TestToDatabase_AStatementThatNamesNoObjectIsNotRefused(t *testing.T) {
 		{name: "a dropped table", sql: "DROP TABLE users;", dialect: "postgres"},
 		{name: "a dropped index", sql: "DROP INDEX idx_users_email;", dialect: "postgres"},
 		{name: "a DO block", sql: "DO $$ BEGIN PERFORM 1; END $$;", dialect: "postgres"},
-		{
-			name: "a revoked default privilege",
-			sql: "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app " +
-				"REVOKE SELECT ON TABLES FROM app_reader;",
-			dialect: "postgres",
-		},
 	}
 
 	for _, test := range tests {
