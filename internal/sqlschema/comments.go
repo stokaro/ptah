@@ -98,7 +98,7 @@ func commentTarget(
 ) (target *string, found bool) {
 	switch statement.kind {
 	case "TABLE":
-		return tableCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name))
+		return tableCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "COLUMN":
 		return columnCommentTarget(databases, statement.name, sourcePlatform)
 	case "INDEX":
@@ -113,27 +113,15 @@ func commentTarget(
 	}
 }
 
-func tableCommentTarget(databases []*schemamodel.Database, qualified string) (*string, bool) {
-	table := commentTable(databases, qualified)
+// tableCommentTarget finds the table a comment names by the rule an ALTER TABLE
+// uses, [resolveTable]: by the name the server resolves, never by the struct
+// name, which gives a table created as "Docs" and a comment on docs one key.
+func tableCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
+	table := resolveTable(databases, qualified, sourcePlatform)
 	if table == nil {
 		return new(string), false
 	}
 	return &table.Comment, true
-}
-
-// commentTable finds the table a comment names by its qualified name, never by
-// its struct name: the struct name camel-cases the table name, so a table
-// created as "Docs" and a comment on docs share one, and PostgreSQL resolves
-// the two to different tables.
-func commentTable(databases []*schemamodel.Database, qualified string) *schemamodel.Table {
-	for _, database := range databases {
-		for i := range database.Tables {
-			if database.Tables[i].QualifiedName() == qualified {
-				return &database.Tables[i]
-			}
-		}
-	}
-	return nil
 }
 
 func indexCommentTarget(databases []*schemamodel.Database, name string) (*string, bool) {
@@ -170,23 +158,19 @@ func roleCommentTarget(databases []*schemamodel.Database, name string) (*string,
 }
 
 // columnCommentTarget finds the column `table.column` or `schema.table.column`
-// names.
+// names, by the rules an ALTER TABLE uses for the table and its column.
 func columnCommentTarget(databases []*schemamodel.Database, name, sourcePlatform string) (*string, bool) {
 	dot := strings.LastIndex(name, ".")
 	if dot < 0 {
 		return new(string), false
 	}
-	table := commentTable(databases, normalizeSQLTableReference(sourcePlatform, name[:dot]))
+	table := resolveTable(databases, normalizeSQLTableReference(sourcePlatform, name[:dot]), sourcePlatform)
 	if table == nil {
 		return new(string), false
 	}
-	column := normalizeSQLIdentifier(sourcePlatform, name[dot+1:])
-	for _, database := range databases {
-		for i := range database.Fields {
-			if database.Fields[i].StructName == table.StructName && database.Fields[i].Name == column {
-				return &database.Fields[i].Comment, true
-			}
-		}
+	field := resolveColumn(databases, table.StructName, name[dot+1:], sourcePlatform)
+	if field == nil {
+		return new(string), false
 	}
-	return new(string), false
+	return &field.Comment, true
 }

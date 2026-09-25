@@ -269,6 +269,19 @@ columns, indexes, constraints, policies, roles, and the object a statement such
 as `GRANT` or `CREATE INDEX` names. Other dialects, and a read with no dialect,
 keep a name as written.
 
+An `ALTER TABLE` reaches the table and column its dialect's server would
+find for the names it writes. `"Docs"` and `docs` are two tables on PostgreSQL,
+and a file may declare both: each keeps its own columns, and `ALTER TABLE docs`
+changes `docs`. In a file that declares only `"Docs"`, the same statement is
+refused, as PostgreSQL refuses it. ClickHouse compares names exactly too.
+SQLite ignores the case of ASCII letters, quoted or not, so `ALTER TABLE docs`
+reaches `Docs` there, and `ärger` does not reach `Ärger`. SQL Server, under its
+default case-insensitive collation, ignores case past ASCII as well. MySQL and
+MariaDB compare column names without case. A MySQL table name follows the
+server's `lower_case_table_names`, which a schema file does not carry, so a
+spelling reaches a table that matches it exactly, or else the one table that
+differs from it only in case. A read with no dialect compares exactly.
+
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
 and `"PUBLIC"` is the `PUBLIC` keyword.
