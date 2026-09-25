@@ -49,7 +49,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/auth v0.23.3 // indirect
+	cloud.google.com/go/auth v0.24.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.1 // indirect
 	cloud.google.com/go/iam v1.13.0 // indirect
