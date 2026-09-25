@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/migratevalidate"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/migration/migrationfile"
@@ -66,6 +67,14 @@ func runAtlasMigrateValidate(
 	policy atlascompatpolicy.Policy,
 	source atlasMigrateSource,
 ) error {
+	// Resolved before the integrity gate, whose clean and unhashed answers
+	// return before any replay, so a malformed declaration fails every run of
+	// this branch. The forwarding branch reaches `ptah migrations validate`,
+	// which resolves the same variable itself.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	var fsys fs.FS
 	if source.project.isVirtualMigrationDir(source.localDir) {
 		captured, err := source.project.captureLocal(source.localDir)
@@ -123,22 +132,28 @@ func runAtlasMigrateValidate(
 	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	return replayAtlasMigrateSource(cmd, source, fsys)
+	return replayAtlasMigrateSource(cmd, source, fsys, devServerDisposable)
 }
 
 // replayAtlasMigrateSource replays a converted migration directory on the dev
 // database. It converts through the same ResolveApplySourceForFormat the apply
 // path executes, so what validate proves runnable is what apply would run.
-func replayAtlasMigrateSource(cmd *cobra.Command, source atlasMigrateSource, fsys fs.FS) error {
+func replayAtlasMigrateSource(
+	cmd *cobra.Command,
+	source atlasMigrateSource,
+	fsys fs.FS,
+	devServerDisposable bool,
+) error {
 	converted, err := atlasmigrate.ResolveApplySourceForFormat(fsys, source.dir, source.format)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	err = migrationreplay.Replay(cmd.Context(), migrationreplay.Options{
-		Dir:       source.dir,
-		DirFormat: migrationfile.DirFormatAtlas,
-		DevURL:    source.devURL,
-		FS:        converted,
+		Dir:                 source.dir,
+		DirFormat:           migrationfile.DirFormatAtlas,
+		DevURL:              source.devURL,
+		DevServerDisposable: devServerDisposable,
+		FS:                  converted,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("error validating migration SQL on dev database: %w", err))

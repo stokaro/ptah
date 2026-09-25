@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/lintartifact"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationintegrity"
@@ -145,6 +146,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	// Resolved with the integrity policy, before any early return, so a
+	// malformed declaration fails every lint and not only one that replays.
+	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	if err := migrationlintreport.ValidateFormat(opts.format); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
@@ -167,6 +174,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	reportOpts.DevServerDisposable = devServerDisposable
 	// The shared integrity gate. Lint belongs to the class through --dev-url:
 	// migrationlintreport.Build replays the directory's migrations on that
 	// database to validate execution semantics and read baseline schema state.

@@ -862,11 +862,12 @@ func parseRefusedTheValueAsNotADockerURL(err error, rawURL string) bool {
 			err.Error() == fmt.Sprintf("not a docker --dev-url: %q", rawURL))
 }
 
-// TestProvisionedRecordsAServerUntilItIsRemoved pins the record a replay reads
-// to decide how much of a dev server it may change. It is keyed on the URL
-// the provisioner returned, which carries the per-instance password, so a URL
-// naming the same published port with any other password is not the server.
-func TestProvisionedRecordsAServerUntilItIsRemoved(t *testing.T) {
+// TestRunOwnedRecordsAProvisionedServerUntilItIsRemoved pins the record a
+// replay reads to decide how much of a dev server it may change. It is keyed on
+// the URL the provisioner returned, which carries the per-instance password, so
+// a URL naming the same published port with any other password is not the
+// server.
+func TestRunOwnedRecordsAProvisionedServerUntilItIsRemoved(t *testing.T) {
 	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	resolved, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
@@ -875,15 +876,15 @@ func TestProvisionedRecordsAServerUntilItIsRemoved(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(devdocker.Provisioned(resolved), qt.IsTrue)
-	c.Assert(devdocker.Provisioned("postgres://postgres:guessed@127.0.0.1:15432/dev?sslmode=disable"), qt.IsFalse)
+	c.Assert(devdocker.RunOwned(resolved), qt.IsTrue)
+	c.Assert(devdocker.RunOwned("postgres://postgres:guessed@127.0.0.1:15432/dev?sslmode=disable"), qt.IsFalse)
 	release()
-	c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
+	c.Assert(devdocker.RunOwned(resolved), qt.IsFalse)
 }
 
-// TestProvisionedIsFalseForAServerTheOperatorNamed is the control: a URL that
-// Resolve hands back untouched was never provisioned.
-func TestProvisionedIsFalseForAServerTheOperatorNamed(t *testing.T) {
+// TestRunOwnedIsFalseForAServerTheOperatorNamed is the control: a URL that
+// Resolve hands back untouched, with nothing declared, is not the run's own.
+func TestRunOwnedIsFalseForAServerTheOperatorNamed(t *testing.T) {
 	c := qt.New(t)
 	resolved, release, err := devdocker.Resolve(t.Context(), "postgres://u:p@localhost:5432/db", devdocker.Options{
 		Runner: &fakeRunner{hostPort: "127.0.0.1:15432"},
@@ -891,5 +892,63 @@ func TestProvisionedIsFalseForAServerTheOperatorNamed(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(release)
-	c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
+	c.Assert(devdocker.RunOwned(resolved), qt.IsFalse)
+}
+
+// TestRunOwnedRecordsADeclaredServerUntilItsReleaseRuns pins the declaration
+// path: a server URL the operator declared disposable is the run's own while
+// the consumer that resolved it holds it, in the trimmed form the consumers
+// connect with, and no longer once the release has run. A second release is a
+// no-op rather than an end to someone else's declaration.
+func TestRunOwnedRecordsADeclaredServerUntilItsReleaseRuns(t *testing.T) {
+	c := qt.New(t)
+	const declared = "postgres://localhost:5432/declared_release"
+	resolved, release, err := devdocker.Resolve(t.Context(), " "+declared+" ", devdocker.Options{
+		Runner:             &fakeRunner{hostPort: "127.0.0.1:15432"},
+		DeclaredDisposable: true,
+	})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(resolved, qt.Equals, " "+declared+" ")
+	c.Assert(devdocker.RunOwned(declared), qt.IsTrue)
+	release()
+	release()
+	c.Assert(devdocker.RunOwned(declared), qt.IsFalse)
+}
+
+// TestRunOwnedKeepsADeclarationAnInnerReleaseDidNotMake covers the nesting
+// that happens in one command: `migrate diff` resolves its dev URL, and the
+// source resolution it calls resolves the same URL again. The inner release
+// ends the inner declaration only, however many times it runs.
+func TestRunOwnedKeepsADeclarationAnInnerReleaseDidNotMake(t *testing.T) {
+	c := qt.New(t)
+	const declared = "postgres://localhost:5432/declared_nested"
+	options := devdocker.Options{Runner: &fakeRunner{hostPort: "127.0.0.1:15432"}, DeclaredDisposable: true}
+	_, outer, err := devdocker.Resolve(t.Context(), declared, options)
+	c.Assert(err, qt.IsNil)
+	_, inner, err := devdocker.Resolve(t.Context(), declared, options)
+	c.Assert(err, qt.IsNil)
+
+	inner()
+	inner()
+	c.Assert(devdocker.RunOwned(declared), qt.IsTrue)
+	outer()
+	c.Assert(devdocker.RunOwned(declared), qt.IsFalse)
+}
+
+// TestRunOwnedIgnoresADeclarationForADockerURL pins that the declaration adds
+// nothing to a provisioned server: the provisioned URL is recorded once, so
+// the one release that removes the container also ends the record.
+func TestRunOwnedIgnoresADeclarationForADockerURL(t *testing.T) {
+	c := qt.New(t)
+	resolved, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:             &fakeRunner{hostPort: "127.0.0.1:15433"},
+		Ready:              alwaysReady,
+		DeclaredDisposable: true,
+	})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(devdocker.RunOwned(resolved), qt.IsTrue)
+	release()
+	c.Assert(devdocker.RunOwned(resolved), qt.IsFalse)
 }
