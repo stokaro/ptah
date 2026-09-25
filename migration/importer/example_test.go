@@ -63,6 +63,41 @@ func ExampleImport_partialRefused() {
 	// 000002_add_email.sql: its name is not a golang-migrate migration file name (<version>_<name>.up.sql / .down.sql)
 }
 
+// ExampleWithDialect converts a Liquibase typed change, which carries no SQL of
+// its own. The parser WithDialect returns renders the change for the dialect it
+// was given, and derives the rollback Liquibase would: the changeset declares
+// none, so the down SQL drops the table the up SQL creates.
+func ExampleWithDialect() {
+	source := fstest.MapFS{"changelog.xml": {Data: []byte(`<databaseChangeLog>
+  <changeSet id="1" author="alice">
+    <createTable tableName="users">
+      <column name="id" type="bigint"><constraints primaryKey="true"/></column>
+    </createTable>
+  </changeSet>
+</databaseChangeLog>`)}}
+
+	parser := must.Must(importer.ParserByName("liquibase"))
+	parser, err := importer.WithDialect(parser, "postgres")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	parsed, err := parser.Parse(source)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(parsed.Migrations[0].UpSQL)
+	fmt.Println(parsed.Migrations[0].DownSQL)
+
+	// Output:
+	// -- POSTGRES TABLE: users --
+	// CREATE TABLE "users" (
+	//   "id" bigint PRIMARY KEY NOT NULL
+	// );
+	// DROP TABLE "users";
+}
+
 // ExampleDetectParser identifies the source tool from the directory alone,
 // which is what Import does when handed a nil parser. The directory below is
 // Goose's shape: a single .sql file whose sections are separated by

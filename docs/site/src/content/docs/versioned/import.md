@@ -109,7 +109,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. |
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
-| Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL; a changeset that carries a typed change or a selector is refused by name. |
+| Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL. Typed changes such as `createTable` convert with `--dialect`; a changeset carrying a selector, or a change type Ptah does not convert, is refused by name. |
 | dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); a directive keeps its options out of the SQL, and `transaction:false` on one direction becomes `-- +ptah no_transaction` on that direction alone. |
 
 This is native Ptah-format import, distinct from the Atlas-compatible
@@ -167,11 +167,13 @@ error: refusing to overwrite existing migration file "0000000001_create_users.up
 Point `--migrations-dir` at an empty directory, or remove the partial result
 and rerun.
 
-**A Liquibase changeset with nothing to convert is rejected by name.** A typed
-change such as `<createTable>` carries no SQL, and `context`, `contexts`,
-`labels` and `preConditions` decide at run time whether a changeset applies,
-which a migration directory cannot express. The message names the changeset,
-the file and the construct.
+**A Liquibase changeset that cannot convert is rejected by name.** A typed
+change such as `<createTable>` carries no SQL until a database is chosen, so it
+converts only with `--dialect`, and the migration it becomes is written for
+that dialect alone. `context`, `contexts`, `labels` and `preConditions` decide
+at run time whether a changeset applies, which a migration directory cannot
+express, so no flag converts them. The message names the changeset, the file
+and the construct.
 [Migrate from Liquibase](../../migrate-from/liquibase/) works through both.
 
 ## Next steps

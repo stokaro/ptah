@@ -55,7 +55,7 @@ separate ptah-compat binary.`,
 	// written apart from them said the command gated nothing while it refused
 	// destructive and protected-table changes.
 	cmd.AddCommand(migratedata.NewMigrateDataCommand())
-	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format."))
+	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format."))
 	cmd.AddCommand(migrationCommand(migrationspush.NewMigrationsPushCommand(), "Push a migration directory to an OCI registry", "Push a migration directory to an OCI-compliant registry as an immutable artifact."))
 	cmd.AddCommand(migrationCommand(migrationspull.NewMigrationsPullCommand(), "Pull a migration directory from an OCI registry", "Pull and reconstruct a migration directory from an OCI-compliant registry."))
 	cmd.AddCommand(migrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))

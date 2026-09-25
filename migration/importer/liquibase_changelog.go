@@ -3,13 +3,17 @@ package importer
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
+
+	"ptah.run/core/platform/capability"
 )
 
 // Liquibase serializes one changeset model four ways: formatted SQL, XML, YAML
@@ -18,9 +22,12 @@ import (
 //
 // # What converts, and what is refused
 //
-// A changeset converts when its changes are SQL: the `sql` change, and
-// `rollback` holding SQL for the down direction. Everything else Liquibase can
-// put in a changelog is refused BY NAME before anything is written:
+// A changeset converts when every change in it converts. The `sql` and
+// `sqlFile` changes carry SQL and convert as they are. The typed changes listed
+// in [liquibaseConverters] -- `createTable`, `addColumn` and the others -- are
+// rendered for the target dialect the caller names, and liquibase_typed.go says
+// how. Everything else Liquibase can put in a changelog is refused BY NAME
+// before anything is written:
 //
 //   - file composition -- `include` and `includeAll` -- because the imported
 //     directory would silently be missing the changesets those files hold;
@@ -29,9 +36,9 @@ import (
 //   - `contexts` and `labels`, because they select WHICH changesets run and
 //     Ptah's directory has no equivalent, so importing them would flatten a
 //     conditional history into an unconditional one;
-//   - typed refactorings such as `createTable` and `addColumn`, because they
-//     are not SQL text at all and rendering them would mean reimplementing
-//     Liquibase's generator per dialect.
+//   - a typed change with no target dialect, because its SQL does not exist
+//     until a dialect is chosen;
+//   - every change type outside [liquibaseConverters].
 //
 // Refusing by name rather than dropping is the rule this repository already
 // applies to unconvertible constructs: a migration directory that is not the
@@ -40,13 +47,19 @@ import (
 
 // liquibaseChangeSet is one changeset, however it was serialized.
 type liquibaseChangeSet struct {
-	id      string
-	author  string
-	upSQL   []string
-	downSQL []string
-	// unsupported names the constructs this changeset carries that do not
-	// convert, in the order they were found.
-	unsupported []string
+	id     string
+	author string
+	// changes are the changes the changeset applies, in order.
+	changes []liquibaseChange
+	// rollback holds the changes an explicit rollback declared.
+	// rollbackDeclared separates an empty rollback, which says undoing the
+	// changeset takes nothing, from no rollback at all, which leaves Ptah to
+	// derive one.
+	rollback         []liquibaseChange
+	rollbackDeclared bool
+	// rollbackRefusal is set when the rollback is written in a form that does
+	// not convert, such as one naming another changeset's rollback.
+	rollbackRefusal string
 	// selectors are the subset that decide WHETHER a changeset runs rather than
 	// what it does. They are separated because the remedy differs: a change
 	// type can be rewritten as `sql`, and a selector cannot be rewritten at all
@@ -60,29 +73,37 @@ type liquibaseChangeSet struct {
 // Name order is the same rule the formatted-SQL reader applies for the same
 // reason: absent a master changelog naming an order, the file name is the only
 // stable one, and inventing a different one would reorder history.
-func parseLiquibaseChangelogFiles(fsys fs.FS, names []string) ([]SourceMigration, error) {
+func parseLiquibaseChangelogFiles(
+	fsys fs.FS,
+	names []string,
+	dialect string,
+	caps capability.Capabilities,
+) ([]SourceMigration, []string, error) {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 
 	var migrations []SourceMigration
+	var consumed []string
 	for _, name := range sorted {
 		content, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("read %q: %w", name, err)
+			return nil, nil, fmt.Errorf("read %q: %w", name, err)
 		}
 		changesets, err := parseLiquibaseChangelog(name, content)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		converter := &liquibaseConverter{fsys: fsys, file: name, dialect: dialect, caps: caps}
 		for _, changeset := range changesets {
-			migration, err := liquibaseMigrationFrom(name, changeset)
+			migration, err := liquibaseMigrationFrom(converter, changeset)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			migrations = append(migrations, migration)
 		}
+		consumed = append(consumed, converter.consumed...)
 	}
-	return migrations, nil
+	return migrations, consumed, nil
 }
 
 // parseLiquibaseChangelog dispatches on the file extension.
@@ -101,32 +122,127 @@ func parseLiquibaseChangelog(name string, content []byte) ([]liquibaseChangeSet,
 
 // liquibaseMigrationFrom turns one changeset into a migration, or reports what
 // stopped it.
-func liquibaseMigrationFrom(fileName string, changeset liquibaseChangeSet) (SourceMigration, error) {
+//
+// Every change is tried before anything is refused, so one message names every
+// construct that stopped the changeset: a second import must not fail for a
+// construct the first message withheld.
+func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseChangeSet) (SourceMigration, error) {
 	name := liquibaseChangesetName(changeset.author, changeset.id)
 	if len(changeset.selectors) > 0 {
 		return SourceMigration{}, fmt.Errorf(
 			"liquibase changeset %s in %q is conditional on %s; a migration directory has no "+
 				"equivalent, so importing it would turn a conditional history into an "+
 				"unconditional one -- split the changelog or import it by hand",
-			name, fileName, strings.Join(changeset.selectors, ", "))
+			name, converter.file, strings.Join(changeset.selectors, ", "))
 	}
-	if len(changeset.unsupported) > 0 {
-		return SourceMigration{}, fmt.Errorf(
-			"liquibase changeset %s in %q uses %s, which is not SQL text and which Ptah does not "+
-				"generate per dialect; rewrite it as a `sql` change or import it by hand",
-			name, fileName, strings.Join(changeset.unsupported, ", "))
+	if changeset.rollbackRefusal != "" {
+		return SourceMigration{}, fmt.Errorf("liquibase changeset %s in %q: %s", name, converter.file, changeset.rollbackRefusal)
 	}
-	upSQL := strings.TrimSpace(strings.Join(changeset.upSQL, "\n"))
+
+	var refusal liquibaseRefusal
+	up := refusal.convertAll(converter, changeset.changes)
+	var down []liquibaseConverted
+	if changeset.rollbackDeclared {
+		down = refusal.convertAll(converter, changeset.rollback)
+	}
+	if err := refusal.err(name, converter.file); err != nil {
+		return SourceMigration{}, err
+	}
+
+	upSQL := liquibaseJoin(up, func(converted liquibaseConverted) string { return converted.up })
 	if upSQL == "" {
-		return SourceMigration{}, fmt.Errorf(
-			"liquibase changeset %s in %q has no SQL",
-			liquibaseChangesetName(changeset.author, changeset.id), fileName)
+		return SourceMigration{}, fmt.Errorf("liquibase changeset %s in %q has no SQL", name, converter.file)
 	}
-	return SourceMigration{
-		Name:    liquibaseChangesetName(changeset.author, changeset.id),
-		UpSQL:   upSQL,
-		DownSQL: strings.TrimSpace(strings.Join(changeset.downSQL, "\n")),
-	}, nil
+	var downSQL string
+	if changeset.rollbackDeclared {
+		downSQL = liquibaseJoin(down, func(converted liquibaseConverted) string { return converted.up })
+	} else {
+		downSQL = liquibaseDerivedRollback(up)
+	}
+	return SourceMigration{Name: name, UpSQL: upSQL, DownSQL: downSQL}, nil
+}
+
+// liquibaseRefusal collects what stopped a changeset's conversion.
+type liquibaseRefusal struct {
+	// unconverted are change types Ptah does not convert.
+	unconverted []string
+	// needDialect are typed changes that convert once a dialect is chosen.
+	needDialect []string
+	// failed is the first change that was recognized and could not be read.
+	failed error
+}
+
+// convertAll converts changes in order, recording each one that did not
+// convert instead of stopping at it.
+func (r *liquibaseRefusal) convertAll(converter *liquibaseConverter, changes []liquibaseChange) []liquibaseConverted {
+	converted := make([]liquibaseConverted, 0, len(changes))
+	for _, change := range changes {
+		result, err := converter.convert(change)
+		switch {
+		case err == nil:
+			converted = append(converted, result)
+		case errors.Is(err, errLiquibaseNotConverted):
+			r.unconverted = append(r.unconverted, change.display)
+		case errors.Is(err, errLiquibaseNeedsDialect):
+			r.needDialect = append(r.needDialect, change.display)
+		case r.failed == nil:
+			r.failed = err
+		}
+	}
+	return converted
+}
+
+// err states the refusal, naming every construct that caused it.
+//
+// A change type Ptah does not convert is named first, because no dialect makes
+// it convert; the typed changes that are waiting only for a dialect are named in
+// the same message so that choosing one does not reveal a second refusal.
+func (r *liquibaseRefusal) err(name, file string) error {
+	switch {
+	case len(r.unconverted) > 0:
+		message := fmt.Sprintf(
+			"liquibase changeset %s in %q uses %s, which is not SQL text and which Ptah does not "+
+				"convert; rewrite it as a `sql` change or import it by hand",
+			name, file, strings.Join(r.unconverted, ", "))
+		if len(r.needDialect) > 0 {
+			message += fmt.Sprintf("; %s would also need --dialect", strings.Join(r.needDialect, ", "))
+		}
+		return errors.New(message)
+	case len(r.needDialect) > 0:
+		return fmt.Errorf(
+			"liquibase changeset %s in %q uses %s, which is not SQL text; Ptah renders it for one "+
+				"target dialect, so pass --dialect to choose it, or rewrite it as a `sql` change",
+			name, file, strings.Join(r.needDialect, ", "))
+	case r.failed != nil:
+		return fmt.Errorf("liquibase changeset %s in %q: %w", name, file, r.failed)
+	default:
+		return nil
+	}
+}
+
+// liquibaseDerivedRollback is the rollback Liquibase derives when a changeset
+// declares none: each change's inverse, last change first. One change that
+// cannot be undone from the changelog alone leaves the whole changeset without
+// a derived rollback, because undoing the rest would leave that one applied.
+func liquibaseDerivedRollback(up []liquibaseConverted) string {
+	inverse := make([]liquibaseConverted, 0, len(up))
+	for _, converted := range slices.Backward(up) {
+		if !converted.reversible {
+			return ""
+		}
+		inverse = append(inverse, liquibaseConverted{up: converted.down})
+	}
+	return liquibaseJoin(inverse, func(converted liquibaseConverted) string { return converted.up })
+}
+
+func liquibaseJoin(converted []liquibaseConverted, text func(liquibaseConverted) string) string {
+	parts := make([]string, 0, len(converted))
+	for _, entry := range converted {
+		if part := strings.TrimSpace(text(entry)); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // ---------------------------------------------------------------------- XML
@@ -140,11 +256,14 @@ type liquibaseXMLRoot struct {
 // can be refused by the name the author wrote rather than by a position.
 type liquibaseXMLAny struct {
 	XMLName  xml.Name
-	ID       string            `xml:"id,attr"`
-	Author   string            `xml:"author,attr"`
-	Context  string            `xml:"context,attr"`
-	Contexts string            `xml:"contexts,attr"`
-	Labels   string            `xml:"labels,attr"`
+	ID       string `xml:"id,attr"`
+	Author   string `xml:"author,attr"`
+	Context  string `xml:"context,attr"`
+	Contexts string `xml:"contexts,attr"`
+	Labels   string `xml:"labels,attr"`
+	// Attrs are the attributes no field above claims, which on a change are
+	// all of them.
+	Attrs    []xml.Attr        `xml:",any,attr"`
 	Children []liquibaseXMLAny `xml:",any"`
 	Text     string            `xml:",chardata"`
 }
@@ -192,35 +311,48 @@ func liquibaseXMLChangeSet(node liquibaseXMLAny) liquibaseChangeSet {
 	}
 	for _, child := range node.Children {
 		switch child.XMLName.Local {
-		case "sql":
-			changeset.upSQL = append(changeset.upSQL, strings.TrimSpace(child.Text))
 		case "rollback":
-			changeset.downSQL = append(changeset.downSQL, liquibaseXMLRollbackSQL(child))
+			changeset.rollbackDeclared = true
+			changeset.rollback, changeset.rollbackRefusal = liquibaseXMLRollback(child)
 		case "preConditions":
 			changeset.selectors = append(changeset.selectors, "preConditions")
 		case "comment", "":
 			// A comment documents the changeset, and an empty name is the
 			// chardata between elements.
 		default:
-			changeset.unsupported = append(changeset.unsupported, "<"+child.XMLName.Local+">")
+			changeset.changes = append(changeset.changes, liquibaseXMLChange(child))
 		}
 	}
 	return changeset
 }
 
-// liquibaseXMLRollbackSQL reads a rollback's SQL, whether written as text or as
-// a nested <sql> element.
-func liquibaseXMLRollbackSQL(node liquibaseXMLAny) string {
-	var parts []string
-	for _, child := range node.Children {
-		if child.XMLName.Local == "sql" {
-			parts = append(parts, strings.TrimSpace(child.Text))
+// liquibaseXMLRollback reads a rollback's changes: nested changes, or SQL
+// written directly as its text.
+//
+// A rollback with attributes names another changeset whose rollback to reuse.
+// Ptah cannot follow the reference, and reading the element as empty would
+// write a down migration that undoes nothing, so it is refused.
+func liquibaseXMLRollback(node liquibaseXMLAny) ([]liquibaseChange, string) {
+	if len(node.Attrs) > 0 {
+		names := make([]string, 0, len(node.Attrs))
+		for _, attr := range node.Attrs {
+			names = append(names, attr.Name.Local)
 		}
+		return nil, fmt.Sprintf("<rollback> refers to another changeset's rollback (%s); "+
+			"Ptah does not follow the reference, so write the rollback out", strings.Join(names, ", "))
 	}
-	if len(parts) > 0 {
-		return strings.Join(parts, "\n")
+	rollback := liquibaseXMLChange(node)
+	var changes []liquibaseChange
+	for _, child := range rollback.children {
+		if child.name == "comment" {
+			continue
+		}
+		changes = append(changes, child)
 	}
-	return strings.TrimSpace(node.Text)
+	if len(changes) == 0 && rollback.text != "" {
+		changes = append(changes, liquibaseSQLChange(rollback.text, "<rollback>"))
+	}
+	return changes, ""
 }
 
 // -------------------------------------------------------------- YAML / JSON
@@ -299,54 +431,60 @@ func liquibaseDocumentChangeSet(value any) liquibaseChangeSet {
 		changeset.selectors = append(changeset.selectors, "preConditions")
 	}
 	changes, _ := liquibaseMapValue(value, "changes")
-	upSQL, upUnsupported := liquibaseDocumentSQL(changes)
-	rollback, _ := liquibaseMapValue(value, "rollback")
-	downSQL, downUnsupported := liquibaseDocumentSQL(rollback)
-
-	changeset.upSQL = upSQL
-	changeset.downSQL = downSQL
-	changeset.unsupported = append(append(changeset.unsupported, upUnsupported...), downUnsupported...)
+	changeset.changes = liquibaseDocumentChanges(changes)
+	if rollback, present := liquibaseMapValue(value, "rollback"); present {
+		changeset.rollbackDeclared = true
+		changeset.rollback, changeset.rollbackRefusal = liquibaseDocumentRollback(rollback)
+	}
 	return changeset
 }
 
-// liquibaseDocumentSQL splits a changes or rollback list into the SQL it holds
-// and the names of the change types that are not SQL.
+// liquibaseDocumentChanges reads a `changes` list.
 //
-// The second result is what the caller refuses by name; returning it rather
-// than dropping it here is what keeps an unconvertible change from becoming a
-// migration file that silently omits it.
-func liquibaseDocumentSQL(node any) (statements, unsupported []string) {
+// An entry that is not a one-key mapping names no change type. It is kept as a
+// change named for what it is, so the converter refuses it rather than the walk
+// skipping it.
+func liquibaseDocumentChanges(node any) []liquibaseChange {
+	var changes []liquibaseChange
 	for _, entry := range liquibaseList(node) {
 		key, value, ok := liquibaseSingleKey(entry)
 		if !ok {
-			// A rollback may be a bare SQL string rather than a list of
-			// changes, which is how Liquibase's own examples write a one-liner.
-			if text, isText := entry.(string); isText && strings.TrimSpace(text) != "" {
-				statements = append(statements, strings.TrimSpace(text))
+			changes = append(changes, liquibaseChange{
+				name: "", display: fmt.Sprintf("a change entry that names no change type (%v)", entry),
+				attrs: make(map[string]string),
+			})
+			continue
+		}
+		changes = append(changes, liquibaseDocumentChange(key, value))
+	}
+	return changes
+}
+
+// liquibaseDocumentRollback reads a rollback, which is a SQL string, a list of
+// changes and SQL strings, or a mapping.
+//
+// A mapping carrying changeSetId names another changeset whose rollback to
+// reuse, and is refused for the reason the XML reader gives.
+func liquibaseDocumentRollback(node any) ([]liquibaseChange, string) {
+	if mapping, ok := node.(map[string]any); ok {
+		if _, reference := mapping["changeSetId"]; reference {
+			return nil, "rollback refers to another changeset's rollback (changeSetId); " +
+				"Ptah does not follow the reference, so write the rollback out"
+		}
+	}
+	var changes []liquibaseChange
+	for _, entry := range liquibaseList(node) {
+		// A rollback may be a bare SQL string rather than a list of changes,
+		// which is how Liquibase's own examples write a one-liner.
+		if text, isText := entry.(string); isText {
+			if strings.TrimSpace(text) != "" {
+				changes = append(changes, liquibaseSQLChange(text, "rollback"))
 			}
 			continue
 		}
-		if key != "sql" {
-			unsupported = append(unsupported, key)
-			continue
-		}
-		statements = append(statements, liquibaseSQLText(value))
+		changes = append(changes, liquibaseDocumentChanges(entry)...)
 	}
-	return statements, unsupported
-}
-
-// liquibaseSQLText reads a `sql` change, which is either a bare string or a
-// mapping whose own `sql` key holds the statement.
-func liquibaseSQLText(value any) string {
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
-	}
-	if inner, ok := liquibaseMapValue(value, "sql"); ok {
-		if text, isText := inner.(string); isText {
-			return strings.TrimSpace(text)
-		}
-	}
-	return ""
+	return changes, ""
 }
 
 // liquibaseList treats a bare value as a one-element list, which is how both

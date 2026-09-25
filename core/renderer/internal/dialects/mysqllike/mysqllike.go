@@ -256,7 +256,14 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 }
 
 func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
-	// Build DROP INDEX statement for MySQL/MariaDB
+	// MySQL and MariaDB name an index only inside its table, so DROP INDEX has
+	// no spelling without ON. A node carrying no table is refused rather than
+	// rendered as a statement both servers reject -- with the schema quoted into
+	// the index name, as `app.i` would be.
+	if node.Table == "" {
+		return fmt.Errorf("%w: %s: DROP INDEX %s names no table, and this target requires one",
+			ptaherr.ErrUnsupportedFeature, r.dialect, node.Name)
+	}
 	var parts []string
 	parts = append(parts, "DROP INDEX")
 
@@ -269,12 +276,7 @@ func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, escapeIdentifier(node.Name))
-
-	// MySQL/MariaDB requires table name in DROP INDEX
-	if node.Table != "" {
-		parts = append(parts, "ON", escapeQualifiedIdentifier(node.Table))
-	}
+	parts = append(parts, escapeIdentifier(node.Name), "ON", escapeQualifiedIdentifier(node.Table))
 
 	sql := strings.Join(parts, " ") + ";"
 
