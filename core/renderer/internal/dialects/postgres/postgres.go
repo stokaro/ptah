@@ -3300,8 +3300,23 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 		grantOption = " WITH GRANT OPTION"
 	}
 	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;",
-		privileges, node.ObjectType, r.escapeQualifiedIdentifier(node.ObjectName), r.escapeRoleTarget(node.Role), grantOption)
+		privileges, node.ObjectType, r.grantTarget(node.ObjectType, node.ObjectName, node.Arguments),
+		r.escapeRoleTarget(node.Role), grantOption)
 	return nil
+}
+
+// grantTarget spells the object of a GRANT or REVOKE. A routine carries its
+// argument types in parentheses, because PostgreSQL resolves an overloaded
+// name by them; the types are written as the declaration or the catalog
+// spelled them, which PostgreSQL reads back either way.
+func (r *Renderer) grantTarget(objectType, objectName, arguments string) string {
+	target := r.escapeQualifiedIdentifier(objectName)
+	switch strings.ToUpper(objectType) {
+	case "FUNCTION", "PROCEDURE", "ROUTINE":
+		return target + "(" + strings.TrimSpace(arguments) + ")"
+	default:
+		return target
+	}
 }
 
 // renderRevokePrivilege renders a REVOKE statement for PostgreSQL.
@@ -3329,7 +3344,8 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 		prefix = "REVOKE GRANT OPTION FOR"
 	}
 	r.w.WriteLinef("%s %s ON %s %s FROM %s;",
-		prefix, privileges, node.ObjectType, r.escapeQualifiedIdentifier(node.ObjectName), r.escapeRoleTarget(node.Role))
+		prefix, privileges, node.ObjectType, r.grantTarget(node.ObjectType, node.ObjectName, node.Arguments),
+		r.escapeRoleTarget(node.Role))
 	return nil
 }
 

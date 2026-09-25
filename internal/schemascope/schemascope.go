@@ -109,6 +109,9 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
+	filtered.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
+		return grantAllowed(allowed, keptTables, grant, defaultSchema)
+	})
 	filtered.DefaultPrivileges = keep(db.DefaultPrivileges,
 		func(privilege schemamodel.DefaultPrivilege) bool {
 			return defaultPrivilegeAllowed(allowed, privilege.Schema, defaultSchema)
@@ -321,6 +324,10 @@ func grantAllowed(
 	if grant.OnTable != "" {
 		return tableReferenceAllowed(keptTables, grant.OnTable)
 	}
+	if grant.OnRoutine != "" {
+		// A routine is kept by its schema, and its grants ride it.
+		return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnRoutine), defaultSchema))
+	}
 	return false
 }
 
@@ -345,6 +352,9 @@ func dbGrantAllowed(
 ) bool {
 	if strings.EqualFold(grant.ObjectType, "SCHEMA") {
 		return schemaAllowed(allowed, effectiveSchema(grant.ObjectName, defaultSchema))
+	}
+	if strings.EqualFold(grant.ObjectType, "FUNCTION") || strings.EqualFold(grant.ObjectType, "PROCEDURE") {
+		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 	}
 	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema)) &&
 		dbTableReferenceAllowed(keptTables, grant.QualifiedTarget())

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"slices"
 	"strings"
 
+	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/tableref"
 )
 
@@ -301,6 +303,7 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.rlsEnabledTables,
 		validator.roles,
 		validator.managedData,
+		func() error { return ValidateRevokedGrants(r) },
 	}
 	for _, validate := range validations {
 		if err := validate(); err != nil {
@@ -779,4 +782,42 @@ func managedDataSourceIdentity(data ManagedData) string {
 
 func managedDataDefinitionIdentity(data ManagedData) string {
 	return managedDataSourceIdentity(data) + "\x00" + strings.Join(data.Keys, "\x00")
+}
+
+// ValidateRevokedGrants refuses a privilege db both grants and revokes to one
+// role on one object for a dialect both declarations reach.
+//
+// A declarative source has no statement order, so neither declaration can win
+// the way a later statement of a SQL script does, and keeping either one would
+// drop the other without a word. A grant spelling ALL contradicts a revoke of
+// any privilege on its object. Targets are compared by [Grant.TargetKey] after
+// the table names are resolved, which [Merge] does before it calls this.
+func ValidateRevokedGrants(db *Database) error {
+	if db == nil {
+		return nil
+	}
+	for _, revoked := range db.RevokedGrants {
+		target := revoked.TargetKey()
+		for _, grant := range db.Grants {
+			if grant.Role != revoked.Role || grant.TargetKey() != target || !dialectScopesOverlap(grant.Dialects, revoked.Dialects) {
+				continue
+			}
+			for _, privilege := range revoked.Privileges {
+				if slices.Contains(grant.Privileges, privilege) || slices.Contains(grant.Privileges, "ALL") {
+					return fmt.Errorf("%s on %s is both granted to and revoked from %q; declare one or the other",
+						privilege, target, revoked.Role)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// dialectScopesOverlap reports whether some dialect is in both scopes. An empty
+// scope is every dialect.
+func dialectScopesOverlap(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(a, func(dialect string) bool { return dialectscope.Includes(b, dialect) })
 }

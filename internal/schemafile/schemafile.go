@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/privilegefold"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
 )
@@ -726,7 +727,9 @@ func appendDatabase(dst, src *schemamodel.Database) {
 	dst.RLSPolicies = append(dst.RLSPolicies, src.RLSPolicies...)
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
-	dst.Grants = append(dst.Grants, src.Grants...)
+	// Grants and revoked grants compose in file order: a later file's REVOKE
+	// takes back an earlier file's GRANT, as it would in one file.
+	privilegefold.Merge(dst, src)
 	dst.DefaultPrivileges = append(dst.DefaultPrivileges, src.DefaultPrivileges...)
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)

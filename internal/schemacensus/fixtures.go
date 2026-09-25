@@ -106,6 +106,8 @@ func Fixtures() []Fixture {
 		{Name: "grant-table", Schema: grantTableFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
+		{Name: "grant-routine", Schema: grantRoutineFixture()},
+		{Name: "revoked-grant", Schema: revokedGrantFixture()},
 		{Name: "default-privilege-tables", Schema: defaultPrivilegeTablesFixture()},
 		{Name: "default-privilege-sequences", Schema: defaultPrivilegeSequencesFixture()},
 		{Name: "default-privilege-functions", Schema: defaultPrivilegeFunctionsFixture()},
@@ -1152,6 +1154,35 @@ func grantSequenceFixture() schemamodel.Database {
 	db.Sequences = []schemamodel.Sequence{{StructName: "S", Name: "order_seq"}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app_reader", Privileges: []string{"USAGE"}, OnSequence: "order_seq",
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// grantRoutineFixture grants on a procedure, so that each part of a routine
+// target is measured: the name, the argument types that pick one overload, and
+// the kind, whose default is FUNCTION and which a procedure is the only way to
+// see.
+func grantRoutineFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Functions = []schemamodel.Function{{
+		StructName: "F", Name: "do_it", Parameters: "p uuid", Language: "sql", Body: "SELECT 1;", Kind: "procedure",
+	}}
+	db.Grants = []schemamodel.Grant{{
+		StructName: "G", Role: "app_reader", Privileges: []string{"EXECUTE"},
+		OnRoutine: "do_it", RoutineArguments: "uuid", RoutineKind: "PROCEDURE",
+		Dialects: []string{"postgres"},
+	}}
+	return db
+}
+
+// revokedGrantFixture asserts a privilege absent.
+func revokedGrantFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.RevokedGrants = []schemamodel.Grant{{
+		StructName: "RG", Role: "app_reader", Privileges: []string{"INSERT"}, OnTable: "t",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

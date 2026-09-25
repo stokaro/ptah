@@ -108,7 +108,8 @@ for the message and the flag it names.
 | `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
 | `extension` | PostgreSQL installation `schema`, `if_not_exists`, `version`, and comments. |
 | `role` | PostgreSQL role attributes, including `password`. |
-| `permission` | PostgreSQL table, schema, and sequence permissions. |
+| `permission` | PostgreSQL table, schema, and sequence permissions. A privilege on a function or procedure is reported as an export loss: a `function.<name>` reference cannot name an overload. |
+| `revoke` | Ptah block: privileges a role must not hold, with `from`, `for`, `privileges` and `comment`. The Atlas community CLI has no such block and ignores it. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
 | `view` / `materialized` | SQL body plus schema and comments. |

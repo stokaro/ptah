@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-371 fields are reachable from the desired schema, and each one carries
+375 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 310 | reaches rendered SQL on at least one target |
+| `ddl` | 314 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -146,6 +146,7 @@ None.
 | `schemamodel.Database.RLSEnabledTables` | `ddl` | — |
 | `schemamodel.Database.RLSPolicies` | `ddl` | — |
 | `schemamodel.Database.Ranges` | `ddl` | — |
+| `schemamodel.Database.RevokedGrants` | `ddl` | — |
 | `schemamodel.Database.Roles` | `ddl` | — |
 | `schemamodel.Database.Schemas` | `ddl` | — |
 | `schemamodel.Database.SelfReferencingForeignKeys` | `derived` | derived by Finalize from the declared foreign keys, so the planner can create the table before the reference to itself |
@@ -262,11 +263,14 @@ None.
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
 | `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |
+| `schemamodel.Grant.OnRoutine` | `ddl` | — |
 | `schemamodel.Grant.OnSchema` | `ddl` | — |
 | `schemamodel.Grant.OnSequence` | `ddl` | — |
 | `schemamodel.Grant.OnTable` | `ddl` | — |
 | `schemamodel.Grant.Privileges` | `ddl` | — |
 | `schemamodel.Grant.Role` | `ddl` | — |
+| `schemamodel.Grant.RoutineArguments` | `ddl` | — |
+| `schemamodel.Grant.RoutineKind` | `ddl` | — |
 | `schemamodel.Grant.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Grant.WithOption` | `ddl` | — |
 | `schemamodel.Hypertable.ChunkInterval` | `ddl` | — |

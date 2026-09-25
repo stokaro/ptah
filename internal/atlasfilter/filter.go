@@ -219,6 +219,7 @@ func excludeGenerated(
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
+	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants)
 	filtered.DefaultPrivileges = state.filterGeneratedDefaultPrivileges(filtered.DefaultPrivileges)
 	filtered.Dependencies = nil
 	filtered.FunctionDependencies = nil
@@ -1281,6 +1282,12 @@ func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {
 		if strings.EqualFold(grant.ObjectType, "SEQUENCE") && s.sequenceExcluded(grant.Schema, grant.ObjectName) {
 			return false
 		}
+		// A grant on a routine leaves with the routine, which filterFunctions
+		// excludes by name, every overload together.
+		if routineGrantObjectTypes[strings.ToUpper(grant.ObjectType)] &&
+			s.matches("function", s.nameCandidates(grant.Schema, grant.ObjectName)...) {
+			return false
+		}
 		// A grant rides the object it is on, so it leaves when that object's
 		// schema leaves. For a SCHEMA grant the object IS the schema, named by
 		// ObjectName; reading grant.Schema there would resolve an empty field
@@ -1605,9 +1612,17 @@ func (s *exclusionState) filterGeneratedGrants(grants []schemamodel.Grant) []sch
 		if grant.OnSequence != "" && s.qualifiedSchemaExcluded(grant.OnSequence) {
 			return false
 		}
+		if grant.OnRoutine != "" && (s.qualifiedSchemaExcluded(grant.OnRoutine) ||
+			s.matches("function", s.qualifiedNameCandidatesFor(grant.OnRoutine)...)) {
+			return false
+		}
 		return !named
 	})
 }
+
+// routineGrantObjectTypes are the object types a catalog read reports for a
+// privilege on a function or procedure.
+var routineGrantObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true}
 
 func (s *exclusionState) matches(resourceType string, names ...string) bool {
 	return s.matchesAny([]string{resourceType}, names...)
@@ -1855,6 +1870,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.RLSEnabledTables = slices.Clone(schema.RLSEnabledTables)
 	filtered.Roles = slices.Clone(schema.Roles)
 	filtered.Grants = slices.Clone(schema.Grants)
+	filtered.RevokedGrants = slices.Clone(schema.RevokedGrants)
 	// A shallow struct copy carries a slice header, so a field left out here is
 	// not dropped -- it is ALIASED, and the filter below then writes through the
 	// caller's own state.
@@ -2015,6 +2031,8 @@ func generatedGrantTargets(grant schemamodel.Grant) []string {
 		return []string{grant.OnSchema, grant.Role + "." + grant.OnSchema}
 	case grant.OnTable != "":
 		return []string{grant.OnTable, grant.Role + "." + grant.OnTable}
+	case grant.OnRoutine != "":
+		return []string{grant.OnRoutine, grant.Role + "." + grant.OnRoutine}
 	default:
 		return nil
 	}

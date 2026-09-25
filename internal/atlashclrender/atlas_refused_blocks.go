@@ -614,7 +614,7 @@ func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	// Both target fields are read: PostgreSQL accepts GRANT ... ON TABLE for a
 	// sequence, so a declaration may name a sequence in OnTable as well as in
 	// OnSequence.
-	for _, grant := range db.Grants {
+	for _, grant := range slices.Concat(db.Grants, db.RevokedGrants) {
 		add(grant.OnTable)
 		add(grant.OnSequence)
 	}

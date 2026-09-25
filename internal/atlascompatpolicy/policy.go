@@ -597,6 +597,7 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
+		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
 		{name: "default privileges", present: len(database.DefaultPrivileges) > 0},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		// These attributes are Ptah HCL extensions. The default compatibility
@@ -617,6 +618,7 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 		{name: "row-level security settings", present: len(database.RLSEnabledTables) > 0},
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
+		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
 		// A default privilege is not one of the named objects a cleanup plan
 		// lists, so without this entry strict `schema clean` would destroy an
 		// object the desired-schema list above claims strict mode does not

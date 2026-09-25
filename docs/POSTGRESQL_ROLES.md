@@ -210,7 +210,7 @@ REVOKE DELETE ON TABLE users FROM app_writer;
 
 ### Role Removal
 
-Roles are not automatically dropped when they disappear from the target schema. Role removal is deliberately manual because roles may be shared with DBAs, infrastructure, or other applications. Grant removal is narrower: Ptah only emits `REVOKE` for privileges attached to roles that are still declared in the target schema.
+Roles are not automatically dropped when they disappear from the target schema. Role removal is deliberately manual because roles may be shared with DBAs, infrastructure, or other applications. Grant removal is narrower: Ptah only emits `REVOKE` for privileges attached to roles that are still declared in the target schema, and for privileges a revoke declaration (`REVOKE` in a SQL schema file, `//ptah:schema:revoke`, or an HCL `revoke` block) names.
 
 ## Integration with RLS Policies
 

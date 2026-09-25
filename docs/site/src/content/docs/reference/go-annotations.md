@@ -107,6 +107,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
 | [`ptah:schema:role`](#ptahschemarole) | A database role | struct |
 | [`ptah:schema:grant`](#ptahschemagrant) | Database grants | struct |
+| [`ptah:schema:revoke`](#ptahschemarevoke) | Privileges a role must not hold | struct |
 | [`ptah:schema:defaultprivilege`](#ptahschemadefaultprivilege) | A PostgreSQL default privilege | struct |
 | [`ptah:schema:rls:enable`](#ptahschemarlsenable) | Row-level security enablement | file or struct |
 | [`ptah:schema:rls:policy`](#ptahschemarlspolicy) | A row-level security policy | file or struct |
@@ -160,7 +161,7 @@ Rules:
   annotation whose scope the exported file would not preserve.
 
 `dialects` is accepted on `extension`, `sequence`, `domain`, `composite`,
-`range`, `function`, `trigger`, `view`, `matview`, `role`, `grant`,
+`range`, `function`, `trigger`, `view`, `matview`, `role`, `grant`, `revoke`,
 `rls:enable` and `rls:policy`. Directives that describe table structure —
 `table`, `field`, `index`, `constraint`, `embedded`, `enum` and `schema` — do
 not accept it.
@@ -680,6 +681,8 @@ Declares database grants.
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. `true`/`false`. |
+| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
+| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
 | `on_schema` | No | Target schema. |
 | `on_sequence` | No | Target sequence. |
 | `on_table` | No | Target table. |
@@ -687,6 +690,10 @@ Declares database grants.
 | `privileges` | No | Alias for `privilege`. |
 | `role` | No | Target role. |
 | `with_option` | No | Adds WITH GRANT OPTION where supported. `true`/`false`. |
+
+A function or procedure is named with its argument types in parentheses,
+because PostgreSQL tells overloads apart by them. A name without them is
+refused while the file is parsed.
 
 On ClickHouse a grant names one scope, and `on_table` must be qualified as
 `database.table` because rendering is offline and has no current database to
@@ -699,6 +706,36 @@ name would win. Privilege names the server rewrites on the way in — `ALL`,
 `CREATE`, `DROP`, `SYSTEM` and the rest — are refused too, because they never
 read back as written. See
 [ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
+
+### `//ptah:schema:revoke`
+
+Declares privileges a role must not hold, including ones it holds without a
+grant: the `EXECUTE` every new function gives `PUBLIC`, or what `ALTER DEFAULT
+PRIVILEGES` gives a role on a new table.
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `comment` | No | Comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
+| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
+| `on_schema` | No | Target schema. |
+| `on_sequence` | No | Target sequence. |
+| `on_table` | No | Target table. |
+| `privilege` | No | Privilege or comma-separated privileges. |
+| `privileges` | No | Alias for `privilege`. |
+| `role` | Yes | Role the privileges are taken from; `PUBLIC` names every role. |
+
+```go
+//ptah:schema:revoke role="PUBLIC" privilege="EXECUTE" on_function="purge_workspace(uuid)"
+//ptah:schema:grant role="app" privilege="EXECUTE" on_function="purge_workspace(uuid)"
+type AccessControl struct{}
+```
+
+Ptah plans the `REVOKE` whenever the database holds the privilege, and in the
+same plan that creates the object, since the privilege arrives with it. The
+same privilege declared both granted and revoked to one role on one object is
+refused: annotations have no order, so neither declaration could win.
 
 ### `//ptah:schema:defaultprivilege`
 

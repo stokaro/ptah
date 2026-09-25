@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tableref"
 )
@@ -21,12 +22,15 @@ import (
 // another desired-schema document -- a local file-to-file diff, or two
 // in-memory schemas -- and no live database reader is involved.
 //
-// dialect names the target the converted schema will be compared under. It only
+// dialect names the target the converted schema will be compared under. It
 // decides how the one goschema field that carries two concepts is unpacked:
 // schemamodel.Index.Type is the PostgreSQL access method on a PostgreSQL-family
 // target and the ClickHouse data-skipping-index type on ClickHouse, and the DB
-// shape keeps those apart in Method and Type. An empty dialect converts as if
-// no target were known and leaves Method unset.
+// shape keeps those apart in Method and Type. On a PostgreSQL-family target it
+// also adds the EXECUTE that PUBLIC holds on every declared routine the
+// document does not revoke it from, because a database built from the document
+// would hold it. An empty dialect converts as if no target were known, leaves
+// Method unset and adds no privilege.
 func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	if db == nil {
 		return &catalog.Database{}
@@ -54,7 +58,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
 		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
 		Roles:       toDBRoles(db.Roles),
-		Grants:      toDBGrants(db.Grants),
+		Grants:      toDBGrants(db, dialect),
 		// A default privilege is an object family of its own rather than an
 		// attribute of a grant. Without this line the declaration still parses
 		// and the model still carries it, while this side of a file-to-file
@@ -630,14 +634,15 @@ func toDBRoles(roles []schemamodel.Role) []catalog.Role {
 	return out
 }
 
-func toDBGrants(grants []schemamodel.Grant) []catalog.Grant {
+func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 	var out []catalog.Grant
-	for _, grant := range grants {
+	for _, grant := range db.Grants {
 		grant.Canonicalize()
 		for _, privilege := range grant.Privileges {
 			objectType := "TABLE"
 			objectName := grant.OnTable
 			objectSchema := ""
+			arguments := ""
 			switch {
 			case grant.OnSchema != "":
 				objectType = "SCHEMA"
@@ -645,6 +650,10 @@ func toDBGrants(grants []schemamodel.Grant) []catalog.Grant {
 			case grant.OnSequence != "":
 				objectType = "SEQUENCE"
 				objectName, objectSchema = splitTableIdentity(grant.OnSequence)
+			case grant.OnRoutine != "":
+				objectType = grant.RoutineKind
+				objectName, objectSchema = splitTableIdentity(grant.OnRoutine)
+				arguments = grant.RoutineArguments
 			default:
 				objectName, objectSchema = splitTableIdentity(objectName)
 			}
@@ -654,12 +663,73 @@ func toDBGrants(grants []schemamodel.Grant) []catalog.Grant {
 				ObjectType: objectType,
 				Schema:     objectSchema,
 				ObjectName: objectName,
+				Arguments:  arguments,
 				WithOption: grant.WithOption,
 				GrantedBy:  grant.GrantedBy,
 			})
 		}
 	}
+	if platform.IsPostgresFamily(dialect) {
+		out = append(out, implicitRoutineGrants(db)...)
+	}
 	return out
+}
+
+// implicitRoutineGrants describes the EXECUTE PUBLIC holds on every routine the
+// document declares and does not revoke it from, the way a catalog read reports
+// it: one [catalog.Grant] marked Implicit.
+//
+// PostgreSQL gives PUBLIC that privilege when CREATE FUNCTION or CREATE
+// PROCEDURE runs, so a database built from this document holds it without a
+// GRANT. Leaving it out would make this side of a file-to-file comparison
+// claim the privilege is absent, and a document that revokes it would plan no
+// REVOKE against a document that does not.
+func implicitRoutineGrants(db *schemamodel.Database) []catalog.Grant {
+	var out []catalog.Grant
+	for _, function := range db.Functions {
+		function.Canonicalize()
+		kind := "FUNCTION"
+		if function.IsProcedure() {
+			kind = "PROCEDURE"
+		}
+		routine := schemamodel.Grant{OnRoutine: function.Name, RoutineArguments: function.Parameters}
+		if publicExecuteDeclared(db, routine) {
+			continue
+		}
+		name, schema := splitTableIdentity(function.Name)
+		out = append(out, catalog.Grant{
+			Role:       "PUBLIC",
+			Privilege:  "EXECUTE",
+			ObjectType: kind,
+			Schema:     schema,
+			ObjectName: name,
+			Arguments:  function.Parameters,
+			Implicit:   true,
+		})
+	}
+	return out
+}
+
+// publicExecuteDeclared reports whether the document grants or revokes
+// PUBLIC's EXECUTE on routine itself, either of which replaces the implicit
+// privilege: a grant is described by [toDBGrants], and a revoke says it is
+// absent.
+func publicExecuteDeclared(db *schemamodel.Database, routine schemamodel.Grant) bool {
+	matches := func(grant schemamodel.Grant) bool {
+		return grant.Role == "PUBLIC" && grant.OnRoutine != "" &&
+			sameRoutine(grant, routine) &&
+			(slices.Contains(grant.Privileges, "EXECUTE") || slices.Contains(grant.Privileges, "ALL"))
+	}
+	return slices.ContainsFunc(db.RevokedGrants, matches) || slices.ContainsFunc(db.Grants, matches)
+}
+
+// sameRoutine compares two routine targets by name and input argument types,
+// the way PostgreSQL resolves the routine a GRANT or REVOKE names.
+func sameRoutine(a, b schemamodel.Grant) bool {
+	aName, aSchema := splitTableIdentity(a.OnRoutine)
+	bName, bSchema := splitTableIdentity(b.OnRoutine)
+	return aName == bName && (aSchema == "" || bSchema == "" || aSchema == bSchema) &&
+		routineargs.InputTypes(a.RoutineArguments) == routineargs.InputTypes(b.RoutineArguments)
 }
 
 // toDBDefaultPrivileges describes each declaration the way a catalog read

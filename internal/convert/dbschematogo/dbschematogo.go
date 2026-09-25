@@ -63,6 +63,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles)
 	database.Grants = convertGrants(dbSchema.Grants)
+	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
 	database.DefaultPrivileges = convertDefaultPrivileges(dbSchema.DefaultPrivileges)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
 	// What the read did not look at is part of what the read said. Dropping it
@@ -105,6 +106,7 @@ func newDatabase() *schemamodel.Database {
 		RLSEnabledTables:  make([]schemamodel.RLSEnabledTable, 0),
 		Roles:             make([]schemamodel.Role, 0),
 		Grants:            make([]schemamodel.Grant, 0),
+		RevokedGrants:     make([]schemamodel.Grant, 0),
 		DefaultPrivileges: make([]schemamodel.DefaultPrivilege, 0),
 		Dependencies:      make(map[string][]string),
 	}
@@ -981,7 +983,9 @@ func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
 func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 	grants := make([]schemamodel.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
-		if dbGrant.IsPartialRevoke {
+		if dbGrant.IsPartialRevoke || dbGrant.Implicit {
+			// An implicit row is the privilege a routine holds because it
+			// exists, which the routine's own declaration already implies.
 			continue
 		}
 		grant := schemamodel.Grant{
@@ -993,6 +997,10 @@ func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 		switch {
 		case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
 			grant.OnSchema = dbGrant.ObjectName
+		case routineGrantObjectTypes[strings.ToUpper(dbGrant.ObjectType)]:
+			grant.OnRoutine = dbGrant.QualifiedTarget()
+			grant.RoutineArguments = dbGrant.Arguments
+			grant.RoutineKind = strings.ToUpper(dbGrant.ObjectType)
 		case strings.EqualFold(dbGrant.ObjectType, "SEQUENCE"):
 			// PostgreSQL accepts GRANT ... ON TABLE for a sequence, so a sequence
 			// described under OnTable still replays. The comparator keys a grant
@@ -1006,6 +1014,53 @@ func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 		grants = append(grants, grant)
 	}
 	return grants
+}
+
+// routineGrantObjectTypes are the object types a catalog read reports for a
+// privilege on a function or procedure.
+var routineGrantObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true}
+
+// revokedPublicExecute describes the routines whose PUBLIC EXECUTE a catalog
+// read shows was revoked.
+//
+// PostgreSQL gives PUBLIC EXECUTE on a routine when it is created, and the read
+// reports that as an Implicit row until the routine's ACL is first written. A
+// routine whose ACL was written and holds no PUBLIC EXECUTE had it revoked, and
+// a description that said nothing about it would recreate the routine with the
+// privilege back. So each such routine gets a revoked grant. A routine with no
+// row at all is outside the read and is left alone.
+func revokedPublicExecute(dbGrants []catalog.Grant) []schemamodel.Grant {
+	type routine struct{ kind, target, arguments string }
+	held := make(map[routine]bool)
+	var order []routine
+	for _, dbGrant := range dbGrants {
+		kind := strings.ToUpper(dbGrant.ObjectType)
+		if !routineGrantObjectTypes[kind] {
+			continue
+		}
+		key := routine{kind: kind, target: dbGrant.QualifiedTarget(), arguments: dbGrant.Arguments}
+		if _, seen := held[key]; !seen {
+			order = append(order, key)
+			held[key] = false
+		}
+		if dbGrant.Role == "PUBLIC" && strings.EqualFold(dbGrant.Privilege, "EXECUTE") {
+			held[key] = true
+		}
+	}
+	revoked := make([]schemamodel.Grant, 0)
+	for _, key := range order {
+		if held[key] {
+			continue
+		}
+		revoked = append(revoked, schemamodel.Grant{
+			Role:             "PUBLIC",
+			Privileges:       []string{"EXECUTE"},
+			OnRoutine:        key.target,
+			RoutineArguments: key.arguments,
+			RoutineKind:      key.kind,
+		})
+	}
+	return revoked
 }
 
 // defaultPrivilegeIdentity is what convertDefaultPrivileges groups rows by:

@@ -834,13 +834,7 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 		return err
 	}
 	grant.WithOption = grantable
-	if table := relationRefName(target); table != "" {
-		grant.OnTable = table
-	} else if schema := objectRefName(target, "schema"); schema != "" {
-		grant.OnSchema = schema
-	} else if sequence := objectRefName(target, "sequence"); sequence != "" {
-		grant.OnSequence = sequence
-	} else {
+	if !setGrantTargetFromRef(&grant, target) {
 		return p.blockError(block, "permission requires table, view, schema, or sequence target")
 	}
 	if grant.Role == "" {
@@ -848,6 +842,61 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 	}
 	p.db.Grants = append(p.db.Grants, grant)
 	return nil
+}
+
+// parseRevoke reads a `revoke` block: privileges a role is declared not to
+// hold on an object, which the comparator revokes wherever the database has
+// them, including privileges no statement granted.
+func (p *parser) parseRevoke(block *hclsyntax.Block) error {
+	if len(block.Labels) != 0 {
+		return p.blockError(block, "revoke block does not accept labels")
+	}
+	if err := p.rejectNestedBlocks(block, "revoke"); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedAttrs(block, map[string]bool{
+		"from":       true,
+		"for":        true,
+		"privileges": true,
+		"comment":    true,
+	}, "revoke"); err != nil {
+		return err
+	}
+	privileges, err := p.rawListAttr(block, "privileges")
+	if err != nil {
+		return err
+	}
+	if len(privileges) == 0 {
+		return p.blockError(block, "revoke requires privileges")
+	}
+	revoked := schemamodel.Grant{
+		Role:       roleTargetName(p.optionalRawExpr(block.Body.Attributes["from"])),
+		Privileges: privileges,
+		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+	}
+	if !setGrantTargetFromRef(&revoked, p.optionalRawExpr(block.Body.Attributes["for"])) {
+		return p.blockError(block, "revoke requires table, view, schema, or sequence target")
+	}
+	if revoked.Role == "" {
+		return p.blockError(block, "revoke requires from")
+	}
+	p.db.RevokedGrants = append(p.db.RevokedGrants, revoked)
+	return nil
+}
+
+// setGrantTargetFromRef sets the object a `permission` or `revoke` block is
+// about, and reports false for a reference it cannot read.
+func setGrantTargetFromRef(grant *schemamodel.Grant, target string) bool {
+	if table := relationRefName(target); table != "" {
+		grant.OnTable = table
+	} else if schema := objectRefName(target, "schema"); schema != "" {
+		grant.OnSchema = schema
+	} else if sequence := objectRefName(target, "sequence"); sequence != "" {
+		grant.OnSequence = sequence
+	} else {
+		return false
+	}
+	return true
 }
 
 // parseDefaultPrivilege reads a `default_privilege` block: the privileges an

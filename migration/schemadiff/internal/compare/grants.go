@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/routineargs"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -51,6 +53,10 @@ func GrantsWithSemantics(
 			generatedGrantMap[newGrantIdentity(ref, semantics)] = ref
 		}
 	}
+	// A revoked grant is asserted absent whoever holds it, so it reaches a
+	// grantee the removal map below never looks at: PUBLIC, and a role the
+	// schema does not manage.
+	revokedGrants := revokedGrantIdentities(desired, semantics)
 
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
@@ -81,7 +87,7 @@ func GrantsWithSemantics(
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
 			databaseGrantMapForAdditions[key] = ref
 		}
-		if managedRoles[ref.Role] {
+		if managedRoles[ref.Role] || revokedGrants[key] {
 			databaseGrantMapForRemovals[key] = ref
 		}
 	}
@@ -104,6 +110,7 @@ func GrantsWithSemantics(
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
 		}
 	}
+	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, diff, semantics)
 
 	sortGrantRefs(diff.GrantsAdded)
 	sortGrantRefs(diff.GrantsRemoved)
@@ -111,10 +118,50 @@ func GrantsWithSemantics(
 	sortGrantRefs(diff.GrantOptionsRevoked)
 }
 
+// revokedGrantIdentities keys every privilege the desired schema revokes.
+func revokedGrantIdentities(desired *schemamodel.Database, semantics identifier.Semantics) map[grantIdentity]bool {
+	revoked := make(map[grantIdentity]bool)
+	for _, grant := range desired.RevokedGrants {
+		for _, ref := range grantRefsFromGenerated(grant) {
+			revoked[newGrantIdentity(ref, semantics)] = true
+		}
+	}
+	return revoked
+}
+
+// revokeOnCreatedTargets plans a revoked grant on an object this plan creates,
+// although the database holds nothing to match it yet: PostgreSQL gives PUBLIC
+// EXECUTE on a function the moment CREATE FUNCTION runs, and ALTER DEFAULT
+// PRIVILEGES hands a new table's privileges to a role. Without the REVOKE in
+// the same plan the created object holds what the schema revokes, and the next
+// comparison plans it again. A REVOKE of a privilege not held changes nothing,
+// measured on PostgreSQL 18, so the statement is safe whether or not the
+// privilege arrives. planned holds the removals already decided, which this
+// does not repeat.
+func revokeOnCreatedTargets(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	planned map[grantIdentity]difftypes.GrantRef,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	for _, grant := range desired.RevokedGrants {
+		for _, ref := range grantRefsFromGenerated(grant) {
+			if _, exists := planned[newGrantIdentity(ref, semantics)]; exists {
+				continue
+			}
+			if revokedTargetCreated(ref, desired, database, semantics) {
+				diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
+			}
+		}
+	}
+}
+
 func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable
+	arguments := ""
 	switch {
 	case grant.OnSchema != "":
 		objectType = grantObjectTypeSchema
@@ -122,6 +169,10 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	case grant.OnSequence != "":
 		objectType = "SEQUENCE"
 		objectName = grant.OnSequence
+	case grant.OnRoutine != "":
+		objectType = grant.RoutineKind
+		objectName = grant.OnRoutine
+		arguments = grant.RoutineArguments
 	}
 	refs := make([]difftypes.GrantRef, 0, len(grant.Privileges))
 	for _, privilege := range grant.Privileges {
@@ -130,6 +181,7 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 			Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
 			ObjectType: objectType,
 			ObjectName: objectName,
+			Arguments:  arguments,
 			WithOption: grant.WithOption,
 		})
 	}
@@ -147,9 +199,15 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
 		ObjectType: objectType,
 		ObjectName: objectName,
+		Arguments:  grant.Arguments,
 		WithOption: grant.WithOption,
 	}
 }
+
+// grantRoutineKinds are the object types that name a routine. They are one
+// kind in a grant's identity: FUNCTION, PROCEDURE and ROUTINE are three
+// spellings of the target, and PostgreSQL resolves ROUTINE to either.
+var grantRoutineKinds = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "ROUTINE": true}
 
 // grantIdentity is what makes two grants the same grant: a role, a privilege,
 // and the object they are about.
@@ -160,26 +218,36 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 // resolve -- and it goes in the schema slot with the table slot left empty,
 // which also keeps `GRANT ... ON SCHEMA app` from colliding with
 // `GRANT ... ON TABLE app`.
+//
+// A routine is named by its schema, its name and its argument types, and the
+// types go in a field of their own: PostgreSQL overloads a name by them.
 type grantIdentity struct {
 	role       string
 	privilege  string
 	objectType string
 	object     tableIdentity
+	arguments  string
 }
 
 func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) grantIdentity {
 	objectType := strings.ToUpper(strings.TrimSpace(ref.ObjectType))
 	object := newQualifiedTableIdentity(ref.ObjectName, semantics)
-	if objectType == grantObjectTypeSchema {
+	arguments := ""
+	switch {
+	case objectType == grantObjectTypeSchema:
 		// A schema grant names a schema, not a table in one, so the schema
 		// component carries the name and the table component stays empty.
 		object = objectidentity.NewBuilder(semantics).TableParts(ref.ObjectName, "").Key()
+	case grantRoutineKinds[objectType]:
+		objectType = "ROUTINE"
+		arguments = routineargs.InputTypes(ref.Arguments)
 	}
 	return grantIdentity{
 		role:       strings.TrimSpace(ref.Role),
 		privilege:  strings.ToUpper(strings.TrimSpace(ref.Privilege)),
 		objectType: objectType,
 		object:     object,
+		arguments:  arguments,
 	}
 }
 
@@ -191,6 +259,9 @@ func sortGrantRefs(refs []difftypes.GrantRef) {
 		if refs[i].ObjectName != refs[j].ObjectName {
 			return refs[i].ObjectName < refs[j].ObjectName
 		}
+		if refs[i].Arguments != refs[j].Arguments {
+			return refs[i].Arguments < refs[j].Arguments
+		}
 		if refs[i].Role != refs[j].Role {
 			return refs[i].Role < refs[j].Role
 		}
@@ -199,4 +270,44 @@ func sortGrantRefs(refs []difftypes.GrantRef) {
 		}
 		return !refs[i].WithOption && refs[j].WithOption
 	})
+}
+
+// revokedTargetCreated reports whether a revoked grant names a table or a
+// routine the desired schema declares and the database does not have, which is
+// an object the plan creates.
+//
+// Tables and routines are the targets that can hold a privilege the moment
+// they exist; a schema or a sequence created by the plan holds none a
+// declaration could revoke.
+func revokedTargetCreated(
+	ref difftypes.GrantRef,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) bool {
+	target := newQualifiedTableIdentity(ref.ObjectName, semantics)
+	objectType := strings.ToUpper(strings.TrimSpace(ref.ObjectType))
+	switch {
+	case grantRoutineKinds[objectType]:
+		arguments := routineargs.InputTypes(ref.Arguments)
+		declared := slices.ContainsFunc(desired.Functions, func(function schemamodel.Function) bool {
+			return newQualifiedTableIdentity(function.Name, semantics) == target &&
+				routineargs.InputTypes(function.Parameters) == arguments
+		})
+		present := slices.ContainsFunc(database.Functions, func(function catalog.Function) bool {
+			return newQualifiedTableIdentity(function.QualifiedName(), semantics) == target &&
+				routineargs.InputTypes(function.Signature()) == arguments
+		})
+		return declared && !present
+	case objectType == "TABLE":
+		declared := slices.ContainsFunc(desired.Tables, func(table schemamodel.Table) bool {
+			return newQualifiedTableIdentity(table.QualifiedName(), semantics) == target
+		})
+		present := slices.ContainsFunc(database.Tables, func(table catalog.Table) bool {
+			return newQualifiedTableIdentity(table.QualifiedName(), semantics) == target
+		})
+		return declared && !present
+	default:
+		return false
+	}
 }

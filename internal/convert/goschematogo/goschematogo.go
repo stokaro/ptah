@@ -267,6 +267,7 @@ func (ctx *renderContext) hasGlobalObjects() bool {
 		len(ctx.db.MaterializedViews) > 0 ||
 		len(ctx.db.Roles) > 0 ||
 		len(ctx.db.Grants) > 0 ||
+		len(ctx.db.RevokedGrants) > 0 ||
 		len(ctx.db.DefaultPrivileges) > 0 ||
 		len(ctx.db.CompositeTypes) > 0 ||
 		len(ctx.db.Domains) > 0 ||
@@ -356,6 +357,9 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	for _, grant := range sortedGrants(ctx.db.Grants) {
 		w.writeComment(grantAnnotation(grant))
+	}
+	for _, revoked := range sortedGrants(ctx.db.RevokedGrants) {
+		w.writeComment(revokeAnnotation(revoked))
 	}
 	for _, privilege := range sortedDefaultPrivileges(ctx.db.DefaultPrivileges) {
 		w.writeComment(defaultPrivilegeAnnotation(privilege))
@@ -694,10 +698,41 @@ func grantAnnotation(grant schemamodel.Grant) string {
 		attr{name: "on_table", value: grant.OnTable, set: grant.OnTable != ""},
 		attr{name: "on_schema", value: grant.OnSchema, set: grant.OnSchema != ""},
 		attr{name: "on_sequence", value: grant.OnSequence, set: grant.OnSequence != ""},
+		routineTargetAttr(grant),
 		attr{name: "with_option", value: strconv.FormatBool(grant.WithOption), set: grant.WithOption},
 		attr{name: "comment", value: grant.Comment, set: grant.Comment != ""},
 		dialectsAttr(grant.Dialects),
 	)
+}
+
+// revokeAnnotation writes one revoked grant back as a directive.
+func revokeAnnotation(revoked schemamodel.Grant) string {
+	return annotation("ptah:schema:revoke",
+		attr{name: "role", value: revoked.Role, set: true},
+		attr{name: "privilege", value: strings.Join(revoked.Privileges, ","), set: len(revoked.Privileges) > 0},
+		attr{name: "on_table", value: revoked.OnTable, set: revoked.OnTable != ""},
+		attr{name: "on_schema", value: revoked.OnSchema, set: revoked.OnSchema != ""},
+		attr{name: "on_sequence", value: revoked.OnSequence, set: revoked.OnSequence != ""},
+		routineTargetAttr(revoked),
+		attr{name: "comment", value: revoked.Comment, set: revoked.Comment != ""},
+		dialectsAttr(revoked.Dialects),
+	)
+}
+
+// routineTargetAttr writes a routine target as on_function or on_procedure,
+// with the argument types in parentheses the way the parser reads them. A
+// ROUTINE target is written as on_function: PostgreSQL resolves the keyword to
+// whichever kind the routine is, and the grant names the same routine.
+func routineTargetAttr(grant schemamodel.Grant) attr {
+	name := "on_function"
+	if strings.EqualFold(grant.RoutineKind, "PROCEDURE") {
+		name = "on_procedure"
+	}
+	return attr{
+		name:  name,
+		value: grant.OnRoutine + "(" + grant.RoutineArguments + ")",
+		set:   grant.OnRoutine != "",
+	}
 }
 
 // defaultPrivilegeAnnotation writes one default privilege back as a directive.
@@ -1027,6 +1062,8 @@ func grantSortKey(grant schemamodel.Grant) string {
 		grant.OnTable,
 		grant.OnSchema,
 		grant.OnSequence,
+		grant.OnRoutine,
+		grant.RoutineArguments,
 		strings.Join(grant.Privileges, ","),
 		strconv.FormatBool(grant.WithOption),
 	}, "\x00")

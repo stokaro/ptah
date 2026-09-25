@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/routinegrant"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -830,6 +831,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // Emitting it would render a statement the server refuses, which is worse than
 // refusing it here -- the plan would fail halfway through.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := routinegrant.Refusal("oracle", "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if node.WithOption {
 		return unsupportedFeaturef(
 			"grant to role %q carries WITH GRANT OPTION, which Oracle refuses for a role "+
@@ -847,6 +851,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // renderRevokePrivilege mirrors the grant, with the same two shapes.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := routinegrant.Refusal("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
