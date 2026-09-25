@@ -609,6 +609,12 @@ SQL: ALTER TABLE missing ADD COLUMN nickname TEXT
 The dev database is dropped clean on every run — point it at a scratch
 database of the target engine, never at a real environment.
 
+Replay refuses a statement whose effect would reach past the dev database,
+such as a `DO` block that creates a role, before the migration runs. A
+`docker://` dev URL gives the run a server of its own, where those statements
+replay; [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions)
+lists what that lifts and what stays refused.
+
 ## The bytes a command runs are captured once
 
 Local migration commands capture the migration directory before database

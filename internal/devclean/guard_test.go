@@ -11,7 +11,7 @@ import (
 )
 
 func TestReplayGuardSQLite_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -48,7 +48,7 @@ func TestReplayGuardSQLite_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardSQLite_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string

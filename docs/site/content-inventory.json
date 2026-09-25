@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14040,
-      "sourceBytes": 98157
+      "visibleWords": 14079,
+      "sourceBytes": 98441
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -704,8 +704,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1512,
-      "sourceBytes": 11783
+      "visibleWords": 1842,
+      "sourceBytes": 13774
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -6860,8 +6860,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5433,
-      "sourceBytes": 38336
+      "visibleWords": 5486,
+      "sourceBytes": 38716
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

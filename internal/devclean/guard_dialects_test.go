@@ -14,7 +14,7 @@ func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -50,7 +50,7 @@ func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -231,7 +231,7 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -304,7 +304,7 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -504,7 +504,7 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MariaDB,
 		Schema:  "ptah_dev",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -545,7 +545,7 @@ func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -597,7 +597,7 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -689,7 +689,7 @@ func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -729,7 +729,7 @@ func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
-	})
+	}, devclean.ReplayRealmDatabase)
 	tests := []struct {
 		name      string
 		statement string
@@ -838,7 +838,7 @@ func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
 
 func TestReplayGuardUnknownDialect_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: "oracle"})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: "oracle"}, devclean.ReplayRealmDatabase)
 
 	err := guard.ValidateStatement("CREATE TABLE users (id integer)")
 
