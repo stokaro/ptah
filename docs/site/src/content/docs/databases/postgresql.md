@@ -292,6 +292,21 @@ Ordering is dependency-aware: roles are created before the functions and
 policies that reference them, and grants are emitted after the roles and
 target objects exist.
 
+A function or procedure is created as early as its definition allows.
+PostgreSQL resolves a routine's parameter and return types when the routine is
+created, and a `LANGUAGE sql` body too, including a SQL-standard `RETURN` or
+`BEGIN ATOMIC` body. So a routine follows the types, tables, views and columns
+its definition names when the same plan creates them, and a view that calls
+the routine follows it. A PL/pgSQL body is read when the routine first runs,
+so it does not hold the routine back. A routine that names nothing the plan
+creates comes first, where a domain, a column default, a policy or a trigger
+can call it.
+
+One order is refused on every path: a column default that calls a
+`LANGUAGE sql` routine reading a table the same plan creates. The routine waits
+for all new tables, so the table with the default comes too early. Create the
+two tables in separate plans, or write the routine in PL/pgSQL.
+
 Reading a live database describes only the roles the schemas being read
 actually use, because a PostgreSQL role belongs to the cluster rather than to
 one database. A role counts as used when it holds a privilege on a relation in
