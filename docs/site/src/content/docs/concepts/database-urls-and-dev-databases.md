@@ -180,6 +180,25 @@ proven to stay inside the disposable realm:
   materialized views must select an explicitly allowlisted engine.
 - SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
 
+Replay runs every migration of a directory on one session, so a PostgreSQL
+`SET` or `RESET` that changes the session would carry into the migrations after
+it, and is refused. A setting that ends with its transaction is accepted:
+
+- `SET LOCAL` and `SET CONSTRAINTS`;
+- `set_config(name, value, true)`, with the name written as a string and `true`
+  written as the keyword.
+
+Replay runs each migration the way `migrations up` does, in one transaction
+unless the file opts out with `-- +ptah no_transaction` or
+`-- atlas:txmode none`. Such a setting holds for the rest of its migration and
+is gone before the next. In a file that opts out, PostgreSQL ignores a
+`SET LOCAL` with a warning, on replay and on apply alike.
+
+Three parameters stay refused even for one transaction. `search_path` (and its
+alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
+`CREATE FUNCTION` reach `pg_catalog`. `role` and `session_authorization` change
+who the rest of the migration runs as.
+
 The rejection happens while Ptah validates the whole migration, before its
 first statement executes. Realm-local removal forms that Ptah can classify
 without interpreting a routine body, such as `DROP FUNCTION`,

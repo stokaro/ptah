@@ -704,8 +704,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1842,
-      "sourceBytes": 13774
+      "visibleWords": 1685,
+      "sourceBytes": 12779
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -6864,8 +6864,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5486,
-      "sourceBytes": 38716
+      "visibleWords": 5482,
+      "sourceBytes": 38618
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

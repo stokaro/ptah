@@ -669,6 +669,9 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 	if first == "SET" && setsPostgresSearchPath(tokens) {
 		return "SET search_path"
 	}
+	if postgresTransactionScopedSetting(tokens) {
+		return ""
+	}
 	switch first {
 	case "ABORT", "BEGIN", "CHECKPOINT", "COMMIT", "DEALLOCATE", "DECLARE",
 		"DISCARD", "END", "EXECUTE", "FETCH", "LISTEN", "LOAD", "LOCK", "MOVE",
@@ -678,6 +681,110 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 	default:
 		return ""
 	}
+}
+
+// postgresTransactionScopedSetting reports a SET whose effect ends with the
+// transaction it runs in: SET LOCAL of a parameter
+// [postgresTransactionScopedParameter] accepts, and SET CONSTRAINTS.
+//
+// A replay runs every migration of a directory on one session, so a setting
+// that outlives its transaction reaches the migrations after it, and a plain
+// SET or RESET stays refused for that reason. These do not: measured on
+// PostgreSQL 18.6, `lock_timeout` reads `0` after `BEGIN; SET LOCAL
+// lock_timeout = '5s'; COMMIT`, after the same with ROLLBACK, and after a SET
+// LOCAL issued outside a transaction block, which PostgreSQL answers with a
+// warning and ignores. A replay runs a migration the way the executor does, in
+// one transaction unless the file opts out, so the setting is in effect for
+// the rest of that migration and gone before the next.
+func postgresTransactionScopedSetting(tokens []lexer.Token) bool {
+	if len(tokens) < 3 || normalizedIdentifier(tokens[0]) != "SET" {
+		return false
+	}
+	switch normalizedIdentifier(tokens[1]) {
+	case "CONSTRAINTS":
+		return true
+	case "LOCAL":
+		// SET LOCAL ROLE and SET LOCAL SESSION AUTHORIZATION never reach here:
+		// postgresRoleOrAuthorizationChange refuses both first.
+		return postgresTransactionScopedParameter(normalizedIdentifier(tokens[2]))
+	default:
+		return false
+	}
+}
+
+// postgresTransactionScopedSetConfig reports a set_config call, whose opening
+// parenthesis is at open, that names its parameter as a string literal
+// [postgresTransactionScopedParameter] accepts and passes the literal TRUE as
+// is_local. set_config with is_local true is SET LOCAL spelled as a function,
+// and ends with its transaction the same way; with false it is a plain SET.
+//
+// Any other spelling is refused: a parameter name computed at run time cannot
+// be read here, and a string such as 'on' is left out because the one spelling
+// the guard accepts should be the one a reader recognizes.
+func postgresTransactionScopedSetConfig(tokens []lexer.Token, open int) bool {
+	arguments := postgresCallArguments(tokens, open)
+	if len(arguments) != 3 || len(arguments[0]) != 1 || len(arguments[2]) != 1 {
+		return false
+	}
+	name := arguments[0][0]
+	if name.Type != lexer.TokenString {
+		return false
+	}
+	isLocal := arguments[2][0]
+	return isLocal.Type == lexer.TokenIdentifier &&
+		normalizedIdentifier(isLocal) == "TRUE" &&
+		postgresTransactionScopedParameter(normalizedIdentifier(name))
+}
+
+// postgresTransactionScopedParameter reports whether a parameter set for one
+// transaction stays inside what the guard checks. It is the one answer both
+// SET LOCAL and set_config read, so the two spellings of the same setting
+// cannot be judged apart.
+//
+// Three names are left out although their effect also ends with the
+// transaction. search_path, and SET SCHEMA which is its alias, decide where an
+// unqualified name lands for the rest of the migration: measured on PostgreSQL
+// 18.6, `SET LOCAL search_path = pg_catalog` followed by an unqualified CREATE
+// FUNCTION creates the function in pg_catalog, and the protected-namespace
+// check reads only qualified names. role and session_authorization change the
+// identity the rest of the migration runs as, which is not a setting the guard
+// can reason about statement by statement.
+func postgresTransactionScopedParameter(name string) bool {
+	switch name {
+	case "", "SEARCH_PATH", "SCHEMA", "ROLE", "SESSION_AUTHORIZATION":
+		return false
+	default:
+		return true
+	}
+}
+
+// postgresCallArguments splits the arguments of the call whose opening
+// parenthesis is at open into their tokens, at the commas outside any nested
+// parentheses. It returns nil when the call is not closed.
+func postgresCallArguments(tokens []lexer.Token, open int) [][]lexer.Token {
+	if open >= len(tokens) || !tokens[open].MatchOperatorValue("(") {
+		return nil
+	}
+	var arguments [][]lexer.Token
+	var current []lexer.Token
+	depth := 0
+	for index := open + 1; index < len(tokens); index++ {
+		token := tokens[index]
+		switch {
+		case token.MatchOperatorValue("("):
+			depth++
+		case token.MatchOperatorValue(")") && depth == 0:
+			return append(arguments, current)
+		case token.MatchOperatorValue(")"):
+			depth--
+		case token.MatchOperatorValue(",") && depth == 0:
+			arguments = append(arguments, current)
+			current = nil
+			continue
+		}
+		current = append(current, token)
+	}
+	return nil
 }
 
 func setsPostgresSearchPath(tokens []lexer.Token) bool {
@@ -720,6 +827,9 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 		// it is about to send to a live database. The rest below are this
 		// guard's own: they answer what a dev-clean run may execute, which is
 		// a wider question.
+		if name == "SET_CONFIG" && postgresTransactionScopedSetConfig(tokens, index+1) {
+			continue
+		}
 		if slices.Contains(sqlreach.PostgresControlFunctions(), name) {
 			return "cluster control function"
 		}

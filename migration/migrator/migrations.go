@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -11,6 +12,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -658,25 +660,66 @@ func (m *Migration) downTimeoutsForDialect(dialect string) (migrationfile.Timeou
 // ignoring an unreadable transaction-mode directive.
 //
 // Replay exists to reconstruct a schema so something else can be computed from
-// it -- a lint analysis, a diff. The transaction mode decides how statements are
-// wrapped when a real database is migrated; on a database that is dropped
-// immediately afterwards it changes nothing anyone can observe, so a directive
-// we cannot read is not a reason to refuse the whole operation.
+// it -- a lint analysis, a diff. So it runs the migration the way
+// [Migrator.MigrateUp] would: a migration that runs in a transaction runs in
+// one transaction on conn, committed before this returns, and a migration that
+// opts out runs statement by statement. A statement whose meaning depends on
+// the transaction then means the same thing in both: a SET LOCAL is in effect
+// for the rest of the migration and gone before the next one, and a statement
+// PostgreSQL refuses inside a transaction block is refused here too. A failed
+// migration is rolled back, so it leaves nothing behind for the next caller to
+// read.
 //
-// The apply path keeps refusing, and that matches: measured on the pinned
-// community binary, `migrate apply` over a directory carrying
-// `-- atlas:txmode unknown` exits 1 with the same complaint, while
-// `migrate lint` over the same directory exits 0 and analyzes it.
+// A directive we cannot read is not a reason to refuse the whole operation,
+// and it runs as the default, in a transaction. The apply path keeps refusing,
+// and that matches: measured on the pinned community binary, `migrate apply`
+// over a directory carrying `-- atlas:txmode unknown` exits 1 with the same
+// complaint, while `migrate lint` over the same directory exits 0 and analyzes
+// it.
 //
-// A migration with no SQL function falls back to [Migration.Up], which still
-// refuses. That path is for programmatic migrations, which carry no file
-// directive to be unreadable in the first place.
+// A migration with no SQL function falls back to [Migration.Up], in the
+// transaction its [Migration.UpTxMode] selects, and still refuses. That path
+// is for programmatic migrations, which carry no file directive to be
+// unreadable in the first place.
 func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if m.upSQLFunc != nil {
-		txMode := m.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
-		return m.upSQLFunc(ctx, conn, migrationExecutionModeForFileTxMode(txMode.Mode))
+	if m.upSQLFunc == nil {
+		return m.replayInExecutionMode(ctx, conn, m.upExecutionMode(), m.Up)
 	}
-	return m.Up(ctx, conn)
+	txMode := m.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
+	mode := migrationExecutionModeForFileTxMode(txMode.Mode)
+	return m.replayInExecutionMode(ctx, conn, mode, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return m.upSQLFunc(ctx, conn, mode)
+	})
+}
+
+// replayInExecutionMode runs up on conn inside one transaction when mode is
+// transactional, as the executor does, and straight on conn otherwise. The
+// transaction is opened the way the executor opens it, so a target that takes
+// no DDL inside a transaction and a SQLite table rebuild get the same answer
+// here as there.
+func (m *Migration) replayInExecutionMode(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	mode migrationExecutionMode,
+	up MigrationFunc,
+) error {
+	if mode != migrationExecutionTransactional {
+		return up(ctx, conn)
+	}
+	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, conn, m.UpSQL)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction for migration %d: %w", m.Version, err)
+	}
+	if err := up(ctx, conn.WithExecutor(tx)); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.Version, rollbackErr))
+		}
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration %d: %w", m.Version, err)
+	}
+	return nil
 }
 
 func (m *Migration) executeUp(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
