@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/stdlib"
+
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 )
 
-// WithRolledBackTransaction runs body inside one throwaway session and one
-// transaction, and rolls that transaction back whatever body does.
+// WithRolledBackTransaction runs body inside one transaction, and rolls that
+// transaction back whatever body does.
 //
 // It is the shape every caller that asks the server to normalize a declaration
 // needs -- the expression probes in internal/dbexprprobe are those callers: a
@@ -20,20 +22,25 @@ import (
 // caller's own loop lives in body; what this method owns is the session, the
 // transaction and the guarantee.
 //
-// The session is pinned and discarded rather than returned to the pool,
-// because body may leave session-level state -- a temporary table, a
-// search_path -- that the next borrower must not inherit.
+// On a pool-backed connection the transaction runs on a session of its own,
+// which is discarded rather than returned to the pool, because body may leave
+// session-level state -- a temporary table, a search_path -- that the next
+// borrower must not inherit.
 //
-// A connection already pinned to a session (see
-// [DatabaseConnection.WithSession]) reports ran false with a nil error and
-// never runs body: it is already inside somebody else's session, and the
-// rollback would discard their work rather than the caller's. The false is the
-// whole answer -- a caller that must not proceed without the transaction has
-// to check ran, not just err. label names the caller in every error.
+// On a connection already pinned to a session (see
+// [DatabaseConnection.WithSession]) the transaction runs on that session, and
+// only when the driver reports the session outside any transaction: a
+// PostgreSQL-wire session whose server status is idle, or a SQL Server session
+// whose @@TRANCOUNT is zero. The rollback then takes back only what body did.
+// A session inside a transaction, or one whose driver cannot say, reports ran
+// false with a nil error and never runs body, because the rollback would
+// discard the owner's work along with the probe's. The false is the whole
+// answer -- a caller that must not proceed without the transaction has to check
+// ran, not just err. label names the caller in every error.
 //
-// Do not call this on an in-memory SQLite connection. Discarding the session
-// takes such a database with it, because it has no existence apart from its
-// only connection: the next statement runs against a fresh, empty one.
+// Do not call this on a pool-backed in-memory SQLite connection. Discarding the
+// session takes such a database with it, because it has no existence apart from
+// its only connection: the next statement runs against a fresh, empty one.
 // Measured: a table created before the call is gone after it.
 // [DatabaseConnection.WithSession] and
 // [DatabaseConnection.WithIsolatedQuerySession] keep an in-memory database
@@ -47,7 +54,10 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 		return false, fmt.Errorf("%s: database connection is nil", label)
 	}
 	if dc.pinned {
-		return false, nil
+		if !dc.pinnedSessionOutsideTransaction(ctx) {
+			return false, nil
+		}
+		return dc.rollBackOn(ctx, dc.session, label, body)
 	}
 
 	session, err := dc.db.Conn(ctx)
@@ -57,13 +67,20 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 	defer func() {
 		resultErr = errors.Join(resultErr, discardSQLConnection(session, label+" session"))
 	}()
+	return dc.rollBackOn(ctx, session, label, body)
+}
 
+// rollBackOn runs body inside one transaction on session and rolls it back,
+// whatever body does and whether or not the setup around it succeeded.
+func (dc *DatabaseConnection) rollBackOn(
+	ctx context.Context,
+	session *sql.Conn,
+	label string,
+	body func(ctx context.Context, tx *sql.Tx) error,
+) (ran bool, resultErr error) {
 	tx, err := session.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return false, fmt.Errorf("%s: begin transaction: %w", label, err)
-	}
-	if err := keepDDLInsideTheTransaction(ctx, tx, dc.info.Version); err != nil {
-		return false, fmt.Errorf("%s: %w", label, err)
 	}
 	defer func() {
 		// The rollback is the point of the transaction, not its error path:
@@ -72,9 +89,55 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 			resultErr = errors.Join(resultErr, fmt.Errorf("%s: roll back: %w", label, rollbackErr))
 		}
 	}()
+	if err := keepDDLInsideTheTransaction(ctx, tx, dc.info.Version); err != nil {
+		return false, fmt.Errorf("%s: %w", label, err)
+	}
 
 	return true, body(ctx, tx)
 }
+
+// pinnedSessionOutsideTransaction reports whether the pinned session is
+// provably outside any transaction.
+//
+// Comparisons run on pinned sessions: `schema apply` compares on the session
+// that holds its apply lock, and `migrate diff` on the session its migration
+// replay ran on. Answering false for every pinned session left each of them
+// without a server-normalized expression, so a CHECK, a policy, an index
+// predicate or a column default the server rewrites compared unequal to its own
+// declaration and was dropped and created again on every run
+// (stokaro/ptah#3643).
+//
+// The answer comes from the driver or the server, never from Ptah's own
+// bookkeeping, because an owner can open a transaction with a plain BEGIN that
+// no wrapper sees. pgx reports the status byte of the server's last
+// ReadyForQuery message; SQL Server reports @@TRANCOUNT. Any other driver, and
+// any failure to ask, answers false.
+func (dc *DatabaseConnection) pinnedSessionOutsideTransaction(ctx context.Context) bool {
+	if dc.session == nil {
+		return false
+	}
+	if platform.NormalizeDialect(dc.info.Dialect) == platform.SQLServer {
+		var open int
+		if err := dc.session.QueryRowContext(ctx, "SELECT @@TRANCOUNT").Scan(&open); err != nil {
+			return false
+		}
+		return open == 0
+	}
+	idle := false
+	err := dc.session.Raw(func(driverConn any) error {
+		conn, ok := driverConn.(*stdlib.Conn)
+		if !ok {
+			return nil
+		}
+		idle = conn.Conn().PgConn().TxStatus() == pgxTxStatusIdle
+		return nil
+	})
+	return err == nil && idle
+}
+
+// pgxTxStatusIdle is the ReadyForQuery status byte of a session outside any
+// transaction block; 'T' is inside one and 'E' inside a failed one.
+const pgxTxStatusIdle = 'I'
 
 // keepDDLInsideTheTransaction asks a server that would not to keep the caller's
 // DDL where the caller put it.

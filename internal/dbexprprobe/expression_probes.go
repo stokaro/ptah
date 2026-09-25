@@ -51,8 +51,8 @@ type IndexExpressionProbe struct {
 //
 // The probe is a temporary table with row-level security enabled and the
 // declared policy on it, inside a transaction that is rolled back. A
-// connection pinned to a session returns nil, for the reason the package
-// documentation gives.
+// connection pinned to a session with a transaction open returns nil, for the
+// reason the package documentation gives.
 func ResolvePolicyExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -129,8 +129,8 @@ func policyClauses(using, withCheck string) string {
 // a varchar column is stored as `lower((code)::text)`, and a partial index's
 // `unit >= 0` over numeric as `(unit >= (0)::numeric)`, so an index nobody had
 // touched was dropped and rebuilt on every run (stokaro/ptah#2047). A
-// connection pinned to a session returns nil, for the reason the package
-// documentation gives.
+// connection pinned to a session with a transaction open returns nil, for the
+// reason the package documentation gives.
 func ResolveIndexExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,

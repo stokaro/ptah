@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 // CompareWithDatabase resolves live catalog identifier equivalence and compares
@@ -336,8 +337,9 @@ func resolveDomainExpressions(
 	return expressions, nil
 }
 
-// resolveCheckExpressions normalizes the declared expression of every table
-// CHECK the database also holds.
+// resolveCheckExpressions normalizes the expression of every CHECK the
+// comparison compares -- declared on the table, or synthesized from a column's
+// check or a table's checks list -- that the database also holds.
 //
 // Only those, for the reason [resolveDomainExpressions] gives: a constraint
 // being created carries its declaration into the ADD statement unchanged, and
@@ -367,11 +369,12 @@ func resolveCheckExpressions(
 	}
 	columns := liveTableColumns(database, semantics)
 
-	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(desired.Constraints))
-	for _, constraint := range desired.Constraints {
-		if !strings.EqualFold(constraint.Type, "CHECK") {
-			continue
-		}
+	// The checks the comparison compares, not only the declared ones: a
+	// column's check is compared as a synthesized constraint, and a check the
+	// resolver never saw is compared by text.
+	compared := compare.ComparedCheckConstraints(desired, database, semantics)
+	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(compared))
+	for _, constraint := range compared {
 		key := exprkey.Check(semantics, constraint.Table, constraint.Name)
 		if _, exists := held[key]; !exists {
 			continue

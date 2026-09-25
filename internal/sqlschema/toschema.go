@@ -895,7 +895,13 @@ func appendCreateTable(
 	// unrendered (stokaro/ptah#1574). They are appended here together with the
 	// constraints so that the order the document declared them in survives to
 	// the naming pass below.
+	constraintsStart := len(database.Constraints)
 	order := declaredOrder(database, node, tableSchema, sourcePlatform)
+
+	// A UNIQUE or foreign key the author left unnamed gets the name its server
+	// gives it, which is the name the other side of a comparison reads from the
+	// catalog.
+	nameCreatedConstraints(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform)
 
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
@@ -1074,6 +1080,7 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 	}
 	constraintSchema, ok := ToConstraint(operation.Constraint, target.structName, target.qualified, target.sourcePlatform)
 	if ok {
+		nameAddedConstraint(&constraintSchema, target)
 		database.Constraints = append(database.Constraints, constraintSchema)
 	}
 	return nil

@@ -38,11 +38,11 @@ func TestWithRolledBackTransaction_RollsBackWhatTheBodyCreated(t *testing.T) {
 }
 
 // TestWithRolledBackTransaction_PinnedConnectionReportsFalseAndRunsNothing
-// pins the documented contract for a connection already inside somebody else's
-// session: ran false, a nil error, and a body that never runs. The false is
-// deliberate rather than an error, because `schema apply` rehearses its plan
-// on a pinned dev session and compares schemas there -- an error here would
-// fail the rehearsal to protect it (see internal/dbexprprobe).
+// pins the documented contract for a pinned session whose driver cannot say
+// whether a transaction is open, which is every driver but pgx and SQL
+// Server's: ran false, a nil error, and a body that never runs. The false is
+// deliberate rather than an error, because comparisons run on pinned sessions
+// -- an error here would fail them to protect them (see internal/dbexprprobe).
 func TestWithRolledBackTransaction_PinnedConnectionReportsFalseAndRunsNothing(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
