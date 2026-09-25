@@ -43,7 +43,9 @@ import (
 //
 //   - column: The AST column node containing all column metadata
 //   - structName: The name of the Go struct this field belongs to
-//   - sourcePlatform: The platform this column was generated for (used for override reconstruction)
+//   - sourcePlatform: The platform this column was generated for. It decides how an
+//     unquoted name is folded (see [identifierPart]), and a non-empty one starts an
+//     empty Overrides map for override reconstruction.
 //
 // # Supported Attributes
 //
@@ -106,10 +108,23 @@ import (
 // Returns a fully configured schemamodel.Field with all attributes extracted from the AST node.
 // The StructName is set to the provided structName parameter.
 func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamodel.Field {
+	field := fieldFromColumn(column, structName, sourcePlatform)
+	// Initialize overrides map if we have a source platform
+	if sourcePlatform != "" {
+		field.Overrides = make(map[string]map[string]string)
+		// Platform-specific values would be populated by MergeFieldOverrides
+	}
+	return field
+}
+
+// fieldFromColumn is [ToField] without the Overrides map. A schema document
+// reads its columns through here: the dialect decides how a name folds, and a
+// document carries no per-platform overrides to reconstruct.
+func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) schemamodel.Field {
 	field := schemamodel.Field{
 		StructName:          structName,
 		FieldName:           "", // This would need to be set separately as it's not in the AST
-		Name:                normalizeSQLIdentifier(column.Name),
+		Name:                normalizeSQLIdentifier(sourcePlatform, column.Name),
 		Type:                column.Type,
 		Nullable:            column.Nullable,
 		Primary:             column.Primary,
@@ -133,14 +148,14 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamo
 	// populated AST node would leak back into a generated Go annotation
 	// suggestion as a phantom `check_name=` with no `check=` to back it.
 	if column.Check != "" {
-		field.CheckName = normalizeSQLIdentifier(column.CheckName)
+		field.CheckName = normalizeSQLIdentifier(sourcePlatform, column.CheckName)
 	}
 
 	// Same guarding, same reason: a name describes a constraint, and one on a
 	// nullable column names nothing. Carrying it would put a phantom name in
 	// front of a NOT NULL that is not there (stokaro/ptah#2161).
 	if !column.Nullable {
-		field.NotNullConstraintName = normalizeSQLIdentifier(column.NotNullConstraintName)
+		field.NotNullConstraintName = normalizeSQLIdentifier(sourcePlatform, column.NotNullConstraintName)
 	}
 
 	// Extract default values
@@ -155,22 +170,16 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamo
 
 	// Extract foreign key reference
 	if column.ForeignKey != nil {
-		foreignTable := normalizeSQLTableReference(column.ForeignKey.Table)
-		foreignColumn := normalizeSQLIdentifier(column.ForeignKey.Column)
+		foreignTable := normalizeSQLTableReference(sourcePlatform, column.ForeignKey.Table)
+		foreignColumn := normalizeSQLIdentifier(sourcePlatform, column.ForeignKey.Column)
 		if column.ForeignKey.Column != "" {
 			field.Foreign = foreignTable + "(" + foreignColumn + ")"
 		} else {
 			field.Foreign = foreignTable
 		}
-		field.ForeignKeyName = normalizeSQLIdentifier(column.ForeignKey.Name)
+		field.ForeignKeyName = normalizeSQLIdentifier(sourcePlatform, column.ForeignKey.Name)
 		field.OnDelete = column.ForeignKey.OnDelete
 		field.OnUpdate = column.ForeignKey.OnUpdate
-	}
-
-	// Initialize overrides map if we have a source platform
-	if sourcePlatform != "" {
-		field.Overrides = make(map[string]map[string]string)
-		// Platform-specific values would be populated by MergeFieldOverrides
 	}
 
 	return field
@@ -234,13 +243,13 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamo
 // Returns a schemamodel.Table with all table-level attributes extracted from the AST node.
 // The StructName field is derived from the table name using basic naming conventions.
 func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Table {
-	tableSchemaName, tableName := normalizeSQLTableIdentifier(table.Name)
+	tableSchemaName, tableName := normalizeSQLTableIdentifier(sourcePlatform, table.Name)
 	tableSchema := schemamodel.Table{
-		StructName: tableStructName(table.Name),
+		StructName: tableStructName(sourcePlatform, table.Name),
 		Name:       tableName,
 		Schema:     tableSchemaName,
 		Comment:    table.Comment,
-		Partition:  toSchemaPartition(table.Partition),
+		Partition:  toSchemaPartition(table.Partition, sourcePlatform),
 		// Carried, because the SQL surface is where a row deletion policy is
 		// read back: `db read` emits the clause, and a schema file holding that
 		// output has to describe the same table it came from
@@ -277,9 +286,9 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			// and the one field that identifies it is not
 			// (stokaro/ptah#2180).
 			tableSchema.PrimaryKeyName = constraint.Name
-			tableSchema.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
-			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)
-			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
+			tableSchema.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
+			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
+			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 			break // Only one primary key constraint per table
 		}
 	}
@@ -317,32 +326,32 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	return tableSchema
 }
 
-func toSchemaPartition(partition *ast.PartitionSpec) *schemamodel.PartitionSpec {
+func toSchemaPartition(partition *ast.PartitionSpec, sourcePlatform string) *schemamodel.PartitionSpec {
 	if partition == nil {
 		return nil
 	}
 	parts := make([]schemamodel.PartitionPart, 0, len(partition.Parts))
 	for _, part := range partition.Parts {
 		parts = append(parts, schemamodel.PartitionPart{
-			Name: normalizeSQLIdentifier(part.Name),
+			Name: normalizeSQLIdentifier(sourcePlatform, part.Name),
 			Expr: part.Expr,
 		})
 	}
 	return &schemamodel.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
-func toPrimaryKeyParts(constraint *ast.ConstraintNode) []schemamodel.PrimaryKeyPart {
+func toPrimaryKeyParts(constraint *ast.ConstraintNode, sourcePlatform string) []schemamodel.PrimaryKeyPart {
 	if len(constraint.ColumnParts) == 0 {
 		parts := make([]schemamodel.PrimaryKeyPart, 0, len(constraint.Columns))
 		for _, column := range constraint.Columns {
-			parts = append(parts, schemamodel.PrimaryKeyPart{Name: normalizeSQLIdentifier(column)})
+			parts = append(parts, schemamodel.PrimaryKeyPart{Name: normalizeSQLIdentifier(sourcePlatform, column)})
 		}
 		return parts
 	}
 	parts := make([]schemamodel.PrimaryKeyPart, 0, len(constraint.ColumnParts))
 	for _, column := range constraint.ColumnParts {
 		parts = append(parts, schemamodel.PrimaryKeyPart{
-			Name:   normalizeSQLIdentifier(column.Name),
+			Name:   normalizeSQLIdentifier(sourcePlatform, column.Name),
 			Prefix: column.Prefix,
 			Desc:   column.Desc,
 		})
@@ -394,16 +403,16 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []schemamodel.PrimaryKeyP
 //
 // Returns a schemamodel.Index with all index attributes extracted from the AST node.
 // The StructName is set to match the table name for proper association.
-func ToIndex(index *ast.IndexNode) schemamodel.Index {
-	tableSchema, tableName := normalizeSQLTableIdentifier(index.Table)
+func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
+	tableSchema, tableName := normalizeSQLTableIdentifier(sourcePlatform, index.Table)
 	// The parts decide the field names rather than being derived alongside
 	// them. A key that carried a suffix is named by its column, not by the
 	// element text the suffix is part of.
-	parts := indexParts(index)
+	parts := indexParts(index, sourcePlatform)
 	return schemamodel.Index{
-		Name:       normalizeSQLIdentifier(index.Name),
+		Name:       normalizeSQLIdentifier(sourcePlatform, index.Name),
 		StructName: tableName,
-		Fields:     indexFieldNames(index, parts),
+		Fields:     indexFieldNames(index, parts, sourcePlatform),
 		Parts:      parts,
 		Unique:     index.Unique,
 		Comment:    index.Comment,
@@ -418,22 +427,22 @@ func ToIndex(index *ast.IndexNode) schemamodel.Index {
 		Condition:      index.Condition,
 		Concurrently:   index.Concurrently,
 		Operator:       index.Operator,
-		IncludeColumns: normalizeSQLIdentifiers(index.IncludeColumns),
+		IncludeColumns: normalizeSQLIdentifiers(sourcePlatform, index.IncludeColumns),
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
 		TableName:      schemamodel.QualifyTableName(tableSchema, tableName),
 	}
 }
 
-func indexParts(index *ast.IndexNode) []schemamodel.IndexPart {
+func indexParts(index *ast.IndexNode, sourcePlatform string) []schemamodel.IndexPart {
 	if len(index.Parts) > 0 {
-		return toSchemaIndexParts(index.Parts)
+		return toSchemaIndexParts(index.Parts, sourcePlatform)
 	}
 	// A key list element the SQL frontend kept as one string can still carry an
 	// operator class, a direction and a NULLS ordering. Reading them is what
 	// keeps a `.sql` document Ptah wrote from planning a rebuild of the index it
 	// describes; see index_key.go.
-	if decomposed := decomposeIndexKeyList(index.Columns); decomposed != nil {
+	if decomposed := decomposeIndexKeyList(index.Columns, sourcePlatform); decomposed != nil {
 		return decomposed
 	}
 	parts := make([]schemamodel.IndexPart, 0, len(index.Columns))
@@ -441,7 +450,7 @@ func indexParts(index *ast.IndexNode) []schemamodel.IndexPart {
 	for _, column := range index.Columns {
 		if isSQLIdentifierReference(column) {
 			parts = append(parts, schemamodel.IndexPart{
-				Name: normalizeSQLIdentifierReference(column),
+				Name: normalizeSQLIdentifierReference(sourcePlatform, column),
 			})
 			continue
 		}
@@ -454,9 +463,9 @@ func indexParts(index *ast.IndexNode) []schemamodel.IndexPart {
 	return parts
 }
 
-func indexFieldNames(index *ast.IndexNode, parts []schemamodel.IndexPart) []string {
+func indexFieldNames(index *ast.IndexNode, parts []schemamodel.IndexPart, sourcePlatform string) []string {
 	if len(parts) == 0 {
-		return normalizeSQLIdentifierReferences(index.Columns)
+		return normalizeSQLIdentifierReferences(sourcePlatform, index.Columns)
 	}
 	fields := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -469,11 +478,11 @@ func indexFieldNames(index *ast.IndexNode, parts []schemamodel.IndexPart) []stri
 	return fields
 }
 
-func toSchemaIndexParts(parts []ast.IndexPart) []schemamodel.IndexPart {
+func toSchemaIndexParts(parts []ast.IndexPart, sourcePlatform string) []schemamodel.IndexPart {
 	schemaParts := make([]schemamodel.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		schemaParts = append(schemaParts, schemamodel.IndexPart{
-			Name:     normalizeSQLIdentifier(part.Name),
+			Name:     normalizeSQLIdentifier(sourcePlatform, part.Name),
 			Expr:     part.Expr,
 			Operator: part.Operator,
 			Prefix:   part.Prefix,
@@ -532,10 +541,10 @@ func toSchemaIndexParts(parts []ast.IndexPart) []schemamodel.IndexPart {
 // # Return Value
 //
 // Returns a schemamodel.Extension with all extension attributes extracted from the AST node.
-func ToExtension(extension *ast.ExtensionNode) schemamodel.Extension {
+func ToExtension(extension *ast.ExtensionNode, sourcePlatform string) schemamodel.Extension {
 	return schemamodel.Extension{
-		Name:        catalogPostgresIdentifierPart(strings.TrimSpace(extension.Name)),
-		Schema:      catalogPostgresIdentifierPart(strings.TrimSpace(extension.Schema)),
+		Name:        identifierPart(sourcePlatform, strings.TrimSpace(extension.Name)),
+		Schema:      identifierPart(sourcePlatform, strings.TrimSpace(extension.Schema)),
 		IfNotExists: extension.IfNotExists,
 		Version:     extension.Version,
 		Comment:     extension.Comment,
@@ -580,9 +589,9 @@ func ToExtension(extension *ast.ExtensionNode) schemamodel.Extension {
 // # Return Value
 //
 // Returns a schemamodel.Enum with the enum name and values extracted from the AST node.
-func ToEnum(enum *ast.EnumNode) schemamodel.Enum {
+func ToEnum(enum *ast.EnumNode, sourcePlatform string) schemamodel.Enum {
 	return schemamodel.Enum{
-		Name:   normalizeSQLIdentifier(enum.Name),
+		Name:   normalizeSQLIdentifier(sourcePlatform, enum.Name),
 		Values: enum.Values,
 	}
 }
@@ -698,45 +707,45 @@ func toDatabase(
 func appendStatement(
 	database, base *schemamodel.Database, stmt ast.Node, sourcePlatform string,
 ) error {
-	if appendRoutine(database, stmt) {
+	if appendRoutine(database, stmt, sourcePlatform) {
 		return nil
 	}
 	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
 		return err
 	}
-	if handled, err := appendRowSecurity(database, stmt); handled {
+	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
 		return err
 	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
 		database.Schemas = append(database.Schemas, schemamodel.Schema{
-			Name:    normalizeSQLIdentifier(node.Name),
+			Name:    normalizeSQLIdentifier(sourcePlatform, node.Name),
 			Comment: node.Comment,
 			Charset: node.Charset,
 			Collate: node.Collate,
 		})
 	case *ast.EnumNode:
-		database.Enums = append(database.Enums, ToEnum(node))
+		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
 	case *ast.CreateTableNode:
 		return appendCreateTable(database, node, sourcePlatform)
 	case *ast.IndexNode:
-		database.Indexes = append(database.Indexes, ToIndex(node))
+		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
 	case *ast.AlterTableNode:
 		return appendAlterTable(database, base, node, sourcePlatform)
 	case *ast.CreateTypeNode:
-		appendCreateType(database, node)
+		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
-		database.Extensions = append(database.Extensions, ToExtension(node))
+		database.Extensions = append(database.Extensions, ToExtension(node, sourcePlatform))
 	case *ast.CreateViewNode:
-		database.Views = append(database.Views, toView(node))
+		database.Views = append(database.Views, toView(node, sourcePlatform))
 	case *ast.CreateMaterializedViewNode:
-		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node))
+		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node, sourcePlatform))
 	case *ast.CreateFunctionNode:
-		database.Functions = append(database.Functions, toFunction(node))
+		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))
 	case *ast.CreateTriggerNode:
-		database.Triggers = append(database.Triggers, toTrigger(node))
+		database.Triggers = append(database.Triggers, toTrigger(node, sourcePlatform))
 	case *ast.CreateSequenceNode:
-		database.Sequences = append(database.Sequences, toSequence(node))
+		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
 	case *ast.CreateRoleNode:
 		database.Roles = append(database.Roles, toRole(node, sourcePlatform))
 	case *ast.CreatePolicyNode:
@@ -813,14 +822,14 @@ const unmodeledStatementQuote = 80
 // dropped in silence, and these three were missed anyway. A comment is read by
 // whoever is already thinking about the switch, which is never the person
 // adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
-func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
+func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) bool {
 	switch node := stmt.(type) {
 	case *ast.PostgresRoutineNode:
-		database.Functions = append(database.Functions, toPostgresRoutine(node))
+		database.Functions = append(database.Functions, toPostgresRoutine(node, sourcePlatform))
 	case *ast.SQLServerRoutineNode:
-		database.Functions = append(database.Functions, toSQLServerRoutine(node))
+		database.Functions = append(database.Functions, toSQLServerRoutine(node, sourcePlatform))
 	case *ast.MySQLRoutineNode:
-		database.Functions = append(database.Functions, toMySQLRoutine(node))
+		database.Functions = append(database.Functions, toMySQLRoutine(node, sourcePlatform))
 	default:
 		return false
 	}
@@ -867,7 +876,7 @@ func appendCreateTable(
 	// Extract fields from table columns
 	fieldsStart := len(database.Fields)
 	for _, column := range node.Columns {
-		fieldSchema := ToField(column, tableSchema.StructName, "")
+		fieldSchema := fieldFromColumn(column, tableSchema.StructName, sourcePlatform)
 		database.Fields = append(database.Fields, fieldSchema)
 	}
 	// A single-column table-level PRIMARY KEY (col) renders inline on the
@@ -881,7 +890,7 @@ func appendCreateTable(
 	// unrendered (stokaro/ptah#1574). They are appended here together with the
 	// constraints so that the order the document declared them in survives to
 	// the naming pass below.
-	order := declaredOrder(database, node, tableSchema)
+	order := declaredOrder(database, node, tableSchema, sourcePlatform)
 
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
@@ -905,20 +914,20 @@ func appendCreateTable(
 // order does not account for every element, because a partial order is worse
 // than none: it would silently drop whatever it failed to mention.
 func declaredOrder(
-	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table,
+	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
 ) []namedElement {
 	if !ordersEverything(node) {
-		return unorderedElements(database, node, table)
+		return unorderedElements(database, node, table, sourcePlatform)
 	}
 	order := make([]namedElement, 0, len(node.Elements))
 	for _, element := range node.Elements {
 		if element.Index != nil {
-			database.Indexes = append(database.Indexes, ToIndex(element.Index))
+			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
 				constraint: noPosition, index: len(database.Indexes) - 1})
 			continue
 		}
-		converted, ok := ToConstraint(element.Constraint, table.StructName, table.QualifiedName())
+		converted, ok := ToConstraint(element.Constraint, table.StructName, table.QualifiedName(), sourcePlatform)
 		if !ok {
 			continue
 		}
@@ -946,11 +955,11 @@ func ordersEverything(node *ast.CreateTableNode) bool {
 // unorderedElements appends in the order this package always used, for a node
 // that recorded none.
 func unorderedElements(
-	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table,
+	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table, sourcePlatform string,
 ) []namedElement {
 	order := make([]namedElement, 0, len(node.Indexes)+len(node.Constraints))
 	for _, constraint := range node.Constraints {
-		converted, ok := ToConstraint(constraint, table.StructName, table.QualifiedName())
+		converted, ok := ToConstraint(constraint, table.StructName, table.QualifiedName(), sourcePlatform)
 		if !ok {
 			continue
 		}
@@ -959,7 +968,7 @@ func unorderedElements(
 			constraint: len(database.Constraints) - 1, index: noPosition})
 	}
 	for _, index := range node.Indexes {
-		database.Indexes = append(database.Indexes, ToIndex(index))
+		database.Indexes = append(database.Indexes, ToIndex(index, sourcePlatform))
 		order = append(order, namedElement{
 			constraint: noPosition, index: len(database.Indexes) - 1})
 	}
@@ -978,7 +987,7 @@ func unorderedElements(
 // contribution and stays in database for the merge to place; a change to an
 // object base declares is made to base, in place. See [alterTarget].
 func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode, sourcePlatform string) error {
-	target, declared := findAlterTarget(database, base, node.Name)
+	target, declared := findAlterTarget(database, base, node.Name, sourcePlatform)
 	for _, op := range node.Operations {
 		if !declared {
 			return undeclaredTableError(node.Name, describeAlterOperation(op))
@@ -988,7 +997,7 @@ func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTable
 		}
 		// A primary key an operation added may have come from a table in
 		// base; the lookup is repeated so the next operation sees it.
-		target, _ = findAlterTarget(database, base, node.Name)
+		target, _ = findAlterTarget(database, base, node.Name, sourcePlatform)
 	}
 	return nil
 }
@@ -998,14 +1007,14 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.AddColumnOperation:
-		return applyAlterTableAddColumn(database, base, target.written, target.structName, typed)
+		return applyAlterTableAddColumn(database, base, target.written, target.structName, typed, sourcePlatform)
 	case *ast.AddConstraintOperation:
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
 		// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
 		// statement carries the whole index (stokaro/ptah#2778).
 		if typed.Index != nil {
-			index := ToIndex(typed.Index)
+			index := ToIndex(typed.Index, sourcePlatform)
 			index.StructName = target.structName
 			index.TableName = target.qualified
 			database.Indexes = append(database.Indexes, index)
@@ -1014,9 +1023,9 @@ func applyAlterOperation(
 	case *ast.AddSkippingIndexOperation:
 		// ClickHouse's data-skipping index arrives as an ALTER because that
 		// is how the ClickHouse renderer writes one (stokaro/ptah#1574).
-		_, tableName := normalizeSQLTableIdentifier(target.written)
+		_, tableName := normalizeSQLTableIdentifier(sourcePlatform, target.written)
 		database.Indexes = append(database.Indexes, schemamodel.Index{
-			Name:       normalizeSQLIdentifier(typed.Name),
+			Name:       normalizeSQLIdentifier(sourcePlatform, typed.Name),
 			StructName: tableName,
 			// The expression is one element, not a column list: it can be
 			// a function call or a tuple, and splitting it on commas would
@@ -1056,9 +1065,9 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 		return nil
 	}
 	if operation.Constraint.Type == ast.PrimaryKeyConstraint {
-		return applyAlterTablePrimaryKey(target, operation.Constraint)
+		return applyAlterTablePrimaryKey(target, operation.Constraint, target.sourcePlatform)
 	}
-	constraintSchema, ok := ToConstraint(operation.Constraint, target.structName, target.qualified)
+	constraintSchema, ok := ToConstraint(operation.Constraint, target.structName, target.qualified, target.sourcePlatform)
 	if ok {
 		database.Constraints = append(database.Constraints, constraintSchema)
 	}
@@ -1096,6 +1105,7 @@ func applyAlterTableAddColumn(
 	database, base *schemamodel.Database,
 	tableName, structName string,
 	operation *ast.AddColumnOperation,
+	sourcePlatform string,
 ) error {
 	if operation.Column == nil {
 		return fmt.Errorf("ALTER TABLE %s ADD COLUMN carries no column", tableName)
@@ -1107,7 +1117,7 @@ func applyAlterTableAddColumn(
 			"%w: ALTER TABLE %s ADD COLUMN %s names a table this schema does not declare",
 			ErrUnmodeledStatement, tableName, operation.Column.Name)
 	}
-	field := ToField(operation.Column, structName, "")
+	field := fieldFromColumn(operation.Column, structName, sourcePlatform)
 	known := database.Fields
 	if base != nil {
 		known = append(slices.Clip(base.Fields), database.Fields...)
@@ -1171,31 +1181,36 @@ func markPrimaryFields(fields []schemamodel.Field, structName string, columns []
 // which is carried in the constraint list and refused later by the renderer,
 // "has no owning table" -- and answering it with silence would leave a second
 // hole of exactly the kind this function exists to close.
-func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNode) error {
+func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNode, sourcePlatform string) error {
 	// PostgreSQL 18.6: `multiple primary keys for table "t" are not allowed`.
 	if len(target.table.PrimaryKey) > 0 || target.hasPrimaryField() {
 		return fmt.Errorf("ALTER TABLE %s ADD PRIMARY KEY: the table already declares a primary key", target.written)
 	}
 	target.table.PrimaryKeyName = constraint.Name
-	target.table.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
-	target.table.PrimaryKeyParts = toPrimaryKeyParts(constraint)
-	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
+	target.table.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
+	target.table.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
+	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
 	}
 	return nil
 }
 
-func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (schemamodel.Constraint, bool) {
+func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourcePlatform string) (schemamodel.Constraint, bool) {
+	// tableName is the owning table as the read already resolved it, so it is
+	// not folded a second time: folding `Docs`, the name of a table declared as
+	// `"Docs"`, would put the constraint on `docs`. The constraint's own names
+	// are SQL as written and are read through sourcePlatform.
+	ownerTable := normalizeSQLTableReference("", tableName)
 	switch constraint.Type {
 	case ast.UniqueConstraint:
 		return schemamodel.Constraint{
 			StructName: structName,
-			Name:       normalizeSQLIdentifier(constraint.Name),
+			Name:       normalizeSQLIdentifier(sourcePlatform, constraint.Name),
 			Type:       "UNIQUE",
-			Table:      normalizeSQLTableReference(tableName),
-			Columns:    normalizeSQLIdentifiers(constraint.Columns),
-			IncludeColumns: normalizeSQLIdentifiers(
+			Table:      ownerTable,
+			Columns:    normalizeSQLIdentifiers(sourcePlatform, constraint.Columns),
+			IncludeColumns: normalizeSQLIdentifiers(sourcePlatform,
 				constraint.IncludeColumns,
 			),
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
@@ -1203,34 +1218,34 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 	case ast.ForeignKeyConstraint:
 		fk := schemamodel.Constraint{
 			StructName: structName,
-			Name:       normalizeSQLIdentifier(constraint.Name),
+			Name:       normalizeSQLIdentifier(sourcePlatform, constraint.Name),
 			Type:       "FOREIGN KEY",
-			Table:      normalizeSQLTableReference(tableName),
-			Columns:    normalizeSQLIdentifiers(constraint.Columns),
+			Table:      ownerTable,
+			Columns:    normalizeSQLIdentifiers(sourcePlatform, constraint.Columns),
 		}
 		if ref := constraint.Reference; ref != nil {
-			fk.ForeignTable = normalizeSQLTableReference(ref.Table)
-			fk.ForeignColumn = normalizeSQLIdentifier(ref.Column)
-			fk.ForeignColumns = normalizeSQLIdentifiers(ref.Columns)
+			fk.ForeignTable = normalizeSQLTableReference(sourcePlatform, ref.Table)
+			fk.ForeignColumn = normalizeSQLIdentifier(sourcePlatform, ref.Column)
+			fk.ForeignColumns = normalizeSQLIdentifiers(sourcePlatform, ref.Columns)
 			fk.OnDelete = ref.OnDelete
 			fk.OnUpdate = ref.OnUpdate
-			fk.OnDeleteColumns = normalizeSQLIdentifiers(ref.OnDeleteColumns)
+			fk.OnDeleteColumns = normalizeSQLIdentifiers(sourcePlatform, ref.OnDeleteColumns)
 		}
 		return fk, true
 	case ast.CheckConstraint:
 		return schemamodel.Constraint{
 			StructName:      structName,
-			Name:            normalizeSQLIdentifier(constraint.Name),
+			Name:            normalizeSQLIdentifier(sourcePlatform, constraint.Name),
 			Type:            "CHECK",
-			Table:           normalizeSQLTableReference(tableName),
+			Table:           ownerTable,
 			CheckExpression: constraint.Expression,
 		}, true
 	case ast.ExcludeConstraint:
 		return schemamodel.Constraint{
 			StructName:      structName,
-			Name:            normalizeSQLIdentifier(constraint.Name),
+			Name:            normalizeSQLIdentifier(sourcePlatform, constraint.Name),
 			Type:            "EXCLUDE",
-			Table:           normalizeSQLTableReference(tableName),
+			Table:           ownerTable,
 			UsingMethod:     constraint.UsingMethod,
 			ExcludeElements: constraint.ExcludeElements,
 			WhereCondition:  constraint.WhereCondition,

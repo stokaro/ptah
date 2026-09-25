@@ -47,11 +47,11 @@ import (
 // partial conversion would silently re-quote or reorder keys nothing asked it
 // to touch, and converting a plain key list would change how existing documents
 // render for no gain.
-func decomposeIndexKeyList(columns []string) []schemamodel.IndexPart {
+func decomposeIndexKeyList(columns []string, sourcePlatform string) []schemamodel.IndexPart {
 	parts := make([]schemamodel.IndexPart, 0, len(columns))
 	suffixed := false
 	for _, column := range columns {
-		part, hasSuffix, ok := decomposeIndexKeyElement(column)
+		part, hasSuffix, ok := decomposeIndexKeyElement(column, sourcePlatform)
 		if !ok {
 			return nil
 		}
@@ -67,7 +67,7 @@ func decomposeIndexKeyList(columns []string) []schemamodel.IndexPart {
 // decomposeIndexKeyElement splits one key list element into its reference and
 // its suffixes. It reports whether the element carried a suffix at all, and
 // whether it was understood well enough to replace the raw text.
-func decomposeIndexKeyElement(column string) (part schemamodel.IndexPart, suffixed, ok bool) {
+func decomposeIndexKeyElement(column, sourcePlatform string) (part schemamodel.IndexPart, suffixed, ok bool) {
 	tokens := indexKeyTokens(column)
 	if len(tokens) == 0 {
 		return schemamodel.IndexPart{}, false, false
@@ -101,7 +101,7 @@ func decomposeIndexKeyElement(column string) (part schemamodel.IndexPart, suffix
 	head := tokens[:end]
 	switch {
 	case len(head) == 1 && isIndexKeyNameToken(head[0]):
-		part.Name = normalizeSQLIdentifier(head[0].Value)
+		part.Name = normalizeSQLIdentifier(sourcePlatform, head[0].Value)
 		return part, suffixed, true
 	case isBalancedGroup(head):
 		part.Expr = strings.TrimSpace(column[head[0].End:head[len(head)-1].Start])

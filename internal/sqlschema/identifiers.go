@@ -9,145 +9,119 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-func normalizeSQLIdentifier(value string) string {
-	parts := splitSQLIdentifier(value)
-	for index, part := range parts {
-		part = strings.TrimSpace(part)
-		parts[index] = unquoteSQLIdentifierPart(part)
+// identifierPart reads one component of a name the way the source dialect's
+// server resolves it. It is the one rule for every name this package records --
+// a table, a column, an index, a constraint, a policy and the table a policy or
+// a grant is on -- because two statements naming one object have to land on
+// one name, and a rule applied to some statements and not others turns one
+// relation into two (stokaro/ptah#3592).
+//
+// A quoted component keeps every character it was written with. An unquoted
+// one is folded where the server folds it, measured through pg_class and
+// pg_attribute: PostgreSQL 18.6 and YugabyteDB 2026.1 lower its ASCII letters,
+// so `CREATE TABLE Docs (Id int)` creates `docs` with a column `id` and
+// `Ärger` stays `Ärger`; CockroachDB 26.3.2 lowers every letter, so `Ärger`
+// becomes `ärger`. Kept as written, the name was rendered quoted: the file
+// created `"Docs"` and a comparison against the `docs` the server holds for
+// the same file planned `DROP TABLE "docs" CASCADE`.
+//
+// Other dialects keep an unquoted name as written. Spanner is in the
+// PostgreSQL family but was not measured, and MySQL, MariaDB, SQL Server,
+// ClickHouse, SQLite and Oracle each have their own case rules, which this
+// package does not model. A read with no dialect keeps names as written too,
+// so a file mixing conventions can be read at all.
+func identifierPart(sourcePlatform, part string) string {
+	part = strings.TrimSpace(part)
+	if isQuotedSQLIdentifierPart(part) {
+		return unquoteSQLIdentifierPart(part)
 	}
-	return strings.Join(parts, ".")
+	switch platform.NormalizeDialect(sourcePlatform) {
+	case platform.Postgres, platform.YugabyteDB:
+		return identifier.ComparisonASCIIInsensitive.IdentityKey(part)
+	case platform.CockroachDB:
+		return identifier.ComparisonUnicodeInsensitive.IdentityKey(part)
+	default:
+		return part
+	}
 }
 
-func normalizeSQLTableIdentifier(value string) (schema, name string) {
+// identifierParts reads each dot-separated component of value through
+// [identifierPart]. The components are independent: `"App".ORDERS` names the
+// relation `orders` inside the schema `App` on PostgreSQL.
+func identifierParts(sourcePlatform, value string) []string {
 	parts := splitSQLIdentifier(value)
 	for index, part := range parts {
-		parts[index] = unquoteSQLIdentifierPart(strings.TrimSpace(part))
+		parts[index] = identifierPart(sourcePlatform, part)
 	}
+	return parts
+}
+
+func normalizeSQLIdentifier(sourcePlatform, value string) string {
+	return strings.Join(identifierParts(sourcePlatform, value), ".")
+}
+
+func normalizeSQLTableIdentifier(sourcePlatform, value string) (schema, name string) {
+	parts := identifierParts(sourcePlatform, value)
 	if len(parts) == 1 {
 		return "", parts[0]
 	}
 	return strings.Join(parts[:len(parts)-1], "."), parts[len(parts)-1]
 }
 
-func normalizeSQLTableReference(value string) string {
-	schema, name := normalizeSQLTableIdentifier(value)
+func normalizeSQLTableReference(sourcePlatform, value string) string {
+	schema, name := normalizeSQLTableIdentifier(sourcePlatform, value)
 	return schemamodel.QualifyTableName(schema, name)
 }
 
-// catalogPostgresTableReference answers which relation a PostgreSQL statement
-// names, one identifier component at a time.
-//
-// The two spellings `ORDERS` and `"ORDERS"` reach this package as different
-// strings, and PostgreSQL reads them as different relations: the unquoted one
-// is folded to `orders` on its way into the catalog, the quoted one keeps its
-// case. Measured on PostgreSQL 17.10 against a database holding only `orders`,
-// `CREATE POLICY p ON ORDERS` exits 0 with a pg_policy row on `public.orders`
-// while `CREATE POLICY p ON "ORDERS"` exits 1 with `relation "ORDERS" does not
-// exist`.
-//
-// [normalizeSQLTableReference] unquotes every component and therefore erases
-// that difference, which is why the reference has to be folded HERE, at the one
-// point in the pipeline that still holds the quoting. Everything downstream
-// sees the relation, so nothing downstream has to guess -- and a guess is what
-// relocated an access-control declaration onto a relation the author did not
-// name (stokaro/ptah#1311).
-//
-// The fold is per component because the components are independent:
-// `"App".ORDERS` names the relation `orders` inside the schema `App`, and
-// PostgreSQL 17.10 resolves it against a table created as `"App".orders`
-// with exit 0.
-//
-// This is deliberately not applied to identifiers in general. Only PostgreSQL
-// folds unquoted identifiers down, and only the RLS statements this package
-// routes here are PostgreSQL-only syntax; the MySQL, MariaDB and SQL Server
-// frontends share the reader and must keep their own case rules.
-func catalogPostgresTableReference(value string) string {
-	parts := splitSQLIdentifier(value)
-	for index, part := range parts {
-		parts[index] = catalogPostgresIdentifierPart(strings.TrimSpace(part))
-	}
-	if len(parts) == 1 {
-		return schemamodel.QualifyTableName("", parts[0])
-	}
-	return schemamodel.QualifyTableName(
-		strings.Join(parts[:len(parts)-1], "."),
-		parts[len(parts)-1],
-	)
-}
-
 // roleName reads one role name the way the source dialect's server resolves
-// it.
+// it: through [identifierPart] like every other name, except on CockroachDB.
 //
-// The PostgreSQL family folds an unquoted name to lower case, so `CREATE ROLE
-// App_A` creates the role `app_a` and `TO App_A` names it. Kept as written, the
-// name was rendered quoted and named a role nobody created: measured on
-// PostgreSQL 18.6, a policy read from `TO App_A` was applied as `TO "App_A"`
-// and refused with `role "App_A" does not exist` (stokaro/ptah#3574).
-//
-// The engines differ on the rest. PostgreSQL and YugabyteDB 2026.1 lower ASCII
-// letters only and keep a quoted name as written. CockroachDB 26.3.2 lowers
-// every role name, quoted or not and past ASCII: `CREATE ROLE "Ärger_Q"`
-// creates `ärger_q`.
+// A role named unquoted in mixed case has to reach the role the server holds.
+// Kept as written, `TO App_A` was rendered `TO "App_A"`, and PostgreSQL 18.6
+// refused it with `role "App_A" does not exist` (stokaro/ptah#3574).
+// CockroachDB 26.3.2 lowers every role name, quoted or not and past ASCII:
+// `CREATE ROLE "Ärger_Q"` creates `ärger_q`, while a quoted table name keeps
+// its case there.
 //
 // Every place this package records a role reads it through here, so a file
-// that creates a role and names it elsewhere names one role. Other dialects
-// keep the name as written: MySQL and MariaDB spell a role with its host, and
-// SQL Server compares names under the database collation.
+// that creates a role and names it elsewhere names one role.
 func roleName(sourcePlatform, value string) string {
 	value = strings.TrimSpace(value)
-	switch {
-	case platform.NormalizeDialect(sourcePlatform) == platform.CockroachDB:
+	if platform.NormalizeDialect(sourcePlatform) == platform.CockroachDB {
 		return identifier.ComparisonUnicodeInsensitive.IdentityKey(unquoteSQLIdentifierPart(value))
-	case platform.IsPostgresFamily(sourcePlatform):
-		return catalogPostgresIdentifierPart(value)
-	default:
-		return normalizeSQLIdentifier(value)
 	}
+	return identifierPart(sourcePlatform, value)
 }
 
-// catalogPostgresIdentifierPart folds one component the way PostgreSQL does:
-// an unquoted component loses its ASCII case, a quoted one keeps every
-// character it was written with.
-func catalogPostgresIdentifierPart(part string) string {
-	if isQuotedSQLIdentifierPart(part) {
-		return unquoteSQLIdentifierPart(part)
-	}
-	return identifier.ComparisonASCIIInsensitive.IdentityKey(part)
+func tableStructName(sourcePlatform, value string) string {
+	return generateStructName(strings.Join(identifierParts(sourcePlatform, value), "_"))
 }
 
-func tableStructName(value string) string {
-	parts := splitSQLIdentifier(value)
-	for index, part := range parts {
-		parts[index] = unquoteSQLIdentifierPart(strings.TrimSpace(part))
-	}
-	return generateStructName(strings.Join(parts, "_"))
-}
-
-func normalizeSQLIdentifierReference(value string) string {
+func normalizeSQLIdentifierReference(sourcePlatform, value string) string {
 	if !isSQLIdentifierReference(value) {
 		return value
 	}
-	return normalizeSQLIdentifier(value)
+	return normalizeSQLIdentifier(sourcePlatform, value)
 }
 
-func normalizeSQLIdentifiers(values []string) []string {
+func normalizeSQLIdentifiers(sourcePlatform string, values []string) []string {
 	if values == nil {
 		return nil
 	}
 	normalized := make([]string, len(values))
 	for index, value := range values {
-		normalized[index] = normalizeSQLIdentifier(value)
+		normalized[index] = normalizeSQLIdentifier(sourcePlatform, value)
 	}
 	return normalized
 }
 
-func normalizeSQLIdentifierReferences(values []string) []string {
+func normalizeSQLIdentifierReferences(sourcePlatform string, values []string) []string {
 	if values == nil {
 		return nil
 	}
 	normalized := make([]string, len(values))
 	for index, value := range values {
-		normalized[index] = normalizeSQLIdentifierReference(value)
+		normalized[index] = normalizeSQLIdentifierReference(sourcePlatform, value)
 	}
 	return normalized
 }
