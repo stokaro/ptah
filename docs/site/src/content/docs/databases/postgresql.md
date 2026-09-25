@@ -126,6 +126,32 @@ Measured on PostgreSQL 18.6:
 A column-level `UNIQUE` is compared by its columns, not by its name. Other
 engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
 
+## Object comments
+
+Ptah writes the comment of a view, a sequence, a domain, a composite or range
+type, and an extension with `COMMENT ON`, reads it back and compares it, as it
+does a table's and a column's. The comment is written right after the statement
+that creates the object, and a changed comment is planned as one `COMMENT ON`
+for the object, not as a drop and a create.
+
+An extension's comment is compared only when the declaration states one.
+`CREATE EXTENSION` gives every extension the comment its control file carries,
+so a declaration without a comment is not read as asking for none. The version
+of an extension follows the same rule.
+
+The other engines of the family take fewer of these statements. Ptah writes and
+compares a comment only where the server stores it and reports it back, which
+each statement's capability key records: `view_comments`, `sequence_comments`,
+`type_comments`, `domain_comments` and `extension_comments`. Where a key is
+false, the render names the comment it left out. CockroachDB accepts
+`COMMENT ON TYPE` and then reports no comment for the type, so its
+`type_comments` key is false, and the Spanner PostgreSQL interface refuses every
+`COMMENT ON`.
+
+A comment on a function, a materialized view, a trigger or a policy is not
+written yet, and an enum type has no comment in the model
+([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)).
+
 ## Unlogged tables
 
 A table declared `unlogged = true` renders `CREATE UNLOGGED TABLE`. Its writes

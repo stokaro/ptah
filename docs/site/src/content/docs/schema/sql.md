@@ -192,12 +192,13 @@ COMMENT ON TABLE notes IS 'what users wrote';
 COMMENT ON COLUMN notes.body IS 'the text, as typed';
 ```
 
-`COMMENT ON` is read for a table, a column, an index, a schema and a role. For
-a view, a sequence, a domain, a type or an extension it is refused, because
-Ptah does not yet write those comments to the database
-([stokaro/ptah#3627](https://github.com/stokaro/ptah/issues/3627)). Reading one
-would drop it silently. A comment on an object the document does not declare
-is refused too, as is `IS NULL`.
+`COMMENT ON` is read for a table, a column, an index, a schema, a role, a view,
+a sequence, a domain, a composite or range type, and an extension, and the
+plan writes each of them to the database. `COMMENT ON TYPE` naming an enum
+type is refused, because Ptah keeps no comment for one, and a comment on a
+function, a materialized view, a trigger or a policy cannot be read yet
+([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)). A comment
+on an object the document does not declare is refused too, as is `IS NULL`.
 
 ## Row-level security
 

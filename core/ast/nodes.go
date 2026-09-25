@@ -1552,6 +1552,53 @@ func NewComment(text string) *CommentNode {
 // Accept implements the Node interface for CommentNode.
 func (n *CommentNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
+// CommentedObject names the kind of object an [ObjectCommentNode] sets the
+// comment of. Its value is the keyword COMMENT ON spells the kind with.
+type CommentedObject string
+
+// The kinds an [ObjectCommentNode] can name. A composite type and a range
+// type are both CommentedType: the statement does not tell them apart.
+const (
+	CommentedView      CommentedObject = "VIEW"
+	CommentedSequence  CommentedObject = "SEQUENCE"
+	CommentedDomain    CommentedObject = "DOMAIN"
+	CommentedType      CommentedObject = "TYPE"
+	CommentedExtension CommentedObject = "EXTENSION"
+)
+
+// ObjectCommentNode sets or removes the comment of an existing view,
+// sequence, domain, type or extension.
+//
+// It is a statement rather than a field of the node that creates the object:
+// a create node carries the comment the object is created with, and this node
+// is what changes the comment of an object that already exists. A table's and
+// a column's comment travel as [SetCommentOperation] instead, beside the other
+// changes to the table.
+//
+// Renderers for the PostgreSQL family write `COMMENT ON <kind> <name> IS ...`
+// where the target stores that kind's comment, and a named skip where it does
+// not. Renderers for other dialects write a note that the statement is not
+// supported, because none of them has one.
+type ObjectCommentNode struct {
+	// Object is the kind of object Name names.
+	Object CommentedObject
+	// Name is the object's name, schema-qualified where the object has a
+	// schema. An extension's name is database-wide and is never split on a
+	// dot.
+	Name string
+	// Comment is what the comment should become. Empty removes it.
+	Comment string
+}
+
+// NewObjectComment creates a node that sets the comment of the object of kind
+// object named name. An empty comment removes the comment.
+func NewObjectComment(object CommentedObject, name, comment string) *ObjectCommentNode {
+	return &ObjectCommentNode{Object: object, Name: name, Comment: comment}
+}
+
+// Accept implements the Node interface for ObjectCommentNode.
+func (n *ObjectCommentNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
 // DropTableNode represents a DROP TABLE statement.
 //
 // This node supports various DROP TABLE options including IF EXISTS,

@@ -429,6 +429,50 @@ const (
 	// answers `Unknown statement` (stokaro/ptah#2651).
 	SchemaComments Capability = "schema_comments"
 
+	// ViewComments marks a target that stores a comment against a view
+	// through `COMMENT ON VIEW` and reports it back through
+	// obj_description(oid, 'pg_class'), which is where Ptah reads it.
+	//
+	// The five object-comment keys are separate because the statements are,
+	// and the engines take different subsets of them. Measured 2026-09-25:
+	// PostgreSQL 14 and 18.6 and YugabyteDB 2024.2, 2025.2 and 2026.1 take
+	// all five and read each one back. CockroachDB v26.3.1 takes COMMENT ON
+	// VIEW and COMMENT ON SEQUENCE and reads both back; v26.2.7 and v25.4.16
+	// answer `syntax error` to both. The Spanner PostgreSQL interface answers
+	// `Unknown statement` to every COMMENT ON form (stokaro/ptah#3627).
+	ViewComments Capability = "view_comments"
+
+	// SequenceComments marks a target that stores a comment against a
+	// sequence through `COMMENT ON SEQUENCE` and reports it back through
+	// obj_description(oid, 'pg_class'). The engines that take it are the ones
+	// ViewComments names.
+	SequenceComments Capability = "sequence_comments"
+
+	// TypeComments marks a target that stores a comment against a composite
+	// or range type through `COMMENT ON TYPE` and reports it back through
+	// obj_description(oid, 'pg_type').
+	//
+	// The read-back is part of the key. CockroachDB v25.4.16, v26.2.7 and
+	// v26.3.1 accept the statement and then report NULL for it: the comment
+	// is stored in pg_description under the type's descriptor ID, while
+	// pg_type.oid is that ID plus 100000, so obj_description never finds it.
+	// A comment Ptah writes and cannot read back is planned again on every
+	// run, which is why the key is false there (stokaro/ptah#3627).
+	TypeComments Capability = "type_comments"
+
+	// DomainComments marks a target that stores a comment against a domain
+	// through `COMMENT ON DOMAIN` and reports it back through
+	// obj_description(oid, 'pg_type'). CockroachDB v26.3.1 creates domains
+	// and answers `syntax error` to this statement (stokaro/ptah#3627).
+	DomainComments Capability = "domain_comments"
+
+	// ExtensionComments marks a target that stores a comment against an
+	// extension through `COMMENT ON EXTENSION` and reports it back through
+	// obj_description(oid, 'pg_extension'). CockroachDB accepts some CREATE
+	// EXTENSION statements and answers `unimplemented` to this one on every
+	// measured line (stokaro/ptah#3627).
+	ExtensionComments Capability = "extension_comments"
+
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
 	// type overrides for those targets.
@@ -962,6 +1006,24 @@ var registry = map[Capability]spec{
 	SchemaComments: {
 		doc: "COMMENT ON SCHEMA, which stores a comment against a schema rather than a table or column",
 	},
+	ViewComments: {
+		doc:      "COMMENT ON VIEW, stored where obj_description reads it back",
+		requires: []Capability{Views},
+	},
+	SequenceComments: {
+		doc:      "COMMENT ON SEQUENCE, stored where obj_description reads it back",
+		requires: []Capability{Sequences},
+	},
+	TypeComments: {
+		doc: "COMMENT ON TYPE for a composite or range type, stored where obj_description reads it back",
+	},
+	DomainComments: {
+		doc:      "COMMENT ON DOMAIN, stored where obj_description reads it back",
+		requires: []Capability{DomainTypes},
+	},
+	ExtensionComments: {
+		doc: "COMMENT ON EXTENSION, stored where obj_description reads it back",
+	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
 	},
@@ -1234,6 +1296,11 @@ func MySQL84() Capabilities {
 		SequenceStartCounterOnly:           false,
 		// MySQL comments live on the table and the column; there is no COMMENT ON SCHEMA.
 		SchemaComments:                  false,
+		ViewComments:                    false,
+		SequenceComments:                false,
+		TypeComments:                    false,
+		DomainComments:                  false,
+		ExtensionComments:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1376,6 +1443,11 @@ func MariaDB1011() Capabilities {
 		SequenceStartCounterOnly: false,
 		// As MySQL: no COMMENT ON SCHEMA.
 		SchemaComments:                  false,
+		ViewComments:                    false,
+		SequenceComments:                false,
+		TypeComments:                    false,
+		DomainComments:                  false,
+		ExtensionComments:               false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1462,7 +1534,14 @@ func Postgres16() Capabilities {
 		Sequences:                          true,
 		SequenceStartCounterOnly:           false,
 		// Measured on PostgreSQL 17: accepted, and obj_description reads it back (stokaro/ptah#2651).
-		SchemaComments:                  true,
+		SchemaComments: true,
+		// Measured on PostgreSQL 14 and 18.6: each COMMENT ON is accepted and
+		// obj_description reads it back (stokaro/ptah#3627).
+		ViewComments:                    true,
+		SequenceComments:                true,
+		TypeComments:                    true,
+		DomainComments:                  true,
+		ExtensionComments:               true,
 		XMLType:                         true,
 		AdvisoryLocks:                   true,
 		RowLevelTTL:                     false,
@@ -1673,9 +1752,14 @@ func ClickHouse24() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// ClickHouse comments a database in CREATE DATABASE; there is no COMMENT ON SCHEMA.
-		SchemaComments: false,
-		XMLType:        false,
-		AdvisoryLocks:  false,
+		SchemaComments:    false,
+		ViewComments:      false,
+		SequenceComments:  false,
+		TypeComments:      false,
+		DomainComments:    false,
+		ExtensionComments: false,
+		XMLType:           false,
+		AdvisoryLocks:     false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
 		// key names a row-expiry policy declared as STORAGE PARAMETERS, the
 		// shape CockroachDB answers and the probe reads back out of
@@ -1765,6 +1849,11 @@ func SQLite3() Capabilities {
 		SequenceStartCounterOnly:           false,
 		// SQLite has neither schemas in this sense nor comment statements.
 		SchemaComments:          false,
+		ViewComments:            false,
+		SequenceComments:        false,
+		TypeComments:            false,
+		DomainComments:          false,
+		ExtensionComments:       false,
 		XMLType:                 false,
 		AdvisoryLocks:           false,
 		RowLevelTTL:             false,
@@ -1927,6 +2016,11 @@ func SQLServer2022() Capabilities {
 		SequenceStartCounterOnly: false,
 		// SQL Server carries this as an extended property, not COMMENT ON.
 		SchemaComments:          false,
+		ViewComments:            false,
+		SequenceComments:        false,
+		TypeComments:            false,
+		DomainComments:          false,
+		ExtensionComments:       false,
 		XMLType:                 true,
 		AdvisoryLocks:           false,
 		RowLevelTTL:             false,
@@ -2058,6 +2152,15 @@ func CockroachDB23() Capabilities {
 		// a comment alone outlives the fact it records.
 		With(DomainTypes, false).
 		With(RangeTypes, false).
+		// Measured 2026-09-25 on v25.4.16 and v26.2.7: `syntax error` to
+		// COMMENT ON VIEW, SEQUENCE and DOMAIN, `unimplemented` to COMMENT ON
+		// EXTENSION, and COMMENT ON TYPE accepted but never reported back by
+		// obj_description. See TypeComments for why (stokaro/ptah#3627).
+		With(ViewComments, false).
+		With(SequenceComments, false).
+		With(TypeComments, false).
+		With(DomainComments, false).
+		With(ExtensionComments, false).
 		With(RowLevelTTL, true)
 }
 
@@ -2138,8 +2241,17 @@ func CockroachDB26() Capabilities {
 // answers `cannot create type ... in temporary schema` (SQLSTATE 3F000). The probe reports that as unresolved, so
 // CHECK and DEFAULT stay uncompared here while base type and NOT NULL are
 // compared as everywhere else.
+//
+// The same line is the first to take COMMENT ON VIEW and COMMENT ON SEQUENCE.
+// Measured 2026-09-25 on v26.3.1: both are accepted and obj_description reads
+// each one back, while v26.2.7 answers `syntax error` to both. COMMENT ON
+// DOMAIN is still a syntax error here, so DomainComments stays false beside
+// the domains themselves (stokaro/ptah#3627).
 func CockroachDB263() Capabilities {
-	return CockroachDB26().With(DomainTypes, true)
+	return CockroachDB26().
+		With(DomainTypes, true).
+		With(ViewComments, true).
+		With(SequenceComments, true)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -2258,6 +2370,14 @@ func SpannerPostgres() Capabilities {
 		// CockroachDB v24.1.33 and YugabyteDB 2024.1.3.0 all accept it and read
 		// it back, so this is Spanner's alone (stokaro/ptah#2651).
 		With(SchemaComments, false).
+		// Measured 2026-09-25 on the same emulator behind PGAdapter 0.55.3:
+		// COMMENT ON VIEW, SEQUENCE, TYPE and EXTENSION all answer `Unknown
+		// statement`, as COMMENT ON TABLE and COLUMN do (stokaro/ptah#3627).
+		With(ViewComments, false).
+		With(SequenceComments, false).
+		With(TypeComments, false).
+		With(DomainComments, false).
+		With(ExtensionComments, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -2484,8 +2604,13 @@ func Oracle23() Capabilities {
 		// than about the type -- which is a property of that account, not of
 		// the engine.
 		// Oracle comments tables and columns; there is no COMMENT ON SCHEMA.
-		SchemaComments: false,
-		XMLType:        true,
+		SchemaComments:    false,
+		ViewComments:      false,
+		SequenceComments:  false,
+		TypeComments:      false,
+		DomainComments:    false,
+		ExtensionComments: false,
+		XMLType:           true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
 		AdvisoryLocks:           false,

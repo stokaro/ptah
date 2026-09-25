@@ -383,6 +383,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			BaseType: domain.BaseType,
 			NotNull:  domain.NotNull,
 			Check:    domain.Check,
+			Comment:  domain.Comment,
 		}
 		setDomainDefaultFromDB(&converted, domain.Default)
 		database.Domains = append(database.Domains, converted)
@@ -393,9 +394,10 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
 		}
 		database.CompositeTypes = append(database.CompositeTypes, schemamodel.CompositeType{
-			Name:   composite.Name,
-			Schema: composite.Schema,
-			Fields: fields,
+			Name:    composite.Name,
+			Schema:  composite.Schema,
+			Fields:  fields,
+			Comment: composite.Comment,
 		})
 	}
 	for _, rangeType := range dbSchema.Ranges {
@@ -415,6 +417,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			Collation:      rangeType.Collation,
 			Canonical:      rangeType.Canonical,
 			SubtypeDiff:    rangeType.SubtypeDiff,
+			Comment:        rangeType.Comment,
 		})
 	}
 }

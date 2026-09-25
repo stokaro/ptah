@@ -34,10 +34,10 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			},
 			expectedUpSQL: []string{
 				"-- Direction: UP",
-				"-- Enable trigram similarity search",
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-				"-- Enable GIN indexes on btree types",
+				"COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';",
 				"CREATE EXTENSION IF NOT EXISTS btree_gin;",
+				"COMMENT ON EXTENSION btree_gin IS 'Enable GIN indexes on btree types';",
 			},
 			expectedDownSQL: []string{
 				"-- Direction: DOWN",

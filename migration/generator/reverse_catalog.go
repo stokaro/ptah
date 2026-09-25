@@ -325,3 +325,17 @@ func priorRole(prior *schemamodel.Database, name string) schemamodel.Role {
 	}
 	return schemamodel.Role{}
 }
+
+// reverseObjectComments exchanges each transition's two states: the down
+// direction puts back the comment the up direction replaced.
+func reverseObjectComments(changes []difftypes.ObjectCommentChange) []difftypes.ObjectCommentChange {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.ObjectCommentChange, 0, len(changes))
+	for _, change := range changes {
+		change.Current, change.Desired = change.Desired, change.Current
+		reversed = append(reversed, change)
+	}
+	return reversed
+}

@@ -86,9 +86,10 @@ func identifierPart(sourcePlatform, part string) string {
 // Any other dialect, and a read with no dialect, compares exactly.
 //
 // Every name a statement writes to reach something already declared goes
-// through here: the table an ALTER TABLE or a COMMENT ON names, the column an
-// ALTER TABLE operation or a COMMENT ON COLUMN names, and the column an ADD
-// COLUMN must not repeat. It cannot become two
+// through here: the table an ALTER TABLE or a COMMENT ON names, the view,
+// sequence, domain, type or extension a COMMENT ON names, the column an ALTER
+// TABLE operation or a COMMENT ON COLUMN names, and the column an ADD COLUMN
+// must not repeat. It cannot become two
 // functions, one for tables and one for columns: the lookups agree only while
 // both copies carry the same dialect rules, and a statement whose table and
 // column were resolved by different rules changes the wrong object

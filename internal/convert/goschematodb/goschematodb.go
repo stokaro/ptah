@@ -487,6 +487,7 @@ func toDBDomains(domains []schemamodel.Domain) []catalog.Domain {
 			NotNull:  domain.NotNull,
 			Default:  defaultValue,
 			Check:    domain.Check,
+			Comment:  domain.Comment,
 		})
 	}
 	return out
@@ -503,9 +504,10 @@ func toDBCompositeTypes(composites []schemamodel.CompositeType) []catalog.Compos
 			})
 		}
 		out = append(out, catalog.CompositeType{
-			Name:   composite.Name,
-			Schema: composite.Schema,
-			Fields: fields,
+			Name:    composite.Name,
+			Schema:  composite.Schema,
+			Fields:  fields,
+			Comment: composite.Comment,
 		})
 	}
 	return out
@@ -518,6 +520,7 @@ func toDBRanges(ranges []schemamodel.Range) []catalog.Range {
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
+			Comment: rangeType.Comment,
 		})
 	}
 	return out

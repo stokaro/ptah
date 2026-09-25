@@ -54,6 +54,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderAlterType(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
 	case *ast.DropTableNode:
 		return r.renderDropTable(n)
 	case *ast.DropTypeNode:

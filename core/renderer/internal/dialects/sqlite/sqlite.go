@@ -1059,3 +1059,11 @@ func partOperatorClasses(node *ast.IndexNode) []string {
 	}
 	return classes
 }
+
+// renderObjectComment names a comment statement this dialect has no spelling
+// of. COMMENT ON is the PostgreSQL family's, and only its planner emits the
+// node, so a caller that builds one for this target is told what was left out.
+func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
+	r.notSupported("COMMENT ON "+string(node.Object), node.Name)
+	return nil
+}

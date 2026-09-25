@@ -341,7 +341,7 @@ func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {
 				Name:    "btree_gin",
 				Comment: "Enable GIN indexes on btree types",
 			},
-			expected: "-- Enable GIN indexes on btree types\nCREATE EXTENSION btree_gin;\n",
+			expected: "CREATE EXTENSION btree_gin;\nCOMMENT ON EXTENSION btree_gin IS 'Enable GIN indexes on btree types';\n",
 		},
 		{
 			name: "extension with all features",
@@ -351,7 +351,7 @@ func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {
 				Version:     "3.0",
 				Comment:     "Geographic data support",
 			},
-			expected: "-- Geographic data support\nCREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';\n",
+			expected: "CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';\nCOMMENT ON EXTENSION postgis IS 'Geographic data support';\n",
 		},
 	}
 
@@ -443,7 +443,7 @@ func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 
 	// Verify the generated SQL
 	c.Assert(legacyPostgresSQL(extensionSQL), qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm")
-	c.Assert(legacyPostgresSQL(extensionSQL), qt.Contains, "-- Enable trigram similarity search")
+	c.Assert(legacyPostgresSQL(extensionSQL), qt.Contains, "COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';")
 
 	c.Assert(legacyPostgresSQL(tableSQL), qt.Contains, "CREATE TABLE products")
 	c.Assert(legacyPostgresSQL(tableSQL), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")

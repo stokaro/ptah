@@ -1399,6 +1399,10 @@ func (p *Planner) plannedUserTypes(
 	// recreations join the same ordering: a new domain over a recreated
 	// composite has to wait for the recreation, which dropModifiedUserTypes has
 	// already removed by this point.
+	//
+	// A recreation carries the type's own comment, which its create node
+	// writes after the CREATE, because the drop took the old one with it. The
+	// DROP before it already says why the type is being recreated.
 	for _, domainDiff := range diff.DomainsModified {
 		if domainIsAlterableInPlace(domainDiff) {
 			// Paired with the same guard in dropModifiedUserTypes: no drop was
@@ -1411,7 +1415,7 @@ func (p *Planner) plannedUserTypes(
 		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
-				node: modelast.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+				node: modelast.FromDomain(domain),
 			})
 		}
 	}
@@ -1424,7 +1428,7 @@ func (p *Planner) plannedUserTypes(
 		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
-				node: modelast.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+				node: modelast.FromCompositeType(composite),
 			})
 		}
 	}
@@ -1435,7 +1439,7 @@ func (p *Planner) plannedUserTypes(
 		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: modelast.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+				node: modelast.FromRange(rangeType),
 			})
 		}
 	}
@@ -1810,6 +1814,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
+
+	// 6.9. Comments on objects that already existed, after every step that
+	// creates, replaces or recreates one of them.
+	result = p.changeObjectComments(result, diff)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)

@@ -19,13 +19,13 @@ import (
 // otherwise read as success. Growth is expected and lands in nodeCensus below;
 // a drop is a decision, and lowering this number is how that decision is
 // recorded.
-const nodeKindFloor = 82
+const nodeKindFloor = 83
 
 // censusRow is one node kind the census accepts.
 //
 // Only the instance is carried. What the visitor should see is derived from the
 // node's own type, because every kind hands the visitor itself -- and a table
-// restating that per row would be 82 copies of one rule, able to disagree with
+// restating that per row would be 83 copies of one rule, able to disagree with
 // it.
 type censusRow struct {
 	// node is the instance the census accepts. It is the zero value except
@@ -85,6 +85,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.ExtensionNode{}},
 	{node: &ast.GrantPrivilegeNode{}},
 	{node: &ast.IndexNode{}},
+	{node: &ast.ObjectCommentNode{}},
 	{node: &ast.RawSQLNode{}},
 	{node: &ast.RefreshMaterializedViewNode{}},
 	{node: &ast.RevokeDefaultPrivilegeNode{}},
