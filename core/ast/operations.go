@@ -103,6 +103,13 @@ type ModifyColumnOperation struct {
 	// operation restates the column: a renderer that alters one property per
 	// clause writes a clause for every property it can alter.
 	HasChanged bool
+	// OmitNullBackfill asks for SET NOT NULL without filling the column's
+	// NULL rows from its declared default first, so the statement fails on a
+	// NULL row as it does when the column declares no default.
+	//
+	// It is read only by a renderer that fills those rows, which the
+	// PostgreSQL family does; the zero value keeps the fill.
+	OmitNullBackfill bool
 }
 
 // ColumnProperties names the properties of a column that a

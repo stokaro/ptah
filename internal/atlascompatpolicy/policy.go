@@ -68,6 +68,17 @@ func (p Policy) IgnoreUnknownHCLNames() bool {
 	return !p.strictCE
 }
 
+// FillsNullRowsWithDefault reports whether a plan that makes a column NOT NULL
+// first fills the column's NULL rows from its declared default.
+//
+// Full compatibility keeps the fill Ptah plans on PostgreSQL: the value is the
+// author's own declaration and the UPDATE is in the plan for review. Strict CE
+// mode plans what Atlas CE v1.3.0 plans, which is SET NOT NULL alone, so the
+// statement fails on a NULL row there as it does on the pinned binary.
+func (p Policy) FillsNullRowsWithDefault() bool {
+	return !p.strictCE
+}
+
 // ValidateDesiredSchema refuses desired-schema object kinds that Atlas CE
 // cannot represent when strict mode is selected. Full compatibility remains a
 // no-op so every Pro-like and best-effort capability stays reachable by

@@ -74,6 +74,18 @@ before output or mutation. A Pro-only object stops the operation; the result
 cannot silently describe less than the database contains. Cleanup validates the
 writer's full destruction inventory, including dependent objects.
 
+## Plans strict mode writes as Atlas CE does
+
+Strict mode also changes what a plan writes where the default surface writes
+more than Atlas CE. On PostgreSQL, a column made `NOT NULL` that declares a
+default is one such case. The default surface fills the column's `NULL` rows
+from that default before `SET NOT NULL`; see
+[Making a column NOT NULL](../../databases/postgresql/#making-a-column-not-null).
+Atlas CE writes `SET NOT NULL` alone, so under strict mode `migrate diff`,
+`schema apply` and `schema diff` write no fill, and the statement fails on a
+`NULL` row as it does there. A layout that writes a rollback file leaves the
+fill out of both halves.
+
 ## Capabilities retained deliberately
 
 Strict mode preserves safety and correctness changes where copying CE would

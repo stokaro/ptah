@@ -214,6 +214,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 
 		DevServerDisposable:       devServerDisposable,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		OmitNullBackfill:          !opts.policy.FillsNullRowsWithDefault(),
 		ValidateSchema:            opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),

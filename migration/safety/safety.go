@@ -12,14 +12,17 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/htmlstyle"
+	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -217,31 +220,104 @@ func AssessRenderedWithCapabilities(
 	caps capability.Capabilities,
 ) ([]StatementAssessment, error) {
 	var assessments []StatementAssessment
-	for _, node := range nodes {
-		nodeAssessment := assessNode(node)
-		rendered, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
-		if err != nil {
-			return nil, err
-		}
-		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
-		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
-			statements = []string{strings.TrimSpace(rendered)}
-		}
-		keepsNull := keepsNullability(node)
-		for _, statement := range statements {
-			assessment := assessStatement(statement, keepsNull)
-			assessment.NodeType = nodeAssessment.NodeType
-			if assessment.Subject == "" {
-				assessment.Subject = nodeAssessment.Subject
+	for _, whole := range nodes {
+		for _, node := range assessmentUnits(whole, dialect) {
+			nodeAssessment := assessNode(node)
+			rendered, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
+			if err != nil {
+				return nil, err
 			}
-			if len(statements) == 1 || isTypeChangeSQL(statement) {
-				raiseAssessment(&assessment, nodeAssessment)
+			statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
+			if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
+				statements = []string{strings.TrimSpace(rendered)}
 			}
-			assessment.Index = len(assessments) + 1
-			assessments = append(assessments, assessment)
+			keepsNull := keepsNullability(node)
+			fills := fillsNullRows(node)
+			for _, statement := range statements {
+				assessment := assessStatement(statement, keepsNull)
+				assessment.NodeType = nodeAssessment.NodeType
+				if assessment.Subject == "" {
+					assessment.Subject = nodeAssessment.Subject
+				}
+				if len(statements) == 1 || isTypeChangeSQL(statement) {
+					raiseAssessment(&assessment, nodeAssessment)
+				}
+				if fills {
+					judgeNullFillPair(&assessment, statement)
+				}
+				assessment.Index = len(assessments) + 1
+				assessments = append(assessments, assessment)
+			}
 		}
 	}
 	return assessments, nil
+}
+
+// assessmentUnits is node, or one ALTER TABLE per operation when node is a
+// PostgreSQL-family ALTER TABLE carrying several operations and one of them
+// fills a column's NULL rows. Rendered one operation at a time, each fill and
+// SET NOT NULL is assessed with the operation that wrote it, so the SET NOT
+// NULL of a column that is filled is not confused with the one of a column
+// that is not. A plan carries one column modification per ALTER TABLE, so
+// this changes nothing about the statements a planned node reports.
+func assessmentUnits(node ast.Node, dialect string) []ast.Node {
+	alter, ok := node.(*ast.AlterTableNode)
+	if !ok || len(alter.Operations) < 2 || !platform.IsPostgresFamily(dialect) ||
+		!slices.ContainsFunc(alter.Operations, operationFillsNullRows) {
+		return []ast.Node{node}
+	}
+	units := make([]ast.Node, 0, len(alter.Operations))
+	for _, operation := range alter.Operations {
+		unit := *alter
+		unit.Operations = []ast.AlterOperation{operation}
+		units = append(units, &unit)
+	}
+	return units
+}
+
+// fillsNullRows reports whether node is an ALTER TABLE whose one operation
+// fills a column's NULL rows before SET NOT NULL, as the PostgreSQL family
+// renders it.
+//
+// The dialect is not asked here. Only a PostgreSQL-family renderer writes the
+// DO block and the SET NOT NULL judgeNullFillPair recognizes; MySQL's MODIFY,
+// SQL Server's ALTER COLUMN and Oracle's MODIFY carry the whole definition in
+// one statement that matches neither, and keep the verdict they have.
+func fillsNullRows(node ast.Node) bool {
+	alter, ok := node.(*ast.AlterTableNode)
+	return ok && len(alter.Operations) == 1 && operationFillsNullRows(alter.Operations[0])
+}
+
+func operationFillsNullRows(operation ast.AlterOperation) bool {
+	modify, ok := operation.(*ast.ModifyColumnOperation)
+	return ok && notnullfill.FillsNullRows(modify)
+}
+
+// judgeNullFillPair judges the two statements a filled SET NOT NULL renders
+// as, each for what it does (stokaro/ptah#3660).
+//
+// Read by its words alone, the fill is a DO block that matches no rule and
+// reads safe, while it rewrites every NULL row of the column. The SET NOT NULL
+// after it reads as a statement that can fail on a NULL row, and the fill
+// before it has just removed those rows. So the fill is a warning for the rows
+// it rewrites, and the SET NOT NULL is safe. A NULL another session writes
+// between the two still fails it, the window every fill-then-constrain
+// migration has; the report judges the plan's statements, not concurrent
+// writers.
+//
+// The fill is the one DO block the PostgreSQL renderer writes for a column
+// modification, which is how it is told from the other statements here;
+// [notnullfill.FillsNullRows] decided that the operation writes it.
+func judgeNullFillPair(assessment *StatementAssessment, statement string) {
+	words := rawWords(sqlutil.StripCommentsForDialect(statement, platform.Postgres))
+	switch {
+	case hasWordPrefix(words, "DO"):
+		assessment.Severity = Warning
+		assessment.Reason = "UPDATE rewrites the column's NULL rows with its declared default before SET NOT NULL"
+	case hasWordSequence(words, "SET", "NOT", "NULL"):
+		assessment.Severity = Safe
+		assessment.Reason = "SET NOT NULL follows the UPDATE that fills the column's NULL rows"
+	}
 }
 
 // AssessSQL returns a best-effort classification for one rendered SQL

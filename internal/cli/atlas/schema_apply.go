@@ -384,6 +384,27 @@ default ptah-compat policy retains Ptah's complete plan, lint, and lock
 capabilities.`
 }
 
+// withAtlasSchemaApplyPolicy sets the fields of runtime that the compatibility
+// policy decides, and answers the result.
+//
+// A schema file written for another tool must not be refused over a name this
+// parser does not model, so unknown HCL names are ignored on the full surface.
+// Strict mode refuses them, plans SET NOT NULL without the fill from a
+// column's declared default as Atlas CE does, and refuses content the Community
+// Edition cannot represent.
+func withAtlasSchemaApplyPolicy(
+	runtime atlasschema.ApplyRuntimeOptions,
+	policy atlascompatpolicy.Policy,
+) atlasschema.ApplyRuntimeOptions {
+	runtime.IgnoreUnknownHCLNames = policy.IgnoreUnknownHCLNames()
+	runtime.OmitNullBackfill = !policy.FillsNullRowsWithDefault()
+	runtime.ValidateDesiredSchema = policy.ValidateDesiredSchema
+	runtime.ValidateCurrentSchema = policy.ValidateInspectedSchema
+	runtime.ValidateLiveObject = atlasLiveSchemaObjectValidator(policy)
+	runtime.ValidateLocalSchemaSource = policy.ValidateLocalSchemaSource
+	return runtime
+}
+
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -559,7 +580,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, withAtlasSchemaApplyPolicy(atlasschema.ApplyRuntimeOptions{
 		DevURL:      opts.devURL,
 		ToURLs:      opts.toURLs,
 		Exclude:     opts.exclude,
@@ -572,17 +593,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		PreparedTo:  preparedTo,
 		Diagnostics: cmd.ErrOrStderr(),
 
-		// Atlas-compatible surface: a schema file written for another tool
-		// must not be refused over a name this parser does not model.
-		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
-		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
-		ValidateCurrentSchema:     opts.policy.ValidateInspectedSchema,
-		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
-		ValidateMigrationSource:   migrationSourceValidator,
-		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
-		Vars:                      schemaVars,
-		DevServerDisposable:       opts.devServerDisposable,
-	})
+		ValidateMigrationSource: migrationSourceValidator,
+		Vars:                    schemaVars,
+		DevServerDisposable:     opts.devServerDisposable,
+	}, opts.policy))
 	if err != nil {
 		// The pinned community binary v1.3.0 reports the HCL diagnostic itself
 		// for this command. The loader's two context wrappers are useful on the
