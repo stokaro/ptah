@@ -3351,6 +3351,7 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 }
 
 func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
+	start := p.current.Start
 	value := p.current.Value
 	p.advance()
 
@@ -3361,18 +3362,19 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 		return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 	}
 
+	// A function may be schema-qualified: pg_catalog.now(), public.nextval(...).
+	for p.current.MatchOperatorValue(".") {
+		p.advance()
+		part, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected function name after '.' in default: %w", err)
+		}
+		value += "." + part
+	}
+
 	// Check if it's a function call
 	if p.current.Type == lexer.TokenOperator && p.current.Value == "(" {
-		// Parse function call
-		p.advance()
-		p.skipWhitespace()
-
-		// Consume closing parenthesis
-		if err := p.expect(lexer.TokenOperator, ")"); err != nil {
-			return nil, err
-		}
-
-		return &ast.DefaultValue{Expression: value + "()"}, nil
+		return p.parseDefaultFunctionCall(start)
 	}
 
 	// Handle MySQL/PostgreSQL functions that can be used without parentheses
@@ -3400,6 +3402,38 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 
 	// Regular identifier/keyword
 	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
+}
+
+// parseDefaultFunctionCall reads a function call in a default, from the name
+// that starts at start through the parenthesis that closes its arguments, and
+// any casts after it.
+//
+// The arguments are kept as written. A call reached with any argument --
+// nextval('t_id_seq'::regclass), which pg_dump writes for every serial
+// column, or lower('X') -- was refused when only an empty argument list was
+// read (stokaro/ptah#3611).
+func (p *Parser) parseDefaultFunctionCall(start int) (*ast.DefaultValue, error) {
+	open := p.current.Start
+	depth := 0
+	for {
+		switch {
+		case p.isAtEnd():
+			return nil, fmt.Errorf("unterminated argument list in default at position %d", open)
+		case p.current.MatchOperatorValue("("):
+			depth++
+		case p.current.MatchOperatorValue(")"):
+			depth--
+		}
+		end := p.current.End
+		p.advance()
+		if depth == 0 {
+			casts, err := p.parsePostgresCasts()
+			if err != nil {
+				return nil, err
+			}
+			return &ast.DefaultValue{Expression: strings.TrimSpace(p.input[start:end]) + casts}, nil
+		}
+	}
 }
 
 func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
