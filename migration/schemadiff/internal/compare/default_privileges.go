@@ -1,12 +1,14 @@
 package compare
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgprivilege"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -107,21 +109,9 @@ func DefaultPrivilegesWithSemantics(
 		}
 	}
 
-	for key, ref := range declared {
-		current, exists := described[key]
-		if !exists {
-			diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, ref)
-			continue
-		}
-		if ref.WithOption && !current.WithOption {
-			diff.DefaultPrivilegeOptionsAdded = append(diff.DefaultPrivilegeOptionsAdded, ref)
-		}
-		if !ref.WithOption && current.WithOption {
-			diff.DefaultPrivilegeOptionsRevoked = append(diff.DefaultPrivilegeOptionsRevoked, current)
-		}
-	}
+	planDefaultPrivilegeAdditions(declared, described, diff)
 	for key, ref := range removable {
-		if _, stillDeclared := declared[key]; !stillDeclared {
+		if !declaredDefaultPrivilege(key, declared) {
 			diff.DefaultPrivilegesRemoved = append(diff.DefaultPrivilegesRemoved, ref)
 		}
 	}
@@ -133,6 +123,80 @@ func DefaultPrivilegesWithSemantics(
 	sortDefaultPrivilegeRefs(diff.DefaultPrivilegesRemoved)
 	sortDefaultPrivilegeRefs(diff.DefaultPrivilegeOptionsAdded)
 	sortDefaultPrivilegeRefs(diff.DefaultPrivilegeOptionsRevoked)
+}
+
+// planDefaultPrivilegeAdditions plans each declared default privilege the
+// database does not hold, and the grant options the two disagree on.
+func planDefaultPrivilegeAdditions(
+	declared, described map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+	diff *difftypes.SchemaDiff,
+) {
+	for key, ref := range declared {
+		held, exists := heldDefaultPrivileges(key, described)
+		if !exists {
+			diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, ref)
+			continue
+		}
+		if ref.WithOption && slices.ContainsFunc(held, func(held difftypes.DefaultPrivilegeRef) bool { return !held.WithOption }) {
+			diff.DefaultPrivilegeOptionsAdded = append(diff.DefaultPrivilegeOptionsAdded, ref)
+		}
+		if ref.WithOption {
+			continue
+		}
+		for _, current := range held {
+			if current.WithOption {
+				diff.DefaultPrivilegeOptionsRevoked = append(diff.DefaultPrivilegeOptionsRevoked, current)
+			}
+		}
+	}
+}
+
+// heldDefaultPrivileges answers whether the database holds the default
+// privilege key names, and with which rows. ALL is held when a row says ALL,
+// or when the database reports every privilege ALL names on the object class
+// on every supported release, one row each; see [heldPrivileges] for why
+// MAINTAIN is not required. Without this a declared ALL matched no row, so the
+// comparison granted ALL and revoked each row it stood for on every run
+// (stokaro/ptah#3579).
+func heldDefaultPrivileges(
+	key defaultPrivilegeIdentity,
+	described map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+) ([]difftypes.DefaultPrivilegeRef, bool) {
+	if ref, exists := described[key]; exists {
+		return []difftypes.DefaultPrivilegeRef{ref}, true
+	}
+	if key.privilege != allPrivilege {
+		return nil, false
+	}
+	portable := pgprivilege.Portable(key.object.objectType)
+	if len(portable) == 0 {
+		return nil, false
+	}
+	held := make([]difftypes.DefaultPrivilegeRef, 0, len(portable))
+	for _, privilege := range portable {
+		ref, exists := described[defaultPrivilegeIdentity{object: key.object, privilege: privilege}]
+		if !exists {
+			return nil, false
+		}
+		held = append(held, ref)
+	}
+	return held, true
+}
+
+// declaredDefaultPrivilege answers whether the declaration grants the default
+// privilege key names: by its own name, or by an ALL on the same object that
+// names it.
+func declaredDefaultPrivilege(
+	key defaultPrivilegeIdentity,
+	declared map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+) bool {
+	if _, exists := declared[key]; exists {
+		return true
+	}
+	if _, exists := declared[defaultPrivilegeIdentity{object: key.object, privilege: allPrivilege}]; !exists {
+		return false
+	}
+	return slices.Contains(pgprivilege.All(key.object.objectType), key.privilege)
 }
 
 // defaultPrivilegeRefsFromDeclaration explodes one declaration into the
