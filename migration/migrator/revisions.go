@@ -2821,6 +2821,10 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
+	if err := m.refuseRespelledRevisions(existing); err != nil {
+		_ = tx.Rollback()
+		return AtlasRevisionSetResult{}, err
+	}
 	retired := m.retiredAtlasRevisionVersions()
 	exactRemoved, err := m.unownedExactAtlasRevisionsAbove(existing, setBoundary(migrations))
 	if err != nil {

@@ -536,8 +536,8 @@
         "/migrate-from/atlas/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 6674,
-      "sourceBytes": 46310
+      "visibleWords": 7019,
+      "sourceBytes": 48506
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
@@ -6858,8 +6858,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5289,
-      "sourceBytes": 36902
+      "visibleWords": 5433,
+      "sourceBytes": 38331
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

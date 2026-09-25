@@ -130,6 +130,7 @@ own measurement conditions.
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
+| [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 
 ## A `--config` selection naming more than one file
 
@@ -781,6 +782,41 @@ that nothing reaches the database, and the migrator's own tests pin the same
 refusal for a pair of up and down files spelled apart.
 
 **Tracking.** [`stokaro/ptah#3532`](https://github.com/stokaro/ptah/issues/3532)
+
+## A revision spelled apart from its file
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` refuses a history whose revision row spells
+a migration file's version another way, such as the row `1` for `001_a.sql`,
+and prints the statements that respell the rows. The pinned community binary
+v1.3.0 reads the same history by comparing versions as text.
+
+Measured on PostgreSQL 18 on 2026-09-25. The revision rows were `1` and `2`, and
+the directory spelled `001_a.sql`, `002_b.sql` and a new `003_c.sql`:
+
+| | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate status` | exit `0`, `Migration Status: OK`, current version `2`, no pending files | exit `1`, names the rows and prints one `UPDATE` per row |
+| `migrate apply` | exit `0`, `No migration files to execute` | exit `1`, the same refusal |
+| `003_c.sql` afterwards | never ran | never ran |
+
+That binary sorts `003` below the recorded `2` as text, so it reads the new file
+as applied and never runs it. Ptah refuses instead, because the readers of this
+history disagree about what ran: to a reader that compares numbers, the row `1`
+is the file `001_a.sql`, and to one that compares text it is not. A write that
+addresses the row by the file's spelling misses it, so a rollback would run the
+down migration and leave the row behind. Both binaries record a version as the
+file name spells it, so neither writes this history; it comes from a table
+written some other way, such as by hand. Running the printed statements gives
+every row its file's spelling, and both binaries then agree.
+
+`TestCompatMigrateApply_RevisionSpelledApartFromItsFileRefuses` pins the refusal
+and that `003_c.sql` does not run. The migrator's tests pin the same refusal for
+status, apply, rollback, checksum verification and `migrate set`, and live tests
+run the printed statements on PostgreSQL, MySQL and ClickHouse.
+
+**Tracking.** [`stokaro/ptah#3550`](https://github.com/stokaro/ptah/issues/3550)
 
 ## Not on this page
 

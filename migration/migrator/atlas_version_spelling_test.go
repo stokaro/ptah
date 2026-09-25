@@ -1,6 +1,7 @@
 package migrator_test
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -175,27 +176,191 @@ func TestAtlasVersionSpelling_NativeRowWithoutAFileKeepsItsNumber(t *testing.T) 
 	c.Assert(missing.RevisionKey, qt.Equals, "10")
 }
 
-// TestAtlasVersionSpelling_HistoryWithoutZerosIsNotReapplied covers a history
-// whose rows read 1, 2, 10 against a directory that spells 001, 002, 010. No
-// row names a file under its own key, and the apply must still
-// not run the migrations a second time: each one would fail on a table it
-// created, or, for a statement that can run twice, succeed twice.
-func TestAtlasVersionSpelling_HistoryWithoutZerosIsNotReapplied(t *testing.T) {
-	c := qt.New(t)
+// unspelledHistory applies unspelledAtlasDirectory to an Atlas-format table,
+// which records the rows 1, 2 and 10 for the migrations spelledAtlasDirectory
+// names 001, 002 and 010.
+func unspelledHistory(c *qt.C) *dbschema.DatabaseConnection {
+	c.Helper()
 	conn := openSpellingDatabase(c)
 	c.Assert(
 		newSpellingMigrator(c, conn, unspelledAtlasDirectory(), migrator.RevisionTableFormatAtlas).MigrateUp(c.Context()),
 		qt.IsNil,
 	)
 	c.Assert(storedAtlasVersions(c, conn), qt.DeepEquals, []string{"1", "10", "2"})
+	return conn
+}
 
+// spellingTables lists the tables the spelling fixtures create, so a test can
+// see whether a refused command ran any of their migrations.
+func spellingTables(c *qt.C, conn *dbschema.DatabaseConnection) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(c.Context(),
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'spelled_%' ORDER BY name")
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = rows.Close() }()
+	var tables []string
+	for rows.Next() {
+		var table string
+		c.Assert(rows.Scan(&table), qt.IsNil)
+		tables = append(tables, table)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return tables
+}
+
+// TestAtlasVersionSpelling_RespelledHistoryIsRefused covers a history whose
+// rows read 1, 2, 10 against a directory that spells 001, 002, 010. Atlas
+// compares versions as text, so to it no row names a file, while the numbers
+// make each row one of the files. Every command refuses the history rather
+// than answer from one of the two readings: status would otherwise report each
+// row as missing and its file as pending, and a rollback would run the down
+// migration and leave the row behind, because it deletes the row by the
+// file's spelling.
+func TestAtlasVersionSpelling_RespelledHistoryIsRefused(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(context.Context, *migrator.Migrator) error
+	}{
+		{name: "status", run: func(ctx context.Context, m *migrator.Migrator) error {
+			_, err := m.GetMigrationStatus(ctx)
+			return err
+		}},
+		{name: "up", run: func(ctx context.Context, m *migrator.Migrator) error {
+			return m.MigrateUp(ctx)
+		}},
+		{name: "down", run: func(ctx context.Context, m *migrator.Migrator) error {
+			return m.MigrateDown(ctx)
+		}},
+		{name: "down to zero", run: func(ctx context.Context, m *migrator.Migrator) error {
+			return m.MigrateDownTo(ctx, 0)
+		}},
+		{name: "verify checksums", run: func(ctx context.Context, m *migrator.Migrator) error {
+			_, err := m.VerifyAppliedChecksums(ctx)
+			return err
+		}},
+		{name: "set", run: func(ctx context.Context, m *migrator.Migrator) error {
+			_, err := m.SetRevision(ctx, 2)
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := unspelledHistory(c)
+			m := newSpellingMigrator(c, conn, spelledAtlasDirectory(), migrator.RevisionTableFormatAtlas)
+
+			err := test.run(c.Context(), m)
+
+			var spelling *migrator.RevisionSpellingError
+			c.Assert(err, qt.ErrorAs, &spelling)
+			c.Assert(spelling.Rows, qt.DeepEquals, []migrator.RevisionSpelling{
+				{Version: 1, Recorded: "1", File: "001"},
+				{Version: 2, Recorded: "2", File: "002"},
+				{Version: 10, Recorded: "10", File: "010"},
+			})
+			c.Assert(storedAtlasVersions(c, conn), qt.DeepEquals, []string{"1", "10", "2"})
+			c.Assert(spellingTables(c, conn), qt.DeepEquals, []string{"spelled_a", "spelled_b", "spelled_c"})
+		})
+	}
+}
+
+// TestAtlasVersionSpelling_RefusalCarriesTheStatementsThatRespell runs the
+// statements the refusal prints and then the commands it refused. After them
+// the rows spell their files, status has nothing pending or missing, and a
+// rollback removes the row it rolled back.
+func TestAtlasVersionSpelling_RefusalCarriesTheStatementsThatRespell(t *testing.T) {
+	c := qt.New(t)
+	conn := unspelledHistory(c)
 	m := newSpellingMigrator(c, conn, spelledAtlasDirectory(), migrator.RevisionTableFormatAtlas)
-	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
 
-	c.Assert(storedAtlasVersions(c, conn), qt.DeepEquals, []string{"1", "10", "2"})
+	_, err := m.GetMigrationStatus(c.Context())
+	var spelling *migrator.RevisionSpellingError
+	c.Assert(err, qt.ErrorAs, &spelling)
+	c.Assert(spelling.Table, qt.Equals, `"atlas_schema_revisions"`)
+	c.Assert(spelling.Statements, qt.DeepEquals, []string{
+		`UPDATE "atlas_schema_revisions" SET version = '001' WHERE version = '1'`,
+		`UPDATE "atlas_schema_revisions" SET version = '002' WHERE version = '2'`,
+		`UPDATE "atlas_schema_revisions" SET version = '010' WHERE version = '10'`,
+	})
+	for _, statement := range spelling.Statements {
+		_, err := conn.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil)
+	}
+
 	status, err := m.GetMigrationStatus(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.PendingMigrations, qt.HasLen, 0)
+	c.Assert(status.MissingMigrations, qt.HasLen, 0)
+	c.Assert(m.MigrateDown(c.Context()), qt.IsNil)
+	c.Assert(storedAtlasVersions(c, conn), qt.DeepEquals, []string{"001", "002"})
+	c.Assert(spellingTables(c, conn), qt.DeepEquals, []string{"spelled_a", "spelled_b"})
+}
+
+// TestAtlasVersionSpelling_RowWithoutAFileIsNotRespelled is the control for
+// the refusal's reach: a row the directory has no file for spells nothing, so
+// the refusal names only the rows a file carries the number of.
+func TestAtlasVersionSpelling_RowWithoutAFileIsNotRespelled(t *testing.T) {
+	c := qt.New(t)
+	conn := unspelledHistory(c)
+	shorter := spelledAtlasDirectory()
+	delete(shorter, "010_c.up.sql")
+	delete(shorter, "010_c.down.sql")
+	m := newSpellingMigrator(c, conn, shorter, migrator.RevisionTableFormatAtlas)
+
+	_, err := m.GetRevisions(c.Context())
+
+	var spelling *migrator.RevisionSpellingError
+	c.Assert(err, qt.ErrorAs, &spelling)
+	c.Assert(spelling.Rows, qt.DeepEquals, []migrator.RevisionSpelling{
+		{Version: 1, Recorded: "1", File: "001"},
+		{Version: 2, Recorded: "2", File: "002"},
+	})
+}
+
+func TestRevisionSpellingError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *migrator.RevisionSpellingError
+		want string
+	}{
+		{
+			name: "one row",
+			err: &migrator.RevisionSpellingError{
+				Table:      `"atlas_schema_revisions"`,
+				Rows:       []migrator.RevisionSpelling{{Version: 1, Recorded: "1", File: "001"}},
+				Statements: []string{`UPDATE "atlas_schema_revisions" SET version = '001' WHERE version = '1'`},
+			},
+			want: `revision table "atlas_schema_revisions" records 1 version under another spelling than its ` +
+				`migration file: 1 for 001; Atlas compares versions as text, so each of these rows names a ` +
+				`different revision than its file does. Respell the rows, then run the command again:` + "\n" +
+				`UPDATE "atlas_schema_revisions" SET version = '001' WHERE version = '1';`,
+		},
+		{
+			name: "several rows",
+			err: &migrator.RevisionSpellingError{
+				Table: `"atlas_schema_revisions"`,
+				Rows: []migrator.RevisionSpelling{
+					{Version: 1, Recorded: "1", File: "001"},
+					{Version: 2, Recorded: "2", File: "002"},
+				},
+				Statements: []string{
+					`UPDATE "atlas_schema_revisions" SET version = '001' WHERE version = '1'`,
+					`UPDATE "atlas_schema_revisions" SET version = '002' WHERE version = '2'`,
+				},
+			},
+			want: `revision table "atlas_schema_revisions" records 2 versions under another spelling than their ` +
+				`migration files: 1 for 001 and 1 more; Atlas compares versions as text, so each of these rows ` +
+				`names a different revision than its file does. Respell the rows, then run the command again:` + "\n" +
+				`UPDATE "atlas_schema_revisions" SET version = '001' WHERE version = '1';` + "\n" +
+				`UPDATE "atlas_schema_revisions" SET version = '002' WHERE version = '2';`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.err.Error(), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestAtlasVersionSpelling_RepeatableSharesItsNumber is the control for the

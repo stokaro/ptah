@@ -556,6 +556,28 @@ That checksum boundary does not change the exact version-token match and never
 causes an already-applied migration to be treated as pending.
 :::
 
+:::caution[A revision row that spells its file's version another way]
+An Atlas-format revision row records a version as the file name spells it, so
+`001_init.sql` is the row `001`. A row that spells the same number another way,
+such as `1`, names a different revision to Atlas, which compares versions as
+text, and the same migration to a reader that compares numbers. Every command
+that reads the revision table refuses such a history, native and
+`ptah-compat` alike, and prints one statement per row that gives it the
+file's spelling:
+
+```text illustration
+revision table "atlas_schema_revisions"."atlas_schema_revisions" records 2 versions under another spelling than their migration files: 1 for 001 and 1 more; Atlas compares versions as text, so each of these rows names a different revision than its file does. Respell the rows, then run the command again:
+UPDATE "atlas_schema_revisions"."atlas_schema_revisions" SET version = '001' WHERE version = '1';
+UPDATE "atlas_schema_revisions"."atlas_schema_revisions" SET version = '002' WHERE version = '2';
+```
+
+Ptah does not run the statements. On ClickHouse, where the version is the
+table's primary key, each row takes an `INSERT` of the respelled row and a
+`DELETE` of the old one instead of an `UPDATE`.
+[Compatibility differences](../../atlas/retained-divergences/#a-revision-spelled-apart-from-its-file)
+has what the pinned community binary does with the same history.
+:::
+
 ## Replay on a dev database
 
 Hashes prove the files are unchanged, not that the SQL executes. Add
