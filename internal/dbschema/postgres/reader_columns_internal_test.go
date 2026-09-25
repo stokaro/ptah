@@ -43,6 +43,9 @@ type pgColumnCatalog struct {
 	// and a reader that drops this hands the comparator a name both of them
 	// answer to.
 	domainSchema string
+	// udtSchema is information_schema.columns.udt_schema, the schema holding
+	// the column's type.
+	udtSchema string
 }
 
 // domainColumnCatalog is CREATE DOMAIN positive_int AS integer CHECK (VALUE > 0)
@@ -56,6 +59,7 @@ func domainColumnCatalog() pgColumnCatalog {
 		formattedType: "positive_int",
 		domainName:    "positive_int",
 		domainSchema:  "public",
+		udtSchema:     "pg_catalog",
 	}
 }
 
@@ -121,14 +125,14 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 			"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
 			"numeric_precision", "numeric_scale", "datetime_precision", "collation_name", "ordinal_position",
 			"generated_kind", "generated_expression", "identity_kind",
-			"column_comment", "not_null_constraint_name", "owned_sequence_name",
+			"column_comment", "not_null_constraint_name", "owned_sequence_name", "udt_schema",
 		},
 		Rows: [][]driver.Value{{
 			catalog.tableName, catalog.columnName, catalog.dataType, catalog.udtName, formattedType,
 			domainName, domainSchema, "YES", nil, nil,
 			nil, nil, nil, "", int64(1),
 			"", "", "",
-			"", "", "",
+			"", "", "", catalog.udtSchema,
 		}},
 	}, nil
 }
@@ -253,4 +257,24 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 			c.Assert(columnsByTable["t"][0].DataType, qt.Equals, "integer")
 		})
 	}
+}
+
+// The schema holding a user-defined column's type is carried, because its
+// bare name, udt_name, is all the rest of the row says about it: app.mood and
+// public.mood read the same without it (stokaro/ptah#3620).
+func TestReadColumnsForSchema_CarriesTheTypesSchema(t *testing.T) {
+	c := qt.New(t)
+	catalog := pgColumnCatalog{
+		tableName: "t", columnName: "m", dataType: "USER-DEFINED", udtName: "mood", udtSchema: "app",
+	}
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return serveColumnQuery(catalog, query)
+	})
+
+	columnsByTable, err := NewPostgreSQLReader(db.SQL, "public").readColumnsForSchema(t.Context(), "public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(columnsByTable["t"], qt.HasLen, 1)
+	c.Assert(columnsByTable["t"][0].UDTName, qt.Equals, "mood")
+	c.Assert(columnsByTable["t"][0].UDTSchema, qt.Equals, "app")
 }

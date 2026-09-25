@@ -5641,8 +5641,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 2339,
-      "sourceBytes": 18054
+      "visibleWords": 2401,
+      "sourceBytes": 18385
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
