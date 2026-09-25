@@ -1346,7 +1346,7 @@
               "type": "string"
             },
             "to": {
-              "description": "Comma-separated roles.",
+              "description": "Comma-separated roles; omitted means PUBLIC on PostgreSQL.",
               "type": "string"
             },
             "using": {

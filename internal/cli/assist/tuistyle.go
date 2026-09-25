@@ -388,3 +388,13 @@ func isListItem(line string) bool {
 	return digits > 0 && digits < len(trimmed) &&
 		(trimmed[digits] == '.' || trimmed[digits] == ')')
 }
+
+// approvalText lays out what an approval asks, for the terminal it is shown on.
+//
+// A person decides on exactly this text -- the patch, its digests, and the
+// sentence saying what the approval covers -- so none of it may be cut. It is
+// wrapped to the terminal's width, and a token longer than a line, a digest on
+// a narrow terminal, is broken across lines rather than having its end dropped.
+func approvalText(message string, width int) string {
+	return lipgloss.Wrap(message, answerWidth(width), " ")
+}

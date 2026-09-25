@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -14,6 +13,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/migrator"
@@ -109,10 +109,6 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	return rehearseStatementsOnDev(ctx, p.conn, devConn, p.current, p.txMode, statements)
 }
 
-// devCleanupTimeout bounds the post-rehearsal cleanup so a canceled command
-// still returns the dev database empty instead of leaving the rehearsal behind.
-const devCleanupTimeout = 30 * time.Second
-
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev
 // database, on every exit path.
 //
@@ -129,8 +125,10 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 	if devConn == nil {
 		return
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), devCleanupTimeout)
-	defer cancel()
+	// A canceled command still returns the dev database empty instead of
+	// leaving the rehearsal behind; see [devclean.CleanupContext].
+	cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
+	defer release()
 	devConn.SchemaWriter().SetDryRun(false)
 	if err := devConn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
 		slog.Warn("failed to clean the dev database after the rehearsal; it may still hold rehearsed objects",

@@ -54,7 +54,11 @@ rehearses its plan on it before touching the target, and Atlas-compatible verbs
 use it for planning, linting, and rollback verification. Ptah cleans the replay
 realm before migration execution, after a failed replay, and after a successful
 replay. Commands that inspect the replayed state do so between execution and
-the final cleanup on the same pinned database session.
+the final cleanup on the same pinned database session. No fixed time limit
+applies to a cleanup: it runs as long as emptying the realm takes, and that
+grows with the number of objects and the round trip to the server. After an
+interrupt, the cleanup has 30 seconds to finish; a second interrupt stops the
+process at once.
 
 Everything a dev database runs stays inside it. Where a schema names a database
 rather than a namespace — MySQL, MariaDB, and ClickHouse — a plan carrying the

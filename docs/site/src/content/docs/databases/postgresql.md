@@ -378,6 +378,16 @@ table that is enabled again without it also gets `NO FORCE`. A policy whose
 kind changes is dropped and created again, because PostgreSQL cannot alter a
 policy's kind in place.
 
+A policy with no `TO` clause applies to `PUBLIC`, and the catalog reports it
+that way, so an omitted `TO`, `TO PUBLIC` and `TO public` compare as one policy.
+The comparison reads the role list as a set: the order of the roles and the
+spacing between them do not count, and a list that names `PUBLIC` beside other
+roles is `PUBLIC`, since every role is a member of it. A declaration that names
+a role where the database has `PUBLIC`, or the other way round, is still a
+change. Ptah renders the clause you wrote, so a policy declared without `TO`
+keeps rendering without one. CockroachDB and YugabyteDB report roles the same
+way.
+
 Which table a policy belongs to is decided under the target's identifier rules
 rather than by spelling, so a policy declared on `orders` and a table created
 as `public.orders` are one table and the enablement is emitted once. Matching

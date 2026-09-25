@@ -3382,8 +3382,12 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 				WHEN 'd' THEN 'DELETE'
 				WHEN '*' THEN 'ALL'
 			END AS policy_for,
+			-- Role 0 is PUBLIC, which has no pg_roles row. A list that names it
+			-- applies to everyone whatever else it names. PostgreSQL stores
+			-- such a list as {0} alone; CockroachDB 26.3 keeps {0, app}, and
+			-- the join below would read that back as app alone.
 			CASE
-				WHEN array_length(pol.polroles, 1) = 1 AND 0 = ANY(pol.polroles) THEN 'PUBLIC'
+				WHEN 0 = ANY(pol.polroles) THEN 'PUBLIC'
 				ELSE array_to_string(ARRAY(
 					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
 				), ',')
