@@ -112,14 +112,14 @@ CREATE POLICY docs_role ON %[1]s.docs TO %[2]s USING (true);
 }
 
 // TestRoleCase_LiveGrantNamesTheRoleTheServerHolds applies a table grant to the
-// role. CockroachDB is absent: reading a table grant back fails there on a
-// grantor the engine does not report (stokaro/ptah#3589).
+// role.
 func TestRoleCase_LiveGrantNamesTheRoleTheServerHolds(t *testing.T) {
 	engines := []struct {
 		name   string
 		engine dbtarget.Engine
 	}{
 		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "CockroachDB", engine: dbtarget.CockroachDB},
 		{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
 	}
 	for _, engine := range engines {
