@@ -228,6 +228,7 @@ func privilegeRepresented(removal removedLine, grants []schemamodel.Grant) bool 
 		OnTable:    removal.values["on_table"],
 		OnSchema:   removal.values["on_schema"],
 		OnSequence: removal.values["on_sequence"],
+		Columns:    splitAnnotationList(removal.values["columns"]),
 	}
 	for _, key := range []string{"on_function", "on_procedure"} {
 		if name, arguments, ok := strings.Cut(removal.values[key], "("); ok {

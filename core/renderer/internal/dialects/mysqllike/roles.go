@@ -7,7 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/renderer/internal/dialects/internal/routinegrant"
+	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/renderdiag"
 )
 
@@ -90,7 +90,10 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 
 // renderGrantPrivilege renders GRANT.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	if err := routinegrant.Refusal(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+	if err := grantrefusal.Routine(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns(r.dialect, "GRANT", node.ObjectName, node.Columns); err != nil {
 		return err
 	}
 	if !r.caps.Has(capability.RoleManagement) {
@@ -126,7 +129,10 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 }
 
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	if err := routinegrant.Refusal(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+	if err := grantrefusal.Routine(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Columns(r.dialect, "REVOKE", node.ObjectName, node.Columns); err != nil {
 		return err
 	}
 	if !r.caps.Has(capability.RoleManagement) {

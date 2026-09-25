@@ -208,6 +208,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Function.Strict", Disposition: DDL},
 	{Field: "schemamodel.Function.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.Function.Volatility", Disposition: DDL},
+	{Field: "schemamodel.Grant.Columns", Disposition: DDL},
 	{Field: "schemamodel.Grant.Comment", Disposition: DDL},
 	{Field: "schemamodel.Grant.Dialects", Disposition: DDL},
 	{

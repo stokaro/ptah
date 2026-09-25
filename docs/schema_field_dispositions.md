@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-377 fields are reachable from the desired schema, and each one carries
+378 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 315 | reaches rendered SQL on at least one target |
+| `ddl` | 316 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -262,6 +262,7 @@ None.
 | `schemamodel.Function.Strict` | `ddl` | — |
 | `schemamodel.Function.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Function.Volatility` | `ddl` | — |
+| `schemamodel.Grant.Columns` | `ddl` | — |
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
 | `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |

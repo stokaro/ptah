@@ -658,16 +658,23 @@ func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 			default:
 				objectName, objectSchema = splitTableIdentity(objectName)
 			}
-			out = append(out, catalog.Grant{
-				Role:       grant.Role,
-				Privilege:  privilege,
-				ObjectType: objectType,
-				Schema:     objectSchema,
-				ObjectName: objectName,
-				Arguments:  arguments,
-				WithOption: grant.WithOption,
-				GrantedBy:  grant.GrantedBy,
-			})
+			columns := grant.Columns
+			if len(columns) == 0 {
+				columns = []string{""}
+			}
+			for _, column := range columns {
+				out = append(out, catalog.Grant{
+					Role:       grant.Role,
+					Privilege:  privilege,
+					ObjectType: objectType,
+					Schema:     objectSchema,
+					ObjectName: objectName,
+					Arguments:  arguments,
+					Column:     column,
+					WithOption: grant.WithOption,
+					GrantedBy:  grant.GrantedBy,
+				})
+			}
 		}
 	}
 	if platform.IsPostgresFamily(dialect) {

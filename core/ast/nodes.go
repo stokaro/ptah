@@ -3385,6 +3385,9 @@ type GrantPrivilegeNode struct {
 	// includes them, because PostgreSQL overloads a name by its argument
 	// types. Empty for every other target.
 	Arguments string
+	// Columns limits every privilege of the node to these columns of a table
+	// target: GRANT UPDATE (a, b) ON t. Empty means the whole object.
+	Columns []string
 	// WithOption controls WITH GRANT OPTION.
 	WithOption bool
 	// Comment is an optional comment for the grant operation.
@@ -3404,6 +3407,13 @@ func NewGrantPrivilege(role, objectType, objectName string, privileges []string)
 // SetArguments sets a routine target's argument types.
 func (n *GrantPrivilegeNode) SetArguments(arguments string) *GrantPrivilegeNode {
 	n.Arguments = arguments
+	return n
+}
+
+// SetColumns limits the node's privileges to columns of its table target and
+// returns the node for chaining.
+func (n *GrantPrivilegeNode) SetColumns(columns []string) *GrantPrivilegeNode {
+	n.Columns = columns
 	return n
 }
 
@@ -3436,6 +3446,9 @@ type RevokePrivilegeNode struct {
 	// Arguments are a routine target's argument types; see
 	// [GrantPrivilegeNode.Arguments].
 	Arguments string
+	// Columns limits every privilege of the node to these columns of a table
+	// target; see [GrantPrivilegeNode.Columns].
+	Columns []string
 	// GrantOptionFor controls REVOKE GRANT OPTION FOR.
 	GrantOptionFor bool
 	// Comment is an optional comment for the revoke operation.
@@ -3455,6 +3468,13 @@ func NewRevokePrivilege(role, objectType, objectName string, privileges []string
 // SetArguments sets a routine target's argument types.
 func (n *RevokePrivilegeNode) SetArguments(arguments string) *RevokePrivilegeNode {
 	n.Arguments = arguments
+	return n
+}
+
+// SetColumns limits the node's privileges to columns of its table target and
+// returns the node for chaining.
+func (n *RevokePrivilegeNode) SetColumns(columns []string) *RevokePrivilegeNode {
+	n.Columns = columns
 	return n
 }
 

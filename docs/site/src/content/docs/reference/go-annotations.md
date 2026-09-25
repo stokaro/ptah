@@ -678,6 +678,7 @@ Declares database grants.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
+| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. `true`/`false`. |
@@ -715,6 +716,7 @@ PRIVILEGES` gives a role on a new table.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
+| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
 | `comment` | No | Comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |

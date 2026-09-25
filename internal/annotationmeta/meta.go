@@ -760,6 +760,8 @@ var directives = []Directive{
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
 				valueString, false, false),
+			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
+				"state,decided_at. PostgreSQL only.", valueList, false, false),
 			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, false),
 			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, false),
 			attr("comment", "Grant comment.", valueString, false, false),
@@ -782,6 +784,8 @@ var directives = []Directive{
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
 				valueString, false, false),
+			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
+				"state,decided_at. PostgreSQL only.", valueList, false, false),
 			attr("comment", "Comment.", valueString, false, false),
 			dialectsAttr(),
 		},

@@ -1714,6 +1714,7 @@ func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 	objectType, objectName, arguments := grantObject(grant)
 	return ast.NewGrantPrivilege(grant.Role, objectType, objectName, grant.Privileges).
 		SetArguments(arguments).
+		SetColumns(grant.Columns).
 		SetWithOption(grant.WithOption).
 		SetComment(grant.Comment)
 }
@@ -1730,6 +1731,7 @@ func FromRevokedGrant(grant schemamodel.Grant) *ast.RevokePrivilegeNode {
 	objectType, objectName, arguments := grantObject(grant)
 	return ast.NewRevokePrivilege(grant.Role, objectType, objectName, grant.Privileges).
 		SetArguments(arguments).
+		SetColumns(grant.Columns).
 		SetComment(grant.Comment)
 }
 
@@ -2273,15 +2275,17 @@ func appendPostTableObjectStatements(
 			return err
 		}
 	}
-	for _, grant := range database.Grants {
-		if err := visit(FromGrant(grant)); err != nil {
+	// Before the grants. The two never name the same privilege -- the schema
+	// reader folds a later GRANT and REVOKE of one into one of the two -- but
+	// a REVOKE of a table privilege also takes it off every column, measured
+	// on PostgreSQL 18, so after a column GRANT it would take that too.
+	for _, revoked := range database.RevokedGrants {
+		if err := visit(FromRevokedGrant(revoked)); err != nil {
 			return err
 		}
 	}
-	// After the grants, which never name the same privilege: the schema reader
-	// folds a later GRANT and REVOKE of one privilege into one of the two.
-	for _, revoked := range database.RevokedGrants {
-		if err := visit(FromRevokedGrant(revoked)); err != nil {
+	for _, grant := range database.Grants {
+		if err := visit(FromGrant(grant)); err != nil {
 			return err
 		}
 	}

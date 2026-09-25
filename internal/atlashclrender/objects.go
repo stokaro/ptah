@@ -531,6 +531,7 @@ func (r *renderer) renderGrants() {
 		r.rawAttr(1, "to", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", target)
 		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
+		r.rawAttr(1, "columns", optionalPrivilegeList(grant.Columns))
 		if grant.WithOption {
 			r.trueAttr(1, "grantable")
 		}
@@ -559,6 +560,7 @@ func (r *renderer) renderRevokedGrants() {
 		r.rawAttr(1, "from", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", r.grantTarget(grant))
 		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
+		r.rawAttr(1, "columns", optionalPrivilegeList(grant.Columns))
 		r.stringAttr(1, "comment", grant.Comment)
 		r.line("}")
 		r.line("")
@@ -598,6 +600,7 @@ func (r *renderer) renderableGrants(grants []schemamodel.Grant, path, noun strin
 			cmp.Compare(a.Role, b.Role),
 			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
 			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
+			cmp.Compare(strings.Join(a.Columns, ","), strings.Join(b.Columns, ",")),
 		)
 	})
 	return renderable

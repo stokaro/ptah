@@ -807,6 +807,10 @@
         "attributes": {
           "additionalProperties": false,
           "properties": {
+            "columns": {
+              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL only.",
+              "type": "string"
+            },
             "comment": {
               "description": "Grant comment.",
               "type": "string"
@@ -1220,6 +1224,10 @@
         "attributes": {
           "additionalProperties": false,
           "properties": {
+            "columns": {
+              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL only.",
+              "type": "string"
+            },
             "comment": {
               "description": "Comment.",
               "type": "string"

@@ -3602,6 +3602,10 @@ type GrantRef struct {
 	// identity; empty for every other target.
 	Arguments string `json:"arguments,omitempty"`
 
+	// Column names the column of a table target the privilege is limited to;
+	// empty for a privilege on the whole object.
+	Column string `json:"column,omitempty"`
+
 	// WithOption records whether the grant has WITH GRANT OPTION.
 	WithOption bool `json:"with_option"`
 }

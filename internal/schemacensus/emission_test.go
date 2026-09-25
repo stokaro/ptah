@@ -137,6 +137,7 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
+		"GRANT UPDATE (\"LABEL\")",
 		"GRANT USAGE ON",
 		// A privilege taken away, which creates no object either.
 		"REVOKE INSERT ON",

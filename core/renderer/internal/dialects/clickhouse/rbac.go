@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/renderdiag"
@@ -150,6 +151,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 		r.notSupported("GRANT", node.Role)
 		return nil
 	}
+	if err := grantrefusal.Columns("clickhouse", "GRANT", node.ObjectName, node.Columns); err != nil {
+		return err
+	}
 	parts, err := rbacGrantParts("GRANT", node.Role, node.ObjectType, node.ObjectName, node.Privileges)
 	if err != nil {
 		return err
@@ -173,6 +177,9 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("REVOKE", node.Role)
 		return nil
+	}
+	if err := grantrefusal.Columns("clickhouse", "REVOKE", node.ObjectName, node.Columns); err != nil {
+		return err
 	}
 	parts, err := rbacGrantParts("REVOKE", node.Role, node.ObjectType, node.ObjectName, node.Privileges)
 	if err != nil {

@@ -1010,6 +1010,9 @@ func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
 			grant.OnSequence = dbGrant.QualifiedTarget()
 		default:
 			grant.OnTable = dbGrant.QualifiedTarget()
+			if dbGrant.Column != "" {
+				grant.Columns = []string{dbGrant.Column}
+			}
 		}
 		grant.Canonicalize()
 		grants = append(grants, grant)

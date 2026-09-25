@@ -1756,6 +1756,13 @@ type Grant struct {
 	RoutineArguments string `json:",omitempty"`
 	RoutineKind      string `json:",omitempty"`
 
+	// Columns limits the privileges to these columns of the OnTable target:
+	// GRANT UPDATE (a, b) ON t. Empty means the whole table. A column
+	// privilege and the table privilege of the same name are two privileges,
+	// as they are in the catalog, and a REVOKE of the table privilege takes
+	// the column privileges with it.
+	Columns []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
@@ -1785,6 +1792,14 @@ func (g *Grant) Canonicalize() {
 	g.OnRoutine = strings.TrimSpace(g.OnRoutine)
 	g.RoutineArguments = strings.TrimSpace(g.RoutineArguments)
 	g.RoutineKind = strings.ToUpper(strings.TrimSpace(g.RoutineKind))
+	var columns []string
+	for _, column := range g.Columns {
+		column = strings.TrimSpace(column)
+		if column != "" && !slices.Contains(columns, column) {
+			columns = append(columns, column)
+		}
+	}
+	g.Columns = columns
 	if g.OnRoutine != "" && g.RoutineKind == "" {
 		g.RoutineKind = "FUNCTION"
 	}
@@ -1794,7 +1809,9 @@ func (g *Grant) Canonicalize() {
 // of one schema name the same object. It is not a SQL spelling.
 //
 // The key carries the kind of target and its name as written, so a table and a
-// schema of one name stay apart. A routine's key includes its argument types,
+// schema of one name stay apart. A column grant's key names its columns, and
+// [Grant.ByColumn] splits a grant into keys of one column each. A routine's
+// key includes its argument types,
 // compared without regard to case or spacing; FUNCTION, PROCEDURE and ROUTINE
 // name the same routine and share a key. Names are not resolved against a
 // schema search path, so `users` and `public.users` have different keys; a
@@ -1809,9 +1826,28 @@ func (g Grant) TargetKey() string {
 		arguments := strings.Join(strings.Fields(strings.ToLower(g.RoutineArguments)), " ")
 		arguments = strings.ReplaceAll(arguments, " ,", ",")
 		return "ROUTINE " + strings.TrimSpace(g.OnRoutine) + "(" + arguments + ")"
+	case len(g.Columns) > 0:
+		return "TABLE " + strings.TrimSpace(g.OnTable) + " (" + strings.Join(g.Columns, ", ") + ")"
 	default:
 		return "TABLE " + strings.TrimSpace(g.OnTable)
 	}
+}
+
+// ByColumn returns the grant as one grant per column it names, each naming
+// that column alone, so that two grants can be compared column by column. A
+// grant that names no column is returned as it is. The privilege list is
+// shared with g; the column lists are new.
+func (g Grant) ByColumn() []Grant {
+	if len(g.Columns) == 0 {
+		return []Grant{g}
+	}
+	split := make([]Grant, 0, len(g.Columns))
+	for _, column := range g.Columns {
+		one := g
+		one.Columns = []string{column}
+		split = append(split, one)
+	}
+	return split
 }
 
 // DefaultPrivilege is a PostgreSQL default privilege: the privileges an object

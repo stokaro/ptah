@@ -108,6 +108,7 @@ func Fixtures() []Fixture {
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
 		{Name: "grant-routine", Schema: grantRoutineFixture()},
 		{Name: "revoked-grant", Schema: revokedGrantFixture()},
+		{Name: "grant-columns", Schema: grantColumnsFixture()},
 		{Name: "default-privilege-tables", Schema: defaultPrivilegeTablesFixture()},
 		{Name: "default-privilege-sequences", Schema: defaultPrivilegeSequencesFixture()},
 		{Name: "default-privilege-functions", Schema: defaultPrivilegeFunctionsFixture()},
@@ -1185,6 +1186,19 @@ func grantRoutineFixture() schemamodel.Database {
 		StructName: "G", Role: "app_reader", Privileges: []string{"EXECUTE"},
 		OnRoutine: "do_it", RoutineArguments: "uuid", RoutineKind: "PROCEDURE",
 		Dialects: []string{"postgres"},
+	}}
+	return db
+}
+
+// grantColumnsFixture limits a privilege to one column of a table. Scoped to
+// the PostgreSQL family: the other renderers refuse a column list by name.
+func grantColumnsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"},
+		schemamodel.Field{StructName: "T", FieldName: "Label", Name: "label", Type: "TEXT"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader", Login: true}}
+	db.Grants = []schemamodel.Grant{{
+		StructName: "G", Role: "app_reader", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"label"},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db
 }

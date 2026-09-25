@@ -2039,6 +2039,9 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	if err := setRoutineTarget(&grant, kv, ctx); err != nil {
 		return err
 	}
+	if err := setGrantColumns(&grant, kv, ctx); err != nil {
+		return err
+	}
 	grant.Canonicalize()
 	s.grants = append(s.grants, grant)
 	return nil
@@ -2087,8 +2090,33 @@ func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName s
 	if err := setRoutineTarget(&revoked, kv, ctx); err != nil {
 		return err
 	}
+	if err := setGrantColumns(&revoked, kv, ctx); err != nil {
+		return err
+	}
 	revoked.Canonicalize()
 	s.revokedGrants = append(s.revokedGrants, revoked)
+	return nil
+}
+
+// setGrantColumns reads the columns a grant or revoke is limited to, which
+// only a table target has.
+func setGrantColumns(grant *schemamodel.Grant, kv map[string]string, ctx annotationErrorContext) error {
+	columns := splitCommaList(kv["columns"])
+	if len(columns) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(grant.OnTable) == "" {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "columns",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("columns on %s at %s needs on_table: column privileges apply to a table",
+				ctx.directive, ctx.location),
+		}
+	}
+	grant.Columns = columns
 	return nil
 }
 
