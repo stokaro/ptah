@@ -50,6 +50,29 @@ CREATE POLICY notes_agent ON notes
   WITH CHECK (id = nullif(current_setting('app.id', true), '')::bigint);`,
 	},
 	{
+		// Each expression names its own table. The server resolves the name
+		// against the table the object is on and stores it unqualified, so
+		// the probe has to create its table under the same name
+		// (stokaro/ptah#3654).
+		name: "a CHECK, an index predicate and a policy naming their own table",
+		sql: `CREATE TABLE clients (id bigint PRIMARY KEY, parent_id bigint, n integer NOT NULL,
+  CONSTRAINT clients_n_check CHECK (clients.n > 0));
+CREATE INDEX clients_parent_idx ON clients (parent_id) WHERE clients.parent_id IS NOT NULL;
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY clients_child_read ON clients
+  USING (EXISTS (SELECT 1 FROM clients c2 WHERE c2.parent_id = clients.id));`,
+	},
+	{
+		// The probe table takes the real table's name, and a subquery naming
+		// the real table through its schema must still read the real table:
+		// the server prints it unqualified, and so must the probe.
+		name: "a policy reading its own table through the schema",
+		sql: `CREATE TABLE clients (id bigint PRIMARY KEY, parent_id bigint);
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY clients_parent_read ON clients
+  USING (EXISTS (SELECT 1 FROM public.clients c2 WHERE c2.parent_id = clients.id));`,
+	},
+	{
 		name: "a partial index predicate",
 		sql: `CREATE TABLE sites (id bigint PRIMARY KEY, owner text NOT NULL, is_default boolean NOT NULL DEFAULT false, site_id bigint);
 CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true AND site_id IS NOT NULL;`,

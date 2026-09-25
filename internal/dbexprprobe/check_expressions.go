@@ -28,6 +28,10 @@ type CheckExpressionProbe struct {
 	// Key identifies the constraint to the caller. It is returned unchanged as
 	// the map key and is never sent to the server.
 	Key string
+	// Table is the bare name of the table the constraint is on, as the server stores
+	// it. The probe table takes that name, so a declaration naming its own
+	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
+	Table string
 	// Columns are the columns of the table the constraint belongs to, taken
 	// from the LIVE read rather than from the declaration: the expression has
 	// to parse against the table it will be added to.
@@ -131,24 +135,27 @@ func resolveOnePostgresCheckExpression(
 		return config.CheckExpression{}, nil
 	}
 
-	name := fmt.Sprintf("ptah_check_probe_%d", index)
-	statement := fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s, CONSTRAINT %s_ck CHECK (%s))",
-		name, checkProbeColumnList(probe.Columns), name, expression)
+	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
+	statements := relation.statements(fmt.Sprintf(
+		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s))",
+		relation.name, checkProbeColumnList(probe.Columns), expression))
 
 	const savepoint = "ptah_check_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return config.CheckExpression{}, fmt.Errorf("resolve check expressions: savepoint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, statement); err != nil {
-		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
-			return config.CheckExpression{}, fmt.Errorf(
-				"resolve check expressions: roll back to savepoint after %q: %w",
-				strings.TrimSpace(probe.Key), rollbackErr)
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+				return config.CheckExpression{}, fmt.Errorf(
+					"resolve check expressions: roll back to savepoint after %q: %w",
+					strings.TrimSpace(probe.Key), rollbackErr)
+			}
+			// The declaration is the caller's, and refusing it here would fail a
+			// comparison over a constraint the server will refuse later anyway,
+			// with a worse message. Unresolved is the honest answer.
+			return config.CheckExpression{}, nil
 		}
-		// The declaration is the caller's, and refusing it here would fail a
-		// comparison over a constraint the server will refuse later anyway,
-		// with a worse message. Unresolved is the honest answer.
-		return config.CheckExpression{}, nil
 	}
 
 	// pg_get_expr is what the reader asks of a live constraint, so both sides
@@ -159,7 +166,7 @@ func resolveOnePostgresCheckExpression(
 		WHERE c.conrelid = $1::regclass AND c.contype = 'c'`
 
 	var stored string
-	if err := tx.QueryRowContext(ctx, query, "pg_temp."+name).Scan(&stored); err != nil {
+	if err := tx.QueryRowContext(ctx, query, relation.regclass).Scan(&stored); err != nil {
 		return config.CheckExpression{}, fmt.Errorf(
 			"resolve check expressions: read back %q: %w", strings.TrimSpace(probe.Key), err)
 	}

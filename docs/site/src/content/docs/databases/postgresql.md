@@ -89,6 +89,13 @@ transaction that is rolled back, reads the stored form, and compares like with
 like. A column is asked only when its default is declared or its type is not
 written the way the catalog reports it.
 
+The temporary table takes the name of the table the declaration is on, so an
+expression that names its own table, such as `CHECK (clients.n > 0)` or a policy
+subquery comparing with `clients.id`, resolves the way the server resolved it.
+The server stores that qualifier unqualified. The probe searches `pg_temp` last,
+so every other name in the expression, `public.clients` included, still reads
+the real table.
+
 The server asked is the one the other side was read from. `schema apply` asks
 the target. `migrate diff` and `migrations generate --replay` ask the dev
 database the migration directory was replayed on. Both compare on a session

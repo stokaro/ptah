@@ -15,6 +15,10 @@ import (
 type PolicyExpressionProbe struct {
 	// Key identifies the policy to the caller and is never sent to the server.
 	Key string
+	// Table is the bare name of the table the policy is on, as the server stores
+	// it. The probe table takes that name, so a declaration naming its own
+	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
+	Table string
 	// Columns are the columns of the table the policy is on, from the LIVE
 	// read: the clauses have to parse against the table they will guard.
 	Columns []CheckProbeColumn
@@ -29,6 +33,10 @@ type PolicyExpressionProbe struct {
 type IndexExpressionProbe struct {
 	// Key identifies the index to the caller and is never sent to the server.
 	Key string
+	// Table is the bare name of the table the index is on, as the server stores
+	// it. The probe table takes that name, so a declaration naming its own
+	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
+	Table string
 	// Columns are the columns of the table the index is on, from the LIVE read.
 	Columns []CheckProbeColumn
 	// Expression is what the index is over, empty for an index over plain
@@ -84,12 +92,12 @@ func resolveOnePolicyExpression(
 		return config.PolicyExpression{}, nil
 	}
 
-	table := fmt.Sprintf("ptah_policy_probe_%d", index)
-	statements := []string{
-		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", table, checkProbeColumnList(probe.Columns)),
-		fmt.Sprintf("ALTER TABLE %s ENABLE ROW LEVEL SECURITY", table),
-		fmt.Sprintf("CREATE POLICY %s_pol ON %s%s", table, table, policyClauses(using, withCheck)),
-	}
+	relation := newProbeRelation(probe.Table, "ptah_policy_probe", index)
+	statements := relation.statements(
+		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),
+		fmt.Sprintf("ALTER TABLE %s ENABLE ROW LEVEL SECURITY", relation.name),
+		fmt.Sprintf("CREATE POLICY ptah_policy_probe_pol ON %s%s", relation.name, policyClauses(using, withCheck)),
+	)
 
 	const query = `
 		SELECT COALESCE(pg_get_expr(p.polqual, p.polrelid), ''),
@@ -100,7 +108,7 @@ func resolveOnePolicyExpression(
 	var answer config.PolicyExpression
 	ok, err := runProbe(ctx, tx, "resolve policy expressions", probe.Key, "ptah_policy_probe", postgresSavepoints,
 		statements, func(ctx context.Context, tx *sql.Tx) error {
-			return tx.QueryRowContext(ctx, query, "pg_temp."+table).
+			return tx.QueryRowContext(ctx, query, relation.regclass).
 				Scan(&answer.Using, &answer.WithCheck)
 		})
 	if err != nil || !ok {
@@ -162,7 +170,7 @@ func resolveOneIndexExpression(
 		return config.IndexExpression{}, nil
 	}
 
-	table := fmt.Sprintf("ptah_index_probe_%d", index)
+	relation := newProbeRelation(probe.Table, "ptah_index_probe", index)
 	over := expression
 	if over == "" {
 		over = strings.Join(quoteProbeParts(probe.Parts), ", ")
@@ -170,17 +178,17 @@ func resolveOneIndexExpression(
 	if strings.TrimSpace(over) == "" {
 		return config.IndexExpression{}, nil
 	}
-	create := fmt.Sprintf("CREATE INDEX %s_idx ON %s ((%s))", table, table, over)
+	create := fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s ((%s))", relation.name, over)
 	if expression == "" {
-		create = fmt.Sprintf("CREATE INDEX %s_idx ON %s (%s)", table, table, over)
+		create = fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s (%s)", relation.name, over)
 	}
 	if predicate != "" {
 		create += fmt.Sprintf(" WHERE (%s)", predicate)
 	}
-	statements := []string{
-		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", table, checkProbeColumnList(probe.Columns)),
+	statements := relation.statements(
+		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),
 		create,
-	}
+	)
 
 	// The expression is read with `pg_get_indexdef` per key, and the predicate
 	// with `pg_get_expr`, because that is what the reader asks of a live index.
@@ -197,7 +205,7 @@ func resolveOneIndexExpression(
 	var answer config.IndexExpression
 	ok, err := runProbe(ctx, tx, "resolve index expressions", probe.Key, "ptah_index_probe", postgresSavepoints,
 		statements, func(ctx context.Context, tx *sql.Tx) error {
-			return tx.QueryRowContext(ctx, query, "pg_temp."+table).
+			return tx.QueryRowContext(ctx, query, relation.regclass).
 				Scan(&answer.Expression, &answer.Predicate)
 		})
 	if err != nil || !ok {
