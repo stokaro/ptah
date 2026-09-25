@@ -172,8 +172,11 @@ func writes(destructive, idempotent bool) *mcp.ToolAnnotations {
 }
 
 // registerReadTools adds the reading half: the four operations ADR 0002 froze,
-// describe_session, which reports what the other four may do, and search_docs,
-// which answers from the documentation carried in this binary. Six in all.
+// describe_session, which reports what the others may do, search_docs, which
+// answers from the documentation carried in this binary, and the two inference
+// tools, which explain an embedding change without driving it. The command
+// help and the reference pages list the same set, and tool_doc_test.go holds
+// each of them to what this registers.
 //
 // They are bound to the session rather than called directly, so that each one
 // asks the capability broker first. Registering them beside the session left
