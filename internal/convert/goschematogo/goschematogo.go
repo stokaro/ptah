@@ -576,6 +576,11 @@ func functionAnnotation(function schemamodel.Function) string {
 		attr{name: "language", value: function.Language, set: function.Language != ""},
 		attr{name: "security", value: function.Security, set: function.Security != ""},
 		attr{name: "volatility", value: function.Volatility, set: function.Volatility != ""},
+		// The planner attributes the parser reads; left out, an export read
+		// back loses them (stokaro/ptah#3630).
+		attr{name: "leakproof", value: "true", set: function.Leakproof},
+		attr{name: "parallel", value: function.Parallel, set: function.Parallel != ""},
+		attr{name: "strict", value: "true", set: function.Strict},
 		attr{name: "settings", value: strings.Join(function.Settings, ";"), set: len(function.Settings) > 0},
 		attr{name: "body", value: function.Body, set: true},
 		attr{name: "comment", value: function.Comment, set: function.Comment != ""},
