@@ -192,6 +192,28 @@ type CompareOptions struct {
 	// that survive it and declines the ones it cannot fold.
 	CheckExpressions map[string]CheckExpression
 
+	// ColumnSpellings carries each declared column's type and default as the
+	// target server itself spells them, keyed by the column's qualified name.
+	//
+	// It is [CompareOptions.CheckExpressions] for a column, and the server
+	// rewrites both. Measured on PostgreSQL 18.6, each declared form read back
+	// differently from the text that created it:
+	//
+	//	declared                                  read back
+	//	varchar(10)[]                          -> character varying(10)[]
+	//	'2020-01-01'::timestamp with time zone -> '2020-01-01 00:00:00+00'::timestamp with time zone
+	//	'x'::text::character varying           -> ('x'::text)::character varying
+	//	'{"a":1}' on jsonb                     -> '{"a": 1}'::jsonb
+	//	't' on boolean                         -> true
+	//
+	// so a column the plan had just created planned a change of type and
+	// default on every later run. A resolved entry is the declaration after the
+	// same round trip (stokaro/ptah#3617).
+	//
+	// A nil map means nobody could ask a server. The comparison then folds the
+	// two spellings with its own normalizer, as before.
+	ColumnSpellings map[string]ColumnSpelling
+
 	// PolicyExpressions carries each declared RLS policy's USING and WITH CHECK
 	// as the target server itself spells them, keyed by the policy's table and
 	// name.
@@ -261,6 +283,22 @@ type CheckExpression struct {
 	Expression string
 	// Resolved reports that a server answered for this constraint. A false
 	// value on a present key is a declaration the server refused.
+	Resolved bool
+}
+
+// ColumnSpelling is one column's type and default in the target server's own
+// spelling. See [CompareOptions.ColumnSpellings].
+//
+// The zero value is what a resolver returns for a column it could not put
+// through the server; a comparison must then fall back to its own folding.
+// Resolved reports which it is.
+type ColumnSpelling struct {
+	// Type is the column's type as format_type prints it.
+	Type string
+	// Default is the column's default as pg_get_expr prints it, empty for a
+	// column that declares none.
+	Default string
+	// Resolved reports that a server answered for this column.
 	Resolved bool
 }
 

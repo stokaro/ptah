@@ -109,22 +109,29 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	TablesAndColumnsWithGeneratedExpressions(desired, database, diff, dialect, semantics, cov, nil)
+	TablesAndColumnsWithServerSpellings(desired, database, diff, dialect, semantics, cov, ServerSpellings{})
 }
 
-// TablesAndColumnsWithGeneratedExpressions is [TablesAndColumnsWithSemantics]
-// told how the target itself spells each declared generated expression.
-//
-// A nil map is every comparison that could not ask a server, which is what the
-// six-argument form passes. See [config.CompareOptions.GeneratedExpressions].
-func TablesAndColumnsWithGeneratedExpressions(
+// ServerSpellings is how the target itself spells the column attributes it
+// rewrites. The zero value is every comparison that could not ask a server.
+type ServerSpellings struct {
+	// Generated is [config.CompareOptions.GeneratedExpressions].
+	Generated map[string]config.GeneratedExpression
+	// Columns is [config.CompareOptions.ColumnSpellings].
+	Columns map[string]config.ColumnSpelling
+}
+
+// TablesAndColumnsWithServerSpellings is [TablesAndColumnsWithSemantics] told
+// how the target itself spells each declared generated expression, column type
+// and column default.
+func TablesAndColumnsWithServerSpellings(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 	cov Coverage,
-	generatedExpressions map[string]config.GeneratedExpression,
+	spellings ServerSpellings,
 ) {
 	// Create maps for quick lookup
 	genTables := make(map[tableIdentity]schemamodel.Table)
@@ -225,7 +232,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 				dialect,
 				semantics,
 				objectOwnedUniqueColumns,
-				generatedExpressions,
+				spellings,
 			)
 			// The TTL policy is compared here rather than inside
 			// tableColumnsWithSemantics because it is a property of the table

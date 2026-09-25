@@ -91,6 +91,13 @@ func IndexParts(semantics identifier.Semantics, schema, table, index string) str
 // would not be found by the other. The dialect is the part both sides agree on
 // by construction.
 func Generated(dialect, schema, table, column string) string {
+	return Column(dialect, schema, table, column)
+}
+
+// Column is the key [config.CompareOptions.ColumnSpellings] is held under. It
+// takes the dialect for the reason [Generated] gives: the map is filled on one
+// connection and read while comparing against another.
+func Column(dialect, schema, table, column string) string {
 	semantics := identifier.ForDialect(dialect)
 	return encode(objectidentity.NewBuilder(semantics).ColumnParts(schema, table, column))
 }
