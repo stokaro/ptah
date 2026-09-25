@@ -33,15 +33,14 @@ import (
 
 // tableCaseRows are the engines and spellings the tests apply. quote wraps
 // every name in the file the same way; a quoted name is the control, because
-// every engine keeps its case. PostgreSQL with quoted names is left out: a
-// quoted mixed-case index is dropped and created again on every PostgreSQL
-// comparison, which is stokaro/ptah#3615 and not a matter of folding.
+// every engine keeps its case.
 var tableCaseRows = []struct {
 	name   string
 	engine dbtarget.Engine
 	quote  string
 }{
 	{name: "PostgreSQL/unquoted mixed case", engine: dbtarget.PostgreSQL, quote: ""},
+	{name: "PostgreSQL/quoted mixed case", engine: dbtarget.PostgreSQL, quote: `"`},
 	{name: "CockroachDB/unquoted mixed case", engine: dbtarget.CockroachDB, quote: ""},
 	{name: "CockroachDB/quoted mixed case", engine: dbtarget.CockroachDB, quote: `"`},
 	{name: "YugabyteDB/unquoted mixed case", engine: dbtarget.YugabyteDB, quote: ""},
