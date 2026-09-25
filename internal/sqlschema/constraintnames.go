@@ -1,18 +1,13 @@
 package sqlschema
 
 import (
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
 )
-
-// postgresNameBytes is the longest name PostgreSQL stores: NAMEDATALEN minus
-// the terminating byte.
-const postgresNameBytes = 63
 
 // The labels PostgreSQL ends a derived constraint name with.
 const (
@@ -115,7 +110,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 // claimDerivedName derives the first name none of the sets holds and claims it
 // in the first set, which is the constraint namespace.
 func claimDerivedName(table string, columns []string, label string, sets ...namespaceNames) string {
-	name := postgresConstraintName(table, columns, label, func(candidate string) bool {
+	name := pgname.Constraint(table, columns, label, func(candidate string) bool {
 		for _, set := range sets {
 			if set.taken(candidate) {
 				return true
@@ -255,77 +250,4 @@ func splitQualifiedTable(qualified string) (schema, name string) {
 		return "", qualified
 	}
 	return ref.Schema, ref.Name
-}
-
-// postgresConstraintName is the name PostgreSQL gives an unnamed constraint of
-// one kind over columns of table: `<table>_<columns joined by _>_<label>`, cut
-// to 63 bytes, and numbered `<label>1`, `<label>2` and on while taken answers
-// true.
-//
-// The server cuts every identifier longer than 63 bytes before it derives a
-// name, and ChooseForeignKeyConstraintNameAddition stops joining columns past
-// 64 bytes. Neither is repeated here: the derived name keeps a prefix of at
-// most 57 bytes of each part, and both cuts leave that prefix unchanged.
-//
-// Measured on PostgreSQL 18.6:
-//
-//	child (parent_id), FOREIGN KEY       child_parent_id_fkey
-//	child (a, b), FOREIGN KEY            child_a_b_fkey
-//	twice, two keys over (p)             twice_p_fkey, twice_p_fkey1
-//	"MixedCase" ("ParentId")             MixedCase_ParentId_fkey
-//	p (a, b), UNIQUE                     p_a_b_key
-//	61-byte table, 53-byte column        a_table_name_that_is_quite_lo_a_column_name_that_is_also_r_fkey
-//	                                     a_table_name_that_is_quite_lo_a_column_name_that_is_also_ra_key
-//	ünï, a 62-byte column of ß           ünï_ñame_ß×23_fkey, 63 bytes and 37 characters
-//	ünï, the same column after `a`       ünï_añame_ß×22_fkey, 62 bytes: the cut falls inside a ß
-func postgresConstraintName(table string, columns []string, label string, taken func(string) bool) string {
-	addition := strings.Join(columns, "_")
-	numbered := label
-	for pass := 1; ; pass++ {
-		name := postgresObjectName(table, addition, numbered)
-		if !taken(name) {
-			return name
-		}
-		numbered = label + strconv.Itoa(pass)
-	}
-}
-
-// postgresObjectName joins name1, name2 and label with underscores and cuts the
-// two names until the whole fits in 63 bytes, as makeObjectName does: one byte
-// at a time from the longer of the two, from name2 when they are equal, and each
-// then clipped back to a character boundary. The label is never cut.
-func postgresObjectName(name1, name2, label string) string {
-	overhead := len(label) + 1
-	if name2 != "" {
-		overhead++
-	}
-	name1Bytes, name2Bytes := len(name1), len(name2)
-	for name1Bytes+name2Bytes > postgresNameBytes-overhead {
-		if name1Bytes > name2Bytes {
-			name1Bytes--
-		} else {
-			name2Bytes--
-		}
-	}
-	var name strings.Builder
-	name.WriteString(clipUTF8(name1, name1Bytes))
-	if name2 != "" {
-		name.WriteByte('_')
-		name.WriteString(clipUTF8(name2, name2Bytes))
-	}
-	name.WriteByte('_')
-	name.WriteString(label)
-	return name.String()
-}
-
-// clipUTF8 returns the longest prefix of s that fits in limit bytes and ends
-// on a character boundary.
-func clipUTF8(s string, limit int) string {
-	if len(s) <= limit {
-		return s
-	}
-	for limit > 0 && !utf8.RuneStart(s[limit]) {
-		limit--
-	}
-	return s[:limit]
 }

@@ -130,8 +130,11 @@ Measured on PostgreSQL 18.6:
 | `UNIQUE (a, b)` on `p` | `p_a_b_key` |
 | `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
 
-A column-level `UNIQUE` is compared by its columns, not by its name. Other
-engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
+A column-level `UNIQUE` is compared by its columns, not by its name. A plan
+that adds one to an existing column writes `ADD CONSTRAINT` under the same
+`<table>_<column>_key` name, without a number, because the plan cannot see
+which names the target already holds. Other engines keep Ptah's own name for
+an unnamed foreign key, `fk_<table>_<column>`.
 
 A view or materialized view body is compared by folding, not by asking the
 server. The server expands a `*` into the column list when it creates the view,
