@@ -341,7 +341,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
@@ -353,14 +353,14 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (documentation source fixture)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
           working-directory: docs/site/fixtures/source-equivalence
 
   go-lint-gate:
@@ -457,7 +457,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
@@ -469,12 +469,12 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
           working-directory: examples/orm-loaders/gorm
 
       - name: Golint (documentation source fixture)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.13.2
+          version: v2.14.0
           working-directory: docs/site/fixtures/source-equivalence

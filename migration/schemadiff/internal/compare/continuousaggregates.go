@@ -93,8 +93,8 @@ func continuousAggregateChange(
 	bodies map[string]config.ContinuousAggregateBody,
 ) *difftypes.ContinuousAggregateDiff {
 	sameOption := declaredOptionMatches(declared.MaterializedOnly, reported.MaterializedOnly)
-	sameBody, comparable := continuousAggregateBodiesAgree(declared, reported, bodies)
-	if sameOption && (!comparable || sameBody) {
+	sameBody, answerable := continuousAggregateBodiesAgree(declared, reported, bodies)
+	if sameOption && (!answerable || sameBody) {
 		return nil
 	}
 	return &difftypes.ContinuousAggregateDiff{
@@ -139,7 +139,7 @@ func continuousAggregateBodiesAgree(
 	declared schemamodel.ContinuousAggregate,
 	reported catalog.ContinuousAggregate,
 	bodies map[string]config.ContinuousAggregateBody,
-) (agree, comparable bool) {
+) (agree, answerable bool) {
 	resolved, ok := bodies[declared.QualifiedName()]
 	if !ok || !resolved.Resolved {
 		return false, false
