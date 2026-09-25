@@ -3454,8 +3454,12 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 				WHEN 'd' THEN 'DELETE'
 				WHEN '*' THEN 'ALL'
 			END AS policy_for,
+			-- Role 0 is PUBLIC, which has no pg_roles row. A list that names it
+			-- applies to everyone whatever else it names. PostgreSQL stores
+			-- such a list as {0} alone; CockroachDB 26.3 keeps {0, app}, and
+			-- the join below would read that back as app alone.
 			CASE
-				WHEN array_length(pol.polroles, 1) = 1 AND 0 = ANY(pol.polroles) THEN 'PUBLIC'
+				WHEN 0 = ANY(pol.polroles) THEN 'PUBLIC'
 				ELSE array_to_string(ARRAY(
 					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
 				), ',')
@@ -4137,7 +4141,33 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			AND c.relname = g.table_name
 			AND c.relacl IS NOT NULL
 		)
-		ORDER BY table_schema, table_name, grantee, privilege_type`
+		UNION ALL
+		-- MAINTAIN, which PostgreSQL 17 added, is left out of
+		-- information_schema.table_privileges: measured on PostgreSQL 18,
+		-- GRANT ALL writes arwdDxtm to relacl and role_table_grants reports
+		-- seven rows. Without this branch a declared MAINTAIN was never seen
+		-- held and was granted again on every run. The rows are read from the
+		-- ACL under the view's own conditions: the relation kinds it covers,
+		-- and a grantor or grantee the reading role is a member of.
+		SELECT
+			COALESCE(grantee.rolname, 'PUBLIC'),
+			acl.privilege_type,
+			n.nspname,
+			c.relname,
+			acl.is_grantable,
+			grantor.rolname
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		CROSS JOIN LATERAL aclexplode(c.relacl) acl
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE n.nspname = $1
+		AND c.relkind IN ('r', 'v', 'f', 'p')
+		AND acl.privilege_type = 'MAINTAIN'
+		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY 3, 4, 1, 2`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {

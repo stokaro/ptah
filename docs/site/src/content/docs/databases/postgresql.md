@@ -181,6 +181,15 @@ also in the same plan that creates the table or function, since the privilege
 arrives with the object. A revoke of a privilege the role does not hold
 changes nothing on the server, so the statement is safe either way.
 
+`ALL`, in a grant or in `ALTER DEFAULT PRIVILEGES`, is compared with what the
+server reports, which is one row per privilege. A role holds `ALL` on a table
+when it holds `SELECT`, `INSERT`,
+`UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` and `TRIGGER`. `MAINTAIN`, which
+PostgreSQL 17 added to `ALL`, is not required: the comparison does not know the
+server version, and PostgreSQL 16 has no `MAINTAIN` to report. A `REVOKE` of
+everything `ALL` names on a table the plan creates is planned as `REVOKE ALL`,
+because PostgreSQL 16 refuses the word `MAINTAIN`.
+
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
 one object wins. Go annotations and HCL have no statement order, so declaring
@@ -371,6 +380,16 @@ schema adds or drops FORCE gets `ALTER TABLE ... FORCE ROW LEVEL SECURITY` or
 table that is enabled again without it also gets `NO FORCE`. A policy whose
 kind changes is dropped and created again, because PostgreSQL cannot alter a
 policy's kind in place.
+
+A policy with no `TO` clause applies to `PUBLIC`, and the catalog reports it
+that way, so an omitted `TO`, `TO PUBLIC` and `TO public` compare as one policy.
+The comparison reads the role list as a set: the order of the roles and the
+spacing between them do not count, and a list that names `PUBLIC` beside other
+roles is `PUBLIC`, since every role is a member of it. A declaration that names
+a role where the database has `PUBLIC`, or the other way round, is still a
+change. Ptah renders the clause you wrote, so a policy declared without `TO`
+keeps rendering without one. CockroachDB and YugabyteDB report roles the same
+way.
 
 Which table a policy belongs to is decided under the target's identifier rules
 rather than by spelling, so a policy declared on `orders` and a table created

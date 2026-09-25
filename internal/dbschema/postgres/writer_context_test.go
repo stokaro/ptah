@@ -79,7 +79,7 @@ func TestWriterDropAllTables_CommitsAllCatalogObjects(t *testing.T) {
 	c.Assert(events[4], qt.Contains, "FROM pg_inherits")
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 4)
-	c.Assert(db.ExecCount(), qt.Equals, 31)
+	c.Assert(db.ExecCount(), qt.Equals, 11)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -95,7 +95,7 @@ func TestWriterDropAllTables_RollsBackOnFailure(t *testing.T) {
 		`refusing to clean schema "public": failed to drop type status: SQL execution failed: boom\nSQL: DROP TYPE IF EXISTS "public"."status" RESTRICT`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 4)
-	c.Assert(db.ExecCount(), qt.Equals, 36)
+	c.Assert(db.ExecCount(), qt.Equals, 14)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
@@ -127,7 +127,7 @@ func TestWriterDropAllTables_RejectsExternalPolicyDependency(t *testing.T) {
 		`refusing to clean schema "public": failed to drop function is_allowed: SQL execution failed: cannot drop function public\.is_allowed\(\) because policy audit_policy depends on it\nSQL: DROP FUNCTION IF EXISTS "public"."is_allowed"\(\) RESTRICT`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 4)
-	c.Assert(db.ExecCount(), qt.Equals, 4)
+	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
@@ -143,7 +143,7 @@ func TestWriterDropAllTables_ResolvesInternalDependencies(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 4)
-	c.Assert(db.ExecCount(), qt.Equals, 11)
+	c.Assert(db.ExecCount(), qt.Equals, 5)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -241,15 +241,15 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	})
 	c.Assert(catalogArgs[10], qt.HasLen, 0)
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`SAVEPOINT ptah_cleanup_object`,
-		`DROP EXTENSION IF EXISTS "hstore" RESTRICT`,
-		`RELEASE SAVEPOINT ptah_cleanup_object`,
-		`SAVEPOINT ptah_cleanup_object`,
-		`DROP COLLATION IF EXISTS "public"."ptah_case_sensitive" RESTRICT`,
-		`RELEASE SAVEPOINT ptah_cleanup_object`,
-		`SAVEPOINT ptah_cleanup_object`,
-		`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC`,
-		`RELEASE SAVEPOINT ptah_cleanup_object`,
+		"SAVEPOINT ptah_cleanup_object;\n" +
+			`DROP EXTENSION IF EXISTS "hstore" RESTRICT;` +
+			"\nRELEASE SAVEPOINT ptah_cleanup_object",
+		"SAVEPOINT ptah_cleanup_object;\n" +
+			`DROP COLLATION IF EXISTS "public"."ptah_case_sensitive" RESTRICT;` +
+			"\nRELEASE SAVEPOINT ptah_cleanup_object",
+		"SAVEPOINT ptah_cleanup_object;\n" +
+			`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC;` +
+			"\nRELEASE SAVEPOINT ptah_cleanup_object",
 		"\n\t\tSELECT lo_unlink(oid)\n\t\tFROM pg_largeobject_metadata\n\t\tORDER BY oid\n\t",
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 		`DROP SCHEMA IF EXISTS "public" RESTRICT`,
@@ -265,7 +265,7 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 11)
-	c.Assert(db.ExecCount(), qt.Equals, 21)
+	c.Assert(db.ExecCount(), qt.Equals, 15)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -611,15 +611,28 @@ func TestWriterDropDatabaseRealm_RollsBackOnPreservedDependency(t *testing.T) {
 		nil,
 		`DROP FUNCTION IF EXISTS "public"."is_allowed"() RESTRICT`,
 	}}
-	db := dbtest.OpenWithExec(t, queryHandler.query, failPostgresPreservedFunctionDrop)
+	var execQueries []string
+	db := dbtest.OpenWithExec(t, queryHandler.query, func(
+		query string,
+		args []driver.NamedValue,
+	) (driver.Result, error) {
+		execQueries = append(execQueries, query)
+		return failPostgresPreservedFunctionDrop(query, args)
+	})
 	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `(?s)refusing to clean PostgreSQL database realm: failed to drop function is_allowed: SQL execution failed: cannot drop function because other objects depend on it.*`)
+	c.Assert(execQueries, qt.DeepEquals, []string{
+		"SAVEPOINT ptah_cleanup_object;\n" +
+			`DROP FUNCTION IF EXISTS "public"."is_allowed"() RESTRICT;` +
+			"\nRELEASE SAVEPOINT ptah_cleanup_object",
+		"ROLLBACK TO SAVEPOINT ptah_cleanup_object;\nRELEASE SAVEPOINT ptah_cleanup_object",
+	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 7)
-	c.Assert(db.ExecCount(), qt.Equals, 4)
+	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
@@ -734,7 +747,7 @@ func TestWriterDropAllTables_PreservesDropErrorWhenSavepointRecoveryFails(t *tes
 	c.Assert(err.Error(), qt.Contains, "failed to roll back cleanup savepoint: rollback failed")
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 4)
-	c.Assert(db.ExecCount(), qt.Equals, 4)
+	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
@@ -1002,7 +1015,7 @@ func failPostgresPreservedFunctionDrop(
 	query string,
 	_ []driver.NamedValue,
 ) (driver.Result, error) {
-	if strings.HasPrefix(query, "DROP FUNCTION") {
+	if strings.Contains(query, "DROP FUNCTION") {
 		return nil, errors.New("cannot drop function because other objects depend on it")
 	}
 	return driver.RowsAffected(0), nil

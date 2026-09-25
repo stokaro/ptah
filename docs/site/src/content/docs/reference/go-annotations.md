@@ -807,7 +807,7 @@ Declares a row-level security policy.
 | `for` | No | Policy command, such as ALL or SELECT. |
 | `name` | No | Policy name. |
 | `table` | No | Target table. |
-| `to` | No | Comma-separated roles. |
+| `to` | No | Comma-separated roles; omitted means PUBLIC on PostgreSQL. |
 | `using` | No | USING expression. |
 | `with_check` | No | WITH CHECK expression. |
 

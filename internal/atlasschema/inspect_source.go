@@ -25,8 +25,6 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-const inspectDevCleanupTimeout = 30 * time.Second
-
 // InspectSourceOptions configures URL-driven Atlas schema inspection.
 type InspectSourceOptions struct {
 	// URLs are the raw inspection sources: a database URL, a local schema file,
@@ -502,11 +500,8 @@ func withMaterializedDevSchema(
 			return fmt.Errorf("reset dev database: %w", err)
 		}
 		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(
-				context.WithoutCancel(ctx),
-				inspectDevCleanupTimeout,
-			)
-			defer cancel()
+			cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
+			defer release()
 			if cleanupErr := devclean.DatabaseRealmKeeping(cleanupCtx, materializedConn, baseline); cleanupErr != nil {
 				resultErr = errors.Join(
 					resultErr,
