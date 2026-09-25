@@ -534,7 +534,8 @@
         "/atlas/strict-ce-mode/",
         "/concepts/migration-directory/",
         "/migrate-from/atlas/",
-        "/reference/atlas-commands/"
+        "/reference/atlas-commands/",
+        "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 7019,
       "sourceBytes": 48506
@@ -6829,6 +6830,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/atlas/retained-divergences/",
         "/concepts/database-urls-and-dev-databases/",
         "/operate/verify-a-release/",
         "/reference/exit-codes/",
@@ -6859,7 +6861,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 5433,
-      "sourceBytes": 38331
+      "sourceBytes": 38336
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",
