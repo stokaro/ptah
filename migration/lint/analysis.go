@@ -467,7 +467,11 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 		return Analysis{}, err
 	}
 	scope := newSchemaScope(opts.SchemaScope)
-	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline), normalizeBaselineIndexes(opts.BaselineIndexes))
+	baseline := newBaselineIndex(
+		normalizeBaselineColumns(opts.Baseline),
+		normalizeBaselineIndexes(opts.BaselineIndexes),
+		normalizeBaselineHypertables(opts.BaselineHypertables),
+	)
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.

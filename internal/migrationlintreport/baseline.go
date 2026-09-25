@@ -14,11 +14,12 @@ import (
 )
 
 // baselineState is the schema state one migration version starts from, in
-// the three forms the linter looks things up in.
+// the forms the linter looks things up in.
 type baselineState struct {
-	columns    []lint.BaselineColumn
-	indexes    []lint.BaselineIndex
-	dependents []lint.BaselineDependent
+	columns     []lint.BaselineColumn
+	indexes     []lint.BaselineIndex
+	dependents  []lint.BaselineDependent
+	hypertables []lint.BaselineHypertable
 }
 
 // readBaselineState records the schema state one migration version starts
@@ -28,9 +29,9 @@ type baselineState struct {
 // been applied and before this one is. That is the only place the retired half
 // of a rename still exists: `ALTER TABLE users RENAME COLUMN id TO oid` says
 // nothing about what `id` was, and after the statement runs there is no `id`
-// left to ask about. One catalog read answers all three forms: the columns and
-// the indexes are read off it directly, and the dependents are resolved from
-// the view and routine bodies it carries.
+// left to ask about. One catalog read answers every form: the columns, the
+// indexes and the TimescaleDB hypertables are read off it directly, and the
+// dependents are resolved from the view and routine bodies it carries.
 func readBaselineState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
@@ -42,10 +43,26 @@ func readBaselineState(ctx context.Context,
 		return baselineState{}, fmt.Errorf("read dev database schema: %w", err)
 	}
 	return baselineState{
-		columns:    baselineColumnsOf(schema, version),
-		indexes:    baselineIndexesOf(schema, version),
-		dependents: baselineDependentsOf(schema, version, dialect),
+		columns:     baselineColumnsOf(schema, version),
+		indexes:     baselineIndexesOf(schema, version),
+		dependents:  baselineDependentsOf(schema, version, dialect),
+		hypertables: baselineHypertablesOf(schema, version),
 	}, nil
+}
+
+// baselineHypertablesOf lists the TimescaleDB hypertables of the read schema as
+// the state version starts from. The reader asks the extension's catalog only
+// where the extension is installed, so a database without it yields none.
+func baselineHypertablesOf(schema *catalog.Database, version int64) []lint.BaselineHypertable {
+	var hypertables []lint.BaselineHypertable
+	for _, hypertable := range schema.Hypertables {
+		hypertables = append(hypertables, lint.BaselineHypertable{
+			Version: version,
+			Schema:  hypertable.Schema,
+			Table:   hypertable.Name,
+		})
+	}
+	return hypertables
 }
 
 // baselineColumnsOf lists every column of the read schema as the state

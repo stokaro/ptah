@@ -95,6 +95,12 @@ missing:
 rename on the compatibility surface. The native surface models a rename as a
 rename, so it asks for no starting state and never prints the notice.
 
+`PG101` reads the starting state to learn whether the indexed table is a
+TimescaleDB hypertable. TimescaleDB refuses `CREATE INDEX CONCURRENTLY` on one,
+so with the state in hand the finding names the extension's per-chunk build
+instead. It still reports from the statement text without a dev database, and
+the notice above then names it on both surfaces.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix
@@ -376,7 +382,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `MY147` | changing column nullability requires a table rebuild | yes | `MY147` | covered — the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question DD103 answers from the baseline |
 | `MY148` | changing a column character set or collation requires a table copy and blocks DML | yes | `MY130` | partial — MY130 names this consequence where it can prove the copy from the dev database; without that baseline, or on a spelling it cannot resolve to a before-and-after, the statement is not reported |
 | `LT101` | modifying a nullable column to non-nullable without a DEFAULT | no | `LT101` | covered |
-| `PG101` | index created without CONCURRENTLY | yes | `PG101` | covered |
+| `PG101` | index created without CONCURRENTLY | yes | `PG101` | covered — on a TimescaleDB hypertable, which refuses CONCURRENTLY, the message names the per-chunk build instead when the dev database shows the table is one; that build is not reported |
 | `PG102` | index dropped without CONCURRENTLY | yes | `PG106` | covered |
 | `PG103` | concurrent operation without the atlas:txmode none header | yes | `PG103` | covered — the atlas:txmode none header and Ptah's own directive both silence it |
 | `PG104` | PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock | yes | `PG104` | covered |

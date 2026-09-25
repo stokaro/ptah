@@ -820,6 +820,31 @@ answers `table "loaded" is not empty`, hinting at `migrate_data => true`.
 **Ptah never sends `migrate_data`**: it rewrites the whole table, which is a
 decision an operator makes rather than one a migration takes on their behalf.
 
+#### Building an index on a hypertable
+
+The usual way to build an index without blocking writes does not work here.
+Measured on TimescaleDB 2.30.1 / PostgreSQL 18.6, on a hypertable of three
+populated chunks:
+
+- `CREATE INDEX CONCURRENTLY` is refused: `hypertables do not support
+  concurrent index creation`.
+- A plain `CREATE INDEX` takes a `SHARE` lock on the hypertable and on every
+  chunk for the whole build, so an `INSERT` waits until it finishes.
+- `CREATE INDEX ... WITH (timescaledb.transaction_per_chunk)` builds one chunk
+  at a time and locks only that chunk. An `INSERT` into another chunk, or into
+  a new one, goes through. It cannot run inside a transaction block, so it
+  belongs in a migration marked `no_transaction` (`-- atlas:txmode none` in an
+  Atlas directory).
+- A per-chunk build that is interrupted leaves the hypertable's index with
+  `indisvalid = false`, and the chunks it had not reached without one. A rerun
+  with `IF NOT EXISTS` skips the name and leaves both as they are, so drop the
+  index before you run the migration again.
+
+`ptah migrations lint` and `ptah-compat migrate lint` report a plain build as
+[`PG101`](../../reference/lint-rules/). With `--dev-url` the replay shows which
+tables are hypertables, and on one the finding names the per-chunk build instead
+of `CONCURRENTLY`. The per-chunk build itself is not reported.
+
 #### What cannot be undone
 
 TimescaleDB has no `drop_hypertable` — measured, the call answers

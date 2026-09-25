@@ -127,6 +127,26 @@ type BaselineIndexPart struct {
 	Prefix int
 }
 
+// BaselineHypertable is one TimescaleDB hypertable of the schema state a
+// migration version starts from, read from the dev database beside
+// [BaselineColumn].
+//
+// Nothing in PostgreSQL's own catalogs says a table is a hypertable: it
+// reads back as an ordinary table, and only the extension's catalog knows. The
+// difference decides what an index build on it may be told to do. Measured on
+// TimescaleDB 2.30.1 over PostgreSQL 18.6, a hypertable refuses `CREATE INDEX
+// CONCURRENTLY` outright (`hypertables do not support concurrent index
+// creation`), so the remedy that fits an ordinary table is a statement the
+// engine rejects here.
+type BaselineHypertable struct {
+	// Version is the migration version whose starting state this hypertable
+	// belongs to: the state read BEFORE that version is applied.
+	Version int64
+	// Schema and Table name the hypertable, as the server spells them.
+	Schema string
+	Table  string
+}
+
 // baselineColumns is one version's starting state, indexed for lookup by the
 // source-spelled references the linter reads out of SQL.
 //
@@ -142,6 +162,9 @@ type baselineColumns struct {
 	// byTableIndexes holds every index of a table under those spellings, in
 	// catalog order.
 	byTableIndexes map[string][]BaselineIndex
+	// hypertables holds every TimescaleDB hypertable under the same reference
+	// spellings, one entry per schema that carries the name.
+	hypertables map[string][]BaselineHypertable
 	// schemaless reports that no column in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
@@ -151,10 +174,14 @@ type baselineColumns struct {
 	schemaless bool
 }
 
-// newBaselineIndex groups baseline columns and indexes by the version whose
-// starting state they describe.
-func newBaselineIndex(columns []BaselineColumn, indexes []BaselineIndex) map[int64]baselineColumns {
-	if len(columns) == 0 && len(indexes) == 0 {
+// newBaselineIndex groups baseline columns, indexes and hypertables by the
+// version whose starting state they describe.
+func newBaselineIndex(
+	columns []BaselineColumn,
+	indexes []BaselineIndex,
+	hypertables []BaselineHypertable,
+) map[int64]baselineColumns {
+	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 {
 		return nil
 	}
 	index := make(map[int64]baselineColumns)
@@ -165,6 +192,7 @@ func newBaselineIndex(columns []BaselineColumn, indexes []BaselineIndex) map[int
 				byRef:          make(map[string][]BaselineColumn),
 				byTable:        make(map[string][]BaselineColumn),
 				byTableIndexes: make(map[string][]BaselineIndex),
+				hypertables:    make(map[string][]BaselineHypertable),
 				schemaless:     true,
 			}
 		}
@@ -192,6 +220,16 @@ func newBaselineIndex(columns []BaselineColumn, indexes []BaselineIndex) map[int
 			state.byTableIndexes[key] = append(state.byTableIndexes[key], idx)
 		}
 		index[idx.Version] = state
+	}
+	for _, hypertable := range hypertables {
+		state := stateOf(hypertable.Version)
+		if hypertable.Schema != "" {
+			state.schemaless = false
+		}
+		for _, key := range baselineTableKeys(hypertable.Schema, hypertable.Table) {
+			state.hypertables[key] = append(state.hypertables[key], hypertable)
+		}
+		index[hypertable.Version] = state
 	}
 	return index
 }
@@ -279,6 +317,28 @@ func (b baselineColumns) tableIndexes(tableRef string) []BaselineIndex {
 		return nil
 	}
 	return b.exactTableIndexes(tableRef[dot+1:])
+}
+
+// hypertable reports whether tableRef names a TimescaleDB hypertable in this
+// state.
+//
+// The table is placed through [baselineColumns.tableColumns], so a reference
+// resolves here exactly when it resolves for every other lookup, and fails
+// closed on the same ambiguity: a bare name two schemas carry is neither
+// schema's table. The rule that asks then keeps its ordinary-table advice
+// rather than claiming a hypertable it cannot place.
+func (b baselineColumns) hypertable(tableRef string) bool {
+	columns := b.tableColumns(tableRef)
+	if len(columns) == 0 {
+		return false
+	}
+	owner := columns[0]
+	for _, hypertable := range b.hypertables[normalizeIdent(owner.Table)] {
+		if hypertable.Schema == owner.Schema {
+			return true
+		}
+	}
+	return false
 }
 
 func (b baselineColumns) exactTableIndexes(tableRef string) []BaselineIndex {
@@ -567,6 +627,19 @@ func normalizeBaselineColumns(columns []BaselineColumn) []BaselineColumn {
 			continue
 		}
 		kept = append(kept, column)
+	}
+	return kept
+}
+
+// normalizeBaselineHypertables drops the entries no lookup can use, for the
+// same reason [normalizeBaselineColumns] does.
+func normalizeBaselineHypertables(hypertables []BaselineHypertable) []BaselineHypertable {
+	kept := make([]BaselineHypertable, 0, len(hypertables))
+	for _, hypertable := range hypertables {
+		if strings.TrimSpace(hypertable.Table) == "" {
+			continue
+		}
+		kept = append(kept, hypertable)
 	}
 	return kept
 }

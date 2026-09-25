@@ -254,27 +254,49 @@ func TestUniqueRules_KeepReportingWhereTheStateProvesNothing(t *testing.T) {
 
 // TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone: the two rules read
 // the state as a refinement, so a run without it still reports from the text
-// and names the refinement it went without.
+// and names the refinement it went without. PG101 names the same input for
+// the same statement, which is its own request, so only this family's
+// entries are compared.
 func TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeUnique(c, "postgres", "CREATE UNIQUE INDEX orders_email_uq ON orders (email);")
 	c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
-	var unmet []string
-	for _, entry := range analysis.UnmetInputs() {
-		unmet = append(unmet, entry.Rule+":"+entry.Input.String())
-	}
-	c.Assert(unmet, qt.DeepEquals, []string{
+	c.Assert(uniqueUnmetInputs(analysis), qt.DeepEquals, []string{
 		"MF101:baseline schema that refines the statement text",
 		"MF102:baseline schema that refines the statement text",
 	})
 }
 
 // TestUniqueRules_AskForNothingWhereNothingIsBuilt: a file with no unique
-// index costs no catalog read.
+// index costs this family no catalog read. PG101 is disabled because it asks
+// for the state of every blocking index build on PostgreSQL, a request of its
+// own that pg101_hypertable_test.go pins.
 func TestUniqueRules_AskForNothingWhereNothingIsBuilt(t *testing.T) {
 	c := qt.New(t)
-	analysis := analyzeUnique(c, "postgres", "CREATE INDEX orders_email_idx ON orders (email);")
+	analysis, err := lint.AnalyzeFS(fixture(uniqueFS("CREATE INDEX orders_email_idx ON orders (email);")), lint.Options{
+		Dialect:   "postgres",
+		DirFormat: migrationfile.DirFormatAtlas,
+		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
+		Disabled:  []string{"PG101"},
+	})
+	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.BaselineVersions(), qt.HasLen, 0)
 	c.Assert(analysis.UnmetInputs(), qt.HasLen, 0)
+}
+
+// uniqueUnmetInputs is [lint.Analysis.UnmetInputs] for this family, spelled
+// rule:input.
+func uniqueUnmetInputs(analysis lint.Analysis) []string {
+	var rules []string
+	byRule := make(map[string]string)
+	for _, entry := range analysis.UnmetInputs() {
+		rules = append(rules, entry.Rule)
+		byRule[entry.Rule] = entry.Rule + ":" + entry.Input.String()
+	}
+	var kept []string
+	for _, rule := range uniqueCodes(rules) {
+		kept = append(kept, byRule[rule])
+	}
+	return kept
 }

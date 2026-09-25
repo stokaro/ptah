@@ -314,6 +314,12 @@ type Options struct {
 	// [BaselineIndex].
 	BaselineIndexes []BaselineIndex
 
+	// BaselineHypertables carries the TimescaleDB hypertables of the state
+	// each version starts from, read in the same catalog read as Baseline,
+	// for the rule whose remedy the engine refuses on a hypertable. See
+	// [BaselineHypertable].
+	BaselineHypertables []BaselineHypertable
+
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
 	// of a project file. Nil leaves the six rules silent: a convention is the
