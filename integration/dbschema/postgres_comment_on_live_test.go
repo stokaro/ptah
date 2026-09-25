@@ -54,8 +54,7 @@ func TestPostgresLiveSQLDocumentCommentOnConverges(t *testing.T) {
 	c.Assert(liveTableComment(live, "notes"), qt.Equals, "what users wrote")
 	c.Assert(liveColumnComment(live, "notes", "body"), qt.Equals, "the text, as typed")
 	// The rest are read from the server directly, so a kind whose comment the
-	// plan never wrote cannot pass by comparing clean against itself: the kinds
-	// stokaro/ptah#3627 owns are refused rather than read for that reason.
+	// plan never wrote cannot pass by comparing clean against itself.
 	rows, err := conn.QueryContext(c.Context(), `
 		SELECT c.relname, COALESCE(obj_description(c.oid, 'pg_class'), '')
 		FROM pg_class c WHERE c.relnamespace = $1::regnamespace

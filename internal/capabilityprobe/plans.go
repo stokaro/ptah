@@ -15,19 +15,20 @@ import (
 // one of its rows is undecidable with that stated, which is the honest reading
 // of "nobody wrote a decider for this yet".
 func planFor(dialect string) (plan, bool) {
-	switch platform.NormalizeDialect(dialect) {
+	normalized := platform.NormalizeDialect(dialect)
+	switch normalized {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgresFamilyPlan(platform.NormalizeDialect(dialect)), true
+		return withObjectComments(postgresFamilyPlan(normalized), normalized), true
 	case platform.MySQL, platform.MariaDB:
-		return mysqlFamilyPlan(platform.NormalizeDialect(dialect)), true
+		return withObjectComments(mysqlFamilyPlan(normalized), normalized), true
 	case platform.ClickHouse:
-		return clickHousePlan(), true
+		return withObjectComments(clickHousePlan(), normalized), true
 	case platform.Oracle:
-		return oraclePlan(), true
+		return withObjectComments(oraclePlan(), normalized), true
 	case platform.SQLServer:
-		return sqlServerPlan(), true
+		return withObjectComments(sqlServerPlan(), normalized), true
 	case platform.SQLite:
-		return sqlitePlan(), true
+		return withObjectComments(sqlitePlan(), normalized), true
 	default:
 		return plan{}, false
 	}
@@ -55,6 +56,15 @@ func planFor(dialect string) (plan, bool) {
 // "a table with a droppable named constraint" -- and each dialect picks a
 // constraint kind it actually supports (stokaro/ptah#942).
 var spannerSpelling = tableSpelling{keyed: true, dropCheckConstraint: true}
+
+// postgresFamilySpelling is the table spelling a PostgreSQL-family dialect's
+// experiments write: Spanner's, or the PostgreSQL one every other member takes.
+func postgresFamilySpelling(dialect string) tableSpelling {
+	if platform.NormalizeDialect(dialect) == platform.Spanner {
+		return spannerSpelling
+	}
+	return tableSpelling{}
+}
 
 // tableSpelling writes throwaway tables for one dialect. The zero value is the
 // PostgreSQL spelling, which is what Postgres, CockroachDB and YugabyteDB have
@@ -156,10 +166,7 @@ func rowDeletionPolicyProbe() experiment {
 }
 
 func postgresFamilyPlan(dialect string) plan {
-	t := tableSpelling{}
-	if platform.NormalizeDialect(dialect) == platform.Spanner {
-		t = spannerSpelling
-	}
+	t := postgresFamilySpelling(dialect)
 	dcgSetup, dcgDrop := t.droppableConstraint("dcg", "dcg_uq")
 	experiments := []experiment{
 		acceptance(capability.DropConstraintGeneric, dcgSetup, dcgDrop),

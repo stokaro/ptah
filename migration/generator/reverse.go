@@ -264,6 +264,10 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// very declaration the forward direction refused (stokaro/ptah#2440).
 		RLSPolicyIdentityConflicts: diff.RLSPolicyIdentityConflicts,
 
+		// A comment transition carries both of its states, so the reversal
+		// swaps them and needs nothing from the schema beside it.
+		ObjectCommentsChanged: reverseObjectComments(diff.ObjectCommentsChanged),
+
 		// Reverse RLS table enablement operations
 		RLSEnabledTablesAdded:   diff.RLSEnabledTablesRemoved, // Tables to disable RLS become tables to enable RLS
 		RLSEnabledTablesRemoved: diff.RLSEnabledTablesAdded,   // Tables to enable RLS become tables to disable RLS

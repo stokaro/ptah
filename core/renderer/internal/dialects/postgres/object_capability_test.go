@@ -84,14 +84,15 @@ func objectKindCases() []objectKindCase {
 // objectKindDeniedCaps is a valid PostgreSQL set with one object kind denied.
 //
 // Denying a kind is not a single flag flip, because the registry carries
-// implication edges: materialized views require views, and replace syntax
-// requires triggers. The dependants come off together with the object so that
-// the result is a set Validate accepts — a renderer must never be handed a set
-// describing a target that cannot exist.
+// implication edges: materialized views and view comments require views, and
+// replace syntax requires triggers. The dependants come off together with the
+// object so that the result is a set Validate accepts — a renderer must never
+// be handed a set describing a target that cannot exist.
 func objectKindDeniedCaps(key capability.Capability) capability.Capabilities {
 	return capability.Postgres16().
 		With(key, false).
 		With(capability.MaterializedViews, false).
+		With(capability.ViewComments, false).
 		With(capability.CreateOrReplaceTrigger, false)
 }
 

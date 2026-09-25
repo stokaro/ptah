@@ -209,6 +209,11 @@ func measuredLines() map[string]measuredLine {
 				capability.ForeignKeyDeleteColumnList: "this run predates the key and sent no ON DELETE column " +
 					"list. It was measured on 2026-09-25 against PostgreSQL 14.24, 15.19 and 18.6, CockroachDB " +
 					"v26.3.1 and YugabyteDB 2024.2 and 2025.2, and carried here from those runs (stokaro/ptah#3562)",
+				capability.ViewComments:      objectCommentCarried,
+				capability.SequenceComments:  objectCommentCarried,
+				capability.TypeComments:      objectCommentCarried,
+				capability.DomainComments:    objectCommentCarried,
+				capability.ExtensionComments: objectCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -306,6 +311,11 @@ func measuredLines() map[string]measuredLine {
 				capability.ForeignKeyDeleteColumnList: "this run predates the key and sent no ON DELETE column " +
 					"list. It was measured on 2026-09-25 against PostgreSQL 14.24, 15.19 and 18.6, CockroachDB " +
 					"v26.3.1 and YugabyteDB 2024.2 and 2025.2, and carried here from those runs (stokaro/ptah#3562)",
+				capability.ViewComments:      objectCommentCarried,
+				capability.SequenceComments:  objectCommentCarried,
+				capability.TypeComments:      objectCommentCarried,
+				capability.DomainComments:    objectCommentCarried,
+				capability.ExtensionComments: objectCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -404,6 +414,11 @@ func measuredLines() map[string]measuredLine {
 				capability.ForeignKeyDeleteColumnList: "this run predates the key and sent no ON DELETE column " +
 					"list. It was measured on 2026-09-25 against PostgreSQL 14.24, 15.19 and 18.6, CockroachDB " +
 					"v26.3.1 and YugabyteDB 2024.2 and 2025.2, and carried here from those runs (stokaro/ptah#3562)",
+				capability.ViewComments:      objectCommentCarried,
+				capability.SequenceComments:  objectCommentCarried,
+				capability.TypeComments:      objectCommentCarried,
+				capability.DomainComments:    objectCommentCarried,
+				capability.ExtensionComments: objectCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -459,3 +474,10 @@ func measuredLines() map[string]measuredLine {
 		},
 	}
 }
+
+// objectCommentCarried is why the five object-comment keys are carried on every
+// measured line: the run named there predates them.
+const objectCommentCarried = "this run predates the key and sent no COMMENT ON for a view, sequence, " +
+	"type, domain or extension. The keys were measured on 2026-09-25 against PostgreSQL 14 and 18.6, " +
+	"YugabyteDB 2024.2, 2025.2 and 2026.1, CockroachDB v25.4.16, v26.2.7 and v26.3.1 and the Spanner " +
+	"emulator behind PGAdapter 0.55.3, and carried here from those runs (stokaro/ptah#3627)"

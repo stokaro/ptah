@@ -634,6 +634,7 @@ var statementLabelOverrides = map[string]string{
 	"ExtensionNode":              "CREATE EXTENSION",
 	"DefaultPrivilegeNode":       "ALTER DEFAULT PRIVILEGES",
 	"RevokeDefaultPrivilegeNode": "ALTER DEFAULT PRIVILEGES",
+	"ObjectCommentNode":          "COMMENT ON",
 }
 
 func statementLabel(stmt ast.Node) string {

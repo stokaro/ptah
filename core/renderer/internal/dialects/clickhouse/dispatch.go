@@ -48,6 +48,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
 
 	// Schemas and databases. ClickHouse has one object for both, so the two
 	// kinds reach two handlers that write the same statement.

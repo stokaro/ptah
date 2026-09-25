@@ -160,8 +160,11 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 }
 
 func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
-	// Add comment if provided
-	if node.Comment != "" {
+	// For a domain, a composite and a range the node's comment is the type's
+	// own, written after the statement that creates it. The model keeps no
+	// comment for an enum, so on one the node's comment is a note for the
+	// script and stays one.
+	if _, enum := node.TypeDef.(*ast.EnumTypeDef); enum && node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
@@ -193,7 +196,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		for i, field := range typeDef.Fields {
 			fields[i] = fmt.Sprintf("%s %s", r.escapeIdentifier(field.Name), field.Type)
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(fields, ", "))
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS (%s);", target, strings.Join(fields, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	case *ast.DomainTypeDef:
 		// CREATE DOMAIN name AS base_type [NOT NULL] [DEFAULT value] [CHECK (constraint)]
@@ -220,6 +225,7 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		}
 
 		r.w.WriteLinef("%s;", sql)
+		r.writeCreatedObjectComment(ast.CommentedDomain, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
 
 	case *ast.RangeTypeDef:
 		// CREATE TYPE name AS RANGE (SUBTYPE = ..., [SUBTYPE_OPCLASS = ...], ...)
@@ -236,7 +242,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		if typeDef.SubtypeDiff != "" {
 			options = append(options, fmt.Sprintf("SUBTYPE_DIFF = %s", typeDef.SubtypeDiff))
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(options, ", "))
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", target, strings.Join(options, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	default:
 		return fmt.Errorf("unsupported type definition: %T", typeDef)
@@ -454,6 +462,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
 
 	// User-defined types.
 	case *ast.EnumNode:
@@ -1664,13 +1674,8 @@ func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 		parts = append(parts, fmt.Sprintf("VERSION %s", r.escapeValue(node.Version)))
 	}
 
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-
+	r.writeCreatedObjectComment(ast.CommentedExtension, r.escapeIdentifier(node.Name), node.Name, node.Comment)
 	return nil
 }
 
@@ -2757,21 +2762,74 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 	return true
 }
 
+// objectCommentKeys names the capability that says a target stores a comment
+// of each kind and reports it back. The statements are separate, and the
+// engines take different subsets of them (stokaro/ptah#3627).
+var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
+	ast.CommentedView:      capability.ViewComments,
+	ast.CommentedSequence:  capability.SequenceComments,
+	ast.CommentedDomain:    capability.DomainComments,
+	ast.CommentedType:      capability.TypeComments,
+	ast.CommentedExtension: capability.ExtensionComments,
+}
+
+// renderObjectComment sets the comment of an object that already exists.
+//
+// A target that does not store the comment gets the named skip rather than
+// the statement, as a create node's comment does: the comparison does not ask
+// for a comment there, so a node that reaches this point was built by hand.
+func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
+	target := r.escapeQualifiedIdentifier(node.Name)
+	if node.Object == ast.CommentedExtension {
+		// An extension's name is database-wide, and splitting it on a dot
+		// would name an object that does not exist, for the reason
+		// renderExtension gives.
+		target = r.escapeIdentifier(node.Name)
+	}
+	return r.writeObjectComment(node.Object, target, node.Name, node.Comment)
+}
+
+// writeCreatedObjectComment writes the comment an object is created with,
+// right after the statement that creates it. PostgreSQL has no comment clause
+// on any of these statements, so the comment is a statement of its own; with
+// no comment there is nothing to write, since a new object has none.
+func (r *Renderer) writeCreatedObjectComment(object ast.CommentedObject, target, name, comment string) {
+	if comment == "" {
+		return
+	}
+	// The kinds passed here are the keys of objectCommentKeys, so the error
+	// an unknown kind would produce cannot arise.
+	_ = r.writeObjectComment(object, target, name, comment)
+}
+
+// writeObjectComment writes COMMENT ON for target, an escaped spelling of the
+// object name names, or the named skip where the target does not store the
+// kind's comment.
+func (r *Renderer) writeObjectComment(object ast.CommentedObject, target, name, comment string) error {
+	key, known := objectCommentKeys[object]
+	if !known {
+		return fmt.Errorf("%w: %s: COMMENT ON %q names no object kind this renderer comments",
+			ptaherr.ErrUnsupportedFeature, r.dialect, string(object))
+	}
+	if r.refuses(key, strings.ToLower(string(object))+" comment", name) {
+		return nil
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", object, target, r.commentLiteral(comment))
+	return nil
+}
+
 // renderCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
 func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	parts := []string{"CREATE SEQUENCE"}
 	if node.IfNotExists {
 		parts = append(parts, "IF NOT EXISTS")
 	}
-	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	target := r.sequenceIdentifier(node.Name, node.Schema)
+	parts = append(parts, target)
 
 	var cycle *bool
 	if node.Cycle {
@@ -2788,6 +2846,7 @@ func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 			parts = append(parts, fmt.Sprintf("START COUNTER WITH %d", *node.Start))
 		}
 		r.w.WriteLinef("%s;", strings.Join(parts, " "))
+		r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
 		return nil
 	}
 
@@ -2798,6 +2857,7 @@ func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
 	return nil
 }
 
@@ -2954,20 +3014,18 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 		return nil
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	create := "CREATE VIEW"
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
-	r.w.WriteLinef("%s %s AS", create, r.escapeQualifiedIdentifier(node.Name))
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("%s %s AS", create, target)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")
 	}
 	r.w.WriteLine(";")
+	r.writeCreatedObjectComment(ast.CommentedView, target, node.Name, node.Comment)
 	return nil
 }
 

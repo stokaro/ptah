@@ -1217,6 +1217,20 @@ type SchemaDiff struct {
 	// schemas but have different definitions (expressions, roles, etc.)
 	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
 
+	// ObjectCommentsChanged holds the comment transitions of views, sequences,
+	// domains, composite and range types, and extensions whose comment is all
+	// that differs, or whose comment differs beside a change the lists above
+	// carry.
+	//
+	// It is a list of its own rather than a field on each kind's diff because
+	// a comment is the one change these objects take in place: a domain whose
+	// only difference is its comment must not be dropped and created again,
+	// and entering one in DomainsModified is what would do that. A comparison
+	// records a transition only where the target stores the comment and reads
+	// it back, so a planner never meets one it cannot apply
+	// (stokaro/ptah#3627).
+	ObjectCommentsChanged []ObjectCommentChange `json:"object_comments_changed"`
+
 	// RLSPolicyIdentityConflicts records declared policies that collapse onto
 	// one identity, which the lists above cannot show: a colliding pair is
 	// already one entry by the time they exist.
@@ -1508,7 +1522,8 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
 		d.hasRoleChanges() ||
-		d.hasConstraintChanges()
+		d.hasConstraintChanges() ||
+		len(d.ObjectCommentsChanged) > 0
 }
 
 // hasTableChanges returns true if there are any table-related changes
@@ -1968,6 +1983,36 @@ type NotNullConstraintNameChange struct {
 // string, so neither has a state between "no comment" and "a comment that says
 // nothing".
 type CommentChange struct {
+	// Current is what the database holds, empty when it holds none.
+	Current string `json:"current"`
+	// Desired is what the declaration asks for, empty to remove it.
+	Desired string `json:"desired"`
+}
+
+// CommentedObjectKind names the kind of object an [ObjectCommentChange] is
+// about.
+type CommentedObjectKind string
+
+// The kinds whose comment an [ObjectCommentChange] carries.
+const (
+	CommentedView          CommentedObjectKind = "view"
+	CommentedSequence      CommentedObjectKind = "sequence"
+	CommentedDomain        CommentedObjectKind = "domain"
+	CommentedCompositeType CommentedObjectKind = "composite_type"
+	CommentedRangeType     CommentedObjectKind = "range_type"
+	CommentedExtension     CommentedObjectKind = "extension"
+)
+
+// ObjectCommentChange is the comment transition of one object that is neither
+// a table nor a column. Those two carry theirs on [TableDiff] and
+// [ColumnDiff], because a table and its columns are altered through one
+// statement per table on some engines, which these objects are not.
+type ObjectCommentChange struct {
+	// Kind says which kind of object Name names.
+	Kind CommentedObjectKind `json:"kind"`
+	// Name is the object's name as the declaration qualifies it. An
+	// extension's name is database-wide and carries no schema.
+	Name string `json:"name"`
 	// Current is what the database holds, empty when it holds none.
 	Current string `json:"current"`
 	// Desired is what the declaration asks for, empty to remove it.

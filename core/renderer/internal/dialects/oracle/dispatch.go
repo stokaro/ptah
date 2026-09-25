@@ -48,6 +48,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
 
 	// Schemas and databases. A schema here is the account that owns the
 	// objects, so both kinds are named and skipped rather than turned into the

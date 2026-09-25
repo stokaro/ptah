@@ -563,7 +563,7 @@ func addDeclaredRangeChange(changes map[string]string, target schemamodel.Range,
 }
 
 // rangeFromCatalog carries a range the database reported into the shape the
-// diff holds. The two declare the same seven properties; the model's remaining
+// diff holds. The two declare the same eight properties; the model's remaining
 // fields describe how a declaration was WRITTEN, which a read has no source for.
 func rangeFromCatalog(reported catalog.Range) schemamodel.Range {
 	return schemamodel.Range{
@@ -574,6 +574,7 @@ func rangeFromCatalog(reported catalog.Range) schemamodel.Range {
 		Collation:      reported.Collation,
 		Canonical:      reported.Canonical,
 		SubtypeDiff:    reported.SubtypeDiff,
+		Comment:        reported.Comment,
 	}
 }
 
@@ -594,8 +595,8 @@ func sortRanges(ranges difftypes.RangeChanges) {
 }
 
 // compositeFromCatalog carries a composite type the database reported into the
-// shape the diff holds. The three properties a read can establish -- name,
-// schema and ordered fields -- are exactly the three the catalog has, and
+// shape the diff holds. The properties a read can establish -- name, schema,
+// ordered fields and comment -- are exactly the ones the catalog has, and
 // CompositeField is the same {Name, Type} pair on both sides.
 func compositeFromCatalog(reported catalog.CompositeType) schemamodel.CompositeType {
 	fields := make([]schemamodel.CompositeField, 0, len(reported.Fields))
@@ -603,9 +604,10 @@ func compositeFromCatalog(reported catalog.CompositeType) schemamodel.CompositeT
 		fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
 	}
 	return schemamodel.CompositeType{
-		Name:   reported.Name,
-		Schema: reported.Schema,
-		Fields: fields,
+		Name:    reported.Name,
+		Schema:  reported.Schema,
+		Fields:  fields,
+		Comment: reported.Comment,
 	}
 }
 
@@ -640,6 +642,7 @@ func domainFromCatalog(reported catalog.Domain) schemamodel.Domain {
 		BaseType: reported.BaseType,
 		NotNull:  reported.NotNull,
 		Check:    reported.Check,
+		Comment:  reported.Comment,
 	}
 	if strings.TrimSpace(reported.Default) != "" {
 		if sqlutil.DefaultLooksLikeExpression(reported.Default) {

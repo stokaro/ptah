@@ -1588,8 +1588,8 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 				},
 			},
 			expectedSQL: []string{
-				"-- Enable trigram similarity search",
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+				"COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';",
 			},
 			unexpectedSQL: []string{
 				"DROP EXTENSION",
@@ -1624,8 +1624,8 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 				},
 			},
 			expectedSQL: []string{
-				"-- Geographic data support",
 				"CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';",
+				"COMMENT ON EXTENSION postgis IS 'Geographic data support';",
 			},
 			unexpectedSQL: []string{
 				"DROP EXTENSION",

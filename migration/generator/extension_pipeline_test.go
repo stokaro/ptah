@@ -33,8 +33,8 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
-				"-- Enable trigram similarity search",
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+				"COMMENT ON EXTENSION pg_trgm IS 'Enable trigram similarity search';",
 			},
 			expectedDownSQL: []string{
 				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
@@ -114,8 +114,8 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
-				"-- Geographic data support",
 				"CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';",
+				"COMMENT ON EXTENSION postgis IS 'Geographic data support';",
 			},
 			expectedDownSQL: []string{
 				"DROP EXTENSION IF EXISTS postgis;",
