@@ -73,6 +73,12 @@ CREATE FUNCTION default_pct() RETURNS integer LANGUAGE plpgsql STABLE AS $$ BEGI
 CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());`,
 	},
 	{
+		name: "a domain CHECK calls a routine that names nothing",
+		sql: `CREATE FUNCTION positive(v integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT v > 0 $$;
+CREATE DOMAIN pct AS integer CHECK (positive(VALUE));
+CREATE TABLE items (id bigint PRIMARY KEY, share pct NOT NULL);`,
+	},
+	{
 		name: "a routine reads a view another view reads it through",
 		sql:  routineBetweenTwoViews,
 	},
@@ -147,28 +153,34 @@ CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT co
 	c.Assert(out, qt.Contains, "Schema is synced")
 }
 
-// TestSchemaRenderOrdersRoutinesAmongTheViewsLive runs the rendered DDL of a
-// routine that reads a view and is called by another view. A render creates
-// everything it declares, so the routine sits between the two views.
-func TestSchemaRenderOrdersRoutinesAmongTheViewsLive(t *testing.T) {
-	c := qt.New(t)
-	target, _ := scratchReplayDatabase(c)
-	database, _, err := sqlschema.Read([]byte(routineBetweenTwoViews), platform.Postgres)
-	c.Assert(err, qt.IsNil)
-	statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
-	c.Assert(err, qt.IsNil)
-	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+// TestSchemaRenderCreatesRoutinesInAnOrderPostgreSQLAcceptsLive runs the
+// rendered DDL of each schema on an empty database. A render creates everything
+// it declares and places routines by the rule a plan uses, so a routine comes
+// after the types and relations it names and before the domain, the column
+// default or the view that calls it.
+func TestSchemaRenderCreatesRoutinesInAnOrderPostgreSQLAcceptsLive(t *testing.T) {
+	for _, test := range routineOrderSchemas {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, _ := scratchReplayDatabase(c)
+			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
+			c.Assert(err, qt.IsNil)
+			statements, err := renderer.GetOrderedCreateStatements(&database, platform.Postgres)
+			c.Assert(err, qt.IsNil)
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
 
-	for _, statement := range statements {
-		_, execErr := conn.ExecContext(c.Context(), statement)
-		c.Assert(execErr, qt.IsNil, qt.Commentf("%s", statement))
+			for _, statement := range statements {
+				_, execErr := conn.ExecContext(c.Context(), statement)
+				c.Assert(execErr, qt.IsNil, qt.Commentf("%s", statement))
+			}
+
+			out := runPtahNative(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeRoutineOrderSchema(c, test.sql), "--dry-run")
+			c.Assert(out, qt.Contains, "Schema is synced")
+		})
 	}
-
-	var count int
-	c.Assert(conn.QueryRowContext(c.Context(), "SELECT n FROM summary").Scan(&count), qt.IsNil)
-	c.Assert(count, qt.Equals, 0)
 }
 
 // TestSchemaApplyCreatesARoutineAfterTheTypeItRebuildsLive pins a rebuilt type

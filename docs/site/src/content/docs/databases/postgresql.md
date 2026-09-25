@@ -334,7 +334,8 @@ its definition names when the same plan creates them, and a view that calls
 the routine follows it. A PL/pgSQL body is read when the routine first runs,
 so it does not hold the routine back. A routine that names nothing the plan
 creates comes first, where a domain, a column default, a policy or a trigger
-can call it.
+can call it. `ptah schema render` places routines by the same rule, treating
+everything it declares as created.
 
 One order is refused on every path: a column default that calls a
 `LANGUAGE sql` routine reading a table the same plan creates. The routine waits

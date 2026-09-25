@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 8475,
-      "sourceBytes": 58501
+      "visibleWords": 8490,
+      "sourceBytes": 58600
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",

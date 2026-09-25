@@ -12,12 +12,13 @@ import (
 	"ptah.run/internal/sqlschema"
 )
 
-// TestGetOrderedCreateStatements_CreatesRoutinesAfterTheRelationsTheyName is
-// the render half of stokaro/ptah#3602. A render creates every declared
-// relation, so a routine whose definition names one is ordered among the views:
-// after a view it reads and before a view that calls it. The planner places
-// routines by the same rule.
-func TestGetOrderedCreateStatements_CreatesRoutinesAfterTheRelationsTheyName(t *testing.T) {
+// TestGetOrderedCreateStatements_PlacesRoutinesLikeAPlan pins that a render
+// places routines by the rule a migration plan uses (stokaro/ptah#3602,
+// stokaro/ptah#3634). A render creates everything it declares, so a routine
+// whose definition names a relation is ordered among the views, one whose
+// signature names a type follows the types, and one that names nothing comes
+// before the types, where a domain or a column default can call it.
+func TestGetOrderedCreateStatements_PlacesRoutinesLikeAPlan(t *testing.T) {
 	tests := []struct {
 		name  string
 		sql   string
@@ -28,6 +29,32 @@ func TestGetOrderedCreateStatements_CreatesRoutinesAfterTheRelationsTheyName(t *
 			sql: `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
 CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM orders $$;`,
 			order: []string{`CREATE TABLE "orders"`, `FUNCTION "order_count"`},
+		},
+		{
+			name: "a column default calls a routine that names nothing",
+			sql: `CREATE FUNCTION next_code() RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT md5(random()::text) $$;
+CREATE TABLE codes (id bigint PRIMARY KEY, code text NOT NULL DEFAULT next_code());`,
+			order: []string{`FUNCTION "next_code"`, `CREATE TABLE "codes"`},
+		},
+		{
+			name: "a domain CHECK calls a routine that names nothing",
+			sql: `CREATE FUNCTION positive(v integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT v > 0 $$;
+CREATE DOMAIN pct AS integer CHECK (positive(VALUE));
+CREATE TABLE items (id bigint PRIMARY KEY, share pct NOT NULL);`,
+			order: []string{`FUNCTION "positive"`, `CREATE DOMAIN "pct"`, `CREATE TABLE "items"`},
+		},
+		{
+			name: "a signature returns an enum a column default calls it for",
+			sql: `CREATE TYPE mood AS ENUM ('happy', 'sad');
+CREATE FUNCTION default_mood() RETURNS mood LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN 'happy'; END $$;
+CREATE TABLE people (id bigint PRIMARY KEY, feeling mood NOT NULL DEFAULT default_mood());`,
+			order: []string{`CREATE TYPE "mood"`, `FUNCTION "default_mood"`, `CREATE TABLE "people"`},
+		},
+		{
+			name: "a role comes before the routines",
+			sql: `CREATE ROLE app_reader NOLOGIN;
+CREATE FUNCTION next_code() RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT md5(random()::text) $$;`,
+			order: []string{`ROLE "app_reader"`, `FUNCTION "next_code"`},
 		},
 		{
 			name: "a routine reads a view another view reads it through",
