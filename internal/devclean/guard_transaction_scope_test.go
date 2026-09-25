@@ -30,7 +30,7 @@ func TestReplayGuardTransactionScopedSetting_HappyPath(t *testing.T) {
 		{name: "set_config in a larger query", statement: `SELECT set_config('app.tenant_id', id::text, true) FROM tenants WHERE slug = 'acme'`},
 	}
 	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
-		guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect, Schema: "public"})
+		guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect, Schema: "public"}, devclean.ReplayRealmDatabase)
 		for _, test := range tests {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -72,7 +72,7 @@ func TestReplayGuardTransactionScopedSetting_FailurePath(t *testing.T) {
 		{name: "set_config with a computed is_local", statement: `SELECT set_config('lock_timeout', '5s', 1 = 1)`, wantErr: `.*rejects cluster control function .*`},
 		{name: "set_config beside a control function", statement: `SELECT set_config('lock_timeout', '5s', true), pg_terminate_backend(42)`, wantErr: `.*rejects cluster control function .*`},
 	}
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"}, devclean.ReplayRealmDatabase)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
