@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 	"strings"
@@ -96,27 +97,7 @@ func ConstraintsWithSemantics(
 	}
 
 	// Create maps for detailed constraint comparison
-	genConstraints := make(map[tableMemberKey]schemamodel.Constraint)
-	for _, constraint := range desired.Constraints {
-		constraint.Table = generatedConstraintTableName(constraint, desired.Tables)
-		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
-		genConstraints[key] = constraint
-	}
-
-	// Synthesize table-level Constraint entries from field-level `check=`
-	// annotations so they participate in drift comparison alongside table
-	// constraints from `//ptah:schema:constraint`. Only synthesized for
-	// columns that already exist in the database — new tables/columns get
-	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
-	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
-	// constraint is created in the same migration step.
-	recordSynthesized(genConstraints, synthesizeFieldLevelCheckConstraints(desired, database, semantics), semantics)
-
-	// Synthesize table-level Constraint entries from the table's own `checks`
-	// list, which renders as a named CHECK. Without this the constraint the
-	// render created is reported as one to drop on every run after the first
-	// (stokaro/ptah#2590).
-	recordSynthesized(genConstraints, synthesizeTableLevelCheckConstraints(desired, database, semantics), semantics)
+	genConstraints := declaredAndCheckConstraints(desired, database, semantics)
 
 	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
 
@@ -379,6 +360,69 @@ func excludeConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint
 	}
 
 	return false
+}
+
+// declaredAndCheckConstraints collects the desired side's declared constraints
+// and the CHECK constraints the comparison synthesizes, keyed as the comparison
+// keys them. A declared constraint wins over a synthesized one with its name.
+func declaredAndCheckConstraints(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) map[tableMemberKey]schemamodel.Constraint {
+	constraints := make(map[tableMemberKey]schemamodel.Constraint)
+	for _, constraint := range desired.Constraints {
+		constraint.Table = generatedConstraintTableName(constraint, desired.Tables)
+		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
+		constraints[key] = constraint
+	}
+
+	// Synthesize table-level Constraint entries from field-level `check=`
+	// annotations so they participate in drift comparison alongside table
+	// constraints from `//ptah:schema:constraint`. Only synthesized for
+	// columns that already exist in the database — new tables/columns get
+	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
+	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
+	// constraint is created in the same migration step.
+	recordSynthesized(constraints, synthesizeFieldLevelCheckConstraints(desired, database, semantics), semantics)
+
+	// Synthesize table-level Constraint entries from the table's own `checks`
+	// list, which renders as a named CHECK. Without this the constraint the
+	// render created is reported as one to drop on every run after the first
+	// (stokaro/ptah#2590).
+	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, semantics), semantics)
+	return constraints
+}
+
+// ComparedCheckConstraints returns every CHECK constraint the constraint
+// comparison holds for the desired side against database: the declared ones,
+// and the ones it synthesizes from a column's check and a table's checks list.
+// They are ordered by table and name.
+//
+// The resolver that asks the server to spell each CHECK reads this set, so the
+// set it resolves is the set compared. The resolver read the declared
+// constraints alone, and a column-level CHECK the server rewrites -- `kind IN
+// ('plugin')`, stored by PostgreSQL 18.6 as `(kind = 'plugin'::text)` -- was
+// never asked about and was dropped and re-added on every run
+// (stokaro/ptah#3643).
+func ComparedCheckConstraints(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) []schemamodel.Constraint {
+	if desired == nil {
+		return nil
+	}
+	var checks []schemamodel.Constraint
+	for _, constraint := range declaredAndCheckConstraints(desired, database, semantics) {
+		if strings.EqualFold(constraint.Type, "CHECK") {
+			checks = append(checks, constraint)
+		}
+	}
+	slices.SortFunc(checks, func(a, b schemamodel.Constraint) int {
+		return cmp.Or(strings.Compare(a.Table, b.Table), strings.Compare(a.Name, b.Name))
+	})
+	return checks
 }
 
 // checkConstraintChanged compares CHECK constraint definitions.

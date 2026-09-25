@@ -68,9 +68,10 @@ type CheckExpressionProbe struct {
 //
 // Dialects other than the ones below return nil: this rewrite is theirs, and
 // the engines that store the text they were given need no normalization at
-// all. A connection pinned to a session also returns nil, for the reason the
-// package documentation gives: the rollback the probe needs would discard the
-// session owner's work, so nothing is asked and the check stays uncompared.
+// all. A connection pinned to a session with a transaction open also returns
+// nil, for the reason the package documentation gives: the rollback the probe
+// needs would discard the session owner's work, so nothing is asked and the
+// check stays uncompared.
 func ResolveCheckExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,

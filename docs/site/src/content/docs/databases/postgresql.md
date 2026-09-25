@@ -83,14 +83,48 @@ its own read-back rarely match as text:
 | `CHECK (price >= 0)` on a numeric column | `(price >= (0)::numeric)` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
-column type and default, CHECK, policy clause, index expression and domain the
-way its catalog does. It creates a temporary object inside a transaction that is
-rolled back, reads the stored form, and compares like with like. A column is
-asked only when its default is declared or its type is not written the way the
-catalog reports it. A declaration the server refuses is compared with Ptah's own
-folding instead. So is every comparison without a connection, and one on a
-connection pinned to a session, where the rollback would discard the session's
-work.
+column type and default, CHECK, policy clause, index expression and predicate,
+and domain the way its catalog does. It creates a temporary object inside a
+transaction that is rolled back, reads the stored form, and compares like with
+like. A column is asked only when its default is declared or its type is not
+written the way the catalog reports it.
+
+The server asked is the one the other side was read from. `schema apply` asks
+the target. `migrate diff` and `migrations generate --replay` ask the dev
+database the migration directory was replayed on. Both compare on a session
+they hold for the whole run, the apply lock or the replay, and the probe
+transaction runs on that session while no transaction is open on it.
+
+A declaration the server refuses is compared with Ptah's own folding instead.
+So is a comparison on a session with a transaction open, where the rollback
+would discard the session's work, and every comparison without a connection.
+`schema diff` is one of those: it compares a database or a replayed directory
+with a schema file by text, even with `--dev-url` (stokaro/ptah#3651).
+
+## Unnamed constraints in a SQL file
+
+PostgreSQL names a table-level `UNIQUE` or a `FOREIGN KEY` that the SQL leaves
+unnamed. A SQL schema file read for PostgreSQL gives the constraint the same
+name, so the file compares equal to the database its own SQL built, and a plan
+from the file creates the constraint under that name.
+
+The name is `<table>_<columns>_key` or `<table>_<columns>_fkey`, with the
+columns joined by underscores. A name longer than 63 bytes is cut, from the
+longer of the table part and the columns part first, at a character boundary.
+A name already taken in the schema is numbered `key1`, `fkey1` and on. For a
+`UNIQUE`, a table, view, sequence or index of that name counts as taken too.
+Measured on PostgreSQL 18.6:
+
+| Declared | Name |
+| --- | --- |
+| `parent_id bigint REFERENCES parent(id)` on `child` | `child_parent_id_fkey` |
+| `FOREIGN KEY (a, b) REFERENCES parent(id, k)` on `child` | `child_a_b_fkey` |
+| a second foreign key over `p` on `twice` | `twice_p_fkey1` |
+| `UNIQUE (a, b)` on `p` | `p_a_b_key` |
+| `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
+
+A column-level `UNIQUE` is compared by its columns, not by its name. Other
+engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
 
 ## Unlogged tables
 

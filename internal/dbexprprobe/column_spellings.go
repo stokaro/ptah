@@ -50,7 +50,8 @@ type ColumnSpellingColumn struct {
 // declared columns is created, format_type and pg_get_expr read its columns
 // back, and the transaction is rolled back. A column the server refuses is
 // returned with Resolved false. Other dialects, and a connection pinned to a
-// session, return nil, for the reasons [ResolveCheckExpressions] gives.
+// session with a transaction open, return nil, for the reasons
+// [ResolveCheckExpressions] gives.
 func ResolveColumnSpellings(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
