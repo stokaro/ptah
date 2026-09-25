@@ -95,11 +95,18 @@ database the migration directory was replayed on. Both compare on a session
 they hold for the whole run, the apply lock or the replay, and the probe
 transaction runs on that session while no transaction is open on it.
 
+`schema diff` asks the server its `--from` side was read from, while that
+connection is still open: the `--from` database itself, or the dev database
+session the `--from` migration directory was replayed on, before the replay's
+cleanup. It does so when `--to` is a schema file or another declaration. A
+`--from` database answers without `--dev-url`.
+
 A declaration the server refuses is compared with Ptah's own folding instead.
 So is a comparison on a session with a transaction open, where the rollback
 would discard the session's work, and every comparison without a connection.
-`schema diff` is one of those: it compares a database or a replayed directory
-with a schema file by text, even with `--dev-url` (stokaro/ptah#3651).
+A `schema diff` whose `--from` is a schema file has no server behind that side
+and compares by text (stokaro/ptah#3658). One whose two sides are both
+databases or directories needs no server: both hold the server's spelling.
 
 ## Unnamed constraints in a SQL file
 
