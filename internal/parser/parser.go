@@ -1031,6 +1031,25 @@ func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, er
 		return false, nil
 	case "SET":
 		return false, p.parseFunctionSetting(function)
+	case "STRICT":
+		function.Strict = true
+		p.advance()
+		return false, nil
+	case "CALLED":
+		p.advance()
+		if err := p.expectWords("ON", "NULL", "INPUT"); err != nil {
+			return false, fmt.Errorf("expected CALLED ON NULL INPUT: %w", err)
+		}
+		function.Strict = false
+		return false, nil
+	case "PARALLEL":
+		return false, p.parseFunctionParallel(function)
+	case "LEAKPROOF":
+		function.Leakproof = true
+		p.advance()
+		return false, nil
+	case "NOT":
+		return false, p.parseFunctionNotClause(function)
 	default:
 		if p.skipMySQLFunctionAttribute(keyword) {
 			return false, nil
@@ -1082,20 +1101,99 @@ func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
 	}
 	p.skipWhitespace()
 
+	// RETURNS NULL ON NULL INPUT is not a return type but the long spelling of
+	// STRICT. No type is called NULL, so the word decides it.
+	if p.current.MatchIdentifierValue("NULL") {
+		p.advance()
+		if err := p.expectWords("ON", "NULL", "INPUT"); err != nil {
+			return fmt.Errorf("expected RETURNS NULL ON NULL INPUT: %w", err)
+		}
+		function.Strict = true
+		return nil
+	}
+
+	// The type ends at the first clause keyword outside parentheses. Reading a
+	// keyword inside them as the end would cut RETURNS TABLE (rows int) short,
+	// and a clause keyword missing from the list was read as part of the type:
+	// RETURNS int COST 100 recorded a return type of "intCOST100".
 	var returns strings.Builder
+	depth := 0
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
-		if p.current.Type == lexer.TokenIdentifier {
-			switch strings.ToUpper(p.current.Value) {
-			case "AS", "BEGIN", "CONTAINS", "DETERMINISTIC", "LANGUAGE", "MODIFIES", "NO", "NOT", "READS", "RETURN", "SECURITY", "SQL", "IMMUTABLE", "STABLE", "VOLATILE":
-				function.SetReturns(strings.TrimSpace(returns.String()))
-				return nil
-			}
+		switch {
+		case p.current.MatchOperatorValue("("):
+			depth++
+		case p.current.MatchOperatorValue(")"):
+			depth--
+		case depth == 0 && returns.Len() > 0 && p.current.Type == lexer.TokenIdentifier &&
+			isFunctionClauseKeyword(p.current.Value):
+			function.SetReturns(strings.TrimSpace(returns.String()))
+			return nil
 		}
 		returns.WriteString(p.current.Value)
 		p.advance()
 	}
 
 	function.SetReturns(strings.TrimSpace(returns.String()))
+	return nil
+}
+
+// isFunctionClauseKeyword reports the words that begin a CREATE FUNCTION
+// clause, and so end the return type that precedes them. The MySQL family's
+// characteristics are here as well as PostgreSQL's clauses.
+func isFunctionClauseKeyword(word string) bool {
+	switch strings.ToUpper(word) {
+	case "AS", "BEGIN", "CONTAINS", "DETERMINISTIC", "LANGUAGE", "MODIFIES", "NO", "NOT", "READS", "RETURN",
+		"SECURITY", "SQL", "IMMUTABLE", "STABLE", "VOLATILE",
+		"STRICT", "CALLED", "RETURNS", "PARALLEL", "LEAKPROOF", "SET", "COST", "ROWS", "WINDOW", "SUPPORT",
+		"TRANSFORM", "EXTERNAL":
+		return true
+	default:
+		return false
+	}
+}
+
+// parseFunctionParallel reads PARALLEL SAFE, RESTRICTED or UNSAFE.
+func (p *Parser) parseFunctionParallel(function *ast.CreateFunctionNode) error {
+	start := p.current.Start
+	p.advance()
+	p.skipWhitespace()
+	level := strings.ToUpper(p.current.Value)
+	switch {
+	case p.current.Type != lexer.TokenIdentifier:
+		return fmt.Errorf("expected SAFE, RESTRICTED or UNSAFE after PARALLEL at position %d", start)
+	case level != "SAFE" && level != "RESTRICTED" && level != "UNSAFE":
+		return fmt.Errorf("unsupported PARALLEL level %s at position %d", p.current.Value, p.current.Start)
+	}
+	function.Parallel = level
+	p.advance()
+	return nil
+}
+
+// parseFunctionNotClause reads a clause that begins with NOT: PostgreSQL's
+// NOT LEAKPROOF, and the MySQL family's NOT DETERMINISTIC.
+func (p *Parser) parseFunctionNotClause(function *ast.CreateFunctionNode) error {
+	start := p.current.Start
+	p.advance()
+	p.skipWhitespace()
+	switch {
+	case p.current.MatchIdentifierValue("LEAKPROOF"):
+		function.Leakproof = false
+	case p.current.MatchIdentifierValue("DETERMINISTIC"):
+	default:
+		return fmt.Errorf("unsupported CREATE FUNCTION clause: NOT %s at position %d", p.current.Value, start)
+	}
+	p.advance()
+	return nil
+}
+
+// expectWords consumes a fixed sequence of keywords.
+func (p *Parser) expectWords(words ...string) error {
+	for _, word := range words {
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, word); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -3046,24 +3144,7 @@ func (p *Parser) parseColumnType() (string, error) {
 	typeName = p.handleMultiWordType(typeName)
 
 	// Check for type parameters (e.g., VARCHAR(255), NUMERIC(10,2))
-	p.skipWhitespace()
-	if p.current.MatchOperatorValue("(") {
-		typeName += "("
-		p.advance()
-
-		// Collect everything inside parentheses
-		parenCount := 1
-		for parenCount > 0 && p.current.Type != lexer.TokenEOF {
-			switch {
-			case p.current.MatchOperatorValue("("):
-				parenCount++
-			case p.current.MatchOperatorValue(")"):
-				parenCount--
-			}
-			typeName += p.current.Value
-			p.advance()
-		}
-	}
+	typeName = p.collectTypeParameters(typeName)
 
 	// Check for MySQL/MariaDB type modifiers (UNSIGNED, ZEROFILL, etc.)
 	typeName = p.handleMySQLLikeTypeModifiers(typeName)
@@ -3074,23 +3155,90 @@ func (p *Parser) parseColumnType() (string, error) {
 	return typeName, nil
 }
 
+// collectTypeParameters appends a parenthesized type modifier list, such as
+// the (255) of VARCHAR(255) or the (5,2) of NUMERIC(5,2), when one follows.
+func (p *Parser) collectTypeParameters(typeName string) string {
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("(") {
+		return typeName
+	}
+	typeName += "("
+	p.advance()
+
+	// Collect everything inside parentheses
+	parenCount := 1
+	for parenCount > 0 && p.current.Type != lexer.TokenEOF {
+		switch {
+		case p.current.MatchOperatorValue("("):
+			parenCount++
+		case p.current.MatchOperatorValue(")"):
+			parenCount--
+		}
+		typeName += p.current.Value
+		p.advance()
+	}
+	return typeName
+}
+
+// parsePostgresCasts reads every `::type` suffix that follows a value, such as
+// the `::uuid[]` of `'{}'::uuid[]`, and returns them as written.
+//
+// The type after `::` is a whole type, not one word: it may be schema-qualified
+// (`::app.mood[]`), take a modifier list (`::numeric(5,2)[]`), span words
+// (`::timestamp with time zone`) and end in array brackets. Reading only the
+// first word left `[]` behind, and the column list then failed on it. A `::`
+// followed by something that is not a type is refused rather than dropped.
+func (p *Parser) parsePostgresCasts() (string, error) {
+	var casts strings.Builder
+	for {
+		p.skipWhitespace()
+		if !p.current.MatchOperatorValue(":") {
+			return casts.String(), nil
+		}
+		start := p.current.Start
+		p.advance()
+		if !p.current.MatchOperatorValue(":") {
+			return "", fmt.Errorf("expected '::' for a type cast at position %d", start)
+		}
+		p.advance()
+		typeName, err := p.parseCastType()
+		if err != nil {
+			return "", err
+		}
+		casts.WriteString("::" + typeName)
+	}
+}
+
+// parseCastType reads the type a `::` cast names.
+func (p *Parser) parseCastType() (string, error) {
+	p.skipWhitespace()
+	typeName, err := p.parseQualifiedIdentifier("type after '::'")
+	if err != nil {
+		return "", err
+	}
+	// A multi-word name is a built-in type, which is never schema-qualified or
+	// quoted, so only a bare word can start one.
+	if isBareWord(typeName) {
+		typeName = p.handleMultiWordType(typeName)
+	}
+	typeName = p.collectTypeParameters(typeName)
+	return p.handlePostgresArrayNotation(typeName), nil
+}
+
+func isBareWord(value string) bool {
+	return value != "" && !strings.ContainsAny(value, `."`)
+}
+
 func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 	value := p.current.Value
 	p.advance()
 
-	// Check for PostgreSQL type casting like '{}'::jsonb
-	if p.current.Type == lexer.TokenOperator && p.current.Value == ":" {
-		p.advance()
-		if p.current.Type == lexer.TokenOperator && p.current.Value == ":" {
-			p.advance()
-			if p.current.Type == lexer.TokenIdentifier {
-				value += "::" + p.current.Value
-				p.advance()
-			}
-		}
+	// PostgreSQL type casts such as '{}'::jsonb or '{}'::uuid[]
+	casts, err := p.parsePostgresCasts()
+	if err != nil {
+		return nil, err
 	}
-
-	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
+	return &ast.DefaultValue{Value: value + casts, ValueSet: true}, nil
 }
 
 func (p *Parser) parseArrayLiteral(value string) (*string, error) {
@@ -5445,9 +5593,17 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		return p.parseAddSkippingIndex()
 	}
 
-	// Optional COLUMN keyword
+	// Optional COLUMN keyword, and after it the PostgreSQL IF NOT EXISTS.
+	// Without the keyword an IF is read as the column's name, which is what
+	// the grammar makes it there.
+	ifNotExists := false
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
 		p.advance()
+		p.skipWhitespace()
+		var err error
+		if ifNotExists, err = p.parseOptionalIfNotExists(); err != nil {
+			return nil, err
+		}
 		p.skipWhitespace()
 	}
 
@@ -5457,7 +5613,7 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		return nil, err
 	}
 
-	return &ast.AddColumnOperation{Column: column}, nil
+	return &ast.AddColumnOperation{Column: column, IfNotExists: ifNotExists}, nil
 }
 
 // parseInlineSkippingIndex reads a ClickHouse data-skipping index declared

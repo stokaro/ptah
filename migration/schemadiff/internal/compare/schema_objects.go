@@ -816,6 +816,14 @@ func FunctionDefinitionsWithDialect(
 			dbFunction.Leakproof, genFunction.Leakproof)
 	}
 
+	// Compare STRICT. A strict function returns NULL for a NULL argument
+	// without running its body, so a routine whose strictness changed answers
+	// differently for the same call even when nothing else about it did.
+	if genFunction.Strict != dbFunction.Strict {
+		functionDiff.Changes["strict"] = fmt.Sprintf("%t -> %t",
+			dbFunction.Strict, genFunction.Strict)
+	}
+
 	// Compare the PARALLEL level, folded so a declaration stating none and a
 	// catalog reporting the server's default are the same routine.
 	if routineparallel.Level(genFunction.Parallel) != routineparallel.Level(dbFunction.Parallel) {

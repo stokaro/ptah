@@ -2545,6 +2545,11 @@ type CreateFunctionNode struct {
 	// Parallel renders the PARALLEL level -- SAFE, RESTRICTED or UNSAFE.
 	// Empty renders no clause, which the server reads as UNSAFE.
 	Parallel string
+	// Strict renders STRICT: the function returns NULL without running when
+	// any argument is NULL. RETURNS NULL ON NULL INPUT is the same property,
+	// and false is CALLED ON NULL INPUT, the server's default. A procedure
+	// takes none of the three.
+	Strict bool
 	// Comment is an optional comment for the function
 	Comment string
 }

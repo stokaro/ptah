@@ -1194,6 +1194,10 @@ type Function struct {
 	// security predicate, so a comparison that ignored it could report a
 	// routine as unchanged while the rows a policy withholds became reachable.
 	Leakproof bool `json:"leakproof,omitempty"`
+	// Strict reports pg_proc.proisstrict: the function returns NULL without
+	// running when any argument is NULL. A dialect with no such property
+	// leaves it false, which is the server's default.
+	Strict bool `json:"strict,omitempty"`
 	// Parallel reports pg_proc.proparallel as SAFE, RESTRICTED or UNSAFE.
 	// A dialect with no such property leaves this empty, which is also what a
 	// declaration stating no level means; UNSAFE is the server's default.

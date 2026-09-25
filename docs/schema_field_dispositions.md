@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-370 fields are reachable from the desired schema, and each one carries
+371 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 309 | reaches rendered SQL on at least one target |
+| `ddl` | 310 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -256,6 +256,7 @@ None.
 | `schemamodel.Function.Returns` | `ddl` | — |
 | `schemamodel.Function.Security` | `ddl` | — |
 | `schemamodel.Function.Settings` | `ddl` | — |
+| `schemamodel.Function.Strict` | `ddl` | — |
 | `schemamodel.Function.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Function.Volatility` | `ddl` | — |
 | `schemamodel.Grant.Comment` | `ddl` | — |

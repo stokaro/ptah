@@ -80,6 +80,23 @@ includes the two documentation targets, so
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
+## Add a column after the table
+
+A column can be added after its table with `ALTER TABLE ... ADD COLUMN`, in the
+same file or in a later file of a schema directory. It joins the table in the
+order the document adds it:
+
+```sql
+CREATE TABLE users (id integer PRIMARY KEY);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
+```
+
+`IF NOT EXISTS` makes the statement do nothing for a column the table already
+declares the same way. A column declared again without `IF NOT EXISTS` is
+refused, as the server refuses it. One declared again with `IF NOT EXISTS` but
+differently is refused too: the server keeps the first declaration and ignores
+the second, so either reading would drop what the other one says.
+
 ## API export metadata
 
 SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,

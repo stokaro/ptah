@@ -633,6 +633,9 @@ func prepareAlterOperation(
 		if typed == nil {
 			return nil, invalidASTForeignKeyError(dialect, "add-column operation is nil")
 		}
+		if typed.IfNotExists && !rendersAddColumnIfNotExists(dialect) {
+			return nil, addColumnIfNotExistsUnsupportedError(dialect)
+		}
 		cloned := *typed
 		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
 		if err != nil {
@@ -890,6 +893,28 @@ func invalidASTForeignKeyError(dialect, message string) error {
 		Dialect: dialect,
 		Err:     ptaherr.ErrInvalidSchemaDiff,
 		Message: "invalid foreign key: " + message,
+	}
+}
+
+// rendersAddColumnIfNotExists names the dialects whose ALTER TABLE takes
+// ADD COLUMN IF NOT EXISTS and whose renderer writes it. Spanner is left out
+// because its PostgreSQL interface has not been measured to accept the form.
+func rendersAddColumnIfNotExists(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return true
+	default:
+		return false
+	}
+}
+
+func addColumnIfNotExistsUnsupportedError(dialect string) error {
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "ADD COLUMN IF NOT EXISTS",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not render ADD COLUMN IF NOT EXISTS", normalized),
 	}
 }
 

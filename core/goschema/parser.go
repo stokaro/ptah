@@ -1298,6 +1298,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		Settings:   routinesetting.NormalizeAll(splitRoutineSettings(kv["settings"])),
 		Leakproof:  kv["leakproof"] == "true",
 		Parallel:   parallel,
+		Strict:     kv["strict"] == "true",
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Dialects:   scope,

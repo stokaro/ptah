@@ -242,7 +242,9 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 // a directory refuses here instead of being read as another schema directory.
 // That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
 // it reports as a symlink rather than as a directory.
-func loadSchemaDirEntry(path string, opts Options) (*schemamodel.Database, map[guardKey]struct{}, error) {
+func loadSchemaDirEntry(
+	path string, opts Options, earlier *schemamodel.Database,
+) (*schemamodel.Database, map[guardKey]struct{}, error) {
 	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
 		return nil, nil, err
@@ -251,7 +253,7 @@ func loadSchemaDirEntry(path string, opts Options) (*schemamodel.Database, map[g
 		return nil, nil, isDirectoryError(resolved)
 	}
 	if strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
-		db, statements, err := loadSQLFileWithStatements(resolved, opts)
+		db, statements, err := loadSQLFileWithStatements(resolved, opts, earlier)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -533,7 +535,7 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	merged := &schemamodel.Database{}
 	ledger := newDirDeclarations()
 	for _, name := range names {
-		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
+		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, merged)
 		if err != nil {
 			return nil, err
 		}
@@ -652,7 +654,7 @@ func LocalFilePath(rawURL string) (string, error) {
 }
 
 func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
-	db, _, err := loadSQLFileWithStatements(path, opts)
+	db, _, err := loadSQLFileWithStatements(path, opts, nil)
 	return db, err
 }
 
@@ -662,13 +664,18 @@ func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
 // table, so only the statement can say whether a redeclaration is guarded, and
 // that is the difference between an exit 1 the pinned binary also gives and a
 // refusal it does not (see schemadir_order.go).
-func loadSQLFileWithStatements(path string, opts Options) (*schemamodel.Database, *ast.StatementList, error) {
+//
+// earlier is what a schema directory's earlier files declared, and nil for a
+// file read on its own; see [sqlschema.ReadOnto].
+func loadSQLFileWithStatements(
+	path string, opts Options, earlier *schemamodel.Database,
+) (*schemamodel.Database, *ast.StatementList, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
 
-	db, statements, err := sqlschema.Read(data, opts.Dialect)
+	db, statements, err := sqlschema.ReadOnto(data, opts.Dialect, earlier)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}

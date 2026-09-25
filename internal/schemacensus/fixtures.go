@@ -1055,7 +1055,7 @@ func functionPlannerPropertiesFixture() schemamodel.Database {
 	db.Functions = []schemamodel.Function{{
 		StructName: "F", Name: "pure", Parameters: "a integer", Returns: "integer",
 		Language: "sql", Volatility: "IMMUTABLE", Body: "SELECT a;",
-		Leakproof: true, Parallel: "SAFE", Kind: "function",
+		Leakproof: true, Parallel: "SAFE", Strict: true, Kind: "function",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db
