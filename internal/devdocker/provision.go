@@ -10,6 +10,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -157,7 +158,46 @@ func (i *Instance) Close() error {
 		return fmt.Errorf("remove dev database container %s: %w", i.container, err)
 	}
 	i.closed = true
+	forgetProvisioned(i.url)
 	return nil
+}
+
+// provisioned records the connectable URL of every server this process started
+// and has not yet removed. [Provisioned] reads it.
+var provisioned = struct {
+	sync.Mutex
+	urls map[string]struct{}
+}{urls: make(map[string]struct{})}
+
+func recordProvisioned(rawURL string) {
+	provisioned.Lock()
+	defer provisioned.Unlock()
+	provisioned.urls[rawURL] = struct{}{}
+}
+
+func forgetProvisioned(rawURL string) {
+	provisioned.Lock()
+	defer provisioned.Unlock()
+	delete(provisioned.urls, rawURL)
+}
+
+// Provisioned reports whether rawURL is the connectable URL [Provision] returned
+// for a server this process started and has not yet removed.
+//
+// It answers from what Provision recorded, not from the shape of the URL. A
+// consumer that received the URL from [Resolve] and handed it on still gets
+// the answer, and an ordinary server URL never does, whatever it points at:
+// the recorded URL carries the per-instance password, which nothing outside
+// this process knows.
+//
+// A dev database replay reads it to decide how much of the server a migration
+// may change. A server this run created and removes afterwards is disposable
+// as a whole; a server the operator named may hold other databases and roles.
+func Provisioned(rawURL string) bool {
+	provisioned.Lock()
+	defer provisioned.Unlock()
+	_, ok := provisioned.urls[rawURL]
+	return ok
 }
 
 // Provision starts a dev database for rawURL and waits until it accepts
@@ -217,6 +257,7 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		releaseInstance(instance, opts)
 		return nil, fmt.Errorf("dev database %s did not become ready: %w", spec.Image, err)
 	}
+	recordProvisioned(instance.url)
 	return instance, nil
 }
 

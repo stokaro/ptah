@@ -655,15 +655,7 @@ func (p *Parser) parsePolicyClauses(policy *ast.CreatePolicyNode) error {
 func (p *Parser) applyPolicyClause(policy *ast.CreatePolicyNode, keyword string) error {
 	switch keyword {
 	case "AS":
-		// PERMISSIVE / RESTRICTIVE has no place in Ptah's IR, and Ptah's HCL
-		// frontend rejects policy `as` for the same reason. Refuse rather than
-		// accept and drop a clause that inverts what the policy means.
-		p.skipWhitespace()
-		kind, err := p.expectIdentifier()
-		if err != nil {
-			return fmt.Errorf("expected PERMISSIVE or RESTRICTIVE after AS: %w", err)
-		}
-		return fmt.Errorf("unsupported CREATE POLICY clause: AS %s at position %d", strings.ToUpper(kind), p.current.Start)
+		return p.applyPolicyAs(policy)
 	case "FOR":
 		p.skipWhitespace()
 		command, err := p.expectIdentifier()
@@ -685,6 +677,31 @@ func (p *Parser) applyPolicyClause(policy *ast.CreatePolicyNode, keyword string)
 		return p.applyPolicyWithCheck(policy)
 	default:
 		return fmt.Errorf("unsupported CREATE POLICY clause: %s at position %d", keyword, p.current.Start)
+	}
+}
+
+// applyPolicyAs reads the AS clause, with AS already consumed.
+//
+// PERMISSIVE is PostgreSQL's default and changes nothing. Anything but the two
+// keywords is refused rather than read as either: permissive policies are
+// OR-ed together and restrictive ones AND-ed over the result, so a misread
+// RESTRICTIVE would widen the access it was written to narrow.
+func (p *Parser) applyPolicyAs(policy *ast.CreatePolicyNode) error {
+	p.skipWhitespace()
+	start := p.current.Start
+	kind, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected PERMISSIVE or RESTRICTIVE after AS: %w", err)
+	}
+	switch strings.ToUpper(kind) {
+	case "PERMISSIVE":
+		policy.Restrictive = false
+		return nil
+	case "RESTRICTIVE":
+		policy.SetRestrictive()
+		return nil
+	default:
+		return fmt.Errorf("expected PERMISSIVE or RESTRICTIVE after AS, got %s at position %d", kind, start)
 	}
 }
 
@@ -783,36 +800,60 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 }
 
 // parseAlterTableRowLevelSecurity parses the ROW LEVEL SECURITY tail of an
-// ALTER TABLE ... ENABLE / DISABLE statement, with the ENABLE or DISABLE
-// keyword already consumed. DISABLE has no IR representation, so it is refused
-// rather than read as its opposite.
-func (p *Parser) parseAlterTableRowLevelSecurity(table, keyword string, start int) (*ast.AlterTableEnableRLSNode, error) {
+// ALTER TABLE ... ENABLE / DISABLE / FORCE / NO FORCE statement, with the
+// keyword before ROW already consumed.
+//
+// ENABLE and FORCE are read. DISABLE and NO FORCE are refused, and for one
+// reason: this parser reads documents that declare a schema, and a document
+// says a table has no row-level security, or that its owner is exempt, by not
+// declaring it. Reading either as a declaration would give a statement that
+// takes a control away the same standing as one that adds it.
+func (p *Parser) parseAlterTableRowLevelSecurity(table, keyword string, start int) (ast.Node, error) {
 	for _, word := range []string{"ROW", "LEVEL", "SECURITY"} {
 		if err := p.expect(lexer.TokenIdentifier, word); err != nil {
 			return nil, fmt.Errorf("expected %s in ALTER TABLE ... %s ROW LEVEL SECURITY: %w", word, keyword, err)
 		}
 	}
-	if keyword != "ENABLE" {
+	switch keyword {
+	case "ENABLE":
+		return ast.NewAlterTableEnableRLS(table), nil
+	case "FORCE":
+		return ast.NewAlterTableForceRLS(table), nil
+	default:
 		return nil, fmt.Errorf("unsupported ALTER operation: %s ROW LEVEL SECURITY at position %d", keyword, start)
 	}
-	return ast.NewAlterTableEnableRLS(table), nil
 }
 
 // parseAlterTableRowSecurity handles an ALTER TABLE tail that begins with
-// ENABLE or DISABLE. The second result reports whether the tail was consumed;
-// when it was not, the caller falls through to the operation list. Anything
-// after ENABLE / DISABLE other than ROW keeps the "unsupported ALTER
+// ENABLE, DISABLE, FORCE or NO. The second result reports whether the tail was
+// consumed; when it was not, the caller falls through to the operation list.
+// Anything after ENABLE / DISABLE other than ROW keeps the "unsupported ALTER
 // operation" error it had before, so ALTER TABLE ... ENABLE TRIGGER is
-// unaffected.
+// unaffected. NO is refused unless FORCE follows it, which is the answer the
+// operation list gives it too: no other ALTER TABLE operation starting with NO
+// is read.
 func (p *Parser) parseAlterTableRowSecurity(table string) (ast.Node, bool, error) {
 	p.skipWhitespace()
-	if !p.current.MatchIdentifierValue("ENABLE") && !p.current.MatchIdentifierValue("DISABLE") {
+	if p.current.Type != lexer.TokenIdentifier {
 		return nil, false, nil
 	}
 	keyword := strings.ToUpper(p.current.Value)
+	switch keyword {
+	case "ENABLE", "DISABLE", "FORCE", "NO":
+	default:
+		return nil, false, nil
+	}
 	start := p.current.Start
 	p.advance()
 	p.skipWhitespace()
+	if keyword == "NO" {
+		if !p.current.MatchIdentifierValue("FORCE") {
+			return nil, true, fmt.Errorf("unsupported ALTER operation: NO at position %d", start)
+		}
+		p.advance()
+		p.skipWhitespace()
+		keyword = "NO FORCE"
+	}
 	if !p.current.MatchIdentifierValue("ROW") {
 		return nil, true, fmt.Errorf("unsupported ALTER operation: %s at position %d", keyword, start)
 	}

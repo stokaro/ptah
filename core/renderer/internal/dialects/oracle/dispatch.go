@@ -131,6 +131,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderAlterTableEnableRLS(n)
 	case *ast.AlterTableDisableRLSNode:
 		return r.renderAlterTableDisableRLS(n)
+	case *ast.AlterTableForceRLSNode:
+		return r.renderAlterTableForceRLS(n)
 
 	// A synonym is a native Oracle object and renders; the rest of this group
 	// belongs to another engine and is named and skipped.

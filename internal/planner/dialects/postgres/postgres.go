@@ -1781,6 +1781,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
 	result = p.enableRLSOnTables(result, diff, semantics)
+	result = p.changeRLSForce(result, diff)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result, err = p.addNewRLSPolicies(result, diff)
@@ -3018,6 +3019,26 @@ func (p *Planner) enableRLSOnTables(
 			enableRLSNode.SetForce()
 		}
 		result = append(result, enableRLSNode)
+	}
+	return result
+}
+
+// changeRLSForce emits ALTER TABLE ... FORCE / NO FORCE ROW LEVEL SECURITY for
+// the tables the comparator recorded in RLSForceChanged.
+//
+// It runs after enableRLSOnTables because an enablement this plan makes already
+// carries the FORCE its declaration asks for, and the comparator lists such a
+// table here only to turn a leftover flag off. Every entry is a declared table,
+// so none of them is one this plan drops.
+func (p *Planner) changeRLSForce(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, change := range diff.RLSForceChanged {
+		node := ast.NewAlterTableForceRLS(change.Table)
+		if change.Forced {
+			node.SetComment(fmt.Sprintf("Apply the policies of %s to its owner", change.Table))
+		} else {
+			node.SetNoForce().SetComment(fmt.Sprintf("Exempt the owner of %s from its policies", change.Table))
+		}
+		result = append(result, node)
 	}
 	return result
 }

@@ -181,8 +181,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5466,
-      "sourceBytes": 45785
+      "visibleWords": 5468,
+      "sourceBytes": 45795
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14040,
-      "sourceBytes": 98157
+      "visibleWords": 14079,
+      "sourceBytes": 98441
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -1143,6 +1143,7 @@
         "/reference/configuration/",
         "/reference/go-annotations/",
         "/reference/lint-rules/",
+        "/schema/sql/",
         "/versioned/apply/",
         "/versioned/lint/"
       ],
@@ -1153,10 +1154,11 @@
         "/databases/overview/",
         "/databases/support-matrix/",
         "/direct/inspect/",
+        "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 6585,
-      "sourceBytes": 46433
+      "visibleWords": 6684,
+      "sourceBytes": 47013
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4613,8 +4615,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5157,
-      "sourceBytes": 39931
+      "visibleWords": 5212,
+      "sourceBytes": 40251
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -5617,6 +5619,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/overview/",
+        "/databases/postgresql/",
         "/reference/native-commands/",
         "/schema/composite/",
         "/schema/document/",
@@ -5629,14 +5632,15 @@
       ],
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
+        "/databases/postgresql/",
         "/faq/",
         "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1470,
-      "sourceBytes": 12043
+      "visibleWords": 1713,
+      "sourceBytes": 14040
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

@@ -251,7 +251,7 @@ func replayOnLockedConnection(
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(atlasTemplateData),
 		migrator.WithAtlasRevisionVersions(revisionVersions),
-		migrator.WithStatementValidator(devclean.NewReplayGuard(conn.Info())),
+		migrator.WithStatementValidator(devclean.NewReplayGuard(conn.Info(), replayRealm(conn.Info()))),
 	)
 	if err != nil {
 		return fmt.Errorf("load migration directory: %w", err)
@@ -274,6 +274,22 @@ func replayOnLockedConnection(
 			hooks,
 		)
 	})
+}
+
+// replayRealm is how much of the dev server this replay may change: the whole
+// server when this process provisioned it for the run and removes it
+// afterwards, and the dev database otherwise.
+//
+// The answer is the one [devdocker.Provisioned] recorded when it started the
+// server, read from the URL the connection was opened with. It is not
+// re-derived from the operator's `--dev-url` spelling, because every consumer
+// resolves a docker URL before it connects and hands the connectable URL on,
+// so by the time a replay runs no docker URL is left to read.
+func replayRealm(info catalog.ServerInfo) devclean.ReplayRealm {
+	if devdocker.Provisioned(info.URL) {
+		return devclean.ReplayRealmServer
+	}
+	return devclean.ReplayRealmDatabase
 }
 
 func replayMigrations(

@@ -3270,6 +3270,7 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			-- empty array (stokaro/ptah#2356).
 			COALESCE(array_to_string(p.proconfig, E'\n'), '') AS settings,
 			p.proleakproof AS leakproof,
+			p.proisstrict AS strict,
 			CASE p.proparallel
 				WHEN 's' THEN 'SAFE'
 				WHEN 'r' THEN 'RESTRICTED'
@@ -3325,6 +3326,7 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			&fn.Kind,
 			&settings,
 			&fn.Leakproof,
+			&fn.Strict,
 			&fn.Parallel,
 		)
 		if err != nil {

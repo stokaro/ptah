@@ -22,11 +22,24 @@ import (
 // rather than the model's. A caller that needs neither ignores the second
 // result.
 func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList, error) {
+	return ReadOnto(data, dialect, nil)
+}
+
+// ReadOnto is [Read] for one file of a schema directory, read against base,
+// what the directory's earlier files declared.
+//
+// A directory is one script run in file order, so a later file may add a
+// column to a table an earlier file created. The result holds only what this
+// file contributes, the added column included; the caller merges it with base.
+// A nil base reads the file alone, as [Read] does.
+func ReadOnto(
+	data []byte, dialect string, base *schemamodel.Database,
+) (schemamodel.Database, *ast.StatementList, error) {
 	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	database, err := ToDatabase(statements, dialect)
+	database, err := toDatabase(statements, dialect, base)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}

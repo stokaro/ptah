@@ -76,7 +76,7 @@ func TestRLSEnabledTables_ADeclaredPolicyIsNotARequestToDisable(t *testing.T) {
 				Name: "docs", Schema: "public", RLSEnabled: true,
 			}}}
 
-			compare.RLSEnabledTablesWithSemantics(declared, live, diff, rlsSemantics())
+			compare.RLSEnabledTablesWithSemantics(declared, live, diff, rlsSemantics(), "postgres")
 
 			c.Assert(diff.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 		})

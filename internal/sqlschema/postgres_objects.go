@@ -1,9 +1,11 @@
 package sqlschema
 
 import (
+	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 )
 
@@ -113,6 +115,7 @@ func toRLSPolicy(node *ast.CreatePolicyNode) schemamodel.RLSPolicy {
 		ToRoles:             normalizeRoleList(node.ToRoles),
 		UsingExpression:     node.UsingExpression,
 		WithCheckExpression: node.WithCheckExpression,
+		Restrictive:         node.Restrictive,
 		Comment:             node.Comment,
 	}
 }
@@ -138,6 +141,72 @@ func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) schemamodel.RLSEnabled
 		Table:   catalogPostgresTableReference(node.Table),
 		Comment: node.Comment,
 	}
+}
+
+// appendRowSecurity reads the two table-level row-level security statements
+// and reports whether stmt was one of them.
+//
+// ENABLE becomes an enablement. FORCE is accepted here and folded into its
+// enablement by [applyForcedRowSecurity], which runs after every statement is
+// read because the ENABLE it qualifies may come later in the document. NO FORCE
+// is refused: a schema says the owner is exempt by not declaring FORCE.
+func appendRowSecurity(database *schemamodel.Database, stmt ast.Node) (bool, error) {
+	switch node := stmt.(type) {
+	case *ast.AlterTableEnableRLSNode:
+		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
+		return true, nil
+	case *ast.AlterTableForceRLSNode:
+		if node.NoForce {
+			return true, fmt.Errorf(
+				"%w: ALTER TABLE %s NO FORCE ROW LEVEL SECURITY; a schema says its owner is exempt by not declaring FORCE",
+				ErrUnmodeledStatement, node.Table)
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+// applyForcedRowSecurity marks each table a FORCE ROW LEVEL SECURITY statement
+// names as forced on the enablement the same document declares.
+//
+// ENABLE and FORCE are two statements and may come in either order, so this
+// runs after every statement is read. The table is resolved the way
+// [toRLSEnabledTable] resolves it and then matched under the target's
+// identifier rules, so `t1` and `public.t1` are one relation here as they are
+// to the comparison that later reads the model.
+//
+// A FORCE for a table the document never enables is refused. PostgreSQL accepts
+// it: measured on 18.6, the table then reports relforcerowsecurity true and
+// relrowsecurity false, and its owner still reads every row, because FORCE
+// changes nothing until row-level security is enabled. The model has no state
+// for a forced table that is not enabled, and the other schema frontends cannot
+// declare one either (an HCL row_security block requires enabled = true), so
+// dropping the statement would lose it and inventing an enablement would add a
+// control nobody wrote.
+func applyForcedRowSecurity(database *schemamodel.Database, statements []ast.Node, sourcePlatform string) error {
+	semantics := identifier.ForDialect(sourcePlatform)
+	for _, statement := range statements {
+		force, ok := statement.(*ast.AlterTableForceRLSNode)
+		if !ok || force.NoForce {
+			continue
+		}
+		key := semantics.QualifiedTableIdentityKey(catalogPostgresTableReference(force.Table))
+		found := false
+		for index := range database.RLSEnabledTables {
+			if semantics.QualifiedTableIdentityKey(database.RLSEnabledTables[index].Table) == key {
+				database.RLSEnabledTables[index].Forced = true
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf(
+				"ALTER TABLE %s FORCE ROW LEVEL SECURITY has no effect until the table enables row-level security; "+
+					"declare ALTER TABLE %s ENABLE ROW LEVEL SECURITY too",
+				force.Table, force.Table)
+		}
+	}
+	return nil
 }
 
 func toView(node *ast.CreateViewNode) schemamodel.View {
@@ -167,6 +236,9 @@ func toFunction(node *ast.CreateFunctionNode) schemamodel.Function {
 		Security:   node.Security,
 		Volatility: node.Volatility,
 		Settings:   node.Settings,
+		Leakproof:  node.Leakproof,
+		Parallel:   node.Parallel,
+		Strict:     node.Strict,
 		Body:       strings.TrimSpace(node.Body),
 		Comment:    node.Comment,
 	}

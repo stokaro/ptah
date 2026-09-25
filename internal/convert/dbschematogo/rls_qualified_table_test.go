@@ -82,3 +82,35 @@ func TestConvert_LeavesAnUnqualifiedRLSTableAlone(t *testing.T) {
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, database.RLSPolicies[0].Table)
 }
+
+// TestConvert_KeepsForceAndRestrictive carries the two row-level security flags
+// a description loses silently without them. A dropped FORCE describes a table
+// whose owner reads past its policies; a dropped RESTRICTIVE describes a policy
+// that widens access instead of narrowing it.
+func TestConvert_KeepsForceAndRestrictive(t *testing.T) {
+	tests := []struct {
+		name            string
+		forced          bool
+		restrictive     bool
+		wantForced      bool
+		wantRestrictive bool
+	}{
+		{name: "forced and restrictive", forced: true, restrictive: true, wantForced: true, wantRestrictive: true},
+		{name: "neither", forced: false, restrictive: false, wantForced: false, wantRestrictive: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema := rlsSchema("app")
+			schema.Tables[0].RLSForced = test.forced
+			schema.RLSPolicies[0].Restrictive = test.restrictive
+
+			database := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
+
+			c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
+			c.Assert(database.RLSEnabledTables[0].Forced, qt.Equals, test.wantForced)
+			c.Assert(database.RLSPolicies, qt.HasLen, 1)
+			c.Assert(database.RLSPolicies[0].Restrictive, qt.Equals, test.wantRestrictive)
+		})
+	}
+}

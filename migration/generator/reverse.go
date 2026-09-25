@@ -267,6 +267,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// Reverse RLS table enablement operations
 		RLSEnabledTablesAdded:   diff.RLSEnabledTablesRemoved, // Tables to disable RLS become tables to enable RLS
 		RLSEnabledTablesRemoved: diff.RLSEnabledTablesAdded,   // Tables to enable RLS become tables to disable RLS
+		RLSForceChanged:         reverseRLSForceChanges(diff.RLSForceChanged),
 
 		// Reverse role operations
 		RolesAdded:          diff.RolesRemoved, // Roles to remove become roles to add
@@ -481,4 +482,19 @@ func priorIndexChanges(
 		})
 	}
 	return changes
+}
+
+// reverseRLSForceChanges moves each FORCE flag back. The flag is two-valued and
+// the forward change moved it off the state the database held, so the database
+// held the opposite of each target.
+func reverseRLSForceChanges(changes difftypes.RLSForceChanges) difftypes.RLSForceChanges {
+	if changes == nil {
+		return nil
+	}
+	reversed := make(difftypes.RLSForceChanges, 0, len(changes))
+	for _, change := range changes {
+		change.Forced = !change.Forced
+		reversed = append(reversed, change)
+	}
+	return reversed
 }

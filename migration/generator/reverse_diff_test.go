@@ -288,7 +288,11 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "old_table"},
 		},
-		RLSEnabledTablesAdded:   difftypes.RLSEnabledTableChanges{{Table: "users"}, {Table: "posts"}},
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "users"}, {Table: "posts"}},
+		RLSForceChanged: difftypes.RLSForceChanges{
+			{Table: "users", Forced: true},
+			{Table: "audit", Forced: false},
+		},
 		RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "old_table"}},
 		RolesAdded:              difftypes.RoleChanges{{Name: "app_user"}, {Name: "admin_user"}},
 		RolesRemoved:            difftypes.RoleChanges{{Name: "old_role"}},
@@ -340,6 +344,11 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	// Verify RLS table enablement reversals
 	c.Assert(result.RLSEnabledTablesAdded, qt.DeepEquals, input.RLSEnabledTablesRemoved)
 	c.Assert(result.RLSEnabledTablesRemoved, qt.DeepEquals, input.RLSEnabledTablesAdded)
+	// FORCE is two-valued, so moving it back is the opposite of each target.
+	c.Assert(result.RLSForceChanged, qt.DeepEquals, difftypes.RLSForceChanges{
+		{Table: "users", Forced: false},
+		{Table: "audit", Forced: true},
+	})
 
 	// Verify role reversals
 	c.Assert(result.RolesAdded.Names(), qt.DeepEquals, input.RolesRemoved.Names())

@@ -106,6 +106,12 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	add(&findings, "rls_policies_modified", len(diff.RLSPoliciesModified), Warning)
 	add(&findings, "rls_enabled_tables_added", len(diff.RLSEnabledTablesAdded), Safe)
 	add(&findings, "rls_enabled_tables_removed", len(diff.RLSEnabledTablesRemoved), Destructive)
+	// NO FORCE counts as destructive for the reason a DISABLE does: afterwards
+	// the table's owner, often the role the application connects as, reads and
+	// writes past every policy the table keeps.
+	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
+	add(&findings, "rls_force_added", forced, Safe)
+	add(&findings, "rls_force_removed", unforced, Destructive)
 	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
 	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
@@ -456,6 +462,12 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Subject = n.Table
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
+	case *ast.AlterTableForceRLSNode:
+		assessment.Subject = n.Table
+		if n.NoForce {
+			assessment.Severity = Destructive
+			assessment.Reason = noForceReason
+		}
 	case *ast.IndexNode:
 		assessment.Subject = n.Name
 		if n.Unique {
@@ -597,6 +609,9 @@ func assessRawSQL(sql string, assessment StatementAssessment) StatementAssessmen
 	case hasWordSequence(words, "DISABLE", "ROW", "LEVEL", "SECURITY"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
+	case hasWordSequence(words, "NO", "FORCE", "ROW", "LEVEL", "SECURITY"):
+		assessment.Severity = Destructive
+		assessment.Reason = noForceReason
 	case hasWordSequence(words, "DROP", "COLUMN"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP COLUMN removes existing column data"
@@ -746,4 +761,20 @@ func hasWordSequence(words []string, sequence ...string) bool {
 		}
 	}
 	return false
+}
+
+// noForceReason is why NO FORCE ROW LEVEL SECURITY is destructive, in the
+// words both the AST and the SQL-text classifiers report.
+const noForceReason = "NO FORCE ROW LEVEL SECURITY exempts the table owner from its policies"
+
+// rlsForceDirections counts the FORCE changes that turn the flag on and off.
+func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int) {
+	for _, change := range changes {
+		if change.Forced {
+			forced++
+			continue
+		}
+		unforced++
+	}
+	return forced, unforced
 }

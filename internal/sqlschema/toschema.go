@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -646,6 +648,14 @@ func ToEnum(enum *ast.EnumNode) schemamodel.Enum {
 func ToDatabase(
 	statements *ast.StatementList, sourcePlatform string,
 ) (schemamodel.Database, error) {
+	return toDatabase(statements, sourcePlatform, nil)
+}
+
+// toDatabase is [ToDatabase] read against the objects earlier documents of the
+// same schema declared. base is nil for a document that stands alone.
+func toDatabase(
+	statements *ast.StatementList, sourcePlatform string, base *schemamodel.Database,
+) (schemamodel.Database, error) {
 	database := schemamodel.Database{
 		Schemas: make([]schemamodel.Schema, 0),
 		Tables:  make([]schemamodel.Table, 0),
@@ -656,9 +666,12 @@ func ToDatabase(
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		if err := appendStatement(&database, stmt, sourcePlatform); err != nil {
+		if err := appendStatement(&database, base, stmt, sourcePlatform); err != nil {
 			return schemamodel.Database{}, err
 		}
+	}
+	if err := applyForcedRowSecurity(&database, statements.Statements, sourcePlatform); err != nil {
+		return schemamodel.Database{}, err
 	}
 
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
@@ -681,12 +694,17 @@ func ToDatabase(
 // adding a node kind somewhere else. So the default refuses by name, and a kind
 // this package deliberately does not model says so in a case of its own rather
 // than by not appearing.
-func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) error {
+func appendStatement(
+	database, base *schemamodel.Database, stmt ast.Node, sourcePlatform string,
+) error {
 	if appendRoutine(database, stmt) {
 		return nil
 	}
 	if appendPrivilegeDeclaration(database, stmt) {
 		return nil
+	}
+	if handled, err := appendRowSecurity(database, stmt); handled {
+		return err
 	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
@@ -703,7 +721,7 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node))
 	case *ast.AlterTableNode:
-		return appendAlterTableConstraints(database, node)
+		return appendAlterTable(database, base, node)
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node)
 	case *ast.ExtensionNode:
@@ -722,8 +740,6 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 		database.Roles = append(database.Roles, toRole(node))
 	case *ast.CreatePolicyNode:
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node))
-	case *ast.AlterTableEnableRLSNode:
-		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
 	case *ast.CommentNode:
 		applyRoleComment(database, node)
 	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
@@ -944,15 +960,25 @@ func unorderedElements(
 	return order
 }
 
-// appendAlterTableConstraints captures constraints added by
-// ALTER TABLE ... ADD CONSTRAINT, such as the foreign keys ORM schema exporters
-// emit as separate statements after the CREATE TABLEs.
-func appendAlterTableConstraints(database *schemamodel.Database, node *ast.AlterTableNode) error {
+// appendAlterTable captures what ALTER TABLE adds to a table the document
+// declares: columns added by ADD COLUMN, and constraints added by ADD
+// CONSTRAINT, such as the foreign keys ORM schema exporters emit as separate
+// statements after the CREATE TABLEs.
+//
+// base holds what earlier files of the same schema directory declared. A
+// directory is one script, so a later file may add a column to a table an
+// earlier file created; the column is this file's contribution and is kept
+// here, on the table's struct name, for the merge to place.
+func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode) error {
 	tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
 	qualifiedTableName := schemamodel.QualifyTableName(tableSchemaName, tableName)
 	structName := tableStructName(node.Name)
 	for _, op := range node.Operations {
 		switch typed := op.(type) {
+		case *ast.AddColumnOperation:
+			if err := applyAlterTableAddColumn(database, base, node.Name, structName, typed); err != nil {
+				return err
+			}
 		case *ast.AddConstraintOperation:
 			if typed.Constraint == nil {
 				continue
@@ -1002,6 +1028,60 @@ func appendAlterTableConstraints(database *schemamodel.Database, node *ast.Alter
 			})
 		}
 	}
+	return nil
+}
+
+// applyAlterTableAddColumn puts a column added by ALTER TABLE ... ADD COLUMN on
+// the table the statement names.
+//
+// Without it the statement parsed and the column never reached the model, so a
+// schema file that declared a column this way rendered, planned and compared
+// as though the column did not exist.
+//
+// A column the table already declares is refused without IF NOT EXISTS, as the
+// server refuses it. With IF NOT EXISTS the server skips the second declaration
+// whatever it says and keeps the first, so the same definition is the same
+// schema and is accepted. A different definition is refused: keeping either
+// one would silently drop what the other says.
+func applyAlterTableAddColumn(
+	database, base *schemamodel.Database,
+	tableName, structName string,
+	operation *ast.AddColumnOperation,
+) error {
+	if operation.Column == nil {
+		return fmt.Errorf("ALTER TABLE %s ADD COLUMN carries no column", tableName)
+	}
+	declares := func(table schemamodel.Table) bool { return table.StructName == structName }
+	if !slices.ContainsFunc(database.Tables, declares) &&
+		(base == nil || !slices.ContainsFunc(base.Tables, declares)) {
+		return fmt.Errorf(
+			"%w: ALTER TABLE %s ADD COLUMN %s names a table this schema does not declare",
+			ErrUnmodeledStatement, tableName, operation.Column.Name)
+	}
+	field := ToField(operation.Column, structName, "")
+	known := database.Fields
+	if base != nil {
+		known = append(slices.Clip(base.Fields), database.Fields...)
+	}
+	for _, existing := range known {
+		if existing.StructName != structName || existing.Name != field.Name {
+			continue
+		}
+		if !operation.IfNotExists {
+			return fmt.Errorf(
+				"ALTER TABLE %s ADD COLUMN %s names a column the table already declares",
+				tableName, operation.Column.Name)
+		}
+		if !reflect.DeepEqual(existing, field) {
+			return fmt.Errorf(
+				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s declares the column differently from the "+
+					"table's own declaration; the server keeps the first and ignores this one, so the "+
+					"document has to say one thing",
+				tableName, operation.Column.Name)
+		}
+		return nil
+	}
+	database.Fields = append(database.Fields, field)
 	return nil
 }
 

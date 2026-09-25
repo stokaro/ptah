@@ -17,6 +17,11 @@ type AlterOperation interface {
 type AddColumnOperation struct {
 	// Column contains the complete column definition to add
 	Column *ColumnNode
+	// IfNotExists records ADD COLUMN IF NOT EXISTS: adding a column the table
+	// already has does nothing instead of failing. The PostgreSQL family
+	// renders it; a dialect without the form refuses the operation rather
+	// than render a statement that fails where the author asked it not to.
+	IfNotExists bool
 }
 
 // Accept hands the visitor this operation.

@@ -205,6 +205,42 @@ without interpreting a routine body, such as `DROP FUNCTION`,
 `DROP FOREIGN TABLE`, `DROP SYNONYM`, and `DROP EXTERNAL TABLE`, remain
 allowed.
 
+### A server Ptah provisions
+
+A `docker://` dev URL starts a server for one command and removes it when the
+command ends, so the server holds nothing that is not the run's. On such a
+server, replay also runs the statements it refuses elsewhere only because
+their effect reaches past the dev database:
+
+- PostgreSQL-family `DO`, `CALL`, routine creation and alteration,
+  `CREATE` and `DROP` of a role, user, group or database, `ALTER ROLE`
+  without `SET` or `RESET`, role membership, privileges on a role, database,
+  schema, language or parameter, `ALTER DEFAULT PRIVILEGES` without
+  `IN SCHEMA`, `DROP OWNED`, `REASSIGN OWNED`, and `COMMENT ON ROLE` or
+  `DATABASE`.
+- MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
+  and `DROP` of a user, role or database, and writes to another database.
+
+So a migration directory that creates its application role in a `DO` block or
+defines a function replays on `docker://postgres/18/dev`.
+
+The rest of the list above still fails closed on a provisioned server. Those
+statements change the replay session or the sessions the rest of the command
+opens (`SET search_path`, `ALTER ROLE ... SET`, any `ALTER DATABASE`,
+transaction control), change how the command's later SQL runs (`ALTER SYSTEM`,
+event triggers, casts, languages), reach past the container (foreign servers,
+subscriptions, `dblink`, an external `COPY`), or mutate a protected namespace
+such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
+scheduler runs it during the rest of the command.
+
+The decision reads what Ptah recorded when it started the server, not the
+spelling of the URL. A server URL keeps the whole list, because such a server
+may hold databases and roles that are not the run's: a role a replay created
+there would outlive the command. That holds for a disposable container
+started some other way, such as a CI service, too
+([`stokaro/ptah#3564`](https://github.com/stokaro/ptah/issues/3564) tracks a
+way to declare one).
+
 ## Where it appears
 
 - Replay validation with a dev database: [Integrity and safety](../../versioned/integrity-and-safety/).

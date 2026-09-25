@@ -12,12 +12,35 @@ import (
 // ReplayGuard rejects migration statements whose effects cannot be confined to
 // the disposable database realm cleaned after migration replay.
 type ReplayGuard struct {
-	info catalog.ServerInfo
+	info  catalog.ServerInfo
+	realm ReplayRealm
 }
 
-// NewReplayGuard creates a dialect-aware migration replay guard.
-func NewReplayGuard(info catalog.ServerInfo) *ReplayGuard {
-	return &ReplayGuard{info: info}
+// ReplayRealm is how much of the dev server a replay may change.
+type ReplayRealm int
+
+const (
+	// ReplayRealmDatabase confines a replay to the dev database. It is the
+	// realm of a server the operator named: that server may hold other
+	// databases and roles, and a role or a database a replay creates outlives
+	// the cleanup, which empties the dev database and nothing else.
+	ReplayRealmDatabase ReplayRealm = iota
+	// ReplayRealmServer lets a replay change the whole server. It is the realm
+	// of a server this run provisioned and removes afterwards, where a role,
+	// another database or a routine body cannot reach anything the run does
+	// not own.
+	//
+	// It lifts only the refusals whose reason is the realm. A statement that
+	// changes the replay session, the server's catalogs or its configuration,
+	// or that reaches past the server, is refused here too: those would
+	// mislead the rest of the run, or leave the container.
+	ReplayRealmServer
+)
+
+// NewReplayGuard creates a dialect-aware migration replay guard for a replay
+// confined to realm.
+func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
+	return &ReplayGuard{info: info, realm: realm}
 }
 
 // ValidateStatement rejects statements whose effects cannot be confined to
@@ -34,9 +57,15 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	case platform.SQLite:
 		return validateSQLiteReplayStatement(tokens)
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		if g.realm == ReplayRealmServer && postgresServerWideOperation(tokens) != "" {
+			return validatePostgresServerWideStatement(dialect, tokens)
+		}
 		return validatePostgresReplayStatement(dialect, tokens)
 	case platform.MySQL, platform.MariaDB:
-		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens)
+		if g.realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
+			return nil
+		}
+		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, g.realm)
 	case platform.SQLServer:
 		return validateSQLServerReplayStatement(tokens)
 	case platform.ClickHouse:

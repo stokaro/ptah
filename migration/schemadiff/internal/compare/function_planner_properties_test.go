@@ -75,3 +75,32 @@ func TestFunctionDefinitions_AnUnstatedParallelLevelEqualsUnsafe(t *testing.T) {
 		})
 	}
 }
+
+// A routine's STRICT is compared, because a strict function returns NULL for a
+// NULL argument without running its body. Two routines that differ only in it
+// answer the same call differently.
+func TestFunctionDefinitions_StrictIsCompared(t *testing.T) {
+	tests := []struct {
+		name       string
+		declared   bool
+		observed   bool
+		wantChange string
+	}{
+		{name: "declared strict against one that is not", declared: true, observed: false, wantChange: "false -> true"},
+		{name: "declared plain against a strict routine", declared: false, observed: true, wantChange: "true -> false"},
+		{name: "both strict", declared: true, observed: true},
+		{name: "neither", declared: false, observed: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.FunctionDefinitions(
+				schemamodel.Function{Name: "f", Strict: test.declared},
+				catalog.Function{Name: "f", Strict: test.observed},
+			)
+
+			c.Assert(diff.Changes["strict"], qt.Equals, test.wantChange)
+		})
+	}
+}

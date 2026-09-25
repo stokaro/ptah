@@ -1085,7 +1085,10 @@ proven. The native Atlas layout remains forward-only and carries `--
 atlas:txmode none` on its own file when required.
 
 A `docker://` dev database is provisioned on the verbs that take one: the
-container is started, used and removed by the command.
+container is started, used and removed by the command. Because the whole server
+is the run's own, replay on it also runs a `DO` block, a routine definition, a
+role and a privilege on a schema or database, which a server URL refuses; see
+[a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
 
 ### The publication boundary
 

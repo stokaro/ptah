@@ -88,7 +88,7 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.RLSEnabledTablesWithSemantics(
-				desired, database, diff, identifier.ForDialect(platform.Postgres),
+				desired, database, diff, identifier.ForDialect(platform.Postgres), platform.Postgres,
 			)
 
 			c.Assert(diff.RLSEnabledTablesAdded.Names(), qt.DeepEquals, test.wantAdded)
