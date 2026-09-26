@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/liquibaserun"
 )
 
 // TestComposeMigrationArtifactsAreCoveredAndLoadable states, over every layout
@@ -101,7 +102,7 @@ func TestComposeMigrationArtifactsCarriesTheRollbackHalf(t *testing.T) {
 		{name: "flyway", format: atlasmigrateimport.FormatFlyway, artifact: 1, marker: "DROP TABLE widgets;"},
 		{name: "goose", format: atlasmigrateimport.FormatGoose, artifact: 0, marker: "-- +goose Down\nDROP TABLE widgets;"},
 		{name: "dbmate", format: atlasmigrateimport.FormatDBMate, artifact: 0, marker: "-- migrate:down\nDROP TABLE widgets;"},
-		{name: "liquibase", format: atlasmigrateimport.FormatLiquibase, artifact: 0, marker: "--rollback: DROP TABLE widgets;"},
+		{name: "liquibase", format: atlasmigrateimport.FormatLiquibase, artifact: 0, marker: "--rollback DROP TABLE widgets;"},
 	}
 
 	for _, tt := range tests {
@@ -419,4 +420,47 @@ func TestComposeMigrationArtifactsKeepsTheAtlasLayoutUnchanged(t *testing.T) {
 			Contents: []byte("-- atlas:txmode none\n\nSELECT 2;"),
 		},
 	})
+}
+
+// TestComposeMigrationArtifacts_LiquibaseRollbackIsOneLiquibaseReads pins the
+// rollback lines the Liquibase layout writes, and reads them back through
+// liquibaserun, which follows Liquibase 5.0.4's formatted-SQL parser: the
+// changeset's rollback is the reverse plan, a line break after each line, as
+// Liquibase runs it (stokaro/ptah#3752). With the `--rollback:` spelling the
+// pinned community binary writes, the same reading finds no rollback at all.
+func TestComposeMigrationArtifacts_LiquibaseRollbackIsOneLiquibaseReads(t *testing.T) {
+	c := qt.New(t)
+
+	artifacts, err := composeMigrationArtifacts(
+		atlasmigrateimport.FormatLiquibase,
+		"widgets",
+		20240102030405,
+		[]MigrationFileContent{{
+			Statements: []string{"DROP TABLE widgets"},
+			ReverseStatements: []string{
+				"CREATE TABLE widgets (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n)",
+				"CREATE INDEX widgets_name ON widgets (name)",
+			},
+		}},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(artifacts, qt.HasLen, 1)
+	c.Assert(string(artifacts[0].Contents), qt.Equals, "--liquibase formatted sql\n"+
+		"--changeset atlas:20240102030405-1\n"+
+		"DROP TABLE widgets;\n"+
+		"--rollback CREATE TABLE widgets (\n"+
+		"--rollback   id INTEGER PRIMARY KEY,\n"+
+		"--rollback   name TEXT\n"+
+		"--rollback );\n"+
+		"--rollback CREATE INDEX widgets_name ON widgets (name);\n")
+	read, err := liquibaserun.ReadFormattedSQL(artifacts[0].Name, string(artifacts[0].Contents))
+	c.Assert(err, qt.IsNil)
+	c.Assert(read.Changesets, qt.HasLen, 1)
+	c.Assert(read.Changesets[0].Body, qt.DeepEquals, []string{"DROP TABLE widgets;", ""})
+	c.Assert(read.Changesets[0].Rollback.Kind(), qt.Equals, liquibaserun.SQLRollback)
+	rollback, err := read.Changesets[0].Rollback.SQL()
+	c.Assert(err, qt.IsNil)
+	c.Assert(rollback, qt.Equals, "CREATE TABLE widgets (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n);\n"+
+		"CREATE INDEX widgets_name ON widgets (name);")
 }

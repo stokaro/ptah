@@ -1650,9 +1650,15 @@ used to write was one the reader silently skipped.
 `migrate diff` writes every selected layout under both spellings. It writes the
 forward and rollback pair for `golang-migrate` and `flyway`, one file with both
 directive sections for `goose` and `dbmate`, and a Liquibase changeset with
-`--rollback:` lines. The refreshed `atlas.sum` covers the selected layout's file
+`--rollback` lines. The refreshed `atlas.sum` covers the selected layout's file
 set. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
 selects a converted source directory through `?format=` on `--dir`.
+
+A Liquibase rollback line is written as `--rollback <SQL>`, the form Liquibase
+runs. Atlas CE writes `--rollback: <SQL>`, which Liquibase reads as a comment,
+so a changeset it writes has no rollback. Strict mode writes the same form as
+the default; see
+[Compatibility differences](../retained-divergences/#a-liquibase-rollback-written-by-migrate-diff).
 
 Goose writes `-- +goose NO TRANSACTION` when either direction requires
 no-transaction execution; its directive governs the whole file and therefore

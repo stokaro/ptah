@@ -131,6 +131,7 @@ own measurement conditions.
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
+| [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
 
 ## A `--config` selection naming more than one file
 
@@ -817,6 +818,44 @@ status, apply, rollback, checksum verification and `migrate set`, and live tests
 run the printed statements on PostgreSQL, MySQL and ClickHouse.
 
 **Tracking.** [`stokaro/ptah#3550`](https://github.com/stokaro/ptah/issues/3550)
+
+## A Liquibase rollback written by `migrate diff`
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `migrate diff` into the Liquibase layout
+(`--dir 'file://migrations?format=liquibase'`) writes each line of the
+changeset's rollback as `--rollback <SQL>`, with one blank after the keyword.
+The pinned community binary v1.3.0 writes `--rollback: <SQL>`. Liquibase 5.0.4
+reads a rollback line only with that blank, so it reads a line with the colon
+as a comment in the changeset's SQL, and the changeset has no rollback.
+
+Measured on SQLite on 2026-09-26, with a diff that creates `widgets` into an
+empty directory, and the changeset each binary wrote run by Liquibase 5.0.4:
+
+| | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| rollback line written | `--rollback: DROP TABLE` | `--rollback DROP TABLE IF EXISTS` |
+| Liquibase `update` | creates `widgets` | creates `widgets` |
+| Liquibase `rollback-count --count=1` | exit `1`: no automatic rollback for raw SQL; `widgets` stays | exit `0`; `widgets` is dropped |
+
+A rollback that spans several lines, such as the `CREATE TABLE` that undoes a
+dropped table, is written as one `--rollback` line per line of SQL, and
+Liquibase joins them with a line break after each. Liquibase rolled a dropped
+`widgets` back to the table with both of its columns.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` does not change this. The layout `migrate diff`
+writes is Ptah's in both profiles -- one changeset per migration and Ptah's
+renderer's SQL, not the community binary's -- so the colon would buy no byte
+parity, and it would lose the rollback the plan wrote.
+
+`TestCompatMigrateDiff_LiquibaseRollbackIsOneLiquibaseRuns` pins the spelling
+under both policies. `TestComposeMigrationArtifacts_LiquibaseRollbackIsOneLiquibaseReads`
+reads the written changeset back through the reader that follows Liquibase's
+formatted-SQL parser, and `TestLiquibaseDiffRollbackE2E_HappyPath` imports two
+written migrations and rolls both back.
+
+**Tracking.** [`stokaro/ptah#3752`](https://github.com/stokaro/ptah/issues/3752)
 
 ## Not on this page
 
