@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlname"
 )
 
 // ErrUnnamedIndex is the class of an inline index left without a name that no
@@ -135,11 +136,26 @@ type engineIndexNaming struct {
 	// MariaDB reuses one and MySQL does not, so the same document gives the two
 	// engines different index names. coverage.covers carries the measurement.
 	descendingCovers bool
+	// unnamedKeyIndexFromColumn is whether the index the engine builds for an
+	// unnamed foreign key takes its name from the key's first column, in the
+	// same namespace and at the key's position in the statement.
+	//
+	// Measured on MySQL 8.4.11: `FOREIGN KEY (a) ..., KEY (a DESC)` names the
+	// key's index `a` and the other index `a_2`, and the other order gives `a`
+	// to the other index and `a_2` to the key's. MariaDB was not measured, so
+	// its entry leaves the name unclaimed, as it is for every engine without
+	// the measurement.
+	unnamedKeyIndexFromColumn bool
 }
 
 // mysqlNaming and mariaDBNaming are the two measured answers.
 var (
-	mysqlNaming   = engineIndexNaming{baseBytes: 61, maxBytes: 64, functionalBase: "functional_index"}
+	mysqlNaming = engineIndexNaming{
+		baseBytes:                 mysqlname.IndexBaseBytes,
+		maxBytes:                  64,
+		functionalBase:            "functional_index",
+		unnamedKeyIndexFromColumn: true,
+	}
 	mariaDBNaming = engineIndexNaming{maxBytes: 64, descendingCovers: true}
 )
 
@@ -403,10 +419,20 @@ func claimConstraintName(
 	naming engineIndexNaming, covered coverage,
 ) error {
 	if constraint.Type == "FOREIGN KEY" {
-		if constraint.Name == "" || covered.covers(constraint.Columns, naming) {
+		if covered.covers(constraint.Columns, naming) {
 			return nil
 		}
-		return claimExplicit(claimed, constraint.Name, table)
+		if constraint.Name != "" {
+			return claimExplicit(claimed, constraint.Name, table)
+		}
+		if !naming.unnamedKeyIndexFromColumn || len(constraint.Columns) == 0 {
+			return nil
+		}
+		// The key's own index takes the column's name, which no model object
+		// carries; claiming it is what gives the next unnamed index the
+		// server's name.
+		_, err := derive(claimed, constraint.Columns[0], table, naming)
+		return err
 	}
 	if constraint.Type != "UNIQUE" {
 		return nil

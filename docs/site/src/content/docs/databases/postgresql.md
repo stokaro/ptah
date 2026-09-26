@@ -179,8 +179,9 @@ key `c_p_fk` and a schema file that writes `p_id bigint REFERENCES p(id)` on
 A column-level `UNIQUE` is compared by its columns, not by its name. A plan
 that adds one to an existing column writes `ADD CONSTRAINT` under the same
 `<table>_<column>_key` name, without a number, because the plan cannot see
-which names the target already holds. Other engines keep Ptah's own name for
-an unnamed foreign key, `fk_<table>_<column>`.
+which names the target already holds. MySQL names an unnamed foreign key
+`<table>_ibfk_<n>`, which the [MySQL page](../mysql/) describes. The other
+engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
 
 ## Object comments
 

@@ -105,6 +105,17 @@ SQL:
   index does. The name is decided when the SQL is read rather than when it is
   written, because the catalog reports what the server chose and a desired
   schema that guessed differently would never converge with it.
+- A foreign key the author did not name is read, on MySQL, with the name the
+  server gives it: `<table>_ibfk_<n>`. In `CREATE TABLE` the unnamed keys are
+  numbered from 1 in the order they are written, and a named key does not move
+  the count. A key that `ALTER TABLE` adds takes one more than the highest
+  `<table>_ibfk_<n>` the table holds. The server names the index it builds for
+  such a key after the key's first column, then `_2` and on, and that index is
+  read as the key's, so a schema file compares equal to the database its own
+  SQL built. A derived name that another foreign key of the database already
+  holds is refused, because MySQL refuses it with `ERROR 1826`. MariaDB was
+  not measured, and an unnamed key there takes Ptah's own name,
+  `fk_<table>_<columns>`.
 - A non-ASCII index name is refused, rather than compared. The two engines fold
   such names differently and not in a way one rule covers: measured on MySQL
   8.4.11 and MariaDB 11.8.9 over a `utf8mb4` connection, `I` beside dotless
