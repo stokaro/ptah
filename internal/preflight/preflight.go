@@ -436,9 +436,17 @@ func databaseURLPassword(dbURL string) string {
 	return password
 }
 
+// parseDatabaseURL reads a database URL for display and for its password. A
+// MySQL-family URL is read by atlasurl.ParseMySQLURL, the parser the connection
+// uses, because net/url refuses its go-sql-driver form and reads a socket URL's
+// path where the database is not.
 func parseDatabaseURL(dbURL string) (*url.URL, error) {
-	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily {
-		return parseMySQLURL(dbURL)
+	mysqlURL, err := atlasurl.ParseMySQLURL(dbURL)
+	switch {
+	case err == nil:
+		return mysqlURL.URL(), nil
+	case !errors.Is(err, atlasurl.ErrNotMySQLURL):
+		return nil, err
 	}
 	return url.Parse(dbURL)
 }
@@ -469,32 +477,33 @@ func isMySQLDumpDialect(dialect string) bool {
 	}
 }
 
+// mysqlDumpCommand points mysqldump at the server and the database the
+// migration connects to. Both are read by atlasurl.ParseMySQLURL, which the
+// connection reads the URL with too, so the port and the host are the driver's
+// even where the URL leaves them out, and a socket URL reaches the socket
+// rather than a host named after its path.
 func mysqlDumpCommand(dbURL, outputPath string) (args, env []string, err error) {
-	parsed, err := parseMySQLURL(dbURL)
+	parsed, err := atlasurl.ParseMySQLURL(dbURL)
 	if err != nil {
 		return nil, nil, err
 	}
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	if dbName == "" {
-		return nil, nil, fmt.Errorf("mysqldump pre-flight hook requires a database name in %s", parsed.Redacted())
+	if parsed.Database() == "" {
+		return nil, nil, fmt.Errorf("mysqldump pre-flight hook requires a database name in %s", parsed.URL().Redacted())
 	}
 
 	args = []string{"--result-file", outputPath}
-	if parsed.Hostname() != "" {
-		args = append(args, "--protocol=TCP", "--host", parsed.Hostname())
+	if host, port, tcp := parsed.HostPort(); tcp {
+		args = append(args, "--protocol=TCP", "--host", host, "--port", port)
+	} else {
+		args = append(args, "--protocol=SOCKET", "--socket", parsed.Address())
 	}
-	if parsed.Port() != "" {
-		args = append(args, "--port", parsed.Port())
+	if user := parsed.User(); user != "" {
+		args = append(args, "--user", user)
 	}
-	if parsed.User != nil {
-		if user := parsed.User.Username(); user != "" {
-			args = append(args, "--user", user)
-		}
-		if password, ok := parsed.User.Password(); ok {
-			env = append(env, "MYSQL_PWD="+password)
-		}
+	if password := parsed.Password(); password != "" {
+		env = append(env, "MYSQL_PWD="+password)
 	}
-	args = append(args, dbName)
+	args = append(args, parsed.Database())
 	return args, env, nil
 }
 
@@ -524,13 +533,4 @@ func postgresDumpURL(dbURL string) string {
 		parsed.Scheme = platform.Postgres
 	}
 	return parsed.String()
-}
-
-func parseMySQLURL(dbURL string) (*url.URL, error) {
-	if strings.Contains(dbURL, "@tcp(") {
-		normalized := strings.Replace(dbURL, "@tcp(", "@", 1)
-		normalized = strings.Replace(normalized, ")", "", 1)
-		return url.Parse(normalized)
-	}
-	return url.Parse(dbURL)
 }

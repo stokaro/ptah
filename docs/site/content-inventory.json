@@ -708,8 +708,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2397,
-      "sourceBytes": 17208
+      "visibleWords": 2456,
+      "sourceBytes": 17565
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1018,8 +1018,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 3299,
-      "sourceBytes": 20160
+      "visibleWords": 3410,
+      "sourceBytes": 20828
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1376,8 +1376,8 @@
         "/faq/",
         "/reference/capabilities/"
       ],
-      "visibleWords": 766,
-      "sourceBytes": 7538
+      "visibleWords": 772,
+      "sourceBytes": 7591
     },
     {
       "path": "docs/site/src/content/docs/databases/support-policy.md",
@@ -5653,8 +5653,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 3330,
-      "sourceBytes": 25025
+      "visibleWords": 3455,
+      "sourceBytes": 26010
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

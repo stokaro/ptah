@@ -29,6 +29,11 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "maria", rawURL: "maria://root@localhost:3306/dev", want: "mariadb"},
 		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/dev", want: "mariadb"},
 		{name: "maria in upper case", rawURL: "MARIA://root@localhost/dev", want: "mariadb"},
+		// The socket spellings the pinned binary v1.3.0 opens. Only the
+		// transport differs from the plain scheme.
+		{name: "mysql socket", rawURL: "mysql+unix://root@/run/mysqld/mysqld.sock?database=dev", want: "mysql"},
+		{name: "mariadb socket", rawURL: "mariadb+unix://root@/run/mysqld/mysqld.sock?database=dev", want: "mariadb"},
+		{name: "maria socket", rawURL: "maria+unix://root@/run/mysqld/mysqld.sock", want: "mariadb"},
 		{name: "sqlite3 opaque drive path alias", rawURL: "sqlite3:C:/work/app.db", want: "sqlite"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
 		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
@@ -142,6 +147,30 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 			name:  "mysql TCP spelling and options do not change identity",
 			left:  "mysql://root:pa)ss@tcp(localhost:3306)/app?parseTime=true",
 			right: "mysql://reader@localhost/app?tls=false",
+			want:  true,
+		},
+		{
+			name:  "a socket and its database",
+			left:  "mysql+unix://writer@/run/mysqld/mysqld.sock?database=app",
+			right: "mysql+unix://reader@/run/mysqld/../mysqld/mysqld.sock?database=app&parseTime=true",
+			want:  true,
+		},
+		{
+			name:  "one socket, two databases",
+			left:  "mysql+unix://root@/run/mysqld/mysqld.sock?database=app",
+			right: "mysql+unix://root@/run/mysqld/mysqld.sock?database=dev",
+			want:  false,
+		},
+		{
+			name:  "a socket is not proven to be a TCP address",
+			left:  "mysql+unix://root@/run/mysqld/mysqld.sock?database=app",
+			right: "mysql://root@127.0.0.1:3306/app",
+			want:  false,
+		},
+		{
+			name:  "the driver's socket form and the socket URL",
+			left:  "mariadb://root@unix(/run/mysqld/mysqld.sock)/app",
+			right: "mariadb+unix://root@/run/mysqld/mysqld.sock?database=app",
 			want:  true,
 		},
 		{
@@ -309,6 +338,27 @@ func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
 			name:  "unspecified database fails closed",
 			left:  "sqlserver://localhost",
 			right: "sqlserver://localhost/app?database=dev",
+			want:  true,
+		},
+		// A socket URL's path is the socket. Read as the database, the target
+		// below is `run/mysqld/mysqld.sock`, the two look distinct, and the
+		// dev-database cleanup this guards would run against the target.
+		{
+			name:  "a socket URL and a TCP URL naming one database fail closed",
+			left:  "mysql+unix://root@/run/mysqld/mysqld.sock?database=app",
+			right: "mysql://root@127.0.0.1:3306/app",
+			want:  true,
+		},
+		{
+			name:  "two socket URLs naming two databases prove distinct realms",
+			left:  "mariadb+unix://root@/run/mysqld/mysqld.sock?database=app",
+			right: "mariadb+unix://root@/run/mysqld/mysqld.sock?database=dev",
+			want:  false,
+		},
+		{
+			name:  "a socket URL naming no database fails closed",
+			left:  "mysql+unix://root@/run/mysqld/mysqld.sock",
+			right: "mysql://root@127.0.0.1:3306/dev",
 			want:  true,
 		},
 	}
@@ -480,6 +530,49 @@ func TestCutMySQLScheme_FailurePath(t *testing.T) {
 			rest, ok := atlasurl.CutMySQLScheme(test.rawURL)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(rest, qt.Equals, test.rawURL)
+		})
+	}
+}
+
+// TestWithDatabaseName_KeepsTheMySQLForm names another database in each form a
+// MySQL-family URL takes, leaving the rest as written. In a +unix URL the path
+// is the socket, so replacing the path would name a socket after the database.
+func TestWithDatabaseName_KeepsTheMySQLForm(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{
+			name:   "URL form",
+			rawURL: "mysql://app@db:3307/shop?parseTime=true",
+			want:   "mysql://app@db:3307/scratch?parseTime=true",
+		},
+		{
+			name:   "driver form",
+			rawURL: "maria://app:pw@tcp(db:3307)/shop?parseTime=true",
+			want:   "maria://app:pw@tcp(db:3307)/scratch?parseTime=true",
+		},
+		{
+			name:   "socket form",
+			rawURL: "mysql+unix://app:pw@/run/x.sock?database=shop&parseTime=true",
+			want:   "mysql+unix://app:pw@/run/x.sock?database=scratch&parseTime=true",
+		},
+		{
+			name:   "socket form naming no database",
+			rawURL: "mariadb+unix://app:pw@/run/x.sock",
+			want:   "mariadb+unix://app:pw@/run/x.sock?database=scratch",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasurl.WithDatabaseName(test.rawURL, "scratch")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }

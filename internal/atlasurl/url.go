@@ -102,16 +102,8 @@ func Parse(rawURL string) (*url.URL, error) {
 // A prefix that is not a URL scheme, such as one with leading space, is not
 // recognized: net/url refuses it as well.
 func CutMySQLScheme(rawURL string) (rest string, ok bool) {
-	scheme, rest, found := strings.Cut(rawURL, "://")
-	if !found || !isURLScheme(scheme) {
-		return rawURL, false
-	}
-	switch platform.NormalizeDialect(scheme) {
-	case platform.MySQL, platform.MariaDB:
-		return rest, true
-	default:
-		return rawURL, false
-	}
+	_, rest, ok = cutMySQLScheme(rawURL)
+	return rest, ok
 }
 
 // isURLScheme reports whether s is spelled as RFC 3986 section 3.1 and net/url
@@ -165,7 +157,12 @@ func DialectFromURL(rawURL string) (string, error) {
 	if rawURL == "" {
 		return "", nil
 	}
-	parsed, err := Parse(normalizeMySQLTCPURL(rawURL))
+	// The scheme is all a dialect needs, and a MySQL-family URL may be in a
+	// form net/url refuses, so its scheme is read as text.
+	if scheme, _, ok := cutMySQLScheme(rawURL); ok {
+		return platform.NormalizeDialect(scheme), nil
+	}
+	parsed, err := Parse(rawURL)
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
 	}
@@ -221,25 +218,25 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 // one known endpoint. Destructive dev and shadow workflows must instead use
 // MayAddressSameDatabase and a live realm comparison after connecting.
 func SameDatabaseEndpoint(left, right string) (bool, error) {
-	leftURL, leftDialect, err := parseDatabaseURL(left)
+	leftURL, err := parseDatabaseURL(left)
 	if err != nil {
 		return false, err
 	}
-	rightURL, rightDialect, err := parseDatabaseURL(right)
+	rightURL, err := parseDatabaseURL(right)
 	if err != nil {
 		return false, err
 	}
-	if leftDialect != rightDialect {
+	if leftURL.dialect != rightURL.dialect {
 		return false, nil
 	}
-	if leftDialect == platform.SQLite {
-		return sameSQLiteDatabase(leftURL, rightURL)
+	if leftURL.dialect == platform.SQLite {
+		return sameSQLiteDatabase(leftURL.parsed, rightURL.parsed)
 	}
-	leftIdentity, err := networkDatabaseIdentity(leftURL, leftDialect)
+	leftIdentity, err := leftURL.identity()
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := networkDatabaseIdentity(rightURL, rightDialect)
+	rightIdentity, err := rightURL.identity()
 	if err != nil {
 		return false, err
 	}
@@ -255,25 +252,25 @@ func SameDatabaseEndpoint(left, right string) (bool, error) {
 // before destructive dev or shadow cleanup. Callers that connect both URLs
 // must also compare their live realm identity before cleanup.
 func MayAddressSameDatabase(left, right string) (bool, error) {
-	leftURL, leftDialect, err := parseDatabaseURL(left)
+	leftURL, err := parseDatabaseURL(left)
 	if err != nil {
 		return false, err
 	}
-	rightURL, rightDialect, err := parseDatabaseURL(right)
+	rightURL, err := parseDatabaseURL(right)
 	if err != nil {
 		return false, err
 	}
-	if leftDialect != rightDialect {
+	if leftURL.dialect != rightURL.dialect {
 		return false, nil
 	}
-	if leftDialect == platform.SQLite {
-		return sameSQLiteDatabase(leftURL, rightURL)
+	if leftURL.dialect == platform.SQLite {
+		return sameSQLiteDatabase(leftURL.parsed, rightURL.parsed)
 	}
-	leftIdentity, err := networkDatabaseIdentity(leftURL, leftDialect)
+	leftIdentity, err := leftURL.identity()
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := networkDatabaseIdentity(rightURL, rightDialect)
+	rightIdentity, err := rightURL.identity()
 	if err != nil {
 		return false, err
 	}
@@ -402,38 +399,57 @@ func normalizedDatabaseHost(host string) string {
 	return ip.String()
 }
 
-func parseDatabaseURL(rawURL string) (*url.URL, string, error) {
-	normalized := normalizeMySQLTCPURL(strings.TrimSpace(rawURL))
+// databaseURL is a database URL read far enough to compare it with another.
+// A MySQL-family URL is read by [ParseMySQLURL] and every other one by [Parse].
+type databaseURL struct {
+	dialect string
+	parsed  *url.URL
+	mysql   *MySQLURL
+}
+
+func parseDatabaseURL(rawURL string) (databaseURL, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	mysqlURL, err := ParseMySQLURL(rawURL)
+	switch {
+	case err == nil:
+		return databaseURL{dialect: mysqlURL.Dialect(), mysql: &mysqlURL}, nil
+	case !errors.Is(err, ErrNotMySQLURL):
+		return databaseURL{}, errors.New("invalid database URL")
+	}
 	// [Parse], not url.Parse. This package exports the Windows rule and then
 	// has to obey it: reaching for the standard parser here refused every
 	// Windows SQLite address the endpoint comparison was given, so `schema
 	// apply`, `migrate diff` and the rollback verification all answered
 	// "invalid database URL" for a path that is perfectly valid on the
 	// operating system they were running on.
-	parsed, err := Parse(normalized)
+	parsed, err := Parse(rawURL)
 	if err != nil {
-		return nil, "", errors.New("invalid database URL")
+		return databaseURL{}, errors.New("invalid database URL")
 	}
 	dialect := platform.NormalizeDialect(parsed.Scheme)
 	if dialect == "" {
-		return nil, "", errors.New("unsupported database URL dialect")
+		return databaseURL{}, errors.New("unsupported database URL dialect")
 	}
-	return parsed, dialect, nil
+	return databaseURL{dialect: dialect, parsed: parsed}, nil
 }
 
-func normalizeMySQLTCPURL(rawURL string) string {
-	if _, ok := CutMySQLScheme(rawURL); !ok {
-		return rawURL
+// identity is the server and database the URL selects.
+func (d databaseURL) identity() (databaseIdentity, error) {
+	if d.mysql != nil {
+		return mysqlDatabaseIdentity(*d.mysql), nil
 	}
-	prefix, address, found := strings.Cut(rawURL, "@tcp(")
-	if !found {
-		return rawURL
+	return networkDatabaseIdentity(d.parsed, d.dialect)
+}
+
+// mysqlDatabaseIdentity reads the server and the database from what the driver
+// connects to, so a socket URL is compared by its socket and its `database`
+// parameter rather than by a path that names the socket.
+func mysqlDatabaseIdentity(u MySQLURL) databaseIdentity {
+	endpoint := normalizedDatabaseHost(u.Address()) + "\x00unix"
+	if host, port, ok := u.HostPort(); ok {
+		endpoint = networkEndpoint(host, port, u.Dialect())
 	}
-	host, suffix, found := strings.Cut(address, ")")
-	if !found {
-		return rawURL
-	}
-	return prefix + "@" + host + suffix
+	return databaseIdentity{dialect: u.Dialect(), endpoint: endpoint, database: u.Database()}
 }
 
 func sqliteIdentity(parsed *url.URL) (string, error) {
@@ -541,11 +557,23 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 // `sslmode` or a `parseTime` while renaming the database would change how the
 // connection behaves for a reason the caller never asked about.
 //
+// A MySQL-family URL keeps the form it was written in, and the database goes
+// where that form puts it: [MySQLURL.WithDatabase] says where. In a +unix URL
+// the path is the socket, so replacing the path would point the connection at
+// a socket named after the database.
+//
 // SQLite is refused. Its URL names a file rather than a server, so swapping the
 // path would name a database in another directory rather than another database
 // on the same server, and the caller that wants a disposable SQLite database
 // wants a new file instead.
 func WithDatabaseName(rawURL, name string) (string, error) {
+	mysqlURL, err := ParseMySQLURL(rawURL)
+	switch {
+	case err == nil:
+		return mysqlURL.WithDatabase(name), nil
+	case !errors.Is(err, ErrNotMySQLURL):
+		return "", err
+	}
 	parsed, err := Parse(rawURL)
 	if err != nil {
 		return "", err

@@ -21,6 +21,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"ptah.run/internal/atlasurl"
 )
 
 // Engine names a database an integration test can ask for.
@@ -89,6 +91,19 @@ const (
 	// Oracle test calls DropAllTables, which drops every object the connected
 	// account owns (stokaro/ptah#1920).
 	OracleAdmin
+	// MySQLSocket is the MySQL server reached through its Unix socket with a
+	// `mysql+unix` URL naming no database, and MariaDBSocket is the MariaDB
+	// server reached the same way.
+	//
+	// They are engines of their own because the transport is what they are
+	// for: in a socket URL the path is the socket and the database is a query
+	// parameter, so a test pointed at the TCP address would report the socket
+	// form as covered while every reader took the database from the path
+	// (stokaro/ptah#3755). The account may create databases; a test creates
+	// them through the TCP administrative engine and names one with the
+	// `database` parameter.
+	MySQLSocket
+	MariaDBSocket
 )
 
 // source is where one engine's address comes from.
@@ -190,6 +205,14 @@ var sources = map[Engine]source{
 	OracleAdmin: {
 		canonical: "ORACLE_ADMIN_TEST_URL",
 		scheme:    []string{"oracle"},
+	},
+	MySQLSocket: {
+		canonical: "MYSQL_SOCKET_TEST_URL",
+		scheme:    []string{"mysql+unix"},
+	},
+	MariaDBSocket: {
+		canonical: "MARIADB_SOCKET_TEST_URL",
+		scheme:    []string{"mariadb+unix", "maria+unix", "mysql+unix"},
 	},
 }
 
@@ -309,6 +332,10 @@ func engineName(engine Engine) string {
 		return "Oracle"
 	case OracleAdmin:
 		return "Oracle with an administrative account"
+	case MySQLSocket:
+		return "MySQL through its Unix socket"
+	case MariaDBSocket:
+		return "MariaDB through its Unix socket"
 	}
 	return engine.String()
 }
@@ -387,6 +414,15 @@ func driverForm(engine Engine, address string) string {
 	switch engine {
 	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
 		return mysqlNetworkDSN(address)
+	case MySQLSocket, MariaDBSocket:
+		// The socket form is Ptah's to read, so it is read by the parser Ptah
+		// connects with: the path is the socket and `database` names the
+		// database, which no splice of the URL can recover.
+		parsed, err := atlasurl.ParseMySQLURL(address)
+		if err != nil {
+			return address
+		}
+		return parsed.DSN()
 	case CockroachDB, YugabyteDB, Spanner:
 		// pgx does not parse these aliases, and rewriting rather than removing
 		// is what dbschema does for the same reason. Spanner belongs here for
@@ -487,6 +523,7 @@ func Engines() []Engine {
 	return []Engine{
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
+		MySQLSocket, MariaDBSocket,
 	}
 }
 

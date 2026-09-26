@@ -233,12 +233,16 @@ func TestMySQLDumpAcceptsURLWithoutUserInfo(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(runner.calls, qt.HasLen, 1)
+	// The port is the driver's default, named because mysqldump is pointed at
+	// the server the migration connects to rather than at its own default.
 	c.Assert(runner.calls[0].Args, qt.DeepEquals, []string{
 		"--result-file",
 		results[0].Artifact,
 		"--protocol=TCP",
 		"--host",
 		"db.internal",
+		"--port",
+		"3306",
 		"shop",
 	})
 	c.Assert(runner.calls[0].Env, qt.HasLen, 0)

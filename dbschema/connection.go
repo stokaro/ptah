@@ -225,18 +225,16 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 }
 
 // parseDatabaseURL parses a database URL into the form the rest of the
-// connection path reads.
+// connection path reads: the scheme names the dialect, and the path is where
+// getDatabaseInfo reads the database from.
 //
-// Two shapes are not URLs and have to be rewritten before net/url sees them.
-//
-// The MySQL family carries a NETWORK where a URL carries a host:
-// user:pass@tcp(127.0.0.1:3306)/db and user:pass@unix(/tmp/mysql.sock)/db are
-// one grammar with two networks, and neither is an authority. The network and
-// its address are dropped so what remains parses, and the parts the caller
-// reads survive it. It is not only the scheme that is read from the result --
-// getDatabaseInfo takes the MySQL database name from the path -- so recognizing
-// only tcp( left a socket address parsed as a host called "unix(" with the
-// socket path folded into the database name.
+// A MySQL-family URL is read by atlasurl.ParseMySQLURL, and only the scheme and
+// the database it found are carried on. Its forms put the database in
+// different places. The go-sql-driver form, user:pass@tcp(127.0.0.1:3306)/db or
+// user:pass@unix(/tmp/mysql.sock)/db, is not a URL at all. In the socket form,
+// mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=db, the path is the
+// socket. A reader of its own here would report a database called after the
+// socket while convertMySQLURL connects to db.
 //
 // A Windows absolute path is not an authority either. sqlite://C:\dir\app.db
 // makes net/url read the drive letter's colon as a port separator and refuse
@@ -245,65 +243,17 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // reporting "invalid database URL". The path is carried as opaque instead,
 // which is the shape convertSQLiteURL already reads first.
 func parseDatabaseURL(dbURL string) (*url.URL, error) {
-	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily {
-		if rewritten, ok := withoutMySQLNetwork(dbURL); ok {
-			return url.Parse(rewritten)
-		}
+	mysqlURL, err := atlasurl.ParseMySQLURL(dbURL)
+	switch {
+	case err == nil:
+		return &url.URL{Scheme: strings.ToLower(mysqlURL.Scheme()), Path: "/" + mysqlURL.Database()}, nil
+	case !errors.Is(err, atlasurl.ErrNotMySQLURL):
+		return nil, err
 	}
 
 	// The Windows rule lives in atlasurl, which is where the other database-URL
-	// parser already knew it. What each parser does about a MySQL address is
-	// its own and stays so: that one keeps the host because it compares
-	// endpoints, this one drops it because getDatabaseInfo reads the database
-	// name from the path.
+	// parser already knew it.
 	return atlasurl.Parse(dbURL)
-}
-
-// mysqlNetworkMarkers are the spellings by which a MySQL-family address
-// introduces go-sql-driver's own network wrapper.
-//
-// Credentials are optional in that grammar, so tcp(host:port)/db and
-// unix(/path)/db are valid targets on their own and follow the scheme directly
-// rather than an "@". tcp and unix are two spellings of one thing to the
-// driver -- the network and the address to reach it on -- so recognizing one
-// without the other reads a socket address as a host called "unix(" with the
-// path folded into the database name.
-//
-// There is one list because the parser and the converter have to recognize
-// exactly the same set, and [ConnectToDatabase] calls them in sequence.
-// stokaro/ptah#1540 is what a second list costs: the parser accepted both
-// credential-free targets while the converter recognized neither, so a valid
-// URL reached the driver either with its scheme still attached or rebuilt
-// around a host that was never one.
-var mysqlNetworkMarkers = []string{"@tcp(", "@unix(", "://tcp(", "://unix("}
-
-// mysqlNetworkMarker returns the marker a MySQL-family address carries and the
-// index it starts at, reporting false when the address names no network
-// wrapper at all.
-func mysqlNetworkMarker(dbURL string) (marker string, start int, ok bool) {
-	for _, candidate := range mysqlNetworkMarkers {
-		if index := strings.Index(dbURL, candidate); index >= 0 {
-			return candidate, index, true
-		}
-	}
-	return "", 0, false
-}
-
-// withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
-// reporting whether one was there to remove.
-func withoutMySQLNetwork(dbURL string) (string, bool) {
-	marker, start, ok := mysqlNetworkMarker(dbURL)
-	if !ok {
-		return dbURL, false
-	}
-	end := strings.Index(dbURL[start:], ")")
-	if end < 0 {
-		return dbURL, false
-	}
-	// Keep everything up to and including the separator the network followed
-	// -- "@" or "://" -- and drop the network with its address.
-	keep := start + strings.Index(marker, "(")
-	return dbURL[:keep] + dbURL[start+end+1:], true
 }
 
 func getDatabaseInfoWithCapabilities(
@@ -1166,6 +1116,15 @@ func CloseAndWarn(conn *DatabaseConnection) {
 	}
 }
 
+// errMySQLURLNamesNoDatabase refuses a MySQL-family URL that selects no
+// database. The session then starts without a default one and DATABASE()
+// answers NULL. The pinned community binary reads such a URL as the whole
+// server; Ptah reads one database at a time, and says so rather than failing
+// on the NULL (stokaro/ptah#3761).
+var errMySQLURLNamesNoDatabase = errors.New(
+	"the database URL names no database, and Ptah reads one MySQL or MariaDB database at a time rather than " +
+		"a whole server: name the database in the URL path, or in the database parameter of a +unix URL")
+
 // getDatabaseInfo retrieves database metadata
 func getDatabaseInfo(
 	ctx context.Context,
@@ -1245,12 +1204,15 @@ func getDatabaseInfo(
 			info.Schema = parsedURL.Path[1:] // Remove leading '/'
 		} else {
 			// Get current database
-			var dbName string
+			var dbName sql.NullString
 			err := db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&dbName)
 			if err != nil {
 				return info, fmt.Errorf("failed to get current database name: %w", err)
 			}
-			info.Schema = dbName
+			if !dbName.Valid {
+				return info, errMySQLURLNamesNoDatabase
+			}
+			info.Schema = dbName.String
 		}
 		// A MySQL-family schema is a database, so no static dialect rule can
 		// name the one that owns an unqualified table the way "public" and
@@ -1413,41 +1375,21 @@ func detectMySQLWireDialect(declaredDialect, version string) string {
 	return platform.NormalizeDialect(declaredDialect)
 }
 
-// convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format
+// convertMySQLURL converts a MySQL-family URL into go-sql-driver's DSN.
+//
+// The DSN is atlasurl.ParseMySQLURL's, which is also where parseDatabaseURL
+// reads the database. One parser is what keeps the two in agreement: with a
+// recognizer in each, a URL can reach the driver with its scheme attached, or
+// be rebuilt around a host that was never one (stokaro/ptah#1540).
 func convertMySQLURL(dbURL string) string {
-	// Already in the driver's own form, so it is returned with only the scheme
-	// removed. The recognition is [mysqlNetworkMarker]'s, which is the same one
-	// parseDatabaseURL uses -- see the note there for why it cannot be a second
-	// list that happens to agree. The scheme is atlasurl.CutMySQLScheme's for
-	// the same reason: parseDatabaseURL asks it too, and a spelling one of them
-	// missed would reach the driver with its scheme still attached.
-	if _, _, ok := mysqlNetworkMarker(dbURL); ok {
-		if after, ok := atlasurl.CutMySQLScheme(dbURL); ok {
-			return after
-		}
+	mysqlURL, err := atlasurl.ParseMySQLURL(dbURL)
+	if err != nil {
+		// ConnectToDatabase parsed this URL before reaching here, so a failure
+		// is unreachable rather than tolerated. Returning the input leaves the
+		// driver to report on it.
 		return dbURL
 	}
-
-	// Parse the URL
-	parsedURL, err := url.Parse(dbURL)
-	if err != nil {
-		return dbURL // Return as-is if parsing fails
-	}
-
-	// Extract components
-	user := parsedURL.User.Username()
-	password, _ := parsedURL.User.Password()
-	host := parsedURL.Host
-	dbName := strings.TrimPrefix(parsedURL.Path, "/")
-	query := parsedURL.RawQuery
-
-	// Build MySQL connection string: user:password@tcp(host)/database?params
-	connectionString := fmt.Sprintf("%s:%s@tcp(%s)/%s", user, password, host, dbName)
-	if query != "" {
-		connectionString += "?" + query
-	}
-
-	return connectionString
+	return mysqlURL.DSN()
 }
 
 func convertPostgresWireURL(dbURL string) string {
