@@ -330,8 +330,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14479,
-      "sourceBytes": 100826
+      "visibleWords": 14523,
+      "sourceBytes": 101179
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -1020,8 +1020,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 3410,
-      "sourceBytes": 20828
+      "visibleWords": 3603,
+      "sourceBytes": 21903
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1168,8 +1168,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10963,
-      "sourceBytes": 74720
+      "visibleWords": 10981,
+      "sourceBytes": 74821
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4294,8 +4294,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14713,
-      "sourceBytes": 101705
+      "visibleWords": 14735,
+      "sourceBytes": 101858
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

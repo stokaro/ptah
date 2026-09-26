@@ -10,12 +10,16 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// tableChecks describes where a table's CHECKs landed: the one its first column
-// carries, then every table-level CHECK in the order the body recorded them,
-// each as `<name>: <expression>`.
+// tableChecks describes where a table's CHECKs landed, in the order the body
+// recorded them: the CHECK a column carries, and each table-level CHECK, as
+// `<level> <name>: <expression>`.
 func tableChecks(table *ast.CreateTableNode) []string {
-	checks := []string{fmt.Sprintf("column %s: %s", table.Columns[0].CheckName, table.Columns[0].Check)}
+	checks := make([]string, 0, len(table.Elements))
 	for _, element := range table.Elements {
+		if element.Column != nil {
+			checks = append(checks, fmt.Sprintf("column %s: %s", element.Column.CheckName, element.Column.Check))
+			continue
+		}
 		checks = append(checks, fmt.Sprintf("table %s: %s", element.Constraint.Name, element.Constraint.Expression))
 	}
 	return checks
@@ -83,6 +87,13 @@ func TestParse_EveryCheckOnAColumnIsKept_FailurePath(t *testing.T) {
 			sql:     "ALTER TABLE t ADD COLUMN a int CHECK (a > 0) CHECK (a < 10);",
 			wantErr: `(?s).*column a carries a second CHECK at position \d+: a column added or modified by ` +
 				`ALTER TABLE keeps one CHECK; add the next with ALTER TABLE \.\.\. ADD CHECK.*`,
+		},
+		{
+			name:    "a second CHECK on a MariaDB column",
+			dialect: "mariadb",
+			sql:     "CREATE TABLE c4 (a int CHECK (a > 0) CHECK (a < 10));",
+			wantErr: `(?s).*column a carries a second CHECK at position \d+: MariaDB accepts one CHECK on a column ` +
+				`and answers ERROR 1064 \(42000\) to the second; write it at table level.*`,
 		},
 		{
 			name:    "MODIFY COLUMN",

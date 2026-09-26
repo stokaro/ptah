@@ -2356,13 +2356,10 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 		}
 	}
 
-	// Otherwise, parse as column definition
-	column, err := p.parseColumnDefinition(table)
-	if err != nil {
-		return err
-	}
-	table.AddColumn(column)
-	return nil
+	// Otherwise, parse as column definition. The column adds itself to the
+	// table before its constraints are read; see parseColumnDefinitionAfterName.
+	_, err := p.parseColumnDefinition(table)
+	return err
 }
 
 func (p *Parser) handleNotNull(column *ast.ColumnNode) error {
@@ -2434,7 +2431,10 @@ func (p *Parser) handleDefault(column *ast.ColumnNode) error {
 // plan the first for DROP.
 //
 // A column ALTER TABLE adds or modifies has no table body to carry a second
-// CHECK, so one there is refused rather than dropped.
+// CHECK, so one there is refused rather than dropped. MariaDB refuses the second
+// CHECK on any column: measured on 11.8.9, `a int CHECK (a > 0) CHECK (a < 10)`
+// is ERROR 1064, and a MariaDB document is refused the same way. MySQL 8.4.11
+// numbers the two `_chk_1` and `_chk_2`.
 func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.ColumnNode, name string) error {
 	position := p.current.Start
 	p.advance()
@@ -2447,6 +2447,12 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 		column.SetCheck(checkExpr)
 		column.SetCheckName(name)
 		return nil
+	}
+	if platform.NormalizeDialect(p.dialect) == platform.MariaDB {
+		return fmt.Errorf(
+			"column %s carries a second CHECK at position %d: MariaDB accepts one CHECK on a column and "+
+				"answers ERROR 1064 (42000) to the second; write it at table level",
+			column.Name, position)
 	}
 	if table == nil {
 		return fmt.Errorf(
@@ -3198,6 +3204,14 @@ func (p *Parser) parseColumnDefinitionAfterName(table *ast.CreateTableNode, colu
 	}
 
 	column := ast.NewColumn(columnName, columnType)
+	// Added before its constraints are read, so the table body records the
+	// column ahead of the table-level elements its own clauses add: a second
+	// CHECK on the column, or a named UNIQUE or PRIMARY KEY. MySQL numbers
+	// an unnamed CHECK in the order the body writes it, and `a int CHECK (a >
+	// 0) CHECK (a < 10)` names the first `_chk_1` (stokaro/ptah#3741).
+	if table != nil {
+		table.AddColumn(column)
+	}
 	if p.dialect == platform.ClickHouse && !isClickHouseNullableType(columnType) {
 		// ClickHouse inverts SQL's default: a bare type is NOT NULL, and
 		// nullability is spelled in the type as Nullable(T). Reading a column

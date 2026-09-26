@@ -28,8 +28,8 @@ const (
 )
 
 // tableElementPositions describes a recorded declaration order as data: for
-// each element, where the node it points at sits in Constraints and where in
-// Indexes, with -1 for the slice the element is not from.
+// each element, where the node it points at sits in Columns, in Constraints and
+// in Indexes, with -1 for the slices the element is not from.
 //
 // The position pair rather than a kind and a name, because the position is the
 // invariant the conversion depends on: an element does not merely say that a
@@ -40,7 +40,8 @@ const (
 func tableElementPositions(table *ast.CreateTableNode) []string {
 	positions := make([]string, 0, len(table.Elements))
 	for _, element := range table.Elements {
-		positions = append(positions, fmt.Sprintf("constraints[%d] indexes[%d]",
+		positions = append(positions, fmt.Sprintf("columns[%d] constraints[%d] indexes[%d]",
+			slices.Index(table.Columns, element.Column),
 			slices.Index(table.Constraints, element.Constraint),
 			slices.Index(table.Indexes, element.Index)))
 	}
@@ -68,22 +69,34 @@ func TestParse_ATableBodyRecordsTheOrderItWasDeclaredIn(t *testing.T) {
 		{
 			name: "a foreign key declared before an index",
 			sql:  foreignKeyThenIndex,
-			want: []string{"constraints[0] indexes[-1]", "constraints[-1] indexes[0]"},
+			want: []string{
+				"columns[0] constraints[-1] indexes[-1]",
+				"columns[1] constraints[-1] indexes[-1]",
+				"columns[-1] constraints[0] indexes[-1]",
+				"columns[-1] constraints[-1] indexes[0]",
+			},
 		},
 		{
 			name: "the same two elements the other way round",
 			sql:  indexThenForeignKey,
-			want: []string{"constraints[-1] indexes[0]", "constraints[0] indexes[-1]"},
+			want: []string{
+				"columns[0] constraints[-1] indexes[-1]",
+				"columns[1] constraints[-1] indexes[-1]",
+				"columns[-1] constraints[-1] indexes[0]",
+				"columns[-1] constraints[0] indexes[-1]",
+			},
 		},
 		{
 			name: "two of each kind, alternating",
 			sql: "CREATE TABLE c (a INT, b INT, KEY (a), CONSTRAINT u1 UNIQUE (b), " +
 				"KEY (b), CONSTRAINT u2 UNIQUE (a));",
 			want: []string{
-				"constraints[-1] indexes[0]",
-				"constraints[0] indexes[-1]",
-				"constraints[-1] indexes[1]",
-				"constraints[1] indexes[-1]",
+				"columns[0] constraints[-1] indexes[-1]",
+				"columns[1] constraints[-1] indexes[-1]",
+				"columns[-1] constraints[-1] indexes[0]",
+				"columns[-1] constraints[0] indexes[-1]",
+				"columns[-1] constraints[-1] indexes[1]",
+				"columns[-1] constraints[1] indexes[-1]",
 			},
 		},
 	}

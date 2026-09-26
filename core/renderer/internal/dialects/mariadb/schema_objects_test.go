@@ -101,3 +101,22 @@ func TestMariaDBRenderer_EscapesEmbeddedBackticks(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TABLE `tenant``data` (")
 	c.Assert(sql, qt.Contains, "`order``key` int")
 }
+
+// TestMariaDBRenderer_ColumnCheckNamedAfterItsColumnStaysOnTheColumn writes a
+// CHECK named after its own column without a name, on the column. MariaDB
+// 11.8.9 names a CHECK written on a column after the column, which is the name
+// a MariaDB schema file gives it, and takes no name there: the unnamed
+// spelling is the one that builds the declared column-level CHECK.
+func TestMariaDBRenderer_ColumnCheckNamedAfterItsColumnStaysOnTheColumn(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("c").
+		AddColumn(ast.NewColumn("id", "int").SetPrimary()).
+		AddColumn(ast.NewColumn("a", "int").SetCheck("a > 0").SetCheckName("a"))
+
+	sql, err := renderer.RenderSQL("mariadb", table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "`a` int CHECK (a > 0)")
+	c.Assert(sql, qt.Not(qt.Contains), "CONSTRAINT")
+}

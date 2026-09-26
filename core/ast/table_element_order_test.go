@@ -64,3 +64,23 @@ func TestCreateTableNode_ANodeNothingOrderedRecordsNoElements(t *testing.T) {
 
 	c.Assert(table.Elements, qt.HasLen, 0)
 }
+
+// TestCreateTableNode_ElementsRecordColumnsWhereTheyWereAdded pins where a
+// column sits among the table's constraints. MySQL numbers an unnamed CHECK in
+// the order the body writes it, on a column or on the table alike, so a body
+// that writes a table-level CHECK before a column carrying one is a different
+// set of names from the same body with the two the other way round
+// (stokaro/ptah#3741).
+func TestCreateTableNode_ElementsRecordColumnsWhereTheyWereAdded(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("c2")
+	check := &ast.ConstraintNode{Type: ast.CheckConstraint, Expression: "b > 0"}
+	a := ast.NewColumn("a", "INT").SetCheck("a > 0")
+	b := ast.NewColumn("b", "INT")
+
+	table.AddConstraint(check).AddColumn(a).AddColumn(b)
+
+	c.Assert(table.Elements, qt.DeepEquals, []ast.TableElement{{Constraint: check}, {Column: a}, {Column: b}})
+	c.Assert(table.Columns, qt.DeepEquals, []*ast.ColumnNode{a, b})
+}

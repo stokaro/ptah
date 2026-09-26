@@ -984,7 +984,7 @@ func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []st
 	// stably through introspection (which otherwise auto-names CHECKs as
 	// `<table>_chk_N` and would not match the drift detector's expected name).
 	if column.Check != "" && !r.rendersNamedColumnCheckAsTableConstraint(column) {
-		if column.CheckName != "" {
+		if column.CheckName != "" && !r.namesColumnCheckAfterColumn(column) {
 			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", escapeIdentifier(column.CheckName), column.Check))
 		} else {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
@@ -997,8 +997,24 @@ func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []st
 	return parts
 }
 
+// rendersNamedColumnCheckAsTableConstraint reports whether a column's named
+// CHECK is written at table level. MariaDB takes no name for a CHECK written on
+// a column: measured on 11.8.9, `a int CONSTRAINT x CHECK (a > 0)` is ERROR
+// 1064. A CHECK named after its own column is the exception; see
+// [Renderer.namesColumnCheckAfterColumn].
 func (r *Renderer) rendersNamedColumnCheckAsTableConstraint(column *ast.ColumnNode) bool {
-	return r.dialect == "mariadb" && column.Check != "" && column.CheckName != ""
+	return r.dialect == "mariadb" && column.Check != "" && column.CheckName != "" &&
+		!r.namesColumnCheckAfterColumn(column)
+}
+
+// namesColumnCheckAfterColumn reports whether the server names the column's
+// CHECK what the column declares, with nothing written: MariaDB names a CHECK
+// written on a column after the column, and keeps it at column level, so the
+// unnamed spelling is the one that builds the declared object. Written at
+// table level under the column's name, the same CHECK would be a table-level
+// one (stokaro/ptah#3741).
+func (r *Renderer) namesColumnCheckAfterColumn(column *ast.ColumnNode) bool {
+	return r.dialect == "mariadb" && column.CheckName != "" && strings.EqualFold(column.CheckName, column.Name)
 }
 
 func (r *Renderer) renderColumnType(column *ast.ColumnNode, columnType string) string {
