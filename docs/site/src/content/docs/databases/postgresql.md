@@ -480,6 +480,15 @@ global default. In Go the same declaration is the `revoked` attribute of
 `default_privilege` block, and in YAML the `revoked` key of a
 `default_privileges` entry.
 
+Reading a live database describes the default privileges of each schema the
+read covers, the connection's default schema included, and renders each one
+with its `IN SCHEMA` clause. A global default, set without `IN SCHEMA`, is left
+out of the description, because no schema source can declare one. A
+description applied to another database therefore does not carry it. Run a
+statement such as
+`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` there
+yourself.
+
 A privilege can be limited to columns of a table: `GRANT UPDATE (state,
 decided_at) ON proposals TO app`. Each column is compared on its own against
 `pg_attribute.attacl`, and a column privilege and the table privilege of the

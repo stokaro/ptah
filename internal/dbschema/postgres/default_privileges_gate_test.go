@@ -68,6 +68,7 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 			caps: capability.Postgres16(),
 			want: []catalog.DefaultPrivilege{{
 				Grantor:    "app_owner",
+				Schema:     "public",
 				ObjectType: "TABLES",
 				Grantee:    "app_reader",
 				Privilege:  "SELECT",

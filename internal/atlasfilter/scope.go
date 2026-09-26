@@ -679,10 +679,11 @@ func (s *scopeSelection) defaultPrivilegeSelected(schema string) bool {
 	if len(s.selectors) == 0 {
 		return true
 	}
-	// The effective schema, not the raw one: a default privilege in the
-	// connected schema carries no schema of its own, and comparing "" against
-	// the --schema names would drop exactly the defaults of the schema the run
-	// is pointed at.
+	// The effective schema, not the raw one. Ptah's readers always name a
+	// default privilege's schema, but a catalog.Database an embedder builds
+	// may follow the blank-default convention the other object types use, and
+	// comparing "" against the --schema names would drop exactly the defaults
+	// of the schema the run is pointed at.
 	_, named := s.allowed[strings.TrimSpace(s.effectiveSchema(schema))]
 	return named
 }

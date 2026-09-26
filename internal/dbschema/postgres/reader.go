@@ -4397,14 +4397,29 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 // collapsed them here would have to pick one grantability for the whole
 // identity and compare a guess against the catalog forever.
 //
-// The join to pg_namespace is an inner join deliberately: it drops the
-// cluster-wide entries, which pg_default_acl records with defaclnamespace 0.
-// Ptah models no such entry -- internal/devclean refuses an
-// ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay -- so a described
-// row of that shape names an object nothing could apply back. defaclobjtype 'n'
-// (SCHEMAS) is left out for the same reason, by the object-type filter, whose
-// CASE is also what turns the catalog's one-character codes into the keywords a
+// The join to pg_namespace is an inner join deliberately: it drops the global
+// entries, which pg_default_acl records with defaclnamespace 0 and which apply
+// in every schema of the database. Ptah models no such entry -- internal/devclean
+// refuses an ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay -- so a
+// described row of that shape names an object nothing could apply back. Its ACL
+// is also a different kind of value: a global row holds the whole ACL, the
+// built-in defaults included, where a schema-scoped row holds only what was
+// added. REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC stores {owner=X/owner}, measured
+// on PostgreSQL 18.6, so exploding it as grants would describe the owner's
+// implicit right and lose the revoke. Reporting or modeling the rows this join
+// drops is stokaro/ptah#3737. defaclobjtype 'n' (SCHEMAS) is left out because
+// the model has no spelling for it either, by the object-type filter, whose CASE
+// is also what turns the catalog's one-character codes into the keywords a
 // statement writes.
+//
+// Every row carries its schema, the connected one included, unlike the other
+// reads here. A table in the connected schema is spelled unqualified, but a
+// default privilege has no unqualified spelling: its schema is the IN SCHEMA
+// clause, and the statement without that clause is the global default above.
+// Blanked, the schema reaches the renderer as no schema, which it refuses for
+// the whole description, and the comparator as a schema no declaration names,
+// so a declared default privilege is planned again on every run
+// (stokaro/ptah#3732).
 //
 // The grantee carries the reserved-name exclusion the other grant reads carry,
 // through the one definition of "reserved", so a default privilege held by a
@@ -4455,10 +4470,12 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 	var privileges []catalog.DefaultPrivilege
 	for rows.Next() {
 		var privilege catalog.DefaultPrivilege
-		var rawSchema string
+		// The schema is scanned as pg_namespace names it and never passed
+		// through outputSchema, which blanks the connected schema. See
+		// [catalog.DefaultPrivilege] for why this family is the exception.
 		if err := rows.Scan(
 			&privilege.Grantor,
-			&rawSchema,
+			&privilege.Schema,
 			&privilege.ObjectType,
 			&privilege.Grantee,
 			&privilege.Privilege,
@@ -4466,7 +4483,6 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan default privilege for schema %s: %w", schemaName, err)
 		}
-		privilege.Schema = r.outputSchema(rawSchema)
 		privileges = append(privileges, privilege)
 	}
 	if err := rows.Err(); err != nil {

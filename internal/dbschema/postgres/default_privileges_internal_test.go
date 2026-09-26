@@ -3,7 +3,7 @@ package postgres
 // White-box testing required: readDefaultPrivileges is unexported, and the
 // exported ReadSchema path reaches it only through a live server. What is under
 // test is partly the statement itself -- the inner join that drops the
-// cluster-wide entries, the object-type filter and the escaped reserved-name
+// global entries, the object-type filter and the escaped reserved-name
 // exclusion -- and a row the query never selects has no observation point in
 // the rows it returns.
 
@@ -57,9 +57,11 @@ func answerDefaultPrivileges(
 // grantability for the identity and then compare that choice against the
 // catalog on every run.
 //
-// The schema comes back empty because this reader was not scoped and the row is
-// in its own schema: that is the same convention every other read here follows,
-// so an object in the connected schema stays unqualified.
+// The schema comes back filled although this reader was not scoped and the row
+// is in its own schema. Every other read here leaves the connected schema
+// blank, but a default privilege's schema is its IN SCHEMA clause: blanked, it
+// reaches the renderer as the global form, which the renderer refuses to write
+// (stokaro/ptah#3732).
 func TestReadDefaultPrivileges_ProjectsOneRowPerPrivilegeHappyPath(t *testing.T) {
 	c := qt.New(t)
 	var sent, bound []string
@@ -76,12 +78,12 @@ func TestReadDefaultPrivileges_ProjectsOneRowPerPrivilegeHappyPath(t *testing.T)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
-		{Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
+		{Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
 		{
-			Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader",
+			Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader",
 			Privilege: "INSERT", WithOption: true,
 		},
-		{Grantor: "app_owner", ObjectType: "SEQUENCES", Grantee: "PUBLIC", Privilege: "USAGE"},
+		{Grantor: "app_owner", Schema: "public", ObjectType: "SEQUENCES", Grantee: "PUBLIC", Privilege: "USAGE"},
 	})
 	c.Assert(bound, qt.DeepEquals, []string{"public"})
 }
@@ -91,9 +93,9 @@ func TestReadDefaultPrivileges_ProjectsOneRowPerPrivilegeHappyPath(t *testing.T)
 // one that asks about the connected schema alone, and a description missing the
 // second schema's defaults reads as "there are none" to the comparator.
 //
-// It also pins which schema a row carries: the connected one stays unqualified
-// and the others are named, so both sides of a comparison spell the same object
-// the same way.
+// It also pins which schema a row carries: every row names its own, the
+// connected one included, which is what a declaration names too, so both sides
+// of a comparison spell the same object the same way.
 func TestReadDefaultPrivileges_ReadsEveryInspectedSchemaHappyPath(t *testing.T) {
 	c := qt.New(t)
 	var sent, bound []string
@@ -109,7 +111,7 @@ func TestReadDefaultPrivileges_ReadsEveryInspectedSchemaHappyPath(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	c.Assert(bound, qt.DeepEquals, []string{"public", "app"})
 	c.Assert(privileges, qt.DeepEquals, []catalog.DefaultPrivilege{
-		{Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
+		{Grantor: "app_owner", Schema: "public", ObjectType: "TABLES", Grantee: "app_reader", Privilege: "SELECT"},
 		{
 			Grantor: "app_owner", Schema: "app", ObjectType: "FUNCTIONS",
 			Grantee: "app_reader", Privilege: "EXECUTE",
@@ -122,7 +124,7 @@ func TestReadDefaultPrivileges_ReadsEveryInspectedSchemaHappyPath(t *testing.T) 
 // failure.
 //
 // Each one costs something different. An outer join to pg_namespace admits the
-// cluster-wide entries, which pg_default_acl records with defaclnamespace 0 and
+// global entries, which pg_default_acl records with defaclnamespace 0 and
 // which replay refuses because they carry no IN SCHEMA. Dropping the object-type
 // filter admits defaclobjtype 'n', for which the CASE yields NULL and no
 // statement exists. An unescaped underscore in the reserved-name exclusion reads

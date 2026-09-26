@@ -45,7 +45,8 @@ import (
 // same way, through the QualifiedName methods, which delegate to
 // [QualifyTableName]. Keying the two sides differently is how a synced table
 // turns into a phantom CREATE and DROP pair (stokaro/ptah#1244,
-// stokaro/ptah#1991).
+// stokaro/ptah#1991). [DefaultPrivilege] is the exception: its schema is
+// always filled, and its doc comment says why.
 //
 // NotDescribed records what the read deliberately did not look at, which is a
 // different fact from an object being absent; see that field.
@@ -1672,10 +1673,18 @@ type RoleMembership struct {
 // 17. A comparison that dropped the grantor would plan a change that deletes
 // somebody else's default.
 //
-// Schema is always set. The cluster-wide form, which pg_default_acl records with
-// defaclnamespace 0, is outside what Ptah models: internal/devclean refuses an
-// ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay, so a described row
-// of that shape could not be applied back.
+// Schema is always set, the read's default schema included. That makes this
+// type the exception to the convention [Database] describes, and deliberately:
+// the schema here is the IN SCHEMA clause rather than where an object lives, and
+// a statement without the clause is the global default -- a different object,
+// not the same one spelled unqualified. A blank schema therefore cannot mean
+// "the default schema" here, and a consumer that met one would have to choose
+// between two readings (stokaro/ptah#3732).
+//
+// The global form, which pg_default_acl records with defaclnamespace 0, is
+// outside what Ptah models: internal/devclean refuses an ALTER DEFAULT
+// PRIVILEGES with no IN SCHEMA during replay, so a described row of that shape
+// could not be applied back.
 type DefaultPrivilege struct {
 	// Grantor is the role whose newly created objects the privileges apply to,
 	// pg_get_userbyid(pg_default_acl.defaclrole).
