@@ -95,7 +95,7 @@ services:
       retries: 12
 
   yugabytedb:
-    image: yugabytedb/yugabyte:2026.1.0.0-b118
+    image: yugabytedb/yugabyte:2026.1.2.0-b137
     command:
       - bash
       - -lc

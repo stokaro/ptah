@@ -283,7 +283,7 @@ jobs:
           # renovate: datasource=docker depName=yugabytedb/yugabyte
           docker run --detach --name ptah-yugabytedb \
             --publish 5433:5433 \
-            yugabytedb/yugabyte:2026.1.0.0-b118 \
+            yugabytedb/yugabyte:2026.1.2.0-b137 \
             bash -lc 'ip=$(hostname -i); ip=${ip%% *}; exec bin/yugabyted start --daemon=false --advertise_address=$ip --ui=false'
 
       - name: Wait for databases to be ready

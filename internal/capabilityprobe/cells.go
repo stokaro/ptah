@@ -639,7 +639,8 @@ var Cells = []Cell{
 		Refinement: RefinedByMeasuredLine, Support: capability.Certified, Image: "yugabytedb/yugabyte:2026.1", ResolveNewestPatch: true,
 		Note: "measured live on YugabyteDB 2026.1.0.0-b118: advisory_locks, " +
 			"create_index_concurrently, and row_level_security agree with YugabyteDB25 after issue #1376; " +
-			"drop_index_concurrently remains false because the server refuses that spelling. Docker Hub " +
+			"drop_index_concurrently remains false because the server refuses that spelling. Probed again on " +
+			"2026.1.2.0-b137 on 2026-09-26: 69 rows, 62 agree, 7 undecidable, none disagrees. Docker Hub " +
 			"publishes no floating 2026.1 tag, so the CI driver resolves the newest numeric patch tag",
 	},
 	{
