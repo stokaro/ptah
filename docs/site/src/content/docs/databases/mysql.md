@@ -134,7 +134,17 @@ SQL:
   kind, such as `a INT CONSTRAINT uq UNIQUE`, `CONSTRAINT pk PRIMARY KEY` or
   `CONSTRAINT nn NOT NULL`, and Ptah refuses each of them by name. Declared at
   table level, a unique key keeps its name on both engines, and a check keeps
-  its name on MariaDB.
+  its name on MariaDB. In the column definition of `ALTER TABLE ... MODIFY`,
+  MariaDB takes `CONSTRAINT` before nothing, and neither engine takes
+  `REFERENCES`, with `CONSTRAINT` in front or without it; Ptah refuses those
+  too.
+- A bare column `REFERENCES`, as in `a INT REFERENCES p(id)`, means something
+  different on each MySQL line: MySQL 8.4 builds nothing from it, while MySQL
+  9.7 and 26.7 build the foreign key `<table>_ibfk_<n>` and an index on the
+  column. A SQL file is read without the server version, so
+  `--dialect mysql` refuses the clause and asks for a table-level
+  `FOREIGN KEY`, which every line builds. MariaDB builds the key, and
+  `--dialect mariadb` reads it.
 - A non-ASCII index name is refused, rather than compared. The two engines fold
   such names differently and not in a way one rule covers: measured on MySQL
   8.4.11 and MariaDB 11.8.9 over a `utf8mb4` connection, `I` beside dotless

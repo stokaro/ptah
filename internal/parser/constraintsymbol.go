@@ -60,6 +60,25 @@ import (
 // So one table, mysqlColumnConstraintKinds, decides both spellings there.
 // Without it, `a int CONSTRAINT uq UNIQUE` reads as a unique constraint `uq`
 // in a MySQL file the server refuses (stokaro/ptah#3745).
+//
+// ALTER TABLE ... MODIFY states a column in a narrower grammar. Measured on
+// MySQL 8.4.11, 9.7.2 and 26.7.0 and on MariaDB 10.11.19, 11.8.9 and 12.3.3,
+// after `CREATE TABLE c (id int, a int)`:
+//
+//	MODIFY a int ...               MySQL            MariaDB
+//	CONSTRAINT ck CHECK (a > 0)    check ck         ERROR 1064
+//	CONSTRAINT CHECK (a > 0)       check c_chk_1    ERROR 1064
+//	CONSTRAINT fk REFERENCES p(id) ERROR 1064       ERROR 1064
+//	CONSTRAINT REFERENCES p(id)    ERROR 1064       ERROR 1064
+//	CONSTRAINT x NOT NULL, UNIQUE  ERROR 1064       ERROR 1064
+//	REFERENCES p(id)               ERROR 1064       ERROR 1064
+//	CHECK (a > 0), NOT NULL        accepted         accepted
+//
+// So MySQL takes CONSTRAINT before CHECK in a MODIFY as it does in CREATE
+// TABLE, MariaDB takes it before nothing, and neither takes REFERENCES there,
+// with CONSTRAINT or without. The table carries the MODIFY answer beside the
+// other one, and refuseModifyReferences refuses the bare REFERENCES
+// (stokaro/ptah#3759).
 
 // constraintKindWords open the constraint that follows a CONSTRAINT symbol, at
 // table level or on a column.
@@ -97,9 +116,19 @@ var columnConstraintKindWords = []string{"CHECK", "REFERENCES", "UNIQUE", "PRIMA
 // It is one table for both spellings because the engines answer both alike. A
 // second list for the named spelling would agree with this one on the day it
 // was written, and stop agreeing the day one of them changed.
-var mysqlColumnConstraintKinds = map[string]string{
-	platform.MySQL:   "CHECK",
-	platform.MariaDB: "REFERENCES",
+var mysqlColumnConstraintKinds = map[string]columnConstraintKinds{
+	platform.MySQL:   {define: "CHECK", modify: "CHECK"},
+	platform.MariaDB: {define: "REFERENCES", modify: ""},
+}
+
+// columnConstraintKinds is one engine's row of mysqlColumnConstraintKinds.
+type columnConstraintKinds struct {
+	// define is the kind CONSTRAINT may precede in the column definition of
+	// CREATE TABLE and ALTER TABLE ... ADD COLUMN.
+	define string
+	// modify is the kind CONSTRAINT may precede in the column definition of
+	// ALTER TABLE ... MODIFY, and empty where it may precede none.
+	modify string
 }
 
 // constraintSymbolOmitted reports whether the cursor, just past CONSTRAINT, sits
@@ -203,22 +232,38 @@ func (p *Parser) handleSymbolLessColumnConstraint(table *ast.CreateTableNode, co
 // `a int CONSTRAINT x COMMENT 'c'`, `CONSTRAINT x AUTO_INCREMENT KEY` and
 // `CONSTRAINT x KEY` too.
 func (p *Parser) refuseMySQLColumnConstraint(start int, symbol string) error {
-	accepted, family := mysqlColumnConstraintKinds[p.dialect]
+	kinds, family := mysqlColumnConstraintKinds[p.dialect]
+	if !family {
+		return nil
+	}
+	accepted, where := kinds.define, "on a column"
+	if p.modifyColumn {
+		accepted, where = kinds.modify, "in a MODIFY column definition"
+	}
 	kind := strings.ToUpper(p.current.Value)
-	if !family || kind == accepted {
+	if kind == accepted {
 		return nil
 	}
 	if symbol == "" {
 		return fmt.Errorf(
-			"CONSTRAINT at position %d is followed by %s, not by a name: on a column, %s accepts "+
-				"CONSTRAINT without a name only before %s, and answers ERROR 1064 (42000) to this; "+
-				"drop the CONSTRAINT keyword",
-			start, kind, p.dialect, accepted)
+			"CONSTRAINT at position %d is followed by %s, not by a name: %s, %s %s, and answers "+
+				"ERROR 1064 (42000) to this; drop the CONSTRAINT keyword",
+			start, kind, where, p.dialect, acceptedConstraint(accepted, "without a name"))
 	}
 	return fmt.Errorf(
-		"CONSTRAINT %s at position %d is followed by %s: on a column, %s accepts CONSTRAINT "+
-			"with a name only before %s, and answers ERROR 1064 (42000) to this; drop CONSTRAINT %s",
-		symbol, start, kind, p.dialect, accepted, symbol)
+		"CONSTRAINT %s at position %d is followed by %s: %s, %s %s, and answers ERROR 1064 (42000) "+
+			"to this; drop CONSTRAINT %s",
+		symbol, start, kind, where, p.dialect, acceptedConstraint(accepted, "with a name"), symbol)
+}
+
+// acceptedConstraint says, in the words of a refusal, which kind an engine
+// takes CONSTRAINT before: `accepts CONSTRAINT with a name only before CHECK`,
+// or `accepts no CONSTRAINT` where kind is empty.
+func acceptedConstraint(kind, spelling string) string {
+	if kind == "" {
+		return "accepts no CONSTRAINT"
+	}
+	return fmt.Sprintf("accepts CONSTRAINT %s only before %s", spelling, kind)
 }
 
 // constraintSymbolRequired refuses a CONSTRAINT without a symbol on a dialect

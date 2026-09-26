@@ -53,23 +53,47 @@ func TestNamedColumnConstraintRefusal_TheFixtureOnThePageIsTheOneThatFails(t *te
 	c.Assert(err, qt.IsNotNil)
 }
 
-// TestNamedMySQLColumnConstraintRefusal_IsQuotedAsThePageSaysItIs binds the
-// page's MySQL example to the refusal the parser gives for it, as the two tests
-// above bind the DEFAULT one: the page has to print the fixture, and the
+// TestMySQLFamilyRefusal_IsQuotedAsThePageSaysItIs binds the page's MySQL
+// family examples to the refusals the parser gives for them, as the two tests
+// above bind the DEFAULT one: the page has to print each fixture, and each
 // fixture has to produce the message the page quotes.
-func TestNamedMySQLColumnConstraintRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
-	c := qt.New(t)
+func TestMySQLFamilyRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		fixture string
+	}{
+		{
+			name:    "a named column constraint",
+			dialect: platform.MySQL,
+			fixture: "CREATE TABLE t (a INT CONSTRAINT uq UNIQUE);",
+		},
+		{
+			name:    "a column-level REFERENCES",
+			dialect: platform.MySQL,
+			fixture: "CREATE TABLE child (a INT REFERENCES parents (id));",
+		},
+		{
+			name:    "a REFERENCES in MODIFY",
+			dialect: platform.MariaDB,
+			fixture: "ALTER TABLE c MODIFY a INT REFERENCES p (id);",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	page := readSQLSchemaPage(c)
-	const fixture = "CREATE TABLE t (a INT CONSTRAINT uq UNIQUE);"
+			page := readSQLSchemaPage(c)
 
-	c.Assert(page, qt.Contains, fixture)
+			c.Assert(page, qt.Contains, test.fixture)
 
-	_, err := parser.NewParser(fixture, parser.WithDialect(platform.MySQL)).Parse()
+			_, err := parser.NewParser(test.fixture, parser.WithDialect(test.dialect)).Parse()
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(collapseWhitespace(page), qt.Contains, collapseWhitespace(err.Error()),
-		qt.Commentf("the refusal changed; update %s", sqlSchemaPage))
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(collapseWhitespace(page), qt.Contains, collapseWhitespace(err.Error()),
+				qt.Commentf("the refusal changed; update %s", sqlSchemaPage))
+		})
+	}
 }
 
 // readSQLSchemaPage reads the documentation page the tests in this file
