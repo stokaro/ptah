@@ -81,12 +81,11 @@ SQL:
   the column, and a key over more columns that the column leads. So
   `a INT UNIQUE, b INT, UNIQUE (a, b)` matches the keys `a` and `a_2` it
   builds, and a key the file no longer declares is dropped, as Atlas CE plans
-  it. A key over the column that the file declares by name stays that
-  declaration's. Where the file writes both `a INT UNIQUE` and
-  `CONSTRAINT uq_a UNIQUE (a)`, the declared key is taken to hold the column's
-  uniqueness, so a database with `uq_a` alone plans nothing, where Atlas CE
-  adds `a`
-  ([stokaro/ptah#3784](https://github.com/stokaro/ptah/issues/3784)).
+  it. A key over the column that the file declares by name, as a constraint
+  or as a unique index, stays that declaration's, and the column's own key is
+  compared beside it. Both engines build `a INT UNIQUE` and
+  `CONSTRAINT uq_a UNIQUE (a)` as two keys, so a database with `uq_a` alone
+  is planned the key `a`, as Atlas CE plans it.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so

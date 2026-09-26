@@ -11,13 +11,24 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// columnOwnedUniques answers the database UNIQUE constraints that a column's
-// own UNIQUE accounts for: for each column the desired state declares unique,
-// one UNIQUE over that column alone, and no other.
+// columnKeys is what the comparison reads about the key each column the desired
+// state declares UNIQUE owns in the database.
+type columnKeys struct {
+	// owned are the database UNIQUE constraints the columns account for. The
+	// constraint comparison leaves them out.
+	owned map[tableMemberKey]struct{}
+	// held are the columns, keyed by table and column, whose own key the
+	// database holds.
+	held map[tableMemberKey]struct{}
+}
+
+// readColumnKeys answers which database UNIQUE constraints the columns the
+// desired state declares UNIQUE account for: for each such column, one UNIQUE
+// over that column alone, and no other.
 //
-// The column's lifecycle creates and drops that one, so the comparison leaves
-// it out; every other UNIQUE of the table stays in it and is paired by name.
-// Three conditions keep the rest in:
+// The column's lifecycle creates and drops that one, so the constraint
+// comparison leaves it out; every other UNIQUE of the table stays in it and is
+// paired by name. Three conditions keep the rest in:
 //
 //   - A UNIQUE over more than the column is a key of its own. Measured on
 //     MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18,
@@ -25,9 +36,11 @@ import (
 //     column's, the second is planned as an ADD against the database the file
 //     built, and with the key removed from the file it is never dropped
 //     (stokaro/ptah#3764).
-//   - A UNIQUE the desired state declares by name is that declaration's. So
-//     `a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)` pairs `uq_a` with its
-//     declaration and leaves the column the other key.
+//   - A UNIQUE the desired state declares by name, as a constraint or as a
+//     unique index, is that declaration's. So `a int UNIQUE, CONSTRAINT uq_a
+//     UNIQUE (a)` pairs `uq_a` with its declaration and leaves the column the
+//     other key, and a database that holds only `uq_a` does not hold the
+//     column's (stokaro/ptah#3784).
 //   - A column accounts for one key. A second UNIQUE over the column alone,
 //     which the file does not declare, is planned for removal, as Atlas CE
 //     v1.3.0 plans it: `ALTER TABLE c DROP INDEX a_2` on MySQL and MariaDB,
@@ -37,12 +50,18 @@ import (
 // the server names a column's own UNIQUE: after the column on MySQL and
 // MariaDB, `<table>_<column>_key` on PostgreSQL. Failing that, the first by
 // name, so the answer does not depend on the catalog's order.
-func columnOwnedUniques(
+//
+// The constraint comparison reads owned, and the column comparison reads held;
+// one function answers both, so the two cannot disagree about which key is the
+// column's.
+func readColumnKeys(
 	desired *schemamodel.Database,
 	database *catalog.Database,
-	genConstraints map[tableMemberKey]schemamodel.Constraint,
+	dialect string,
 	semantics identifier.Semantics,
-) map[tableMemberKey]struct{} {
+) columnKeys {
+	declared := declaredAndCheckConstraints(desired, database, dialect, semantics)
+	declaredIndexes := generatedIndexIdentities(desired, semantics)
 	uniqueColumns := desiredUniqueColumns(desired, semantics)
 	candidates := make(map[tableMemberKey][]catalog.Constraint)
 	for _, constraint := range database.Constraints {
@@ -54,12 +73,16 @@ func columnOwnedUniques(
 		if !uniqueColumns[column] {
 			continue
 		}
-		if _, declared := genConstraints[newCatalogConstraintKey(constraint, semantics)]; declared {
+		if _, byName := declared[newCatalogConstraintKey(constraint, semantics)]; byName ||
+			uniqueConstraintOwnedByDeclaredIndex(constraint, dialect, declaredIndexes, semantics) {
 			continue
 		}
 		candidates[column] = append(candidates[column], constraint)
 	}
-	owned := make(map[tableMemberKey]struct{}, len(candidates))
+	keys := columnKeys{
+		owned: make(map[tableMemberKey]struct{}, len(candidates)),
+		held:  make(map[tableMemberKey]struct{}, len(candidates)),
+	}
 	for column, constraints := range candidates {
 		owner := slices.MinFunc(constraints, func(a, b catalog.Constraint) int {
 			return cmp.Or(
@@ -67,9 +90,10 @@ func columnOwnedUniques(
 				cmp.Compare(a.Name, b.Name),
 			)
 		})
-		owned[newCatalogConstraintKey(owner, semantics)] = struct{}{}
+		keys.owned[newCatalogConstraintKey(owner, semantics)] = struct{}{}
+		keys.held[column] = struct{}{}
 	}
-	return owned
+	return keys
 }
 
 // desiredUniqueColumns answers the columns the desired state declares UNIQUE,

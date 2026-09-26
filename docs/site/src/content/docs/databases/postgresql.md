@@ -259,6 +259,16 @@ column or a key over more columns that the column leads, is compared by its
 name, so `a int UNIQUE, UNIQUE (a, b)` matches the two keys it builds, and a
 key the file no longer declares is dropped.
 
+A named `UNIQUE` over the column alone, written in the same `CREATE TABLE`, is
+the column's key too: the server
+builds `CONSTRAINT uq_a UNIQUE (a)` beside `a int UNIQUE` as `uq_a` alone.
+Written in separate statements, the two are two keys on the server, and Ptah
+still reads them as one
+([stokaro/ptah#3812](https://github.com/stokaro/ptah/issues/3812)). A
+unique index is an object apart, so `a int UNIQUE` beside
+`CREATE UNIQUE INDEX ux ON c (a)` builds `c_a_key` and `ux`, and a database
+with `ux` alone is planned `c_a_key`, as Atlas CE plans it.
+
 A plan that adds a column-level `UNIQUE` to an existing column writes
 `ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
 because the plan cannot see which names the target already holds. MySQL and
