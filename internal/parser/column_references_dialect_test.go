@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -26,47 +27,35 @@ import (
 //	                                                           CONSTRAINT `f`
 //
 // So the clause is refused for MySQL and read for MariaDB. See
-// stokaro/ptah#2791.
+// stokaro/ptah#2791. The named spelling MySQL answers with error 1064 is
+// refused with the other named column constraints the engine refuses, in
+// named_column_constraint_dialect_test.go.
 
 const columnReferencesParents = "CREATE TABLE parents (id INT PRIMARY KEY);\n"
 
+// TestParseColumnReferences_MySQLFailurePath refuses the bare clause, which
+// MySQL 8.4.11 accepts and builds nothing from.
 func TestParseColumnReferences_MySQLFailurePath(t *testing.T) {
-	tests := []struct {
-		name       string
-		sql        string
-		wantAnswer string
-	}{
-		{
-			name:       "bare clause",
-			sql:        "CREATE TABLE child (a INT REFERENCES parents(id));",
-			wantAnswer: "MySQL accepts the clause and creates neither a foreign key nor an index",
-		},
-		{
-			name:       "named clause",
-			sql:        "CREATE TABLE child (a INT CONSTRAINT f REFERENCES parents(id));",
-			wantAnswer: "MySQL refuses that spelling outright with error 1064 (42000)",
-		},
-	}
+	c := qt.New(t)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
+	result, err := parser.NewParser(
+		columnReferencesParents+"CREATE TABLE child (a INT REFERENCES parents(id));",
+		parser.WithDialect(platform.MySQL),
+	).Parse()
 
-			result, err := parser.NewParser(
-				columnReferencesParents+test.sql,
-				parser.WithDialect(platform.MySQL),
-			).Parse()
-
-			c.Assert(result, qt.IsNil)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err.Error(), qt.Contains, test.wantAnswer)
-			c.Assert(err.Error(), qt.Contains, "write a table-level FOREIGN KEY clause")
-			var capabilityErr *ptaherr.CapabilityError
-			c.Assert(err, qt.ErrorAs, &capabilityErr)
-			c.Assert(capabilityErr.Dialect, qt.Equals, platform.MySQL)
-			c.Assert(capabilityErr.Feature, qt.Equals, "enforced column-level REFERENCES")
-		})
-	}
+	c.Assert(result, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
+		"a column-level REFERENCES clause at position 69: MySQL accepts the clause and "+
+			"creates neither a foreign key nor an index: SHOW CREATE TABLE reports the "+
+			"column alone, and information_schema.referential_constraints stays empty, so "+
+			"Ptah refuses it rather than reading a foreign key the source schema does not "+
+			"have; write a table-level FOREIGN KEY clause to declare an enforced relationship",
+	))
+	var capabilityErr *ptaherr.CapabilityError
+	c.Assert(err, qt.ErrorAs, &capabilityErr)
+	c.Assert(capabilityErr.Dialect, qt.Equals, platform.MySQL)
+	c.Assert(capabilityErr.Feature, qt.Equals, "enforced column-level REFERENCES")
 }
 
 // MariaDB is the control that keeps the refusal scoped to the engine that

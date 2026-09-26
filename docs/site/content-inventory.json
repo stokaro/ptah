@@ -1018,8 +1018,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2906,
-      "sourceBytes": 17969
+      "visibleWords": 2988,
+      "sourceBytes": 18413
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -5653,8 +5653,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 3191,
-      "sourceBytes": 23934
+      "visibleWords": 3317,
+      "sourceBytes": 24963
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
