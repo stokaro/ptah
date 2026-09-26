@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
@@ -533,6 +534,13 @@ func resolveDesiredState(
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	// generateDiff replays the migration directory on this connection next,
+	// and the replay resets it first. A --to database the URL comparison above
+	// could not match is compared live now, after it was read and before the
+	// reset.
+	if err := devlock.EnsureDistinct(ctx, conn, opts.Desired.DevProtected()...); err != nil {
+		return atlassource.State{}, err
 	}
 	return state, nil
 }

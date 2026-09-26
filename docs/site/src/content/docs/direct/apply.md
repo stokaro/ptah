@@ -102,7 +102,9 @@ On the Atlas-compatible surface, `--to` additionally accepts a database URL
 whose live schema becomes the desired schema, or an Atlas-format migration
 directory replayed on the required `--dev-url` dev database. When `--dev-url`
 is set, the ordered plan is rehearsed on the dev database before the target is
-touched, and a failed rehearsal refuses the apply. The rehearsal runs entirely
+touched, and a failed rehearsal refuses the apply. A dev database that is the
+target, by its URL or by what the two servers answer about the database each
+session selected, is refused before it is reset. The rehearsal runs entirely
 inside the dev database, which is handed back empty afterwards — see
 [Atlas schema commands](../../atlas/schema-commands/). `--lock-timeout`
 bounds the session advisory lock that serializes concurrent applies,

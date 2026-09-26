@@ -176,16 +176,20 @@ func connectSimulationDev(
 			return nil, noRelease, fmt.Errorf("compare --dev-url with target database: %w", err)
 		}
 		if sameTarget {
-			return nil, noRelease, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+			return nil, noRelease, errDevURLIsTarget
 		}
 	}
+	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
 		if err != nil {
 			return nil, noRelease, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
 		}
 		if sameDesired {
-			return nil, noRelease, fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
+			return nil, noRelease, devURLIsDesiredError(desired)
+		}
+		if isDirectDatabaseURL(desired) {
+			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
 		}
 	}
 
@@ -211,7 +215,32 @@ func connectSimulationDev(
 		release()
 		return nil, noRelease, err
 	}
+	// The URL comparisons above cannot see every alias: a connection pooler
+	// can serve the target under another database name. Each server is asked
+	// which database the session selected, and the dev connection is handed
+	// to the caller only when that answer differs. The caller registers the
+	// cleanup of the rehearsal after this returns, so a refusal here leaves
+	// both databases as they were (stokaro/ptah#3769).
+	if err := devlock.EnsureDistinct(ctx, devConn, protected...); err != nil {
+		dbschema.CloseAndWarn(devConn)
+		release()
+		return nil, noRelease, err
+	}
 	return devConn, release, nil
+}
+
+// errDevURLIsTarget is the refusal of a dev URL that names the target, by its
+// URL or by what its server answers.
+var errDevURLIsTarget = errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+
+// errReplayDevURLIsTarget refuses a dev database that is the target when a
+// --to migration directory is about to be replayed on it.
+var errReplayDevURLIsTarget = errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the migration directory is replayed on it")
+
+// devURLIsDesiredError is the refusal of a dev URL that names a desired-state
+// database, by its URL or by what its server answers.
+func devURLIsDesiredError(desired string) error {
+	return fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
 }
 
 // aliasCandidates returns the URLs worth asking whether devURL already names
@@ -240,11 +269,17 @@ func aliasCandidates(devURL string, candidates []string) []string {
 // directly connectable database. Desired-state files and migration directories
 // share the DesiredURLs collection and are intentionally not database aliases.
 func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
-	scheme, _, found := strings.Cut(strings.TrimSpace(candidate), ":")
-	if !found || platform.NormalizeDialect(scheme) == "" {
+	if !isDirectDatabaseURL(candidate) {
 		return false, nil
 	}
 	return atlasurl.MayAddressSameDatabase(databaseURL, candidate)
+}
+
+// isDirectDatabaseURL reports whether a desired-state value is a database URL
+// rather than a file or a migration directory.
+func isDirectDatabaseURL(candidate string) bool {
+	scheme, _, found := strings.Cut(strings.TrimSpace(candidate), ":")
+	return found && platform.NormalizeDialect(scheme) != ""
 }
 
 // rehearseStatementsOnDev resets the dev database, recreates the target's
@@ -290,13 +325,6 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		sameTargetRealm, err := devlock.SameRealm(ctx, targetConn, session)
-		if err != nil {
-			return fmt.Errorf("compare live --dev-url and target database realms: %w", err)
-		}
-		if sameTargetRealm {
-			return errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
-		}
 		return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
 	})
 }

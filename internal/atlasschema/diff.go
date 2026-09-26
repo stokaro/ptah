@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
@@ -146,9 +147,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:             dialect,
-		DialectFlag:         prepared.dialectFlag,
-		DevURL:              opts.DevURL,
+		Dialect:     dialect,
+		DialectFlag: prepared.dialectFlag,
+		DevURL:      opts.DevURL,
+		// A database on either side is compared live with the dev database
+		// before the dev database is reset for the other side.
+		Protected:           append(fromSet.DevProtected(), toSet.DevProtected()...),
 		DevServerDisposable: opts.DevServerDisposable,
 		SchemaScope:         schemaScope,
 		SchemaScopeFlag:     schemaScopeFlag,
@@ -541,6 +545,11 @@ func materializedState(
 		return atlassource.State{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
+	// The materialization resets the dev database before it creates the
+	// declaration there.
+	if err := devlock.EnsureDistinct(ctx, devConn, opts.Protected...); err != nil {
+		return atlassource.State{}, err
+	}
 
 	var state atlassource.State
 	err = withMaterializedDevSchema(ctx, devConn, declared.Schema, opts.ReportIgnored,
