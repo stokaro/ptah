@@ -708,8 +708,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2354,
-      "sourceBytes": 16810
+      "visibleWords": 2397,
+      "sourceBytes": 17208
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1376,8 +1376,8 @@
         "/faq/",
         "/reference/capabilities/"
       ],
-      "visibleWords": 763,
-      "sourceBytes": 7516
+      "visibleWords": 766,
+      "sourceBytes": 7538
     },
     {
       "path": "docs/site/src/content/docs/databases/support-policy.md",

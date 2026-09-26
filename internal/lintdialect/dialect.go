@@ -11,9 +11,9 @@ import (
 // Expected is the user-facing list of supported lint dialects.
 //
 // It names the canonical spelling of every supported engine. Each engine's
-// documented aliases are accepted too -- see [Canonical] -- but listing all
-// twenty-four spellings here would bury the nine names a reader is actually
-// choosing between.
+// documented aliases are accepted too -- see [Canonical] -- but listing every
+// spelling here would bury the canonical names a reader is actually choosing
+// between.
 const Expected = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
 
 // Canonical resolves an accepted lint dialect spelling to the canonical name

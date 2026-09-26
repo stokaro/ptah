@@ -1284,6 +1284,8 @@ func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 	}{
 		{name: "a socket target names its database", url: "mysql://user:pass@unix(/tmp/mysql.sock)/shop", want: "shop"},
 		{name: "a mariadb socket target too", url: "mariadb://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
+		{name: "a maria socket target too", url: "maria://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
+		{name: "a maria TCP target", url: "maria://u:p@tcp(127.0.0.1:3306)/shop", want: "shop"},
 		{name: "the TCP spelling is unchanged", url: "mysql://user:pass@tcp(127.0.0.1:3306)/shop", want: "shop"},
 	}
 
@@ -1372,6 +1374,8 @@ func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
 		{name: "a TCP target with no credentials", url: "mysql://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
 		{name: "a socket target with no credentials", url: "mysql://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
 		{name: "the MariaDB scheme reads the same", url: "mariadb://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
+		{name: "the maria spelling reads the same", url: "maria://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
+		{name: "a scheme in upper case reads the same", url: "MARIA://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
 		{name: "credentials are still carried", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
 		{name: "a driver DSN with no scheme is left alone", url: "tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
 	}
@@ -1404,7 +1408,10 @@ func TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter(t *testing.T) {
 		"mysql://user:pass@tcp(localhost:3306)/shop",
 		"mysql://user:pass@unix(/tmp/mysql.sock)/shop",
 		"mariadb://tcp(localhost:3306)/shop",
+		"maria://user:pass@tcp(localhost:3306)/shop",
+		"MARIA://unix(/tmp/mysql.sock)/shop",
 		"mysql://user:pass@localhost:3306/shop",
+		"maria://user:pass@localhost:3306/shop",
 	}
 
 	for _, address := range addresses {
@@ -1439,14 +1446,17 @@ func TestConnectToDatabase_ReachesTheDriverForACredentialFreeSocketTarget(t *tes
 	c.Assert(err, qt.ErrorMatches, `.*dial unix `+regexp.QuoteMeta(socket)+`.*`)
 }
 
-// withoutMySQLScheme removes whichever MySQL-family scheme an address carries.
+// withoutMySQLScheme removes the scheme an address carries. Every address the
+// control above names carries a MySQL-family one, so the text before "://" is
+// the scheme whatever its spelling. It is not atlasurl.CutMySQLScheme: a
+// control that asked the converter's own predicate would agree with it when
+// that predicate missed a spelling.
 func withoutMySQLScheme(address string) string {
-	for _, scheme := range []string{"mysql://", "mariadb://"} {
-		if after, ok := strings.CutPrefix(address, scheme); ok {
-			return after
-		}
+	_, rest, found := strings.Cut(address, "://")
+	if !found {
+		return address
 	}
-	return address
+	return rest
 }
 
 // TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath keeps the Windows

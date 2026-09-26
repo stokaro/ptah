@@ -30,6 +30,34 @@ func TestNormalizeDialect_DistributedSQLAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeDialect_MySQLFamilyAliases_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := map[string]string{
+		"mysql":     platform.MySQL,
+		"mariadb":   platform.MariaDB,
+		"maria":     platform.MariaDB,
+		" Maria ":   platform.MariaDB,
+		"MARIA":     platform.MariaDB,
+		" MariaDB ": platform.MariaDB,
+	}
+
+	for input, expected := range tests {
+		c.Assert(platform.NormalizeDialect(input), qt.Equals, expected, qt.Commentf("input %q", input))
+	}
+}
+
+// TestNormalizeDialect_MySQLFamilyAliases_FailurePath pins spellings the
+// pinned community binary v1.3.0 refuses with `unknown driver`, so accepting
+// `maria` did not widen the family into a prefix match.
+func TestNormalizeDialect_MySQLFamilyAliases_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	for _, input := range []string{"maria+tcp", "mariadb+tcp", "mysql+tcp", "mari", "mariadbx"} {
+		c.Assert(platform.NormalizeDialect(input), qt.Equals, "", qt.Commentf("input %q", input))
+	}
+}
+
 func TestNormalizeDialect_SQLiteAliases(t *testing.T) {
 	c := qt.New(t)
 

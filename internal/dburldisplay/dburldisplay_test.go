@@ -60,6 +60,24 @@ func TestFormat(t *testing.T) {
 			expected: "mysql://root@tcp(localhost:3306)/testdb?callback=https%3A%2F%2Fx%3Ay%40example.test&password=redacted",
 		},
 		{
+			// net/url refuses the tcp() form, so only the MySQL-family branch
+			// can redact it: a scheme the connector opens and that branch did
+			// not recognize would print the password whole.
+			name:     "maria tcp URL with password",
+			input:    "maria://root:password@tcp(localhost:3306)/testdb",
+			expected: "maria://root:***@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:     "upper-case MariaDB tcp URL with password",
+			input:    "MARIADB://root:password@tcp(localhost:3306)/testdb",
+			expected: "MARIADB://root:***@tcp(localhost:3306)/testdb",
+		},
+		{
+			name:     "maria URL with password",
+			input:    "maria://root:password@localhost:3306/testdb",
+			expected: "maria://root:***@localhost:3306/testdb",
+		},
+		{
 			name:     "SQL Server URL with password and query secret",
 			input:    "sqlserver://sa:VerySecret@localhost:1433?database=ptah&password=querysecret&encrypt=disable",
 			expected: "sqlserver://sa:***@localhost:1433?database=ptah&encrypt=disable&password=redacted",

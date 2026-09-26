@@ -26,7 +26,7 @@ page defines all four; other pages link here instead of redefining them.
 | --- | --- |
 | PostgreSQL | `postgres://user:pass@localhost:5432/app` |
 | MySQL | `mysql://user:pass@localhost:3306/app` (Go-driver form `mysql://user:pass@tcp(localhost:3306)/app` is also accepted) |
-| MariaDB | `mariadb://user:pass@localhost:3306/app` |
+| MariaDB | `mariadb://user:pass@localhost:3306/app` (the Atlas CLI spelling `maria://user:pass@localhost:3306/app` is also accepted) |
 | SQLite | `sqlite://relative.db`, `sqlite:///absolute/path/app.db`, `sqlite:file:C:/absolute/windows/path/app.db`, `sqlite:///:memory:`, `sqlite:file:memdb1?mode=memory&cache=shared` |
 | SQL Server | `sqlserver://sa:pass@localhost:1433?database=app` (plus a Ptah-only `schema` parameter — see [SQL Server](../../databases/sqlserver/)) |
 | ClickHouse | `clickhouse://user:pass@localhost:9000/app` |
@@ -40,6 +40,12 @@ Scheme aliases normalize to the canonical dialect (`postgresql://`,
 alias list is on the
 [Database support matrix](../../databases/support-matrix/). A URL with an
 unrecognized scheme fails with `unsupported database dialect`.
+
+A MySQL or MariaDB server behind a Unix socket takes the Go-driver form,
+`mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app`. The Atlas CLI socket
+schemes `mysql+unix://`, `maria+unix://` and `mariadb+unix://` are refused as
+unrecognized schemes
+([stokaro/ptah#3755](https://github.com/stokaro/ptah/issues/3755)).
 
 ## The four database roles
 

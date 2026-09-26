@@ -39,7 +39,7 @@ measured.
 | [PostgreSQL](../postgresql/) | `postgres` (`postgresql`, `pgx`) | `postgres://`, `postgresql://` | Primary first-party target with the broadest schema-object coverage. |
 | [SQLite](../sqlite/) | `sqlite` (`sqlite3`) | `sqlite://` | Supported for local workflows, examples, and lightweight test databases. |
 | [MySQL](../mysql/) | `mysql` | `mysql://` | Supported, with dialect-specific limitations. |
-| [MariaDB](../mysql/) | `mariadb` | `mariadb://` | Supported, with dialect-specific limitations. |
+| [MariaDB](../mysql/) | `mariadb` (`maria`) | `mariadb://`, `maria://` | Supported, with dialect-specific limitations. |
 | [SQL Server](../sqlserver/) | `sqlserver` (`mssql`, `tsql`, `sql-server`, `sql_server`) | `sqlserver://`, `mssql://` | Deliberately conservative portable subset. |
 | [CockroachDB](../distributed/) | `cockroachdb` (`cockroach`, `crdb`) | `cockroachdb://`, `crdb://` | PostgreSQL-compatible path with capability differences. |
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |

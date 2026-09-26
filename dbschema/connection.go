@@ -245,7 +245,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // reporting "invalid database URL". The path is carried as opaque instead,
 // which is the shape convertSQLiteURL already reads first.
 func parseDatabaseURL(dbURL string) (*url.URL, error) {
-	if strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://") {
+	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily {
 		if rewritten, ok := withoutMySQLNetwork(dbURL); ok {
 			return url.Parse(rewritten)
 		}
@@ -1418,13 +1418,11 @@ func convertMySQLURL(dbURL string) string {
 	// Already in the driver's own form, so it is returned with only the scheme
 	// removed. The recognition is [mysqlNetworkMarker]'s, which is the same one
 	// parseDatabaseURL uses -- see the note there for why it cannot be a second
-	// list that happens to agree.
+	// list that happens to agree. The scheme is atlasurl.CutMySQLScheme's for
+	// the same reason: parseDatabaseURL asks it too, and a spelling one of them
+	// missed would reach the driver with its scheme still attached.
 	if _, _, ok := mysqlNetworkMarker(dbURL); ok {
-		// Remove the mysql:// or mariadb:// prefix if present
-		if after, ok := strings.CutPrefix(dbURL, "mysql://"); ok {
-			return after
-		}
-		if after, ok := strings.CutPrefix(dbURL, "mariadb://"); ok {
+		if after, ok := atlasurl.CutMySQLScheme(dbURL); ok {
 			return after
 		}
 		return dbURL

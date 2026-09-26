@@ -83,6 +83,54 @@ func Parse(rawURL string) (*url.URL, error) {
 	return nil, err
 }
 
+// CutMySQLScheme reports whether rawURL begins with a scheme that selects the
+// MySQL driver, and returns what follows that scheme's "://".
+//
+// Which schemes those are is [platform.NormalizeDialect]'s answer: every
+// spelling that folds onto MySQL or MariaDB, in any letter case, since net/url
+// lowercases a scheme too. The scheme is read as text because net/url refuses
+// the go-sql-driver form a MySQL-family URL may carry,
+// user:pass@tcp(host:port)/db, so a caller that rewrites, redacts or splits
+// that form has to recognize the scheme before it can parse anything.
+//
+// It is one predicate because the dialect check and each of those callers must
+// recognize the same set. With a list of `mysql://` and `mariadb://` at each
+// caller instead, `maria://user:pass@tcp(host)/db` reaches the MySQL driver
+// while the display prints its password and the online-DDL parser reads
+// `maria` as the user name (stokaro/ptah#3744).
+//
+// A prefix that is not a URL scheme, such as one with leading space, is not
+// recognized: net/url refuses it as well.
+func CutMySQLScheme(rawURL string) (rest string, ok bool) {
+	scheme, rest, found := strings.Cut(rawURL, "://")
+	if !found || !isURLScheme(scheme) {
+		return rawURL, false
+	}
+	switch platform.NormalizeDialect(scheme) {
+	case platform.MySQL, platform.MariaDB:
+		return rest, true
+	default:
+		return rawURL, false
+	}
+}
+
+// isURLScheme reports whether s is spelled as RFC 3986 section 3.1 and net/url
+// spell a scheme: a letter, then letters, digits, "+", "-" or ".".
+func isURLScheme(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case 'a' <= r && r <= 'z', 'A' <= r && r <= 'Z':
+		case i > 0 && ('0' <= r && r <= '9' || r == '+' || r == '-' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // IsWindowsPath reports whether a URL's remainder is a Windows absolute path,
 // which is the one shape whose colon is not a port separator.
 func IsWindowsPath(rest string) bool {
@@ -374,7 +422,7 @@ func parseDatabaseURL(rawURL string) (*url.URL, string, error) {
 }
 
 func normalizeMySQLTCPURL(rawURL string) string {
-	if !strings.HasPrefix(rawURL, "mysql://") && !strings.HasPrefix(rawURL, "mariadb://") {
+	if _, ok := CutMySQLScheme(rawURL); !ok {
 		return rawURL
 	}
 	prefix, address, found := strings.Cut(rawURL, "@tcp(")
@@ -465,28 +513,6 @@ func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
 	return filepath.Clean(path), false, nil
 }
 
-// dockerEngineAliases are docker image names the pinned community binary
-// provisions that are not also dialect spellings.
-//
-// `maria` is the whole set today. It is a measured community spelling --
-// `docker://maria/11/dev` and `docker://mariadb/11/dev` both resolve to that
-// binary's MariaDB image -- and [ptah.run/internal/devdocker] starts a
-// container for either. [platform.NormalizeDialect] knows only `mariadb`,
-// because `maria` is not a dialect anyone writes as a URL scheme, so without
-// this the dialect preflight refused `docker://maria/11/dev` with `unsupported
-// docker --dev-url engine "maria"` and no container was ever started: a
-// capability the pinned binary has, removed.
-//
-// This duplicates one row of devdocker's engine table, which is the wrong shape
-// and is deliberate for now: devdocker imports dbschema (for the readiness
-// probe) and dbschema depends on this package, so atlasurl cannot ask devdocker
-// what a docker engine name means without an import cycle. The single-source
-// fix is to lift the engine table below both, and it is a refactor rather than
-// a defect repair.
-var dockerEngineAliases = map[string]string{
-	"maria": platform.MariaDB,
-}
-
 func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	engine := parsed.Host
 	if engine == "" {
@@ -497,9 +523,6 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	}
 	if before, _, found := strings.Cut(engine, ":"); found {
 		engine = before
-	}
-	if dialect, ok := dockerEngineAliases[strings.ToLower(engine)]; ok {
-		return dialect, nil
 	}
 	dialect := platform.NormalizeDialect(engine)
 	if dialect == "" {

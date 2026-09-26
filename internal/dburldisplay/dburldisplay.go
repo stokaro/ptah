@@ -13,16 +13,23 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"ptah.run/internal/atlasurl"
 )
 
 const redactedQueryValue = "redacted"
 
-var mySQLTCPPasswordPattern = regexp.MustCompile(`^((?:mysql|mariadb)://[^:@/?#]+):([^@/?#]+)@`)
+// mySQLTCPPasswordPattern matches the leading credentials of a MySQL-family
+// URL in go-sql-driver's tcp() form. It accepts any scheme because Format asks
+// atlasurl.CutMySQLScheme first, and that predicate is the one the connector
+// asks: a spelling written here as well would have to be added twice, and the
+// one that was missed would print its password.
+var mySQLTCPPasswordPattern = regexp.MustCompile(`^([^:/?#]+://[^:@/?#]+):([^@/?#]+)@`)
 
 // Format formats a database URL for display (hiding secrets).
 func Format(dbURL string) string {
 	// Handle MySQL/MariaDB URLs specially since they have a different format
-	if (strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://")) && strings.Contains(dbURL, "@tcp(") {
+	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily && strings.Contains(dbURL, "@tcp(") {
 		// For MySQL/MariaDB URLs like mysql://user:pass@tcp(host:port)/db?params
 		// Redact only the leading authority credentials, not DSN-like values in query params.
 		return redactURLQuery(mySQLTCPPasswordPattern.ReplaceAllString(dbURL, "$1:***@"))
