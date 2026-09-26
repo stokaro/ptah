@@ -308,6 +308,9 @@ func reverseSchemaDiffWithSchemaForDialect(
 		ConstraintsRemoved:           reverseConstraintRemovals(diff, schema, semantics),
 		ForeignKeysRemovedWithTables: reverseForeignKeyRemovals(diff, schema, dialect),
 		ConstraintsAdded:             reverseConstraintAdditions(diff, dbSchema, semantics),
+		// A comment transition carries both of its states, as an object's
+		// does, so the reversal swaps them.
+		ConstraintCommentsChanged: reverseConstraintComments(diff.ConstraintCommentsChanged),
 	}
 	// A re-created table brings its own primary key and field-level foreign keys
 	// back with it, so listing those a second time as constraint additions is

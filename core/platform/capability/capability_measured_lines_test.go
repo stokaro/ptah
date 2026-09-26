@@ -219,6 +219,7 @@ func measuredLines() map[string]measuredLine {
 				capability.MaterializedViewComments: routineCommentCarried,
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
+				capability.ConstraintComments:       constraintCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -326,6 +327,7 @@ func measuredLines() map[string]measuredLine {
 				capability.MaterializedViewComments: routineCommentCarried,
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
+				capability.ConstraintComments:       mysqlConstraintCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -434,6 +436,7 @@ func measuredLines() map[string]measuredLine {
 				capability.MaterializedViewComments: routineCommentCarried,
 				capability.TriggerComments:          routineCommentCarried,
 				capability.PolicyComments:           routineCommentCarried,
+				capability.ConstraintComments:       mysqlConstraintCommentCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -489,6 +492,20 @@ func measuredLines() map[string]measuredLine {
 		},
 	}
 }
+
+// constraintCommentCarried is why a line measured before the constraint
+// comment key existed carries it rather than observing it.
+const constraintCommentCarried = "this run predates the key and sent no COMMENT ON CONSTRAINT. The key " +
+	"was measured on 2026-09-26 against PostgreSQL 14 and 18, YugabyteDB 2024.2, 2025.2 and 2026.1, " +
+	"CockroachDB v25.4.16, v26.2.7 and v26.3.1 and the Spanner emulator behind PGAdapter 0.55.3, and " +
+	"carried here from those runs (stokaro/ptah#3678)"
+
+// mysqlConstraintCommentCarried is the same for a MySQL-family line, where the
+// key is false because the grammar is absent rather than because a server
+// refused it in a run.
+const mysqlConstraintCommentCarried = "this run predates the key and sent no COMMENT ON CONSTRAINT. " +
+	"MySQL and MariaDB have no statement that comments a constraint, so the key is false for the " +
+	"family (stokaro/ptah#3678)"
 
 // objectCommentCarried is why the five object-comment keys are carried on every
 // measured line: the run named there predates them.

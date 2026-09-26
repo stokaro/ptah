@@ -186,23 +186,31 @@ CREATE PROCEDURE`,
 }
 
 // A table constraint's comment, stated with COMMENT ON CONSTRAINT ... ON the
-// way pg_dump writes it, is written after the table, and the document plans
-// nothing once applied. A changed one is not compared yet
-// (stokaro/ptah#3678), so this test holds the creation only.
-func TestPostgresLiveConstraintCommentIsWrittenWithItsTable(t *testing.T) {
+// way pg_dump writes it, is written after the table, changed in place and
+// removed, and the document plans nothing after each apply.
+func TestPostgresLiveConstraintCommentFollowsTheDocument(t *testing.T) {
 	c := qt.New(t)
 	conn, schemaName := newFormsSchema(c)
-
-	settleFormsDocument(c, conn, schemaName, map[string]string{"schema.sql": `
+	table := `
 CREATE TABLE "%[1]s".notes (id integer PRIMARY KEY, CONSTRAINT positive CHECK (id > 0));
-COMMENT ON CONSTRAINT positive ON "%[1]s".notes IS 'ids start at one';
-`})
+`
+	steps := []struct {
+		comment string
+		want    string
+	}{
+		{comment: `COMMENT ON CONSTRAINT positive ON "%[1]s".notes IS 'ids start at one';`, want: "ids start at one"},
+		{comment: `COMMENT ON CONSTRAINT positive ON "%[1]s".notes IS 'ids are positive';`, want: "ids are positive"},
+		{comment: "", want: ""},
+	}
+	for _, step := range steps {
+		settleFormsDocument(c, conn, schemaName, map[string]string{"schema.sql": table + step.comment + "\n"})
 
-	var comment string
-	c.Assert(conn.QueryRowContext(c.Context(), `
-		SELECT COALESCE(obj_description(con.oid, 'pg_constraint'), '')
-		FROM pg_constraint con WHERE con.connamespace = $1::regnamespace AND con.conname = 'positive'`,
-		schemaName,
-	).Scan(&comment), qt.IsNil)
-	c.Assert(comment, qt.Equals, "ids start at one")
+		var comment string
+		c.Assert(conn.QueryRowContext(c.Context(), `
+			SELECT COALESCE(obj_description(con.oid, 'pg_constraint'), '')
+			FROM pg_constraint con WHERE con.connamespace = $1::regnamespace AND con.conname = 'positive'`,
+			schemaName,
+		).Scan(&comment), qt.IsNil)
+		c.Assert(comment, qt.Equals, step.want)
+	}
 }

@@ -9,10 +9,9 @@
 // applied database without it, because `schema apply` reaches an existing table
 // through ALTER. Only pg_description answers which of the two happened.
 //
-// The read is deliberately not Ptah's own. No catalog reader fills
-// schemamodel.Constraint.Comment, so asking Ptah to read the comment back would
-// be asking a reader that cannot see it, and a test built on that would pass
-// against a database holding nothing.
+// The read is deliberately not Ptah's own. Ptah reads the comment back to
+// compare it (stokaro/ptah#3678), so asking Ptah whether the comment is there
+// would ask the code under test to grade itself.
 
 package gonative_test
 
@@ -60,12 +59,9 @@ func TestConstraintCommentReachesTheCatalogIntegration(t *testing.T) {
 
 // TestConstraintCommentApplyStaysIdempotentIntegration is the control that
 // keeps the test above from being satisfied by a run that rewrites the schema
-// every time.
-//
-// A comment written on one side and read by neither is the shape that produces
-// a database Ptah keeps trying to change: no catalog reader fills the field, so
-// if the comparison consulted it, every run would plan the same statement
-// again. It does not, and this is what says so.
+// every time. The comparison reads the comment back and compares it, so a
+// comment written where the reader does not look would be planned again on
+// every run.
 func TestConstraintCommentApplyStaysIdempotentIntegration(t *testing.T) {
 	c := qt.New(t)
 	url := dbtarget.URL(t, dbtarget.PostgreSQL)
@@ -109,6 +105,82 @@ func dropConstraintCommentTable(c *qt.C, dsn string) {
 	}
 	defer db.Close()
 	if _, err := db.Exec("DROP TABLE IF EXISTS ptah2611_orders CASCADE"); err != nil {
+		c.Logf("cleanup did not drop the table: %v", err)
+	}
+}
+
+// orderEntities is the reproduction with attribute written after the
+// constraint's other attributes: a comment attribute, or nothing.
+func orderEntities(attribute string) string {
+	return `package models
+
+//ptah:schema:table name="ptah3678_orders"
+//ptah:schema:constraint name="ck_ptah3678_orders_total" type="CHECK" check="total > 0"` + attribute + `
+type Order struct {
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
+	ID int64
+	//ptah:schema:field name="total" type="BIGINT"
+	Total int64
+}
+`
+}
+
+// TestConstraintCommentChangesInPlaceIntegration applies a declaration, then the
+// same declaration with the constraint's comment changed and then removed, and
+// asks the server after each (stokaro/ptah#3678). Every apply converges: a
+// comparison right after it finds nothing to do.
+//
+// YugabyteDB stores a constraint's comment too, and the reader's live test reads
+// it there. It is not a row here because `schema apply` cannot yet apply
+// anything to a YugabyteDB database (stokaro/ptah#3687).
+func TestConstraintCommentChangesInPlaceIntegration(t *testing.T) {
+	engines := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "CockroachDB", engine: dbtarget.CockroachDB},
+	}
+	for _, test := range engines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url := dbtarget.URL(t, test.engine)
+			dsn := requireReachableEngine(t, test.engine, "pgx", test.name)
+			dir := t.TempDir()
+			c.Cleanup(func() { dropTable(c, dsn, "ptah3678_orders") })
+
+			steps := []struct {
+				attribute string
+				want      string
+			}{
+				{attribute: ` comment="a total is positive"`, want: "a total is positive"},
+				{attribute: ` comment="a total is above zero"`, want: "a total is above zero"},
+				{attribute: "", want: ""},
+			}
+			for _, step := range steps {
+				c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(orderEntities(step.attribute)), 0o600), qt.IsNil)
+
+				runNativePtah(c, "schema", "apply", "--db-url", url, "--root-dir", dir, "--auto-approve")
+
+				c.Assert(constraintCommentInCatalog(c, dsn, "ck_ptah3678_orders_total"), qt.Equals, step.want)
+				c.Assert(runNativePtah(c, "schema", "compare", "--db-url", url, "--root-dir", dir),
+					qt.Contains, "No schema differences detected")
+			}
+		})
+	}
+}
+
+// dropTable removes one table this file created, so a shared server is left as
+// it was found.
+func dropTable(c *qt.C, dsn, table string) {
+	c.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		c.Logf("cleanup could not open the database: %v", err)
+		return
+	}
+	defer db.Close()
+	if _, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {
 		c.Logf("cleanup did not drop the table: %v", err)
 	}
 }

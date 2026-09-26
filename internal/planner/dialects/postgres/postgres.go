@@ -1909,6 +1909,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// unique indexes and constraints have been created.
 	result = p.addForeignKeyConstraintsForNewTables(result, diff)
 
+	// 10.7. Comments on the constraints both sides already hold. A constraint
+	// added above takes its comment from the statement that adds it.
+	result = changeConstraintComments(result, diff)
+
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
@@ -3740,7 +3744,16 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		Initially:       add.Initially,
 		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
 	}
-	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
+	fkRef.Name = add.Name
+	constraint := ast.NewForeignKeyConstraint(add.Name, add.Columns, fkRef)
+	// The renderer writes the comment as COMMENT ON CONSTRAINT after the ADD.
+	// Without it a commented foreign key is added bare, and the next
+	// comparison plans its comment on its own.
+	constraint.Comment = add.Comment
+	return &ast.AlterTableNode{
+		Name:       add.TableName,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
+	}
 }
 
 // removeConstraints removes table-level constraints via ALTER TABLE statements.

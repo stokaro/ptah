@@ -606,3 +606,28 @@ func (op *SetCommentOperation) Accept(visitor Visitor) error {
 }
 
 func (op *SetCommentOperation) alterOperation() {}
+
+// SetConstraintCommentOperation sets, changes or clears the comment of one
+// constraint of the table the surrounding ALTER TABLE names.
+//
+// It is an operation of its own rather than a field of [SetCommentOperation]
+// because only the PostgreSQL family has a statement for it, `COMMENT ON
+// CONSTRAINT ... ON table`. A renderer that has none refuses the operation as
+// one it does not know, where a field it did not read would write the table's
+// comment instead. Callers gate it on [capability.ConstraintComments].
+type SetConstraintCommentOperation struct {
+	// Constraint names the constraint as the database holds it.
+	Constraint string
+	// Comment is what the comment should become. Empty removes it.
+	Comment string
+}
+
+// Accept implements the Node interface for SetConstraintCommentOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
+func (op *SetConstraintCommentOperation) Accept(visitor Visitor) error {
+	return visitor.VisitNode(op)
+}
+
+func (op *SetConstraintCommentOperation) alterOperation() {}

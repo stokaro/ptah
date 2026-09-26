@@ -95,43 +95,7 @@ func ConstraintsWithSemantics(
 	if opts != nil {
 		dialect = opts.Dialect
 	}
-
-	// Create maps for detailed constraint comparison
-	genConstraints := declaredAndCheckConstraints(desired, database, semantics)
-
-	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
-
-	// Synthesize table-level Constraint entries from field-level `foreign=`
-	// annotations so on_delete / on_update drift on an existing field-level
-	// FK participates in comparison (issue #189), mirroring the field-level
-	// CHECK synthesis above. Only synthesized for columns that already exist
-	// in the database — new tables/columns get their FK inline via CREATE
-	// TABLE / ALTER TABLE ADD CONSTRAINT, so emitting an ADD CONSTRAINT here
-	// would double-create it in the same migration step.
-	//
-	// synthesizedFKKeys records the table.constraint_name of every synthesized
-	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
-	// through to the comparison instead of filtering it out — otherwise
-	// foreignKeyConstraintChanged would never run for field-level FKs. Every
-	// synthesized key is recorded, including one an explicit declaration
-	// already holds: the DB-side row has to reach the comparison either way.
-	fieldLevelForeignKeys := synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics)
-	synthesizedFKKeys := make(map[tableMemberKey]struct{}, len(fieldLevelForeignKeys))
-	for _, synthesized := range fieldLevelForeignKeys {
-		synthesizedFKKeys[newConstraintKey(
-			synthesized.Table, synthesized.Name, synthesized.Type, semantics,
-		)] = struct{}{}
-	}
-	recordSynthesized(genConstraints, fieldLevelForeignKeys, semantics)
-
-	dbConstraints := collectDatabaseConstraints(
-		desired,
-		database,
-		genConstraints,
-		synthesizedFKKeys,
-		dialect,
-		semantics,
-	)
+	genConstraints, dbConstraints := pairedConstraints(desired, database, dialect, semantics)
 
 	// Find added constraints (constraints in generated schema but not in database)
 	for constraintKey, genConstraint := range genConstraints {
@@ -185,6 +149,60 @@ func ConstraintsWithSemantics(
 		}
 		return a.Name < b.Name
 	})
+}
+
+// pairedConstraints keys both sides' constraints the way the comparison pairs
+// them: the desired side's declared constraints with the ones it synthesizes
+// from columns and tables, and the database's constraints less the ones
+// another representation owns. A key on both sides is one constraint.
+//
+// It is the one pairing, because the definitions and the comments of a
+// constraint are compared by two functions that must agree on which database
+// constraint a declaration is.
+func pairedConstraints(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) (genConstraints map[tableMemberKey]schemamodel.Constraint, dbConstraints map[tableMemberKey]catalog.Constraint) {
+	// Create maps for detailed constraint comparison
+	genConstraints = declaredAndCheckConstraints(desired, database, semantics)
+
+	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
+
+	// Synthesize table-level Constraint entries from field-level `foreign=`
+	// annotations so on_delete / on_update drift on an existing field-level
+	// FK participates in comparison (issue #189), mirroring the field-level
+	// CHECK synthesis above. Only synthesized for columns that already exist
+	// in the database — new tables/columns get their FK inline via CREATE
+	// TABLE / ALTER TABLE ADD CONSTRAINT, so emitting an ADD CONSTRAINT here
+	// would double-create it in the same migration step.
+	//
+	// synthesizedFKKeys records the table.constraint_name of every synthesized
+	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
+	// through to the comparison instead of filtering it out — otherwise
+	// foreignKeyConstraintChanged would never run for field-level FKs. Every
+	// synthesized key is recorded, including one an explicit declaration
+	// already holds: the DB-side row has to reach the comparison either way.
+	fieldLevelForeignKeys := synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics)
+	synthesizedFKKeys := make(map[tableMemberKey]struct{}, len(fieldLevelForeignKeys))
+	for _, synthesized := range fieldLevelForeignKeys {
+		synthesizedFKKeys[newConstraintKey(
+			synthesized.Table, synthesized.Name, synthesized.Type, semantics,
+		)] = struct{}{}
+	}
+	recordSynthesized(genConstraints, fieldLevelForeignKeys, semantics)
+
+	dbConstraints = collectDatabaseConstraints(
+		desired,
+		database,
+		genConstraints,
+		synthesizedFKKeys,
+		dialect,
+		semantics,
+	)
+
+	return genConstraints, dbConstraints
 }
 
 // collectDatabaseConstraints keys the database's constraints by table and name,
@@ -372,8 +390,7 @@ func declaredAndCheckConstraints(
 ) map[tableMemberKey]schemamodel.Constraint {
 	constraints := make(map[tableMemberKey]schemamodel.Constraint)
 	for _, constraint := range desired.Constraints {
-		constraint.Table = generatedConstraintTableName(constraint, desired.Tables)
-		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
+		constraint, key := declaredConstraint(constraint, desired.Tables, semantics)
 		constraints[key] = constraint
 	}
 
@@ -392,6 +409,18 @@ func declaredAndCheckConstraints(
 	// (stokaro/ptah#2590).
 	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, semantics), semantics)
 	return constraints
+}
+
+// declaredConstraint returns a constraint the declaration states, with its
+// table named the way the comparison names it, and the key it pairs by. The
+// constraint comparison and the comment comparison both key a declared
+// constraint through it, so the two cannot disagree about which constraint a
+// declaration is.
+func declaredConstraint(
+	constraint schemamodel.Constraint, tables []schemamodel.Table, semantics identifier.Semantics,
+) (schemamodel.Constraint, tableMemberKey) {
+	constraint.Table = generatedConstraintTableName(constraint, tables)
+	return constraint, newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
 }
 
 // ComparedCheckConstraints returns every CHECK constraint the constraint

@@ -154,6 +154,7 @@ func reverseConstraintAdditions(
 					Identity:  constraintscope.Identity(semantics, removed.TableName, removed.Name),
 					Type:      "PRIMARY KEY",
 					Columns:   append([]string(nil), columns...),
+					Comment:   dbConstraint.Comment,
 				})
 			}
 		case "CHECK":
@@ -164,6 +165,7 @@ func reverseConstraintAdditions(
 					Identity:        constraintscope.Identity(semantics, removed.TableName, removed.Name),
 					Type:            "CHECK",
 					CheckExpression: *dbConstraint.CheckClause,
+					Comment:         dbConstraint.Comment,
 				})
 			}
 		case "UNIQUE":
@@ -176,6 +178,7 @@ func reverseConstraintAdditions(
 					Columns:        append([]string(nil), columns...),
 					IncludeColumns: append([]string(nil), dbConstraint.IncludeColumns...),
 					NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
+					Comment:        dbConstraint.Comment,
 				})
 			}
 		}
@@ -202,6 +205,9 @@ func foreignKeyAdditionFromDBConstraint(
 		// The down migration restores the list too, or it would set every
 		// referencing column where the prior key set some.
 		OnDeleteColumns: append([]string(nil), dbFK.OnDeleteColumns...),
+		// And the comment the dropped key carried, which the statement that
+		// adds it back writes.
+		Comment: dbFK.Comment,
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)
@@ -600,4 +606,18 @@ func defaultForeignKeyConstraintName(tableName string, columns []string) string 
 		columnName = "foreign_key"
 	}
 	return schemaprep.GenerateForeignKeyName(tableName, columnName)
+}
+
+// reverseConstraintComments exchanges each constraint comment transition's two
+// states: the down direction puts back the comment the up direction replaced.
+func reverseConstraintComments(changes []difftypes.ConstraintCommentChange) []difftypes.ConstraintCommentChange {
+	if changes == nil {
+		return nil
+	}
+	reversed := make([]difftypes.ConstraintCommentChange, 0, len(changes))
+	for _, change := range changes {
+		change.Current, change.Desired = change.Desired, change.Current
+		reversed = append(reversed, change)
+	}
+	return reversed
 }

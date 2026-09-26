@@ -514,6 +514,19 @@ const (
 	// measured line.
 	PolicyComments Capability = "policy_comments"
 
+	// ConstraintComments marks a target that stores a comment against a table
+	// constraint through `COMMENT ON CONSTRAINT ... ON table` and reports it
+	// back through obj_description(oid, 'pg_constraint'), which is where Ptah
+	// reads it.
+	//
+	// Measured 2026-09-26 on a CHECK, a UNIQUE, a PRIMARY KEY and a FOREIGN
+	// KEY constraint, each written, changed and cleared with IS NULL:
+	// PostgreSQL 14 and 18, YugabyteDB 2024.2, 2025.2 and 2026.1, and
+	// CockroachDB v25.4.16, v26.2.7 and v26.3.1 take every one and read each
+	// back. The Spanner PostgreSQL interface answers `Unknown statement`
+	// (stokaro/ptah#3678).
+	ConstraintComments Capability = "constraint_comments"
+
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
 	// type overrides for those targets.
@@ -1085,6 +1098,9 @@ var registry = map[Capability]spec{
 		doc:      "COMMENT ON POLICY, stored where obj_description reads it back",
 		requires: []Capability{RowLevelSecurity},
 	},
+	ConstraintComments: {
+		doc: "COMMENT ON CONSTRAINT ... ON a table, stored where obj_description reads it back",
+	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
 	},
@@ -1367,6 +1383,7 @@ func MySQL84() Capabilities {
 		MaterializedViewComments:        false,
 		TriggerComments:                 false,
 		PolicyComments:                  false,
+		ConstraintComments:              false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1519,6 +1536,7 @@ func MariaDB1011() Capabilities {
 		MaterializedViewComments:        false,
 		TriggerComments:                 false,
 		PolicyComments:                  false,
+		ConstraintComments:              false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1608,16 +1626,19 @@ func Postgres16() Capabilities {
 		SchemaComments: true,
 		// Measured on PostgreSQL 14 and 18.6: each COMMENT ON is accepted and
 		// obj_description reads it back (stokaro/ptah#3627, stokaro/ptah#3646).
-		ViewComments:                    true,
-		SequenceComments:                true,
-		TypeComments:                    true,
-		DomainComments:                  true,
-		ExtensionComments:               true,
-		FunctionComments:                true,
-		ProcedureComments:               true,
-		MaterializedViewComments:        true,
-		TriggerComments:                 true,
-		PolicyComments:                  true,
+		ViewComments:             true,
+		SequenceComments:         true,
+		TypeComments:             true,
+		DomainComments:           true,
+		ExtensionComments:        true,
+		FunctionComments:         true,
+		ProcedureComments:        true,
+		MaterializedViewComments: true,
+		TriggerComments:          true,
+		PolicyComments:           true,
+		// Measured on PostgreSQL 14 and 18 on a CHECK, a UNIQUE, a PRIMARY KEY
+		// and a FOREIGN KEY constraint (stokaro/ptah#3678).
+		ConstraintComments:              true,
 		XMLType:                         true,
 		AdvisoryLocks:                   true,
 		RowLevelTTL:                     false,
@@ -1839,6 +1860,7 @@ func ClickHouse24() Capabilities {
 		MaterializedViewComments: false,
 		TriggerComments:          false,
 		PolicyComments:           false,
+		ConstraintComments:       false,
 		XMLType:                  false,
 		AdvisoryLocks:            false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
@@ -1940,6 +1962,7 @@ func SQLite3() Capabilities {
 		MaterializedViewComments: false,
 		TriggerComments:          false,
 		PolicyComments:           false,
+		ConstraintComments:       false,
 		XMLType:                  false,
 		AdvisoryLocks:            false,
 		RowLevelTTL:              false,
@@ -2112,6 +2135,7 @@ func SQLServer2022() Capabilities {
 		MaterializedViewComments: false,
 		TriggerComments:          false,
 		PolicyComments:           false,
+		ConstraintComments:       false,
 		XMLType:                  true,
 		AdvisoryLocks:            false,
 		RowLevelTTL:              false,
@@ -2490,6 +2514,10 @@ func SpannerPostgres() Capabilities {
 		With(MaterializedViewComments, false).
 		With(TriggerComments, false).
 		With(PolicyComments, false).
+		// Measured 2026-09-26 on the same emulator behind PGAdapter 0.55.3:
+		// COMMENT ON CONSTRAINT answers `Unknown statement` for a CHECK and a
+		// FOREIGN KEY constraint (stokaro/ptah#3678).
+		With(ConstraintComments, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -2727,6 +2755,7 @@ func Oracle23() Capabilities {
 		MaterializedViewComments: false,
 		TriggerComments:          false,
 		PolicyComments:           false,
+		ConstraintComments:       false,
 		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
