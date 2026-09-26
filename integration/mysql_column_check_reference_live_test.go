@@ -60,8 +60,7 @@ func TestMySQLFamilyColumnCheckReferencesMatchTheServerLive(t *testing.T) {
 // mysqlErrorNumber answers the error number the server returned, and 0 for a
 // statement it accepted.
 func mysqlErrorNumber(err error) uint16 {
-	var serverErr *mysqldriver.MySQLError
-	if errors.As(err, &serverErr) {
+	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
 		return serverErr.Number
 	}
 	return 0
