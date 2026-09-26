@@ -267,8 +267,9 @@ the published contract must differ from database names and types.
 ## `--dialect` decides how the file is read, not only how it is written
 
 The dialect selects the tokenizer as well as the renderer: whether a backslash
-escapes inside a string, whether `E'...'` is an escape string, whether `--x`
-without a space is a comment, and whether `[name]` is an identifier.
+escapes inside a string, whether `E'...'` is an escape string, whether a string
+continues on the next line, whether `--x` without a space is a comment, and
+whether `[name]` is an identifier.
 
 Each of these follows from the dialect you name.
 
@@ -278,6 +279,29 @@ and `DEFAULT 'a\'b'` is an unterminated string — PostgreSQL 18 answers
 `unterminated bit string literal`. Read with `--dialect postgres`, Ptah refuses
 it too. Read with `--dialect mysql`, where a backslash escapes, the same bytes
 are a valid default.
+
+**A PostgreSQL string constant is read in every spelling the server reads.**
+With `--dialect postgres`, a comment, a column default and an enum label may
+each be written as a dollar-quoted string, an `E'...'` escape string, a
+`U&'...'` Unicode escape string with an optional `UESCAPE` clause, or a string
+continued on the next line:
+
+```sql
+COMMENT ON COLUMN notes.body IS 'the text, '
+  'as typed';
+COMMENT ON TABLE notes IS $c$what users wrote, apostrophes and all$c$;
+```
+
+Each reads as the one string the server stores, so the file compares clean
+against a database it was applied to. The continuation follows PostgreSQL's
+rule: only whitespace between the two strings, with at least one newline in
+it, and a `--` comment counts as whitespace. Two strings on one line, or with a
+block comment between them, are refused, as PostgreSQL refuses them, and so is
+an escape the server rejects, such as `U&'\0000'`. With `--dialect cockroachdb`,
+`yugabytedb` or `spanner`, a comment, default or label written as a continued
+string or a `U&'...'` string is refused: CockroachDB applies a different
+continuation rule and has no `U&'...'` strings, and the other two have not been
+measured.
 
 **A version-guarded span is stepped over, and the one clause a schema needs is
 read out of it.** `mysqldump` writes a full-text index's parser as

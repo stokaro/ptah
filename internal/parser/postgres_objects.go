@@ -269,12 +269,11 @@ func applyRoleFlag(role *ast.CreateRoleNode, keyword string) bool {
 }
 
 func (p *Parser) applyRolePassword(role *ast.CreateRoleNode) error {
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenString {
-		return fmt.Errorf("expected password literal at position %d", p.current.Start)
+	password, err := p.stringConstant("the password")
+	if err != nil {
+		return err
 	}
-	role.SetPassword(trimSQLStringLiteral(p.current.Value))
-	p.advance()
+	role.SetPassword(password)
 	return nil
 }
 
@@ -1106,21 +1105,4 @@ func splitQualifiedIdentifier(value string) []string {
 		}
 	}
 	return append(parts, value[start:])
-}
-
-// trimSQLStringLiteral removes the surrounding quotes from a lexed string
-// literal and collapses the doubled quotes SQL uses for escaping.
-func trimSQLStringLiteral(value string) string {
-	if len(value) < 2 {
-		return value
-	}
-	quote := value[0]
-	if quote != '\'' && quote != '"' {
-		return value
-	}
-	if value[len(value)-1] != quote {
-		return value
-	}
-	inner := value[1 : len(value)-1]
-	return strings.ReplaceAll(inner, string([]byte{quote, quote}), string(quote))
 }

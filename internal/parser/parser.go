@@ -480,11 +480,14 @@ func (p *Parser) parseCreateExtensionVersion() (string, error) {
 	p.advance()
 	p.skipWhitespace()
 
+	if p.current.Type == lexer.TokenString && !isDoubleQuotedIdentifierToken(p.current) {
+		return p.stringConstant("the extension version")
+	}
 	if p.current.Type != lexer.TokenString && p.current.Type != lexer.TokenIdentifier {
 		return "", fmt.Errorf("expected extension version, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
-	version := strings.Trim(p.current.Value, "'\"")
+	version := strings.Trim(p.current.Value, `"`)
 	p.advance()
 	return version, nil
 }
@@ -3388,7 +3391,19 @@ func isBareWord(value string) bool {
 
 func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 	value := p.current.Value
-	p.advance()
+	if p.isPostgresRoutineDialect() && !isDoubleQuotedIdentifierToken(p.current) {
+		// The server stores one spelling of a string default whichever the
+		// file used, so the default is kept in that spelling: kept as
+		// written, `$$x$$` and `E'x'` compare unequal to the 'x' the server
+		// reports, and the plan writes their quoting into the default.
+		text, err := p.stringConstant("the default value")
+		if err != nil {
+			return nil, err
+		}
+		value = quotedStringConstant(text)
+	} else {
+		p.advance()
+	}
 
 	// PostgreSQL type casts such as '{}'::jsonb or '{}'::uuid[]
 	casts, err := p.parsePostgresCasts()
@@ -6822,17 +6837,11 @@ func (p *Parser) parseEnumTypeBody(typeName string) (*ast.EnumNode, error) {
 			break
 		}
 
-		if p.current.Type != lexer.TokenString {
-			return nil, fmt.Errorf("expected string value for enum at position %d", p.current.Start)
-		}
-
-		// Remove quotes from string value
-		value := p.current.Value
-		if len(value) >= 2 && (value[0] == '\'' || value[0] == '"') {
-			value = value[1 : len(value)-1]
+		value, err := p.stringConstant("an enum label")
+		if err != nil {
+			return nil, err
 		}
 		values = append(values, value)
-		p.advance()
 
 		p.skipWhitespace()
 
@@ -7075,6 +7084,11 @@ func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
 // applies the statement decides which of them it models and refuses the rest
 // by name, so every form has to parse. The target ends at the IS that is
 // outside any parentheses and followed by the comment's string literal.
+//
+// The literal is the opposite: it is read here, in whichever spelling the file
+// used, and written into the node as one standard single-quoted string. The
+// reader then meets one spelling of the text, whether the file continued it
+// on the next line, escaped it, or wrote it between dollar quotes.
 func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "COMMENT"); err != nil {
 		return nil, err
@@ -7104,13 +7118,12 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 			p.current.Start > start {
 			isAt := p.current.Start
 			p.advance()
-			p.skipWhitespace()
-			if p.current.Type != lexer.TokenString {
-				return nil, fmt.Errorf("expected string for comment text at position %d", p.current.Start)
+			text, err := p.stringConstant("the comment text")
+			if err != nil {
+				return nil, err
 			}
 			target := strings.TrimSpace(p.input[start:isAt])
-			commentText := fmt.Sprintf("COMMENT ON %s IS %s", target, p.current.Value)
-			p.advance()
+			commentText := fmt.Sprintf("COMMENT ON %s IS %s", target, quotedStringConstant(text))
 			return ast.NewComment(commentText), nil
 		}
 		p.advance()
