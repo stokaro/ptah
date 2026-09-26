@@ -919,25 +919,25 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 		},
 		{
 			name:     "mysql wire, MySQL banner",
-			detect:   detectMySQLWireDialect,
+			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "9.7.1",
 		},
 		{
 			name:     "mysql wire, MariaDB banner on a mysql URL",
-			detect:   detectMySQLWireDialect,
+			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "10.11.15-MariaDB-ubu2204",
 		},
 		{
 			name:     "mysql wire, the replication prefix on a mysql URL",
-			detect:   detectMySQLWireDialect,
+			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mysql",
 			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
 		},
 		{
-			name:     "mysql wire, explicit mariadb with a generic banner",
-			detect:   detectMySQLWireDialect,
+			name:     "mysql wire, a mariadb URL naming a server that does not announce MariaDB",
+			detect:   detectMySQLWireDialectIgnoringScheme,
 			declared: "mariadb",
 			version:  "MySQL-compatible server 8.0",
 		},
@@ -957,43 +957,36 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 	}
 }
 
+// detectMySQLWireDialectIgnoringScheme gives detectMySQLWireDialect the shape
+// the agreement table above calls both wire detectors through. The scheme is
+// dropped because the MySQL wire does not read it.
+func detectMySQLWireDialectIgnoringScheme(_, version string) string {
+	return detectMySQLWireDialect(version)
+}
+
+// TestDetectMySQLWireDialect reads the product from the banner alone. The
+// banners are the ones MySQL 8.4.11, MySQL 9.7.0, MariaDB 10.11.15 and MariaDB
+// 11.8.9 answer with; the generic one is a server announcing neither, which is
+// MySQL whatever scheme reached it, as it is to the pinned community binary
+// (stokaro/ptah#3756).
 func TestDetectMySQLWireDialect(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared string
 		version  string
 		expected string
 	}{
-		{
-			name:     "mysql server",
-			declared: "mysql",
-			version:  "9.7.0",
-			expected: "mysql",
-		},
-		{
-			name:     "mariadb detected from mysql URL",
-			declared: "mysql",
-			version:  "10.11.15-MariaDB-ubu2204",
-			expected: "mariadb",
-		},
-		{
-			name:     "mariadb replication prefix",
-			declared: "mysql",
-			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
-			expected: "mariadb",
-		},
-		{
-			name:     "explicit mariadb survives generic banner",
-			declared: "mariadb",
-			version:  "MySQL-compatible server",
-			expected: "mariadb",
-		},
+		{name: "MySQL 9.7", version: "9.7.0", expected: "mysql"},
+		{name: "MySQL 8.4", version: "8.4.11", expected: "mysql"},
+		{name: "MariaDB 10.11", version: "10.11.15-MariaDB-ubu2204", expected: "mariadb"},
+		{name: "MariaDB 11.8", version: "11.8.9-MariaDB-ubu2404", expected: "mariadb"},
+		{name: "MariaDB behind the replication prefix", version: "5.5.5-10.11.15-MariaDB-ubu2204", expected: "mariadb"},
+		{name: "a server that does not announce MariaDB", version: "MySQL-compatible server", expected: "mysql"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(detectMySQLWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
+			c.Assert(detectMySQLWireDialect(tt.version), qt.Equals, tt.expected)
 		})
 	}
 }

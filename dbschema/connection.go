@@ -1196,7 +1196,7 @@ func getDatabaseInfo(
 			return info, fmt.Errorf("failed to get MySQL/MariaDB version: %w", err)
 		}
 		info.Version = version
-		info.Dialect = detectMySQLWireDialect(dialect, version)
+		info.Dialect = detectMySQLWireDialect(version)
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
 		// Get database name from URL path
@@ -1365,14 +1365,24 @@ func detectPostgresWireDialect(declaredDialect, version string) string {
 	}
 }
 
-// detectMySQLWireDialect is detectPostgresWireDialect's MySQL-wire twin, and
-// reads the same table for the same reason. MariaDB is the one product that
-// announces itself over this protocol.
-func detectMySQLWireDialect(declaredDialect, version string) string {
+// detectMySQLWireDialect names the product behind a MySQL-wire connection from
+// its VERSION() banner, reading the table detectPostgresWireDialect reads.
+//
+// Unlike the PostgreSQL wire, the server is the whole answer here and the
+// scheme the operator connected with is not consulted. MariaDB announces itself
+// in every banner, the replication prefix included, and a banner without it is
+// a MySQL server. `mysql://`, `mariadb://` and `maria://` open one driver, so
+// the scheme cannot say which of the two a server is; the pinned community
+// binary v1.3.0 decides by the server the same way, and printed byte-identical
+// `schema inspect` output through all three against MariaDB 11.8.9 and against
+// MySQL 8.4.11. Read from the scheme, a `mariadb://` URL naming a MySQL server
+// plans MariaDB statements for it, and a dev URL spelled differently from its
+// target is refused as another dialect on the same server (stokaro/ptah#3756).
+func detectMySQLWireDialect(version string) string {
 	if capability.BannerPlatform(version) == platform.MariaDB {
 		return platform.MariaDB
 	}
-	return platform.NormalizeDialect(declaredDialect)
+	return platform.MySQL
 }
 
 // convertMySQLURL converts a MySQL-family URL into go-sql-driver's DSN.
