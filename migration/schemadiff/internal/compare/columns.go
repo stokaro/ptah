@@ -183,6 +183,9 @@ func tableColumnsWithSemantics(
 			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
 				genCol.Nullable = false
 			}
+			if dbCol.IsPrimaryKey && sqliteRowidAlias(dialect, genTable, keyColumns, genCol) {
+				genCol.Nullable = dbCol.IsNullable == "YES"
+			}
 			columnKey := newColumnIdentityForTable(genTable.Schema, genTable.Name, identity, semantics)
 			if _, objectOwned := objectOwnedUniqueColumns[columnKey]; objectOwned {
 				genCol.Unique = false
@@ -580,6 +583,24 @@ func sqliteKeyColumnImpliesNotNull(
 		return false
 	}
 	return sqlitekey.ImpliesNotNull(table, keyColumns, field)
+}
+
+// sqliteRowidAlias reports whether field is the rowid alias of a SQLite table,
+// the one key column whose NOT NULL flag changes nothing the server does; see
+// [sqlitekey.IsRowidAlias]. The caller takes the catalog's flag for it when the
+// catalog column is the key too, so `id INTEGER PRIMARY KEY` and `id integer
+// NOT NULL PRIMARY KEY` compare equal rather than rebuilding the table. A column
+// that becomes the key keeps its nullability change beside the key change.
+func sqliteRowidAlias(
+	dialect string,
+	table schemamodel.Table,
+	keyColumns []string,
+	field schemamodel.Field,
+) bool {
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return false
+	}
+	return sqlitekey.IsRowidAlias(table, keyColumns, field)
 }
 
 // columnTypeChange returns the "database -> desired" row for a column's type,

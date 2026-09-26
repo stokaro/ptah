@@ -62,6 +62,28 @@ func ImpliesNotNull(table schemamodel.Table, keyColumns []string, field schemamo
 	return !isRowidAlias(keyColumns, field)
 }
 
+// IsRowidAlias reports whether field is table's rowid under another name: the
+// one column of a single-column key of declared type INTEGER, on a table that
+// has a rowid. keyColumns is what [KeyColumns] returns for the table.
+//
+// SQLite never stores NULL in that column. An explicit NULL is given the next
+// rowid, whether the column declares NOT NULL or not, and `pragma table_info`
+// still reports notnull 0 for one spelling and 1 for the other. Measured on
+// SQLite 3.51.0: `id INTEGER PRIMARY KEY` and `id integer NOT NULL PRIMARY
+// KEY` both accept `INSERT ... VALUES (NULL)` and store 1. So the flag on this
+// column describes nothing the server does, and a comparison that reads it as
+// a nullability change rebuilds the table for no effect (stokaro/ptah#3685).
+//
+// A WITHOUT ROWID table has no rowid to alias, and every other key column --
+// `id TEXT PRIMARY KEY` on an ordinary rowid table holds NULL -- keeps a flag
+// that means what it says.
+func IsRowidAlias(table schemamodel.Table, keyColumns []string, field schemamodel.Field) bool {
+	if table.WithoutRowID || !coversColumn(keyColumns, field.Name) {
+		return false
+	}
+	return isRowidAlias(keyColumns, field)
+}
+
 // KeyColumnIsNotNull reports whether a server of dialect holds field NOT NULL
 // because table's primary key covers it. keyColumns is what [KeyColumns]
 // returns for the table.

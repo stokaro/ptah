@@ -275,3 +275,82 @@ func TestKeyColumnIsNotNull(t *testing.T) {
 		})
 	}
 }
+
+// TestIsRowidAlias names the one key column whose NOT NULL flag SQLite ignores.
+// Measured on SQLite 3.51.0, each true row accepts `INSERT ... VALUES (NULL)`
+// with and without a declared NOT NULL and stores the next rowid; each false
+// row either holds NULL or refuses it, so its flag is a real difference.
+func TestIsRowidAlias(t *testing.T) {
+	tests := []struct {
+		name       string
+		table      schemamodel.Table
+		keyColumns []string
+		field      schemamodel.Field
+		want       bool
+	}{
+		{
+			name:       "an INTEGER key on a rowid table",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
+			want:       true,
+		},
+		{
+			name:       "the type name read case-insensitively",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"ID"},
+			field:      schemamodel.Field{Name: "id", Type: "integer", Nullable: false},
+			want:       true,
+		},
+		{
+			name:       "an INTEGER key on a STRICT table",
+			table:      schemamodel.Table{Name: "t", Strict: true},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
+			want:       true,
+		},
+		{
+			name:       "an INTEGER key on a WITHOUT ROWID table",
+			table:      schemamodel.Table{Name: "t", WithoutRowID: true},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "INTEGER", Primary: true},
+			want:       false,
+		},
+		{
+			name:       "a TEXT key, which holds NULL on a rowid table",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true},
+			want:       false,
+		},
+		{
+			name:       "an INT key, which SQLite does not alias",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "INT", Primary: true},
+			want:       false,
+		},
+		{
+			name:       "an INTEGER column of a composite key",
+			table:      schemamodel.Table{Name: "t", PrimaryKey: []string{"a", "b"}},
+			keyColumns: []string{"a", "b"},
+			field:      schemamodel.Field{Name: "a", Type: "INTEGER"},
+			want:       false,
+		},
+		{
+			name:       "an INTEGER column outside the key",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "n", Type: "INTEGER"},
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(sqlitekey.IsRowidAlias(tt.table, tt.keyColumns, tt.field), qt.Equals, tt.want)
+		})
+	}
+}

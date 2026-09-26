@@ -74,6 +74,12 @@ The SQLite renderer and planner support:
 - Views without `WITH CHECK OPTION`, and row-level triggers (SQLite has no
   statement-level triggers).
 
+A single-column `INTEGER` primary key on a table with a rowid is the rowid
+alias, and SQLite stores no `NULL` in it whether or not it says `NOT NULL`. The
+two spellings are one table, so a comparison between them plans nothing. Any
+other key column keeps its flag: `id TEXT PRIMARY KEY` holds `NULL` on a rowid
+table, and making it `NOT NULL` rebuilds the table.
+
 A rebuild of a table that other tables reference drops the original table,
 which is a foreign-key violation while enforcement is on. The plan therefore
 starts with `PRAGMA foreign_keys = off;` and ends with

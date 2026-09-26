@@ -99,6 +99,29 @@ func TestSchemaDiffComparesAFileWithADatabaseWithoutADevDatabase(t *testing.T) {
 	}
 }
 
+// TestSchemaDiffSQLiteRowidAliasDeclaredTwiceIsSynced: the rowid alias declared
+// with and without NOT NULL is one table on SQLite, which stores no NULL in it
+// either way, so native `ptah schema diff` plans no rebuild between the two
+// (stokaro/ptah#3685).
+func TestSchemaDiffSQLiteRowidAliasDeclaredTwiceIsSynced(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	sqlPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	hclPath := writeSchemaSQLFile(c, dir, "schema.hcl", "schema \"main\" {\n}\n"+
+		"table \"widgets\" {\n  schema = schema.main\n"+
+		"  column \"id\" {\n    null = false\n    type = integer\n  }\n"+
+		"  primary_key {\n    columns = [column.id]\n  }\n}\n")
+
+	out, err := runSchema("", "diff",
+		"--from", sqlPath,
+		"--to", hclPath,
+		"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Schemas are synced, no changes to be made.")
+}
+
 func TestSchemaDiffRequiresFromAndTo(t *testing.T) {
 	c := qt.New(t)
 
