@@ -63,15 +63,9 @@ supports.
 ## Compatibility
 
 Which Ptah build an operator version runs is the operator's claim, not this
-site's, and it changes when the operator measures something new. It is
-published as a current table at
-[the operator compatibility matrix](https://docs.ptah.run/compatibility/operator/),
-outside this site's per-version archives so that it answers with the present
-catalog rather than with whatever was true when a Ptah release shipped.
-
-The table keeps declared support and verified support apart, and says which
-combinations nobody has measured. An untested pairing is not an incompatible
-one.
+site's, and it changes when the operator measures something new. The operator
+publishes it on its own site, in
+[Ptah compatibility](https://operator.ptah.run/edge/support/ptah/).
 
 ## Its documentation
 
