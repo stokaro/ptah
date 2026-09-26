@@ -18,6 +18,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/schemaprep"
@@ -1897,6 +1898,14 @@ func WalkDatabase(
 ) error {
 	if visit == nil {
 		return fmt.Errorf("walk database schema: nil visitor")
+	}
+	// No server is asked here, so a bare table's schema is the target's
+	// catalog default. See schemaprep.ValidateTableSpellings for why a
+	// wrong default refuses rather than merges.
+	if err := schemaprep.ValidateTableSpellings(
+		&database, identifier.ForDialect(targetPlatform).DefaultSchema,
+	); err != nil {
+		return err
 	}
 
 	// Normalize once so every conversion path consumes the same names.
