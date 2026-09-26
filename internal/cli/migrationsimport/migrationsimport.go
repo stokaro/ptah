@@ -53,10 +53,14 @@ addForeignKeyConstraint, renameTable and renameColumn have no SQL until a
 database is chosen, so they import only with --dialect, and the migrations
 they become are written for that dialect alone. A changeset without an
 explicit rollback gets the rollback Liquibase would derive, where every change
-in it can be undone. Any other construct -- include, preConditions, context,
-labels, dbms on a changeset or a change, runAlways or runOnChange set to true,
-and the remaining change types -- is refused by name rather than dropped, so
-an import either carries the whole changelog or does not happen. --dialect
+in it can be undone. A changeset with runInTransaction="false" becomes a
+no-transaction migration, and one with ignore="true", which Liquibase never
+runs, is left out and named on stderr. Any other construct -- include,
+preConditions, context, labels, dbms on a changeset or a change, runAlways or
+runOnChange set to true, a changeset attribute such as failOnError="false" or
+runOrder that a migration cannot carry, one Ptah does not read, and the
+remaining change types -- is refused by name rather than dropped, so an import
+either carries the whole changelog or does not happen. --dialect
 does not make dbms convert: the name Liquibase gives some databases depends on
 how it connected, so a changeset's dbms cannot be matched to a dialect.
 
@@ -156,6 +160,7 @@ func runImport(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintf(out, "  %s\n", name)
 	}
 	reportDeclined(cmd.ErrOrStderr(), result.Declined)
+	reportSkipped(cmd.ErrOrStderr(), result.Skipped)
 	return nil
 }
 
@@ -183,6 +188,23 @@ func renderingParser(cmd *cobra.Command, parser importer.Parser, opts *options) 
 		return nil, fmt.Errorf("--dialect: %w", err)
 	}
 	return rendering, nil
+}
+
+// reportSkipped names every changeset the import left out because the source
+// tool never runs it, and why.
+//
+// Leaving it out is faithful -- a Liquibase changeset with ignore="true" never
+// ran -- so the import is not refused. It is still reported, on stderr beside
+// the declined files, because a changeset that is in the changelog and not in
+// the directory would otherwise be found only by comparing the two.
+func reportSkipped(errOut io.Writer, skipped []importer.SkippedChangeset) {
+	if len(skipped) == 0 {
+		return
+	}
+	fmt.Fprintf(errOut, "Skipped %d changeset(s):\n", len(skipped))
+	for _, entry := range skipped {
+		fmt.Fprintf(errOut, "  %s %s: %s\n", entry.Path, entry.Changeset, entry.Reason)
+	}
 }
 
 // reportDeclined names every source file the import did not convert, and why.

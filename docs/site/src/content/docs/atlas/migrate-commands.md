@@ -1799,9 +1799,10 @@ ptah-compat migrate import \
   --to "file://migrations"
 ```
 
-A successful compatibility import is silent. Inspect the destination directory
-and its `atlas.sum` to see what was written, rather than reading a progress
-message off stdout. Rejections stay loud on stderr.
+A successful compatibility import writes nothing to stdout. Inspect the
+destination directory and its `atlas.sum` to see what was written, rather than
+reading a progress message. Rejections, and warnings about what the import left
+out, go to stderr.
 
 The command is intentionally fail-closed: use a destination directory different
 from the source directory, and start with a destination that does not already
@@ -1829,7 +1830,11 @@ database only, or runs again after its first run (`dbms`, `runAlways`,
 `runOnChange`), refuses the import by name, where Atlas CE copies it and applies
 it everywhere. The numbered-only conversion copies each file whole, and refuses
 the same changesets before it copies, on import and on `migrate apply`, which
-reads the directory the same way.
+reads the directory the same way. A changeset with `runInTransaction:false`
+becomes a no-transaction Atlas migration, which Atlas CE runs in a transaction
+instead. A changeset with `ignore:true` is left out of a conventional import and
+named in a warning on stderr, and a numbered file holding one is refused, since a
+copy cannot leave it out.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/migration/importer"
 )
 
 // A numbered Liquibase file is copied whole, and a copy of a changeset
@@ -35,6 +36,27 @@ func TestLoadFSLiquibaseNumberedRunConditions_FailurePath(t *testing.T) {
 			},
 			message: `liquibase changeset s:2 in "2_view\.sql" sets runOnChange, .*`,
 		},
+		{
+			name: "ignore",
+			files: map[string]string{
+				"1_init.sql": "--liquibase formatted sql\n--changeset s:1\nSELECT 1;\n--changeset s:2 ignore:true\nSELECT 2;\n",
+			},
+			message: `liquibase changeset s:2 in "1_init\.sql" sets ignore, so Liquibase never runs it, .*`,
+		},
+		{
+			name: "transaction modes mixed in one file",
+			files: map[string]string{
+				"1_init.sql": "--liquibase formatted sql\n--changeset s:1 runInTransaction:false\nVACUUM;\n--changeset s:2\nSELECT 2;\n",
+			},
+			message: `liquibase file "1_init\.sql" sets runInTransaction to false on some changesets and not on others, .*`,
+		},
+		{
+			name: "failOnError false",
+			files: map[string]string{
+				"1_init.sql": "--liquibase formatted sql\n--changeset s:1 failOnError:false\nSELECT 1;\n",
+			},
+			message: `liquibase changeset s:1 in "1_init\.sql" sets failOnError=false, which Ptah cannot carry .*`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -52,15 +74,14 @@ func TestLoadFSLiquibaseNumberedRunConditions_FailurePath(t *testing.T) {
 	}
 }
 
-// The refusal reads run conditions and nothing else. An attribute that decides
-// nothing about running the changeset, the defaults spelled out, and a layout
-// the changeset parser would refuse are carried by the copy as they are, so the
-// converted file stays the one Atlas CE writes.
+// The conversion reads attributes and nothing else. The defaults spelled out
+// and a layout the changeset parser would refuse are carried by the copy as they
+// are, so the converted file stays the one Atlas CE writes.
 func TestLoadFSLiquibaseNumberedRunConditions_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	source := fstest.MapFS{
 		"1_init.sql": &fstest.MapFile{Data: []byte("--liquibase formatted sql\nSELECT 0;\n" +
-			"--changeset atlas:1-1 runInTransaction:false runAlways:false dbms:\nCREATE TABLE t (id int);\n")},
+			"--changeset atlas:1-1 runAlways:false ignore:false dbms:\nCREATE TABLE t (id int);\n")},
 		"2_skeleton.sql": &fstest.MapFile{Data: []byte("--liquibase formatted sql\n")},
 	}
 
@@ -69,5 +90,74 @@ func TestLoadFSLiquibaseNumberedRunConditions_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(entryNames(loaded), qt.DeepEquals, []string{"1_init.sql", "2_skeleton.sql"})
 	c.Assert(string(loaded.Entries[0].Data), qt.Equals,
-		"SELECT 0;\n--changeset atlas:1-1 runInTransaction:false runAlways:false dbms:\nCREATE TABLE t (id int);\n")
+		"SELECT 0;\n--changeset atlas:1-1 runAlways:false ignore:false dbms:\nCREATE TABLE t (id int);\n")
+}
+
+// A file whose changesets all set runInTransaction to false converts to a
+// no-transaction Atlas migration. `ptah-compat migrate diff` writes that
+// attribute for a statement that cannot run in a transaction, and Atlas CE
+// v1.3.0 reads it as nothing: its apply of such a file fails with "cannot
+// VACUUM from within a transaction" on SQLite (stokaro/ptah#3714).
+func TestLoadFSLiquibaseNumberedNoTransaction_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	source := fstest.MapFS{
+		"1_vacuum.sql": &fstest.MapFile{Data: []byte(
+			"--liquibase formatted sql\n--changeset atlas:1-1 runInTransaction:false\nVACUUM;\n")},
+		"2_table.sql": &fstest.MapFile{Data: []byte(
+			"--liquibase formatted sql\n--changeset atlas:2-1\nCREATE TABLE t (id int);\n")},
+	}
+
+	loaded, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(entryNames(loaded), qt.DeepEquals, []string{"1_vacuum.sql", "2_table.sql"})
+	c.Assert(string(loaded.Entries[0].Data), qt.Equals,
+		"-- atlas:txmode none\n\n--changeset atlas:1-1 runInTransaction:false\nVACUUM;\n")
+	c.Assert(string(loaded.Entries[1].Data), qt.Equals, "--changeset atlas:2-1\nCREATE TABLE t (id int);\n")
+}
+
+// The import that splits a Liquibase changelog into changesets carries each
+// changeset's runInTransaction:false as the Atlas no-transaction directive, and
+// leaves an ignored changeset out while naming it in the result, whichever of
+// the two changelog shapes it reads.
+func TestImportLiquibaseChangesetAttributes_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		content string
+	}{
+		{
+			name: "conventional formatted sql",
+			file: "changelog.sql",
+			content: "--liquibase formatted sql\n--changeset s:1 runInTransaction:false\nVACUUM;\n" +
+				"--changeset s:2 ignore:true\nDROP TABLE t;\n",
+		},
+		{
+			name: "xml changelog",
+			file: "changelog.xml",
+			content: `<databaseChangeLog><changeSet id="1" author="s" runInTransaction="false"><sql>VACUUM;</sql></changeSet>` +
+				`<changeSet id="2" author="s" ignore="true"><sql>DROP TABLE t;</sql></changeSet></databaseChangeLog>`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := t.TempDir()
+			target := t.TempDir()
+			writeFile(c, source, test.file, test.content)
+
+			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+				FromURL: "file://" + source + "?format=liquibase",
+				ToURL:   "file://" + target,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(baseNames(result.Files), qt.DeepEquals, []string{"1_s_1.sql"})
+			c.Assert(readFile(c, target, "1_s_1.sql"), qt.Equals, "-- atlas:txmode none\n\nVACUUM;\n")
+			c.Assert(result.SkippedChangesets, qt.DeepEquals, []importer.SkippedChangeset{{
+				Path: test.file, Changeset: "s:2", Reason: `ignore="true": Liquibase never runs this changeset`,
+			}})
+			assertAtlasSumOK(c, target, result.SumFile)
+		})
+	}
 }

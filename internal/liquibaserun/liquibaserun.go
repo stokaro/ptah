@@ -1,14 +1,16 @@
-// Package liquibaserun recognizes the Liquibase changeset attributes that decide
-// whether, or how often, Liquibase runs a changeset: context, labels, dbms,
-// preconditions, runAlways and runOnChange.
+// Package liquibaserun recognizes the attributes of a Liquibase changeset and
+// says what each asks of an import: nothing, a no-transaction migration, a
+// changeset Liquibase never runs, or a refusal. The refusals cover what decides
+// whether, or how often, Liquibase runs a changeset -- context, labels, dbms,
+// preconditions, runAlways, runOnChange -- and the attributes Ptah has no form
+// for, such as failOnError="false".
 //
-// A migration directory has no equivalent for any of them, so every Ptah reader
-// of a Liquibase changelog refuses a changeset that carries one. The changeset
+// Every Ptah reader of a Liquibase changelog asks this package. The changeset
 // parser in migration/importer splits a changelog into one migration per
 // changeset, and the one-file conversion in internal/atlasmigrateimport copies a
-// numbered formatted-SQL file whole. Both ask this package, because a list per
-// reader drops, in the reader that was not told, whatever the other learned to
-// refuse (stokaro/ptah#3713).
+// numbered formatted-SQL file whole. A list per reader drops, in the reader that
+// was not told, whatever the other learned to read (stokaro/ptah#3713,
+// stokaro/ptah#3714).
 package liquibaserun
 
 import (
@@ -19,51 +21,134 @@ import (
 	"strings"
 )
 
-// Kind says what a changeset attribute decides about running the changeset.
-type Kind int
+// Effect says what one changeset attribute, with its value, asks of an import.
+type Effect int
 
 const (
-	// None is an attribute that decides nothing about running the changeset.
-	None Kind = iota
+	// Unknown is an attribute Ptah does not read. Liquibase ignores a name it
+	// does not know as well, but a name Ptah does not know may be one Liquibase
+	// does, so an import refuses it rather than guess.
+	Unknown Effect = iota
+	// NoEffect decides nothing a migration has to carry: an identifier, a
+	// note, or a value that spells out Liquibase's default.
+	NoEffect
 	// Selector decides WHETHER the changeset runs.
 	Selector
-	// Repeat decides whether Liquibase runs the changeset again after its
-	// first run.
+	// Repeat makes Liquibase run the changeset again after its first run.
 	Repeat
+	// NoTransaction runs the changeset, and its rollback, outside a
+	// transaction.
+	NoTransaction
+	// Skip means Liquibase never runs the changeset and never records it.
+	Skip
+	// Unsupported is a value that changes how Liquibase runs the changeset in a
+	// way a Ptah migration has no form for.
+	Unsupported
 )
 
-// Condition is the one place that recognizes what decides whether, or how
-// often, Liquibase runs a changeset.
+// unsupportedReasons says, per attribute, what Liquibase does that a Ptah
+// migration cannot. Keys are lower case.
+var unsupportedReasons = map[string]string{
+	"failonerror":           "Liquibase records the changeset as run when it fails, and a failed Ptah migration stops the apply",
+	"runorder":              "Liquibase moves the changeset to the start or the end of the update",
+	"runwith":               "Liquibase runs the SQL through that native client rather than the database driver",
+	"runwithspoolfile":      "Liquibase runs the SQL through a native client and writes its output to that file",
+	"objectquotingstrategy": "it changes how Liquibase quotes the names that typed changes create",
+	"enddelimiter":          "Ptah does not know the delimiter, so it would stay in the SQL",
+	"rollbackenddelimiter":  "Ptah does not know the delimiter, so it would stay in the rollback SQL",
+}
+
+// Attribute is the one place that recognizes a changeset attribute, and says
+// what its value asks of an import. Names match in any case, as Liquibase
+// matches them, and an empty value is Liquibase's default.
 //
-// kind is reported for every name the function recognizes, and binds reports
-// whether the value makes the condition hold: an empty value is the default, so
-// an empty selector selects nothing, and `runAlways="false"` spells out the
-// default. A repeat whose value is not a boolean is an error, because what the
-// author meant by it is unknown. Names match in any case, as Liquibase matches
-// them.
-func Condition(key, value string) (kind Kind, binds bool, err error) {
-	switch strings.ToLower(key) {
+// A boolean attribute whose value is not a boolean is an error, because what
+// the author meant by it is unknown.
+func Attribute(key, value string) (Effect, error) {
+	value = strings.TrimSpace(value)
+	name := strings.ToLower(key)
+	switch name {
+	case "id", "author", "created", "logicalfilepath", "changelogid", "onvalidationfail",
+		"comment", "validchecksum", "validchecksums",
+		// A Ptah migration file is split into statements by Ptah, and its
+		// comments do not execute, so neither setting changes what runs.
+		"splitstatements", "rollbacksplitstatements", "stripcomments":
+		return NoEffect, nil
 	// contextFilter is the newer spelling of context, and Liquibase reads
 	// either.
 	case "context", "contextfilter", "contexts", "labels", "dbms":
-		return Selector, strings.TrimSpace(value) != "", nil
+		return presence(value, Selector), nil
 	// A precondition is a selector whatever it holds; Liquibase accepts both
 	// spellings of the element.
 	case "preconditions":
-		return Selector, true, nil
+		return Selector, nil
 	// alwaysRun is the older spelling of runAlways, and Liquibase reads either.
 	case "runalways", "alwaysrun", "runonchange":
-		if strings.TrimSpace(value) == "" {
-			return Repeat, false, nil
+		return whenTrue(key, value, Repeat)
+	case "ignore":
+		return whenTrue(key, value, Skip)
+	case "runintransaction":
+		return whenFalse(key, value, NoTransaction)
+	case "failonerror":
+		return whenFalse(key, value, Unsupported)
+	case "runorder", "runwithspoolfile":
+		return presence(value, Unsupported), nil
+	case "runwith":
+		if strings.EqualFold(value, "jdbc") {
+			return NoEffect, nil
 		}
-		repeat, ok := ParseBool(value)
-		if !ok {
-			return Repeat, false, fmt.Errorf("%s %q is not true or false", key, value)
+		return presence(value, Unsupported), nil
+	case "objectquotingstrategy":
+		if strings.EqualFold(value, "LEGACY") {
+			return NoEffect, nil
 		}
-		return Repeat, repeat, nil
+		return presence(value, Unsupported), nil
+	case "enddelimiter", "rollbackenddelimiter":
+		if value == ";" {
+			return NoEffect, nil
+		}
+		return presence(value, Unsupported), nil
 	default:
-		return None, false, nil
+		return Unknown, nil
 	}
+}
+
+// presence is effect for a value that is set and NoEffect for an empty one.
+func presence(value string, effect Effect) Effect {
+	if value == "" {
+		return NoEffect
+	}
+	return effect
+}
+
+// whenTrue is effect for a boolean attribute set to true.
+func whenTrue(key, value string, effect Effect) (Effect, error) {
+	if value == "" {
+		return NoEffect, nil
+	}
+	parsed, ok := ParseBool(value)
+	if !ok {
+		return NoEffect, fmt.Errorf("%s %q is not true or false", key, value)
+	}
+	if parsed {
+		return effect, nil
+	}
+	return NoEffect, nil
+}
+
+// whenFalse is effect for a boolean attribute, true by default, set to false.
+func whenFalse(key, value string, effect Effect) (Effect, error) {
+	if value == "" {
+		return NoEffect, nil
+	}
+	parsed, ok := ParseBool(value)
+	if !ok {
+		return NoEffect, fmt.Errorf("%s %q is not true or false", key, value)
+	}
+	if parsed {
+		return NoEffect, nil
+	}
+	return effect, nil
 }
 
 // ParseBool is the one grammar for a Liquibase boolean, and reports false for a
@@ -79,52 +164,94 @@ func ParseBool(value string) (parsed, ok bool) {
 	}
 }
 
-// Conditions collects the run conditions one changeset carries. The zero value
-// holds none.
-type Conditions struct {
-	selectors []string
-	repeats   []string
-	err       error
+// Changeset collects what the attributes of one changeset ask of an import.
+// The zero value asks nothing.
+type Changeset struct {
+	selectors     []string
+	repeats       []string
+	unsupported   []string
+	unknown       []string
+	noTransaction bool
+	skip          bool
+	err           error
 }
 
-// Note records key when it names a run condition that holds, and reports
-// whether key names a run condition at all, so a reader can tell one from a
-// change. A name is recorded once: formatted SQL writes one
-// `--precondition-<type>` line per precondition.
-func (c *Conditions) Note(key, value string) bool {
-	kind, binds, err := Condition(key, value)
+// Note records one attribute written where only attributes can stand. A name
+// [Attribute] does not recognize is recorded as one Ptah does not read.
+func (c *Changeset) Note(key, value string) {
+	if !c.NoteKnown(key, value) && !slices.Contains(c.unknown, key) {
+		c.unknown = append(c.unknown, key)
+	}
+}
+
+// NoteKnown records one attribute and reports whether [Attribute] recognizes
+// its name. A name it does not recognize is left to the caller, which is how a
+// reader tells an attribute written as a nested XML element from a change. A
+// name is recorded once: formatted SQL writes one `--precondition-<type>` line
+// per precondition.
+func (c *Changeset) NoteKnown(key, value string) bool {
+	effect, err := Attribute(key, value)
 	switch {
-	case kind == None:
+	case effect == Unknown:
 		return false
 	case err != nil:
 		if c.err == nil {
 			c.err = err
 		}
-	case binds && kind == Selector:
+	case effect == Selector:
 		c.AddSelector(key)
-	case binds && kind == Repeat && !slices.Contains(c.repeats, key):
+	case effect == Repeat && !slices.Contains(c.repeats, key):
 		c.repeats = append(c.repeats, key)
+	case effect == Unsupported:
+		c.unsupported = append(c.unsupported, fmt.Sprintf("%s=%s, which Ptah cannot carry because %s",
+			key, strings.TrimSpace(value), unsupportedReasons[strings.ToLower(key)]))
+	case effect == NoTransaction:
+		c.noTransaction = true
+	case effect == Skip:
+		c.skip = true
 	}
 	return true
 }
 
 // AddSelector records a selector a reader recognized itself, such as the `dbms`
 // of one change inside the changeset. A name is recorded once.
-func (c *Conditions) AddSelector(name string) {
+func (c *Changeset) AddSelector(name string) {
 	if !slices.Contains(c.selectors, name) {
 		c.selectors = append(c.selectors, name)
 	}
 }
 
-// Err refuses a changeset that Liquibase runs conditionally or more than once,
-// naming every attribute that makes it so, and returns nil for one that runs
-// unconditionally, once. name identifies the changeset and file the changelog
-// holding it.
+// Clone returns a copy that shares nothing with c, so a changelog's own
+// attributes can be the start of each changeset in it.
+func (c Changeset) Clone() Changeset {
+	c.selectors = slices.Clone(c.selectors)
+	c.repeats = slices.Clone(c.repeats)
+	c.unsupported = slices.Clone(c.unsupported)
+	c.unknown = slices.Clone(c.unknown)
+	return c
+}
+
+// Skipped reports that Liquibase never runs the changeset: its `ignore` is
+// true. A reader leaves such a changeset out and says so, which is what
+// Liquibase does with it, whatever else the changeset carries.
+func (c Changeset) Skipped() bool {
+	return c.skip
+}
+
+// NoTransaction reports that the changeset and its rollback run outside a
+// transaction: its `runInTransaction` is false.
+func (c Changeset) NoTransaction() bool {
+	return c.noTransaction
+}
+
+// Err refuses a changeset whose attributes ask for something a migration
+// directory cannot carry, naming every attribute that does, and returns nil for
+// one it can. name identifies the changeset and file the changelog holding it.
 //
 // A selector is named first and decides the remedy: a changeset that runs on
 // some databases or in some environments has to be split in Liquibase, and
-// removing a repeat attribute does not change that.
-func (c Conditions) Err(name, file string) error {
+// removing any other attribute does not change that.
+func (c Changeset) Err(name, file string) error {
 	switch {
 	case c.err != nil:
 		return fmt.Errorf("liquibase changeset %s in %q: %w", name, file, c.err)
@@ -145,6 +272,13 @@ func (c Conditions) Err(name, file string) error {
 				"a Ptah migration runs once, so importing it would turn a repeated changeset into a "+
 				"one-time one -- import it by hand",
 			name, file, strings.Join(c.repeats, ", "))
+	case len(c.unsupported) > 0 || len(c.unknown) > 0:
+		clauses := slices.Clone(c.unsupported)
+		for _, key := range c.unknown {
+			clauses = append(clauses, key+", which Ptah does not read")
+		}
+		return fmt.Errorf("liquibase changeset %s in %q sets %s -- import it by hand",
+			name, file, strings.Join(clauses, "; "))
 	default:
 		return nil
 	}
@@ -201,26 +335,51 @@ func Attributes(args string) [][2]string {
 	return attributes
 }
 
-// ScanFormattedSQL refuses a formatted-SQL file holding a changeset that
-// Liquibase runs conditionally or more than once, and returns nil otherwise.
-// The refusal names the first such changeset by its author:id.
+// ScanFormattedSQL reads the changeset attributes of a formatted-SQL file that
+// a reader copies whole rather than splits, refuses the file when one of its
+// changesets asks for something a copy cannot carry, and otherwise reports
+// whether the copy has to run outside a transaction. The refusal names the
+// first such changeset by its author:id.
 //
-// It reads the run conditions and nothing else, so a file the changeset parser
-// in migration/importer would refuse for its layout -- a header with no
-// changeset, SQL before the first one -- passes here. It is for a reader that
-// copies the file whole rather than splitting it, where the layout loses
-// nothing and a run condition is the one thing dropped.
-func ScanFormattedSQL(file, content string) error {
-	var current *Conditions
+// A copy is one migration, so the changesets in it share one transaction mode.
+// Every changeset setting runInTransaction to false makes the copy a
+// no-transaction migration; a file mixing the two modes is refused, because
+// either mode would run one of its changesets differently from Liquibase. A
+// changeset Liquibase never runs (ignore="true") is refused as well, because a
+// copy cannot leave one changeset out.
+//
+// It reads the attributes and nothing else, so a file the changeset parser in
+// migration/importer would refuse for its layout -- a header with no changeset,
+// SQL before the first one -- passes here. A copy loses nothing in those
+// shapes.
+func ScanFormattedSQL(file, content string) (noTransaction bool, err error) {
+	var current *Changeset
 	name := ""
+	changesets, noTransactionChangesets := 0, 0
+	finish := func() error {
+		if current == nil {
+			return nil
+		}
+		if err := current.Err(name, file); err != nil {
+			return err
+		}
+		if current.Skipped() {
+			return fmt.Errorf("liquibase changeset %s in %q sets ignore, so Liquibase never runs it, and "+
+				"a file copied whole cannot leave one changeset out -- remove the changeset or import it by hand",
+				name, file)
+		}
+		changesets++
+		if current.NoTransaction() {
+			noTransactionChangesets++
+		}
+		return nil
+	}
 	for line := range strings.SplitSeq(content, "\n") {
 		if args, ok := ChangesetArgs(line); ok {
-			if current != nil {
-				if err := current.Err(name, file); err != nil {
-					return err
-				}
+			if err := finish(); err != nil {
+				return false, err
 			}
-			current = &Conditions{}
+			current = &Changeset{}
 			name = changesetName(args)
 			for _, attribute := range Attributes(args) {
 				current.Note(attribute[0], attribute[1])
@@ -228,13 +387,18 @@ func ScanFormattedSQL(file, content string) error {
 			continue
 		}
 		if current != nil && IsPreconditions(line) {
-			current.Note("preconditions", "")
+			current.NoteKnown("preconditions", "")
 		}
 	}
-	if current == nil {
-		return nil
+	if err := finish(); err != nil {
+		return false, err
 	}
-	return current.Err(name, file)
+	if noTransactionChangesets > 0 && noTransactionChangesets < changesets {
+		return false, fmt.Errorf("liquibase file %q sets runInTransaction to false on some changesets and not "+
+			"on others, and a file copied whole runs as one migration in one mode -- give each mode a file of "+
+			"its own", file)
+	}
+	return noTransactionChangesets > 0, nil
 }
 
 // changesetName is the author:id a `--changeset` marker names, as the author
