@@ -34,8 +34,10 @@ func domainDefaultInUse(c *qt.C, conn *dbschema.DatabaseConnection, schemaName s
 // document then compares clean against what the server stored. The default is
 // read back by using it first, so a row cannot pass by comparing a misread
 // against itself. Kept with its quotes, a string default plans
-// ALTER DOMAIN ... SET DEFAULT '''ab''' against the domain it declares
-// (stokaro/ptah#3740).
+//
+//	ALTER DOMAIN ... SET DEFAULT '''ab'''
+//
+// against the domain it declares (stokaro/ptah#3740).
 func TestPostgresLiveDomainDefaultSpellingsCompareClean(t *testing.T) {
 	tests := []struct {
 		name   string
