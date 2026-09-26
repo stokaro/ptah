@@ -234,3 +234,154 @@ func seqCopyFile(c *qt.C, from, to string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(to, content, 0o600), qt.IsNil) // #nosec G703 -- both paths are the test's own temporary files.
 }
+
+// seqWriteExpectedKeys writes the --expect-sequence document with a version key
+// beside each version, as a caller that approved an Atlas-format history does.
+func seqWriteExpectedKeys(c *qt.C, entries ...struct {
+	version int64
+	key     string
+},
+) string {
+	c.Helper()
+	type migration struct {
+		Version    int64  `json:"version"`
+		VersionKey string `json:"version_key"`
+	}
+	document := struct {
+		Migrations []migration `json:"migrations"`
+	}{Migrations: make([]migration, 0, len(entries))}
+	for _, entry := range entries {
+		document.Migrations = append(document.Migrations, migration{Version: entry.version, VersionKey: entry.key})
+	}
+	content, err := json.Marshal(document)
+	c.Assert(err, qt.IsNil)
+	path := filepath.Join(c.TempDir(), "expected.json")
+	c.Assert(os.WriteFile(path, content, 0o600), qt.IsNil)
+	return path
+}
+
+// A checkpoint changes which migrations a run selects, not only how many: it
+// bootstraps a database with no history and never runs once one exists. An
+// approval taken on one side of that line names a sequence the other side
+// does not select, and the run has to refuse it rather than run the other.
+func TestMigrateUpExpectSequenceWithACheckpoint(t *testing.T) {
+	// The checkpoint at 3 squashes 1 and 2 into one file.
+	writeCheckpoint := func(c *qt.C, dir string) {
+		c.Helper()
+		checkpoint := "CREATE TABLE " + seqTable(1) + " (id INTEGER PRIMARY KEY);\n" +
+			"CREATE TABLE " + seqTable(2) + " (id INTEGER PRIMARY KEY);\n"
+		c.Assert(os.WriteFile(filepath.Join(dir, "0000000003_squash.checkpoint.up.sql"),
+			[]byte(checkpoint), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, "0000000003_squash.checkpoint.down.sql"),
+			[]byte("DROP TABLE "+seqTable(2)+";\nDROP TABLE "+seqTable(1)+";\n"), 0o600), qt.IsNil)
+	}
+	writeDirectory := func(c *qt.C) string {
+		c.Helper()
+		dir := c.TempDir()
+		seqWriteMigrations(c, dir, 1, 2, 4)
+		writeCheckpoint(c, dir)
+		return dir
+	}
+
+	t.Run("an approval of the checkpoint bootstrap runs on the fresh database it was taken on", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeDirectory(c)
+		dbPath := filepath.Join(c.TempDir(), "fresh.db")
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--expect-sequence", seqWriteExpected(c, 3, 4))
+		c.Assert(err, qt.IsNil)
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{3, 4})
+	})
+
+	t.Run("a history that appeared after a fresh-database approval is refused", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeDirectory(c)
+		dbPath := filepath.Join(c.TempDir(), "raced.db")
+		// Somebody applies the first migration by hand between the approval and
+		// the run, so the checkpoint no longer bootstraps and the run would
+		// select [2 4] instead.
+		first := c.TempDir()
+		seqWriteMigrations(c, first, 1)
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", first)
+		c.Assert(err, qt.IsNil)
+
+		_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--expect-sequence", seqWriteExpected(c, 3, 4))
+
+		c.Assert(err, qt.ErrorMatches, `.*selected under the migration lock are \[2 4\], and the approved sequence is \[3 4\].*`)
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
+		c.Assert(seqTableExists(c, dbPath, seqTable(2)), qt.IsFalse)
+		c.Assert(seqTableExists(c, dbPath, seqTable(4)), qt.IsFalse)
+	})
+
+	t.Run("a database restored to empty after an approval past the checkpoint is refused", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeDirectory(c)
+		dbPath := filepath.Join(c.TempDir(), "restored.db")
+		bootstrap := c.TempDir()
+		writeCheckpoint(c, bootstrap)
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", bootstrap)
+		c.Assert(err, qt.IsNil)
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{3})
+		// The approval is [4]. Restoring a backup from before the bootstrap
+		// empties the history, and the run would select the checkpoint again.
+		seqRestoreBackwards(c, dbPath, 1)
+		conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(context.Background(), "DROP TABLE "+seqTable(2))
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(context.Background(), `DELETE FROM schema_migrations WHERE version = 3`)
+		c.Assert(err, qt.IsNil)
+		dbschema.CloseAndWarn(conn)
+
+		_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--expect-sequence", seqWriteExpected(c, 4))
+
+		c.Assert(err, qt.ErrorMatches, `.*selected under the migration lock are \[3 4\], and the approved sequence is \[4\].*`)
+		c.Assert(seqRevisions(c, dbPath), qt.HasLen, 0)
+		c.Assert(seqTableExists(c, dbPath, seqTable(4)), qt.IsFalse)
+	})
+}
+
+// An Atlas-format directory keys a revision by the spelling in its file name,
+// so 0001 and 1 are the same number and different migrations. The approval
+// names the key, and a document that names the number alone is not the
+// approval of that file.
+func TestMigrateUpExpectSequenceComparesVersionKeys(t *testing.T) {
+	type entry = struct {
+		version int64
+		key     string
+	}
+	writeDirectory := func(c *qt.C) string {
+		c.Helper()
+		dir := c.TempDir()
+		for name, content := range map[string]string{
+			"0001_users.sql":  "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+			"0002_orders.sql": "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
+		} {
+			c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		}
+		return dir
+	}
+	run := func(c *qt.C, dir, dbPath, expected string) error {
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+filepath.ToSlash(dbPath), "--migrations-dir", dir,
+			"--dir-format", "atlas", "--revision-format", "atlas", "--expect-sequence", expected)
+		return err
+	}
+
+	t.Run("the keys the files carry run", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "keyed.db")
+		err := run(c, writeDirectory(c), dbPath, seqWriteExpectedKeys(c, entry{1, "0001"}, entry{2, "0002"}))
+		c.Assert(err, qt.IsNil)
+		c.Assert(seqTableExists(c, dbPath, "orders"), qt.IsTrue)
+	})
+
+	t.Run("the numbers alone are refused", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "unkeyed.db")
+		err := run(c, writeDirectory(c), dbPath, seqWriteExpected(c, 1, 2))
+		c.Assert(err, qt.ErrorMatches, `.*selected under the migration lock are \[1/0001 2/0002\], and the approved sequence is \[1 2\].*`)
+		c.Assert(seqTableExists(c, dbPath, "users"), qt.IsFalse)
+	})
+}
