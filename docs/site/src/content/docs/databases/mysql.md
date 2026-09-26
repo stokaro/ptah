@@ -75,6 +75,18 @@ SQL:
   default engine a desired `HASH` reads back as `BTREE`, and reporting it would
   plan a rebuild MySQL immediately undoes. Deciding the MySQL case properly
   needs the table's storage engine, which the index comparison does not have.
+- A column-level `UNIQUE` accounts for one key over its column alone, the one
+  named after the column where there are several, as the server names it.
+  Every other `UNIQUE` of the table is compared by its name: a second key over
+  the column, and a key over more columns that the column leads. So
+  `a INT UNIQUE, b INT, UNIQUE (a, b)` matches the keys `a` and `a_2` it
+  builds, and a key the file no longer declares is dropped, as Atlas CE plans
+  it. A key over the column that the file declares by name stays that
+  declaration's. Where the file writes both `a INT UNIQUE` and
+  `CONSTRAINT uq_a UNIQUE (a)`, the declared key is taken to hold the column's
+  uniqueness, so a database with `uq_a` alone plans nothing, where Atlas CE
+  adds `a`
+  ([stokaro/ptah#3784](https://github.com/stokaro/ptah/issues/3784)).
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so

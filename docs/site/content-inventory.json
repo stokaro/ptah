@@ -1020,8 +1020,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 3603,
-      "sourceBytes": 21903
+      "visibleWords": 3746,
+      "sourceBytes": 22722
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1168,8 +1168,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10981,
-      "sourceBytes": 74821
+      "visibleWords": 11053,
+      "sourceBytes": 75200
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
