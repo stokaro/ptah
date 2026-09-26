@@ -13,6 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -367,12 +368,7 @@ func inspectCleanupCapabilities(
 			inspectPartitionEdges:    true,
 			inspectDatabaseArtifacts: true,
 			protectedDatabases:       protectedYugabyteDatabases,
-			// Every YugabyteDB database starts with these. 2026.1 adds
-			// postgres_fdw, and its built-in yb_global_views_server keeps
-			// both it and pg_stat_statements from being dropped: DROP
-			// EXTENSION answers "cannot drop extension ... because other
-			// objects depend on it" (stokaro/ptah#3693).
-			systemExtensions: []string{"pg_stat_statements", "plpgsql", "postgres_fdw"},
+			systemExtensions:         cleanupSystemExtensions(platform.YugabyteDB),
 		}, nil
 	default:
 		isPostgreSQL := strings.Contains(version, "postgresql")
@@ -383,9 +379,18 @@ func inspectCleanupCapabilities(
 			inspectDatabaseArtifacts: isPostgreSQL,
 			cleanupLargeObjects:      isPostgreSQL,
 			protectedDatabases:       protectedPostgresDatabases,
-			systemExtensions:         []string{"plpgsql"},
+			systemExtensions:         cleanupSystemExtensions(platform.Postgres),
 		}, nil
 	}
+}
+
+// cleanupSystemExtensions are the extensions a realm cleanup leaves on a
+// server of the dialect: plpgsql, which PostgreSQL and YugabyteDB both install
+// in every database, and the ones [serverobjects.Extensions] names, which the
+// comparison reads as well. YugabyteDB 2026.1.2 refuses to drop either of its
+// own (stokaro/ptah#3693).
+func cleanupSystemExtensions(dialect string) []string {
+	return keptCleanupExtensions([]string{"plpgsql"}, serverobjects.Extensions(dialect))
 }
 
 // withoutTransaction returns the capabilities as they apply on a server that
