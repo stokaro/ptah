@@ -124,11 +124,17 @@ SQL:
   the same clause written without the keyword, which is how the server builds
   it: it takes the name that clause takes, and an unnamed foreign key counts in
   the same `<table>_ibfk_<n>` sequence as the other unnamed keys of its table.
-  On a column, MySQL accepts the form only before `CHECK` and MariaDB only
-  before `REFERENCES`. The server answers `ERROR 1064` to every other
-  symbol-less spelling and to a `CONSTRAINT` in front of `KEY`, `INDEX`,
-  `FULLTEXT` or `SPATIAL`, with a name or without one, and Ptah refuses each of
-  them by name.
+  The server answers `ERROR 1064` to every other symbol-less spelling and to a
+  `CONSTRAINT` in front of `KEY`, `INDEX`, `FULLTEXT` or `SPATIAL`, with a name
+  or without one, and Ptah refuses each of them by name.
+- On a column, MySQL accepts `CONSTRAINT` only before `CHECK` and MariaDB only
+  before `REFERENCES`, with a name or without one, as in
+  `a INT CONSTRAINT ck CHECK (a > 0)` on MySQL. Measured on MySQL 8.4,
+  MySQL 26.7 and MariaDB 11.8, the server answers `ERROR 1064` to every other
+  kind, such as `a INT CONSTRAINT uq UNIQUE`, `CONSTRAINT pk PRIMARY KEY` or
+  `CONSTRAINT nn NOT NULL`, and Ptah refuses each of them by name. Declared at
+  table level, a unique key keeps its name on both engines, and a check keeps
+  its name on MariaDB.
 - A non-ASCII index name is refused, rather than compared. The two engines fold
   such names differently and not in a way one rule covers: measured on MySQL
   8.4.11 and MariaDB 11.8.9 over a `utf8mb4` connection, `I` beside dotless

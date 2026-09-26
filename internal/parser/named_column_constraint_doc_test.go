@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/parser"
 )
 
@@ -52,8 +53,27 @@ func TestNamedColumnConstraintRefusal_TheFixtureOnThePageIsTheOneThatFails(t *te
 	c.Assert(err, qt.IsNotNil)
 }
 
-// readSQLSchemaPage reads the documentation page the two tests above compare
-// against.
+// TestNamedMySQLColumnConstraintRefusal_IsQuotedAsThePageSaysItIs binds the
+// page's MySQL example to the refusal the parser gives for it, as the two tests
+// above bind the DEFAULT one: the page has to print the fixture, and the
+// fixture has to produce the message the page quotes.
+func TestNamedMySQLColumnConstraintRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
+	c := qt.New(t)
+
+	page := readSQLSchemaPage(c)
+	const fixture = "CREATE TABLE t (a INT CONSTRAINT uq UNIQUE);"
+
+	c.Assert(page, qt.Contains, fixture)
+
+	_, err := parser.NewParser(fixture, parser.WithDialect(platform.MySQL)).Parse()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(collapseWhitespace(page), qt.Contains, collapseWhitespace(err.Error()),
+		qt.Commentf("the refusal changed; update %s", sqlSchemaPage))
+}
+
+// readSQLSchemaPage reads the documentation page the tests in this file
+// compare against.
 func readSQLSchemaPage(c *qt.C) string {
 	c.Helper()
 

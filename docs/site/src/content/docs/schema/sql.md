@@ -407,9 +407,10 @@ CREATE TABLE "pets" (
 - Unsupported DDL constructs fail with a parse error naming the statement.
   Treat the error as a compatibility gap and check the conformance reports.
 - A constraint name on `DEFAULT` is refused. Ptah keeps a name on `NOT NULL`,
-  `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY`; the last two are read as
-  the table constraint they describe, which is the level a name lives at. A
-  default has no such level and no engine Ptah supports records one:
+  `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY` where the dialect's grammar
+  takes one; the last two are read as the table constraint they describe, which
+  is the level a name lives at. A default has no such level and no engine Ptah
+  supports records one:
 
   ```sql
   CREATE TABLE t (b INTEGER CONSTRAINT c_x DEFAULT 1);
@@ -465,6 +466,26 @@ CREATE TABLE "pets" (
   `CONSTRAINT` in front of `KEY`, `INDEX`, `FULLTEXT` or `SPATIAL` is refused
   on every dialect, with a name or without one, because an index takes no
   `CONSTRAINT` keyword.
+- A named column constraint is read under `--dialect mysql` only before
+  `CHECK`, and under `--dialect mariadb` only before `REFERENCES`. On a column,
+  each engine takes `CONSTRAINT` before that one kind alone, with a name or
+  without one. MySQL 8.4, MySQL 26.7 and MariaDB 11.8 answer `ERROR 1064` to
+  every other kind, and Ptah refuses it too:
+
+  ```sql
+  CREATE TABLE t (a INT CONSTRAINT uq UNIQUE);
+  ```
+
+  ```text
+  CONSTRAINT uq at position 22 is followed by UNIQUE: on a column, mysql
+  accepts CONSTRAINT with a name only before CHECK, and answers ERROR 1064
+  (42000) to this; drop CONSTRAINT uq
+  ```
+
+  Drop the name, or declare the constraint at table level to keep it, as in
+  `CONSTRAINT uq UNIQUE (a)`. PostgreSQL takes a name before every column
+  constraint, so `--dialect postgres` reads a named `UNIQUE`, `PRIMARY KEY`,
+  `CHECK`, `REFERENCES` and `NOT NULL` on a column.
 - A column-level `REFERENCES` clause is refused under `--dialect mysql`. MySQL
   accepts the syntax and builds nothing from it, so reading it as a foreign key
   would make rendering add a constraint the source schema never had:
@@ -538,10 +559,12 @@ CREATE TABLE "pets" (
   The distinction is not whether the syntax parses: PostgreSQL 17 accepts
   `CONSTRAINT c_x NOT NULL` and stores nothing, while PostgreSQL 18 records one
   row per `NOT NULL` in `pg_constraint` with `contype = 'n'`, keyed to the
-  column through `conkey`, and can drop, add and rename it by name. MariaDB 12.3
-  answers `ERROR 1064 (42000)` for the syntax outright. So the name is gated on
-  the target's measured capability, and a target that cannot keep it refuses the
-  declaration rather than silently dropping the name.
+  column through `conkey`, and can drop, add and rename it by name. MySQL and
+  MariaDB answer `ERROR 1064 (42000)` for the syntax outright, so
+  `--dialect mysql` and `--dialect mariadb` refuse it when the file is read.
+  Elsewhere the name is gated on the target's measured capability, and a target
+  that cannot keep it refuses the declaration rather than silently dropping the
+  name.
 
 ## Next steps
 

@@ -2450,27 +2450,21 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 	return nil
 }
 
-// mysqlColumnReferencesAnswers spells what MySQL answers to each column-level
-// REFERENCES spelling, so a refusal quotes the engine rather than a boolean.
-// It is a lookup rather than a branch because the spelling selects a sentence,
-// not a code path.
-//
-// Measured 2026-09-03 on MySQL 8.4.11, `CREATE TABLE child (a INT ...)`
-// against `CREATE TABLE parents (id INT PRIMARY KEY)`.
-var mysqlColumnReferencesAnswers = map[bool]string{
-	false: "MySQL accepts the clause and creates neither a foreign key nor an " +
-		"index: SHOW CREATE TABLE reports the column alone, and " +
-		"information_schema.referential_constraints stays empty",
-	true: "MySQL refuses that spelling outright with error 1064 (42000)",
-}
-
 // refuseColumnReferences reports MySQL having no enforced column-level
 // REFERENCES, and answers nil for every other dialect.
 //
+// Measured 2026-09-03 on MySQL 8.4.11, `CREATE TABLE child (a INT REFERENCES
+// parents(id))` is accepted and builds nothing: SHOW CREATE TABLE reports the
+// column alone, and information_schema.referential_constraints stays empty.
 // Reading the clause as a foreign key is not a smaller version of what the
 // engine does, it is a different schema: rendering the parsed model back emits
 // an ALTER TABLE ... ADD CONSTRAINT for a relationship the source never had,
 // which turns inspect-and-re-render into a schema change (stokaro/ptah#2791).
+//
+// The named spelling, `a INT CONSTRAINT f REFERENCES parents(id)`, does not
+// reach this refusal: MySQL answers ERROR 1064 to it, and
+// refuseMySQLColumnConstraint refuses it with every other column kind MySQL
+// takes no name before.
 //
 // MariaDB is deliberately not gated. Measured 2026-09-03 on MariaDB 11.8.9,
 // both spellings are enforced there and both build a backing index -- the bare
@@ -2486,7 +2480,7 @@ var mysqlColumnReferencesAnswers = map[bool]string{
 //
 // The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature])
 // and errors.As against *[ptaherr.CapabilityError].
-func (p *Parser) refuseColumnReferences(name string) error {
+func (p *Parser) refuseColumnReferences() error {
 	if platform.NormalizeDialect(p.dialect) != platform.MySQL {
 		return nil
 	}
@@ -2495,23 +2489,14 @@ func (p *Parser) refuseColumnReferences(name string) error {
 		Feature: "enforced column-level REFERENCES",
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf(
-			"%s at position %d: %s, so Ptah refuses it rather than reading a "+
-				"foreign key the source schema does not have; write a table-level "+
-				"FOREIGN KEY clause to declare an enforced relationship",
-			describeColumnReferences(name),
+			"a column-level REFERENCES clause at position %d: MySQL accepts the clause and "+
+				"creates neither a foreign key nor an index: SHOW CREATE TABLE reports the "+
+				"column alone, and information_schema.referential_constraints stays empty, so "+
+				"Ptah refuses it rather than reading a foreign key the source schema does not "+
+				"have; write a table-level FOREIGN KEY clause to declare an enforced relationship",
 			p.current.Start,
-			mysqlColumnReferencesAnswers[name != ""],
 		),
 	}
-}
-
-// describeColumnReferences names the spelling a refusal is about, so the
-// message opens with the text the author wrote.
-func describeColumnReferences(name string) string {
-	if name == "" {
-		return "a column-level REFERENCES clause"
-	}
-	return fmt.Sprintf("the column-level REFERENCES clause named %q", name)
 }
 
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
@@ -2915,7 +2900,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "CONSTRAINT":
 		return p.handleColumnConstraint(table, column)
 	case "REFERENCES":
-		if err := p.refuseColumnReferences(""); err != nil {
+		if err := p.refuseColumnReferences(); err != nil {
 			return err
 		}
 		return p.handleReferences(column)
@@ -2942,9 +2927,13 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.
 // A CONSTRAINT written without a name is handleSymbolLessColumnConstraint's.
 //
-// Every column constraint may be named in the SQL every supported engine
-// accepts -- measured on PostgreSQL 17.11, which takes a name in front of NOT
-// NULL, UNIQUE, PRIMARY KEY, CHECK, DEFAULT and REFERENCES alike. Ptah read
+// On the MySQL family, refuseMySQLColumnConstraint answers first: MySQL takes
+// a name only before CHECK, MariaDB only before REFERENCES, and each answers
+// ERROR 1064 to every other kind. The branches below read what it lets pass.
+//
+// PostgreSQL takes a name before every column constraint -- measured on
+// PostgreSQL 17.11, in front of NOT NULL, UNIQUE, PRIMARY KEY, CHECK, DEFAULT
+// and REFERENCES alike. Ptah read
 // exactly one of them, and refused the rest by naming the keyword that followed
 // the name:
 //
@@ -2988,13 +2977,13 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		return fmt.Errorf("expected column constraint name: %w", err)
 	}
 	p.skipWhitespace()
+	if err := p.refuseMySQLColumnConstraint(start, name); err != nil {
+		return err
+	}
 	switch {
 	case p.current.MatchIdentifierValue("CHECK"):
 		return p.handleColumnCheck(table, column, name)
 	case p.current.MatchIdentifierValue("REFERENCES"):
-		if err := p.refuseColumnReferences(name); err != nil {
-			return err
-		}
 		if err := p.handleReferences(column); err != nil {
 			return err
 		}
@@ -3003,12 +2992,13 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 	case p.current.MatchIdentifierValue("UNIQUE"):
 		return p.namedSingleColumnConstraint(table, column, name, ast.UniqueConstraint)
 	case p.current.MatchIdentifierValue("NOT"):
-		// Read since the model gained somewhere to keep it. The name is taken
-		// on every dialect and refused later, by the layer that knows the
-		// target: a parser that refused here would reject a file PostgreSQL 18
-		// accepts and round-trips, and one that dialect-gated here would refuse
-		// a `.sql` file being read for a target it was not written against
-		// (stokaro/ptah#2161).
+		// The name is taken on every dialect whose grammar has the spelling,
+		// and refused later where the target cannot keep it, by the layer that
+		// knows the target: a parser that refused here would reject a file
+		// PostgreSQL 18 accepts and round-trips, and the dialect alone cannot
+		// tell PostgreSQL 18, which keeps the name, from PostgreSQL 17, which
+		// records nothing (stokaro/ptah#2161). The MySQL family has no such
+		// spelling, and refuseMySQLColumnConstraint refused it above.
 		if err := p.handleNotNull(column); err != nil {
 			return err
 		}

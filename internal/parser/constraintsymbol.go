@@ -44,6 +44,22 @@ import (
 // blames a misspelled keyword the statement does not have (stokaro/ptah#3730).
 // `CONSTRAINT UNIQUE KEY uq (a)` parses without an error, as a plain index
 // where the author wrote a unique one.
+//
+// On a column, the MySQL family answers a CONSTRAINT with a symbol exactly as
+// it answers one without. Measured on MySQL 8.4.11, MySQL 26.7.0, MariaDB
+// 11.8.9 and PostgreSQL 18.6, with `a int CONSTRAINT x <kind>`:
+//
+//	kind            MySQL 8.4.11, 26.7.0  MariaDB 11.8.9  PostgreSQL 18.6
+//	CHECK           check x               ERROR 1064      check x
+//	REFERENCES      ERROR 1064            foreign key x   foreign key x
+//	UNIQUE          ERROR 1064            ERROR 1064      unique x
+//	PRIMARY KEY     ERROR 1064            ERROR 1064      primary key x
+//	NOT NULL        ERROR 1064            ERROR 1064      not-null x
+//	DEFAULT, NULL   ERROR 1064            ERROR 1064      accepted, name kept nowhere
+//
+// So one table, mysqlColumnConstraintKinds, decides both spellings there.
+// Without it, `a int CONSTRAINT uq UNIQUE` reads as a unique constraint `uq`
+// in a MySQL file the server refuses (stokaro/ptah#3745).
 
 // constraintKindWords open the constraint that follows a CONSTRAINT symbol, at
 // table level or on a column.
@@ -74,10 +90,14 @@ var mysqlSymbolLessTableKinds = []string{"PRIMARY", "UNIQUE", "FOREIGN", "CHECK"
 // after CONSTRAINT.
 var columnConstraintKindWords = []string{"CHECK", "REFERENCES", "UNIQUE", "PRIMARY", "NOT", "NULL", "DEFAULT"}
 
-// mysqlSymbolLessColumnKinds is the one column constraint each engine of the
-// MySQL family accepts after a CONSTRAINT without a symbol. The two engines
-// disagree, and each refuses the other's.
-var mysqlSymbolLessColumnKinds = map[string]string{
+// mysqlColumnConstraintKinds is the one column constraint each engine of the
+// MySQL family accepts after CONSTRAINT, with a symbol or without one. The two
+// engines disagree, and each refuses the other's.
+//
+// It is one table for both spellings because the engines answer both alike. A
+// second list for the named spelling would agree with this one on the day it
+// was written, and stop agreeing the day one of them changed.
+var mysqlColumnConstraintKinds = map[string]string{
 	platform.MySQL:   "CHECK",
 	platform.MariaDB: "REFERENCES",
 }
@@ -161,21 +181,44 @@ func (p *Parser) refuseConstraintBeforeIndex(start int) error {
 // else.
 func (p *Parser) handleSymbolLessColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode, start int) error {
 	kind := strings.ToUpper(p.current.Value)
-	accepted, family := mysqlSymbolLessColumnKinds[p.dialect]
-	if !family {
+	if _, family := mysqlColumnConstraintKinds[p.dialect]; !family {
 		return p.constraintSymbolRequired(start, kind)
 	}
-	if kind != accepted {
+	if err := p.refuseMySQLColumnConstraint(start, ""); err != nil {
+		return err
+	}
+	if kind == "CHECK" {
+		return p.handleColumnCheck(table, column, "")
+	}
+	return p.handleReferences(column)
+}
+
+// refuseMySQLColumnConstraint refuses a column constraint written after
+// CONSTRAINT where the MySQL-family engine refuses it, and answers nil
+// everywhere else. symbol is the name written after CONSTRAINT, empty when
+// there is none, and the cursor sits on the kind.
+//
+// Every word but the accepted kind is refused, not only the kinds in the table
+// above: MySQL 8.4.11, MySQL 26.7.0 and MariaDB 11.8.9 answer ERROR 1064 to
+// `a int CONSTRAINT x COMMENT 'c'`, `CONSTRAINT x AUTO_INCREMENT KEY` and
+// `CONSTRAINT x KEY` too.
+func (p *Parser) refuseMySQLColumnConstraint(start int, symbol string) error {
+	accepted, family := mysqlColumnConstraintKinds[p.dialect]
+	kind := strings.ToUpper(p.current.Value)
+	if !family || kind == accepted {
+		return nil
+	}
+	if symbol == "" {
 		return fmt.Errorf(
 			"CONSTRAINT at position %d is followed by %s, not by a name: on a column, %s accepts "+
 				"CONSTRAINT without a name only before %s, and answers ERROR 1064 (42000) to this; "+
 				"drop the CONSTRAINT keyword",
 			start, kind, p.dialect, accepted)
 	}
-	if kind == "CHECK" {
-		return p.handleColumnCheck(table, column, "")
-	}
-	return p.handleReferences(column)
+	return fmt.Errorf(
+		"CONSTRAINT %s at position %d is followed by %s: on a column, %s accepts CONSTRAINT "+
+			"with a name only before %s, and answers ERROR 1064 (42000) to this; drop CONSTRAINT %s",
+		symbol, start, kind, p.dialect, accepted, symbol)
 }
 
 // constraintSymbolRequired refuses a CONSTRAINT without a symbol on a dialect
