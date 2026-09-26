@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/triggerdef"
 )
 
 func (r *renderer) renderExtensions() {
@@ -468,7 +469,7 @@ func (r *renderer) renderTrigger(trigger schemamodel.Trigger) {
 		r.warn(path, "trigger timing cannot be represented in HCL schema output")
 		return
 	}
-	event, ok := triggerEventAttr(trigger.Event)
+	events, ok := triggerEventAttrs(trigger.Event)
 	if !ok {
 		r.warn(path, "trigger event cannot be represented in HCL schema output")
 		return
@@ -496,7 +497,9 @@ func (r *renderer) renderTrigger(trigger schemamodel.Trigger) {
 	// carrying `view "v"` in two schemas, where `on = table.other.v` is refused.
 	r.rawAttr(1, "on", r.relationRef(trigger.Table, quote(trigger.Table)))
 	r.linef("  %s {", timing)
-	r.rawAttr(2, event, "true")
+	for _, event := range events {
+		r.rawAttr(2, event, "true")
+	}
 	r.line("  }")
 	// Quoted, for the same reason as everywhere else in this file. Measured on
 	// the pinned Atlas community binary v1.3.0 against a trigger block it
@@ -878,12 +881,26 @@ func triggerTimingBlock(timing string) (string, bool) {
 	return "", false
 }
 
-func triggerEventAttr(event string) (string, bool) {
-	switch strings.ToUpper(event) {
-	case "INSERT", "UPDATE", "DELETE", "TRUNCATE":
-		return strings.ToLower(event), true
+// triggerEventAttrs spells an event list such as `INSERT OR UPDATE` as the
+// attributes of a timing block, one per event, or reports false when a member
+// has no attribute to set: `UPDATE OF` a column list is one. Writing the block
+// without that member would describe a trigger that fires on fewer events.
+//
+// The list is split by triggerdef, which reads a quoted column holding `OR`
+// or a comma as one name, and the attribute names are its keywords.
+func triggerEventAttrs(event string) ([]string, bool) {
+	events := triggerdef.Events(event)
+	if len(events) == 0 {
+		return nil, false
 	}
-	return "", false
+	attrs := make([]string, 0, len(events))
+	for _, member := range events {
+		if len(member.Columns) > 0 || !slices.Contains(triggerdef.Keywords(), member.Keyword) {
+			return nil, false
+		}
+		attrs = append(attrs, strings.ToLower(member.Keyword))
+	}
+	return attrs, true
 }
 
 // atlasLanguage renders a function's `lang` attribute: the canonical spelling

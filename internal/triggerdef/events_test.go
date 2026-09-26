@@ -118,3 +118,15 @@ func TestIncludesAndNamesColumns(t *testing.T) {
 		})
 	}
 }
+
+// TestKeywords is the set of events a trigger fires on, in the order
+// PostgreSQL 18.6 reports them. A caller's copy is its own: changing it
+// changes no later answer.
+func TestKeywords(t *testing.T) {
+	c := qt.New(t)
+
+	first := triggerdef.Keywords()
+	first[0] = "SELECT"
+
+	c.Assert(triggerdef.Keywords(), qt.DeepEquals, []string{"INSERT", "DELETE", "UPDATE", "TRUNCATE"})
+}

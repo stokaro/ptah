@@ -5,11 +5,19 @@ import (
 	"strings"
 )
 
-// eventOrder is the order PostgreSQL reports a trigger's events in, whatever
-// order they were declared in: pg_get_triggerdef writes
+// keywords are the events a trigger fires on, in the order PostgreSQL reports
+// them whatever order they were declared in: pg_get_triggerdef writes
 // `BEFORE DELETE OR UPDATE OF b, a` for a trigger created
 // `BEFORE UPDATE OF b, a OR DELETE`, measured on PostgreSQL 18.6.
-var eventOrder = map[string]int{"INSERT": 0, "DELETE": 1, "UPDATE": 2, "TRUNCATE": 3}
+var keywords = []string{"INSERT", "DELETE", "UPDATE", "TRUNCATE"}
+
+// Keywords returns the events a trigger can fire on, in upper case and in the
+// order [Canonical] puts them. A surface that spells each event as a separate
+// attribute, such as an HCL timing block, reads and writes them from here so
+// the set and its order have one declaration.
+func Keywords() []string {
+	return slices.Clone(keywords)
+}
 
 // Event is one member of a trigger's event list.
 type Event struct {
@@ -105,10 +113,10 @@ func event(tokens []string) Event {
 }
 
 func rank(e Event) int {
-	if order, known := eventOrder[e.Keyword]; known {
+	if order := slices.Index(keywords, e.Keyword); order >= 0 {
 		return order
 	}
-	return len(eventOrder)
+	return len(keywords)
 }
 
 // tokens splits text into words and commas. A double-quoted identifier is one

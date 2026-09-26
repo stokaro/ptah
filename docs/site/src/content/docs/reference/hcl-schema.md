@@ -114,7 +114,7 @@ for the message and the flag it names.
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
 | `view` / `materialized` | SQL body plus schema and comments. |
-| `trigger` | Trigger timing, target, execution mode, function body, and comments. |
+| `trigger` | Trigger timing and every event its timing block sets (`insert`, `update`, `delete`, `truncate`), target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
