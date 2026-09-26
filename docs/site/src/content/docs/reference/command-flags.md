@@ -1822,7 +1822,7 @@ Read the columns as follows.
 | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
-| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
 | `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
 | `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
@@ -1859,7 +1859,7 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | hidden |
 | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
@@ -2074,13 +2074,13 @@ Read the columns as follows.
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
-| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
 | `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
+| `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
 </div>

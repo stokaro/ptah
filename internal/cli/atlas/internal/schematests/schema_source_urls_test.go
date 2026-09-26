@@ -86,8 +86,10 @@ func TestSchemaApplyMigrationDirSourceRequiresDevURLBeforeTarget(t *testing.T) {
 
 	err := cmd.Execute()
 
+	// The pinned binary's sentence for a migration directory with no dev
+	// database, measured on 2026-09-26 (stokaro/ptah#3680).
 	c.Assert(err, qt.ErrorMatches,
-		`--to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
+		`--dev-url cannot be empty\. See: https://atlasgo\.io/atlas-schema/sql#dev-database`)
 	// The failure happened before the target database was contacted: the
 	// SQLite target file was never created.
 	_, statErr := os.Stat(targetPath)

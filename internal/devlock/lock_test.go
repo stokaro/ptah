@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dblock"
 	"ptah.run/internal/devlock"
 )
 
@@ -37,6 +38,31 @@ func TestAcquire_SQLiteSerializesSameRealm(t *testing.T) {
 	secondLock, err := devlock.Acquire(t.Context(), secondConn, 0)
 	c.Assert(err, qt.IsNil)
 	c.Assert(secondLock.Release(), qt.IsNil)
+}
+
+// TestAcquire_SQLiteRefusesAHeldRealmAtOnceUnderNoWait: a negative timeout
+// tries the realm lock once. The context here would outlast any wait, so a
+// refusal that came from it would name the deadline instead.
+func TestAcquire_SQLiteRefusesAHeldRealmAtOnceUnderNoWait(t *testing.T) {
+	c := qt.New(t)
+	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "dev.db"))
+	firstConn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(firstConn)
+	secondConn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(secondConn)
+	firstLock, err := devlock.Acquire(t.Context(), firstConn, 0)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(firstLock.Release(), qt.IsNil) }()
+
+	waitCtx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	blockedLock, err := devlock.Acquire(waitCtx, secondConn, dblock.NoWait)
+
+	c.Assert(err, qt.ErrorMatches, `acquire sqlite dev database realm lock: lock is held by another process`)
+	c.Assert(blockedLock, qt.IsNil)
+	c.Assert(waitCtx.Err(), qt.IsNil)
 }
 
 func TestAcquire_SQLiteSeparatesDifferentRealms(t *testing.T) {

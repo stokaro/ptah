@@ -243,6 +243,49 @@ func InputTypes(arguments string) string {
 	return strings.Join(types, ", ")
 }
 
+// ImpliedResult answers the result type PostgreSQL gives a function that
+// declares OUT arguments and no RETURNS clause, spelled the way
+// pg_get_function_result prints it, or empty for an argument list with no
+// output.
+//
+// The server derives it from the arguments that return a value, OUT and INOUT
+// alike: one such argument is the function's result, and two or more make it a
+// record. Measured on PostgreSQL 18.6:
+//
+//	declared                          pg_get_function_result
+//	a integer DEFAULT 1, OUT b text   text
+//	INOUT a int4                      integer
+//	a int, OUT b varchar(10)          character varying
+//	a int, OUT b int, OUT c text      record
+//
+// A declaration that leaves RETURNS out is compared against that type.
+// Compared as an empty clause, it differs from the catalog's on every plan
+// (stokaro/ptah#3690).
+func ImpliedResult(arguments string) string {
+	var types []string
+	for _, part := range splitTopLevel(arguments) {
+		text := strings.TrimSpace(part)
+		if index := indexKeyword(text, "default"); index >= 0 {
+			text = strings.TrimSpace(text[:index])
+		}
+		if index := strings.Index(text, "="); index >= 0 {
+			text = strings.TrimSpace(text[:index])
+		}
+		mode, rest := splitArgumentMode(text)
+		if (mode == "out" || mode == "inout") && rest != "" {
+			types = append(types, normalizeRoutineType(withoutParameterName(rest)))
+		}
+	}
+	switch len(types) {
+	case 0:
+		return ""
+	case 1:
+		return types[0]
+	default:
+		return "record"
+	}
+}
+
 // splitArgumentMode takes a leading argument mode off an argument.
 func splitArgumentMode(text string) (mode, rest string) {
 	lowered := strings.ToLower(text)

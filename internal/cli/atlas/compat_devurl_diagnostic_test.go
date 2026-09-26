@@ -150,8 +150,94 @@ func compatDevURLRows() []compatDevURLRow {
 		compatDevURLMigrateLintRows(),
 		compatDevURLMigrateValidateRows(),
 		compatDevURLSchemaRows(),
+		compatDevURLBlankRows(),
 		compatDevURLPlacementRows(),
 	)
+}
+
+// compatDevURLBlankValue is a --dev-url made of spaces. It is not the empty
+// string: the pinned binary opens it and reports the missing driver on all six
+// verbs, including the two that open no dev database when the flag is absent
+// or empty (stokaro/ptah#3680, measured on 2026-09-26).
+const compatDevURLBlankValue = "  "
+
+// compatDevURLBlankRows are the six verbs given [compatDevURLBlankValue]. The
+// schema diff and schema apply rows name databases only, the argv where an
+// absent dev database is no refusal at all, so a build that trimmed the value
+// before judging it exits 0 on them.
+func compatDevURLBlankRows() []compatDevURLRow {
+	return []compatDevURLRow{
+		{
+			name: "migrate diff opens a blank dev-url and reports the missing driver",
+			verb: "migrate diff",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{
+					"migrate", "diff", "demo", "--dir", "file://" + fx.dir,
+					"--to", fx.desiredURL, "--dev-url", compatDevURLBlankValue,
+				}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+		{
+			name: "migrate lint opens a blank dev-url and reports the missing driver",
+			verb: "migrate lint",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{
+					"migrate", "lint", "--dir", "file://" + fx.dir,
+					"--latest", "1", "--dev-url", compatDevURLBlankValue,
+				}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+		{
+			name: "migrate validate opens a blank dev-url and reports the missing driver",
+			verb: "migrate validate",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{
+					"migrate", "validate", "--dir", "file://" + fx.dir,
+					"--dev-url", compatDevURLBlankValue,
+				}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+		{
+			name: "schema diff between two databases refuses a blank dev-url",
+			verb: "schema diff",
+			args: func(compatDevURLFixture) []string {
+				return []string{
+					"schema", "diff", "--from", compatDevURLUnreachableTarget,
+					"--to", compatDevURLUnreachableTarget, "--dev-url", compatDevURLBlankValue,
+				}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+		{
+			name: "schema apply to a database refuses a blank dev-url before it contacts the target",
+			verb: "schema apply",
+			args: func(compatDevURLFixture) []string {
+				return []string{
+					"schema", "apply", "--url", compatDevURLUnreachableTarget,
+					"--to", compatDevURLUnreachableTarget, "--auto-approve",
+					"--dev-url", compatDevURLBlankValue,
+				}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+		{
+			name: "schema inspect of a schema file opens a blank dev-url and reports the missing driver",
+			verb: "schema inspect",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{"schema", "inspect", "--url", fx.desiredURL, "--dev-url", compatDevURLBlankValue}
+			},
+			wantStderr: compatDevURLMissingDriver,
+			wantErr:    true,
+		},
+	}
 }
 
 func compatDevURLMigrateDiffRows() []compatDevURLRow {
@@ -510,4 +596,21 @@ func TestCompatDevURLDiagnostics_CoverEveryVerbRegisteringTheFlag(t *testing.T) 
 				qt.Commentf("%q is accounted for but no longer registers --dev-url", verb))
 		})
 	}
+}
+
+// TestCompatDevURLDiagnostics_ADatabaseSourceNeverOpensABlankDevURL is the
+// control for the blank rows: `schema inspect` of a database reads the
+// database and never opens the dev database, so a blank value is not judged
+// there. Measured on the pinned binary on PostgreSQL, `schema inspect --url
+// <database> --dev-url " "` exits 0 and prints the schema.
+func TestCompatDevURLDiagnostics_ADatabaseSourceNeverOpensABlankDevURL(t *testing.T) {
+	c := qt.New(t)
+	dbPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE blank_dev_url (id INTEGER PRIMARY KEY);")
+
+	stdout, stderr, err := atlastest.RunCompat(
+		"schema", "inspect", "--url", "sqlite://"+dbPath, "--dev-url", compatDevURLBlankValue,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%q", stderr))
+	c.Assert(stdout, qt.Contains, `table "blank_dev_url"`)
 }

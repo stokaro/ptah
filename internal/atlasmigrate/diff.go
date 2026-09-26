@@ -86,10 +86,13 @@ type DiffOptions struct {
 	// migration files do not carry one.
 	PlanBidirectional func(BidirectionalPlanInput) (BidirectionalPlan, error)
 	Schemas           []string
-	LockTimeout       time.Duration
-	Policy            atlasschema.DiffPolicy
-	Qualifier         Qualifier
-	DryRun            bool
+	// LockTimeout bounds the wait for the migration directory lock and the
+	// dev database lock. Zero waits indefinitely; a negative value does not
+	// wait, and a lock another run holds is refused at once.
+	LockTimeout time.Duration
+	Policy      atlasschema.DiffPolicy
+	Qualifier   Qualifier
+	DryRun      bool
 	// Diagnostics receives non-fatal notices about desired objects whose
 	// creation cannot be planned safely from the replayed directory's coverage.
 	Diagnostics io.Writer
@@ -483,7 +486,7 @@ func prepareDiff(
 	opts = normalizeDiffOptions(opts)
 	schemas := schemascope.SplitNames(opts.Schemas)
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
-	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
+	if err := atlasreport.ValidateMigrateDiffTemplate(format); err != nil {
 		return preparedDiff{}, err
 	}
 	if err := opts.Qualifier.ValidateScope(conn.Info().Dialect, schemas); err != nil {
@@ -713,7 +716,7 @@ func readScopedDevSchema(ctx context.Context,
 func renderMigrationDiffSQL(statements []string, format string) (string, error) {
 	report := atlasreport.NewSchemaDiff(nil, nil, statements)
 	var out bytes.Buffer
-	if err := atlasreport.WriteSchemaDiff(&out, format, report); err != nil {
+	if err := atlasreport.WriteMigrateDiff(&out, format, report); err != nil {
 		return "", err
 	}
 	return out.String(), nil

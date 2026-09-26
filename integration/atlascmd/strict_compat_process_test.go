@@ -903,7 +903,7 @@ func TestFullCompatDoesNotPreflightMigrationDesiredSources(t *testing.T) {
 
 	c.Assert(code, qt.Equals, 1)
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, "Error: invalid tx-mode \"statement\": expected file, all, or none\n")
+	c.Assert(stderr, qt.Equals, "Error: unknown tx-mode \"statement\"\n")
 	_, err := os.Stat(targetPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }

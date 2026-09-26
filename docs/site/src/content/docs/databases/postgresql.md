@@ -267,6 +267,18 @@ view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.
 
+A function with `OUT` or `INOUT` arguments may leave `RETURNS` out. PostgreSQL
+then records the type those arguments imply, and Ptah compares the declaration
+against that type: the type of the one such argument, or `record` for two or
+more. `f(a integer, OUT b text)` returns `text`, and
+`f(a integer, OUT b integer, OUT c text)` returns `record`.
+
+A routine or `DO` body in a SQL schema file may be written in any quoting
+PostgreSQL takes: `'...'` with doubled quotes, `E'...'` with backslash
+escapes, or a dollar quote. Ptah reads the body as the server does, with the
+quoting undone, and writes it between dollar quotes the body does not contain:
+`$$`, or `$ptah$` when the body holds `$$`.
+
 ## Triggers
 
 A SQL schema file declares a trigger with the statement `pg_dump` writes, and

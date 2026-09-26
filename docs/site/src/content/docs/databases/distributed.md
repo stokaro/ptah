@@ -182,6 +182,18 @@ A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
 `--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
+## YugabyteDB's own extensions
+
+Every YugabyteDB database starts with extensions the server installs into
+`pg_catalog`: `pg_stat_statements` on 2024.2, 2025.2 and 2026.1, and
+`postgres_fdw` as well on 2026.1. On 2026.1 the server's global views depend
+on both, and YugabyteDB refuses `DROP EXTENSION` for either one.
+
+A comparison never plans the removal of these extensions, whatever the ignore
+list holds, so a declaration that does not name them applies. Only the removal
+is withheld: a declaration that names `postgres_fdw` creates it on a line that
+does not install it.
+
 ## Next steps
 
 - Which release lines are declared and at what support level: [Database support matrix](../support-matrix/).

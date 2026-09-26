@@ -48,7 +48,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 		URLs:   []string{"sqlite://" + dbPath},
 		DevURL: "notadriver://x",
 		Format: "hcl",
-		DevURLDiagnostic: func(string) error {
+		DevURLDiagnostic: func(string, atlassource.Set) error {
 			diagnosticCalled = true
 			return errors.New("unexpected compat diagnostic")
 		},
@@ -422,7 +422,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			Format: "{{ if }}",
 		})
 
-		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+		c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 	})
 
 	t.Run("duplicate write targets", func(t *testing.T) {

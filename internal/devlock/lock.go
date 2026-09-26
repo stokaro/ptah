@@ -61,7 +61,8 @@ func SameRealm(
 }
 
 // Acquire locks the selected disposable database realm. A zero timeout waits
-// until ctx is canceled.
+// until ctx is canceled, and a negative one does not wait: a realm another
+// replay holds is refused at once, as [dblock.NoWait] is.
 func Acquire(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -233,6 +234,9 @@ func acquireFile(ctx context.Context, path string, timeout time.Duration) (*os.F
 		}
 		if !errors.Is(err, errLocked) {
 			return nil, err
+		}
+		if timeout < 0 {
+			return nil, errors.New("lock is held by another process")
 		}
 		if timeout > 0 && time.Since(startedAt) >= timeout {
 			return nil, fmt.Errorf("lock timeout after %s", timeout)

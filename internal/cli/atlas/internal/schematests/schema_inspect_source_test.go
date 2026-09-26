@@ -29,7 +29,9 @@ CREATE UNIQUE INDEX users_email_key ON users (email);
 
 // TestSchemaInspectLocalFileRequiresDevURL mirrors the pinned Atlas
 // cli-inspect-file fixture: inspecting a schema file without a dev database
-// fails with Atlas's exact message.
+// fails with Atlas's exact message. The fixture matches the message's prefix;
+// for a SQL file the pinned binary v1.3.0 appends a link to its dev-database
+// page, measured on 2026-09-26, and so does this surface.
 func TestSchemaInspectLocalFileRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 	schemaPath := filepath.Join(t.TempDir(), "a.sql")
@@ -42,7 +44,7 @@ func TestSchemaInspectLocalFileRequiresDevURL(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`)
+	c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty\. See: https://atlasgo\.io/atlas-schema/sql#dev-database`)
 }
 
 // TestSchemaInspectLocalSQLFileWithDevURL mirrors the pinned fixture's happy
@@ -147,4 +149,71 @@ func TestSchemaInspectSplitTypeModeWritesGroupedFiles(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(tables), qt.Contains, `table "users"`)
 	c.Assert(string(tables), qt.Contains, `table "posts"`)
+}
+
+// TestSchemaInspectWithoutDevURL_FailurePath is the pinned binary's answer to
+// `schema inspect --url <source>` with no dev database, measured on 2026-09-26
+// on PostgreSQL (stokaro/ptah#3680): a source a dev database has to run first
+// gets the sentence with the link to that binary's dev-database page, and an
+// HCL source gets the bare sentence. Both exit 1 with standard output empty.
+func TestSchemaInspectWithoutDevURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     func(fx schemaDiffDevURLFixture) string
+		devURL     []string
+		wantStderr string
+	}{
+		{
+			name:       "a SQL file",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.sqlFile },
+			wantStderr: diffDevURLEmptySQL,
+		},
+		{
+			name:       "a directory of SQL files",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.sqlDir },
+			wantStderr: diffDevURLEmptySQL,
+		},
+		{
+			name:       "a migration directory",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.migrationDir },
+			wantStderr: diffDevURLEmptySQL,
+		},
+		{
+			name:       "an HCL file",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.hclFile },
+			wantStderr: diffDevURLEmpty,
+		},
+		{
+			name:       "a directory of HCL files",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.hclDir },
+			wantStderr: diffDevURLEmpty,
+		},
+		{
+			name:       "a SQL file with an explicitly empty --dev-url",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.sqlFile },
+			devURL:     []string{"--dev-url", ""},
+			wantStderr: diffDevURLEmptySQL,
+		},
+		{
+			name:       "a SQL file with a --dev-url made of spaces",
+			source:     func(fx schemaDiffDevURLFixture) string { return fx.sqlFile },
+			devURL:     []string{"--dev-url", " "},
+			wantStderr: "Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newSchemaDiffDevURLFixture(c)
+
+			stdout, stderr, err := atlastest.RunCompat(append([]string{
+				"schema", "inspect", "--url", tt.source(fx),
+			}, tt.devURL...)...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stderr, qt.Equals, tt.wantStderr)
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
 }
