@@ -9,7 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path"
+	posixpath "path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -424,8 +424,8 @@ func networkEndpoint(host, port, dialect string) string {
 // same socket spelled with a `..` segment would then read as another server. A
 // drive-letter path is still cleaned the Windows way.
 func normalizedDatabaseHost(host string) string {
-	if path.IsAbs(host) {
-		return path.Clean(host)
+	if posixpath.IsAbs(host) {
+		return posixpath.Clean(host)
 	}
 	if filepath.IsAbs(host) {
 		return filepath.Clean(host)
