@@ -50,7 +50,7 @@ func TestRenderSQL_AProcedureCarriesNoVolatility(t *testing.T) {
 	out := renderedSQL(c, "postgres",
 		"CREATE PROCEDURE p() LANGUAGE plpgsql AS $$ BEGIN UPDATE t SET c = 1; END; $$;")
 
-	c.Assert(out, qt.Contains, "CREATE OR REPLACE PROCEDURE")
+	c.Assert(out, qt.Contains, "CREATE PROCEDURE")
 	c.Assert(out, qt.Contains, "SECURITY INVOKER")
 	c.Assert(out, qt.Not(qt.Contains), "VOLATILE",
 		qt.Commentf("a procedure may not carry a volatility attribute:\n%s", out))
@@ -66,6 +66,6 @@ func TestRenderSQL_AFunctionStillCarriesItsVolatility(t *testing.T) {
 	out := renderedSQL(c, "postgres",
 		"CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN UPDATE t SET c = 1; END; $$;")
 
-	c.Assert(out, qt.Contains, "CREATE OR REPLACE FUNCTION")
+	c.Assert(out, qt.Contains, "CREATE FUNCTION")
 	c.Assert(out, qt.Contains, "VOLATILE")
 }

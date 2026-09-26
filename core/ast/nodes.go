@@ -2677,6 +2677,15 @@ type CreateFunctionNode struct {
 	// and false is CALLED ON NULL INPUT, the server's default. A procedure
 	// takes none of the three.
 	Strict bool
+	// Replace says the routine exists already and this statement replaces its
+	// definition. The PostgreSQL renderer writes CREATE OR REPLACE for it and a
+	// plain CREATE otherwise, so a plan says which of the two it does: a
+	// replacement rewrites code that policies, triggers and other roles already
+	// call, and a plain CREATE of a routine that exists fails instead of
+	// overwriting it. The Oracle and SQL Server renderers use their replacing
+	// form either way, and the MySQL-family planner drops a routine before it
+	// creates it again.
+	Replace bool
 	// Comment is an optional comment for the function
 	Comment string
 }
@@ -2829,6 +2838,13 @@ func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNod
 //	createFunc.SetComment("Sets the current tenant context for RLS")
 func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode {
 	n.Comment = comment
+	return n
+}
+
+// SetReplace marks the routine as one that exists already, so the statement
+// replaces its definition, and returns the node for chaining.
+func (n *CreateFunctionNode) SetReplace() *CreateFunctionNode {
+	n.Replace = true
 	return n
 }
 

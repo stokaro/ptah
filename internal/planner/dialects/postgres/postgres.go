@@ -2333,7 +2333,10 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 	// routine's, which the renderer writes with COMMENT ON.
 	result = append(result, ast.NewComment(fmt.Sprintf("Modify function %s: %s",
 		target.Name, summarizeFunctionChanges(fnDiff))))
-	return append(result, modelast.FromFunction(target))
+	// A replacement even after the drop above: the plan still rewrites a
+	// routine that exists, and the drop took its grants with it. Only an added
+	// routine is a plain CREATE.
+	return append(result, modelast.FromFunction(target).SetReplace())
 }
 
 // replacementIsRefused reports whether PostgreSQL refuses this modification

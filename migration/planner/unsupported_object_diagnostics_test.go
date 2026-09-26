@@ -306,7 +306,7 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 		{name: "extension", want: `CREATE EXTENSION`},
 		{name: "sequence", want: `CREATE SEQUENCE`},
 		{name: "role", want: `CREATE ROLE`},
-		{name: "function", want: `CREATE OR REPLACE FUNCTION`},
+		{name: "function", want: `CREATE FUNCTION`},
 		{name: "view", want: `CREATE VIEW`},
 		{name: "materialized view", want: `CREATE MATERIALIZED VIEW`},
 		{name: "trigger", want: `CREATE TRIGGER`},

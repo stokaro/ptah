@@ -190,7 +190,7 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 		{name: "recreates the view", fragment: "CREATE VIEW rev_active_users AS"},
 		{name: "recreates the view body", fragment: revViewBody},
 		{name: "recreates the materialized view", fragment: "CREATE MATERIALIZED VIEW rev_user_stats AS"},
-		{name: "recreates the trigger function", fragment: "CREATE OR REPLACE FUNCTION ptah_trigger_rev_view_users_rev_touch()"},
+		{name: "recreates the trigger function", fragment: "CREATE FUNCTION ptah_trigger_rev_view_users_rev_touch()"},
 		{name: "recreates the trigger", fragment: "CREATE TRIGGER rev_touch BEFORE UPDATE ON rev_view_users"},
 	}
 

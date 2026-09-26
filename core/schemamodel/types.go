@@ -1013,7 +1013,7 @@ func (r Range) QualifiedName() string {
 //
 // Example generated SQL:
 //
-//	CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT)
+//	CREATE FUNCTION set_tenant_context(tenant_id_param TEXT)
 //	RETURNS VOID AS $$
 //	BEGIN
 //	    PERFORM set_config('app.current_tenant_id', tenant_id_param, false);

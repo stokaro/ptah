@@ -529,7 +529,7 @@ func TestPostgreSQLRenderer_VisitCreateFunction(t *testing.T) {
 				SetReturns("VOID").
 				SetLanguage("plpgsql").
 				SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"),
-			expected: `CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT) RETURNS VOID AS $$
+			expected: `CREATE FUNCTION set_tenant_context(tenant_id_param TEXT) RETURNS VOID AS $$
 BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;
 $$
 LANGUAGE plpgsql;
@@ -543,7 +543,7 @@ LANGUAGE plpgsql;
 				SetSecurity("DEFINER").
 				SetVolatility("STABLE").
 				SetBody("BEGIN RETURN current_setting('app.current_tenant_id', true); END;"),
-			expected: `CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$
+			expected: `CREATE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$
 BEGIN RETURN current_setting('app.current_tenant_id', true); END;
 $$
 LANGUAGE plpgsql SECURITY DEFINER STABLE;
@@ -556,7 +556,7 @@ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 				SetLanguage("sql").
 				SetBody("SELECT 42").
 				SetComment("Test function for unit tests"),
-			expected: `CREATE OR REPLACE FUNCTION test_function() RETURNS INTEGER AS $$
+			expected: `CREATE FUNCTION test_function() RETURNS INTEGER AS $$
 SELECT 42
 $$
 LANGUAGE sql;
@@ -570,7 +570,7 @@ COMMENT ON FUNCTION test_function() IS 'Test function for unit tests';
 				SetReturns("int").
 				SetLanguage("sql").
 				SetReturnBody("value[1]::int"),
-			expected: `CREATE OR REPLACE FUNCTION first_int(value text[]) RETURNS int LANGUAGE sql RETURN value[1]::int;
+			expected: `CREATE FUNCTION first_int(value text[]) RETURNS int LANGUAGE sql RETURN value[1]::int;
 `,
 		},
 		{
@@ -583,7 +583,7 @@ COMMENT ON FUNCTION test_function() IS 'Test function for unit tests';
 				SetAtomicBody(`BEGIN ATOMIC
 SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;
 END`),
-			expected: `CREATE OR REPLACE FUNCTION is_even(x int) RETURNS boolean LANGUAGE SQL STABLE BEGIN ATOMIC
+			expected: `CREATE FUNCTION is_even(x int) RETURNS boolean LANGUAGE SQL STABLE BEGIN ATOMIC
 SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;
 END;
 `,

@@ -62,7 +62,7 @@ func objectKindCases() []objectKindCase {
 					SetBody("BEGIN RETURN NEW; END;")
 			},
 			drop: func() ast.Node { return ast.NewDropFunction("touch_updated") },
-			ddl:  "CREATE OR REPLACE FUNCTION",
+			ddl:  "CREATE FUNCTION",
 		},
 		{
 			name:   "trigger",
@@ -162,8 +162,8 @@ func TestPostgreSQLRenderer_ObjectKindCapabilities(t *testing.T) {
 // TestPostgreSQLRenderer_TriggerCarriesItsFunction pins the reason
 // VisitCreateTrigger consults Triggers and not Functions.
 //
-// A PostgreSQL trigger renders as a linked CREATE OR REPLACE FUNCTION plus the
-// CREATE TRIGGER. That function is not an object the schema author declared, so
+// A PostgreSQL trigger renders as a linked CREATE FUNCTION plus the CREATE
+// TRIGGER. That function is not an object the schema author declared, so
 // a target that hosts triggers must still get it where declared functions are
 // refused — and a target that refuses triggers must not receive a stray
 // function body for a trigger that will never exist.
@@ -183,7 +183,7 @@ func TestPostgreSQLRenderer_TriggerCarriesItsFunction(t *testing.T) {
 		sql, err := renderer.Render(trigger())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION")
+		c.Assert(sql, qt.Contains, "CREATE FUNCTION")
 		c.Assert(sql, qt.Contains, "CREATE TRIGGER")
 	})
 
@@ -198,7 +198,7 @@ func TestPostgreSQLRenderer_TriggerCarriesItsFunction(t *testing.T) {
 		sql, err := renderer.Render(trigger())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Not(qt.Contains), "CREATE OR REPLACE FUNCTION")
+		c.Assert(sql, qt.Not(qt.Matches), `(?s).*CREATE (OR REPLACE )?FUNCTION.*`)
 		c.Assert(sql, qt.Contains, "-- POSTGRES: trigger users_touch is not supported by this target; skipped.")
 	})
 }

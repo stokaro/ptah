@@ -348,6 +348,13 @@ lint rule reports it in a migration that contains one.
 
 ## Function changes
 
+A function the database does not have yet is planned as `CREATE FUNCTION`, and
+a new procedure as `CREATE PROCEDURE`, so a plan says whether it creates a
+routine or replaces one. If a routine of that name and those argument types
+appears before the plan runs, the statement fails with SQLSTATE 42723 instead
+of overwriting it. The function Ptah writes for a trigger with a body follows
+the trigger: a new trigger creates it, and a changed trigger replaces it.
+
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner
 property, or setting. Views, policies, and triggers that call the function stay

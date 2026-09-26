@@ -2502,13 +2502,18 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	// writes it.
 	defer r.writeCreatedRoutineComment(node)
 
-	// Build CREATE OR REPLACE FUNCTION statement
-	var parts []string
-	if node.IsProcedure() {
-		parts = append(parts, "CREATE OR REPLACE PROCEDURE")
-	} else {
-		parts = append(parts, "CREATE OR REPLACE FUNCTION")
+	// A plain CREATE for a routine the database does not have, and CREATE OR
+	// REPLACE for one it has, so a plan says which of the two it does. CREATE
+	// OR REPLACE also creates a routine that does not exist, so written for
+	// both it hides whether the plan rewrites code that policies, triggers and
+	// other roles already call. And a plain CREATE of a routine that does exist
+	// fails with SQLSTATE 42723 instead of overwriting a definition the plan did
+	// not know about. Measured on PostgreSQL 18.6.
+	create := "CREATE"
+	if node.Replace {
+		create = "CREATE OR REPLACE"
 	}
+	parts := []string{create + " " + routineWord(node)}
 
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
@@ -3202,6 +3207,14 @@ func (r *Renderer) renderRefreshMaterializedView(node *ast.RefreshMaterializedVi
 	return nil
 }
 
+// routineWord is the keyword that names the routine a node creates.
+func routineWord(node *ast.CreateFunctionNode) string {
+	if node.IsProcedure() {
+		return "PROCEDURE"
+	}
+	return "FUNCTION"
+}
+
 // renderCreateTrigger renders PostgreSQL trigger creation plus its linked
 // trigger function.
 func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
@@ -3222,7 +3235,14 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if !node.ExternalFunction {
 		body := renderPostgreSQLTriggerFunctionBody(node.Body)
 		quote := dollarQuote(body)
-		r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", r.escapeQualifiedIdentifier(functionName))
+		// The function is the trigger's own, so it exists exactly when the
+		// trigger does: a replaced trigger replaces it, and a new one creates
+		// it, for the reason renderCreateFunction gives.
+		create := "CREATE FUNCTION"
+		if node.Replace {
+			create = "CREATE OR REPLACE FUNCTION"
+		}
+		r.w.WriteLinef("%s %s()", create, r.escapeQualifiedIdentifier(functionName))
 		r.w.WriteLinef("RETURNS trigger AS %s", quote)
 		r.w.WriteLine(body)
 		r.w.WriteLinef("%s LANGUAGE plpgsql;", quote)

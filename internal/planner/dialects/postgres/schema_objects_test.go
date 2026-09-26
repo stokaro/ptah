@@ -699,8 +699,8 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_trigger_users_set_updated_at()")
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_trigger_posts_set_updated_at()")
+	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_users_set_updated_at()")
+	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_posts_set_updated_at()")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set_updated_at();")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
@@ -769,7 +769,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
-	assertBefore(t, sql, "CREATE OR REPLACE FUNCTION z_parent()", "CREATE OR REPLACE FUNCTION a_child()")
+	assertBefore(t, sql, "CREATE FUNCTION z_parent()", "CREATE FUNCTION a_child()")
 }
 
 func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *testing.T) {

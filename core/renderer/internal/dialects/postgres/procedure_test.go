@@ -33,7 +33,7 @@ func TestPostgreSQLRenderer_Procedure(t *testing.T) {
 				SetReturns("integer").
 				SetLanguage("sql").
 				SetBody("SELECT n"),
-			want:        `CREATE OR REPLACE PROCEDURE "bump"(n integer)`,
+			want:        `CREATE PROCEDURE "bump"(n integer)`,
 			wantMissing: "RETURNS",
 		},
 		{
@@ -43,7 +43,7 @@ func TestPostgreSQLRenderer_Procedure(t *testing.T) {
 				SetReturns("integer").
 				SetLanguage("sql").
 				SetBody("SELECT n + 1"),
-			want:        `CREATE OR REPLACE FUNCTION "addone"(n integer) RETURNS integer`,
+			want:        `CREATE FUNCTION "addone"(n integer) RETURNS integer`,
 			wantMissing: "PROCEDURE",
 		},
 		{
@@ -108,7 +108,7 @@ func TestPostgreSQLRenderer_Procedure_NamesTheSkipOnATargetWithout(t *testing.T)
 		SetBody("SELECT 1"))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Not(qt.Contains), "CREATE OR REPLACE PROCEDURE")
+	c.Assert(sql, qt.Not(qt.Matches), `(?s).*CREATE (OR REPLACE )?PROCEDURE.*`)
 	c.Assert(sql, qt.Contains, "procedure bump is not supported by this target; skipped.")
 }
 
