@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
+	"ptah.run/internal/liquibaserun"
 )
 
 // A Liquibase typed change -- `createTable`, `addColumn` and the rest -- is not
@@ -956,24 +957,11 @@ func (ch liquibaseChange) referentialAction(key string) (string, error) {
 // liquibaseBool reads Liquibase's boolean spelling. Anything else is refused:
 // an attribute that did not parse is an attribute nothing read.
 func liquibaseBool(display, key, value string) (bool, error) {
-	parsed, ok := liquibaseParseBool(value)
+	parsed, ok := liquibaserun.ParseBool(value)
 	if !ok {
 		return false, fmt.Errorf("%s %s %q is not true or false", display, key, value)
 	}
 	return parsed, nil
-}
-
-// liquibaseParseBool is the one grammar for a Liquibase boolean, and reports
-// false for a value that is not one.
-func liquibaseParseBool(value string) (parsed, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true":
-		return true, true
-	case "false":
-		return false, true
-	default:
-		return false, false
-	}
 }
 
 // liquibaseNames splits Liquibase's comma-separated column list.

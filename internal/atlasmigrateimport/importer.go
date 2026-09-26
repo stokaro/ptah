@@ -30,6 +30,7 @@ import (
 
 	"ptah.run/atlascompat"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/liquibaserun"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/revisiontable"
@@ -2122,8 +2123,22 @@ func dbmateDirective(line string) (string, bool) {
 
 // liquibaseSQL keeps a Liquibase formatted-SQL body, dropping the header and any
 // --rollback directive lines. Liquibase has no up/down section marker, so the
-// remainder is the up SQL and there is nothing here that can fail.
-func liquibaseSQL(_ string, data []byte) ([]byte, error) {
+// remainder is the up SQL.
+//
+// The file is copied whole rather than split into changesets, which is what
+// keeps each converted file byte for byte the one Atlas CE writes. A changeset
+// Liquibase runs on some databases only, or runs again after its first run,
+// would lose that in the copy and run everywhere, once, so it is refused here as
+// the changeset parser refuses it; liquibaserun is the one recognizer both use.
+// Atlas CE v1.3.0 copies such a file and applies it everywhere, and refusing it
+// is deliberately stricter. The parser's other refusals are about splitting a
+// file -- a header with no changeset, SQL before the first one -- and a copy
+// loses nothing there, so they do not apply: `ptah-compat migrate new` writes a
+// header-only file itself.
+func liquibaseSQL(name string, data []byte) ([]byte, error) {
+	if err := liquibaserun.ScanFormattedSQL(name, string(data)); err != nil {
+		return nil, err
+	}
 	var out []string
 	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(strings.ToLower(line))

@@ -602,10 +602,19 @@ Measured 2026-09-26 with Atlas CE v1.3.0: a conventional formatted-SQL
 `CREATE TABLE only_on_mysql (id int);` imports at exit 0 as a copy of the file,
 and `migrate apply` of the result on SQLite creates `only_on_mysql`, a table the
 Liquibase history created on MySQL alone. `ptah-compat migrate import` exits 1
-and names the changeset and the attribute. A directory of numbered SQL names
-keeps the one-file conversion, which copies each file without reading its
-changesets, so there the attribute is still carried as a comment
-(stokaro/ptah#3713).
+and names the changeset and the attribute.
+
+A directory of numbered SQL names keeps the one-file conversion, which copies
+each file whole so the converted bytes stay the ones Atlas CE writes. The copy
+reads the file's run conditions first and refuses the same changesets, since a
+copy would run them everywhere, once. Measured 2026-09-26 with Atlas CE v1.3.0
+on `1_only_mysql.sql` (`--changeset s:1 dbms:mysql`) beside `2_everywhere.sql`:
+`atlas migrate import` exits 0 and writes both files, and `atlas migrate apply`
+on SQLite creates `only_on_mysql` and `everywhere`. `ptah-compat migrate import`
+and `ptah-compat migrate apply` both exit 1, name the changeset, and write
+nothing. The rest of the changeset parser's refusals are about splitting a file
+into changesets and do not apply to a copy, so a header-only file, which
+`ptah-compat migrate new` writes, still converts.
 
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 

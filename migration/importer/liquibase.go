@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/liquibaserun"
 )
 
 // Liquibase formatted-SQL changelog markers. A formatted-SQL changelog begins
@@ -16,22 +17,8 @@ import (
 // changesets marked by `--changeset <author>:<id>`; rollback SQL for a changeset
 // is given by `--rollback <sql>` lines.
 var (
-	liquibaseHeaderRE = regexp.MustCompile(`(?i)^--\s*liquibase\s+formatted\s+sql\b`)
-	// liquibaseChangesetRE matches on the `--changeset` keyword alone (not the
-	// argument) so that a marker missing its author:id still routes through
-	// validation and errors, rather than being absorbed as the previous
-	// changeset's SQL. `\b` keeps `--changesetlike` from matching.
-	liquibaseChangesetRE = regexp.MustCompile(`(?i)^\s*--\s*changeset\b(.*)$`)
-	liquibaseRollbackRE  = regexp.MustCompile(`(?i)^\s*--\s*rollback\b(.*)$`)
-	// liquibaseAttributeRE reads one `name:value` attribute after the author:id
-	// of a `--changeset` line. The value may be quoted, as Liquibase allows for
-	// context and labels, and may follow the colon after blanks, which Liquibase's
-	// own dbms pattern accepts.
-	liquibaseAttributeRE = regexp.MustCompile(`([A-Za-z]+):[ \t]*("[^"]*"|\S*)`)
-	// liquibasePreconditionsRE matches the `--preconditions` line and each
-	// `--precondition-<type>` line that follows it, the formatted-SQL spelling
-	// of a changeset's preConditions.
-	liquibasePreconditionsRE = regexp.MustCompile(`(?i)^\s*--\s*precondition(?:s|-)`)
+	liquibaseHeaderRE   = regexp.MustCompile(`(?i)^--\s*liquibase\s+formatted\s+sql\b`)
+	liquibaseRollbackRE = regexp.MustCompile(`(?i)^\s*--\s*rollback\b(.*)$`)
 	// liquibaseNameSepRE collapses runs of non-alphanumerics (e.g. the ':' and
 	// '-' common in changeset ids) to a single '_' when building a Ptah name.
 	liquibaseNameSepRE = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -187,7 +174,7 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 // versions across all files.
 //
 // The attributes of a `--changeset` line and its `--preconditions` lines go to
-// [liquibaseRunCondition], the same recognizer the XML, YAML and JSON readers
+// [liquibaserun.Condition], the same recognizer the XML, YAML and JSON readers
 // use, so a changeset that runs conditionally or repeatedly is refused here as
 // it is there.
 func parseLiquibaseFormattedSQL(fileName, content string) ([]SourceMigration, error) {
@@ -208,11 +195,13 @@ func parseLiquibaseFormattedSQL(fileName, content string) ([]SourceMigration, er
 	}
 
 	for line := range strings.SplitSeq(content, "\n") {
-		if match := liquibaseChangesetRE.FindStringSubmatch(line); match != nil {
+		// A marker missing its author:id is still a marker, so it is refused
+		// rather than absorbed as the previous changeset's SQL.
+		if args, ok := liquibaserun.ChangesetArgs(line); ok {
 			if err := flush(); err != nil {
 				return nil, err
 			}
-			author, id, err := parseLiquibaseChangesetID(match[1], fileName)
+			author, id, err := parseLiquibaseChangesetID(args, fileName)
 			if err != nil {
 				return nil, err
 			}
@@ -222,8 +211,8 @@ func parseLiquibaseFormattedSQL(fileName, content string) ([]SourceMigration, er
 			}
 			seen[key] = true
 			current = &liquibaseFormattedChangeSet{liquibaseChangeSet: liquibaseChangeSet{author: author, id: id}}
-			for _, attribute := range liquibaseFormattedAttributes(match[1]) {
-				current.noteRunCondition(attribute[0], attribute[1])
+			for _, attribute := range liquibaserun.Attributes(args) {
+				current.run.Note(attribute[0], attribute[1])
 			}
 			continue
 		}
@@ -262,10 +251,10 @@ func (cs *liquibaseFormattedChangeSet) addLine(line string) {
 		}
 		return
 	}
-	if liquibasePreconditionsRE.MatchString(line) {
+	if liquibaserun.IsPreconditions(line) {
 		// A comment to the database, and a condition to Liquibase: kept in the
 		// up, it would run unconditionally what ran conditionally.
-		cs.noteRunCondition("preconditions", "")
+		cs.run.Note("preconditions", "")
 		return
 	}
 	cs.up.WriteString(line)
@@ -274,7 +263,7 @@ func (cs *liquibaseFormattedChangeSet) addLine(line string) {
 
 // migration is the changeset as a migration, or the refusal that stops it.
 func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigration, error) {
-	if err := cs.runConditionErr(cs.author+":"+cs.id, fileName); err != nil {
+	if err := cs.run.Err(cs.author+":"+cs.id, fileName); err != nil {
 		return SourceMigration{}, err
 	}
 	upSQL := strings.TrimSpace(cs.up.String())
@@ -300,25 +289,6 @@ func parseLiquibaseChangesetID(args, fileName string) (author, id string, err er
 		return "", "", fmt.Errorf("liquibase changeset marker %q in %q is missing author:id", strings.TrimSpace(args), fileName)
 	}
 	return author, id, nil
-}
-
-// liquibaseFormattedAttributes reads the `name:value` attributes that follow the
-// author:id on a `--changeset` line, such as `dbms:mysql` or
-// `context:"prod or staging"`, in the order they are written. A quoted value
-// loses its quotes.
-func liquibaseFormattedAttributes(args string) [][2]string {
-	fields := strings.Fields(args)
-	if len(fields) < 2 {
-		return nil
-	}
-	// The first field is author:id, which the attribute pattern would read as
-	// an attribute named for the author.
-	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(args), fields[0]))
-	var attributes [][2]string
-	for _, match := range liquibaseAttributeRE.FindAllStringSubmatch(rest, -1) {
-		attributes = append(attributes, [2]string{match[1], strings.Trim(match[2], `"`)})
-	}
-	return attributes
 }
 
 // liquibaseChangesetName builds a Ptah description from a changeset's author and

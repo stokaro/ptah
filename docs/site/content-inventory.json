@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14286,
-      "sourceBytes": 99724
+      "visibleWords": 14297,
+      "sourceBytes": 99771
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -4290,8 +4290,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14576,
-      "sourceBytes": 100890
+      "visibleWords": 14618,
+      "sourceBytes": 101137
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

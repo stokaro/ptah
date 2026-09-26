@@ -15,6 +15,7 @@ import (
 	yaml "go.yaml.in/yaml/v3"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/liquibaserun"
 )
 
 // Liquibase serializes one changeset model four ways: formatted SQL, XML, YAML
@@ -72,125 +73,12 @@ type liquibaseChangeSet struct {
 	// rollbackRefusal is set when the rollback is written in a form that does
 	// not convert, such as one naming another changeset's rollback.
 	rollbackRefusal string
-	// selectors are the subset that decide WHETHER a changeset runs rather than
-	// what it does. They are separated because the remedy differs: a change
-	// type can be rewritten as `sql`, and a selector cannot be rewritten at all
-	// -- it has no equivalent in a migration directory.
-	selectors []string
-	// repeats are the attributes that make Liquibase run the changeset again
-	// after its first run. A migration directory has no equivalent for them
-	// either.
-	repeats []string
-	// conditionErr is set when a run attribute holds a value that does not
-	// parse, so what it decides is unknown.
-	conditionErr error
-}
-
-// liquibaseRunKind says what a changeset attribute decides about running the
-// changeset.
-type liquibaseRunKind int
-
-const (
-	// liquibaseNoRunCondition is an attribute that decides nothing about
-	// running the changeset.
-	liquibaseNoRunCondition liquibaseRunKind = iota
-	// liquibaseSelector decides WHETHER the changeset runs.
-	liquibaseSelector
-	// liquibaseRepeat decides whether Liquibase runs it again after its first
-	// run.
-	liquibaseRepeat
-)
-
-// liquibaseRunCondition is the one place that recognizes what decides whether,
-// or how often, Liquibase runs a changeset. The XML walk, the YAML and JSON walk
-// and the formatted-SQL reader hand it every attribute and element a changeset
-// carries, and [liquibaseChange.withoutRunCondition] hands it the `dbms` of a
-// change, so a condition added here is refused in all four serializations and at
-// both levels. A list per reader would drop, in the readers that were not told,
-// whatever the others learned to refuse.
-//
-// kind is reported for every name the function recognizes, and binds reports
-// whether the value makes the condition hold: an empty value is the default, so
-// an empty selector selects nothing, and `runAlways="false"` spells out the
-// default. A repeat whose value is not a boolean is an error, because what the
-// author meant by it is unknown. Names match in any case, as Liquibase matches
-// them.
-func liquibaseRunCondition(key, value string) (kind liquibaseRunKind, binds bool, err error) {
-	switch strings.ToLower(key) {
-	// contextFilter is the newer spelling of context, and Liquibase reads
-	// either.
-	case "context", "contextfilter", "contexts", "labels", "dbms":
-		return liquibaseSelector, strings.TrimSpace(value) != "", nil
-	// A precondition is a selector whatever it holds; Liquibase accepts both
-	// spellings of the element.
-	case "preconditions":
-		return liquibaseSelector, true, nil
-	// alwaysRun is the older spelling of runAlways, and Liquibase reads either.
-	case "runalways", "alwaysrun", "runonchange":
-		if strings.TrimSpace(value) == "" {
-			return liquibaseRepeat, false, nil
-		}
-		repeat, ok := liquibaseParseBool(value)
-		if !ok {
-			return liquibaseRepeat, false, fmt.Errorf("%s %q is not true or false", key, value)
-		}
-		return liquibaseRepeat, repeat, nil
-	default:
-		return liquibaseNoRunCondition, false, nil
-	}
-}
-
-// noteRunCondition records key when it names a run condition that holds, and
-// reports whether key names a run condition at all, so a reader can tell one
-// from a change. A name is recorded once: formatted SQL writes one
-// `--precondition-<type>` line per precondition.
-func (cs *liquibaseChangeSet) noteRunCondition(key, value string) bool {
-	kind, binds, err := liquibaseRunCondition(key, value)
-	switch {
-	case kind == liquibaseNoRunCondition:
-		return false
-	case err != nil:
-		if cs.conditionErr == nil {
-			cs.conditionErr = err
-		}
-	case binds && kind == liquibaseSelector && !slices.Contains(cs.selectors, key):
-		cs.selectors = append(cs.selectors, key)
-	case binds && kind == liquibaseRepeat && !slices.Contains(cs.repeats, key):
-		cs.repeats = append(cs.repeats, key)
-	}
-	return true
-}
-
-// runConditionErr refuses a changeset that Liquibase runs conditionally or more
-// than once, naming every attribute that makes it so.
-//
-// A selector is named first and decides the remedy: a changeset that runs on
-// some databases or in some environments has to be split in Liquibase, and
-// removing a repeat attribute does not change that.
-func (cs liquibaseChangeSet) runConditionErr(name, file string) error {
-	switch {
-	case cs.conditionErr != nil:
-		return fmt.Errorf("liquibase changeset %s in %q: %w", name, file, cs.conditionErr)
-	case len(cs.selectors) > 0:
-		message := fmt.Sprintf(
-			"liquibase changeset %s in %q is conditional on %s; a migration directory has no "+
-				"equivalent, so importing it would turn a conditional history into an "+
-				"unconditional one -- split the changelog or import it by hand",
-			name, file, strings.Join(cs.selectors, ", "))
-		if len(cs.repeats) > 0 {
-			message += fmt.Sprintf("; it also sets %s, which a migration directory cannot express either",
-				strings.Join(cs.repeats, ", "))
-		}
-		return errors.New(message)
-	case len(cs.repeats) > 0:
-		return fmt.Errorf(
-			"liquibase changeset %s in %q sets %s, so Liquibase can run it again on a later update; "+
-				"a Ptah migration runs once, so importing it would turn a repeated changeset into a "+
-				"one-time one -- import it by hand",
-			name, file, strings.Join(cs.repeats, ", "))
-	default:
-		return nil
-	}
+	// run holds what decides WHETHER, or how often, the changeset runs rather
+	// than what it does. It is kept apart from the changes because the remedy
+	// differs: a change type can be rewritten as `sql`, and a run condition
+	// cannot be rewritten at all -- it has no equivalent in a migration
+	// directory.
+	run liquibaserun.Conditions
 }
 
 // liquibaseDbmsTargeted are the change types that run only on the databases
@@ -201,7 +89,7 @@ func (cs liquibaseChangeSet) runConditionErr(name, file string) error {
 var liquibaseDbmsTargeted = []string{"sql", "sqlFile", "insert", "createProcedure"}
 
 // withoutRunCondition takes the `dbms` attribute off a change Liquibase targets
-// by it, and returns the selector it names, if any.
+// by it, and returns the selector it names, if any, for [liquibaserun.Conditions].
 //
 // The converter then never sees the attribute. An empty one runs everywhere,
 // which is what the converted change does, and a non-empty one refuses the
@@ -216,7 +104,7 @@ func (ch liquibaseChange) withoutRunCondition() (liquibaseChange, []string) {
 	for _, key := range slices.Sorted(maps.Keys(ch.attrs)) {
 		value := ch.attrs[key]
 		if strings.EqualFold(key, "dbms") {
-			if kind, binds, _ := liquibaseRunCondition(key, value); kind == liquibaseSelector {
+			if kind, binds, _ := liquibaserun.Condition(key, value); kind == liquibaserun.Selector {
 				if binds {
 					selectors = append(selectors, ch.display+" "+key)
 				}
@@ -306,8 +194,10 @@ func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseCh
 	// skips it on another database when it rolls back.
 	changes, changeSelectors := liquibaseWithoutRunConditions(changeset.changes)
 	rollback, rollbackSelectors := liquibaseWithoutRunConditions(changeset.rollback)
-	changeset.selectors = slices.Concat(changeset.selectors, changeSelectors, rollbackSelectors)
-	if err := changeset.runConditionErr(name, converter.file); err != nil {
+	for _, selector := range slices.Concat(changeSelectors, rollbackSelectors) {
+		changeset.run.AddSelector(selector)
+	}
+	if err := changeset.run.Err(name, converter.file); err != nil {
 		return SourceMigration{}, err
 	}
 	if changeset.rollbackRefusal != "" {
@@ -431,7 +321,7 @@ type liquibaseXMLRoot struct {
 // can be refused by the name the author wrote rather than by a position.
 //
 // Only id and author have a field. Every other attribute lands in Attrs, so the
-// changeset walk hands each one to [liquibaseRunCondition] and a change's
+// changeset walk hands each one to [liquibaserun.Condition] and a change's
 // converter sees each one it does not read. A field of its own would hide an
 // attribute from both.
 type liquibaseXMLAny struct {
@@ -478,7 +368,7 @@ func parseLiquibaseXML(name string, content []byte) ([]liquibaseChangeSet, error
 func liquibaseXMLChangeSet(node liquibaseXMLAny) liquibaseChangeSet {
 	changeset := liquibaseChangeSet{id: node.ID, author: node.Author}
 	for _, attr := range node.Attrs {
-		changeset.noteRunCondition(attr.Name.Local, attr.Value)
+		changeset.run.Note(attr.Name.Local, attr.Value)
 	}
 	for _, child := range node.Children {
 		switch child.XMLName.Local {
@@ -491,7 +381,7 @@ func liquibaseXMLChangeSet(node liquibaseXMLAny) liquibaseChangeSet {
 		default:
 			// Liquibase reads a changeset attribute written as a nested element
 			// as well, and <preConditions> is one of these.
-			if !changeset.noteRunCondition(child.XMLName.Local, strings.TrimSpace(child.Text)) {
+			if !changeset.run.Note(child.XMLName.Local, strings.TrimSpace(child.Text)) {
 				changeset.changes = append(changeset.changes, liquibaseXMLChange(child))
 			}
 		}
@@ -597,7 +487,7 @@ func liquibaseDocumentChangeSet(value any) liquibaseChangeSet {
 	}
 	mapping, _ := value.(map[string]any)
 	for _, key := range slices.Sorted(maps.Keys(mapping)) {
-		changeset.noteRunCondition(key, liquibaseStringValue(value, key))
+		changeset.run.Note(key, liquibaseStringValue(value, key))
 	}
 	changes, _ := liquibaseMapValue(value, "changes")
 	changeset.changes = liquibaseDocumentChanges(changes)
