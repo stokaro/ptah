@@ -66,14 +66,15 @@ func removedIndexes(dialect string, desired *schemamodel.Database, current *cata
 }
 
 // TestCompare_TheIndexMySQLBuildsForAnUnnamedKeyIsTheKeys covers the
-// comparison half of stokaro/ptah#3725.
+// comparison half of stokaro/ptah#3725 and stokaro/ptah#3743.
 //
-// MySQL names an unnamed key `<table>_ibfk_<n>` and the index it builds for it
-// after the key's first column, `_2` and on when that is taken. Measured on
-// MySQL 8.4.11: `FOREIGN KEY (p_id) REFERENCES p(id)` holds `c_ibfk_1` over an
-// index `p_id`, and beside an index already called `p_id` over another column
-// the key's index is `p_id_2`. Read as an index nobody declared, it is planned
-// for removal, which the server refuses while the key needs it.
+// MySQL and MariaDB name an unnamed key `<table>_ibfk_<n>` and the index they
+// build for it after the key's first column, `_2` and on when that is taken.
+// Measured on MySQL 8.4.11, 26.7.0 and MariaDB 11.8.9: `FOREIGN KEY (p_id)
+// REFERENCES p(id)` holds `c_ibfk_1` over an index `p_id`, and beside an index
+// already called `p_id` over another column the key's index is `p_id_2`. Read
+// as an index nobody declared, it is planned for removal, which the server
+// refuses while the key needs it.
 func TestCompare_TheIndexMySQLBuildsForAnUnnamedKeyIsTheKeys(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -94,23 +95,24 @@ func TestCompare_TheIndexMySQLBuildsForAnUnnamedKeyIsTheKeys(t *testing.T) {
 			current: liveChildWithKey("c_ibfk_6", indexOn("p_id", "p_id")),
 		},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			key := test.current.Constraints[0].Name
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				key := test.current.Constraints[0].Name
 
-			removed := removedIndexes(platform.MySQL, desiredChildWithKey(key, test.declared...), test.current)
+				removed := removedIndexes(dialect, desiredChildWithKey(key, test.declared...), test.current)
 
-			c.Assert(removed, qt.HasLen, 0)
-		})
+				c.Assert(removed, qt.HasLen, 0)
+			})
+		}
 	}
 }
 
 // TestCompare_AColumnNamedIndexBesideANamedKeyIsTheAuthors is the control the
 // constraint's name is there for. A key written with a name gets an index
 // under that name, so an index named after the column beside it is one the
-// author made, and dropping it from the declaration plans its removal. MariaDB
-// was not measured, so it keeps the name rule alone.
+// author made, and dropping it from the declaration plans its removal.
 func TestCompare_AColumnNamedIndexBesideANamedKeyIsTheAuthors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -119,7 +121,8 @@ func TestCompare_AColumnNamedIndexBesideANamedKeyIsTheAuthors(t *testing.T) {
 	}{
 		{name: "a key of the author's name on MySQL", dialect: platform.MySQL, key: "fk_c_p"},
 		{name: "an ibfk name with a leading zero on MySQL", dialect: platform.MySQL, key: "c_ibfk_01"},
-		{name: "an unnamed key's name on MariaDB", dialect: platform.MariaDB, key: "c_ibfk_1"},
+		{name: "a key of the author's name on MariaDB", dialect: platform.MariaDB, key: "fk_c_p"},
+		{name: "an ibfk name with a leading zero on MariaDB", dialect: platform.MariaDB, key: "c_ibfk_01"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

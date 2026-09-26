@@ -111,12 +111,19 @@ type mysqlScratch struct {
 
 func newMySQLScratch(c *qt.C) mysqlScratch {
 	c.Helper()
-	adminDSN := dbtarget.DriverDSN(c, dbtarget.MySQLAdmin)
+	return newMySQLFamilyScratch(c, dbtarget.MySQLAdmin)
+}
+
+// newMySQLFamilyScratch is [newMySQLScratch] on the administrative
+// connection of engine, MySQL or MariaDB.
+func newMySQLFamilyScratch(c *qt.C, engine dbtarget.Engine) mysqlScratch {
+	c.Helper()
+	adminDSN := dbtarget.DriverDSN(c, engine)
 	admin, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
 	c.Assert(admin.PingContext(c.Context()), qt.IsNil)
-	return mysqlScratch{admin: admin, adminDSN: adminDSN, adminURL: dbtarget.URL(c, dbtarget.MySQLAdmin)}
+	return mysqlScratch{admin: admin, adminDSN: adminDSN, adminURL: dbtarget.URL(c, engine)}
 }
 
 // builtFrom creates a database and runs the SQL on it as the server receives

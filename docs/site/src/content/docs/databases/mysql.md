@@ -105,19 +105,44 @@ SQL:
   index does. The name is decided when the SQL is read rather than when it is
   written, because the catalog reports what the server chose and a desired
   schema that guessed differently would never converge with it.
-- A foreign key the author did not name is read, on MySQL, with the name the
-  server gives it: `<table>_ibfk_<n>`. In `CREATE TABLE` the unnamed keys are
-  numbered from 1 in the order they are written, and a named key does not move
-  the count. A key that `ALTER TABLE` adds takes one more than the highest
-  `<table>_ibfk_<n>` the table holds. The server names the index it builds for
-  such a key after the key's first column, then `_2` and on, and that index is
-  read as the key's, so a schema file compares equal to the database its own
-  SQL built. A derived name that another foreign key of the database already
-  holds is refused, because MySQL refuses it with `ERROR 1826`. MariaDB names
-  an unnamed key `<table>_ibfk_<n>` too, but Ptah reads it there with its own
-  name, `fk_<table>_<columns>`, so a MariaDB file with an unnamed key plans a
-  rename against the database it built
-  ([stokaro/ptah#3743](https://github.com/stokaro/ptah/issues/3743)).
+- An unnamed `UNIQUE`, `KEY` or `INDEX` that `ALTER TABLE ... ADD` adds is
+  named by the same rule, against every index the table holds at that point of
+  the schema, the earlier files of a directory included. The index a foreign
+  key built holds a name too: the key's own name, or its first column's for an
+  unnamed key. The server drops that index when the added one covers the key,
+  and the added one can then take its name, so `FOREIGN KEY (a) REFERENCES
+  p(id)` followed by `ALTER TABLE c ADD UNIQUE (a)` leaves one index, `a`.
+  MySQL does not let a descending leading part cover a foreign key and MariaDB
+  does, so `ADD KEY (a DESC)` is `a_2` on MySQL and `a` on MariaDB.
+- A foreign key the author did not name is read with the name the server gives
+  it: `<table>_ibfk_<n>`. In `CREATE TABLE` the unnamed keys are numbered from 1
+  in the order they are written, and a named key does not move the count. A key
+  that `ALTER TABLE` adds takes one more than the highest `<table>_ibfk_<n>` the
+  table held before the statement: a key the same statement drops still
+  counts, and a key the statement adds under a name does not. The server names
+  the index it builds for such a key after the key's first column, then `_2`
+  and on, and that index is read as the key's, so a schema file compares equal
+  to the database its own SQL built. A derived name that another foreign key of
+  the database already holds is refused, because the server refuses it: MySQL
+  answers `ERROR 1826` and MariaDB `ERROR 1005`.
+- On MariaDB a column-level `a INT REFERENCES p(id)` builds a key, numbered
+  with the table's other unnamed keys. Ptah numbers the columns' keys first,
+  which is the server's order when the columns come before the table-level
+  keys; a table-level key written before such a column takes the lower number
+  on the server
+  ([stokaro/ptah#3765](https://github.com/stokaro/ptah/issues/3765)). MySQL
+  8.4 builds nothing from the clause, and Ptah refuses it under
+  `--dialect mysql`.
+- The name in `FOREIGN KEY idx (a) REFERENCES p(id)` names the key itself on
+  MariaDB, and the key's index takes it. On MySQL it names only the key's
+  index, and the key is `<table>_ibfk_<n>`.
+- MariaDB 12.1 and later name an unnamed key `<n>` rather than
+  `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
+  database. A schema file does not say which line it is for, so Ptah reads the
+  older name and compares a key the server numbered with the key of the same
+  definition. A document whose older name would collide, or would pass 64
+  characters, is refused on every line, including the lines that accept it
+  ([stokaro/ptah#3762](https://github.com/stokaro/ptah/issues/3762)).
 - Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
   `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
   `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as

@@ -136,25 +136,22 @@ type engineIndexNaming struct {
 	// MariaDB reuses one and MySQL does not, so the same document gives the two
 	// engines different index names. coverage.covers carries the measurement.
 	descendingCovers bool
-	// unnamedKeyIndexFromColumn is whether the index the engine builds for an
-	// unnamed foreign key takes its name from the key's first column, in the
-	// same namespace and at the key's position in the statement.
-	//
-	// Measured on MySQL 8.4.11: `FOREIGN KEY (a) ..., KEY (a DESC)` names the
-	// key's index `a` and the other index `a_2`, and the other order gives `a`
-	// to the other index and `a_2` to the key's. MariaDB was not measured, so
-	// its entry leaves the name unclaimed, as it is for every engine without
-	// the measurement.
-	unnamedKeyIndexFromColumn bool
 }
 
 // mysqlNaming and mariaDBNaming are the two measured answers.
+//
+// The engines agree on the index an unnamed foreign key builds when nothing
+// covers it: it takes its name from the key's first column, in the same
+// namespace and at the key's place in the statement; see
+// [mysqlname.IsUnnamedKeyIndexName]. Measured on MySQL 8.4.11, 26.7.0 and
+// MariaDB 11.8.9, `FOREIGN KEY (a, b) ..., KEY (a)` names the key's index `a`
+// and the other index `a_2`, and the other order gives `a` to the other index
+// and `a_2` to the key's.
 var (
 	mysqlNaming = engineIndexNaming{
-		baseBytes:                 mysqlname.IndexBaseBytes,
-		maxBytes:                  64,
-		functionalBase:            "functional_index",
-		unnamedKeyIndexFromColumn: true,
+		baseBytes:      mysqlname.IndexBaseBytes,
+		maxBytes:       64,
+		functionalBase: "functional_index",
 	}
 	mariaDBNaming = engineIndexNaming{maxBytes: 64, descendingCovers: true}
 )
@@ -215,13 +212,6 @@ func nameMySQLInlineIndexes(
 	// It is taken by the name rather than by any column of it: `a INT PRIMARY
 	// KEY, KEY (a)` still leaves the index called `a`.
 	claimed.claim("PRIMARY")
-	for _, field := range database.Fields[fieldsStart:] {
-		// A column-level UNIQUE is an index named after its column, and it is
-		// created before any table-level element, so it claims the bare name.
-		if field.Unique {
-			claimed.claim(field.Name)
-		}
-	}
 	// Coverage is a property of the whole table body and order is not.
 	// Measured on MySQL 26.7 and MariaDB 12.3, all three of these leave the
 	// foreign key with no backing index of its own, so its name stays free:
@@ -233,6 +223,16 @@ func nameMySQLInlineIndexes(
 	// Deciding it from what precedes the constraint refused all three, which
 	// are documents both engines accept.
 	covered := coversOf(database, table, fieldsStart, order)
+	for _, field := range database.Fields[fieldsStart:] {
+		// A column-level UNIQUE is an index named after its column, and it is
+		// created before any table-level element, so it claims the bare name.
+		if field.Unique {
+			claimed.claim(field.Name)
+		}
+		if err := claimColumnForeignKeyIndex(claimed, field, table, naming, covered); err != nil {
+			return err
+		}
+	}
 	// Names, though, are allocated in the order the document declared them:
 	// that is the order the server allocates in, and the two disagree on a
 	// document that is valid one way round and refused the other
@@ -425,7 +425,7 @@ func claimConstraintName(
 		if constraint.Name != "" {
 			return claimExplicit(claimed, constraint.Name, table)
 		}
-		if !naming.unnamedKeyIndexFromColumn || len(constraint.Columns) == 0 {
+		if len(constraint.Columns) == 0 {
 			return nil
 		}
 		// The key's own index takes the column's name, which no model object
@@ -450,6 +450,29 @@ func claimConstraintName(
 	}
 	constraint.Name = name
 	return nil
+}
+
+// claimColumnForeignKeyIndex claims the name of the index the server builds
+// for a key a column declares with `REFERENCES`, where nothing in the table
+// body covers the column.
+//
+// It is claimed at the column's place, before any table-level element, as a
+// column-level UNIQUE is. Measured on MariaDB 11.8.9 and MySQL 26.7.0, which
+// build a key from the clause, `a INT REFERENCES p(id), KEY a (id)` is
+// `ERROR 1061 Duplicate key name 'a'`. On MariaDB a key the column names,
+// `a INT CONSTRAINT fkx REFERENCES p(id)`, builds its index under that name.
+func claimColumnForeignKeyIndex(
+	claimed indexNames, field schemamodel.Field, table schemamodel.Table,
+	naming engineIndexNaming, covered coverage,
+) error {
+	if field.Foreign == "" || covered.covers([]string{field.Name}, naming) {
+		return nil
+	}
+	if field.ForeignKeyName != "" {
+		return claimExplicit(claimed, field.ForeignKeyName, table)
+	}
+	_, err := derive(claimed, field.Name, table, naming)
+	return err
 }
 
 // claimIndexName names one inline index.
@@ -536,18 +559,23 @@ func claimExplicit(claimed indexNames, name string, table schemamodel.Table) err
 func derive(
 	claimed indexNames, column string, table schemamodel.Table, naming engineIndexNaming,
 ) (string, error) {
+	candidate := firstFree(claimed, column, naming)
+	if len(candidate) > naming.maxBytes {
+		return "", fmt.Errorf("%w: %s on %s is %d bytes and the limit is %d",
+			ErrIndexNameTooLong, candidate, table.Name, len(candidate), naming.maxBytes)
+	}
+	claimed.claim(candidate)
+	return candidate, nil
+}
+
+// firstFree is the first name of the server's sequence for column that nothing
+// has claimed: the column name, then _2, _3 and so on.
+func firstFree(claimed indexNames, column string, naming engineIndexNaming) string {
 	candidate := column
-	for suffix := 2; ; suffix++ {
-		if !claimed.taken(candidate) {
-			if len(candidate) > naming.maxBytes {
-				return "", fmt.Errorf("%w: %s on %s is %d bytes and the limit is %d",
-					ErrIndexNameTooLong, candidate, table.Name, len(candidate), naming.maxBytes)
-			}
-			claimed.claim(candidate)
-			return candidate, nil
-		}
+	for suffix := 2; claimed.taken(candidate); suffix++ {
 		candidate = truncateBase(column, naming) + "_" + strconv.Itoa(suffix)
 	}
+	return candidate
 }
 
 // truncateBase cuts the base name down to what the engine leaves room for.
