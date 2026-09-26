@@ -2,11 +2,9 @@ package sqlschema
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/mysqlname"
 )
 
 // nameAddedIndex gives an unnamed index an ALTER TABLE adds the name the
@@ -19,7 +17,7 @@ func nameAddedIndex(index *schemamodel.Index, target alterTarget) error {
 	if _, ok := namingFor(target.sourcePlatform); !ok {
 		return nil
 	}
-	name, err := nameAddedMySQLIndex(target, indexCandidate(*index), firstIndexColumn(*index))
+	name, err := nameAddedMySQLIndex(target, firstIndexColumn(*index))
 	if err != nil {
 		return err
 	}
@@ -34,7 +32,7 @@ func nameAddedMySQLUnique(constraint *schemamodel.Constraint, target alterTarget
 		return fmt.Errorf("%w: a unique constraint on %s names no column",
 			ErrUnnamedIndex, target.written)
 	}
-	name, err := nameAddedMySQLIndex(target, ascending(constraint.Columns), constraint.Columns[0])
+	name, err := nameAddedMySQLIndex(target, constraint.Columns[0])
 	if err != nil {
 		return err
 	}
@@ -69,7 +67,7 @@ func nameAddedMySQLUnique(constraint *schemamodel.Constraint, target alterTarget
 //
 // The index the server builds for a foreign key is in the namespace too; see
 // [heldIndexNames] for what it holds and when it lets go.
-func nameAddedMySQLIndex(target alterTarget, adding candidateKey, column string) (string, error) {
+func nameAddedMySQLIndex(target alterTarget, column string) (string, error) {
 	naming, _ := namingFor(target.sourcePlatform)
 	table := *target.table
 	if column == "" {
@@ -80,7 +78,7 @@ func nameAddedMySQLIndex(target alterTarget, adding candidateKey, column string)
 			"%w: the index on %s starts with an expression, which this engine has no functional index for",
 			ErrUnnamedIndex, table.Name)
 	}
-	name, err := derive(heldIndexNames(target, naming, adding), column, table, naming)
+	name, err := derive(heldIndexNames(target), column, table, naming)
 	if err != nil {
 		return "", err
 	}
@@ -91,17 +89,14 @@ func nameAddedMySQLIndex(target alterTarget, adding candidateKey, column string)
 }
 
 // heldIndexNames is the index namespace of the table an ALTER TABLE names, as
-// the model holds it before the operation that adds adding.
+// the document holds it at that point.
 //
 // The model keeps every index an author wrote or the reader named, every
 // UNIQUE, and each column's own UNIQUE, which the server names after its
-// column. It does not keep the index the server builds for a foreign key
-// nothing covers, so that name is derived here from the key.
-//
-// Such an index is named after the key when the key has a name, and after the
-// key's first column when it has none; see [mysqlname.IsUnnamedKeyIndexName].
-// Measured on every engine [mysqlname.NamesForeignKeys] answers for, with
-// `FK (x)` standing for `FOREIGN KEY (x) REFERENCES p(id)`:
+// column. The index the server built for a foreign key is in the namespace too,
+// and the document records it under the name the server gave it; see
+// [keyIndex]. Measured on every engine [mysqlname.NamesForeignKeys] answers
+// for, with `FK (x)` standing for `FOREIGN KEY (x) REFERENCES p(id)`:
 //
 //	the table holds                ALTER TABLE c ...    names
 //	CONSTRAINT b FK (a)            ADD UNIQUE (b)       b_2, and `b` stays the key's
@@ -111,94 +106,38 @@ func nameAddedMySQLIndex(target alterTarget, adding candidateKey, column string)
 //	FK (a)                         ADD UNIQUE (a, b)    a, and the key's `a` is dropped
 //	FK (a)                         ADD KEY (a DESC)     a_2 on MySQL; a on MariaDB, which drops the key's
 //
-// So the server drops the index it built for a key as soon as another index
-// covers the key, and it does so before it names the index being added: the
-// key's index is claimed only while nothing, adding included, covers the key.
-//
-// The model does not say whether a key called `<table>_ibfk_<n>` was named by
-// the server or written that way, and the two build differently named indexes.
-// Such a key is read as the server's, which is how the reader names every key
-// the author left unnamed and how the comparison recognizes the key's index.
-func heldIndexNames(target alterTarget, naming engineIndexNaming, adding candidateKey) indexNames {
+// The server drops the key's index before it names the index being added, and
+// [alterTarget.releaseKeyIndexes] has already taken it out by the time this
+// runs.
+func heldIndexNames(target alterTarget) indexNames {
 	claimed := make(indexNames)
 	claimed.claim("PRIMARY")
-	covered := coverage{adding, ascending(target.table.PrimaryKey)}
 	for _, database := range target.databases {
-		covered = claimDeclaredKeys(claimed, covered, database, target)
+		claimDeclaredNames(claimed, database, target)
 	}
-	for _, key := range target.foreignKeys() {
-		if covered.covers(key.columns, naming) {
-			continue
-		}
-		if key.name != "" && !mysqlname.IsForeignKeyName(target.table.Name, key.name) {
-			claimed.claim(key.name)
-			continue
-		}
-		claimed.claim(firstFree(claimed, key.columns[0], naming))
+	for _, built := range target.keys.onTable(target.qualified) {
+		claimed.claim(built.name)
 	}
 	return claimed
 }
 
-// claimDeclaredKeys claims the names of the keys database declares for the
-// table -- its indexes, its UNIQUEs and its columns' own UNIQUEs -- and answers
-// covered with each of them, and with the columns' primary keys, added.
-func claimDeclaredKeys(
-	claimed indexNames, covered coverage, database *schemamodel.Database, target alterTarget,
-) coverage {
+// claimDeclaredNames claims the names of the keys database declares for the
+// table: its indexes, its UNIQUEs and its columns' own UNIQUEs.
+func claimDeclaredNames(claimed indexNames, database *schemamodel.Database, target alterTarget) {
 	for _, field := range database.Fields {
-		if field.StructName != target.structName {
-			continue
-		}
-		if field.Primary || field.Unique {
-			covered = append(covered, ascending([]string{field.Name}))
-		}
-		if field.Unique {
+		if field.StructName == target.structName && field.Unique {
 			claimed.claim(field.Name)
 		}
 	}
 	for _, index := range database.Indexes {
-		if !target.ownsIndex(index) {
-			continue
-		}
-		if index.Name != "" {
+		if target.ownsIndex(index) && index.Name != "" {
 			claimed.claim(index.Name)
 		}
-		covered = append(covered, indexCandidate(index))
 	}
 	for _, constraint := range database.Constraints {
-		if constraint.Table != target.qualified || !strings.EqualFold(constraint.Type, "UNIQUE") {
-			continue
-		}
-		if constraint.Name != "" {
+		if constraint.Table == target.qualified && strings.EqualFold(constraint.Type, "UNIQUE") &&
+			constraint.Name != "" {
 			claimed.claim(constraint.Name)
 		}
-		covered = append(covered, ascending(constraint.Columns))
 	}
-	return covered
-}
-
-// foreignKey is one foreign key of the table an ALTER TABLE names, declared on
-// the table or on one of its columns.
-type foreignKey struct {
-	name    string
-	columns []string
-}
-
-// foreignKeys answers the table's foreign keys, the earlier files' first,
-// which is the order the server built them in.
-func (t alterTarget) foreignKeys() []foreignKey {
-	var keys []foreignKey
-	for _, database := range slices.Backward(t.databases) {
-		for _, field := range database.Fields {
-			if field.Foreign != "" && field.StructName == t.structName {
-				keys = append(keys, foreignKey{name: field.ForeignKeyName, columns: []string{field.Name}})
-			}
-		}
-		for _, constraint := range database.Constraints {
-			if isForeignKey(constraint) && constraint.Table == t.qualified && len(constraint.Columns) > 0 {
-				keys = append(keys, foreignKey{name: constraint.Name, columns: constraint.Columns})
-			}
-		}
-	}
-	return keys
 }

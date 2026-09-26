@@ -148,6 +148,18 @@ SQL:
 - The name in `FOREIGN KEY idx (a) REFERENCES p(id)` names the key itself on
   MariaDB, and the key's index takes it. On MySQL it names only the key's
   index, and the key is `<table>_ibfk_<n>`.
+- The index the server builds for a foreign key follows its own rule, on both
+  engines, and Ptah reads a schema file by it. The server builds one only where
+  no other index begins with the key's columns: not where the body declares
+  such an index, and not for a key whose columns begin a longer key's, or match
+  a later key's. The index outlives its key: `ALTER TABLE ... DROP FOREIGN KEY`
+  and `DROP CONSTRAINT` leave it, and it keeps an index of the key's name that
+  the author declared. And it gives way to any index added later that begins
+  with its columns, which then takes its place and can take its name. The index
+  a MySQL `FOREIGN KEY idx (a)` clause names is such an index, under that
+  name. An index the author declared never gives way. So a file that drops a
+  key, or adds a `UNIQUE` over a key's column, compares equal to the database
+  it built.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
