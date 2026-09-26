@@ -19,10 +19,10 @@ import (
 // copied here, so a spelling added to the switch is covered by these tests
 // without anyone editing this file.
 //
-// That property is the whole point for this package: lintdialect accepted a
-// hand-maintained list of nine canonical names while the rest of the tree took
-// twenty-four spellings, and a copied list is exactly what let the two drift
-// apart unnoticed (stokaro/ptah#270).
+// That property is the whole point for this package: a hand-maintained list
+// of canonical names here, beside every alias the rest of the tree takes, is a
+// copied list, and a copied list is exactly what lets the two drift apart
+// unnoticed (stokaro/ptah#270).
 //
 // internal/modelast/dialect_spelling_test.go reads the same switch the
 // same way. The extraction is duplicated rather than shared because the only

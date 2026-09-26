@@ -76,11 +76,8 @@ func parseURLForm(dbURL string) (DSN, error) {
 // percent-decoding, matching what ptah hands go-sql-driver for this form.
 func parseTCPForm(dbURL string) DSN {
 	body := dbURL
-	for _, scheme := range []string{"mysql://", "mariadb://"} {
-		if after, ok := strings.CutPrefix(body, scheme); ok {
-			body = after
-			break
-		}
+	if after, ok := atlasurl.CutMySQLScheme(dbURL); ok {
+		body = after
 	}
 
 	var dsn DSN

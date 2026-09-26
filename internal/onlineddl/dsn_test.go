@@ -43,6 +43,25 @@ func TestParseDatabaseURL_HappyPath(t *testing.T) {
 			url:  "mariadb://root@localhost/inventory",
 			want: onlineddl.DSN{Host: "localhost", Port: "3306", User: "root", Database: "inventory"},
 		},
+		// The scheme is the one ptah connects with, so a spelling the
+		// connector takes and this parser did not would hand the tool `maria`
+		// as the user and `//root:pw` as the password.
+		{
+			name: "maria scheme tcp form",
+			url:  "maria://root:pw@tcp(127.0.0.1:3307)/inventory",
+			want: onlineddl.DSN{Host: "127.0.0.1", Port: "3307", User: "root", Password: "pw", Database: "inventory"},
+		},
+		{
+			name: "upper-case scheme tcp form",
+			url:  "MARIADB://root:pw@tcp(127.0.0.1:3307)/inventory",
+			want: onlineddl.DSN{Host: "127.0.0.1", Port: "3307", User: "root", Password: "pw", Database: "inventory"},
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name: "maria scheme url form",
+			url:  "maria://root:pw@db:3307/inventory",
+			want: onlineddl.DSN{Host: "db", Port: "3307", User: "root", Password: "pw", Database: "inventory"},
+		},
 		// #nosec G101 -- fixture URL with a made-up password, not a credential
 		{
 			name: "url-encoded password",

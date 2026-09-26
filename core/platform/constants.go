@@ -38,7 +38,10 @@ func NormalizeDialect(dialect string) string {
 		return Postgres
 	case "mysql":
 		return MySQL
-	case "mariadb":
+	// `maria` is a MariaDB spelling the pinned community binary v1.3.0
+	// accepts as a URL scheme, on every verb that opens a database, and as a
+	// docker dev-URL engine (stokaro/ptah#3744).
+	case "mariadb", "maria":
 		return MariaDB
 	case "clickhouse", "ch":
 		return ClickHouse

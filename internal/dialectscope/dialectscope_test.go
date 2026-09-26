@@ -12,11 +12,11 @@ import (
 // the parse contract at once, because they are the same decision seen from two
 // sides: what a scope MEANS is exactly what it must refuse to guess.
 //
-// The alias rows matter on their own. Ptah accepts 24 spellings of 9 dialects,
-// and a scope that matched the raw string would scope an object to `postgresql`
-// while the target called itself `postgres` -- an object silently missing from
-// the dialect its author named, which is the failure this attribute exists to
-// remove rather than to introduce a second time.
+// The alias rows matter on their own. Ptah accepts several spellings of most
+// dialects, and a scope that matched the raw string would scope an object to
+// `postgresql` while the target called itself `postgres` -- an object silently
+// missing from the dialect its author named, which is the failure this
+// attribute exists to remove rather than to introduce a second time.
 func TestParse_ResolvesEverySpellingAndRefusesTheQuietReadings(t *testing.T) {
 	tests := []struct {
 		name string

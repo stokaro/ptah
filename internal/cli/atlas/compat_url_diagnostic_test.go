@@ -22,8 +22,9 @@ import (
 // Every expectation below was measured against the pinned community binary
 // v1.3.0, through ptah-atlas-conformance/bin/atlas, on 2026-08-13, with
 // standard output and standard error captured to separate files and each exit
-// status read from an unpiped invocation. All eighteen cells put their message
-// on standard error, leave standard output empty, and exit 1.
+// status read from an unpiped invocation. The `maria+tcp` rows were measured
+// the same way on 2026-09-26. Every URL diagnostic puts its message on
+// standard error, leaves standard output empty, and exits 1.
 //
 // The rows are not one message repeated. Three independent facts are encoded:
 //
@@ -52,6 +53,8 @@ const (
 	compatURLMissingDriver   = "Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n"
 	compatURLMissingScheme   = "Error: missing scheme. See: https://atlasgo.io/url\n"
 	compatURLUnknownDriver   = "Error: sql/sqlclient: unknown driver \"notadriver\". See: https://atlasgo.io/url\n"
+
+	compatURLUnknownMariaTransport = "Error: sql/sqlclient: unknown driver \"maria+tcp\". See: https://atlasgo.io/url\n"
 )
 
 // compatURLFixtureVersion is the one migration the hashed fixture directory
@@ -313,6 +316,25 @@ func compatURLRows() []compatURLRow {
 				return []string{"schema", "inspect", "--url", "notadriver://x"}
 			},
 			wantStderr: compatURLUnknownDriver,
+		},
+		{
+			// `maria` is a driver spelling, and `maria+tcp` is not one: the
+			// pinned binary names it as unknown on every verb, measured on
+			// 2026-09-26.
+			name: "migrate apply names a MariaDB spelling the pinned binary refuses",
+			verb: "migrate apply",
+			args: func(fx compatURLFixture) []string {
+				return []string{"migrate", "apply", "--dir", "file://" + fx.dir, "--url", "maria+tcp://x"}
+			},
+			wantStderr: compatURLUnknownMariaTransport,
+		},
+		{
+			name: "schema inspect names a MariaDB spelling the pinned binary refuses",
+			verb: "schema inspect",
+			args: func(compatURLFixture) []string {
+				return []string{"schema", "inspect", "--url", "maria+tcp://x"}
+			},
+			wantStderr: compatURLUnknownMariaTransport,
 		},
 	}
 }

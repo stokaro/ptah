@@ -24,15 +24,20 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "mysql TCP spelling", rawURL: "mysql://root@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mysql TCP spelling with closing parenthesis in password", rawURL: "mysql://root:pa)ss@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mariadb TCP spelling", rawURL: "mariadb://root@tcp(localhost:3306)/dev", want: "mariadb"},
+		// The pinned binary v1.3.0 accepts `maria://` wherever it opens a
+		// database, as the MariaDB spelling it also takes as a docker engine.
+		{name: "maria", rawURL: "maria://root@localhost:3306/dev", want: "mariadb"},
+		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/dev", want: "mariadb"},
+		{name: "maria in upper case", rawURL: "MARIA://root@localhost/dev", want: "mariadb"},
 		{name: "sqlite3 opaque drive path alias", rawURL: "sqlite3:C:/work/app.db", want: "sqlite"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
 		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
 		{name: "docker mariadb", rawURL: "docker://mariadb/11/dev", want: "mariadb"},
 		{
-			// The alias the pinned binary accepts and this resolver did not.
-			// devdocker starts a MariaDB container for it, but the dialect
-			// preflight runs first and refused `unsupported docker --dev-url
-			// engine "maria"`, so no consumer ever reached the provisioner.
+			// The engine the pinned binary provisions for this name is its
+			// MariaDB image, as it is for `docker://mariadb/...`. devdocker
+			// starts a MariaDB container for it too, and it is reached only if
+			// the dialect preflight in front of it resolves `maria`.
 			name:   "docker maria alias",
 			rawURL: "docker://maria/11/dev",
 			want:   "mariadb",
@@ -63,6 +68,9 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		// internal/devlock both put it in the PostgreSQL family, and the
 		// dev-database page documents the URL form.
 		{name: "unsupported", rawURL: "db2://localhost/dev", wantErr: `unsupported --dev-url dialect "db2://localhost/dev"`},
+		// The pinned binary v1.3.0 answers `unknown driver "maria+tcp"`: the
+		// MariaDB spelling is a scheme of its own, not a prefix.
+		{name: "maria with a transport the community binary refuses", rawURL: "maria+tcp://localhost/dev", wantErr: `unsupported --dev-url dialect "maria\+tcp://localhost/dev"`},
 	}
 
 	for _, test := range tests {
@@ -134,6 +142,12 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 			name:  "mysql TCP spelling and options do not change identity",
 			left:  "mysql://root:pa)ss@tcp(localhost:3306)/app?parseTime=true",
 			right: "mysql://reader@localhost/app?tls=false",
+			want:  true,
+		},
+		{
+			name:  "maria and mariadb spell one dialect and one server",
+			left:  "maria://root:pa)ss@tcp(localhost:3306)/app",
+			right: "mariadb://reader@localhost/app",
 			want:  true,
 		},
 		{
@@ -408,6 +422,64 @@ func TestIsDockerURL_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(atlasurl.IsDockerURL(test.rawURL), qt.IsFalse)
+		})
+	}
+}
+
+func TestCutMySQLScheme_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{name: "mysql", rawURL: "mysql://root@localhost:3306/app", want: "root@localhost:3306/app"},
+		{name: "mariadb", rawURL: "mariadb://root@tcp(localhost:3306)/app", want: "root@tcp(localhost:3306)/app"},
+		{name: "maria", rawURL: "maria://root@localhost/app", want: "root@localhost/app"},
+		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/app", want: "root:pa)ss@tcp(localhost:3306)/app"},
+		{name: "maria socket spelling", rawURL: "maria://unix(/tmp/mysql.sock)/app", want: "unix(/tmp/mysql.sock)/app"},
+		// net/url lowercases a scheme, so the connector reads this one as
+		// MariaDB; a scheme test that did not would pass it to the driver
+		// with the scheme attached.
+		{name: "upper case", rawURL: "MARIADB://root:pass@tcp(localhost:3306)/app", want: "root:pass@tcp(localhost:3306)/app"},
+		{name: "mixed case", rawURL: "Maria://root@localhost/app", want: "root@localhost/app"},
+		{name: "only the first separator is the scheme's", rawURL: "maria://root:a://b@localhost/app", want: "root:a://b@localhost/app"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			rest, ok := atlasurl.CutMySQLScheme(test.rawURL)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(rest, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestCutMySQLScheme_FailurePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+	}{
+		{name: "another dialect", rawURL: "postgres://localhost/app"},
+		{name: "a transport the community binary refuses", rawURL: "maria+tcp://localhost/app"},
+		{name: "a longer name that begins with a family spelling", rawURL: "mariadbx://localhost/app"},
+		{name: "a docker dev URL naming the engine", rawURL: "docker://maria/11/dev"},
+		{name: "no separator", rawURL: "maria:root@localhost/app"},
+		{name: "a driver DSN with no scheme", rawURL: "root:pass@tcp(localhost:3306)/app"},
+		// net/url refuses a scheme with a space in it, and so does this: a
+		// trimmed comparison would read a value the connector rejects as one
+		// it accepts.
+		{name: "leading space", rawURL: " maria://localhost/app"},
+		{name: "space before the separator", rawURL: "maria ://localhost/app"},
+		{name: "empty", rawURL: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			rest, ok := atlasurl.CutMySQLScheme(test.rawURL)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(rest, qt.Equals, test.rawURL)
 		})
 	}
 }

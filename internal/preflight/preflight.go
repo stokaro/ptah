@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/atlasurl"
 )
 
 const defaultWebhookTimeout = 30 * time.Second
@@ -436,7 +437,7 @@ func databaseURLPassword(dbURL string) string {
 }
 
 func parseDatabaseURL(dbURL string) (*url.URL, error) {
-	if strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://") {
+	if _, mysqlFamily := atlasurl.CutMySQLScheme(dbURL); mysqlFamily {
 		return parseMySQLURL(dbURL)
 	}
 	return url.Parse(dbURL)
