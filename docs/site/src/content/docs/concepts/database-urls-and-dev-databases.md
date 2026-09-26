@@ -47,9 +47,9 @@ form, `mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app`, or
 names the database, and a host is ignored. The Go-driver form
 `mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app` reaches the same socket.
 
-A MySQL or MariaDB URL must name a database, and an empty `database` parameter
-is refused. The Atlas CLI reads a URL that names none as the whole server
-([stokaro/ptah#3761](https://github.com/stokaro/ptah/issues/3761)).
+A MySQL or MariaDB URL must name a database: run the command once per
+database. The Atlas CLI reads a URL naming none as the whole server
+([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)).
 
 ## The four database roles
 

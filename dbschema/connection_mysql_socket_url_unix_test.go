@@ -58,6 +58,6 @@ func TestConnectToDatabase_RefusesAnEmptyDatabaseParameter(t *testing.T) {
 
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "mysql+unix://app:secret@"+socket+"?database=")
 
-	c.Assert(err, qt.ErrorMatches, `invalid database URL: invalid mysql\+unix URL: the database parameter is empty; name a database, or leave the parameter out`)
+	c.Assert(err, qt.ErrorMatches, `invalid database URL: invalid mysql\+unix URL: the database parameter is empty; name the database in it, as in \?database=app`)
 	c.Assert(conn, qt.IsNil)
 }

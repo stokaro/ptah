@@ -240,10 +240,10 @@ func TestNativeSchemaApplyConnectsThroughASocketE2E(t *testing.T) {
 	}
 }
 
-// TestCompatRefusesASocketURLNamingNoDatabaseE2E connects through the socket
-// with no database. The community binary reads that URL as the whole server,
-// which Ptah does not (stokaro/ptah#3761), so the refusal names the missing
-// database rather than failing on the NULL the server answers for it.
+// TestCompatRefusesASocketURLNamingNoDatabaseE2E names the socket and no
+// database. The community binary reads that URL as the whole server, which
+// Ptah does not (stokaro/ptah#3789), so the refusal comes before connecting
+// and says what to write instead.
 func TestCompatRefusesASocketURLNamingNoDatabaseE2E(t *testing.T) {
 	for _, server := range mysqlSocketServers {
 		t.Run(server.name, func(t *testing.T) {
@@ -252,7 +252,7 @@ func TestCompatRefusesASocketURLNamingNoDatabaseE2E(t *testing.T) {
 
 			out, err := runCompatVerb("schema", "inspect", "--url", scratch.socket.String())
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*the database URL names no database.*`, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches, `(?s).*the database URL names no database; .*, and run the command once for each database.*`, qt.Commentf("%s", out))
 		})
 	}
 }

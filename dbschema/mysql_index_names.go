@@ -258,8 +258,9 @@ func (n *nameClasses) resolved() []identifier.ResolvedName {
 	return resolved
 }
 
-// isMySQLFamilyDialect reports whether the dialect is one whose index-name
-// equivalence has to be asked of the server.
+// isMySQLFamilyDialect reports whether the dialect is MySQL or MariaDB: one
+// whose index-name equivalence has to be asked of the server, and whose URL
+// has to name a database.
 func isMySQLFamilyDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB:

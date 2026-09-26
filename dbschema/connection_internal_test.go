@@ -1387,11 +1387,9 @@ func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
 	}
 }
 
-// mysqlSessionAnswers is a MariaDB server whose session has no default
-// database, as a URL naming none leaves it.
+// mysqlSessionAnswers is a MariaDB server, as far as getDatabaseInfo asks.
 var mysqlSessionAnswers = map[string]dbtest.QueryResult{
-	"SELECT VERSION()":  {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
-	"SELECT DATABASE()": {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{nil}}},
+	"SELECT VERSION()": {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
 }
 
 // TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL checks that the database a
@@ -1412,25 +1410,6 @@ func TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Schema, qt.Equals, "shop")
 	c.Assert(info.Dialect, qt.Equals, platform.MariaDB)
-}
-
-// TestGetDatabaseInfo_RefusesAMySQLURLThatNamesNoDatabase names the missing
-// database rather than failing on the NULL DATABASE() answers. The pinned
-// community binary reads such a URL as the whole server, which Ptah does not
-// (stokaro/ptah#3761).
-func TestGetDatabaseInfo_RefusesAMySQLURLThatNamesNoDatabase(t *testing.T) {
-	c := qt.New(t)
-	const socketURL = "mariadb+unix://root@/run/mysqld/mysqld.sock"
-	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		return mysqlSessionAnswers[query], nil
-	})
-	parsedURL, err := parseDatabaseURL(socketURL)
-	c.Assert(err, qt.IsNil)
-
-	info, err := getDatabaseInfo(t.Context(), db.SQL, platform.MariaDB, parsedURL, socketURL, resolveSchemaFromSession)
-
-	c.Assert(err, qt.ErrorIs, errMySQLURLNamesNoDatabase)
-	c.Assert(info.Schema, qt.Equals, "")
 }
 
 // TestMySQLDatabaseAgreesBetweenParserAndConverter is the control that keeps

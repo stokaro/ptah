@@ -58,16 +58,9 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		return nil, fmt.Errorf("invalid database URL: %w", err)
 	}
 
-	// Check for empty or invalid scheme
-	if parsedURL.Scheme == "" {
-		return nil, fmt.Errorf("invalid database URL: missing scheme")
-	}
-
-	// Determine the dialect
-	rawDialect := strings.ToLower(parsedURL.Scheme)
-	dialect := platform.NormalizeDialect(rawDialect)
-	if dialect == "" {
-		return nil, fmt.Errorf("unsupported database dialect: %s", rawDialect)
+	dialect, err := connectionDialect(parsedURL)
+	if err != nil {
+		return nil, err
 	}
 
 	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
@@ -1116,14 +1109,40 @@ func CloseAndWarn(conn *DatabaseConnection) {
 	}
 }
 
+// connectionDialect is the dialect a parsed database URL connects with. It
+// makes the refusals the URL alone decides, before anything is dialed: a
+// missing or unknown scheme, and a MySQL-family URL that names no database,
+// whose session would start with no default database, so what a command reads
+// or changes would be decided by nothing the operator wrote.
+func connectionDialect(parsedURL *url.URL) (string, error) {
+	if parsedURL.Scheme == "" {
+		return "", errors.New("invalid database URL: missing scheme")
+	}
+	rawDialect := strings.ToLower(parsedURL.Scheme)
+	dialect := platform.NormalizeDialect(rawDialect)
+	if dialect == "" {
+		return "", fmt.Errorf("unsupported database dialect: %s", rawDialect)
+	}
+	if isMySQLFamilyDialect(dialect) && strings.TrimPrefix(parsedURL.Path, "/") == "" {
+		return "", errMySQLURLNamesNoDatabase
+	}
+	return dialect, nil
+}
+
 // errMySQLURLNamesNoDatabase refuses a MySQL-family URL that selects no
-// database. The session then starts without a default one and DATABASE()
-// answers NULL. The pinned community binary reads such a URL as the whole
-// server; Ptah reads one database at a time, and says so rather than failing
-// on the NULL (stokaro/ptah#3761).
+// database, and says what to write instead.
+//
+// The pinned community binary v1.3.0 reads such a URL as the whole server: it
+// inspects every database, plans CREATE DATABASE and DROP DATABASE, keeps its
+// revisions in a database of their own, and `schema clean` drops every
+// database on the server. Ptah reads and changes one MySQL-family database per
+// connection, so it refuses the URL rather than guess which one was meant
+// (stokaro/ptah#3761).
 var errMySQLURLNamesNoDatabase = errors.New(
-	"the database URL names no database, and Ptah reads one MySQL or MariaDB database at a time rather than " +
-		"a whole server: name the database in the URL path, or in the database parameter of a +unix URL")
+	"the database URL names no database; Ptah reads and changes one MySQL or MariaDB database per run, " +
+		"not a whole server. Name the database in the URL path (mysql://user@host:3306/app) or, " +
+		"for a socket URL, in the database parameter (mysql+unix://user@/run/mysqld/mysqld.sock?database=app), " +
+		"and run the command once for each database")
 
 // getDatabaseInfo retrieves database metadata
 func getDatabaseInfo(
@@ -1199,21 +1218,9 @@ func getDatabaseInfo(
 		info.Dialect = detectMySQLWireDialect(version)
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
-		// Get database name from URL path
-		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
-			info.Schema = parsedURL.Path[1:] // Remove leading '/'
-		} else {
-			// Get current database
-			var dbName sql.NullString
-			err := db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&dbName)
-			if err != nil {
-				return info, fmt.Errorf("failed to get current database name: %w", err)
-			}
-			if !dbName.Valid {
-				return info, errMySQLURLNamesNoDatabase
-			}
-			info.Schema = dbName.String
-		}
+		// The database the URL names; ConnectToDatabase refuses a URL that
+		// names none before it connects.
+		info.Schema = strings.TrimPrefix(parsedURL.Path, "/")
 		// A MySQL-family schema is a database, so no static dialect rule can
 		// name the one that owns an unqualified table the way "public" and
 		// "main" do; only the connection knows it. Leaving the field empty is

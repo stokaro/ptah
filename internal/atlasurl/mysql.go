@@ -151,8 +151,8 @@ func (u *MySQLURL) readSocketForm(rawURL string) error {
 	query := parsed.Query()
 	database := query.Get(mysqlSocketDatabaseParam)
 	if query.Has(mysqlSocketDatabaseParam) && database == "" {
-		return fmt.Errorf("invalid %s URL: the %s parameter is empty; name a database, or leave the parameter out",
-			u.scheme, mysqlSocketDatabaseParam)
+		return fmt.Errorf("invalid %s URL: the %s parameter is empty; name the database in it, as in ?%s=app",
+			u.scheme, mysqlSocketDatabaseParam, mysqlSocketDatabaseParam)
 	}
 	query.Del(mysqlSocketDatabaseParam)
 	u.parsed = parsed
