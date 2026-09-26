@@ -146,9 +146,12 @@ exercise a real server dialect — see
 - **PostgreSQL-family cleanup rejects database-scoped artifacts.** PostgreSQL
   and YugabyteDB reject publications, subscriptions, logical replication
   slots, event triggers, and non-extension foreign-data wrappers, servers, or
-  user mappings before DDL. PostgreSQL also removes and verifies database large
-  objects transactionally. YugabyteDB does not run that PostgreSQL-specific
-  large-object operation.
+  user mappings before DDL. An object the server created when it built the
+  database template is not counted: YugabyteDB 2026.1.2 puts the foreign
+  server `yb_global_views_server` into every database, and the cleanup leaves
+  it, and the extensions it depends on, in place. PostgreSQL also removes and
+  verifies database large objects transactionally. YugabyteDB does not run
+  that PostgreSQL-specific large-object operation.
 - **SQL Server cleanup rejects replication state.** A replication-enabled
   database or replicated table fails before DDL, along with other unsupported
   database-scoped artifacts. Remove replication configuration or use a

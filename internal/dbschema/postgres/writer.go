@@ -367,7 +367,12 @@ func inspectCleanupCapabilities(
 			inspectPartitionEdges:    true,
 			inspectDatabaseArtifacts: true,
 			protectedDatabases:       protectedYugabyteDatabases,
-			systemExtensions:         []string{"pg_stat_statements", "plpgsql"},
+			// Every YugabyteDB database starts with these. 2026.1 adds
+			// postgres_fdw, and its built-in yb_global_views_server keeps
+			// both it and pg_stat_statements from being dropped: DROP
+			// EXTENSION answers "cannot drop extension ... because other
+			// objects depend on it" (stokaro/ptah#3693).
+			systemExtensions: []string{"pg_stat_statements", "plpgsql", "postgres_fdw"},
 		}, nil
 	default:
 		isPostgreSQL := strings.Contains(version, "postgresql")
@@ -1573,6 +1578,15 @@ func rejectProtectedPostgresDatabase(
 	return nil
 }
 
+// rejectPostgresDatabaseScopedArtifacts refuses a realm cleanup while the
+// database holds a database-scoped object the cleanup cannot remove. An object
+// an extension owns is not counted, since dropping the extension removes it,
+// and neither is one the server made at initdb: an OID below 16384,
+// PostgreSQL's FirstNormalObjectId, is assigned only while initdb builds the
+// template, and every later object gets one at or above it. YugabyteDB 2026.1
+// creates the foreign server yb_global_views_server that way, with OID 13543,
+// in every database, and counted, it refuses every cleanup on that line
+// (stokaro/ptah#3693).
 func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) error {
 	var kind string
 	var name string
@@ -1582,13 +1596,15 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 				'publication'::text AS object_kind,
 				publication.pubname AS object_name
 			FROM pg_publication publication
+			WHERE publication.oid >= 16384
 
 			UNION ALL
 			SELECT
 				'subscription',
 				subscription.subname
 			FROM pg_subscription subscription
-			WHERE subscription.subdbid = (
+			WHERE subscription.oid >= 16384
+			  AND subscription.subdbid = (
 				SELECT database.oid
 				FROM pg_database database
 				WHERE database.datname = current_database()
@@ -1611,7 +1627,8 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 				'event trigger',
 				event_trigger.evtname
 			FROM pg_event_trigger event_trigger
-			WHERE NOT EXISTS (
+			WHERE event_trigger.oid >= 16384
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_event_trigger'::regclass
@@ -1624,7 +1641,8 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 				'foreign-data wrapper',
 				wrapper.fdwname
 			FROM pg_foreign_data_wrapper wrapper
-			WHERE NOT EXISTS (
+			WHERE wrapper.oid >= 16384
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_foreign_data_wrapper'::regclass
@@ -1637,7 +1655,8 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 				'foreign server',
 				server.srvname
 			FROM pg_foreign_server server
-			WHERE NOT EXISTS (
+			WHERE server.oid >= 16384
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_foreign_server'::regclass
@@ -1656,7 +1675,8 @@ func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx) erro
 			FROM pg_user_mapping mapping
 			LEFT JOIN pg_roles role ON role.oid = mapping.umuser
 			JOIN pg_foreign_server server ON server.oid = mapping.umserver
-			WHERE NOT EXISTS (
+			WHERE mapping.oid >= 16384
+			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_user_mapping'::regclass
