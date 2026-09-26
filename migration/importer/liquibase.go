@@ -323,6 +323,8 @@ func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigrati
 		DownSQL:           downSQL,
 		UpNoTransaction:   noTransaction,
 		DownNoTransaction: noTransaction,
+		Path:              fileName,
+		Changeset:         cs.author + ":" + cs.id,
 	}, nil
 }
 

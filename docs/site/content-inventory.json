@@ -181,8 +181,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 5468,
-      "sourceBytes": 45795
+      "visibleWords": 5473,
+      "sourceBytes": 45829
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -330,8 +330,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14500,
-      "sourceBytes": 101042
+      "visibleWords": 14479,
+      "sourceBytes": 100826
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -4294,8 +4294,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14738,
-      "sourceBytes": 101875
+      "visibleWords": 14713,
+      "sourceBytes": 101705
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

@@ -42,10 +42,12 @@ CREATE TABLE conventional_table (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "")
-	// The changeset carries a --rollback line an Atlas single-file
-	// migration cannot hold, so the import names the file
-	// (stokaro/ptah#3116).
-	c.Assert(stderr, qt.Contains, "was not imported")
+	// Each changeset carries a --rollback line an Atlas single-file
+	// migration cannot hold, so the import names each one with its file,
+	// the numbered one and the conventional one alike (stokaro/ptah#3116,
+	// stokaro/ptah#3753).
+	c.Assert(stderr, qt.Equals, "warning: an Atlas migration holds no rollback, so the rollbacks of these 2 "+
+		"changesets were not imported:\n  1_numbered.sql numbered:first\n  changelog.sql conventional:second\n")
 	_, statErr := os.Stat(filepath.Join(target, "1_numbered_first.sql"))
 	c.Assert(statErr, qt.IsNil)
 	_, statErr = os.Stat(filepath.Join(target, "2_conventional_second.sql"))

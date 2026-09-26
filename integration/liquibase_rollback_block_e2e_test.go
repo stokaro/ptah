@@ -72,8 +72,8 @@ func TestLiquibaseRollbackBlockE2E_HappyPath(t *testing.T) {
 		_, importErr, err := runCLIProcess(ctx, work, compat,
 			"migrate", "import", "--from", "file://legacy?format=liquibase", "--to", "file://out")
 		c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("migrate import: %s", importErr))
-		c.Assert(importErr, qt.Equals, "warning: an Atlas migration holds no rollback, so the rollback in this "+
-			"source file was not imported:\n  1_init.sql\n")
+		c.Assert(importErr, qt.Equals, "warning: an Atlas migration holds no rollback, so the rollback of this "+
+			"changeset was not imported:\n  1_init.sql s:1\n")
 		copied, err := os.ReadFile(filepath.Join(work, "out", "1_init.sql"))
 		c.Assert(err, qt.IsNil)
 		c.Assert(string(copied), qt.Equals, "--changeset s:1\nCREATE TABLE accounts (id int);\nCREATE TABLE ledgers (id int);\n")

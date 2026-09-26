@@ -869,9 +869,9 @@ A Liquibase changeset whose `ignore` is true is left out, because Liquibase
 never runs it, and each one is named in a warning on stderr; `runInTransaction`
 set to false becomes an Atlas no-transaction migration. The lines an
 `--ignoreLines` directive skips are left out of every conversion, and a property
-reference such as `${tbl}` refuses it. A changeset's `--rollback` lines and
-`/* liquibase rollback` blocks are left out as well, since an Atlas migration
-is up-only, and a numbered file that held one is named in a warning on stderr.
+reference such as `${tbl}` refuses it. A changeset's rollback is left out as
+well, since an Atlas migration is up-only, and each changeset whose rollback
+runs something is named with its file in a warning on stderr.
 
 A successful compatibility import writes nothing to stdout; inspect the
 destination directory and its `atlas.sum` instead of relying on a progress

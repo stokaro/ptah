@@ -644,8 +644,8 @@ environment and which Atlas CE copies as it is, refuses the conversion.
 
 A `/* liquibase rollback` block is read as Liquibase reads it as well: it ends
 at the first line that ends in `*/`, and the numbered copy leaves it out, with
-the changeset's `--rollback` lines, and names the file in the warning about
-dropped rollbacks. Measured 2026-09-26 on SQLite with a numbered `1_init.sql`
+the changeset's `--rollback` lines, and names the changeset and its file in the
+warning about dropped rollbacks. Measured 2026-09-26 on SQLite with a numbered `1_init.sql`
 that creates `accounts`, then holds a block whose line
 `DROP TABLE accounts; /* accounts first */ DROP TABLE ledgers;` carries a
 comment of its own, then creates `ledgers`: Liquibase 5.0.4 `update` creates

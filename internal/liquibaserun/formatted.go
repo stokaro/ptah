@@ -31,6 +31,11 @@ type FormattedChangeset struct {
 	Rollback Rollback
 }
 
+// Name is the changeset's author:id as the marker writes it.
+func (c FormattedChangeset) Name() string {
+	return changesetName(c.Args)
+}
+
 // The patterns below are Liquibase's own (AbstractFormattedChangeLogParser),
 // matched against a line whose ASCII letters are lowered, which is what Java's
 // CASE_INSENSITIVE flag compares: ASCII letters only. javaSpace is Java's \s

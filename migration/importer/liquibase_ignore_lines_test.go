@@ -25,28 +25,28 @@ func TestLiquibaseIgnoreLines_HappyPath(t *testing.T) {
 				"CREATE TABLE ignored_block (id int);\n--ignoreLines:end\nCREATE TABLE t1b (id int);\n--changeset s:2\n" +
 				"--ignoreLines:1\nCREATE TABLE ignored_count (id int);\nCREATE TABLE t2 (id int);\n",
 			want: []importer.SourceMigration{
-				{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE t1 (id int);\nCREATE TABLE t1b (id int);"},
-				{Version: 2, Name: "s_2", UpSQL: "CREATE TABLE t2 (id int);"},
+				{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t1 (id int);\nCREATE TABLE t1b (id int);"},
+				{Version: 2, Name: "s_2", Path: "changelog.sql", Changeset: "s:2", UpSQL: "CREATE TABLE t2 (id int);"},
 			},
 		},
 		{
 			name: "a block holding a whole changeset, before the first one",
 			content: "--liquibase formatted sql\n--ignoreLines:start\n--changeset s:9\nCREATE TABLE hidden_changeset (id int);\n" +
 				"--ignoreLines:end\n--changeset s:1\nCREATE TABLE b1 (id int);\n",
-			want: []importer.SourceMigration{{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE b1 (id int);"}},
+			want: []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE b1 (id int);"}},
 		},
 		{
 			name: "a block with no end, over the next changeset",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE c1 (id int);\n-- ignoreLines:2\n" +
 				"CREATE TABLE skipped_a (id int);\nCREATE TABLE skipped_b (id int);\n--ignoreLines:start\n" +
 				"CREATE TABLE never_ended (id int);\n--changeset s:2\nCREATE TABLE never_ended_2 (id int);\n",
-			want: []importer.SourceMigration{{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE c1 (id int);"}},
+			want: []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE c1 (id int);"}},
 		},
 		{
 			name: "a rollback line inside a block",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--ignoreLines:1\n" +
 				"--rollback DROP TABLE ignored;\n--rollback DROP TABLE t;\n",
-			want: []importer.SourceMigration{{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE t (id int);", DownSQL: "DROP TABLE t;"}},
+			want: []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);", DownSQL: "DROP TABLE t;"}},
 		},
 	}
 	for _, test := range tests {

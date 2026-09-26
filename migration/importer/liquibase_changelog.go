@@ -391,6 +391,7 @@ func liquibaseConvertChangeset(
 	return SourceMigration{
 		Name: name, UpSQL: upSQL, DownSQL: downSQL,
 		UpNoTransaction: noTransaction, DownNoTransaction: noTransaction,
+		Path: converter.file, Changeset: changeset.author + ":" + changeset.id,
 	}, nil
 }
 
