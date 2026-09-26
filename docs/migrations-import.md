@@ -139,7 +139,11 @@ appearance — with the `author:id` carried into the name
 (`0000000001_alice_create_users...`).
 
 In formatted SQL each `--rollback` line contributes the down, and a normal `--`
-SQL comment is kept in the up. In a changelog the changes are the up and
+SQL comment is kept in the up. An `--ignoreLines:start` ... `--ignoreLines:end`
+block, or `--ignoreLines:<n>` and the next n lines, is left out, as Liquibase
+leaves it out: before the first changeset, inside one, or around a whole
+`--changeset`. A block with no end runs to the end of the file. The spellings
+Liquibase refuses, such as `--ignoreLines:START`, are refused. In a changelog the changes are the up and
 `rollback` is the down, whether it is written as a change list, a nested
 `<sql>`, or bare SQL text. A `sql` change reads `splitStatements`,
 `stripComments` and a `comment`, and refuses any other attribute by name, such
@@ -165,8 +169,17 @@ names, which must lie inside the source directory, is SQL already.
 Each change reads the attributes it understands and refuses any other by name,
 because an attribute nothing reads is an attribute dropped. A declaration the
 target cannot carry, such as `autoIncrement` on ClickHouse, refuses the
-conversion for the same reason. A property reference (`${name}`) is refused:
-its value is defined outside the changelog.
+conversion for the same reason.
+
+A property reference such as `${schema}` is refused wherever Liquibase fills
+one in: in formatted-SQL changesets and rollbacks, in every value of an XML,
+YAML or JSON changeset, and in a `sqlFile`'s content. Liquibase takes the value
+from an environment variable, a Java system property or a command-line
+parameter of that name before any `--property` or `<property>` the changelog
+defines, so the value that ran is not in the changelog. Measured with Liquibase
+5.0.4: a changelog property `tbl` became `from_env` when `TBL=from_env` was
+set. A property nothing references is accepted, and a `${` with no closing
+brace is text, as it is to Liquibase.
 
 A changeset with no `rollback` gets the rollback Liquibase derives: the inverse
 of each change, last change first. A changeset holding a change with no

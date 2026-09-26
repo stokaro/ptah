@@ -1825,16 +1825,21 @@ and its `atlas.sum` validate and apply under both Ptah and Atlas CE.
 
 Liquibase XML, YAML and JSON changelogs are read through the same changeset
 parser as the native `ptah migrations import`, with the same refusals; Atlas CE
-reports `nothing to import` for them. A changeset that Liquibase runs on one
-database only, or runs again after its first run (`dbms`, `runAlways`,
-`runOnChange`), refuses the import by name, where Atlas CE copies it and applies
-it everywhere. The numbered-only conversion copies each file whole, and refuses
-the same changesets before it copies, on import and on `migrate apply`, which
-reads the directory the same way. A changeset with `runInTransaction:false`
-becomes a no-transaction Atlas migration, which Atlas CE runs in a transaction
-instead. A changeset with `ignore:true` is left out of a conventional import and
-named in a warning on stderr, and a numbered file holding one is refused, since a
-copy cannot leave it out.
+reports `nothing to import` for them. The numbered-only conversion copies each
+file whole, and reads it first, on import and on `migrate apply`, which reads
+the directory the same way. Both conversions read a changeset as Liquibase
+does, where Atlas CE copies it and runs all of it:
+
+- A changeset Liquibase runs on one database only, or runs again after its first
+  run (`dbms`, `runAlways`, `runOnChange`), refuses the conversion by name.
+- A changeset with `runInTransaction:false` becomes a no-transaction Atlas
+  migration, which Atlas CE runs in a transaction instead.
+- A changeset with `ignore:true` is left out of a conventional import and named
+  in a warning on stderr; a numbered file holding one is refused, since a copy
+  cannot leave it out.
+- An `--ignoreLines` directive and the lines it skips are left out.
+- A property reference such as `${tbl}` refuses the conversion, since Liquibase
+  fills it in from the environment it ran in.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

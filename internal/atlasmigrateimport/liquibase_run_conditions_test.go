@@ -161,3 +161,53 @@ func TestImportLiquibaseChangesetAttributes_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// A numbered file is copied with only the lines Liquibase reads: an
+// --ignoreLines directive and the lines it skips are left out, where Atlas CE
+// v1.3.0 copies them and runs them (stokaro/ptah#3727).
+func TestLoadFSLiquibaseNumberedIgnoreLines_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	source := fstest.MapFS{
+		"1_init.sql": &fstest.MapFile{Data: []byte("--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t1 (id int);\n" +
+			"--ignoreLines:start\nCREATE TABLE ignored_block (id int);\n--ignoreLines:end\n--changeset s:2\n" +
+			"--ignoreLines:1\nCREATE TABLE ignored_count (id int);\nCREATE TABLE t2 (id int);\n")},
+	}
+
+	loaded, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(loaded.Entries[0].Data), qt.Equals,
+		"--changeset s:1\nCREATE TABLE t1 (id int);\n--changeset s:2\nCREATE TABLE t2 (id int);\n")
+}
+
+// A property reference in a numbered file, and a directive Liquibase refuses,
+// refuse the conversion.
+func TestLoadFSLiquibaseNumberedIgnoreLines_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		message string
+	}{
+		{
+			name:    "a property reference",
+			body:    "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE ${tbl} (id int);\n",
+			message: `liquibase changeset s:1 in "1_init\.sql" uses the property reference \$\{tbl\}; .*`,
+		},
+		{
+			name:    "start in upper case",
+			body:    "--liquibase formatted sql\n--changeset s:1\n--ignoreLines:START\nSELECT 1;\n",
+			message: `liquibase changelog "1_init\.sql" line 3: "--ignoreLines:START" names neither start nor a number of lines, .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := fstest.MapFS{"1_init.sql": &fstest.MapFile{Data: []byte(test.body)}}
+
+			loaded, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+			c.Assert(err, qt.ErrorMatches, test.message)
+			c.Assert(loaded, qt.IsNil)
+		})
+	}
+}

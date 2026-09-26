@@ -404,13 +404,13 @@ func TestLiquibaseTyped_FailurePath(t *testing.T) {
 			name:    "a property reference in a name",
 			dialect: "postgres",
 			changes: `<createTable tableName="${prefix}t"><column name="id" type="int"/></createTable>`,
-			message: `tableName "${prefix}t" is a property reference, which Ptah does not resolve`,
+			message: `uses the property reference ${prefix}; Liquibase fills it in when it runs`,
 		},
 		{
 			name:    "a property reference in a type",
 			dialect: "postgres",
 			changes: `<createTable tableName="t"><column name="id" type="${id_type}"/></createTable>`,
-			message: `type "${id_type}" is a property reference, which Ptah does not resolve`,
+			message: `uses the property reference ${id_type}; Liquibase fills it in when it runs`,
 		},
 		{
 			name:    "two defaults",

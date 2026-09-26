@@ -342,7 +342,13 @@ attributes a migration has no form for, such as `failOnError="false"` and
 
 A changeset with `runInTransaction="false"` becomes a no-transaction
 migration, and one with `ignore="true"`, which Liquibase never runs, is left
-out of the import and named on standard error.
+out of the import and named on standard error. In formatted SQL, the lines an
+`--ignoreLines` directive skips are left out as well.
+
+A property reference such as `${schema}` is refused. Liquibase fills it in when
+it runs, and an environment variable or command-line parameter of that name
+wins over the changelog's own `property`, so the changelog does not say what
+ran. Write the value in before you import.
 
 ## Apply the result
 

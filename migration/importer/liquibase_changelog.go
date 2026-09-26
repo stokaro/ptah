@@ -320,6 +320,11 @@ func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseCh
 			Reason: fmt.Sprintf("every change in it has a dbms that does not select %s", converter.dbms),
 		}}}, nil
 	}
+	// Liquibase fills in a property reference in every value it reads, so one
+	// anywhere in a change that runs refuses the changeset.
+	if err := liquibaserun.PropertyReferencesErr(liquibaseChangeTexts(slices.Concat(up.kept, rollback.kept))...); err != nil {
+		return liquibaseConversion{}, fmt.Errorf("liquibase changeset %s in %q %w", name, converter.file, err)
+	}
 	var skipped []SkippedChangeset
 	for _, dropped := range slices.Concat(up.dropped, rollback.dropped) {
 		skipped = append(skipped, liquibaseOtherDatabase(
@@ -330,6 +335,26 @@ func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseCh
 		return liquibaseConversion{}, err
 	}
 	return liquibaseConversion{migration: migration, imported: true, skipped: skipped}, nil
+}
+
+// liquibaseChangeTexts lists every value Liquibase reads in changes: each
+// attribute value and text, down through the nested elements. A `comment`
+// documents a change and runs nowhere, so it is not listed.
+func liquibaseChangeTexts(changes []liquibaseChange) []string {
+	var texts []string
+	for _, change := range changes {
+		if change.name == "comment" {
+			continue
+		}
+		for _, key := range slices.Sorted(maps.Keys(change.attrs)) {
+			if key != "comment" {
+				texts = append(texts, change.attrs[key])
+			}
+		}
+		texts = append(texts, change.text)
+		texts = append(texts, liquibaseChangeTexts(change.children)...)
+	}
+	return texts
 }
 
 // liquibaseConvertChangeset converts a changeset's changes and rollback into a

@@ -272,10 +272,10 @@ func TestScanFormattedSQL_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			noTransaction, err := liquibaserun.ScanFormattedSQL("1_x.sql", test.content)
+			scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql", test.content)
 
 			c.Assert(err, qt.ErrorMatches, test.message)
-			c.Assert(noTransaction, qt.IsFalse)
+			c.Assert(scanned, qt.DeepEquals, liquibaserun.FormattedCopy{})
 		})
 	}
 }
@@ -307,10 +307,10 @@ func TestScanFormattedSQL_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			noTransaction, err := liquibaserun.ScanFormattedSQL("1_x.sql", test.content)
+			scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql", test.content)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(noTransaction, qt.Equals, test.noTransaction)
+			c.Assert(scanned.NoTransaction, qt.Equals, test.noTransaction)
 		})
 	}
 }
@@ -422,6 +422,224 @@ func TestKnownDBMS_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(liquibaserun.KnownDBMS(test.name), qt.Equals, test.known)
+		})
+	}
+}
+
+// FormattedLines keeps what Liquibase reads and drops an --ignoreLines
+// directive with the lines it skips. Each row was checked against Liquibase
+// 5.0.4 where it concerns a changelog Liquibase runs (stokaro/ptah#3727).
+func TestFormattedLines_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "a block",
+			content: "a\n--ignoreLines:start\nskipped\n--ignoreLines:end\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "a count",
+			content: "a\n--ignoreLines:2\nskipped\nskipped\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "a blank after the dashes, and the name in any case",
+			content: "a\n-- IGNORELINES:1\nskipped\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "a block with no end runs to the end of the file",
+			content: "a\n--ignoreLines:start\nskipped\n--changeset s:2\nskipped",
+			want:    []string{"a"},
+		},
+		{
+			// Liquibase ends a block on end in lower case only.
+			name:    "END inside a block does not end it",
+			content: "a\n--ignoreLines:start\n--ignoreLines:END\nskipped\n--ignoreLines:end\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			// Inside a block Liquibase reads no directive but end, not even
+			// one it refuses outside a block.
+			name:    "a count and a misspelling inside a block",
+			content: "a\n--ignoreLines:start\n--ignoreLines:3\n--ignore:true\nskipped\n--ignoreLines:end\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "a count past the end of the file",
+			content: "a\n--ignoreLines:99\nskipped",
+			want:    []string{"a"},
+		},
+		{
+			name:    "a count of zero",
+			content: "a\n--ignoreLines:0\nb",
+			want:    []string{"a", "b"},
+		},
+		{
+			// The directive must fill its line, so these are comments.
+			name:    "text after the word, and a blank before the dashes",
+			content: "--ignoreLines:1 skip one\n --ignoreLines:1\nb",
+			want:    []string{"--ignoreLines:1 skip one", " --ignoreLines:1", "b"},
+		},
+		{
+			name:    "a carriage return before the newline",
+			content: "a\r\n--ignoreLines:start\r\nskipped\r\n--ignoreLines:end\r\nb\r",
+			want:    []string{"a\r", "b\r"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			lines, err := liquibaserun.FormattedLines("c.sql", test.content)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(lines, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// The spellings Liquibase refuses are refused, with the line that holds them.
+func TestFormattedLines_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		message string
+	}{
+		{
+			name:    "start in upper case",
+			content: "a\n--ignoreLines:START\nb",
+			message: `liquibase changelog "c.sql" line 2: "--ignoreLines:START" names neither start nor a number of lines, so Liquibase refuses it`,
+		},
+		{
+			name:    "a word that is not a number",
+			content: "--ignoreLines:1_0",
+			message: `liquibase changelog "c.sql" line 1: "--ignoreLines:1_0" names neither start nor a number of lines, so Liquibase refuses it`,
+		},
+		{
+			name:    "one dash",
+			content: "a\n-ignoreLines:2",
+			message: `liquibase changelog "c.sql" line 2: "-ignoreLines:2" is not a directive Liquibase reads, and Liquibase refuses it -- write --ignoreLines:<count\|start\|end>`,
+		},
+		{
+			name:    "ignore for ignoreLines",
+			content: "--ignore:2",
+			message: `liquibase changelog "c.sql" line 1: "--ignore:2" is not a directive Liquibase reads, .*`,
+		},
+		{
+			name:    "one dash inside a block",
+			content: "--ignoreLines:start\nskipped\n-ignoreLines:end\n--ignoreLines:end",
+			message: `liquibase changelog "c.sql" line 3: "-ignoreLines:end" is not a directive Liquibase reads, .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			lines, err := liquibaserun.FormattedLines("c.sql", test.content)
+
+			c.Assert(err, qt.ErrorMatches, test.message)
+			c.Assert(lines, qt.IsNil)
+		})
+	}
+}
+
+// PropertyReferences finds what Liquibase's expander fills in, each once.
+func TestPropertyReferences_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{name: "none", text: "SELECT 1", want: nil},
+		{name: "one", text: "CREATE TABLE ${schema}.t (id int)", want: []string{"${schema}"}},
+		{name: "each once, in order", text: "${b} ${a} ${b}", want: []string{"${b}", "${a}"}},
+		{name: "one inside another", text: "x ${a${b}} y", want: []string{"${a${b}}"}},
+		{name: "a dollar before it", text: "$${a}", want: []string{"${a}"}},
+		{name: "no closing brace", text: "SELECT '${a' || '}'", want: []string{"${a' || '}"}},
+		{name: "no closing brace at all", text: "SELECT '${a'", want: nil},
+		{name: "a dollar alone", text: "SELECT $1, $$body$$", want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(liquibaserun.PropertyReferences(test.text), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// PropertyReferencesErr names every reference across its texts and says why
+// the value cannot be taken from the changelog.
+func TestPropertyReferencesErr_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	err := liquibaserun.PropertyReferencesErr("CREATE TABLE ${schema}.t", "DROP TABLE ${schema}.${t}")
+
+	c.Assert(err, qt.ErrorMatches, `uses the property reference \$\{schema\}, \$\{t\}; Liquibase fills it in when it runs, `+
+		`and an environment variable, a Java system property or a command-line parameter of that name wins over `+
+		`any property the changelog defines, so the changelog does not record the value that ran -- write the `+
+		`value in, or import the changeset by hand`)
+}
+
+// Text without a reference passes.
+func TestPropertyReferencesErr_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(liquibaserun.PropertyReferencesErr("SELECT 1", "", "SELECT '$'"), qt.IsNil)
+}
+
+// A copied file carries only the lines Liquibase reads, so a changeset inside
+// an ignored block is not read and does not refuse the file.
+func TestScanFormattedSQL_IgnoreLines_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	content := "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE a (id int);\n" +
+		"--ignoreLines:start\n--changeset s:9 dbms:mysql\nCREATE TABLE hidden (id int);\n--ignoreLines:end\n" +
+		"--ignoreLines:1\nCREATE TABLE skipped (id int);\n"
+
+	scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql", content)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scanned.Lines, qt.DeepEquals, []string{
+		"--liquibase formatted sql", "--changeset s:1", "CREATE TABLE a (id int);", "",
+	})
+}
+
+// A property reference in a copied changeset, in its SQL or its rollback,
+// refuses the file; so does a directive Liquibase refuses.
+func TestScanFormattedSQL_PropertyReference_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		message string
+	}{
+		{
+			name:    "in the SQL",
+			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE ${t} (id int);\n",
+			message: `liquibase changeset s:1 in "1_x.sql" uses the property reference \$\{t\}; .*`,
+		},
+		{
+			name:    "in the rollback",
+			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback DROP TABLE ${t};\n",
+			message: `liquibase changeset s:1 in "1_x.sql" uses the property reference \$\{t\}; .*`,
+		},
+		{
+			name:    "a directive Liquibase refuses",
+			content: "--liquibase formatted sql\n--changeset s:1\n--ignoreLines:START\nSELECT 1;\n",
+			message: `liquibase changelog "1_x.sql" line 3: "--ignoreLines:START" names neither start nor a number of lines, .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql", test.content)
+
+			c.Assert(err, qt.ErrorMatches, test.message)
+			c.Assert(scanned, qt.DeepEquals, liquibaserun.FormattedCopy{})
 		})
 	}
 }

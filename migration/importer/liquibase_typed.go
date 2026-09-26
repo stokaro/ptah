@@ -179,6 +179,10 @@ func (c *liquibaseConverter) sqlFile(change liquibaseChange) (liquibaseConverted
 	if err != nil {
 		return liquibaseConverted{}, fmt.Errorf("%s names %q: %w", change.display, name, err)
 	}
+	// Liquibase fills in the property references in the file's content too.
+	if err := liquibaserun.PropertyReferencesErr(string(content)); err != nil {
+		return liquibaseConverted{}, fmt.Errorf("%s names %q, which %w", change.display, name, err)
+	}
 	c.consumed = append(c.consumed, resolved)
 	return liquibaseConverted{up: strings.TrimSpace(string(content))}, nil
 }
@@ -555,14 +559,10 @@ func liquibaseApplyConstraints(
 // The type is kept as the author wrote it and the dialect renderer
 // canonicalizes it, which is the path every declared type in Ptah takes.
 // `java.sql.Types.VARCHAR(255)` is Liquibase's JDBC spelling of the same type
-// and loses its prefix. A property reference is refused: its value is defined
-// outside the changelog, and writing `${id_type}` into a migration is writing a
-// statement that cannot run.
+// and loses its prefix. A property reference never reaches it: the changeset
+// holding one is refused before any change converts.
 func liquibaseColumnType(declared string) (string, error) {
 	columnType := strings.TrimSpace(declared)
-	if strings.Contains(columnType, "${") {
-		return "", fmt.Errorf("type %q is a property reference, which Ptah does not resolve", declared)
-	}
 	if rest, ok := strings.CutPrefix(columnType, "java.sql.Types."); ok {
 		columnType = rest
 	}
@@ -590,10 +590,6 @@ func liquibaseColumnDefault(change liquibaseChange) (*ast.DefaultValue, error) {
 			change.display, change.attrs["name"], strings.Join(set, ", "))
 	}
 	value := change.attrs[set[0]]
-	if strings.Contains(value, "${") {
-		return nil, fmt.Errorf("%s %s: %s %q is a property reference, which Ptah does not resolve",
-			change.display, change.attrs["name"], set[0], value)
-	}
 	switch set[0] {
 	case "defaultValueComputed":
 		return &ast.DefaultValue{Expression: value}, nil
@@ -914,9 +910,6 @@ func (ch liquibaseChange) required(key string) (string, error) {
 	if value == "" {
 		return "", fmt.Errorf("%s has no %s", ch.display, key)
 	}
-	if strings.Contains(value, "${") {
-		return "", fmt.Errorf("%s %s %q is a property reference, which Ptah does not resolve", ch.display, key, value)
-	}
 	return value, nil
 }
 
@@ -926,11 +919,7 @@ func (ch liquibaseChange) qualifiedTable(schemaKey, tableKey string) (string, er
 	if err != nil {
 		return "", err
 	}
-	schema := strings.TrimSpace(ch.attrs[schemaKey])
-	if strings.Contains(schema, "${") {
-		return "", fmt.Errorf("%s %s %q is a property reference, which Ptah does not resolve", ch.display, schemaKey, schema)
-	}
-	return liquibaseQualify(schema, table), nil
+	return liquibaseQualify(ch.attrs[schemaKey], table), nil
 }
 
 // flag reads a boolean attribute that defaults to false.

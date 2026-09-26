@@ -2166,13 +2166,17 @@ func dbmateDirective(line string) (string, bool) {
 // as nothing and runs such a file in a transaction, where a statement like
 // VACUUM fails; this conversion carries it, and the converted bytes gain the
 // Atlas directive for that reason.
+//
+// The copy holds only the lines Liquibase reads: an `--ignoreLines` directive
+// and the lines it skips are left out. Atlas CE v1.3.0 copies them and runs
+// them, and Liquibase never does.
 func liquibaseSQL(name string, data []byte) ([]byte, error) {
-	noTransaction, err := liquibaserun.ScanFormattedSQL(name, string(data))
+	scanned, err := liquibaserun.ScanFormattedSQL(name, string(data))
 	if err != nil {
 		return nil, err
 	}
 	var out []string
-	for line := range strings.SplitSeq(string(data), "\n") {
+	for _, line := range scanned.Lines {
 		trimmed := strings.TrimSpace(strings.ToLower(line))
 		if trimmed == "--liquibase formatted sql" || strings.HasPrefix(trimmed, "--rollback") {
 			continue
@@ -2180,7 +2184,7 @@ func liquibaseSQL(name string, data []byte) ([]byte, error) {
 		out = append(out, line)
 	}
 	converted := normalizeSQL([]byte(strings.Join(out, "\n")))
-	if noTransaction && converted != nil {
+	if scanned.NoTransaction && converted != nil {
 		return addAtlasNoTransactionDirective(converted), nil
 	}
 	return converted, nil

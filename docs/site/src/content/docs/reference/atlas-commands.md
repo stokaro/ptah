@@ -865,7 +865,9 @@ applies it everywhere.
 
 A Liquibase changeset whose `ignore` is true is left out, because Liquibase
 never runs it, and each one is named in a warning on stderr; `runInTransaction`
-set to false becomes an Atlas no-transaction migration.
+set to false becomes an Atlas no-transaction migration. The lines an
+`--ignoreLines` directive skips are left out of every conversion, and a property
+reference such as `${tbl}` refuses it.
 
 A successful compatibility import writes nothing to stdout; inspect the
 destination directory and its `atlas.sum` instead of relying on a progress
