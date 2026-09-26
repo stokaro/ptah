@@ -44,6 +44,11 @@ SQL:
   `CURRENT_USER()`. Connect as that definer, change the desired routine to
   `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
   ownership facts fail closed too.
+- Routines have no overloads. A schema that declares two functions, or two
+  procedures, of one name with different parameters is refused before any
+  statement is planned. Applied, the second `CREATE` fails with Error 1304 and
+  the first stays, measured on MySQL 8.4 and MariaDB 11.8. A function and a
+  procedure of one name are two routines.
 - An index declaring `SPATIAL` or `FULLTEXT` is compared against the access
   method the server reports, so a plain index of the same name over the same
   column is a difference rather than a match. An index declaring **no** type

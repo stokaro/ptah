@@ -337,6 +337,10 @@ leaves the default where it is.
   `CHECK` changes need a manual migration.
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
+- Routines have no overloads. A schema that declares two functions, or two
+  procedures, of one name with different parameters is refused before any
+  statement is planned. Ptah writes `CREATE OR ALTER`, and measured on SQL
+  Server 2022 the second replaces the first without an error.
 - A synonym's target is recorded and resolved by the server, not validated by
   Ptah: a synonym naming an object that does not exist is created successfully
   and fails when something uses it, which is SQL Server's own behavior.
