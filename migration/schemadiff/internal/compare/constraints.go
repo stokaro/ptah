@@ -172,7 +172,7 @@ func pairedConstraints(
 	semantics identifier.Semantics,
 ) (genConstraints map[tableMemberKey]schemamodel.Constraint, dbConstraints map[tableMemberKey]catalog.Constraint) {
 	// Create maps for detailed constraint comparison
-	genConstraints = declaredAndCheckConstraints(desired, database, semantics)
+	genConstraints = declaredAndCheckConstraints(desired, database, dialect, semantics)
 
 	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
 
@@ -379,6 +379,7 @@ func excludeConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint
 func declaredAndCheckConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
 ) map[tableMemberKey]schemamodel.Constraint {
 	constraints := make(map[tableMemberKey]schemamodel.Constraint)
@@ -394,13 +395,13 @@ func declaredAndCheckConstraints(
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
-	recordSynthesized(constraints, synthesizeFieldLevelCheckConstraints(desired, database, semantics), semantics)
+	recordSynthesized(constraints, synthesizeFieldLevelCheckConstraints(desired, database, dialect, semantics), semantics)
 
 	// Synthesize table-level Constraint entries from the table's own `checks`
 	// list, which renders as a named CHECK. Without this the constraint the
 	// render created is reported as one to drop on every run after the first
 	// (stokaro/ptah#2590).
-	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, semantics), semantics)
+	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, dialect, semantics), semantics)
 	return constraints
 }
 
@@ -417,9 +418,9 @@ func declaredConstraint(
 }
 
 // ComparedCheckConstraints returns every CHECK constraint the constraint
-// comparison holds for the desired side against database: the declared ones,
-// and the ones it synthesizes from a column's check and a table's checks list.
-// They are ordered by table and name.
+// comparison holds for the desired side against database on dialect: the
+// declared ones, and the ones it synthesizes from a column's check and a
+// table's checks list. They are ordered by table and name.
 //
 // The resolver that asks the server to spell each CHECK reads this set, so the
 // set it resolves is the set compared. The resolver read the declared
@@ -430,13 +431,14 @@ func declaredConstraint(
 func ComparedCheckConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
 ) []schemamodel.Constraint {
 	if desired == nil {
 		return nil
 	}
 	var checks []schemamodel.Constraint
-	for _, constraint := range declaredAndCheckConstraints(desired, database, semantics) {
+	for _, constraint := range declaredAndCheckConstraints(desired, database, dialect, semantics) {
 		if strings.EqualFold(constraint.Type, "CHECK") {
 			checks = append(checks, constraint)
 		}

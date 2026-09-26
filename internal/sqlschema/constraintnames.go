@@ -50,8 +50,8 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 }
 
 // nameCreatedConstraints gives every unnamed CHECK, every unnamed table-level
-// UNIQUE and every unnamed FOREIGN KEY one CREATE TABLE declared the name
-// PostgreSQL gives it.
+// UNIQUE, every unnamed EXCLUDE and every unnamed FOREIGN KEY one CREATE TABLE
+// declared the name PostgreSQL gives it.
 //
 // The name has to be decided on the desired model, because the other side of a
 // comparison is a catalog, and a catalog holds the name the server chose. A
@@ -61,14 +61,17 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 // `<table>_<columns>_key` to add the same UNIQUE back without a name, which the
 // server named again (stokaro/ptah#3643). Left unnamed, a CHECK never pairs
 // with the server's `<table>_check`, and the comparison drops the server's
-// CHECK to add the same one back (stokaro/ptah#3729).
+// CHECK to add the same one back (stokaro/ptah#3729), and so does an EXCLUDE
+// with the server's `<table>_<elements>_excl` (stokaro/ptah#3749).
 //
 // The order is the server's. PostgreSQL creates the table and its CHECK
-// constraints, then the index behind each UNIQUE, then the foreign keys, and
+// constraints, then the index behind each UNIQUE and EXCLUDE, in the order the
+// table declares them, then the foreign keys, and
 // each derived name avoids every name that exists by then. So every name the
 // schema already holds is claimed first -- in this file, in the earlier files
 // the document read, and the table's own explicitly named constraints -- then
-// the CHECK names, then the UNIQUE names, then the foreign key names. A named
+// the CHECK names, then the UNIQUE and EXCLUDE names, then the foreign key
+// names. A named
 // CHECK written after an unnamed one that derives its name is refused by the
 // server, so claiming the explicit names first changes no name a server
 // accepts. Measured, `REFERENCES
@@ -98,12 +101,7 @@ func nameCreatedConstraints(
 	relations := relationNamesInSchema(databases, table.Schema)
 	nameCreatedChecks(database, table, fieldsStart, constraintsStart, constraints)
 	for i := constraintsStart; i < len(database.Constraints); i++ {
-		constraint := &database.Constraints[i]
-		if !strings.EqualFold(constraint.Type, "UNIQUE") || constraint.Name != "" {
-			continue
-		}
-		constraint.Name = claimDerivedName(table.Name, constraint.Columns, uniqueLabel, constraints, relations)
-		relations.claim(constraint.Name)
+		nameIndexedConstraint(&database.Constraints[i], table.Name, constraints, relations)
 	}
 	for i := fieldsStart; i < len(database.Fields); i++ {
 		field := &database.Fields[i]
@@ -336,12 +334,12 @@ func nameAddedColumnCheck(field *schemamodel.Field, target alterTarget, columns 
 	field.CheckName = claimCheckName(table, field.Check, columns, constraintNamesInSchema(target.databases, schema))
 }
 
-// nameAddedConstraint names an unnamed CHECK, UNIQUE or FOREIGN KEY an ALTER
-// TABLE adds, by the rule [nameCreatedConstraints] follows, against every name
-// the schema already holds -- in this file and in the earlier ones the document
-// read. MySQL and MariaDB name the last two differently: an unnamed foreign key
-// takes [nameAddedMySQLForeignKey], and an unnamed UNIQUE is an index named
-// like any other; see [nameAddedMySQLIndex].
+// nameAddedConstraint names an unnamed CHECK, UNIQUE, EXCLUDE or FOREIGN KEY
+// an ALTER TABLE adds, by the rule [nameCreatedConstraints] follows, against
+// every name the schema already holds -- in this file and in the earlier ones
+// the document read. MySQL and MariaDB name UNIQUE and FOREIGN KEY differently:
+// an unnamed foreign key takes [nameAddedMySQLForeignKey], and an unnamed
+// UNIQUE is an index named like any other; see [nameAddedMySQLIndex].
 func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget) error {
 	if constraint.Name != "" {
 		return nil
@@ -368,13 +366,37 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	case strings.EqualFold(constraint.Type, "CHECK"):
 		_, columns := tableColumns(target.databases, target.structName)
 		constraint.Name = claimCheckName(table, constraint.CheckExpression, columns, constraints)
-	case strings.EqualFold(constraint.Type, "UNIQUE"):
-		relations := relationNamesInSchema(target.databases, schema)
-		constraint.Name = claimDerivedName(table, constraint.Columns, uniqueLabel, constraints, relations)
+	case strings.EqualFold(constraint.Type, "UNIQUE"), strings.EqualFold(constraint.Type, "EXCLUDE"):
+		nameIndexedConstraint(constraint, table, constraints, relationNamesInSchema(target.databases, schema))
 	case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
 		constraint.Name = claimDerivedName(table, constraint.Columns, foreignKeyLabel, constraints)
 	}
 	return nil
+}
+
+// nameIndexedConstraint names an unnamed UNIQUE or EXCLUDE on table, the two
+// kinds the server builds an index for. The index is a relation, so the name
+// avoids every relation of the schema as well as every constraint, and claims
+// its place in both. Any other constraint, and one with a name, is left alone.
+func nameIndexedConstraint(
+	constraint *schemamodel.Constraint,
+	table string,
+	constraints, relations namespaceNames,
+) {
+	if constraint.Name != "" {
+		return
+	}
+	switch {
+	case strings.EqualFold(constraint.Type, "UNIQUE"):
+		constraint.Name = claimDerivedName(table, constraint.Columns, uniqueLabel, constraints, relations)
+	case strings.EqualFold(constraint.Type, "EXCLUDE"):
+		constraint.Name = pgname.Exclude(table, constraint.ExcludeElements, func(candidate string) bool {
+			return constraints.taken(candidate) || relations.taken(candidate)
+		})
+	default:
+		return
+	}
+	relations.claim(constraint.Name)
 }
 
 // claimCheckName derives the name of an unnamed CHECK on table and claims it in

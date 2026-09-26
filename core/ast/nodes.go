@@ -478,10 +478,8 @@ type ColumnNode struct {
 	// Check contains a check constraint expression for this column
 	Check string
 	// CheckName is an optional explicit constraint name for the column-level
-	// CHECK. When empty, dialect renderers either emit an unnamed `CHECK (...)`
-	// (relying on the engine's auto-generated name) or, in the planner path
-	// when matching against introspected constraints, a deterministic
-	// "<table>_<column>_check" identifier.
+	// CHECK. When empty, dialect renderers emit an unnamed `CHECK (...)` and
+	// the engine names it.
 	CheckName string
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL.

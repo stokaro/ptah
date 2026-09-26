@@ -83,7 +83,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	checks, err := resolveCheckExpressions(ctx, conn, desired, database, semantics)
+	checks, err := resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -502,6 +502,7 @@ func resolveCheckExpressions(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
 ) (map[string]config.CheckExpression, error) {
 	if desired == nil || database == nil {
@@ -518,7 +519,7 @@ func resolveCheckExpressions(
 	// The checks the comparison compares, not only the declared ones: a
 	// column's check is compared as a synthesized constraint, and a check the
 	// resolver never saw is compared by text.
-	compared := compare.ComparedCheckConstraints(desired, database, semantics)
+	compared := compare.ComparedCheckConstraints(desired, database, dialect, semantics)
 	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(compared))
 	for _, constraint := range compared {
 		key := exprkey.Check(semantics, constraint.Table, constraint.Name)

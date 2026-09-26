@@ -657,7 +657,7 @@ func FromTableWithConstraints(
 	declared []schemamodel.Constraint,
 ) *ast.CreateTableNode {
 	node := fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
-	replaceSynthesizedTableChecks(node, table, declared)
+	replaceSynthesizedTableChecks(node, table, fields, declared, targetPlatform)
 	return node
 }
 
@@ -751,7 +751,7 @@ func fromTableWithFieldConverter(
 	// `CHECK (price > 0)` and `CONSTRAINT "products_check" CHECK (price > 0)`
 	// in one CREATE TABLE. The unnamed copy is the shape this change replaced,
 	// because a server-invented name is what stopped the schema converging.
-	for _, check := range schemaprep.TableCheckConstraints(newTable, nil) {
+	for _, check := range schemaprep.TableCheckConstraints(newTable, fields, nil, targetPlatform) {
 		createTable.AddConstraint(FromConstraint(check))
 	}
 
@@ -948,6 +948,7 @@ const (
 func addTableConstraints(
 	createTable *ast.CreateTableNode,
 	table schemamodel.Table,
+	fields []schemamodel.Field,
 	constraints []schemamodel.Constraint,
 	mode tableConstraintMode,
 	targetPlatform string,
@@ -957,7 +958,7 @@ func addTableConstraints(
 	// again from the same function the comparator calls -- one namer with one
 	// input, rather than a rendered name decided without the explicit
 	// constraints and a compared name decided with them.
-	replaceSynthesizedTableChecks(createTable, table, constraints)
+	replaceSynthesizedTableChecks(createTable, table, fields, constraints, targetPlatform)
 
 	for _, constraint := range constraints {
 		if !schemaprep.ConstraintBelongsToTable(constraint, table) {
@@ -992,7 +993,9 @@ func addTableConstraints(
 func replaceSynthesizedTableChecks(
 	createTable *ast.CreateTableNode,
 	table schemamodel.Table,
+	fields []schemamodel.Field,
 	declared []schemamodel.Constraint,
+	targetPlatform string,
 ) {
 	kept := make([]*ast.ConstraintNode, 0, len(createTable.Constraints))
 	for _, node := range createTable.Constraints {
@@ -1003,7 +1006,7 @@ func replaceSynthesizedTableChecks(
 	}
 	createTable.Constraints = kept
 
-	for _, check := range schemaprep.TableCheckConstraints(table, declared) {
+	for _, check := range schemaprep.TableCheckConstraints(table, fields, declared, targetPlatform) {
 		createTable.AddConstraint(FromConstraint(check))
 	}
 }
@@ -2193,7 +2196,7 @@ func appendTableStatements(
 		if sqliteTarget {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
-		addTableConstraints(tableNode, table, database.Constraints, mode, targetPlatform)
+		addTableConstraints(tableNode, table, allFields, database.Constraints, mode, targetPlatform)
 		if err := visit(tableNode); err != nil {
 			return nil, err
 		}

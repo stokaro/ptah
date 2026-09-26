@@ -149,10 +149,11 @@ columns instead.
 
 ## Unnamed constraints in a SQL file
 
-PostgreSQL names a `CHECK`, a table-level `UNIQUE` or a `FOREIGN KEY` that the
-SQL leaves unnamed. A SQL schema file read for PostgreSQL gives the constraint
-the same name, so the file compares equal to the database its own SQL built,
-and a plan from the file creates the constraint under that name.
+PostgreSQL names a `CHECK`, a table-level `UNIQUE`, an `EXCLUDE` or a
+`FOREIGN KEY` that the SQL leaves unnamed. A SQL schema file read for
+PostgreSQL gives the constraint the same name, so the file compares equal to
+the database its own SQL built, and a plan from the file creates the constraint
+under that name.
 
 The name is `<table>_<columns>_key` or `<table>_<columns>_fkey`, with the
 columns joined by underscores. A name longer than 63 bytes is cut, from the
@@ -168,6 +169,26 @@ Measured on PostgreSQL 18.6:
 | a second foreign key over `p` on `twice` | `twice_p_fkey1` |
 | `UNIQUE (a, b)` on `p` | `p_a_b_key` |
 | `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
+
+An `EXCLUDE` is named `<table>_<elements>_excl`. An element that is a column
+takes the column's name. An expression takes the name of the function it
+calls, of the column or type a cast names, or a word such as `coalesce` or
+`case`, and `expr` when it has none. A name an earlier element holds is
+numbered, and the constraint name is cut and numbered the way a `UNIQUE` name
+is, past tables, views, sequences and indexes as well. Measured on PostgreSQL
+18.6:
+
+| Declared | Name |
+| --- | --- |
+| `EXCLUDE USING gist (r WITH =, s WITH <>)` on `b` | `b_r_s_excl` |
+| `EXCLUDE USING btree (lower(t) WITH =)` on `d` | `d_lower_excl` |
+| `EXCLUDE USING btree ((r + 1) WITH =)` on `f` | `f_expr_excl` |
+| `EXCLUDE USING gist (r WITH =, r WITH <>)` on `h` | `h_r_r1_excl` |
+
+An `EXCLUDE` is compared by its name and then by its text. An element or a
+`WHERE` clause the server prints with other parentheses, such as `(lower(t))`
+or `WHERE (s > 0)`, is still planned again
+([#3767](https://github.com/stokaro/ptah/issues/3767)).
 
 A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
 column of the table, and `<table>_check` when it names none or more than one.
@@ -209,6 +230,13 @@ The other engines keep Ptah's own name for an unnamed foreign key,
 `fk_<table>_<column>`. A `CHECK` left unnamed in a file read for another engine
 stays unnamed. Two of them on one table are compared by their conditions, so a
 plan never merges one into the other.
+
+A column `check` declared in YAML or a Go annotation without `check_name` is
+written without a name, so PostgreSQL names it by the rule
+above, and the comparison looks for that name. A table's `checks` entries are
+named `<table>_check`, `<table>_check1` and on, past the names the column
+`CHECK`s take: a column `CHECK` over two columns takes `<table>_check`, and
+the first entry beside it takes `<table>_check1`.
 
 ## Object comments
 

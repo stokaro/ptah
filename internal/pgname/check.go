@@ -1,13 +1,5 @@
 package pgname
 
-import (
-	"strings"
-
-	"ptah.run/core/platform"
-	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/lexer"
-)
-
 // checkLabel is the label PostgreSQL ends the name of an unnamed CHECK with.
 const checkLabel = "check"
 
@@ -65,28 +57,10 @@ func checkColumn(table, expression string, columns []string) (string, bool) {
 	return "", false
 }
 
-// significantTokens reads expression the way PostgreSQL's lexer does and keeps
-// every token but whitespace and comments.
-func significantTokens(expression string) []lexer.Token {
-	scanner := lexer.NewLexerWithOptions(expression, dialectlexer.Options(platform.Postgres))
-	var tokens []lexer.Token
-	for {
-		token := scanner.NextToken()
-		switch token.Type {
-		case lexer.TokenEOF:
-			return tokens
-		case lexer.TokenWhitespace, lexer.TokenComment:
-			continue
-		default:
-			tokens = append(tokens, token)
-		}
-	}
-}
-
 // checkReader walks the tokens of one CHECK expression and records the
 // columns it references.
 type checkReader struct {
-	tokens   []lexer.Token
+	tokens   tokenList
 	table    string
 	declared map[string]bool
 	found    map[string]bool
@@ -102,10 +76,10 @@ func (r *checkReader) read() {
 // readAt reads the construct that starts at position and returns the position
 // after it.
 func (r *checkReader) readAt(position int) int {
-	if r.operatorAt(position, ":") && r.operatorAt(position+1, ":") {
+	if r.tokens.operatorAt(position, ":") && r.tokens.operatorAt(position+1, ":") {
 		return r.skipTypeName(position + 2)
 	}
-	name, ok := r.nameAt(position)
+	name, ok := r.tokens.nameAt(position)
 	if !ok {
 		return position + 1
 	}
@@ -113,20 +87,20 @@ func (r *checkReader) readAt(position int) int {
 		return next
 	}
 	switch {
-	case r.operatorAt(position+1, "("):
+	case r.tokens.operatorAt(position+1, "("):
 		// A function call.
-	case r.operatorAt(position+1, "."):
+	case r.tokens.operatorAt(position+1, "."):
 		// A qualifier: the column, if any, is the part after the dot. The
 		// table's own name before `.*` is the whole row.
-		if name == r.table && r.operatorAt(position+2, "*") {
+		if name == r.table && r.tokens.operatorAt(position+2, "*") {
 			r.wholeRow = true
 		}
-	case r.stringLiteralAt(position + 1):
+	case r.tokens.stringLiteralAt(position + 1):
 		// A typed literal, such as `date '2000-01-01'`.
 		return r.skipWords(position+2, intervalFields)
 	case r.declared[name]:
 		r.found[name] = true
-	case name == r.table && !r.operatorAt(position-1, "."):
+	case name == r.table && !r.tokens.operatorAt(position-1, "."):
 		r.wholeRow = true
 	}
 	return position + 1
@@ -139,13 +113,13 @@ func (r *checkReader) readAt(position int) int {
 // `ts AT TIME ZONE 'UTC' > '2000-01-01'` each reference `ts` alone.
 func (r *checkReader) skipKeywordConstruct(position int) (int, bool) {
 	switch {
-	case r.keywordAt(position, "as"):
+	case r.tokens.keywordAt(position, "as"):
 		return r.skipTypeName(position + 1), true
-	case r.keywordAt(position, "collate"):
-		return r.skipQualifiedName(position + 1), true
-	case r.keywordAt(position, "at") && r.keywordAt(position+1, "time") && r.keywordAt(position+2, "zone"):
+	case r.tokens.keywordAt(position, "collate"):
+		return r.tokens.skipQualifiedName(position + 1), true
+	case r.tokens.keywordAt(position, "at") && r.tokens.keywordAt(position+1, "time") && r.tokens.keywordAt(position+2, "zone"):
 		return position + 3, true
-	case r.keywordAt(position, "extract") && r.operatorAt(position+1, "("):
+	case r.tokens.keywordAt(position, "extract") && r.tokens.operatorAt(position+1, "("):
 		return position + 3, true
 	default:
 		return position, false
@@ -164,14 +138,14 @@ var (
 // position: a possibly qualified name, the words that continue it, a
 // parenthesized modifier and array brackets, in any order after the name.
 func (r *checkReader) skipTypeName(position int) int {
-	position = r.skipQualifiedName(position)
+	position = r.tokens.skipQualifiedName(position)
 	for {
 		switch {
-		case r.operatorAt(position, "("):
-			position = r.skipBalanced(position, "(", ")")
-		case r.operatorAt(position, "["):
-			position = r.skipBalanced(position, "[", "]")
-		case r.keywordIn(position, typeNameWords), r.keywordIn(position, intervalFields):
+		case r.tokens.operatorAt(position, "("):
+			position = r.tokens.skipBalanced(position, "(", ")")
+		case r.tokens.operatorAt(position, "["):
+			position = r.tokens.skipBalanced(position, "[", "]")
+		case r.tokens.keywordIn(position, typeNameWords), r.tokens.keywordIn(position, intervalFields):
 			position++
 		default:
 			return position
@@ -179,113 +153,11 @@ func (r *checkReader) skipTypeName(position int) int {
 	}
 }
 
-// skipQualifiedName returns the position after the dotted name that starts at
-// position.
-func (r *checkReader) skipQualifiedName(position int) int {
-	if _, ok := r.nameAt(position); !ok {
-		return position
-	}
-	position++
-	for r.operatorAt(position, ".") {
-		if _, ok := r.nameAt(position + 1); !ok {
-			return position
-		}
-		position += 2
-	}
-	return position
-}
-
-// skipBalanced returns the position after the closer that balances the opener
-// at position.
-func (r *checkReader) skipBalanced(position int, opener, closer string) int {
-	depth := 0
-	for ; position < len(r.tokens); position++ {
-		switch {
-		case r.operatorAt(position, opener):
-			depth++
-		case r.operatorAt(position, closer):
-			depth--
-			if depth == 0 {
-				return position + 1
-			}
-		}
-	}
-	return position
-}
-
 // skipWords returns the first position from position on that is not one of
 // words.
 func (r *checkReader) skipWords(position int, words []string) int {
-	for r.keywordIn(position, words) {
+	for r.tokens.keywordIn(position, words) {
 		position++
 	}
 	return position
-}
-
-func (r *checkReader) operatorAt(position int, value string) bool {
-	return position >= 0 && position < len(r.tokens) && r.tokens[position].MatchOperatorValue(value)
-}
-
-func (r *checkReader) stringLiteralAt(position int) bool {
-	if position >= len(r.tokens) {
-		return false
-	}
-	token := r.tokens[position]
-	return token.Type == lexer.TokenString && !strings.HasPrefix(token.Value, `"`)
-}
-
-// keywordAt reports whether the token at position is word written unquoted.
-func (r *checkReader) keywordAt(position int, word string) bool {
-	return position < len(r.tokens) && r.tokens[position].Type == lexer.TokenIdentifier &&
-		foldUnquoted(r.tokens[position].Value) == word
-}
-
-func (r *checkReader) keywordIn(position int, words []string) bool {
-	for _, word := range words {
-		if r.keywordAt(position, word) {
-			return true
-		}
-	}
-	return false
-}
-
-// nameAt answers the name the token at position spells, as the server stores
-// it: a quoted identifier keeps its case, an unquoted one is folded. A number
-// is not a name.
-func (r *checkReader) nameAt(position int) (string, bool) {
-	if position >= len(r.tokens) {
-		return "", false
-	}
-	token := r.tokens[position]
-	switch {
-	case token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`):
-		return unquoteIdentifier(token.Value), true
-	case token.Type == lexer.TokenIdentifier && token.Value != "" && !isDigit(token.Value[0]):
-		return foldUnquoted(token.Value), true
-	default:
-		return "", false
-	}
-}
-
-// foldUnquoted folds an unquoted identifier as PostgreSQL does: ASCII letters
-// to lower case, every other character kept.
-func foldUnquoted(value string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= 'A' && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		return r
-	}, value)
-}
-
-// unquoteIdentifier removes the double quotes around an identifier and undoes
-// the doubling of a quote inside it.
-func unquoteIdentifier(value string) string {
-	value = strings.TrimPrefix(value, `"`)
-	value = strings.TrimSuffix(value, `"`)
-	return strings.ReplaceAll(value, `""`, `"`)
-}
-
-func isDigit(character byte) bool {
-	return character >= '0' && character <= '9'
 }

@@ -1018,8 +1018,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 3299,
-      "sourceBytes": 20160
+      "visibleWords": 3410,
+      "sourceBytes": 20828
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1166,8 +1166,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10665,
-      "sourceBytes": 72761
+      "visibleWords": 10919,
+      "sourceBytes": 74211
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -5653,8 +5653,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 3330,
-      "sourceBytes": 25025
+      "visibleWords": 3455,
+      "sourceBytes": 26010
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
