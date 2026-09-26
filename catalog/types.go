@@ -864,6 +864,11 @@ type Index struct {
 	// Only readers that can ask the catalog (pg_inherits over index
 	// relations) set this; everything else leaves it false.
 	PartitionAttached bool `json:"partition_attached,omitempty"`
+
+	// HashShardBuckets is the bucket count of a CockroachDB index built USING
+	// HASH, and 0 for every other index. See [Constraint.HashShardBuckets] for
+	// what the description carries instead of the sharding.
+	HashShardBuckets int `json:"hash_shard_buckets,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
@@ -941,6 +946,18 @@ type Constraint struct {
 	// PostgreSQL and the engines that share its catalog, through
 	// obj_description(oid, 'pg_constraint').
 	Comment string `json:"comment,omitempty"`
+
+	// HashShardBuckets is the bucket count of a CockroachDB key built USING
+	// HASH, and 0 for every other constraint.
+	//
+	// A hash-sharded key spans a hidden virtual column CockroachDB adds, such
+	// as crdb_internal_id_shard_16, before or after the declared ones. The
+	// reader leaves that column out of ColumnNames, as it leaves every hidden
+	// column out of a table, so the description is the key as declared, and
+	// records the sharding here. No schema source can declare USING HASH, so
+	// the description applied elsewhere builds the key unsharded, and the read
+	// surfaces say so (stokaro/ptah#3771).
+	HashShardBuckets int `json:"hash_shard_buckets,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.

@@ -48,6 +48,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -73,6 +75,9 @@ type pgIndexCatalog struct {
 	keyOpclasses []pgIndexKeyOpclass
 	// keyOptions is the JSON array of pg_index.indoption bitmasks.
 	keyOptions string
+	// keyHidden is the JSON array of per-key attishidden flags, which only a
+	// target with hidden columns is asked for.
+	keyHidden string
 	// includeColumns is the JSON array of INCLUDE payload column texts.
 	includeColumns string
 	// method is pg_am.amname.
@@ -432,6 +437,7 @@ func serveIndexQuery(currentCatalog pgIndexCatalog, query string) (dbtest.QueryR
 		{"index_key_attnums", "indkey", currentCatalog.keyAttnums},
 		{"index_key_opclasses", "indclass", opclasses},
 		{"index_key_options", "indoption", currentCatalog.keyOptions},
+		{"index_key_hidden", "attishidden", currentCatalog.keyHidden},
 		{"index_include_columns", "indkey", currentCatalog.includeColumns},
 		{"index_method", "amname", currentCatalog.method},
 		{"index_storage_params", "reloptions", currentCatalog.storageParams},
@@ -790,7 +796,23 @@ func readIndexThroughFakeServer(t *testing.T, currentCatalog pgIndexCatalog) (ca
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return serveIndexQuery(currentCatalog, query)
 	})
-	indexes, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema(t.Context(), "public")
+	return readOneIndex(t, NewPostgreSQLReader(db.SQL, "public"))
+}
+
+// readCockroachIndexThroughFakeServer is readIndexThroughFakeServer for a reader
+// that knows it reads CockroachDB, which is the one that asks about hidden
+// columns and hash sharding.
+func readCockroachIndexThroughFakeServer(t *testing.T, currentCatalog pgIndexCatalog) (catalog.Index, error) {
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return serveIndexQuery(currentCatalog, query)
+	})
+	return readOneIndex(t, NewPostgreSQLWireReaderWithCapabilities(
+		db.SQL, "public", platform.CockroachDB, capability.CockroachDB263(),
+	))
+}
+
+func readOneIndex(t *testing.T, reader *Reader) (catalog.Index, error) {
+	indexes, err := reader.readIndexesForSchema(t.Context(), "public")
 	if err != nil {
 		return catalog.Index{}, err
 	}
@@ -1378,6 +1400,68 @@ func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
 			got, err := answerCommentProjection(currentCatalog, query)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// hashShardedCatalog is CREATE INDEX plain_v_idx ON plain (v) USING HASH as
+// CockroachDB v26.3.1 reports it: indkey {3 2}, the hidden virtual shard column
+// first, and a definition that names only v.
+func hashShardedCatalog() pgIndexCatalog {
+	currentCatalog := plainCatalog()
+	currentCatalog.tableName = "plain"
+	currentCatalog.indexName = "plain_v_idx"
+	currentCatalog.indexDef = "CREATE INDEX plain_v_idx ON public.plain USING btree (v ASC) USING HASH WITH (bucket_count=16)"
+	currentCatalog.keyTexts = `["crdb_internal_v_shard_16", "v"]`
+	currentCatalog.keyAttnums = `[3, 2]`
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{
+		{name: "int8_ops", isDefault: true}, {name: "int8_ops", isDefault: true},
+	}
+	currentCatalog.keyOptions = `[0, 0]`
+	currentCatalog.keyHidden = `[true, false]`
+	return currentCatalog
+}
+
+// TestReadIndexesForSchema_KeepsAHashShardedIndexAsDeclared pins the index half
+// of the hash-sharding rule. The shard column is the first key, and a read that
+// kept it described CREATE INDEX over a column the description does not have;
+// the bucket count is kept beside the index instead, since no declaration can
+// spell it (stokaro/ptah#3771).
+//
+// The PostgreSQL row is the control: the same catalog answer through a reader
+// that has no hidden columns is not asked about them, keeps every key, and
+// reads no bucket count out of a definition PostgreSQL never prints.
+func TestReadIndexesForSchema_KeepsAHashShardedIndexAsDeclared(t *testing.T) {
+	tests := []struct {
+		name        string
+		read        func(*testing.T, pgIndexCatalog) (catalog.Index, error)
+		wantColumns []string
+		wantBuckets int
+	}{
+		{
+			name:        "cockroachdb",
+			read:        readCockroachIndexThroughFakeServer,
+			wantColumns: []string{"v"},
+			wantBuckets: 16,
+		},
+		{
+			name:        "postgres",
+			read:        readIndexThroughFakeServer,
+			wantColumns: []string{"crdb_internal_v_shard_16", "v"},
+			wantBuckets: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := test.read(t, hashShardedCatalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.Columns, qt.DeepEquals, test.wantColumns)
+			c.Assert(index.Parts, qt.HasLen, len(test.wantColumns))
+			c.Assert(index.HashShardBuckets, qt.Equals, test.wantBuckets)
 		})
 	}
 }

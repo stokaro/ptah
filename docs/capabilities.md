@@ -1253,8 +1253,22 @@ file, exactly as any other command reaching the same URL would.
   the same reason: a description cannot hold it without the column. The keyless
   table's key over `rowid`, `<table>_pkey`, is the case that matters. Described,
   it would make every comparison plan `DROP CONSTRAINT <table>_pkey`, which
-  CockroachDB refuses. A hash-sharded primary key also spans a declared column,
-  so it is kept.
+  CockroachDB refuses.
+
+  A key or index built `USING HASH` spans the declared columns and a hidden
+  shard column, such as `crdb_internal_id_shard_16`. It is described over the
+  declared columns, so the description applies, and the bucket count the server
+  prints is kept beside it. No schema source can declare `USING HASH`, so a
+  description applied to another database builds the key unsharded, and a diff
+  between the two reports no difference. `ptah db read` and `schema inspect`
+  name each one on stderr:
+
+  ```text
+  note: 1 CockroachDB key or index built USING HASH is described without it,
+  because no schema source can declare hash sharding; a description applied to
+  another database builds it unsharded, and a diff between the two reports no
+  difference: orders.orders_pkey (16 buckets).
+  ```
 
   Two refusals are about values rather than names. A zero or negative knob is
   refused because the server rejects the negative one and accepts zero while

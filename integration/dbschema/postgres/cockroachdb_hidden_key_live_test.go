@@ -58,9 +58,44 @@ func TestReaderHiddenKey_LiveLeavesOutTheEnginesKey(t *testing.T) {
 	})
 }
 
+// TestReaderHashShardedKey_LiveKeepsTheDeclaredColumns reads the same fixture
+// for what a hash-sharded key and index are described as.
+//
+// Each spans a hidden shard column the author never declared, first in the key.
+// Described over it, the key names a column the description does not have, and
+// applying the description fails with `column "crdb_internal_id_shard_16" does
+// not exist` (stokaro/ptah#3771). The key and the index are described over the
+// declared columns, and the bucket count is read from the server's own
+// definition. The keyed table's primary key is the control: it has no sharding
+// to read.
+func TestReaderHashShardedKey_LiveKeepsTheDeclaredColumns(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 2*time.Minute)
+	defer cancel()
+	conn, schemaName := prepareHiddenKeyFixture(c, ctx)
+
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
+
+	c.Assert(err, qt.IsNil)
+	keys := make(map[string]string)
+	for _, constraint := range schema.Constraints {
+		keys[constraint.TableName+"."+constraint.Name] = fmt.Sprintf("%v %d", constraint.ColumnNames, constraint.HashShardBuckets)
+	}
+	c.Assert(keys, qt.DeepEquals, map[string]string{
+		"keyed.keyed_pkey":     "[id] 0",
+		"sharded.sharded_pkey": "[id] 16",
+	})
+	indexes := make(map[string]string)
+	for _, index := range schema.Indexes {
+		indexes[index.TableName+"."+index.Name] = fmt.Sprintf("%v %d", index.Columns, index.HashShardBuckets)
+	}
+	c.Assert(indexes["keyed.keyed_v_idx"], qt.Equals, "[v] 8")
+	c.Assert(indexes["sharded.sharded_pkey"], qt.Equals, "[id] 16")
+}
+
 // prepareHiddenKeyFixture creates a schema of its own holding a keyless table,
-// a table with a hash-sharded key and a table with a declared key, and drops it
-// when the test ends.
+// a table with a hash-sharded key, and a table with a declared key and a
+// hash-sharded index, and drops it when the test ends.
 func prepareHiddenKeyFixture(c *qt.C, ctx context.Context) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbtarget.URL(c, dbtarget.CockroachDB))
@@ -78,7 +113,8 @@ func prepareHiddenKeyFixture(c *qt.C, ctx context.Context) (*dbschema.DatabaseCo
 		"CREATE SCHEMA " + schema,
 		"CREATE TABLE " + schema + ".keyless (id INT8)",
 		"CREATE TABLE " + schema + ".sharded (id INT8 PRIMARY KEY USING HASH)",
-		"CREATE TABLE " + schema + ".keyed (id INT8, CONSTRAINT keyed_pkey PRIMARY KEY (id))",
+		"CREATE TABLE " + schema + ".keyed (id INT8, v INT8, CONSTRAINT keyed_pkey PRIMARY KEY (id))",
+		"CREATE INDEX keyed_v_idx ON " + schema + ".keyed (v) USING HASH WITH (bucket_count = 8)",
 	} {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement:\n%s", statement))
