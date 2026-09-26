@@ -1062,8 +1062,9 @@ func (d document) addDefaultPrivileges(db *schemamodel.Database) error {
 
 // defaultPrivilegeObjectTypes is the set of object classes an entry may name.
 //
-// SCHEMAS is absent deliberately: this family is schema-scoped, and a default
-// privilege on schemas is the cluster-wide form the model has no spelling for.
+// SCHEMAS is absent deliberately: this family is schema-scoped, and PostgreSQL
+// accepts a default privilege on schemas only in the global form, without
+// IN SCHEMA, which the model has no spelling for.
 var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
 
 // buildDefaultPrivilege turns one entry into a model object, refusing an entry

@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/fileplan"
+	"ptah.run/internal/globaldefaults"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemascope"
@@ -221,6 +222,10 @@ func renderInspectSchema(
 	// those have no hypertables in them, so the note is silent there rather
 	// than suppressed.
 	timescale.ReportUndescribed(opts.Diagnostics, schema)
+	// Global default privileges are not in any document this renders, and the
+	// list survives selection unchanged, so the note says what the read left
+	// out (stokaro/ptah#3737).
+	globaldefaults.ReportUndescribed(opts.Diagnostics, schema)
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,

@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/globaldefaults"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
@@ -110,6 +111,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// continuous aggregate is not described at all, so the statements printed
 	// below are correct and incomplete. See stokaro/ptah#1026.
 	timescale.ReportUndescribed(stderr, schema)
+
+	// A default privilege set without IN SCHEMA is not described, and applying
+	// the statements below elsewhere leaves it behind. See stokaro/ptah#3737.
+	globaldefaults.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect)

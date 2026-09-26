@@ -366,7 +366,7 @@ A `grantable` name that is not in `privileges` is refused while the document is
 parsed: granting it would grant a privilege nobody asked for, and keeping it as
 a flag on nothing would put a contradiction in the schema.
 
-The cluster-wide form, written without `IN SCHEMA`, has no spelling here.
+The global form, written without `IN SCHEMA`, has no spelling here.
 `schema` is required, and a default privilege with no schema is a different
 object Ptah does not model.
 

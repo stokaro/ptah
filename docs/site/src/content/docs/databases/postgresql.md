@@ -539,10 +539,21 @@ Reading a live database describes the default privileges of each schema the
 read covers, the connection's default schema included, and renders each one
 with its `IN SCHEMA` clause. A global default, set without `IN SCHEMA`, is left
 out of the description, because no schema source can declare one. A
-description applied to another database therefore does not carry it. Run a
-statement such as
-`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` there
-yourself.
+description applied to another database therefore does not carry it, and
+`ptah db read` and `schema inspect` name each one on stderr, by object class
+and grantor, whichever schemas the read covers:
+
+```text
+note: 2 global default privileges, set by ALTER DEFAULT PRIVILEGES without IN
+SCHEMA, are not described, because no schema source can declare one; a
+description applied to another database does not carry them: FUNCTIONS for
+app_owner, TABLES for app_owner.
+```
+
+Run a statement such as
+`ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
+on the other database yourself. On CockroachDB a default set `FOR ALL ROLES`
+is named as `for all roles`.
 
 A privilege can be limited to columns of a table: `GRANT UPDATE (state,
 decided_at) ON proposals TO app`. Each column is compared on its own against

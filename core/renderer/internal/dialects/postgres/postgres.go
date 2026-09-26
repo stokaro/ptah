@@ -3634,9 +3634,9 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 // identity is two statements rather than one -- which is also how a reader
 // reports it back, so the two spellings fold to the same thing.
 //
-// IN SCHEMA is always emitted. The clause-less form sets the cluster-wide
-// default, which internal/devclean refuses during replay, and the node has no
-// spelling for it.
+// IN SCHEMA is always emitted. The clause-less form sets the global default for
+// every schema of the database, which internal/devclean refuses during replay,
+// and the node has no spelling for it.
 func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	if len(node.Privileges) == 0 {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires at least one privilege")
