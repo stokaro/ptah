@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
@@ -471,6 +472,12 @@ func (p *Planner) modifyExistingColumns(
 				HasPreviousNullable: colDiff.Changes["nullable"] != "",
 				PreviousDefault:     previousColumnDefault(colDiff.Changes),
 				HasPreviousDefault:  columnDefaultChanged(colDiff.Changes),
+				// Stated although MODIFY restates the whole column, because the
+				// statement cannot say what changed: it repeats NOT NULL on a
+				// type change as on a nullability change, and migration/safety
+				// reads which of the two it is from here.
+				Changed:    columnchange.Properties(colDiff),
+				HasChanged: true,
 			}},
 		}
 		result = append(result, alterNode)

@@ -1014,8 +1014,8 @@
         "/databases/overview/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2400,
-      "sourceBytes": 15044
+      "visibleWords": 2555,
+      "sourceBytes": 15911
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -4380,8 +4380,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8982,
-      "sourceBytes": 88745
+      "visibleWords": 8989,
+      "sourceBytes": 88817
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
