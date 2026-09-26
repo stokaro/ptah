@@ -80,6 +80,23 @@ objects, and roles. Ptah resolves table-scoped identities before comparing
 definitions, so different Go struct names cannot hide a database-object
 conflict.
 
+The merge compares names as they are written, so `users` and `public.users`
+are two identities there. On the target they can be one table: a table without
+a schema is created in the target's default schema. Once the target is known,
+Ptah refuses a schema that declares one table both ways:
+
+```text
+table "users" is declared twice, once without a schema and once as "public.users"; a table without a schema is created in the default schema "public", so both name one table -- declare it once, or spell it the same way in every source
+```
+
+`ptah schema render` takes the default schema from the dialect: `public` on
+PostgreSQL, `dbo` on SQL Server, `main` on SQLite. A command that connects,
+such as `ptah schema compare` or `ptah migrations generate`, asks the server
+instead. When the search path puts another schema first, `users` and
+`public.users` are two tables there, and both are kept. A dialect without a
+default schema, such as MySQL, checks nothing: `public` is a database of its
+own.
+
 API export metadata follows the same complete-definition rule. A table or
 column loaded from YAML, HCL, or Go keeps its `api_name`, target-specific names,
 `api_type`, and `api_expose` in the merged schema. Identical complete

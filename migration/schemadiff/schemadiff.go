@@ -622,6 +622,13 @@ func validateDeclaredBeforeComparison(
 	if desired == nil {
 		return nil
 	}
+	// The server's own default schema, where a bare table name lands: a
+	// search path set to another schema makes `accounts` and
+	// `public.accounts` two tables, and the static default would call them one.
+	defaultSchema := info.IdentifierSemantics.Normalize(info.Dialect).DefaultSchema
+	if err := schemaprep.ValidateTableSpellings(desired, defaultSchema); err != nil {
+		return err
+	}
 	if err := reservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
 		return err
 	}

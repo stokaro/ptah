@@ -5025,8 +5025,8 @@
         "/schema/yaml/",
         "/versioned/generate/"
       ],
-      "visibleWords": 592,
-      "sourceBytes": 5119
+      "visibleWords": 718,
+      "sourceBytes": 6115
     },
     {
       "path": "docs/site/src/content/docs/schema/dbml.md",
