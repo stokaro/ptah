@@ -28,7 +28,7 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 - For Homebrew publishing: the `stokaro/homebrew-ptah` tap repository and a
   credential that can push to it. `Contents: Read and write` on that repository
   is the whole of what GoReleaser needs: it reads the default branch, reads the
-  formula path for its SHA, and writes the file.
+  cask path for its SHA, and writes the file.
 
   The release mints that credential from the GitHub App behind the
   `PUBLISH_APP_ID` variable and the `PUBLISH_APP_KEY` secret, narrowed to
@@ -39,7 +39,7 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   neither before anything is built. `skip_upload` is `false`, so a release
   cannot finish green with the Homebrew channel missing.
 
-  An **expired** fine-grained token fails the same run later, at the formula
+  An **expired** fine-grained token fails the same run later, at the cask
   push, because a presence check cannot tell a live token from a dead one. That
   is the failure the app removes: its token is minted per run and lives an hour,
   and the release job is capped at 40 minutes so the token cannot expire while
