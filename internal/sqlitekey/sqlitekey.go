@@ -1,4 +1,4 @@
-// Package sqlitekey answers whether SQLite enforces NOT NULL on a primary key
+// Package sqlitekey answers whether a server enforces NOT NULL on a primary key
 // column. Every other engine Ptah renders for decides that from the dialect
 // alone; SQLite decides it from the table's shape.
 //
@@ -38,6 +38,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 )
 
@@ -59,6 +60,33 @@ func ImpliesNotNull(table schemamodel.Table, keyColumns []string, field schemamo
 		return false
 	}
 	return !isRowidAlias(keyColumns, field)
+}
+
+// KeyColumnIsNotNull reports whether a server of dialect holds field NOT NULL
+// because table's primary key covers it. keyColumns is what [KeyColumns]
+// returns for the table.
+//
+// Every engine but SQLite makes a key column NOT NULL whatever the column
+// declares; SQLite answers by [ImpliesNotNull]. A column the key does not
+// cover answers false on every engine.
+//
+// It is the answer the comparison normalizes a desired key column to, so a
+// description of what a server would hold -- a schema file read as the current
+// side of a diff -- has to give it too, or the two sides disagree about a
+// column declared once.
+func KeyColumnIsNotNull(
+	dialect string,
+	table schemamodel.Table,
+	keyColumns []string,
+	field schemamodel.Field,
+) bool {
+	if !coversColumn(keyColumns, field.Name) {
+		return false
+	}
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return true
+	}
+	return ImpliesNotNull(table, keyColumns, field)
 }
 
 // KeyColumns returns every column table's primary key covers, reading the

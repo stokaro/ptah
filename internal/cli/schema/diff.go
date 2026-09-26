@@ -55,7 +55,12 @@ required --dev-url dev database. All URLs of one flag must be one source
 kind.
 
 The SQL dialect is pinned by --dev-url first, then by --from and --to
-database URLs; local schema files alone still require --dev-url. This makes
+database URLs; local schema files alone still require --dev-url. When --from
+is a schema file and --to is a database or a migration directory, the file is
+created on the --dev-url database and read back before it is compared, so both
+sides carry the server's spelling of every expression. The dev database is
+reset for that, as it is for a replay, and a --dev-url that names the --from or
+--to database is refused. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
@@ -71,7 +76,7 @@ of reporting a synced schema to a CI check.`,
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.fromURLs, diffFromFlag, nil, "Current schema state: file path, database URL, or migration directory (repeatable)")
 	flags.StringArrayVar(&opts.toURLs, diffToFlag, nil, "Desired schema state: file path, database URL, or migration directory (repeatable)")
-	flags.StringVar(&opts.devURL, diffDevURLFlag, "", "Dev database URL used to choose the SQL dialect and replay migration-directory sources")
+	flags.StringVar(&opts.devURL, diffDevURLFlag, "", "Dev database URL used to choose the SQL dialect, replay migration-directory sources, and materialize a --from schema file compared with a database or directory")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, diffIncludeFlag, nil, "Schema objects to include in diffing (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, diffExcludeFlag, nil, "Schema objects to exclude from diffing (Atlas-style selectors)")

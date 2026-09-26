@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strings"
 	"time"
 
 	"ptah.run/catalog"
@@ -21,6 +22,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
@@ -425,6 +427,9 @@ func withResolvedDiffSources(
 	opts atlassource.ResolveOptions,
 	use func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error,
 ) error {
+	if materializesFrom(fromSet, toSet, opts.DevURL) {
+		return withMaterializedFromSource(ctx, fromSet, toSet, opts, use)
+	}
 	if !holdsServerForComparison(fromSet, toSet) {
 		fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, opts)
 		if err != nil {
@@ -446,6 +451,124 @@ func withResolvedDiffSources(
 		return fmt.Errorf("load %s schema: %w", fromSet.Flag, err)
 	}
 	return useErr
+}
+
+// materializesFrom reports whether a --from declaration -- a schema file, an
+// external schema program or a remote schema -- is created on the dev database
+// and read back before it is compared: when --to is a database or a migration
+// directory, and a dev database is given.
+//
+// Read as written, such a --from is the author's text on the current side of
+// the comparison, and a --to read from a server holds the server's spelling of
+// every expression it rewrites. A file compared with the database its own SQL
+// built planned its defaults, CHECKs and policies again (stokaro/ptah#3658).
+// Materialized, the --from side is what the server holds too, and the two
+// compare like with like. Atlas CE materializes a --from that is not a
+// database the same way.
+//
+// A --to declaration keeps the --from declaration as written: two documents
+// spell an expression the same way when they declare the same schema, and the
+// comparison already folds key columns on both. Without a dev database there
+// is nowhere to create the --from side, and it is compared as written.
+func materializesFrom(fromSet, toSet atlassource.Set, devURL string) bool {
+	return !readsServer(fromSet.Kind) && readsServer(toSet.Kind) && strings.TrimSpace(devURL) != ""
+}
+
+// withMaterializedFromSource is [withResolvedDiffSources] for a --from that
+// [materializesFrom] creates on the dev database.
+//
+// The declaration is loaded and validated before the dev database is touched,
+// so a source that does not load fails without a reset. What the dev database
+// holds after the materialization is read back as the --from state, and the
+// dev database is released before --to is resolved: a --to directory replays
+// on the same dev database.
+//
+// The read-back keeps the document's coverage record. A document that records
+// `ptah:not-described` for a kind makes no claim about it, and a catalog read
+// would turn the dev database's answer for that kind into one.
+func withMaterializedFromSource(
+	ctx context.Context,
+	fromSet, toSet atlassource.Set,
+	opts atlassource.ResolveOptions,
+	use func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error,
+) error {
+	declared, err := resolveDiffSource(ctx, fromSet, opts)
+	if err != nil {
+		return err
+	}
+	// The strict live-catalog validation of a --to database finishes before the
+	// dev database is reset, as [resolveDiffSources] keeps it for a replay.
+	toState, toResolved, err := preResolveLiveDiffSource(ctx, toSet, opts)
+	if err != nil {
+		return err
+	}
+	fromState, err := materializedState(ctx, fromSet, declared, opts)
+	if err != nil {
+		return fmt.Errorf("load %s schema: %w", fromSet.Flag, err)
+	}
+	if !toResolved {
+		toState, err = resolveDiffSource(ctx, toSet, opts)
+		if err != nil {
+			return err
+		}
+	}
+	return use(fromState, toState, nil)
+}
+
+// materializedState creates a declared state on the dev database, reads it
+// back and returns what was read, with the declaration's coverage record.
+func materializedState(
+	ctx context.Context,
+	set atlassource.Set,
+	declared atlassource.State,
+	opts atlassource.ResolveOptions,
+) (atlassource.State, error) {
+	devURL, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{
+		DeclaredDisposable: opts.DevServerDisposable,
+	})
+	if err != nil {
+		return atlassource.State{}, err
+	}
+	defer releaseDev()
+	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
+	if err != nil {
+		return atlassource.State{}, fmt.Errorf("connect to --dev-url: %w", err)
+	}
+	defer dbschema.CloseAndWarn(devConn)
+
+	var state atlassource.State
+	err = withMaterializedDevSchema(ctx, devConn, declared.Schema, opts.ReportIgnored,
+		func(materialized *dbschema.DatabaseConnection) error {
+			read, err := set.DevState(ctx, materialized, opts)
+			if err != nil {
+				return err
+			}
+			read.DB.NotDescribed = declared.Schema.NotDescribed
+			read.Schema.NotDescribed = declared.Schema.NotDescribed
+			if opts.ValidateInspectedSchema != nil {
+				if err := opts.ValidateInspectedSchema(read.Schema); err != nil {
+					return err
+				}
+			}
+			state = read
+			return nil
+		})
+	if err != nil {
+		return atlassource.State{}, err
+	}
+	return state, nil
+}
+
+// resetsDevDatabase reports whether a diff resets the dev database: it
+// replays a migration directory there, or materializes a --from declaration
+// there. Only then can a source that aliases the dev database lose its state.
+func resetsDevDatabase(fromSet, toSet atlassource.Set, devURL string) bool {
+	if strings.TrimSpace(devURL) == "" {
+		return false
+	}
+	return fromSet.Kind == atlassource.KindMigrationDir ||
+		toSet.Kind == atlassource.KindMigrationDir ||
+		materializesFrom(fromSet, toSet, devURL)
 }
 
 // holdsServerForComparison reports whether --from has a server behind it and
@@ -537,6 +660,20 @@ func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
 	}
 	if err := toSet.EnsureDevDatabase(opts.DevURL); err != nil {
 		return preparedDiffSources{}, err
+	}
+	// A diff that resets the dev database refuses a database source the dev
+	// URL also names, before anything is opened. Measured on master with
+	// `--from file://migrations --to $DB --dev-url $DB`: the replay's reset
+	// dropped every table in the --to database, and the diff then planned to
+	// create them again. Atlas CE refuses the same argv with `connected
+	// database is not clean`.
+	if resetsDevDatabase(fromSet, toSet, opts.DevURL) {
+		if err := fromSet.EnsureDevIsolation(opts.DevURL); err != nil {
+			return preparedDiffSources{}, err
+		}
+		if err := toSet.EnsureDevIsolation(opts.DevURL); err != nil {
+			return preparedDiffSources{}, err
+		}
 	}
 	// Validate both local sides before resolving either one. In particular, a
 	// refused --to must not be preceded by opening a database-backed --from.

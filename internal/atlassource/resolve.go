@@ -414,35 +414,14 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 		snapshot,
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			// Same decision, same owner: a migration directory that creates a
-			// second schema describes it, and a read scoped to the dev
-			// connection's own schema would report the replay as having created
-			// nothing there (stokaro/ptah#1276).
-			names, err := schemascope.ReadNames(ctx, replayConn.Info(), opts.Schemas, replayConn)
+			state, err := s.DevState(ctx, replayConn, opts)
 			if err != nil {
-				return fmt.Errorf("read dev database schema: %w", err)
-			}
-			schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, replayConn, names)
-			if err != nil {
-				return fmt.Errorf("read dev database schema: %w", err)
-			}
-			schema = WithoutRevisionTable(schema)
-			if opts.ValidateInspectedDatabase != nil {
-				if err := opts.ValidateInspectedDatabase(replayConn, names); err != nil {
-					return err
-				}
+				return err
 			}
 			// Finished here rather than after the replay returns, because the
 			// replay's cleanup drops the schema this session holds, and a
 			// caller holding the state may need to ask the server about it.
-			finishErr = finish(State{
-				Kind:          s.Kind,
-				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, replayConn.Info().Dialect),
-				DB:            schema,
-				DefaultSchema: replayConn.Info().Schema,
-				RealmScoped: schemaselection.Realm(
-					replayConn.Info().Dialect, replayConn.Info().URL, replayConn.Info().Schema),
-			}, replayConn)
+			finishErr = finish(state, replayConn)
 			return nil
 		},
 	); err != nil {
@@ -452,6 +431,39 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 		return finishErr
 	}
 	return ctx.Err()
+}
+
+// DevState reads what a dev database session holds after the set's source
+// was replayed or materialized on it, as the state of that source.
+//
+// The read covers the schemas [schemascope.ReadNames] selects rather than the
+// dev connection's own schema alone: a directory or a schema file that creates
+// a second schema describes it, and a read scoped to the connection's schema
+// would report it as having created nothing there (stokaro/ptah#1276). The
+// revision table is left out, and opts.ValidateInspectedDatabase runs on the
+// session. opts.ValidateInspectedSchema does not; the caller runs it.
+func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, opts ResolveOptions) (State, error) {
+	names, err := schemascope.ReadNames(ctx, conn.Info(), opts.Schemas, conn)
+	if err != nil {
+		return State{}, fmt.Errorf("read dev database schema: %w", err)
+	}
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
+	if err != nil {
+		return State{}, fmt.Errorf("read dev database schema: %w", err)
+	}
+	schema = WithoutRevisionTable(schema)
+	if opts.ValidateInspectedDatabase != nil {
+		if err := opts.ValidateInspectedDatabase(conn, names); err != nil {
+			return State{}, err
+		}
+	}
+	return State{
+		Kind:          s.Kind,
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect),
+		DB:            schema,
+		DefaultSchema: conn.Info().Schema,
+		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
+	}, nil
 }
 
 func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {

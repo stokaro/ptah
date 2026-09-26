@@ -108,12 +108,20 @@ session the `--from` migration directory was replayed on, before the replay's
 cleanup. It does so when `--to` is a schema file or another declaration. A
 `--from` database answers without `--dev-url`.
 
+When `--from` is a schema file and `--to` is a database or a migration
+directory, `schema diff` creates the file on the `--dev-url` database, reads it
+back, and compares what it read. The `--from` side then holds the server's
+spelling too, as Atlas CE's does. Two schema files are compared as written: they
+spell an expression the same way when they declare the same schema. Two
+databases or directories both hold the server's spelling already.
+
 A declaration the server refuses is compared with Ptah's own folding instead.
 So is a comparison on a session with a transaction open, where the rollback
 would discard the session's work, and every comparison without a connection.
-A `schema diff` whose `--from` is a schema file has no server behind that side
-and compares by text (stokaro/ptah#3658). One whose two sides are both
-databases or directories needs no server: both hold the server's spelling.
+A `schema diff` from a schema file to a database without `--dev-url` is one of
+those: the file's expressions are compared as written, and a rewritten default,
+CHECK or policy is planned again. Pass `--dev-url` for that direction. A key
+column is NOT NULL on the file's side either way, as the server holds it.
 
 A view or materialized view body is compared by folding, not by asking the
 server. The server expands a `*` into the column list when it creates the view,
