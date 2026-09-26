@@ -175,6 +175,11 @@ func clickHousePlan() plan {
 			"the relation the PostgreSQL-family cleanup reads default-privilege "+
 				"grants from; ClickHouse answers `Unknown table expression identifier`",
 		),
+		acceptanceNote(capability.CatalogTriggerDefinitions, nil,
+			"SELECT pg_get_triggerdef(oid) FROM pg_trigger LIMIT 1",
+			"the function the PostgreSQL-family trigger read takes a WHEN "+
+				"condition from; ClickHouse has neither it nor pg_trigger",
+		),
 		roleManagement(t),
 		foreignKeys(
 			[]string{

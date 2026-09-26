@@ -510,6 +510,14 @@ func TestForServerVersion(t *testing.T) {
 		{"cockroach banner disables concurrent indexes", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.CreateIndexConcurrently, false},
 		{"cockroach banner disables XML", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.XMLType, false},
 		{"yugabytedb banner keeps concurrent indexes", "postgres", "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang", capability.CreateIndexConcurrently, true},
+		// The banners the servers reported where pg_get_triggerdef was asked
+		// for (stokaro/ptah#3707): absent on 25.4, present from 26.2 and on
+		// every YugabyteDB line.
+		{"cockroach 25.4 has no trigger definitions", "postgres", "CockroachDB CCL v25.4.16 (x86_64-pc-linux-gnu, built 2026/09/02 15:29:39, go1.23.12 X:nocoverageredesign)", capability.CatalogTriggerDefinitions, false},
+		{"cockroach 26.2 has trigger definitions", "postgres", "CockroachDB CCL v26.2.7 (x86_64-pc-linux-gnu, built 2026/09/21 19:51:39, go1.25.13)", capability.CatalogTriggerDefinitions, true},
+		{"cockroach 26.3 has trigger definitions", "postgres", "CockroachDB CCL v26.3.1 (x86_64-pc-linux-gnu, built 2026/08/24 17:36:57, go1.26.6)", capability.CatalogTriggerDefinitions, true},
+		{"yugabytedb 2024.2 has trigger definitions", "yugabytedb", "PostgreSQL 11.2-YB-2024.2.10.0-b0 on x86_64-pc-linux-gnu, compiled by clang version 17.0.6", capability.CatalogTriggerDefinitions, true},
+		{"postgres 18 has trigger definitions", "postgres", "PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit", capability.CatalogTriggerDefinitions, true},
 		{"spanner banner supports foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, true},
 		{"unparseable falls back to dialect default", "mysql", "who knows", capability.DropConstraintGeneric, true},
 	}

@@ -306,6 +306,7 @@ func postgresFamilyPlan(dialect string) plan {
 			"the relation the cleanup reads ALTER DEFAULT PRIVILEGES grants "+
 				"from; Spanner answers `relation \"pg_default_acl\" does not exist`",
 		),
+		catalogTriggerDefinitions(),
 		acceptance(capability.GeneratedColumns, nil,
 			t.table("gcx", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n"),
 		),
@@ -754,7 +755,37 @@ func mysqlFamilyPlan(dialect string) plan {
 		),
 	}
 
-	undecided := map[capability.Capability]string{
+	undecided := mysqlFamilyUndecided()
+	// Both dialects are asked. Declaring MariaDB undecided here would rest on
+	// the engine having SEQUENCE while Ptah's generator does not, which makes
+	// the server's answer an answer to a different question. Ptah renders,
+	// reads and plans a MariaDB sequence, so the two answers agree and the
+	// experiment decides the key on both engines.
+	experiments = append(experiments, all(capability.Sequences, nil,
+		"CREATE SEQUENCE sq",
+		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
+	))
+	// The ALGORITHM and LOCK pair, asked on a change both engines apply in
+	// place. A server that refuses the clause refuses the statement, so
+	// acceptance is the whole answer.
+	experiments = append(experiments, acceptance(capability.AlterTableAlgorithmLock,
+		[]string{"CREATE TABLE aal (n int PRIMARY KEY)"},
+		"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
+	))
+	// Asked rather than declared for the same reason its twin above is: the
+	// clause is PostgreSQL's, and a server that took it would mean Ptah could
+	// write it here too.
+	experiments = append(experiments, acceptance(capability.AddConstraintNotValid,
+		[]string{"CREATE TABLE nvc (n int PRIMARY KEY)"},
+		"ALTER TABLE nvc ADD CONSTRAINT nvc_ck CHECK (n > 0) NOT VALID",
+	))
+	return plan{experiments: experiments, undecided: undecided}
+}
+
+// mysqlFamilyUndecided is each key the MySQL-family plan declares rather than
+// asks, with the reason no statement this server takes would decide it.
+func mysqlFamilyUndecided() map[capability.Capability]string {
+	return map[capability.Capability]string{
 		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
 			"relation, and the reader the key gates runs only against Oracle, so neither having nor " +
 			"lacking it here would decide the key",
@@ -813,6 +844,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation this server " +
 			"does not have and no MySQL-family cleanup reads; its absence here says nothing about the " +
 			"PostgreSQL-family cleanup the key gates",
+		capability.CatalogTriggerDefinitions: "pg_get_triggerdef is a PostgreSQL catalog function this " +
+			"server does not have and no MySQL-family reader calls; its absence here says nothing about the " +
+			"PostgreSQL-family trigger read the key gates",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
 			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
 			"refusal would answer a different question",
@@ -827,30 +861,19 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.ContinuousAggregates: "the key names a TimescaleDB object for the same reason; this " +
 			"server has no such statement and no MySQL-family code path emits one",
 	}
-	// Both dialects are asked. Declaring MariaDB undecided here would rest on
-	// the engine having SEQUENCE while Ptah's generator does not, which makes
-	// the server's answer an answer to a different question. Ptah renders,
-	// reads and plans a MariaDB sequence, so the two answers agree and the
-	// experiment decides the key on both engines.
-	experiments = append(experiments, all(capability.Sequences, nil,
-		"CREATE SEQUENCE sq",
-		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
-	))
-	// The ALGORITHM and LOCK pair, asked on a change both engines apply in
-	// place. A server that refuses the clause refuses the statement, so
-	// acceptance is the whole answer.
-	experiments = append(experiments, acceptance(capability.AlterTableAlgorithmLock,
-		[]string{"CREATE TABLE aal (n int PRIMARY KEY)"},
-		"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
-	))
-	// Asked rather than declared for the same reason its twin above is: the
-	// clause is PostgreSQL's, and a server that took it would mean Ptah could
-	// write it here too.
-	experiments = append(experiments, acceptance(capability.AddConstraintNotValid,
-		[]string{"CREATE TABLE nvc (n int PRIMARY KEY)"},
-		"ALTER TABLE nvc ADD CONSTRAINT nvc_ck CHECK (n > 0) NOT VALID",
-	))
-	return plan{experiments: experiments, undecided: undecided}
+}
+
+// catalogTriggerDefinitions decides CatalogTriggerDefinitions by asking for
+// the function the trigger read takes a WHEN condition from. A missing
+// function fails the statement before any row is read, so an empty pg_trigger
+// still answers. CockroachDB 25.4.16 answers `unknown function:
+// pg_get_triggerdef()`, and 26.2.7 and 26.3.1 accept it (stokaro/ptah#3707).
+func catalogTriggerDefinitions() experiment {
+	return acceptanceNote(capability.CatalogTriggerDefinitions, nil,
+		"SELECT pg_get_triggerdef(oid) FROM pg_trigger LIMIT 1",
+		"the function the trigger read takes a WHEN condition from; CockroachDB 25.4 answers "+
+			"`unknown function: pg_get_triggerdef()`",
+	)
 }
 
 // schemaComments decides SchemaComments by commenting the probe's OWN schema.

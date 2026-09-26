@@ -3314,6 +3314,14 @@ func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
 }
 
 func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) ([]catalog.Trigger, error) {
+	// The WHEN condition comes out of pg_get_triggerdef, and a server without
+	// the function refuses the whole statement rather than the one column, so
+	// there the definition is a constant and each trigger is read without its
+	// condition. See [capability.CatalogTriggerDefinitions].
+	definition := "pg_get_triggerdef(trg.oid)"
+	if !r.caps.Has(capability.CatalogTriggerDefinitions) {
+		definition = "''"
+	}
 	triggersQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3338,7 +3346,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			p.prosrc AS body,
 			p.proname AS execute_function,
 			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment,
-			pg_get_triggerdef(trg.oid) AS definition,
+			` + definition + ` AS definition,
 			COALESCE(trg.tgoldtable, '') AS old_table,
 			COALESCE(trg.tgnewtable, '') AS new_table
 		FROM pg_trigger trg

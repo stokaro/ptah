@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -180,9 +181,79 @@ func TestTriggersWithSemanticsAndConditions_UsesTheServerSpelling(t *testing.T) 
 			database := &catalog.Database{Triggers: []catalog.Trigger{read.read()}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.TriggersWithSemanticsAndConditions(desired, database, diff, semantics, test.conditions)
+			compare.TriggersWithSemanticsAndConditions(desired, database, diff, semantics, test.conditions, capability.Postgres18())
 
 			c.Assert(diff.TriggersModified, qt.HasLen, test.wantCount)
+		})
+	}
+}
+
+// TestTriggersWithSemanticsAndConditions_ComparesOnlyAConditionTheReadReports
+// holds a declared condition against a read that could not report one. On a
+// target without pg_get_triggerdef the read has every trigger without its
+// condition, so comparing it would replace the trigger on every plan; on a
+// target with the function, a condition the server lacks is a change
+// (stokaro/ptah#3707).
+func TestTriggersWithSemanticsAndConditions_ComparesOnlyAConditionTheReadReports(t *testing.T) {
+	declared := clauseTrigger{event: "UPDATE", forEach: "ROW", when: "(NEW).a > 0"}
+	read := clauseTrigger{event: "UPDATE", forEach: "ROW"}
+	tests := []struct {
+		name      string
+		caps      capability.Capabilities
+		wantCount int
+	}{
+		{name: "CockroachDB 25.4 reads no condition", caps: capability.CockroachDB25(), wantCount: 0},
+		{name: "CockroachDB 26.3 reads one", caps: capability.CockroachDB263(), wantCount: 1},
+		{name: "PostgreSQL 18 reads one", caps: capability.Postgres18(), wantCount: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Triggers: []schemamodel.Trigger{declared.declared()}}
+			database := &catalog.Database{Triggers: []catalog.Trigger{read.read()}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.TriggersWithSemanticsAndConditions(
+				desired, database, diff, identifier.ForDialect(platform.CockroachDB), nil, test.caps,
+			)
+
+			c.Assert(diff.TriggersModified, qt.HasLen, test.wantCount)
+		})
+	}
+}
+
+// TestTriggerDefinitions_CockroachTypeAnnotations compares a condition with
+// CockroachDB's read-back of it, which annotates each constant with its type:
+// `WHEN ((NEW).a > 0)` reads back as `(new).a > 0:::INT8` on v26.3.1. The
+// annotation is not a change; a different constant still is, and so is `:::`
+// inside a string.
+func TestTriggerDefinitions_CockroachTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		read     string
+		want     map[string]string
+	}{
+		{name: "an annotated constant", declared: "(NEW).a > 0", read: "(new).a > 0:::INT8", want: make(map[string]string)},
+		{name: "two annotated constants", declared: "1 = 1", read: "1:::INT8 = 1:::INT8", want: make(map[string]string)},
+		{
+			name: "another constant", declared: "(NEW).a > 1", read: "(new).a > 0:::INT8",
+			want: map[string]string{"when": "(new).a > 0:::INT8 -> (NEW).a > 1"},
+		},
+		{
+			name: "the annotation inside a string is text", declared: "(NEW).s = 'a'", read: "(new).s = 'a:::INT8':::STRING",
+			want: map[string]string{"when": "(new).s = 'a:::INT8':::STRING -> (NEW).s = 'a'"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := compare.TriggerDefinitions(
+				clauseTrigger{event: "UPDATE", forEach: "ROW", when: test.declared}.declared(),
+				clauseTrigger{event: "UPDATE", forEach: "ROW", when: test.read}.read(),
+				identifier.ForDialect(platform.CockroachDB),
+			)
+			c.Assert(diff.Changes, qt.DeepEquals, test.want)
 		})
 	}
 }

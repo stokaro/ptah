@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
@@ -45,19 +46,28 @@ func TriggersWithSemantics(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
-	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil)
+	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil, nil)
 }
 
 // TriggersWithSemanticsAndConditions is [TriggersWithSemantics] with each
-// declared WHEN condition as the server prints it, where a server was asked;
-// see [config.CompareOptions.TriggerConditions].
+// declared WHEN condition as the server prints it, where a server was asked
+// (see [config.CompareOptions.TriggerConditions]), and with the target's
+// capabilities.
+//
+// A condition is compared only where caps says the read can report one,
+// [capability.CatalogTriggerDefinitions]. Without it the read has every
+// trigger without its condition, so comparing would plan the declared one
+// again on every run and still leave the server's unread. Empty caps compare
+// it, which is what a comparison with no target to ask assumes.
 func TriggersWithSemanticsAndConditions(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 	conditions map[string]config.TriggerCondition,
+	caps capability.Capabilities,
 ) {
+	readsConditions := len(caps) == 0 || caps.Has(capability.CatalogTriggerDefinitions)
 	semantics = semantics.Normalize("")
 
 	// Paired by the candidate set rather than by a map key.
@@ -97,6 +107,9 @@ func TriggersWithSemanticsAndConditions(
 			canonical.When = resolved.Condition
 		}
 		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index], semantics)
+		if !readsConditions {
+			delete(triggerDiff.Changes, "when")
+		}
 		if len(triggerDiff.Changes) > 0 {
 			triggerDiff.Desired = declared
 			diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
@@ -297,8 +310,53 @@ func foldTriggerColumn(name string) string {
 // and one pair of outer parentheses, which makes a single comparison match its
 // read-back and leaves a compound condition, which the server parenthesizes
 // operand by operand, reported as changed.
+//
+// CockroachDB cannot be asked -- the probe needs a temporary table, which it
+// refuses unless an experimental setting is on -- and it prints each constant
+// with a type annotation: `WHEN ((NEW).a > 0)` reads back as `(new).a >
+// 0:::INT8` on v26.2.7 and v26.3.1. The annotation asserts the type the
+// constant already has, so it is dropped from both sides before they are
+// folded; without that, every such trigger is replaced on every plan.
 func sameTriggerCondition(declared, observed string) bool {
-	return normalizeCheckExpression(declared) == normalizeCheckExpression(observed)
+	return normalizeCheckExpression(withoutTypeAnnotations(declared)) ==
+		normalizeCheckExpression(withoutTypeAnnotations(observed))
+}
+
+// withoutTypeAnnotations removes each CockroachDB type annotation, `:::` and
+// the type name after it, outside string literals and quoted identifiers.
+func withoutTypeAnnotations(expression string) string {
+	if !strings.Contains(expression, ":::") {
+		return expression
+	}
+	var out strings.Builder
+	var quote byte
+	for i := 0; i < len(expression); i++ {
+		c := expression[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case strings.HasPrefix(expression[i:], ":::"):
+			i += 3
+			for i < len(expression) && isTypeNameByte(expression[i]) {
+				i++
+			}
+			i--
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
+}
+
+// isTypeNameByte reports whether c can appear in a type name CockroachDB
+// writes after `:::`, such as INT8, DECIMAL or STRING[].
+func isTypeNameByte(c byte) bool {
+	return c == '_' || c == '[' || c == ']' ||
+		('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')
 }
 
 // describeCondition names an absent condition in a change description.
