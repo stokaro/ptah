@@ -22,9 +22,11 @@ const sqlServer2025Banner = "Microsoft SQL Server 2025 (RTM-CU7) (KB5096981) - 1
 	"\tCopyright (C) 2025 Microsoft Corporation\n" +
 	"\tEnterprise Developer Edition (64-bit) on Linux (Ubuntu 24.04.4 LTS) <X64>"
 
-// yugabyteBanner is what a live yugabytedb/yugabyte:2026.1.0.0-b118 reported
-// through YSQL. The leading number is the PostgreSQL compatibility version.
-const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-linux-gnu, compiled by clang, 64-bit"
+// yugabyteBanner is what a live yugabytedb/yugabyte:2026.1.2.0-b137 reported
+// through YSQL on 2026-09-26, the image the integration workflow starts. The
+// leading number is the PostgreSQL compatibility version.
+const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.2.0-b0 on x86_64-pc-linux-gnu, compiled by clang version 21.1.1 " +
+	"(https://github.com/yugabyte/llvm-project.git efca861cc42178cc4c555d605b36c79d7d121cc1), 64-bit"
 
 // TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners executes the misread
 // that internal/capabilityprobe exists to correct.
