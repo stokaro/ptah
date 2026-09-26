@@ -32,7 +32,8 @@ import (
 //
 // In every case that binary's atlas.sum covered only the forward half — the
 // `.up.sql`, the `V…` file, or the single file — which is what
-// [atlasmigrateimport.SumFileNames] already computes per layout.
+// [atlasmigrateimport.SumFileNames] already computes per layout. The Liquibase
+// rollback is the one spelling not copied: see [liquibaseRollbackPrefix].
 //
 // The SQL text itself is Ptah's own renderer's, not that binary's, on every
 // layout including the native one. Matching the layout is what this closes;
@@ -85,10 +86,20 @@ const (
 	// of one either (stokaro/ptah#1630).
 	liquibaseNoTransactionAttribute = " runInTransaction:false"
 	// liquibaseRollbackPrefix introduces one line of a changeset's rollback.
-	// Liquibase concatenates consecutive rollback lines into one rollback
-	// statement, which is why a multi-line statement is emitted as several of
+	// Liquibase adds each line's SQL and a line break to the changeset's
+	// rollback, which is why a multi-line statement is emitted as several of
 	// these rather than as one line carrying newlines.
-	liquibaseRollbackPrefix = "--rollback: "
+	//
+	// It is Liquibase's `--rollback <SQL>`, with one blank after the keyword,
+	// and not the `--rollback: <SQL>` the pinned community binary v1.3.0
+	// writes. Liquibase 5.0.4 reads a rollback line only with that blank
+	// (`\s*--[\s]*rollback (.*)` in its formatted-SQL parser), and a line with
+	// the colon is a comment in the changeset's SQL: measured on SQLite, the
+	// changeset then has no rollback and rollback-count refuses it, where this
+	// spelling drops the table. Copying the colon would lose the rollback the
+	// plan wrote, so this is a deliberate difference, and strict mode keeps
+	// it: the layout this writes is Ptah's in both profiles (stokaro/ptah#3752).
+	liquibaseRollbackPrefix = "--rollback "
 )
 
 // composeMigrationArtifacts turns the planned migrations of one `migrate diff`
@@ -268,6 +279,17 @@ func directiveArtifact(
 	return []PublicationArtifact{{Name: name, Contents: []byte(body.String())}}
 }
 
+// liquibaseChangesetAttributes returns the attributes the one changeset carries.
+//
+// The changeset holds both directions, so a requirement on either half opts the
+// whole changeset out -- there is no narrower unit to mark.
+func liquibaseChangesetAttributes(content MigrationFileContent) string {
+	if !content.NoTransaction && !content.ReverseNoTransaction {
+		return ""
+	}
+	return liquibaseNoTransactionAttribute
+}
+
 // composeLiquibaseArtifact composes the one layout whose rollback is attached
 // to a changeset rather than appended as a block.
 //
@@ -292,24 +314,13 @@ func directiveArtifact(
 //
 // The cost is per-changeset rollback granularity, which is the ability to undo
 // part of one migration. Nothing else moves: the file name, the covered set,
-// the header and the changeset syntax are the layout's, and the rollback is
+// the header and the changeset marker are the layout's, and the rollback is
 // complete.
 //
-// A statement spanning several lines becomes several `--rollback:` lines, which
-// Liquibase concatenates into one rollback statement. Emitting it as a single
-// line carrying newlines would end the rollback at the first one and silently
-// drop the rest.
-// liquibaseChangesetAttributes returns the attributes the one changeset carries.
-//
-// The changeset holds both directions, so a requirement on either half opts the
-// whole changeset out -- there is no narrower unit to mark.
-func liquibaseChangesetAttributes(content MigrationFileContent) string {
-	if !content.NoTransaction && !content.ReverseNoTransaction {
-		return ""
-	}
-	return liquibaseNoTransactionAttribute
-}
-
+// A statement spanning several lines becomes several `--rollback` lines, which
+// Liquibase joins into one rollback statement, a line break after each.
+// Emitting it as a single line carrying newlines would end the rollback at the
+// first one and silently drop the rest.
 func composeLiquibaseArtifact(
 	name string,
 	version int64,

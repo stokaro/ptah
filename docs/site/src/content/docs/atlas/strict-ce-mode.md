@@ -91,7 +91,9 @@ fill out of both halves.
 Strict mode preserves safety and correctness changes where copying CE would
 lose data, hide state, or fail for an unrelated reason. Those measured
 differences are [Compatibility differences](../retained-divergences/), not parity
-claims.
+claims. One of them is a file strict mode writes: `migrate diff` into the
+Liquibase layout writes rollback lines Liquibase runs, where Atlas CE writes a
+spelling Liquibase reads as a comment.
 
 With the selector absent, `ptah-compat` retains every implemented Atlas
 Pro-like and best-effort capability. PostgreSQL extensions, sequences, and
