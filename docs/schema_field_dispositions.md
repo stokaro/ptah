@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-379 fields are reachable from the desired schema, and each one carries
+382 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 317 | reaches rendered SQL on at least one target |
+| `ddl` | 320 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -433,9 +433,12 @@ None.
 | `schemamodel.Trigger.ExecuteFunction` | `ddl` | — |
 | `schemamodel.Trigger.ForEach` | `ddl` | — |
 | `schemamodel.Trigger.Name` | `ddl` | — |
+| `schemamodel.Trigger.NewTable` | `ddl` | — |
+| `schemamodel.Trigger.OldTable` | `ddl` | — |
 | `schemamodel.Trigger.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Trigger.Table` | `ddl` | — |
 | `schemamodel.Trigger.Timing` | `ddl` | — |
+| `schemamodel.Trigger.When` | `ddl` | — |
 | `schemamodel.View.Attributes` | `ddl` | — |
 | `schemamodel.View.Body` | `ddl` | — |
 | `schemamodel.View.Comment` | `ddl` | — |

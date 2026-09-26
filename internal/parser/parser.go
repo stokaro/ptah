@@ -1489,7 +1489,7 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
-	event, err := p.parseTriggerEvent()
+	event, err := p.parseTriggerEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -1506,7 +1506,19 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
+	oldTable, newTable, err := p.parseOptionalTriggerReferencing()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
 	forEach, err := p.parseOptionalTriggerForEach()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	when, err := p.parseOptionalTriggerWhen()
 	if err != nil {
 		return nil, err
 	}
@@ -1515,7 +1527,9 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	trigger := ast.NewCreateTrigger(triggerName, tableName).
 		SetTiming(timing).
 		SetEvent(event).
-		SetForEach(forEach)
+		SetForEach(forEach).
+		SetReferencing(oldTable, newTable).
+		SetWhen(when)
 
 	if p.current.MatchIdentifierValue("EXECUTE") {
 		return p.parseTriggerExecuteClause(trigger, statementStart)
@@ -1600,47 +1614,145 @@ func (p *Parser) parseTriggerTiming() (string, error) {
 	}
 }
 
+// parseTriggerEvents reads the events a trigger fires on: one of INSERT,
+// UPDATE [OF column, ...], DELETE and TRUNCATE, or several joined by OR, which
+// is every form PostgreSQL 18 accepts. The answer keeps the order written and
+// separates the members with " OR " and the columns with ", ", whatever
+// spacing the source used.
+func (p *Parser) parseTriggerEvents() (string, error) {
+	var events []string
+	for {
+		event, err := p.parseTriggerEvent()
+		if err != nil {
+			return "", err
+		}
+		events = append(events, event)
+		p.skipWhitespace()
+		if !p.current.MatchIdentifierValue("OR") {
+			return strings.Join(events, " OR "), nil
+		}
+		p.advance()
+		p.skipWhitespace()
+	}
+}
+
 func (p *Parser) parseTriggerEvent() (string, error) {
 	switch {
-	case p.current.MatchIdentifierValue("INSERT"), p.current.MatchIdentifierValue("DELETE"):
+	case p.current.MatchIdentifierValue("INSERT"), p.current.MatchIdentifierValue("DELETE"),
+		p.current.MatchIdentifierValue("TRUNCATE"):
 		event := strings.ToUpper(p.current.Value)
 		p.advance()
 		return event, nil
 	case p.current.MatchIdentifierValue("UPDATE"):
-		return p.parseUpdateTriggerEvent(), nil
+		return p.parseUpdateTriggerEvent()
 	default:
 		return "", fmt.Errorf("expected trigger event, got %s at position %d", p.current.Type, p.current.Start)
 	}
 }
 
-func (p *Parser) parseUpdateTriggerEvent() string {
-	var event strings.Builder
-	event.WriteString(strings.ToUpper(p.current.Value))
+// parseUpdateTriggerEvent reads UPDATE and the column list an OF clause gives
+// it, stopping before the OR or ON that follows the last column.
+func (p *Parser) parseUpdateTriggerEvent() (string, error) {
 	p.advance()
 	p.skipWhitespace()
 	if !p.current.MatchIdentifierValue("OF") {
-		return event.String()
+		return "UPDATE", nil
 	}
-
-	event.WriteString(" OF")
 	p.advance()
-	for !p.isAtEnd() && !p.current.MatchIdentifierValue("ON") {
-		event.WriteString(p.current.Value)
+	p.skipWhitespace()
+
+	var columns []string
+	for {
+		column, err := p.expectIdentifier()
+		if err != nil {
+			return "", fmt.Errorf("expected trigger UPDATE OF column: %w", err)
+		}
+		columns = append(columns, column)
+		p.skipWhitespace()
+		if !p.current.MatchOperatorValue(",") {
+			return "UPDATE OF " + strings.Join(columns, ", "), nil
+		}
 		p.advance()
+		p.skipWhitespace()
 	}
-	return strings.TrimSpace(event.String())
 }
 
+// parseOptionalTriggerReferencing reads the REFERENCING clause of a trigger
+// with transition tables: OLD TABLE [AS] name and NEW TABLE [AS] name, in
+// either order, each at most once.
+//
+// It reads the clause on a PostgreSQL-family read only. Oracle spells a
+// different clause the same way -- REFERENCING OLD AS o, row aliases rather
+// than tables -- and that one stays in the text the body reader keeps.
+func (p *Parser) parseOptionalTriggerReferencing() (oldTable, newTable string, err error) {
+	if !p.current.MatchIdentifierValue("REFERENCING") || !p.readsPostgresTriggerClauses() {
+		return "", "", nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	for p.current.MatchIdentifierValue("OLD") || p.current.MatchIdentifierValue("NEW") {
+		which := strings.ToUpper(p.current.Value)
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
+			return "", "", fmt.Errorf("expected TABLE after REFERENCING %s: %w", which, err)
+		}
+		p.skipWhitespace()
+		if p.current.MatchIdentifierValue("AS") {
+			p.advance()
+			p.skipWhitespace()
+		}
+		name, err := p.expectIdentifier()
+		if err != nil {
+			return "", "", fmt.Errorf("expected transition table name: %w", err)
+		}
+		target := &newTable
+		if which == "OLD" {
+			target = &oldTable
+		}
+		if *target != "" {
+			return "", "", fmt.Errorf("REFERENCING names the %s transition table twice at position %d", which, p.current.Start)
+		}
+		*target = name
+		p.skipWhitespace()
+	}
+	if oldTable == "" && newTable == "" {
+		return "", "", fmt.Errorf("expected OLD TABLE or NEW TABLE after REFERENCING at position %d", p.current.Start)
+	}
+	return oldTable, newTable, nil
+}
+
+// parseOptionalTriggerWhen reads a WHEN clause and returns its condition
+// without the parentheses, on a PostgreSQL-family read. SQLite and Oracle
+// write a WHEN of their own, SQLite's without parentheses, and it stays in the
+// text the body reader keeps, as it does on a read that names no dialect.
+func (p *Parser) parseOptionalTriggerWhen() (string, error) {
+	if !p.current.MatchIdentifierValue("WHEN") || !p.readsPostgresTriggerClauses() {
+		return "", nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	return p.collectParenthesizedBody("trigger WHEN condition")
+}
+
+// readsPostgresTriggerClauses reports whether this read takes WHEN and
+// REFERENCING as PostgreSQL defines them.
+func (p *Parser) readsPostgresTriggerClauses() bool {
+	return platform.IsPostgresFamily(p.dialect)
+}
+
+// parseOptionalTriggerForEach reads FOR [EACH] ROW or STATEMENT. PostgreSQL
+// makes EACH optional.
 func (p *Parser) parseOptionalTriggerForEach() (string, error) {
 	if !p.current.MatchIdentifierValue("FOR") {
 		return "ROW", nil
 	}
 	p.advance()
 	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "EACH"); err != nil {
-		return "", fmt.Errorf("expected EACH after FOR in trigger clause: %w", err)
+	if p.current.MatchIdentifierValue("EACH") {
+		p.advance()
+		p.skipWhitespace()
 	}
-	p.skipWhitespace()
 
 	forEach, err := p.expectIdentifier()
 	if err != nil {

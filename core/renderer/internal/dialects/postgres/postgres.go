@@ -3194,17 +3194,44 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if forEach == "" {
 		forEach = "ROW"
 	}
-	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH %s EXECUTE FUNCTION %s();",
+	r.w.WriteLinef("%s %s %s %s ON %s%s FOR EACH %s%s EXECUTE FUNCTION %s();",
 		create,
 		r.escapeIdentifier(node.Name),
 		node.Timing,
 		node.Event,
 		r.escapeQualifiedIdentifier(node.Table),
+		r.triggerReferencingClause(node),
 		forEach,
+		triggerWhenClause(node),
 		r.escapeQualifiedIdentifier(functionName))
 	r.writeCreatedObjectComment(ast.CommentedTrigger, r.scopedCommentTarget(node.Name, node.Table),
 		node.Name+" on "+node.Table, node.Comment)
 	return nil
+}
+
+// triggerReferencingClause is the REFERENCING clause naming a trigger's
+// transition tables, with a leading space, or "" when it declares none.
+func (r *Renderer) triggerReferencingClause(node *ast.CreateTriggerNode) string {
+	var tables []string
+	if node.OldTable != "" {
+		tables = append(tables, "OLD TABLE AS "+r.escapeIdentifier(node.OldTable))
+	}
+	if node.NewTable != "" {
+		tables = append(tables, "NEW TABLE AS "+r.escapeIdentifier(node.NewTable))
+	}
+	if len(tables) == 0 {
+		return ""
+	}
+	return " REFERENCING " + strings.Join(tables, " ")
+}
+
+// triggerWhenClause is a trigger's WHEN clause, with a leading space, or ""
+// when it fires unconditionally.
+func triggerWhenClause(node *ast.CreateTriggerNode) string {
+	if strings.TrimSpace(node.When) == "" {
+		return ""
+	}
+	return " WHEN (" + strings.TrimSpace(node.When) + ")"
 }
 
 func renderPostgreSQLTriggerFunctionBody(body string) string {

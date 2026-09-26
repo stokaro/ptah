@@ -695,6 +695,11 @@ var directives = []Directive{
 			attr("timing", "Trigger timing, such as BEFORE or AFTER.", valueString, true, false),
 			attr("event", "Trigger event, such as INSERT or UPDATE.", valueString, true, false),
 			attr("for", "Trigger granularity; defaults to ROW.", valueString, false, false),
+			attr("when", "WHEN condition; the trigger fires only where it is true. PostgreSQL family.", valueSQL, false, false),
+			attr("old_table", "Transition table holding the rows before the change "+
+				"(REFERENCING OLD TABLE). PostgreSQL family.", valueString, false, false),
+			attr("new_table", "Transition table holding the rows after the change "+
+				"(REFERENCING NEW TABLE). PostgreSQL family.", valueString, false, false),
 			attr("body", "Trigger body SQL.", valueSQL, true, false),
 			attr("comment", "Trigger comment.", valueString, false, false),
 			dialectsAttr(),

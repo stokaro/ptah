@@ -58,6 +58,12 @@ func Policy(semantics identifier.Semantics, qualifiedTable, policy string) strin
 	return encode(objectidentity.NewBuilder(semantics).Policy(qualifiedTable, policy))
 }
 
+// Trigger is the key for a trigger whose table arrives as one possibly qualified
+// string, which is how a declaration spells it.
+func Trigger(semantics identifier.Semantics, qualifiedTable, trigger string) string {
+	return encode(objectidentity.NewBuilder(semantics).Trigger(qualifiedTable, trigger))
+}
+
 // PolicyParts is [Policy] for a catalog.
 func PolicyParts(semantics identifier.Semantics, schema, table, policy string) string {
 	return encode(objectidentity.NewBuilder(semantics).PolicyParts(schema, table, policy))

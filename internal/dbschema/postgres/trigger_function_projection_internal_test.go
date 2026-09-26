@@ -66,10 +66,13 @@ func answeringTriggerFunctions(query string, _ []driver.NamedValue) (dbtest.Quer
 		Columns: []string{
 			"schema_name", "table_name", "trigger_name",
 			"timing", "event", "for_each", "body", "execute_function", "comment",
+			"definition", "old_table", "new_table",
 		},
 		Rows: [][]driver.Value{
-			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", ""},
-			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", ""},
+			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", "",
+				"CREATE TRIGGER trg_a AFTER INSERT ON public.a FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
+			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", "",
+				"CREATE TRIGGER trg_b AFTER INSERT ON public.b FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
 		},
 	}, nil
 }

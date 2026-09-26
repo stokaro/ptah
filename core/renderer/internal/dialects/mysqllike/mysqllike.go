@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/triggerdef"
 )
 
 // Renderer provides MySQL-like-specific SQL rendering
@@ -795,6 +796,9 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if forEach != "ROW" {
 		return fmt.Errorf("%w: %s: FOR EACH %s triggers are not supported", ptaherr.ErrUnsupportedFeature, r.dialect, forEach)
 	}
+	if reason := unsupportedTriggerClause(node); reason != "" {
+		return fmt.Errorf("%w: %s: trigger %q %s", ptaherr.ErrUnsupportedFeature, r.dialect, node.Name, reason)
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -808,6 +812,29 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s",
 		create, escapeIdentifier(node.Name), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), terminateStatement(node.Body))
 	return nil
+}
+
+// unsupportedTriggerClause names the first part of a trigger this family
+// cannot express, or returns "". A MySQL or MariaDB trigger fires on exactly
+// one of INSERT, UPDATE and DELETE, for every row, with no condition and no
+// column list; keeping one member of an event list or dropping a WHEN would
+// create a trigger that fires at other times than the one declared.
+func unsupportedTriggerClause(node *ast.CreateTriggerNode) string {
+	events := triggerdef.Events(node.Event)
+	switch {
+	case len(events) > 1:
+		return "fires on several events (" + strings.TrimSpace(node.Event) + "); a trigger here fires on one"
+	case triggerdef.Includes(events, "TRUNCATE"):
+		return "fires on TRUNCATE, which has no trigger here"
+	case triggerdef.NamesColumns(events):
+		return "fires on an UPDATE of named columns, which has no trigger here"
+	case strings.TrimSpace(node.When) != "":
+		return "has a WHEN condition, which has no trigger here"
+	case node.OldTable != "" || node.NewTable != "":
+		return "declares transition tables, which have no trigger here"
+	default:
+		return ""
+	}
 }
 
 // terminateStatement returns body with exactly one trailing semicolon. A body

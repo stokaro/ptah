@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/unloggedtable"
 )
 
@@ -3321,13 +3322,20 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			concat_ws(' OR ',
 				CASE WHEN (trg.tgtype & 4) <> 0 THEN 'INSERT' END,
 				CASE WHEN (trg.tgtype & 8) <> 0 THEN 'DELETE' END,
-				CASE WHEN (trg.tgtype & 16) <> 0 THEN 'UPDATE' END,
+				CASE WHEN (trg.tgtype & 16) <> 0 THEN 'UPDATE' || COALESCE(' OF ' || (
+					SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY k.position)
+					FROM unnest(trg.tgattr::int2[]) WITH ORDINALITY AS k(attnum, position)
+					JOIN pg_attribute a ON a.attrelid = trg.tgrelid AND a.attnum = k.attnum
+				), '') END,
 				CASE WHEN (trg.tgtype & 32) <> 0 THEN 'TRUNCATE' END
 			) AS event,
 			CASE WHEN (trg.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
 			p.prosrc AS body,
 			p.proname AS execute_function,
-			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment
+			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment,
+			pg_get_triggerdef(trg.oid) AS definition,
+			COALESCE(trg.tgoldtable, '') AS old_table,
+			COALESCE(trg.tgnewtable, '') AS new_table
 		FROM pg_trigger trg
 		JOIN pg_class tbl ON tbl.oid = trg.tgrelid
 		JOIN pg_namespace n ON n.oid = tbl.relnamespace
@@ -3345,6 +3353,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	var triggers []catalog.Trigger
 	for rows.Next() {
 		var trigger catalog.Trigger
+		var definition string
 		err := rows.Scan(
 			&trigger.Schema,
 			&trigger.Table,
@@ -3355,10 +3364,16 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			&trigger.Body,
 			&trigger.ExecuteFunction,
 			&trigger.Comment,
+			&definition,
+			&trigger.OldTable,
+			&trigger.NewTable,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan trigger: %w", err)
 		}
+		// The WHEN condition is read out of the definition; see
+		// [triggerdef.When] for why the catalog column cannot be printed.
+		trigger.When = triggerdef.When(definition)
 		trigger.Schema = r.outputSchema(trigger.Schema)
 		triggers = append(triggers, trigger)
 	}

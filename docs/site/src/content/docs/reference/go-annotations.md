@@ -588,8 +588,11 @@ Declares a database trigger.
 | `event` | Yes | Trigger event, such as INSERT or UPDATE. |
 | `for` | No | Trigger granularity; defaults to ROW. |
 | `name` | Yes | Trigger name. |
+| `new_table` | No | Transition table holding the rows after the change (REFERENCING NEW TABLE). PostgreSQL family. |
+| `old_table` | No | Transition table holding the rows before the change (REFERENCING OLD TABLE). PostgreSQL family. |
 | `table` | Yes | Target table. |
 | `timing` | Yes | Trigger timing, such as BEFORE or AFTER. |
+| `when` | No | WHEN condition; the trigger fires only where it is true. PostgreSQL family. |
 
 ### `//ptah:schema:view`
 

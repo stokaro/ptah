@@ -1802,12 +1802,24 @@
               "description": "Trigger name.",
               "type": "string"
             },
+            "new_table": {
+              "description": "Transition table holding the rows after the change (REFERENCING NEW TABLE). PostgreSQL family.",
+              "type": "string"
+            },
+            "old_table": {
+              "description": "Transition table holding the rows before the change (REFERENCING OLD TABLE). PostgreSQL family.",
+              "type": "string"
+            },
             "table": {
               "description": "Target table.",
               "type": "string"
             },
             "timing": {
               "description": "Trigger timing, such as BEFORE or AFTER.",
+              "type": "string"
+            },
+            "when": {
+              "description": "WHEN condition; the trigger fires only where it is true. PostgreSQL family.",
               "type": "string"
             }
           },

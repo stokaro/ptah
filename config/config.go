@@ -241,6 +241,31 @@ type CompareOptions struct {
 	// `lower(code)` is stored as `lower((code)::text)` over a varchar column
 	// and as `lower(code)` over text (stokaro/ptah#2047).
 	IndexExpressions map[string]IndexExpression
+
+	// TriggerConditions carries each declared trigger's WHEN condition as the
+	// target server itself prints it, keyed by the trigger's table and name.
+	//
+	// PostgreSQL stores the condition parsed and prints it with a parenthesis
+	// around every operand. Measured on 18.6, `NEW.total IS DISTINCT FROM
+	// OLD.total AND new.a > 0` reads back as `((new.total IS DISTINCT FROM
+	// old.total) AND (new.a > 0))`, which no folding of the declared text
+	// reaches without risking two different conditions comparing equal.
+	//
+	// A nil map means nobody could ask a server, and the comparison folds both
+	// sides the way it folds a CHECK.
+	TriggerConditions map[string]TriggerCondition
+}
+
+// TriggerCondition is one trigger's WHEN condition in the target server's own
+// spelling. See [CompareOptions.TriggerConditions].
+//
+// The zero value carries the same meaning [PolicyExpression]'s does.
+type TriggerCondition struct {
+	// Condition is the condition as pg_get_triggerdef prints it, without the
+	// WHEN clause's own parentheses.
+	Condition string
+	// Resolved reports that a server answered for this trigger.
+	Resolved bool
 }
 
 // PolicyExpression is one RLS policy's expressions in the target server's own

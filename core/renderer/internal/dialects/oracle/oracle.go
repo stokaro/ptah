@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/triggerdef"
 )
 
 const DialectName = platform.Oracle
@@ -697,6 +698,17 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	}
 	if forEach != "ROW" {
 		return unsupportedFeaturef("FOR EACH %s triggers are not supported", forEach)
+	}
+	// Oracle takes an event list and UPDATE OF columns as written, but has no
+	// TRUNCATE row trigger, and its WHEN and REFERENCING name row aliases
+	// rather than PostgreSQL's pseudo-records and transition tables.
+	switch {
+	case triggerdef.Includes(triggerdef.Events(node.Event), "TRUNCATE"):
+		return unsupportedFeaturef("trigger %q fires on TRUNCATE, which has no row trigger on Oracle", node.Name)
+	case strings.TrimSpace(node.When) != "":
+		return unsupportedFeaturef("trigger %q has a PostgreSQL WHEN condition", node.Name)
+	case node.OldTable != "" || node.NewTable != "":
+		return unsupportedFeaturef("trigger %q declares transition tables, which Oracle does not have", node.Name)
 	}
 	body := strings.TrimSpace(node.Body)
 	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW",

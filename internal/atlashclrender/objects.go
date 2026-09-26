@@ -473,6 +473,17 @@ func (r *renderer) renderTrigger(trigger schemamodel.Trigger) {
 		r.warn(path, "trigger event cannot be represented in HCL schema output")
 		return
 	}
+	// The trigger block has no attribute for either clause, and the trigger
+	// without it is another trigger: it fires on rows the condition excludes,
+	// or its function reads transition tables that no longer exist.
+	if trigger.When != "" {
+		r.warn(path, "trigger WHEN condition cannot be represented in HCL schema output")
+		return
+	}
+	if trigger.OldTable != "" || trigger.NewTable != "" {
+		r.warn(path, "trigger transition tables cannot be represented in HCL schema output")
+		return
+	}
 	r.linef(`trigger %s {`, quote(trigger.Name))
 	// A trigger's target is a relation, not a table: `INSTEAD OF` triggers only
 	// exist on views, and Trigger.Table is where the reader puts one. Measured

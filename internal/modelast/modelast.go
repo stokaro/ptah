@@ -1623,6 +1623,8 @@ func FromTrigger(trigger schemamodel.Trigger) *ast.CreateTriggerNode {
 		SetTiming(trigger.Timing).
 		SetEvent(trigger.Event).
 		SetForEach(trigger.ForEach).
+		SetReferencing(trigger.OldTable, trigger.NewTable).
+		SetWhen(trigger.When).
 		SetBody(trigger.Body).
 		SetFunctionName(functionName).
 		SetComment(trigger.Comment)

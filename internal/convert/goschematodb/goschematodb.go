@@ -613,6 +613,10 @@ func toDBTriggers(triggers []schemamodel.Trigger, tables map[string]schemamodel.
 			ForEach: trigger.ForEach,
 			Body:    trigger.Body,
 			Comment: trigger.Comment,
+
+			When:     trigger.When,
+			OldTable: trigger.OldTable,
+			NewTable: trigger.NewTable,
 		})
 	}
 	return out
