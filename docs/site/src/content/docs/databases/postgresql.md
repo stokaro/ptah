@@ -414,10 +414,12 @@ creates comes first, where a domain, a column default, a policy or a trigger
 can call it. `ptah schema render` places routines by the same rule, treating
 everything it declares as created.
 
-One order is refused on every path: a column default that calls a
-`LANGUAGE sql` routine reading a table the same plan creates. The routine waits
-for all new tables, so the table with the default comes too early. Create the
-two tables in separate plans, or write the routine in PL/pgSQL.
+A column default or a `CHECK` that calls a `LANGUAGE sql` routine reading
+another new table gets the one order PostgreSQL accepts: the table the routine
+reads, then the routine, then the table that calls it. The same holds for a
+column added to an existing table. A routine that reads the very table whose
+default or `CHECK` calls it has no such order, and PostgreSQL refuses it in
+either order; write that routine in PL/pgSQL.
 
 Reading a live database describes only the roles the schemas being read
 actually use, because a PostgreSQL role belongs to the cluster rather than to

@@ -1911,8 +1911,12 @@ func WalkDatabase(
 	}
 
 	// 6. Add table definitions (they may be referenced by indexes)
-	// Use the combined field list that includes embedded field expansions
-	if err := appendTableStatements(visit, database, allFields, targetPlatform); err != nil {
+	// Use the combined field list that includes embedded field expansions.
+	// A routine that names a relation waits for it among the view-likes at
+	// step 9, unless a table calls it, in which case it is created here
+	// between the tables.
+	tableRoutines, err := appendTableStatements(visit, database, allFields, targetPlatform, placements)
+	if err != nil {
 		return err
 	}
 
@@ -1938,7 +1942,7 @@ func WalkDatabase(
 	}
 
 	// 9. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform, placements); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, placements, tableRoutines); err != nil {
 		return err
 	}
 
@@ -2121,28 +2125,89 @@ func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
 	return nodes
 }
 
+// appendTableStatements appends every declared table, and between them the
+// routines a table's column default or CHECK calls that have to wait for a
+// relation; see [deporder.TablesWithRoutinesForCreate]. It returns the names
+// of the routines it created, which the view-like ordering then leaves out.
 func appendTableStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
 	allFields []schemamodel.Field,
 	targetPlatform string,
-) error {
+	placements map[string]deporder.RoutinePlacement,
+) (map[string]bool, error) {
 	sqliteTarget := isSQLiteTarget(targetPlatform)
 	mode := tableConstraintsWithoutForeignKeys
 	if sqliteTarget {
 		mode = tableConstraintsWithForeignKeys
 	}
+	var routines []schemamodel.Function
+	for _, function := range database.Functions {
+		if placements[function.Name] == deporder.RoutineWithRelations {
+			routines = append(routines, function)
+		}
+	}
+	creations := make([]deporder.TableCreation, 0, len(database.Tables))
 	for _, table := range database.Tables {
+		creations = append(creations, deporder.TableCreation{
+			Name:        table.Name,
+			Expressions: deporder.TableExpressions(table.Checks, tableFields(table, allFields), tableConstraints(table, database.Constraints)),
+		})
+	}
+	steps := deporder.TablesWithRoutinesForCreate(creations, routines, database.FunctionDependencies, targetPlatform)
+
+	created := make(map[string]bool)
+	tables := make(map[string][]schemamodel.Table, len(database.Tables))
+	for _, table := range database.Tables {
+		tables[table.Name] = append(tables[table.Name], table)
+	}
+	for _, step := range steps {
+		if step.Routine {
+			created[step.Name] = true
+			for _, function := range routines {
+				if function.Name != step.Name {
+					continue
+				}
+				if err := visit(FromFunction(function)); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		table := tables[step.Name][0]
+		tables[step.Name] = tables[step.Name][1:]
 		tableNode := fromTableWithoutForeignKeys(table, allFields, database.Enums, targetPlatform)
 		if sqliteTarget {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
 		addTableConstraints(tableNode, table, database.Constraints, mode, targetPlatform)
 		if err := visit(tableNode); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return created, nil
+}
+
+// tableFields are the declared columns of table.
+func tableFields(table schemamodel.Table, fields []schemamodel.Field) []schemamodel.Field {
+	var own []schemamodel.Field
+	for _, field := range fields {
+		if field.StructName == table.StructName {
+			own = append(own, field)
+		}
+	}
+	return own
+}
+
+// tableConstraints are the declared constraints of table.
+func tableConstraints(table schemamodel.Table, constraints []schemamodel.Constraint) []schemamodel.Constraint {
+	var own []schemamodel.Constraint
+	for _, constraint := range constraints {
+		if schemaprep.ConstraintBelongsToTable(constraint, table) {
+			own = append(own, constraint)
+		}
+	}
+	return own
 }
 
 func appendUniqueIndexStatements(visit func(ast.Node) error, tables []schemamodel.Table, indexes []schemamodel.Index) error {
@@ -2286,6 +2351,7 @@ func appendPostTableObjectStatements(
 	database schemamodel.Database,
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
+	tableRoutines map[string]bool,
 ) error {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
@@ -2296,7 +2362,7 @@ func appendPostTableObjectStatements(
 			}
 		}
 	}
-	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements); err != nil {
+	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements, tableRoutines); err != nil {
 		return err
 	}
 	for _, rlsEnabled := range database.RLSEnabledTables {
@@ -2372,13 +2438,14 @@ func appendOrderedViewLikeStatements(
 	database schemamodel.Database,
 	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
+	tableRoutines map[string]bool,
 ) error {
 	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
 	viewsByName := make(map[string]schemamodel.View, len(database.Views))
 	materializedViewsByName := make(map[string]schemamodel.MaterializedView, len(database.MaterializedViews))
 	routinesByName := make(map[string][]schemamodel.Function)
 	for _, function := range database.Functions {
-		if placements[function.Name] != deporder.RoutineWithRelations {
+		if placements[function.Name] != deporder.RoutineWithRelations || tableRoutines[function.Name] {
 			continue
 		}
 		if _, seen := routinesByName[function.Name]; !seen {

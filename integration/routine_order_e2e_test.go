@@ -25,6 +25,14 @@ import (
 const routineReadingATable = `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
 CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM orders $$;`
 
+// defaultCallsARatesReader has a column default call a LANGUAGE sql routine
+// that reads another table the same schema creates: the shape
+// stokaro/ptah#3635 was filed with. PostgreSQL accepts one order, rates, then
+// default_pct, then invoices.
+const defaultCallsARatesReader = `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce((SELECT pct FROM rates WHERE code = 'std'), 0) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());`
+
 // routineBetweenTwoViews has a routine read one view and another view call it.
 const routineBetweenTwoViews = `CREATE TABLE orders (id bigint PRIMARY KEY, total integer NOT NULL);
 CREATE VIEW big AS SELECT id, total FROM orders WHERE total > 100;
@@ -77,6 +85,29 @@ CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT defau
 		sql: `CREATE FUNCTION positive(v integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT v > 0 $$;
 CREATE DOMAIN pct AS integer CHECK (positive(VALUE));
 CREATE TABLE items (id bigint PRIMARY KEY, share pct NOT NULL);`,
+	},
+	{
+		name: "a column default calls a LANGUAGE sql routine reading another new table",
+		sql:  defaultCallsARatesReader,
+	},
+	{
+		name: "a column default calls a routine that calls a LANGUAGE sql rates reader",
+		sql: `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION rate_of(c text) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT pct FROM rates WHERE code = c $$;
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce(rate_of('std'), 0) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());`,
+	},
+	{
+		name: "a CHECK calls a LANGUAGE sql routine reading another new table",
+		sql: `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION has_rate(c text) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM rates WHERE code = c) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, code text NOT NULL CONSTRAINT invoices_code_rated CHECK (has_rate(code)));`,
+	},
+	{
+		name: "a table CHECK constraint calls a LANGUAGE sql routine reading another new table",
+		sql: `CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION has_rate(c text) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM rates WHERE code = c) $$;
+CREATE TABLE invoices (id bigint PRIMARY KEY, code text NOT NULL, CONSTRAINT invoices_code_rated CHECK (has_rate(code)));`,
 	},
 	{
 		name: "a routine reads a view another view reads it through",
@@ -198,5 +229,24 @@ CREATE FUNCTION half(p pct) RETURNS numeric LANGUAGE sql IMMUTABLE AS $$ SELECT 
 	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", rebuilt, "--auto-approve")
 
 	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", rebuilt, "--dry-run")
+	c.Assert(out, qt.Contains, "Schema is synced")
+}
+
+// TestSchemaApplyCreatesARoutineBeforeTheColumnThatCallsItLive pins the
+// existing table: a column added to it with a default calling a LANGUAGE sql
+// routine that reads a new table is added after the routine, and the routine
+// after the table it reads.
+func TestSchemaApplyCreatesARoutineBeforeTheColumnThatCallsItLive(t *testing.T) {
+	c := qt.New(t)
+	target, _ := scratchReplayDatabase(c)
+	runPtahNative(c, "schema", "apply", "--db-url", target,
+		"--schema-file", writeRoutineOrderSchema(c, "CREATE TABLE orders (id bigint PRIMARY KEY);"), "--auto-approve")
+	grown := writeRoutineOrderSchema(c, `CREATE TABLE orders (id bigint PRIMARY KEY, pct integer NOT NULL DEFAULT default_pct());
+CREATE TABLE rates (code text PRIMARY KEY, pct integer NOT NULL);
+CREATE FUNCTION default_pct() RETURNS integer LANGUAGE sql STABLE AS $$ SELECT coalesce((SELECT pct FROM rates WHERE code = 'std'), 0) $$;`)
+
+	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--auto-approve")
+
+	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
 	c.Assert(out, qt.Contains, "Schema is synced")
 }

@@ -408,7 +408,7 @@ func quotePostgresIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, routines relationRoutines) []ast.Node {
 	// Phase 1: create the tables without their foreign keys, in an order where
 	// a table comes after everything it references.
 	//
@@ -416,8 +416,21 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	// declaration, this table's columns and the enums they name, and the
 	// ordering rules read the same three plus the document's dependency map,
 	// which travels too (stokaro/ptah#2315).
+	//
+	// A routine a column default or a CHECK calls, placed with the relations
+	// because it reads one, is created here between the tables; see
+	// routines.tableSteps.
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder()
+	byName := make(map[string]difftypes.TableCreation, len(creations))
 	for _, creation := range creations {
+		byName[creation.Name] = creation
+	}
+	for _, step := range routines.tableSteps {
+		if step.Routine {
+			result = append(result, routines.nodes[step.Name]...)
+			continue
+		}
+		creation := byName[step.Name]
 		astNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
@@ -1759,6 +1772,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// creates waits for it, at step 4b or among the view-likes at step 6.6; see
 	// deporder.PlaceRoutines.
 	placements := p.routinePlacements(diff)
+	relationPlaced := p.relationRoutines(diff, placements)
 	result = p.addNewFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
@@ -1796,7 +1810,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.modifyExistingFunctions(result, diff, placements, deporder.RoutineAfterTypes)
 
 	// 5. Add new tables
-	result = p.addNewTables(result, diff)
+	result = p.addNewTables(result, diff, relationPlaced)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
@@ -1812,7 +1826,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 6.6. Add and modify views, materialized views, and triggers after their
 	// tables/functions exist. The routines that name a relation this plan
 	// creates are ordered with the views, since either may read the other.
-	result = p.addNewViewLikeObjects(result, diff, placements)
+	result = p.addNewViewLikeObjects(result, diff, relationPlaced)
 	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
@@ -2506,10 +2520,11 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 func (p *Planner) addNewViewLikeObjects(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	placements map[string]deporder.RoutinePlacement,
+	routines relationRoutines,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	objects, routineNodes := p.relationRoutineViewLikes(diff, placements)
+	objects := routines.viewLikes()
+	routineNodes := routines.nodes
 	for _, view := range diff.ViewsAdded {
 		// The body travels WITH the change, so the dependency order this
 		// computes does not depend on finding the view again.
