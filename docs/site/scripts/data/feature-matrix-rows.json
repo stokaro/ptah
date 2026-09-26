@@ -1625,7 +1625,7 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "no",
-    "note": "Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) except the `--auto-approve` flags, which stay explicit-only. CE annotates no flag with one.",
+    "note": "Native verbs bind their flags to documented PTAH_* variables ([env: PTAH_X] in help). A flag that must be typed per run, such as `--auto-approve`, binds none. CE annotates no flag with one.",
     "evidence": "All 49 --help screens annotate each flag with [env: PTAH_*]; verified live: PTAH_FORMAT=dot ptah viz --root-dir . emitted Graphviz DOT instead of the mermaid default, exit 0. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. No help screen on the community binary annotates any flag with an environment variable, and `ATLAS_URL=sqlite://file?mode=memory atlas schema inspect` exits 1 with 'Error: required flag(s) \"url\" not set'. Had the twin been honored the run would have printed a schema document and exited 0."
   },
   {

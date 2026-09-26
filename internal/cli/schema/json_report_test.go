@@ -2,8 +2,10 @@ package schema_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/migration/safety"
@@ -491,4 +494,202 @@ func TestSchemaApplyWithoutJSONKeepsItsTranscript(t *testing.T) {
 		"Auto-approval enabled; applying schema changes.\n"+
 		"Schema apply completed successfully.\n")
 	c.Assert(stderr, qt.Equals, "")
+}
+
+// TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown is the dispatch rule
+// on the path that computes its plan. SQLite adds a CHECK by rebuilding the
+// table, and the rebuild copies the one row the new CHECK rejects, so the
+// INSERT fails after the statements ahead of it ran. Every statement was sent,
+// and the report must not claim that nothing reached the database.
+func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY, age INTEGER); INSERT INTO users VALUES (1, -5);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY, age INTEGER CHECK (age > 0));\n")
+
+	stdout, stderr, err := runSchemaStreams("apply",
+		"--db-url", "sqlite://"+dbPath, "--schema-file", schemaPath, "--auto-approve", "--json")
+
+	c.Assert(err, qt.ErrorMatches, `(?s)apply schema changes: .*CHECK constraint failed.*`, qt.Commentf("stderr:\n%s", stderr))
+	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+	c.Assert(report.Refusal, qt.IsNil)
+	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Statements, qt.Contains,
+		`INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`)
+	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
+}
+
+// TestSchemaApplyJSONRefusesEdit keeps the editor off a run whose standard
+// output is a document. The editor named here does not exist, so a run that
+// reached it would fail on the launch rather than on the refusal.
+func TestSchemaApplyJSONRefusesEdit(t *testing.T) {
+	c := qt.New(t)
+	f := newPlanFixture(c)
+	c.Setenv("VISUAL", "")
+	c.Setenv("EDITOR", filepath.Join(f.dir, "no-such-editor"))
+
+	stdout, stderr, err := runSchemaStreams("apply",
+		"--db-url", f.dbURL, "--schema-file", f.schemaPath, "--edit", "--auto-approve", "--json")
+
+	c.Assert(err, qt.ErrorMatches,
+		`--edit cannot be combined with --json: the JSON document is read by a program, and --edit waits for a person in an editor`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
+		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Outcome:         atlasschema.ApplyOutcomeFailed,
+		Error:           err.Error(),
+	})
+	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
+}
+
+// panicOnWrite is standard error for a run that panics the first time it
+// writes for a person.
+type panicOnWrite struct{}
+
+func (panicOnWrite) Write([]byte) (int, error) {
+	panic("standard error refused the write")
+}
+
+// TestSchemaPlanJSONReportsAPanicAsFailed is the document a panicking plan
+// still owes. Under --json the first thing written for a person is the plan
+// block on standard error, ahead of the file, so the panic lands in the middle
+// of the run. The panic goes on to the caller, which is what makes the process
+// report an internal error and exit 2.
+func TestSchemaPlanJSONReportsAPanicAsFailed(t *testing.T) {
+	c := qt.New(t)
+	f := newPlanFixture(c)
+	planPath := filepath.Join(f.dir, "add-orders.plan.json")
+	cmd := schema.NewSchemaCommand()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(panicOnWrite{})
+	cmd.SetArgs([]string{"plan", "--db-url", f.dbURL, "--schema-file", f.schemaPath, "--output", planPath, "--json"})
+
+	c.Assert(func() { _ = cmd.Execute() }, qt.PanicMatches, "standard error refused the write")
+	c.Assert(decodeOneDocument[atlasschema.PlanReport](c, stdout.String()), qt.DeepEquals, atlasschema.PlanReport{
+		ContractVersion: atlasschema.PlanReportContractVersion,
+		Outcome:         atlasschema.PlanOutcomeFailed,
+		Error:           "internal error: standard error refused the write",
+	})
+	_, statErr := os.Stat(planPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// countryCityEntities declares a table whose rows are the project's and one
+// whose rows are not. The declared city names a country the declaration does
+// not carry, so only a database holding that country row accepts the city.
+const countryCityEntities = `package entities
+
+//ptah:schema:table name="countries"
+type Country struct {
+	//ptah:schema:field name="code" type="TEXT" primary="true"
+	Code string
+}
+
+//ptah:schema:data table="cities" key="id" file="cities.yaml"
+//ptah:schema:table name="cities"
+type City struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+
+	//ptah:schema:field name="country" type="TEXT" not_null="true" foreign="countries(code)"
+	Country string
+}
+`
+
+// TestSchemaApplyJSONReportsASimulationFailure is a rehearsal that fails where
+// the target would not. The dev database gets the target's structure and none
+// of its rows, so the declared city's foreign key finds no country there. The
+// control applies the same plan without --dev-url, which is what shows the
+// refusal came from the rehearsal rather than from the plan.
+func TestSchemaApplyJSONReportsASimulationFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	entities := filepath.Join(dir, "entities")
+	c.Assert(os.MkdirAll(entities, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(entities, "schema.go"), []byte(countryCityEntities), 0o600), qt.IsNil)
+	citiesFile := filepath.Join(entities, "cities.yaml")
+	c.Assert(os.WriteFile(citiesFile, []byte("[]\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+	dbURL := "sqlite://" + dbPath
+	out, err := runSchema("", "apply", "--db-url", dbURL, "--root-dir", entities, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	seedSQLite(c, dbPath, "INSERT INTO countries (code) VALUES ('NO');")
+	c.Assert(os.WriteFile(citiesFile, []byte("- id: 1\n  country: NO\n"), 0o600), qt.IsNil)
+	args := []string{"apply", "--db-url", dbURL, "--root-dir", entities, "--auto-approve", "--json"}
+
+	stdout, stderr, err := runSchemaStreams(append(args, "--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"))...)
+
+	c.Assert(err, qt.ErrorMatches,
+		`(?s)dev database simulation failed during plan: .*FOREIGN KEY constraint failed.*; the plan was not applied to the target database`)
+	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
+	c.Assert(report.Refusal, qt.DeepEquals, &atlasschema.Refusal{Code: atlasschema.RefusalSimulationFailed})
+	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(stderr, qt.Not(qt.Contains), "Auto-approval enabled")
+
+	control, controlStderr, err := runSchemaStreams(args...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", controlStderr))
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, control).Outcome, qt.Equals, atlasschema.ApplyOutcomeApplied)
+}
+
+// runSchemaStreamsContext is runSchemaStreams under ctx, for the rows that
+// read what the verb reported into its context.
+func runSchemaStreamsContext(ctx context.Context, args ...string) (stdout, stderr string, err error) {
+	cmd := schema.NewSchemaCommand()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs(args)
+	err = cmd.ExecuteContext(ctx)
+	return out.String(), errOut.String(), err
+}
+
+// TestSchemaVerbsReportTheirWorkFinished is what keeps the exit status in step
+// with the document. The process reports an interrupt that arrives after a
+// verb returned unless the verb reported its work finished, so without the
+// report a SIGTERM between the commit and the exit turns an applied run into
+// exit 143 beside a document that says applied.
+func TestSchemaVerbsReportTheirWorkFinished(t *testing.T) {
+	c := qt.New(t)
+	f := newPlanFixture(c)
+	planPath := filepath.Join(f.dir, "add-orders.plan.json")
+	planCtx, planFinished := cmdutil.WithWorkReport(c.Context())
+
+	_, stderr, err := runSchemaStreamsContext(planCtx, "plan",
+		"--db-url", f.dbURL, "--schema-file", f.schemaPath, "--output", planPath, "--json")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(planFinished(), qt.IsTrue)
+
+	applyCtx, applyFinished := cmdutil.WithWorkReport(c.Context())
+
+	stdout, stderr, err := runSchemaStreamsContext(applyCtx, "apply",
+		"--db-url", f.dbURL, "--plan", planPath, "--auto-approve", "--json")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout).Outcome, qt.Equals, atlasschema.ApplyOutcomeApplied)
+	c.Assert(applyFinished(), qt.IsTrue)
+}
+
+// TestSchemaApplyDoesNotReportAFailedRunFinished is the other half: a run that
+// failed has not done what it was asked, so an interrupt still decides the
+// status.
+func TestSchemaApplyDoesNotReportAFailedRunFinished(t *testing.T) {
+	c := qt.New(t)
+	f := newPlanFixture(c)
+	ctx, finished := cmdutil.WithWorkReport(c.Context())
+
+	_, _, err := runSchemaStreamsContext(ctx, "apply",
+		"--db-url", f.dbURL, "--plan", filepath.Join(f.dir, "missing.plan.json"), "--auto-approve", "--json")
+
+	c.Assert(err, qt.ErrorMatches, "read plan file: .*")
+	c.Assert(finished(), qt.IsFalse)
 }

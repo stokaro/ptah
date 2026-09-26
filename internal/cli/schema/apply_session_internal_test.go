@@ -263,6 +263,117 @@ func testSchemaApplyJSONSessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
 }
 
+// TestSchemaApplyJSONReportsAPanicAfterDispatchAsUnknown is the document a
+// panicking apply still owes, from the point where it matters most: every
+// statement committed inside the lock session, and the session then panicked.
+// The document must say unknown rather than stay missing, and the panic must go
+// on, so the process still reports an internal error and exits 2.
+func TestSchemaApplyJSONReportsAPanicAfterDispatchAsUnknown(t *testing.T) {
+	testSchemaApplyJSONPanicAfterDispatch(t, keepApplySessionNormalPath)
+}
+
+func TestSchemaApplyPlanFileJSONReportsAPanicAfterDispatchAsUnknown(t *testing.T) {
+	testSchemaApplyJSONPanicAfterDispatch(t, configureApplySessionPlan)
+}
+
+func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossSetup) {
+	t.Helper()
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	rootPath := filepath.Join(dir, "outer.db")
+	targetPath := filepath.Join(dir, "session.db")
+	planPath := filepath.Join(dir, "add-orders.plan.json")
+	seedApplySessionSQLite(c, rootPath, "CREATE TABLE root_only (id INTEGER PRIMARY KEY);")
+	seedApplySessionSQLite(c, targetPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	desiredPath := writeApplySessionFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	opts := schemaApplyOptions{
+		dbURL:          "sqlite://" + rootPath,
+		schemaFiles:    []string{desiredPath},
+		autoApprove:    true,
+		jsonOutput:     true,
+		connectTimeout: dbcli.DefaultConnectTimeout.String(),
+	}
+	setup(c, targetPath, desiredPath, planPath, &opts)
+	redirect := &redirectApplySession{target: openApplySessionSQLite(c, targetPath)}
+	panicAfterRun := func(
+		ctx context.Context,
+		root *dbschema.DatabaseConnection,
+		name string,
+		timeout time.Duration,
+		use func(*dbschema.DatabaseConnection) error,
+	) (runErr, releaseErr error) {
+		_, _ = redirect.run(ctx, root, name, timeout, use)
+		panic("lock session lost its connection")
+	}
+	cmd, stdout, stderr := newApplySessionJSONCommand()
+
+	c.Assert(func() { _ = runSchemaApplyWithLockSession(cmd, opts, panicAfterRun) },
+		qt.PanicMatches, "lock session lost its connection")
+
+	var report atlasschema.ApplyReport
+	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+	c.Assert(report.Refusal, qt.IsNil)
+	c.Assert(report.Error, qt.Equals, "internal error: lock session lost its connection")
+	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+}
+
+// TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed is the control for
+// the row above. The session panics before it runs anything, so nothing was
+// sent and the document says failed.
+func TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	rootPath := filepath.Join(dir, "outer.db")
+	seedApplySessionSQLite(c, rootPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	desiredPath := writeApplySessionFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	panicBeforeRun := func(
+		context.Context,
+		*dbschema.DatabaseConnection,
+		string,
+		time.Duration,
+		func(*dbschema.DatabaseConnection) error,
+	) (runErr, releaseErr error) {
+		panic("lock session could not start")
+	}
+	cmd, stdout, _ := newApplySessionJSONCommand()
+
+	c.Assert(func() {
+		_ = runSchemaApplyWithLockSession(cmd, schemaApplyOptions{
+			dbURL:          "sqlite://" + rootPath,
+			schemaFiles:    []string{desiredPath},
+			autoApprove:    true,
+			jsonOutput:     true,
+			connectTimeout: dbcli.DefaultConnectTimeout.String(),
+		}, panicBeforeRun)
+	}, qt.PanicMatches, "lock session could not start")
+
+	var report atlasschema.ApplyReport
+	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
+	c.Assert(report, qt.DeepEquals, atlasschema.ApplyReport{
+		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Outcome:         atlasschema.ApplyOutcomeFailed,
+		Error:           "internal error: lock session could not start",
+	})
+	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"users"})
+}
+
+func newApplySessionJSONCommand() (cmd *cobra.Command, stdout, stderr *bytes.Buffer) {
+	cmd = newSchemaApplyCommand()
+	cmd.SetContext(context.Background())
+	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetIn(strings.NewReader(""))
+	return cmd, stdout, stderr
+}
+
 func keepApplySessionNormalPath(
 	_ *qt.C,
 	_, _, _ string,

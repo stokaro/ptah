@@ -101,8 +101,16 @@ func approvalFor(
 func verifiedApproval(
 	ctx context.Context, options approvalOptions, plan planIdentity,
 ) (*embedcutover.Approval, error) {
+	// One read serves both halves. Verifying one read and taking the digest
+	// from another lets a file replaced in between pass with a signature over
+	// a plan for something else.
+	signedPlan, err := os.ReadFile(options.approvalFile) //gosec:disable G304 -- the operator named this file on the command line
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", options.approvalFile, err)
+	}
 	verified, err := planapproval.Verify(ctx, planapproval.VerifyOptions{
 		PlanPath:       options.approvalFile,
+		Plan:           signedPlan,
 		AllowedSigners: effectiveAllowedSigners(options.allowedSigners),
 		Signer:         options.signer,
 	})
@@ -120,7 +128,7 @@ func verifiedApproval(
 		return nil, err
 	}
 
-	signed, err := planDigestIn(options.approvalFile)
+	signed, err := planDigestIn(options.approvalFile, signedPlan)
 	if err != nil {
 		return nil, err
 	}
@@ -189,12 +197,9 @@ func writePlanFile(out io.Writer, path string, plan planIdentity) error {
 		path, path)))
 }
 
-// planDigestIn reads the digest out of a signed plan file.
-func planDigestIn(path string) (string, error) {
-	body, err := os.ReadFile(path) //gosec:disable G304 -- the operator named this file on the command line
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
+// planDigestIn reads the digest out of a signed plan file's content. path
+// names the file in errors.
+func planDigestIn(path string, body []byte) (string, error) {
 	for line := range strings.SplitSeq(string(body), "\n") {
 		if digest, found := strings.CutPrefix(strings.TrimSpace(line), planDigestKey+": "); found {
 			return strings.TrimSpace(digest), nil

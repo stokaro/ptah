@@ -98,8 +98,17 @@ func Sign(ctx context.Context, planPath, keyPath string) error {
 
 // VerifyOptions names what a verification checks against.
 type VerifyOptions struct {
-	// PlanPath is the plan whose approval is checked.
+	// PlanPath is where the plan was read from. The approval is read from
+	// [SignaturePath] of it, and the path names the plan in errors. Verify
+	// never reads the plan through it.
 	PlanPath string
+	// Plan is the plan's content: the bytes the signature has to cover.
+	//
+	// The caller reads the plan once and passes what it read, then acts on
+	// those same bytes. Verification that opened the path itself would check
+	// one read while the caller executed another, and a file replaced between
+	// the two would run with nobody's approval.
+	Plan []byte
 	// AllowedSigners is the OpenSSH allowed_signers file listing the keys whose
 	// approval counts. Committing it to the repository is what makes the set of
 	// approvers reviewable in the same place as the code.
@@ -117,7 +126,9 @@ type Approval struct {
 	Digest string
 }
 
-// Verify checks a plan's approval and reports who made it.
+// Verify checks that the approval beside opts.PlanPath covers opts.Plan and
+// reports who made it. It reads the signature and the allowed-signers file,
+// and never the plan: the bytes it verifies are the ones the caller holds.
 func Verify(ctx context.Context, opts VerifyOptions) (Approval, error) {
 	if strings.TrimSpace(opts.AllowedSigners) == "" {
 		return Approval{}, errors.New("an allowed-signers file is required to verify a plan approval")
@@ -125,10 +136,10 @@ func Verify(ctx context.Context, opts VerifyOptions) (Approval, error) {
 	if _, err := os.Stat(opts.AllowedSigners); err != nil {
 		return Approval{}, fmt.Errorf("read allowed signers %s: %w", opts.AllowedSigners, err)
 	}
-	plan, err := os.ReadFile(opts.PlanPath)
-	if err != nil {
-		return Approval{}, fmt.Errorf("read plan %s: %w", opts.PlanPath, err)
+	if opts.Plan == nil {
+		return Approval{}, fmt.Errorf("verify the approval of %s: the plan's content is required", opts.PlanPath)
 	}
+	plan := opts.Plan
 	signaturePath := SignaturePath(opts.PlanPath)
 	if _, err := os.Stat(signaturePath); err != nil {
 		if os.IsNotExist(err) {
@@ -139,6 +150,7 @@ func Verify(ctx context.Context, opts VerifyOptions) (Approval, error) {
 
 	signer := opts.Signer
 	if signer == "" {
+		var err error
 		signer, err = principalFor(ctx, opts, plan, signaturePath)
 		if err != nil {
 			return Approval{}, err

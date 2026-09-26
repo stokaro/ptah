@@ -70,14 +70,26 @@ schema. Pass --save or
 --output <path> to write the plan file, or --dry-run to print the plan
 document without saving it.
 
---json prints one versioned JSON document on standard output, on success and
-on failure: whether the plan holds changes, the plan document with each
-statement's severity, the plan digest, and a typed refusal code when planning
-refused. With --dry-run the document carries the plan in place of printing it.
-Everything written for a person goes to standard error.`,
+--json prints one versioned JSON document on standard output once the run
+starts, on success and on failure: whether the plan holds changes, the plan
+document with each statement's severity, the plan digest, and a typed refusal
+code when planning refused. With --dry-run the document carries the plan in
+place of printing it. The digest covers the plan file's bytes, which the
+document does not carry: pass --output to have them. Everything written for a
+person goes to standard error. A command line refused before the run starts --
+an unknown flag, a flag value that does not parse, flags that cannot be
+combined, a positional argument -- prints no document. --json reads no
+environment variable.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSchemaPlan(cmd, opts)
+			if err := runSchemaPlan(cmd, opts); err != nil {
+				return err
+			}
+			// The plan is computed and saved or printed, so an interrupt
+			// arriving between here and the process exit stopped nothing. See
+			// cmdutil.ReportWorkFinished.
+			cmdutil.ReportWorkFinished(cmd.Context())
+			return nil
 		},
 	}
 	flags := cmd.Flags()
@@ -98,6 +110,7 @@ Everything written for a person goes to standard error.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	disableJSONEnvBinding(flags, planJSONFlag)
 	cmd.MarkFlagsMutuallyExclusive(planSaveFlag, planDryRunFlag)
 	cmd.MarkFlagsMutuallyExclusive(planOutputFlag, planDryRunFlag)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -106,12 +119,23 @@ Everything written for a person goes to standard error.`,
 
 func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	human := opts.humanOutput(cmd)
-	evidence, err := planSchema(cmd, opts, human)
-	if opts.jsonOutput {
-		evidence.Err = err
-		if writeErr := writeReport(cmd.OutOrStdout(), atlasschema.NewPlanReport(evidence)); writeErr != nil && err == nil {
-			err = writeErr
+	document := newResultDocument(cmd, opts.jsonOutput)
+	// A panic skips the document write below, so without this a caller
+	// parsing standard output finds nothing there. The document reports a
+	// failed plan, and the panic then continues, so the process still reports
+	// an internal error and exits 2.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			document.writeOnPanic(atlasschema.NewPlanReport(atlasschema.PlanEvidence{
+				Err: cmdutil.InternalError(recovered),
+			}))
+			panic(recovered)
 		}
+	}()
+	evidence, err := planSchema(cmd, opts, human)
+	evidence.Err = err
+	if writeErr := document.write(atlasschema.NewPlanReport(evidence)); writeErr != nil && err == nil {
+		err = writeErr
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
