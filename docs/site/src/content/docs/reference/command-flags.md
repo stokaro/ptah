@@ -1353,6 +1353,7 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
@@ -1550,6 +1551,7 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
 | `--name` | `string` | — | `PTAH_NAME` | — |
 | `--output` | `string` | — | `PTAH_OUTPUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |

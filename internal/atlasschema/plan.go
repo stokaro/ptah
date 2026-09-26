@@ -470,18 +470,33 @@ func MarshalPlanFile(plan PlanFile) ([]byte, error) {
 // Atlas-compatible command tree reads both encodings through
 // [ReadPlanDocument].
 func ReadPlanFile(path string) (PlanFile, error) {
+	plan, _, err := ReadPlanFileDigest(path)
+	return plan, err
+}
+
+// ReadPlanFileDigest reads a plan file as [ReadPlanFile] does, and also
+// returns the SHA-256 of the bytes it decoded, in sha256:<hex> form.
+//
+// The digest is taken from the same read the plan is decoded from, so it names
+// the document that was executed even when the file is replaced a moment
+// later. The digest is empty whenever the error is not nil.
+func ReadPlanFileDigest(path string) (PlanFile, string, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
-		return PlanFile{}, fmt.Errorf("read plan file: %w", err)
+		return PlanFile{}, "", fmt.Errorf("read plan file: %w", err)
 	}
 	if DetectPlanFormat(contents) == PlanFormatHCL {
-		return PlanFile{}, fmt.Errorf(
+		return PlanFile{}, "", fmt.Errorf(
 			"plan file %s is in the Atlas %s format, which the native `ptah schema apply --plan` does not read; "+
 				"apply it with `ptah-compat schema apply --plan file://%s --to <desired state>`, "+
 				"or produce a native plan with `ptah schema plan --output <name>%s`",
 			path, PlanFileSuffixHCL, path, PlanFileSuffix)
 	}
-	return decodePlanJSON(contents, path)
+	plan, err := decodePlanJSON(contents, path)
+	if err != nil {
+		return PlanFile{}, "", err
+	}
+	return plan, digest.FromBytes(contents).String(), nil
 }
 
 // decodePlanJSON parses and validates the native format_version-1 JSON plan

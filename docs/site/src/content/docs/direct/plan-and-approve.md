@@ -140,6 +140,11 @@ Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script
 around this workflow has to treat a missing plan file as a normal outcome.
+With `--json` the command says so in a document rather than a sentence:
+`outcome` is `no-changes`. The same document carries the plan, its digest and
+a typed refusal code when planning refuses, and `ptah schema apply --json`
+reports the apply the same way; see
+[Read the result in a script](../apply/#read-the-result-in-a-script).
 
 ## List the approvers
 

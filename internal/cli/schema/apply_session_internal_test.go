@@ -10,6 +10,7 @@ package schema
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 )
@@ -202,6 +204,62 @@ func testSchemaApplySessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(output.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(strings.Count(output.String(), "error: "+sessionFailure.Error()+"\n"), qt.Equals, 1)
 	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"root_only"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+}
+
+// TestSchemaApplyJSONReportsSessionLossAsUnknown is the evidence rule at the
+// command boundary. Every statement committed and the lock session then failed
+// on release, so the command fails. The document must not say applied, and it
+// must not say refused or failed either: the statements were sent, and those
+// outcomes promise they were not.
+func TestSchemaApplyJSONReportsSessionLossAsUnknown(t *testing.T) {
+	testSchemaApplyJSONSessionLoss(t, keepApplySessionNormalPath)
+}
+
+func TestSchemaApplyPlanFileJSONReportsSessionLossAsUnknown(t *testing.T) {
+	testSchemaApplyJSONSessionLoss(t, configureApplySessionPlan)
+}
+
+func testSchemaApplyJSONSessionLoss(t *testing.T, setup applySessionLossSetup) {
+	t.Helper()
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	rootPath := filepath.Join(dir, "outer.db")
+	targetPath := filepath.Join(dir, "session.db")
+	planPath := filepath.Join(dir, "add-orders.plan.json")
+	seedApplySessionSQLite(c, rootPath, "CREATE TABLE root_only (id INTEGER PRIMARY KEY);")
+	seedApplySessionSQLite(c, targetPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	desiredPath := writeApplySessionFile(c, dir, "schema.sql",
+		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	opts := schemaApplyOptions{
+		dbURL:          "sqlite://" + rootPath,
+		schemaFiles:    []string{desiredPath},
+		autoApprove:    true,
+		jsonOutput:     true,
+		connectTimeout: dbcli.DefaultConnectTimeout.String(),
+	}
+	setup(c, targetPath, desiredPath, planPath, &opts)
+	target := openApplySessionSQLite(c, targetPath)
+	sessionFailure := errors.New("advisory lock session failed during release: lock release failed")
+	redirect := &redirectApplySession{target: target, terminal: sessionFailure}
+	cmd := newSchemaApplyCommand()
+	cmd.SetContext(context.Background())
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetIn(strings.NewReader(""))
+
+	err := runSchemaApplyWithLockSession(cmd, opts, redirect.run)
+
+	c.Assert(err, qt.ErrorIs, sessionFailure)
+	var report atlasschema.ApplyReport
+	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+	c.Assert(report.Refusal, qt.IsNil)
+	c.Assert(report.Error, qt.Contains, sessionFailure.Error())
+	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
 }
 
