@@ -97,21 +97,24 @@ type CreateTableNode struct {
 	// and a live server's SHOW CREATE TABLE returns them that way, so a reader
 	// that only understood standalone CREATE INDEX lost them (stokaro/ptah#1574).
 	Indexes []*IndexNode
-	// Elements is the order the table body declared its constraints and
-	// indexes in.
+	// Elements is the order the table body declared its columns, constraints
+	// and indexes in.
 	//
-	// Constraints and Indexes above are two slices, so between them they cannot
-	// say which came first, and on MySQL and MariaDB that is load-bearing: an
-	// index takes its name from the first free candidate at the moment it is
-	// read, so `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)` builds `b` and `b_2`
-	// while the same two elements the other way round is refused with
-	// `ERROR 1061 Duplicate key name`. Measured on MySQL 26.7 and MariaDB 12.3,
-	// and on the 8.4 and 11.8 lines before them.
+	// Columns, Constraints and Indexes above are three slices, so between them
+	// they cannot say which came first, and on MySQL and MariaDB that is
+	// load-bearing. An index takes its name from the first free candidate at
+	// the moment it is read, so `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)`
+	// builds `b` and `b_2` while the same two elements the other way round is
+	// refused with `ERROR 1061 Duplicate key name`. Measured on MySQL 26.7 and
+	// MariaDB 12.3, and on the 8.4 and 11.8 lines before them. MySQL numbers
+	// an unnamed CHECK in the order the body writes it, on a column or on the
+	// table, so `CHECK (b > 0), a int CHECK (a > 0)` names the table-level
+	// CHECK `_chk_1` (stokaro/ptah#3741).
 	//
-	// Empty for a node nothing ordered -- one built by a fluent builder rather
-	// than parsed -- and a reader that finds it empty falls back to the two
-	// slices, which is what every reader did before it existed
-	// (stokaro/ptah#2773).
+	// [CreateTableNode.AddColumn], [CreateTableNode.AddConstraint] and
+	// [CreateTableNode.AddIndex] record an element each. A node whose slices
+	// were assigned directly records none, and a reader that finds a slice's
+	// elements missing falls back to that slice's own order (stokaro/ptah#2773).
 	Elements []TableElement
 	// SelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
 	SelectBody string
@@ -348,13 +351,15 @@ func NewCreateDatabase(name string) *CreateDatabaseNode {
 // Accept implements the Node interface for CreateDatabaseNode.
 func (n *CreateDatabaseNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// AddColumn adds a column to the CREATE TABLE statement and returns the table node for chaining.
+// AddColumn adds a column to the CREATE TABLE statement, records where it sat
+// in the table body, and returns the table node for chaining.
 //
 // Example:
 //
 //	table.AddColumn(NewColumn("id", "INTEGER").SetPrimary())
 func (n *CreateTableNode) AddColumn(column *ColumnNode) *CreateTableNode {
 	n.Columns = append(n.Columns, column)
+	n.Elements = append(n.Elements, TableElement{Column: column})
 	return n
 }
 
@@ -372,10 +377,12 @@ func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode {
 
 // TableElement is one entry in a table body's declaration order.
 //
-// Exactly one field is set. A pair of pointers rather than a slice index,
-// because an index into a slice that is still being appended to is a second
-// piece of state to keep true, and this one cannot go stale.
+// Exactly one field is set. Pointers rather than slice indexes, because an
+// index into a slice that is still being appended to is a second piece of
+// state to keep true, and a pointer cannot go stale.
 type TableElement struct {
+	// Column is the element, when it was a column definition.
+	Column *ColumnNode
 	// Constraint is the element, when it was a table-level constraint.
 	Constraint *ConstraintNode
 	// Index is the element, when it was an inline index.

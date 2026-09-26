@@ -227,9 +227,10 @@ that adds one to an existing column writes `ADD CONSTRAINT` under the same
 which names the target already holds. MySQL and MariaDB name an unnamed
 foreign key `<table>_ibfk_<n>`, which the [MySQL page](../mysql/) describes.
 The other engines keep Ptah's own name for an unnamed foreign key,
-`fk_<table>_<column>`. A `CHECK` left unnamed in a file read for another engine
-stays unnamed. Two of them on one table are compared by their conditions, so a
-plan never merges one into the other.
+`fk_<table>_<column>`. MySQL and MariaDB name an unnamed `CHECK` by rules of
+their own, which the MySQL page describes too. A `CHECK` left unnamed in a file
+read for another engine stays unnamed. Two of them on one table are compared by
+their conditions, so a plan never merges one into the other.
 
 A column `check` declared in YAML or a Go annotation without `check_name` is
 written without a name, so PostgreSQL names it by the rule
