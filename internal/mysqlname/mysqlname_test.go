@@ -189,6 +189,32 @@ func TestClauseIndexNamesKey(t *testing.T) {
 	}
 }
 
+// TestForeignKeyNameLimit pins the longest derived name each server keeps as
+// derived. Measured over a utf8mb4 connection on MySQL 8.4.11 and 26.7.0 and
+// MariaDB 11.8.9: MySQL keeps 64 characters in either statement and refuses 65;
+// MariaDB refuses 64 in CREATE TABLE and keeps 63; its ALTER TABLE keeps 64 and
+// cuts 65 to 64.
+func TestForeignKeyNameLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		statement mysqlname.Statement
+		want      int
+	}{
+		{name: "MySQL, CREATE TABLE", dialect: platform.MySQL, statement: mysqlname.CreateTable, want: 64},
+		{name: "MySQL, ALTER TABLE", dialect: platform.MySQL, statement: mysqlname.AlterTable, want: 64},
+		{name: "MariaDB, CREATE TABLE", dialect: platform.MariaDB, statement: mysqlname.CreateTable, want: 63},
+		{name: "MariaDB, ALTER TABLE", dialect: platform.MariaDB, statement: mysqlname.AlterTable, want: 64},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.ForeignKeyNameLimit(test.dialect, test.statement), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestNextForeignKeyNumber covers the number ALTER TABLE starts from. Each row
 // is what a table held before a statement added an unnamed key, measured on
 // MySQL 8.4.11, 26.7.0 and MariaDB 11.8.9.

@@ -94,12 +94,57 @@ func ClauseIndexNamesKey(dialect string) bool {
 // explicit `c_ibfk_1` beside an unnamed key of `c`, on the same table or on
 // another, is refused. MySQL answers `ERROR 1826 (HY000): Duplicate foreign
 // key constraint name`; MariaDB answers `ERROR 1005 (HY000)` with errno 150 on
-// the same table and errno 121 on another. It does not shorten the name
-// either: a table name longer than 57 characters on MySQL, and longer than 56
-// in a MariaDB CREATE TABLE, is `ERROR 1059 (42000): Identifier name ... is
-// too long`.
+// the same table and errno 121 on another. A name that is too long is refused
+// or cut; see [ForeignKeyNameLimit].
 func ForeignKey(table string, n int) string {
 	return table + foreignKeyLabel + strconv.Itoa(n)
+}
+
+// Statement is the kind of statement that declares an unnamed foreign key. The
+// longest name the server keeps for the key depends on it; see
+// [ForeignKeyNameLimit].
+type Statement int
+
+const (
+	// CreateTable is a key a CREATE TABLE body declares, on a column or on the
+	// table.
+	CreateTable Statement = iota
+	// AlterTable is a key ALTER TABLE adds.
+	AlterTable
+)
+
+// ForeignKeyNameLimit answers the longest name, in characters, that a server
+// of dialect keeps as it derived it for an unnamed foreign key the statement
+// declares.
+//
+// MySQL refuses a longer name in either statement with `ERROR 1059 (42000):
+// Identifier name ... is too long`. MariaDB through 12.0 refuses a name of
+// [MaxIdentifierChars] characters in CREATE TABLE with the same error, and in
+// ALTER TABLE cuts a longer name to MaxIdentifierChars without a warning.
+// Measured over a utf8mb4 connection, with the length of the derived name:
+//
+//	statement                     name  MySQL 8.4.11, 26.7.0  MariaDB 11.8.9
+//	CREATE TABLE, 56-char table   63    kept                  kept
+//	CREATE TABLE, 56-char table   64    kept                  ERROR 1059
+//	CREATE TABLE, 57-char table   64    kept                  ERROR 1059
+//	ALTER TABLE, 57-char table    64    kept                  kept
+//	ALTER TABLE, 58-char table    65    ERROR 1059            cut to 64
+//
+// MariaDB's CREATE TABLE refusal does not count characters: a 64-character
+// name whose table is spelled in two-byte characters is kept. The limit here
+// holds every such name to 63 characters, which refuses nothing MariaDB keeps
+// among single-byte names.
+//
+// A name the server refuses is not a document, and a name it cuts is not the
+// name the reader derives, so the reader refuses both. MariaDB 12.1 and later
+// write the key's number instead of this name and keep the document; the
+// reader cannot tell the lines apart, and the refusal holds on those lines
+// too.
+func ForeignKeyNameLimit(dialect string, statement Statement) int {
+	if platform.NormalizeDialect(dialect) == platform.MariaDB && statement == CreateTable {
+		return MaxIdentifierChars - 1
+	}
+	return MaxIdentifierChars
 }
 
 // ForeignKeyNumber answers the number of a foreign key name ALTER TABLE counts

@@ -239,8 +239,10 @@ func columnForeignKeysOf(database schemamodel.Database) []string {
 
 // TestRead_MariaDBColumnForeignKeyNames names the key a column declares with
 // REFERENCES, which MariaDB builds and numbers with the table's other unnamed
-// keys. Measured on MariaDB 11.8.9 and MySQL 26.7.0; MySQL 8.4 builds nothing
-// from the clause, and the parser refuses it for MySQL.
+// keys, in the order the body writes them (stokaro/ptah#3765). Every row was
+// read back from MariaDB 11.8.9 and MySQL 26.7.0 after running its SQL;
+// MariaDB 12.3.3 writes the same numbers without the prefix. MySQL 8.4 builds
+// nothing from the clause, and the parser refuses it for MySQL.
 func TestRead_MariaDBColumnForeignKeyNames(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -249,10 +251,30 @@ func TestRead_MariaDBColumnForeignKeyNames(t *testing.T) {
 		wantTable   []string
 	}{
 		{
-			name:        "a column's key comes before the table's",
+			name:        "a column's key written before the table's",
 			sql:         "CREATE TABLE c (id int PRIMARY KEY, a int REFERENCES p(id), b int, FOREIGN KEY (b) REFERENCES p(id));",
 			wantColumns: []string{"c_ibfk_1(a)"},
 			wantTable:   []string{"c c_ibfk_2(b)"},
+		},
+		{
+			name:        "a table's key written before a column's",
+			sql:         "CREATE TABLE c (id int PRIMARY KEY, FOREIGN KEY (b) REFERENCES p(id), a int REFERENCES p(id), b int);",
+			wantColumns: []string{"c_ibfk_2(a)"},
+			wantTable:   []string{"c c_ibfk_1(b)"},
+		},
+		{
+			name: "a table's key between two columns' keys",
+			sql: "CREATE TABLE c (id int PRIMARY KEY, a int REFERENCES p(id), b int, FOREIGN KEY (b) REFERENCES p(id), " +
+				"d int REFERENCES p(id));",
+			wantColumns: []string{"c_ibfk_1(a)", "c_ibfk_3(d)"},
+			wantTable:   []string{"c c_ibfk_2(b)"},
+		},
+		{
+			name: "a named table key between them does not move the count",
+			sql: "CREATE TABLE c (id int PRIMARY KEY, b int, FOREIGN KEY (b) REFERENCES p(id), " +
+				"CONSTRAINT fx FOREIGN KEY (b) REFERENCES p(id), a int REFERENCES p(id), d int, FOREIGN KEY (d) REFERENCES p(id));",
+			wantColumns: []string{"c_ibfk_2(a)"},
+			wantTable:   []string{"c c_ibfk_1(b)", "c c_ibfk_3(d)", "c fx(b)"},
 		},
 		{
 			name:        "a key the column names does not move the count",

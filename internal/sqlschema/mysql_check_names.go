@@ -30,79 +30,6 @@ var ErrDuplicateCheckName = errors.New("two CHECK constraints claim the same nam
 // longest identifier it keeps. See [mysqlname.MaxIdentifierChars].
 var ErrCheckNameTooLong = errors.New("the derived CHECK name is longer than the engine accepts")
 
-// checkSite is where the model keeps one CHECK: on a field, or among the
-// constraints. Exactly one position is set.
-type checkSite struct {
-	field      int
-	constraint int
-}
-
-// name answers the name the CHECK at the site carries, to read or assign.
-func (s checkSite) name(database *schemamodel.Database) *string {
-	if s.field != noPosition {
-		return &database.Fields[s.field].CheckName
-	}
-	return &database.Constraints[s.constraint].Name
-}
-
-// declaredChecks lists the CHECKs of the table one CREATE TABLE declared, in
-// the order the statement wrote them: on a column, or on the table.
-//
-// The k-th CHECK among the constraints the table appended is the k-th CHECK
-// element the body recorded, because every CHECK converts and the constraints
-// were appended in the body's order. A node that did not record where each
-// column sits -- one a fluent builder assembled from assigned slices -- gives
-// no position to a column's CHECK, and its CHECKs are listed with the ones on
-// columns first, which is the order a table written column by column declares
-// them in.
-func declaredChecks(
-	database *schemamodel.Database, node *ast.CreateTableNode, fieldsStart, constraintsStart int,
-) []checkSite {
-	var tableChecks []int
-	for i := constraintsStart; i < len(database.Constraints); i++ {
-		if isCheck(database.Constraints[i]) {
-			tableChecks = append(tableChecks, i)
-		}
-	}
-	if !ordersColumnsAndConstraints(node) {
-		sites := make([]checkSite, 0, len(node.Columns)+len(tableChecks))
-		for i, column := range node.Columns {
-			if column.Check != "" {
-				sites = append(sites, checkSite{field: fieldsStart + i, constraint: noPosition})
-			}
-		}
-		for _, position := range tableChecks {
-			sites = append(sites, checkSite{field: noPosition, constraint: position})
-		}
-		return sites
-	}
-	sites := make([]checkSite, 0, len(node.Columns)+len(tableChecks))
-	next := 0
-	for _, element := range node.Elements {
-		switch {
-		case element.Column != nil && element.Column.Check != "":
-			sites = append(sites, checkSite{
-				field: fieldsStart + slices.Index(node.Columns, element.Column), constraint: noPosition})
-		case element.Constraint != nil && element.Constraint.Type == ast.CheckConstraint:
-			sites = append(sites, checkSite{field: noPosition, constraint: tableChecks[next]})
-			next++
-		}
-	}
-	return sites
-}
-
-// ordersColumnsAndConstraints reports whether the body recorded where every
-// column and every constraint sits.
-func ordersColumnsAndConstraints(node *ast.CreateTableNode) bool {
-	columns := 0
-	for _, element := range node.Elements {
-		if element.Column != nil {
-			columns++
-		}
-	}
-	return columns == len(node.Columns) && ordersEverything(node)
-}
-
 // namesColumnChecksAfterColumns reports whether the source dialect names a
 // CHECK written on a column after the column: MariaDB does, measured on
 // 11.8.9, and keeps it apart from the CHECKs written on the table.
@@ -125,14 +52,14 @@ func isCheck(constraint schemamodel.Constraint) bool {
 // catalog's: the comparison drops the server's CHECK and adds the same one
 // back (stokaro/ptah#3741).
 func nameCreatedMySQLFamilyChecks(
-	database, base *schemamodel.Database, table schemamodel.Table, checks []checkSite, sourcePlatform string,
+	database, base *schemamodel.Database, table schemamodel.Table, checks []elementSite, sourcePlatform string,
 ) error {
 	databases := []*schemamodel.Database{database, base}
 	switch platform.NormalizeDialect(sourcePlatform) {
 	case platform.MySQL:
 		n := uint32(1)
 		for _, site := range checks {
-			name := site.name(database)
+			name := checkSites().name(database, site)
 			if *name != "" {
 				continue
 			}
@@ -153,7 +80,7 @@ func nameCreatedMySQLFamilyChecks(
 			return err
 		}
 		for _, site := range checks {
-			name := site.name(database)
+			name := checkSites().name(database, site)
 			if *name == "" {
 				*name = mysqlname.MariaDBCheck(mariaDBCheckNameTaken(databases, table))
 			}

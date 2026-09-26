@@ -918,11 +918,12 @@ func appendCreateTable(
 	if err != nil {
 		return err
 	}
-	checks := declaredChecks(database, node, fieldsStart, constraintsStart)
+	checks := declaredSites(database, node, fieldsStart, constraintsStart, checkSites())
 	if err := nameCreatedMySQLFamilyChecks(database, base, tableSchema, checks, sourcePlatform); err != nil {
 		return err
 	}
-	if err := nameCreatedMySQLForeignKeys(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform); err != nil {
+	keys := declaredSites(database, node, fieldsStart, constraintsStart, foreignKeySites())
+	if err := nameCreatedMySQLForeignKeys(database, base, tableSchema, keys, sourcePlatform); err != nil {
 		return err
 	}
 	recordCreatedKeyIndexes(database, document, tableSchema, keyIndexes)

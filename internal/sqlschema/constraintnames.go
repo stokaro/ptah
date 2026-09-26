@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -29,6 +30,12 @@ import (
 // reader cannot tell which line a file is for and derives the older name, so
 // it refuses them for those lines too.
 var ErrDuplicateForeignKeyName = errors.New("two foreign keys claim the same name")
+
+// ErrForeignKeyNameTooLong is the class of a foreign key MySQL or MariaDB would
+// name past the longest name the server keeps as derived. The server refuses
+// the statement or cuts the name, and neither leaves a key under the name the
+// reader derives; see [mysqlname.ForeignKeyNameLimit].
+var ErrForeignKeyNameTooLong = errors.New("the derived foreign key name is longer than the engine keeps")
 
 // The labels PostgreSQL ends a derived constraint name with.
 const (
@@ -121,9 +128,11 @@ func nameCreatedConstraints(
 
 // nameCreatedMySQLForeignKeys gives every unnamed foreign key one CREATE TABLE
 // declared the name MySQL and MariaDB give it, `<table>_ibfk_<n>`, numbered
-// from 1 in the order the statement writes the unnamed keys. MariaDB 12.1 and
-// later write only the number, and the comparison reads such a key as the one
-// named here; see [mysqlname.IsNumberedForeignKeyName].
+// from 1 in the order the statement writes the unnamed keys. keys are the
+// table's foreign keys in that order, on a column or on the table; see
+// [declaredSites]. MariaDB 12.1 and later write only the number, and the
+// comparison reads such a key as the one named here; see
+// [mysqlname.IsNumberedForeignKeyName].
 //
 // The name has to be decided on the desired model, for the reason
 // [nameCreatedConstraints] gives: the other side of a comparison is a catalog,
@@ -132,61 +141,38 @@ func nameCreatedConstraints(
 // key again under that name and drop the server's (stokaro/ptah#3725,
 // stokaro/ptah#3743).
 //
-// A key a column declares with `REFERENCES` counts too, and the columns are
-// numbered before the table-level keys. The server numbers in the order the
-// body writes its elements, and the model does not keep where a column sits
-// among them, so this is the server's order for the usual layout, columns
-// first. Measured on MySQL 26.7.0 and MariaDB 11.8.9, which build a key from
-// the clause: `a INT REFERENCES p(id), b INT, FOREIGN KEY (b) ...` names the
-// column's key `c_ibfk_1`. A table-level key written before a column's
-// `REFERENCES` takes the lower number on the server and the higher one here.
+// A key a column declares with `REFERENCES` counts at the column's place.
 // MySQL 8.4 builds nothing from the clause, and the parser refuses it there.
 //
 // A named key does not move the count, and a derived name is not moved out of
 // the way of a named one: the server answers a collision with an error, and so
-// does this; see [ErrDuplicateForeignKeyName].
+// does this; see [ErrDuplicateForeignKeyName]. Nor is it shortened; see
+// [ErrForeignKeyNameTooLong].
 //
 // It runs after [nameMySQLInlineIndexes], which reads an empty name as a key
 // the author left unnamed: the index the server builds for such a key is named
 // after its column, not after the constraint.
 func nameCreatedMySQLForeignKeys(
-	database, base *schemamodel.Database, table schemamodel.Table,
-	fieldsStart, constraintsStart int, sourcePlatform string,
+	database, base *schemamodel.Database, table schemamodel.Table, keys []elementSite, sourcePlatform string,
 ) error {
 	if !mysqlname.NamesForeignKeys(sourcePlatform) {
 		return nil
 	}
 	databases := []*schemamodel.Database{database, base}
 	next := 1
-	derive := func() (string, error) {
-		name := mysqlname.ForeignKey(table.Name, next)
-		if err := refuseHeldForeignKeyName(databases, table.Schema, name, table.Name); err != nil {
-			return "", err
+	for _, site := range keys {
+		name := foreignKeySites().name(database, site)
+		if *name != "" {
+			continue
 		}
+		derived := mysqlname.ForeignKey(table.Name, next)
+		if err := refuseDerivedForeignKeyName(
+			databases, table, derived, sourcePlatform, mysqlname.CreateTable,
+		); err != nil {
+			return err
+		}
+		*name = derived
 		next++
-		return name, nil
-	}
-	for i := fieldsStart; i < len(database.Fields); i++ {
-		field := &database.Fields[i]
-		if field.Foreign == "" || field.ForeignKeyName != "" {
-			continue
-		}
-		name, err := derive()
-		if err != nil {
-			return err
-		}
-		field.ForeignKeyName = name
-	}
-	for i := constraintsStart; i < len(database.Constraints); i++ {
-		constraint := &database.Constraints[i]
-		if !isForeignKey(*constraint) || constraint.Name != "" {
-			continue
-		}
-		name, err := derive()
-		if err != nil {
-			return err
-		}
-		constraint.Name = name
 	}
 	return nil
 }
@@ -198,11 +184,37 @@ func nameCreatedMySQLForeignKeys(
 func nameAddedMySQLForeignKey(target alterTarget) (string, error) {
 	table := target.table
 	name := mysqlname.ForeignKey(table.Name, target.statement.nextForeignKey)
-	if err := refuseHeldForeignKeyName(target.databases, table.Schema, name, table.Name); err != nil {
+	if err := refuseDerivedForeignKeyName(
+		target.databases, *table, name, target.sourcePlatform, mysqlname.AlterTable,
+	); err != nil {
 		return "", err
 	}
 	target.statement.nextForeignKey++
 	return name, nil
+}
+
+// refuseDerivedForeignKeyName refuses a name the server derives for an unnamed
+// foreign key of table and would not keep: one longer than the statement
+// allows, and one another foreign key of the database already holds.
+func refuseDerivedForeignKeyName(
+	databases []*schemamodel.Database, table schemamodel.Table, name, sourcePlatform string,
+	statement mysqlname.Statement,
+) error {
+	if limit := mysqlname.ForeignKeyNameLimit(sourcePlatform, statement); utf8.RuneCountInString(name) > limit {
+		return fmt.Errorf("%w: %s, the name %s gives an unnamed foreign key of %s in %s, is %d characters, "+
+			"and the server keeps at most %d there as derived; name the key",
+			ErrForeignKeyNameTooLong, name, platform.NormalizeDialect(sourcePlatform), table.Name,
+			statementName(statement), utf8.RuneCountInString(name), limit)
+	}
+	return refuseHeldForeignKeyName(databases, table.Schema, name, table.Name)
+}
+
+// statementName spells the statement as SQL does.
+func statementName(statement mysqlname.Statement) string {
+	if statement == mysqlname.AlterTable {
+		return "ALTER TABLE"
+	}
+	return "CREATE TABLE"
 }
 
 // nameAddedColumnForeignKeys names the key a column added by ALTER TABLE ...
