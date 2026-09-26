@@ -157,6 +157,13 @@ func TestParseConstraintWithoutSymbol_WordBeforeAKindIsTheSymbol(t *testing.T) {
 			wantType: ast.UniqueConstraint,
 		},
 		{
+			name:     "a comment between the symbol and the kind",
+			dialect:  platform.Postgres,
+			sql:      "CREATE TABLE c (a INT, CONSTRAINT key /* the symbol */ UNIQUE (a));",
+			wantName: "key",
+			wantType: ast.UniqueConstraint,
+		},
+		{
 			name:     "EXCLUDE names a check on MySQL",
 			dialect:  platform.MySQL,
 			sql:      "CREATE TABLE c (a INT, CONSTRAINT exclude CHECK (a > 0));",
