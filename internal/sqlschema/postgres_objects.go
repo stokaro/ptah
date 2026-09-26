@@ -7,6 +7,8 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/routineargs"
 )
 
@@ -264,7 +266,7 @@ func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode, 
 	case *ast.RangeTypeDef:
 		database.Ranges = append(database.Ranges, toRange(schema, name, node, definition))
 	case *ast.DomainTypeDef:
-		database.Domains = append(database.Domains, toDomain(schema, name, node, definition))
+		database.Domains = append(database.Domains, toDomain(schema, name, node, definition, sourcePlatform))
 	}
 }
 
@@ -301,7 +303,9 @@ func toRange(schema, name string, node *ast.CreateTypeNode, definition *ast.Rang
 	return rangeType
 }
 
-func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.DomainTypeDef) schemamodel.Domain {
+func toDomain(
+	schema, name string, node *ast.CreateTypeNode, definition *ast.DomainTypeDef, sourcePlatform string,
+) schemamodel.Domain {
 	domain := schemamodel.Domain{
 		Name:     name,
 		Schema:   schema,
@@ -311,11 +315,36 @@ func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.Dom
 		Comment:  node.Comment,
 	}
 	if definition.Default != nil {
-		domain.Default = definition.Default.Value
-		domain.DefaultExpr = definition.Default.Expression
+		domain.Default, domain.DefaultExpr = domainDefault(definition.Default, sourcePlatform)
 	}
 	domain.Canonicalize()
 	return domain
+}
+
+// domainDefault splits a domain's DEFAULT the way [schemamodel.Domain] keeps
+// it: Default holds a value, which the planner quotes, and DefaultExpr holds
+// SQL, which it writes as it is.
+//
+// The parser hands over SQL either way, so only a string constant becomes a
+// value, read as the server reads it. Copied into Default with its quotes,
+// DEFAULT 'ab' is quoted a second time, and the plan sets the default to the
+// four characters 'ab', quotes included (stokaro/ptah#3740). Anything else --
+// a number, a keyword, a cast, a call -- is SQL and stays SQL, and DEFAULT
+// NULL is no default at all, which is what the server stores for it.
+func domainDefault(value *ast.DefaultValue, sourcePlatform string) (literal, expression string) {
+	if value.Expression != "" {
+		return "", value.Expression
+	}
+	written := strings.TrimSpace(value.Value)
+	if !strings.HasPrefix(written, `"`) {
+		if text, ok := lexer.StringValue(written, dialectlexer.Options(sourcePlatform)); ok {
+			return text, ""
+		}
+	}
+	if strings.EqualFold(written, "NULL") {
+		return "", ""
+	}
+	return "", written
 }
 
 func unquoteSQLStringLiteral(value string) string {

@@ -30,7 +30,8 @@ Renders `CREATE DOMAIN "email" AS TEXT NOT NULL CHECK (VALUE ~ '@');`.
 
 > Round-trip and reconciliation notes:
 > - Base types are canonicalized before comparison (`VARCHAR(n)` ↔ `character varying(n)`, `float8` ↔ `double precision`, `int4` ↔ `integer`, etc.), so a domain over any spelling round-trips cleanly.
-> - `check` and `default`/`default_expr` are **create-only**: they are emitted on `CREATE DOMAIN` but not reconciled by the diff engine, because PostgreSQL rewrites `CHECK` expressions on read-back (adding parentheses and `::casts`), which a string comparison would report as a phantom change. Changing a domain's `CHECK` or `DEFAULT` after creation requires a manual migration.
+> - `check` and `default`/`default_expr` are compared through the server. PostgreSQL rewrites both on read-back (adding parentheses and `::casts`), so against a live database Ptah asks the server to normalize the declaration and compares that with what the catalog holds. A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CHECK`; a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration that leaves either out does not remove the one the database holds, and a comparison with no server to ask leaves both uncompared.
+> - `default` is the value itself, and Ptah quotes it when it writes SQL; `default_expr` is SQL, written as it is. A SQL schema file's `DEFAULT 'ab'` reads as the value `ab`, in any spelling of the string PostgreSQL reads, and any other default (`42`, `now()`, `'ab'::text`) reads as SQL. `DEFAULT NULL` is no default, which is what PostgreSQL stores for it.
 > - There is no in-place `ALTER` for a base-type change, so a genuine `type` or `not_null` modification is emitted as a **non-`CASCADE`** drop + recreate. If the domain is still used by a column the drop fails loudly rather than dropping the column; reconcile such changes manually.
 
 ## Composite types
