@@ -311,6 +311,109 @@ annotations, or an OCI artifact, `ptah schema drift` gives the same
 confirmation with
 `No schema drift detected.` and exits `0`.
 
+## Read the result in a script
+
+`--json` on `ptah schema plan` and `ptah schema apply` prints one JSON document
+on standard output, on success and on failure. The text a person reads goes to
+standard error instead: the planned statements, the confirmation prompt, and
+the `error:` line. The exit codes stay the same. A caller parses standard
+output and does not match any sentence on either stream.
+
+Against the database this page has converged, a plan reports that nothing is
+left to change:
+
+```console
+ptah schema plan --db-url "sqlite://app.db" --schema-file schema.sql --dry-run --json
+```
+
+Expected output on standard output:
+
+```text
+{
+  "contract_version": 1,
+  "outcome": "no-changes"
+}
+```
+
+The plan file saved earlier was computed against the database before it
+changed, so applying it again is refused, and the document names the reason:
+
+```console exits=2
+ptah schema apply --db-url "sqlite://app.db" --plan add-created-at.plan.json --auto-approve --json
+```
+
+Expected output includes, on standard output:
+
+```text
+  "outcome": "refused",
+  "refusal": {
+    "code": "stale-plan",
+    "changed": "schema",
+```
+
+`contract_version` is the version of the document, not of Ptah. A consumer that
+does not know the version it reads should refuse the document. The version rises
+when a field changes meaning or leaves, and when an outcome gains a value. A new
+field does not raise it, and neither does a new refusal code, because every
+refusal means that nothing reached the database.
+
+### The plan document
+
+| Field | Meaning |
+| --- | --- |
+| `outcome` | `changes`, `no-changes`, `refused` or `failed` |
+| `plan_digest` | SHA-256 of the plan file, as `sha256:<hex>`: the bytes `--save` and `--output` write and `--dry-run` prints without `--json` |
+| `plan_path` | Where `--save` or `--output` wrote the file |
+| `plan` | The plan file itself, with each statement's `sql`, `severity` and `reason`, the plan-level `destructive` flag, and the `name` and fingerprints that identify it |
+| `refusal` | Why planning refused; see below |
+| `error` | The message printed on standard error, for `refused` and `failed` |
+
+`plan`, `plan_digest` and `plan_path` appear only with `changes`. `no-changes`
+means the database already matches the desired schema, and no file is written.
+`failed` means the plan could not be computed or saved, for a reason that has
+no refusal code. The document does not depend on when it was written, so two
+plans against an unchanged database print the same bytes.
+
+### The apply document
+
+| Field | Meaning |
+| --- | --- |
+| `outcome` | How the run ended; see the next table |
+| `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read |
+| `statements` | The statements the run listed as its planned changes, in order |
+| `refusal` | Why the apply refused; see below |
+| `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
+
+| Outcome | Meaning |
+| --- | --- |
+| `applied` | Every statement ran |
+| `no-changes` | The database already matches the desired schema |
+| `dry-run` | Nothing ran. With `--plan`, the fingerprint was verified first |
+| `canceled` | The confirmation prompt was declined |
+| `refused` | Nothing reached the database, for the reason `refusal` names |
+| `failed` | Nothing reached the database, for a reason with no refusal code |
+| `unknown` | The statements were sent and the run returned an error |
+
+`unknown` is the outcome a caller must not retry from. The statements were
+sent, and the document cannot say how far they got: a transaction may have
+rolled them all back, a run without one may have left some, and a lost
+connection hides even that. Read the database before deciding. A lock session
+that fails after every statement committed is reported this way too, rather
+than as `applied`.
+
+### Refusal codes
+
+| Code | Raised by | Details |
+| --- | --- | --- |
+| `stale-plan` | `apply --plan` | `changed` is `schema` or `rows`; `plan_fingerprint` and `database_fingerprint` are the two values compared |
+| `protected-table` | `plan`, and `apply` without `--plan` | `tables` lists the fenced tables the plan would change |
+| `lock-timeout` | `apply` | Another session held the schema apply lock longer than `--lock-timeout` |
+| `transaction-preflight` | `apply` | A statement cannot run inside the transaction `--tx-mode` opens |
+| `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database |
+
+A consumer that does not know a code still knows what `refused` means, and
+reads `error` for the rest.
+
 ## Hybrid patterns
 
 - **Gate natively, apply on approval.** `ptah schema drift --severity
@@ -335,6 +438,10 @@ confirmation with
   sha256:05a1209c...); the database changed since the plan was computed, so
   re-run `schema plan` against the current database and review the fresh plan
   ```
+
+  Under `--json` the document reports it as the refusal code `stale-plan`,
+  with both fingerprints; see
+  [Read the result in a script](#read-the-result-in-a-script).
 
 - Declining the confirmation prompt cancels with `Schema apply canceled.` and
   no changes.

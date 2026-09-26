@@ -904,13 +904,13 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 7,
-          "expectations": 6
+          "steps": 9,
+          "expectations": 8
         },
         {
           "shell": "powershell",
-          "steps": 7,
-          "expectations": 6
+          "steps": 9,
+          "expectations": 8
         }
       ]
     },

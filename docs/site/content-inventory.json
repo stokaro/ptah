@@ -1480,8 +1480,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 1477,
-      "sourceBytes": 13937
+      "visibleWords": 2139,
+      "sourceBytes": 18690
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1699,8 +1699,8 @@
         "/reference/native-commands/",
         "/start/quick-start-direct/"
       ],
-      "visibleWords": 1556,
-      "sourceBytes": 14321
+      "visibleWords": 1607,
+      "sourceBytes": 14652
     },
     {
       "path": "docs/site/src/content/docs/extend/components.md",
@@ -4388,8 +4388,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8996,
-      "sourceBytes": 88902
+      "visibleWords": 9008,
+      "sourceBytes": 89006
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

@@ -48,6 +48,7 @@ const (
 	applyProtectedTableFlag  = "protected-table"
 	applyPlanFlag            = "plan"
 	applyRequireApprovalFlag = "require-approval"
+	applyJSONFlag            = "json"
 )
 
 type schemaApplyOptions struct {
@@ -69,6 +70,7 @@ type schemaApplyOptions struct {
 	requireApproval bool
 	allowedSigners  string
 	approvalSigner  string
+	jsonOutput      bool
 	plainHTTP       bool
 	connectTimeout  string
 	configPath      string
@@ -138,7 +140,13 @@ database still matches the plan's source fingerprint. --schemas and --include
 positively select what both comparison sides see; --exclude subtracts from the
 result. An --include selection that matches neither the target nor the desired
 schema refuses the apply rather than reporting a synced schema for work that
-did not happen.`,
+did not happen.
+
+--json prints one versioned JSON document on standard output, on success and
+on failure: the outcome, the statements the run listed, the plan file's name
+and digest with --plan, and a typed refusal code when the apply refused before
+anything reached the database. Everything written for a person, including the
+confirmation prompt, goes to standard error.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaApply(cmd, opts)
@@ -168,6 +176,8 @@ did not happen.`,
 		"OpenSSH allowed_signers file listing approvers (default: ./.ptah/allowed_signers)")
 	flags.StringVar(&opts.approvalSigner, approvalSignerFlag, "",
 		"Require the approval to belong to this principal")
+	flags.BoolVar(&opts.jsonOutput, applyJSONFlag, false,
+		"Print the run's result as one versioned JSON document, on success and on failure")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -209,24 +219,57 @@ func runSchemaApplyWithLockSession(
 	opts schemaApplyOptions,
 	lockSession schemaApplyLockSession,
 ) error {
+	run := &applyRun{human: opts.humanOutput(cmd)}
+	outcome, err := applySchema(cmd, opts, lockSession, run)
+	if err == nil && outcome == atlasschema.ApplyOutcomeApplied {
+		fmt.Fprintln(run.human, "Schema apply completed successfully.")
+	}
+	if opts.jsonOutput {
+		run.evidence.Completed = outcome
+		run.evidence.Err = err
+		if writeErr := writeReport(cmd.OutOrStdout(), atlasschema.NewApplyReport(run.evidence)); writeErr != nil && err == nil {
+			err = writeErr
+		}
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	return nil
+}
+
+// applyRun is where one apply writes for a person, and the evidence its --json
+// document reports.
+type applyRun struct {
+	human    io.Writer
+	evidence atlasschema.ApplyEvidence
+}
+
+// applySchema runs one apply and says how it ended. The outcome is empty when
+// the error is not nil.
+func applySchema(
+	cmd *cobra.Command,
+	opts schemaApplyOptions,
+	lockSession schemaApplyLockSession,
+	run *applyRun,
+) (atlasschema.ApplyOutcome, error) {
 	// Resolved before the project file is read, so a malformed declaration
 	// fails every apply and not only one whose desired state is a migration
 	// directory.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	opts.devServerDisposable = devServerDisposable
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	opts.dbURL = dbcli.EffectiveString(
 		cmd,
@@ -242,26 +285,26 @@ func runSchemaApplyWithLockSession(
 	)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+		return "", fmt.Errorf("database URL is required")
 	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 		if err := decideSchemaApplyLockRequest(cmd, opts.dbURL, dialect); err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 	}
 	if strings.TrimSpace(opts.planPath) != "" {
-		return runSchemaApplyPlanFileWithLockSession(cmd, opts, lockSession)
+		return applySchemaPlanFile(cmd, opts, lockSession, run)
 	}
 	if len(opts.rootDirs) == 0 && len(opts.schemaFiles) == 0 && len(opts.toURLs) == 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
+		return "", fmt.Errorf(
 			"a desired schema source is required: pass --%s and/or --%s, or --%s",
-			applyRootDirFlag, applySchemaFileFlag, applyToFlag))
+			applyRootDirFlag, applySchemaFileFlag, applyToFlag)
 	}
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	if len(opts.toURLs) > 0 {
 		// Classification rejects unsupported schemes and source conflicts, and
@@ -269,19 +312,19 @@ func runSchemaApplyWithLockSession(
 		// database is contacted.
 		set, err := atlassource.ClassifySet("--"+applyToFlag, opts.toURLs, atlassource.ProjectEnv{})
 		if err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 		if err := set.EnsureDevDatabase(opts.devURL); err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 	}
 	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
 		dbcli.EffectiveString(
@@ -291,7 +334,7 @@ func runSchemaApplyWithLockSession(
 			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
 		))
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 
 	var desired *schemamodel.Database
@@ -305,7 +348,7 @@ func runSchemaApplyWithLockSession(
 	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
 		declaredVars, varsErr := dbcli.DeclaredVars(cmd)
 		if varsErr != nil {
-			return cmdutil.Fail(cmd, varsErr)
+			return "", varsErr
 		}
 		loadOptions.Vars = declaredVars
 	}
@@ -316,7 +359,7 @@ func runSchemaApplyWithLockSession(
 	// reads against the target's dialect and is loaded below.
 	resolved, isArtifact, err := schemaload.ResolveBeforeConnect(cmd.Context(), loadOptions)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	if isArtifact {
 		desired = resolved.Database
@@ -326,26 +369,26 @@ func runSchemaApplyWithLockSession(
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err))
+		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 
 	if desired == nil && (len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0) {
 		loadOptions.Dialect = conn.Info().Dialect
 		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
 		if err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 	}
 
 	// Lock ownership and every authoritative target action share one physical
 	// session. If that session disappears, the target operation fails with it;
 	// no pooled connection can continue the DDL after losing the lock.
-	applied := false
+	var outcome atlasschema.ApplyOutcome
 	runErr, releaseErr := lockSession(
 		cmd.Context(),
 		conn,
@@ -353,18 +396,15 @@ func runSchemaApplyWithLockSession(
 		lockTimeout,
 		func(session *dbschema.DatabaseConnection) error {
 			var applyErr error
-			applied, applyErr = runSchemaApplyOnLockedSession(cmd, opts, session, desired, projectCfg, txMode)
+			outcome, applyErr = runSchemaApplyOnLockedSession(cmd, opts, session, desired, projectCfg, txMode, run)
 			return applyErr
 		},
 	)
 	warnSchemaApplyLockRelease(cmd, releaseErr)
 	if runErr != nil {
-		return cmdutil.Fail(cmd, runErr)
+		return "", runErr
 	}
-	if applied {
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
-	}
-	return nil
+	return outcome, nil
 }
 
 func runSchemaApplyOnLockedSession(
@@ -374,7 +414,8 @@ func runSchemaApplyOnLockedSession(
 	desired *schemamodel.Database,
 	projectCfg projectconfig.Config,
 	txMode migrator.MigrationTxMode,
-) (applied bool, resultErr error) {
+	run *applyRun,
+) (atlasschema.ApplyOutcome, error) {
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		ProjectRoot:         schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
@@ -391,11 +432,11 @@ func runSchemaApplyOnLockedSession(
 		Diagnostics:         cmd.ErrOrStderr(),
 	})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if !plan.HasChanges() {
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
-		return false, nil
+		fmt.Fprintln(run.human, "Schema is synced, no changes to be made.")
+		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 
 	sqlText := plan.SQL()
@@ -403,18 +444,19 @@ func runSchemaApplyOnLockedSession(
 	if opts.edit {
 		edited, err := editSchemaApplySQL(cmd.Context(), sqlText)
 		if err != nil {
-			return false, err
+			return "", err
 		}
 		sqlText = edited
 		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
 	}
-	printSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+	printSchemaApplyPlan(run.human, sqlText)
+	run.evidence.Statements = statements
 	if opts.dryRun {
-		return false, nil
+		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 	info := conn.Info()
 	if err := atlasschema.PreflightApplyTransaction(info.Dialect, info.Capabilities, txMode, statements); err != nil {
-		return false, err
+		return "", err
 	}
 	// The dev database rehearses the exact ordered statements that would be
 	// applied — including edited SQL — and a failed rehearsal refuses the
@@ -425,48 +467,52 @@ func runSchemaApplyOnLockedSession(
 		DesiredURLs: opts.toURLs,
 		Statements:  statements,
 	}); err != nil {
-		return false, err
+		return "", err
 	}
 
-	ok, err := confirmSchemaApply(cmd, opts)
+	ok, err := confirmSchemaApply(cmd, opts, run.human)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if !ok {
-		return false, nil
+		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 
+	run.evidence.Dispatched = true
 	if opts.edit {
 		// The edited SQL replaces the prepared plan as the executable payload.
 		conn.SchemaWriter().SetDryRun(false)
 		if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
-			return false, fmt.Errorf("apply schema changes: %w", err)
+			return "", fmt.Errorf("apply schema changes: %w", err)
 		}
 	} else if err := plan.Execute(cmd.Context()); err != nil {
-		return false, fmt.Errorf("apply schema changes: %w", err)
+		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
-	return true, nil
+	return atlasschema.ApplyOutcomeApplied, nil
 }
 
-func runSchemaApplyPlanFileWithLockSession(
+// applySchemaPlanFile runs one apply of a saved plan file and says how it
+// ended. The outcome is empty when the error is not nil.
+func applySchemaPlanFile(
 	cmd *cobra.Command,
 	opts schemaApplyOptions,
 	lockSession schemaApplyLockSession,
-) error {
+	run *applyRun,
+) (atlasschema.ApplyOutcome, error) {
 	if err := validateSchemaApplyPlanOptions(cmd); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	path, err := schemafile.LocalFilePath(opts.planPath)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("--%s %q: %w", applyPlanFlag, opts.planPath, err))
+		return "", fmt.Errorf("--%s %q: %w", applyPlanFlag, opts.planPath, err)
 	}
 	// The approval gate runs on the resolved path, before the plan is parsed
 	// and long before the database is contacted: a plan nobody approved must
@@ -474,41 +520,43 @@ func runSchemaApplyPlanFileWithLockSession(
 	// operator wondering what already ran (stokaro/ptah#1857).
 	if opts.requireApproval {
 		if err := requirePlanApproval(cmd, path, opts.allowedSigners, opts.approvalSigner); err != nil {
-			return cmdutil.Fail(cmd, err)
+			return "", err
 		}
 	}
-	plan, err := atlasschema.ReadPlanFile(path)
+	plan, planDigest, err := atlasschema.ReadPlanFileDigest(path)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
+	run.evidence.PlanName = plan.Name
+	run.evidence.PlanDigest = planDigest
 	// The plan's `-- atlas:txmode` header is part of what was reviewed, so it
 	// decides the transaction mode together with --tx-mode, under the rule
 	// ptah-compat applies to the same file. It is resolved before the
 	// connection, so a refused combination touches no database.
 	txMode, err = atlasschema.ResolvePlanTxMode(txMode, path, plan.SQL())
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err))
+		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return "", err
 	}
 
 	// Fingerprint verification and execution share the session that owns the
 	// lock, so no pooled connection can continue after that lock is lost.
-	applied := false
+	var outcome atlasschema.ApplyOutcome
 	runErr, releaseErr := lockSession(
 		cmd.Context(),
 		conn,
@@ -516,18 +564,15 @@ func runSchemaApplyPlanFileWithLockSession(
 		lockTimeout,
 		func(session *dbschema.DatabaseConnection) error {
 			var applyErr error
-			applied, applyErr = runSchemaApplyPlanFileOnLockedSession(cmd, opts, session, plan, txMode)
+			outcome, applyErr = runSchemaApplyPlanFileOnLockedSession(cmd, opts, session, plan, txMode, run)
 			return applyErr
 		},
 	)
 	warnSchemaApplyLockRelease(cmd, releaseErr)
 	if runErr != nil {
-		return cmdutil.Fail(cmd, runErr)
+		return "", runErr
 	}
-	if applied {
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
-	}
-	return nil
+	return outcome, nil
 }
 
 func runSchemaApplyPlanFileOnLockedSession(
@@ -536,34 +581,37 @@ func runSchemaApplyPlanFileOnLockedSession(
 	conn *dbschema.DatabaseConnection,
 	plan atlasschema.PlanFile,
 	txMode migrator.MigrationTxMode,
-) (applied bool, resultErr error) {
+	run *applyRun,
+) (atlasschema.ApplyOutcome, error) {
 	if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
-		return false, err
+		return "", err
 	}
 
-	printSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	printSchemaApplyPlan(run.human, plan.SQL())
+	run.evidence.Statements = plan.StatementSQL()
 	if opts.dryRun {
-		return false, nil
+		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 	info := conn.Info()
 	if err := atlasschema.PreflightApplyTransaction(
 		info.Dialect, info.Capabilities, txMode, plan.StatementSQL(),
 	); err != nil {
-		return false, err
+		return "", err
 	}
-	ok, err := confirmSchemaApply(cmd, opts)
+	ok, err := confirmSchemaApply(cmd, opts, run.human)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if !ok {
-		return false, nil
+		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 
 	conn.SchemaWriter().SetDryRun(false)
+	run.evidence.Dispatched = true
 	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, plan.SQL()); err != nil {
-		return false, fmt.Errorf("apply schema changes: %w", err)
+		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
-	return true, nil
+	return atlasschema.ApplyOutcomeApplied, nil
 }
 
 // validateSchemaApplyPlanOptions rejects flags that would recompute or
@@ -624,12 +672,11 @@ func printSchemaApplyPlan(out io.Writer, sqlText string) {
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 
-func confirmSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) (bool, error) {
+func confirmSchemaApply(cmd *cobra.Command, opts schemaApplyOptions, prompt io.Writer) (bool, error) {
 	if opts.autoApprove {
-		fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; applying schema changes.")
+		fmt.Fprintln(prompt, "Auto-approval enabled; applying schema changes.")
 		return true, nil
 	}
-	prompt := cmd.OutOrStdout()
 	fmt.Fprint(prompt, "Apply these schema changes? Type 'YES' to confirm: ")
 	var confirmation string
 	if _, err := fmt.Fscan(cmd.InOrStdin(), &confirmation); err != nil {

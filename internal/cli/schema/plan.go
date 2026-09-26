@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -30,6 +31,7 @@ const (
 	planOutputFlag     = "output"
 	planSaveFlag       = "save"
 	planDryRunFlag     = "dry-run"
+	planJSONFlag       = "json"
 )
 
 type schemaPlanOptions struct {
@@ -43,6 +45,7 @@ type schemaPlanOptions struct {
 	output          string
 	save            bool
 	dryRun          bool
+	jsonOutput      bool
 	plainHTTP       bool
 	connectTimeout  string
 	configPath      string
@@ -65,7 +68,13 @@ comes from native schema files or OCI artifacts (--schema-file, repeatable),
 or Go annotations (--root-dir, repeatable). Sources merge into one composite
 schema. Pass --save or
 --output <path> to write the plan file, or --dry-run to print the plan
-document without saving it.`,
+document without saving it.
+
+--json prints one versioned JSON document on standard output, on success and
+on failure: whether the plan holds changes, the plan document with each
+statement's severity, the plan digest, and a typed refusal code when planning
+refused. With --dry-run the document carries the plan in place of printing it.
+Everything written for a person goes to standard error.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaPlan(cmd, opts)
@@ -83,6 +92,8 @@ document without saving it.`,
 	flags.StringVar(&opts.output, planOutputFlag, "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.save, planSaveFlag, false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, planDryRunFlag, false, "Print the plan file document without saving it")
+	flags.BoolVar(&opts.jsonOutput, planJSONFlag, false,
+		"Print the run's result as one versioned JSON document, on success and on failure")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -94,16 +105,37 @@ document without saving it.`,
 }
 
 func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
-	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+	human := opts.humanOutput(cmd)
+	evidence, err := planSchema(cmd, opts, human)
+	if opts.jsonOutput {
+		evidence.Err = err
+		if writeErr := writeReport(cmd.OutOrStdout(), atlasschema.NewPlanReport(evidence)); writeErr != nil && err == nil {
+			err = writeErr
+		}
+	}
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	return nil
+}
+
+// planSchema computes the plan and saves or prints it as opts ask. What a
+// person reads goes to human; the plan document itself goes to standard output
+// only under --dry-run without --json, where it is the command's output.
+//
+// It returns the evidence a --json run reports, and the error the command
+// fails with. The evidence carries no plan when the error is not nil.
+func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (atlasschema.PlanEvidence, error) {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return atlasschema.PlanEvidence{}, err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 	opts.dbURL = dbcli.EffectiveString(
 		cmd,
@@ -120,25 +152,25 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	policy := nativeDiffPolicy(projectCfg)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+		return atlasschema.PlanEvidence{}, fmt.Errorf("database URL is required")
 	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-			return cmdutil.Fail(cmd, err)
+			return atlasschema.PlanEvidence{}, err
 		}
 	}
 	if len(opts.rootDirs) == 0 && len(opts.schemaFiles) == 0 {
-		return cmdutil.Fail(cmd, fmt.Errorf(
+		return atlasschema.PlanEvidence{}, fmt.Errorf(
 			"a desired schema source is required: pass --%s and/or --%s",
-			planRootDirFlag, planSchemaFileFlag))
+			planRootDirFlag, planSchemaFileFlag)
 	}
 	if !opts.save && strings.TrimSpace(opts.output) == "" && !opts.dryRun {
-		return cmdutil.Fail(cmd, fmt.Errorf(
+		return atlasschema.PlanEvidence{}, fmt.Errorf(
 			"pass --%s or --%s <path> to write a local plan file, or --%s to preview the plan document",
-			planSaveFlag, planOutputFlag, planDryRunFlag))
+			planSaveFlag, planOutputFlag, planDryRunFlag)
 	}
 	if strings.ContainsAny(opts.name, `/\`) {
-		return cmdutil.Fail(cmd, fmt.Errorf("--%s must not contain path separators; use --%s to choose the plan file location", planNameFlag, planOutputFlag))
+		return atlasschema.PlanEvidence{}, fmt.Errorf("--%s must not contain path separators; use --%s to choose the plan file location", planNameFlag, planOutputFlag)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
 		dbcli.EffectiveString(
@@ -148,12 +180,12 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
 		))
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 
 	declaredVars, err := dbcli.DeclaredVars(cmd)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 	loadOptions := schemaload.Options{
 		RootDirs:        opts.rootDirs,
@@ -167,14 +199,14 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	// [schemaload.ResolveBeforeConnect].
 	resolved, isArtifact, err := schemaload.ResolveBeforeConnect(cmd.Context(), loadOptions)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", planDBURLFlag, err))
+		return atlasschema.PlanEvidence{}, fmt.Errorf("connect to --%s: %w", planDBURLFlag, err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
@@ -185,7 +217,7 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		loadOptions.Dialect = conn.Info().Dialect
 		desired, err = schemaload.LoadContext(cmd.Context(), loadOptions)
 		if err != nil {
-			return cmdutil.Fail(cmd, err)
+			return atlasschema.PlanEvidence{}, err
 		}
 	}
 
@@ -200,31 +232,38 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		Diagnostics:     cmd.ErrOrStderr(),
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
 	if !plan.HasChanges() {
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
-		return nil
+		fmt.Fprintln(human, "Schema is synced, no changes to be made.")
+		return atlasschema.PlanEvidence{Plan: &plan}, nil
 	}
 	document, err := atlasschema.MarshalPlanFile(plan)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return atlasschema.PlanEvidence{}, err
 	}
+	evidence := atlasschema.PlanEvidence{Plan: &plan, Document: document}
 	if opts.dryRun {
-		if _, err := cmd.OutOrStdout().Write(document); err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("write plan preview: %w", err))
+		// Under --json the report carries the document, and printing it a
+		// second time would put two JSON values on one stream.
+		if opts.jsonOutput {
+			return evidence, nil
 		}
-		return nil
+		if _, err := cmd.OutOrStdout().Write(document); err != nil {
+			return atlasschema.PlanEvidence{}, fmt.Errorf("write plan preview: %w", err)
+		}
+		return evidence, nil
 	}
 
-	printSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	printSchemaApplyPlan(human, plan.SQL())
 	path := strings.TrimSpace(opts.output)
 	if path == "" {
 		path = plan.Name + atlasschema.PlanFileSuffix
 	}
 	if err := os.WriteFile(path, document, 0o644); err != nil { // #nosec G306 -- plan files are meant to be reviewed and shared, 0644 like migration files
-		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))
+		return atlasschema.PlanEvidence{}, fmt.Errorf("write plan file: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)
-	return nil
+	fmt.Fprintf(human, "Plan saved to file://%s\n", path)
+	evidence.Path = path
+	return evidence, nil
 }
