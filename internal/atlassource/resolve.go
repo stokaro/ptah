@@ -147,26 +147,66 @@ type State struct {
 // is introspected; external schema programs run without a shell and their
 // standard output is parsed as the desired schema.
 func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
-	if err := s.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
-		return State{}, err
-	}
-	state, err := s.resolve(ctx, opts)
+	var resolved State
+	err := s.ResolveHolding(ctx, opts, func(state State, _ *dbschema.DatabaseConnection) error {
+		resolved = state
+		return nil
+	})
 	if err != nil {
 		return State{}, err
 	}
-	validateSchema := opts.ValidateSchema
-	if state.DB != nil && opts.ValidateInspectedSchema != nil {
-		validateSchema = opts.ValidateInspectedSchema
-	}
-	if validateSchema != nil {
-		if err := validateSchema(state.Schema); err != nil {
-			return State{}, err
-		}
-	}
-	return state, nil
+	return resolved, nil
 }
 
-func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
+// HoldFunc receives a resolved state together with the connection that
+// produced it, while that connection is still open.
+//
+// The connection is the source database's own for [KindDatabase], and the
+// session the migration directory was replayed on for [KindMigrationDir],
+// with the replayed schema still in place. Every other kind has no server
+// behind it, and the connection is nil. It must not escape the call: it is
+// closed, and a replayed dev database is cleaned, when the call returns.
+type HoldFunc func(state State, conn *dbschema.DatabaseConnection) error
+
+// ResolveHolding resolves the set as [Set.Resolve] does, validation
+// included, and hands the state to hold before the connection that produced
+// it is closed.
+//
+// It exists for a comparison that has to ask the server that stored a state
+// how that server spells what the other side declares. After [Set.Resolve]
+// returns, the database it read is out of reach, and a replayed directory's
+// schema has been dropped from the dev database.
+//
+// An error hold returns is returned as it is, without the resolution context
+// a resolution error carries; a resolution error is returned before hold runs.
+func (s Set) ResolveHolding(ctx context.Context, opts ResolveOptions, hold HoldFunc) error {
+	if err := s.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return err
+	}
+	var holdErr error
+	err := s.resolve(ctx, opts, func(state State, conn *dbschema.DatabaseConnection) error {
+		validateSchema := opts.ValidateSchema
+		if state.DB != nil && opts.ValidateInspectedSchema != nil {
+			validateSchema = opts.ValidateInspectedSchema
+		}
+		if validateSchema != nil {
+			if err := validateSchema(state.Schema); err != nil {
+				return err
+			}
+		}
+		// Kept apart from the resolution error: a replay wraps whatever its
+		// callback returns with the source's name, and the caller's own
+		// failure is not a failure to read the source.
+		holdErr = hold(state, conn)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return holdErr
+}
+
+func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
 	switch s.Kind {
 	case KindLocalFile:
 		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
@@ -178,19 +218,27 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 			Vars:                  opts.Vars,
 		})
 		if err != nil {
-			return State{}, err
+			return err
 		}
-		return State{Kind: s.Kind, Schema: schema}, nil
+		return finish(State{Kind: s.Kind, Schema: schema}, nil)
 	case KindDatabase:
-		return s.resolveDatabase(ctx, opts)
+		return s.resolveDatabase(ctx, opts, finish)
 	case KindMigrationDir:
-		return s.resolveMigrationDir(ctx, opts)
+		return s.resolveMigrationDir(ctx, opts, finish)
 	case KindExternalSchema:
-		return s.resolveExternalSchema(ctx, opts)
+		state, err := s.resolveExternalSchema(ctx, opts)
+		if err != nil {
+			return err
+		}
+		return finish(state, nil)
 	case KindRemoteSchema:
-		return s.resolveRemoteSchema(ctx)
+		state, err := s.resolveRemoteSchema(ctx)
+		if err != nil {
+			return err
+		}
+		return finish(state, nil)
 	default:
-		return State{}, fmt.Errorf("%s: unresolved %s desired-state source", s.Flag, s.Kind)
+		return fmt.Errorf("%s: unresolved %s desired-state source", s.Flag, s.Kind)
 	}
 }
 
@@ -258,13 +306,13 @@ func (s Set) SchemaFileSources() []schemafile.Source {
 	return sources
 }
 
-func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, error) {
+func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
 	if err := s.ensureDialect(opts); err != nil {
-		return State{}, err
+		return err
 	}
 	conn, err := connectDatabase(ctx, s.Sources[0].Raw, opts.ConnectTimeout)
 	if err != nil {
-		return State{}, fmt.Errorf("connect to %s database: %w", s.Flag, err)
+		return fmt.Errorf("connect to %s database: %w", s.Flag, err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
@@ -276,24 +324,24 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	// difference (stokaro/ptah#1276).
 	names, err := schemascope.ReadNames(ctx, conn.Info(), opts.Schemas, conn)
 	if err != nil {
-		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
+		return fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
 	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	if err != nil {
-		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
+		return fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
 	if opts.ValidateInspectedDatabase != nil {
 		if err := opts.ValidateInspectedDatabase(conn, names); err != nil {
-			return State{}, err
+			return err
 		}
 	}
-	return State{
+	return finish(State{
 		Kind:          s.Kind,
 		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect),
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
-	}, nil
+	}, conn)
 }
 
 // ensureDialect rejects database sources whose URL scheme resolves to a
@@ -310,11 +358,11 @@ func (s Set) ensureDialect(opts ResolveOptions) error {
 	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, implied, opts.DialectFlag, pinned)
 }
 
-func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (State, error) {
+func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
 	source := s.Sources[0]
 	devURL := strings.TrimSpace(opts.DevURL)
 	if err := s.EnsureDevDatabase(devURL); err != nil {
-		return State{}, err
+		return err
 	}
 	// The dialect check runs on the URL AS WRITTEN, before any container is
 	// started: `docker://postgres/16/dev` names its dialect in the text, so a
@@ -322,7 +370,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	// answering it first keeps a refused run from paying for a container it
 	// would immediately throw away.
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
-		return State{}, err
+		return err
 	}
 	// The operator's spelling decides whether this is a docker URL at all; the
 	// normalization above is this path's, and it applies to the answer. See
@@ -332,7 +380,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		DeclaredDisposable: opts.DevServerDisposable,
 	})
 	if err != nil {
-		return State{}, err
+		return err
 	}
 	defer releaseDev()
 	devURL = strings.TrimSpace(resolved)
@@ -340,22 +388,22 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if snapshot == nil {
 		snapshot, err = s.captureMigrationSource()
 		if err != nil {
-			return State{}, err
+			return err
 		}
 		if opts.ValidateMigrationSource != nil {
 			if err := opts.ValidateMigrationSource(snapshot); err != nil {
-				return State{}, err
+				return err
 			}
 		}
 	}
 
 	conn, err := connectDatabase(ctx, devURL, opts.ConnectTimeout)
 	if err != nil {
-		return State{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	var state State
+	var finishErr error
 	replay := migrationreplay.WithReplayedSnapshot
 	if opts.DevLockHeld {
 		replay = migrationreplay.WithReplayedSnapshotLocked
@@ -384,23 +432,26 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 					return err
 				}
 			}
-			state = State{
+			// Finished here rather than after the replay returns, because the
+			// replay's cleanup drops the schema this session holds, and a
+			// caller holding the state may need to ask the server about it.
+			finishErr = finish(State{
 				Kind:          s.Kind,
 				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, replayConn.Info().Dialect),
 				DB:            schema,
 				DefaultSchema: replayConn.Info().Schema,
 				RealmScoped: schemaselection.Realm(
 					replayConn.Info().Dialect, replayConn.Info().URL, replayConn.Info().Schema),
-			}
+			}, replayConn)
 			return nil
 		},
 	); err != nil {
-		return State{}, fmt.Errorf("%s %q: %w", s.Flag, source.Raw, err)
+		return errors.Join(finishErr, fmt.Errorf("%s %q: %w", s.Flag, source.Raw, err))
 	}
-	if err := ctx.Err(); err != nil {
-		return State{}, err
+	if finishErr != nil {
+		return finishErr
 	}
-	return state, nil
+	return ctx.Err()
 }
 
 func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {

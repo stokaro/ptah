@@ -479,6 +479,13 @@ func diffCategoryFixtures() []categoryFixture {
 			}}},
 			&schemamodel.Database{},
 		},
+		{
+			"ObjectCommentsChanged",
+			&difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{{
+				Kind: difftypes.CommentedView, Name: "v", Current: "old", Desired: "new",
+			}}},
+			&schemamodel.Database{},
+		},
 		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
 		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
 		{"RLSForceChanged", &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}}, &schemamodel.Database{}},

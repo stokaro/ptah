@@ -53,6 +53,12 @@ CREATE SCHEMA IF NOT EXISTS "extensions";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" VERSION '1.3';
 ```
 
+A column type may name its schema, quoted or not, the way `pg_dump` writes a
+type outside the search path: `m app.mood`, `m "app"."Mood"[]`,
+`g public.geometry(Point, 4326)`. A comparison matches it to the type the
+database reports by schema and name. A column moved to a type of the same name
+in another schema plans the change.
+
 ## Render it
 
 ```bash
@@ -175,6 +181,25 @@ the schema file keeps its text, which would then name a column that is no
 longer there. Drop the object first, or declare the column under its final
 name.
 
+## Comments
+
+A comment can be set with a separate `COMMENT ON`, the way `pg_dump` writes
+one, in the same file or in a later file of a schema directory:
+
+```sql
+CREATE TABLE notes (id integer PRIMARY KEY, body text);
+COMMENT ON TABLE notes IS 'what users wrote';
+COMMENT ON COLUMN notes.body IS 'the text, as typed';
+```
+
+`COMMENT ON` is read for a table, a column, an index, a schema, a role, a view,
+a sequence, a domain, a composite or range type, and an extension, and the
+plan writes each of them to the database. `COMMENT ON TYPE` naming an enum
+type is refused, because Ptah keeps no comment for one, and a comment on a
+function, a materialized view, a trigger or a policy cannot be read yet
+([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)). A comment
+on an object the document does not declare is refused too, as is `IS NULL`.
+
 ## Row-level security
 
 A PostgreSQL schema file declares row-level security with the statements a
@@ -235,15 +260,32 @@ version-conditional fragments Ptah does not model, and `mariadb-dump` opens
 every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
 executes, because no server is version 999999.
 
-**A role name folds the way the engine folds it.** On PostgreSQL and
-YugabyteDB an unquoted name loses its ASCII case, so `TO App_Reader` in a
-policy names `app_reader`, the role `CREATE ROLE App_Reader` created, and a
-quoted `"App_Reader"` keeps its case. CockroachDB lowers every role name,
-quoted or not, so read with `--dialect cockroachdb` the quoted spelling names
-`app_reader` as well, and `"PUBLIC"` is the `PUBLIC` keyword. This holds
-wherever the file names a role: `CREATE ROLE`, `COMMENT ON ROLE`, `GRANT`,
-`REVOKE`, `ALTER DEFAULT PRIVILEGES` and a policy's `TO`. Other dialects keep a
-role name as written.
+**An unquoted name folds the way the engine folds it.** PostgreSQL and
+YugabyteDB lower the ASCII letters of an unquoted name, so `CREATE TABLE Docs
+(Id integer)` declares the table `docs` with the column `id`, and a later
+`ALTER TABLE DOCS` or `CREATE POLICY p ON docs` names that table. CockroachDB
+lowers every letter of an unquoted name, past ASCII too. A quoted name keeps
+its case on all three. The rule covers every name the file writes: tables,
+columns, indexes, constraints, policies, roles, and the object a statement such
+as `GRANT` or `CREATE INDEX` names. Other dialects, and a read with no dialect,
+keep a name as written.
+
+An `ALTER TABLE` reaches the table and column its dialect's server would
+find for the names it writes. `"Docs"` and `docs` are two tables on PostgreSQL,
+and a file may declare both: each keeps its own columns, and `ALTER TABLE docs`
+changes `docs`. In a file that declares only `"Docs"`, the same statement is
+refused, as PostgreSQL refuses it. ClickHouse compares names exactly too.
+SQLite ignores the case of ASCII letters, quoted or not, so `ALTER TABLE docs`
+reaches `Docs` there, and `ärger` does not reach `Ärger`. SQL Server, under its
+default case-insensitive collation, ignores case past ASCII as well. MySQL and
+MariaDB compare column names without case. A MySQL table name follows the
+server's `lower_case_table_names`, which a schema file does not carry, so a
+spelling reaches a table that matches it exactly, or else the one table that
+differs from it only in case. A read with no dialect compares exactly.
+
+Role names differ on CockroachDB, which lowers every role name, quoted or not:
+read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
+and `"PUBLIC"` is the `PUBLIC` keyword.
 
 **Omitting `--dialect` keeps a permissive reader.** No dialect means no
 dialect's rules, which is what lets one file mixing conventions be read at all.

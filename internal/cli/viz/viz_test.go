@@ -229,19 +229,27 @@ func TestSVGRespectsTheCallersDeadline(t *testing.T) {
 // desired-schema file format, and not from Go annotations alone
 // (stokaro/ptah#3088).
 //
-// The rows carry the source text and nothing else. Every format is asserted
-// against the same three lines on purpose: which format described the schema
+// The rows carry the source text and the foreign key's name. Every format is
+// asserted against the same lines on purpose: which format described the schema
 // decides nothing about the diagram drawn from it, and a row that needed its
-// own assertions would be saying the opposite.
+// own assertions would be saying the opposite. The name is the exception. The
+// key is unnamed in every row but the HCL one, and a SQL file read for
+// PostgreSQL gives an unnamed key the name the server gives it when it runs the
+// same file (stokaro/ptah#3643).
 func TestCommandRendersEveryFileSource(t *testing.T) {
 	tests := []struct {
 		name string
 		file string
 		body string
+		// label is the name the foreign key is drawn with. A SQL file read for
+		// PostgreSQL names an unnamed key the way the server does; the other
+		// formats keep Ptah's own name.
+		label string
 	}{
 		{
-			name: "sql",
-			file: "schema.sql",
+			name:  "sql",
+			file:  "schema.sql",
+			label: "books_author_id_fkey",
 			body: `CREATE TABLE authors (
     id INTEGER PRIMARY KEY,
     name VARCHAR(120) NOT NULL
@@ -254,8 +262,9 @@ CREATE TABLE books (
 `,
 		},
 		{
-			name: "yaml",
-			file: "schema.yaml",
+			name:  "yaml",
+			file:  "schema.yaml",
+			label: "fk_books_author_id",
 			body: `tables:
   authors:
     columns:
@@ -279,8 +288,9 @@ CREATE TABLE books (
 `,
 		},
 		{
-			name: "hcl",
-			file: "schema.hcl",
+			name:  "hcl",
+			file:  "schema.hcl",
+			label: "fk_books_author_id",
 			body: `table "authors" {
   column "id" {
     type = integer
@@ -318,8 +328,9 @@ table "books" {
 `,
 		},
 		{
-			name: "dbml",
-			file: "schema.dbml",
+			name:  "dbml",
+			file:  "schema.dbml",
+			label: "fk_books_author_id",
 			body: `Table authors {
   id integer [pk, not null]
   name varchar(120) [not null]
@@ -353,7 +364,7 @@ Ref: books.author_id > authors.id
 			c.Assert(stdout.String(), qt.Contains, "erDiagram\n")
 			c.Assert(stdout.String(), qt.Contains, "  authors {\n")
 			c.Assert(stdout.String(), qt.Contains, "  books {\n")
-			c.Assert(stdout.String(), qt.Contains, `  authors ||--o{ books : "fk_books_author_id"`)
+			c.Assert(stdout.String(), qt.Contains, `  authors ||--o{ books : "`+test.label+`"`)
 		})
 	}
 }

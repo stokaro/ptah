@@ -448,6 +448,19 @@ func (p *Planner) modifyExistingColumns(
 		}
 		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
+		// Add a comment showing what changes are being made, before the
+		// statement it describes: written after it, the comment is the last
+		// fragment of a plan that ends on a column change, and every writer
+		// terminates it as `-- Modify column ... --;` (stokaro/ptah#3645).
+		// Iterate the changes in sorted key order so migration output is
+		// deterministic (issue #59).
+		changesList := make([]string, 0, len(colDiff.Changes))
+		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
+		}
+		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
+		result = append(result, astCommentNode)
+
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
 			Name: tableDiff.TableName,
@@ -461,16 +474,6 @@ func (p *Planner) modifyExistingColumns(
 			}},
 		}
 		result = append(result, alterNode)
-
-		// Add a comment showing what changes are being made. Iterate the
-		// changes in sorted key order so migration output is deterministic
-		// (issue #59).
-		changesList := make([]string, 0, len(colDiff.Changes))
-		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
-			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
-		}
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
-		result = append(result, astCommentNode)
 	}
 	return result, nil
 }

@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/rlsscope"
@@ -806,35 +807,96 @@ func (p *Planner) modifyExistingTableColumns(
 		// a NOT NULL constraint rename are written from the diff alone, so they
 		// are emitted above this and reach a column the diff carries no
 		// definition for.
-		columnNode, ok := columnNodeFor(colDiff, vocabulary)
-		if !ok {
+		changed := changedColumnProperties(colDiff)
+		_, uniqueChanged := colDiff.Changes["unique"]
+		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
 			continue
 		}
 
-		// Generate ALTER COLUMN statements using AST
-		alterNode := &ast.AlterTableNode{
-			Name: tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
-				Column:              columnNode,
-				PreviousType:        previousColumnType(colDiff.Changes["type"]),
-				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-				HasPreviousNullable: colDiff.Changes["nullable"] != "",
-			}},
-		}
-		result = append(result, alterNode)
+		// The comment goes before the statements it describes. Written after
+		// them, it is the last fragment of a plan that ends on a column
+		// change, and every writer terminates it: `-- Modify column ... --;`.
+		result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
 
-		// Add a comment showing what changes are being made. Iterate the
-		// changes in sorted key order so migration output is deterministic
-		// (issue #59).
-		changesList := make([]string, 0, len(colDiff.Changes))
-		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
-			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
+		if changed.Any() {
+			columnNode, _ := columnNodeFor(colDiff, vocabulary)
+			result = append(result, &ast.AlterTableNode{
+				Name: tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+					Column:              columnNode,
+					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+					Changed:             changed,
+					HasChanged:          true,
+				}},
+			})
 		}
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
-		result = append(result, astCommentNode)
+		if node := addedColumnUnique(tableDiff.TableName, colDiff); node != nil {
+			result = append(result, node)
+		}
 	}
 	return result
+}
+
+// addedColumnUnique is the ADD CONSTRAINT for a column that gains a
+// column-level UNIQUE, or nil when it gains none.
+//
+// No ALTER COLUMN clause carries uniqueness, so the column's own statements
+// leave it out, and without this the plan says `unique: false -> true` and
+// adds nothing (stokaro/ptah#3649). The constraint takes the name PostgreSQL
+// gives the same UNIQUE inside CREATE TABLE, which is also what Atlas CE
+// v1.3.0 writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`.
+//
+// The other direction needs nothing here. The live UNIQUE is a constraint the
+// desired schema does not have, so the plan drops it by its name as a removed
+// constraint. A column declaring unique_expr gets no constraint: uniqueness
+// over the raw column is not what it asked for, and no target renders the
+// expression.
+func addedColumnUnique(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+	if _, changed := colDiff.Changes["unique"]; !changed || !colDiff.Desired.Unique ||
+		strings.TrimSpace(colDiff.Desired.UniqueExpr) != "" {
+		return nil
+	}
+	table := tableName
+	if ref, ok := tableref.Parse(tableName); ok {
+		table = ref.Name
+	}
+	return &ast.AlterTableNode{
+		Name: tableName,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{
+			Constraint: ast.NewUniqueConstraint(pgname.ColumnKey(table, colDiff.ColumnName), colDiff.ColumnName),
+		}},
+	}
+}
+
+// changedColumnProperties names the properties a column diff changes that an
+// ALTER COLUMN clause carries, so the renderer writes a clause for those and
+// for nothing else (stokaro/ptah#3645).
+//
+// The keys are the comparator's: a default is recorded under "default" or
+// "default_expr", depending on how the live side spelled it.
+func changedColumnProperties(colDiff difftypes.ColumnDiff) ast.ColumnProperties {
+	_, typeChanged := colDiff.Changes["type"]
+	_, nullabilityChanged := colDiff.Changes["nullable"]
+	_, literalDefaultChanged := colDiff.Changes["default"]
+	_, expressionDefaultChanged := colDiff.Changes["default_expr"]
+	return ast.ColumnProperties{
+		Type:        typeChanged,
+		Nullability: nullabilityChanged,
+		Default:     literalDefaultChanged || expressionDefaultChanged,
+	}
+}
+
+// modifyColumnComment describes a column's changes. The changes are listed in
+// sorted key order so migration output is deterministic (issue #59).
+func modifyColumnComment(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+	changesList := make([]string, 0, len(colDiff.Changes))
+	for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+		changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
+	}
+	return ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 }
 
 // columnNodeFor renders the column a modification carries, and reports whether
@@ -1363,6 +1425,10 @@ func (p *Planner) plannedUserTypes(
 	// recreations join the same ordering: a new domain over a recreated
 	// composite has to wait for the recreation, which dropModifiedUserTypes has
 	// already removed by this point.
+	//
+	// A recreation carries the type's own comment, which its create node
+	// writes after the CREATE, because the drop took the old one with it. The
+	// DROP before it already says why the type is being recreated.
 	for _, domainDiff := range diff.DomainsModified {
 		if domainIsAlterableInPlace(domainDiff) {
 			// Paired with the same guard in dropModifiedUserTypes: no drop was
@@ -1375,7 +1441,7 @@ func (p *Planner) plannedUserTypes(
 		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
-				node: modelast.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+				node: modelast.FromDomain(domain),
 			})
 		}
 	}
@@ -1388,7 +1454,7 @@ func (p *Planner) plannedUserTypes(
 		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
-				node: modelast.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+				node: modelast.FromCompositeType(composite),
 			})
 		}
 	}
@@ -1399,7 +1465,7 @@ func (p *Planner) plannedUserTypes(
 		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: modelast.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+				node: modelast.FromRange(rangeType),
 			})
 		}
 	}
@@ -1704,15 +1770,20 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
 	result = p.addNewRoles(result, diff)
 
-	// 2. Add new functions (functions may be used by RLS policies)
-	result = p.addNewFunctions(result, diff)
+	// 2. Add the routines whose definitions name nothing this plan creates.
+	// They go first because a domain CHECK, a column DEFAULT, a policy or a
+	// trigger may call them. A routine that names a type or a relation this plan
+	// creates waits for it, at step 4b or among the view-likes at step 6.6; see
+	// deporder.PlaceRoutines.
+	placements := p.routinePlacements(diff)
+	result = p.addNewFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
 	// without affecting policies or triggers that reference the function. A
 	// change the server refuses to replace is a drop and a create instead; see
 	// replacementIsRefused.
-	result = p.modifyExistingFunctions(result, diff)
+	result = p.modifyExistingFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
@@ -1736,6 +1807,11 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff)
 
+	// 4b. The routines whose signatures name a type created above, before the
+	// tables whose defaults may call them.
+	result = p.addNewFunctions(result, diff, placements, deporder.RoutineAfterTypes)
+	result = p.modifyExistingFunctions(result, diff, placements, deporder.RoutineAfterTypes)
+
 	// 5. Add new tables
 	result = p.addNewTables(result, diff)
 
@@ -1750,8 +1826,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.addSequenceOwnership(result, diff)
 	result = p.modifyExistingSequences(result, diff)
 
-	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
-	result = p.addNewViewLikeObjects(result, diff)
+	// 6.6. Add and modify views, materialized views, and triggers after their
+	// tables/functions exist. The routines that name a relation this plan
+	// creates are ordered with the views, since either may read the other.
+	result = p.addNewViewLikeObjects(result, diff, placements)
 	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
@@ -1762,6 +1840,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
+
+	// 6.9. Comments on objects that already existed, after every step that
+	// creates, replaces or recreates one of them.
+	result = p.changeObjectComments(result, diff)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -2209,54 +2291,36 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 	return result
 }
 
-func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, fn := range deporder.FunctionsForCreateWithOrdering(
-		diff.FunctionsAdded.Declarations(),
-		diff.DeclaredFunctions.Order,
-		diff.DeclaredFunctions.Dependencies,
-	) {
-		result = append(result, modelast.FromFunction(fn))
-	}
-	return result
-}
-
-func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	// The definition travels WITH the change (stokaro/ptah#2315). Without it
-	// there is no faithful CREATE OR REPLACE to emit -- the change map records
-	// what differs, never the whole body and attribute set -- so a change
-	// carrying none is skipped.
-	for _, fnDiff := range diff.FunctionsModified {
-		target := fnDiff.Desired
-		if target.Name == "" {
-			continue
+// modifiedFunctionNodes is the statements that replace one routine: CREATE OR
+// REPLACE, or a drop and a create where the server refuses the replacement.
+func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
+	target := fnDiff.Desired
+	var result []ast.Node
+	if replacementIsRefused(fnDiff) {
+		// Not IF EXISTS: the routine was just read from the database, so a
+		// drop that matches nothing means the signature is wrong, and
+		// saying so here is clearer than the 42P13 the create would answer.
+		// Not CASCADE either: a view, policy or trigger that uses the
+		// routine makes the server refuse the drop, which stops the plan
+		// rather than removing an object nobody asked to remove.
+		drop := ast.NewDropFunction(target.Name).
+			SetKind(target.Kind).
+			SetComment(fmt.Sprintf(
+				"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
+				target.Name,
+			))
+		// An empty list is still a list: the routine that takes no
+		// arguments is dropped as `f()`, and only a change that recorded
+		// no identity at all leaves the statement naming the routine.
+		if fnDiff.CurrentSignature != nil {
+			drop.SetParameters(*fnDiff.CurrentSignature)
 		}
-
-		if replacementIsRefused(fnDiff) {
-			// Not IF EXISTS: the routine was just read from the database, so a
-			// drop that matches nothing means the signature is wrong, and
-			// saying so here is clearer than the 42P13 the create would answer.
-			// Not CASCADE either: a view, policy or trigger that uses the
-			// routine makes the server refuse the drop, which stops the plan
-			// rather than removing an object nobody asked to remove.
-			drop := ast.NewDropFunction(target.Name).
-				SetKind(target.Kind).
-				SetComment(fmt.Sprintf(
-					"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
-					target.Name,
-				))
-			// An empty list is still a list: the routine that takes no
-			// arguments is dropped as `f()`, and only a change that recorded
-			// no identity at all leaves the statement naming the routine.
-			if fnDiff.CurrentSignature != nil {
-				drop.SetParameters(*fnDiff.CurrentSignature)
-			}
-			result = append(result, drop)
-		}
-
-		functionNode := modelast.FromFunction(target)
-		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
-		result = append(result, functionNode)
+		result = append(result, drop)
 	}
+
+	functionNode := modelast.FromFunction(target)
+	functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
+	result = append(result, functionNode)
 	return result
 }
 
@@ -2456,9 +2520,13 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 	return ref.Schema, ref.Name
 }
 
-func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) addNewViewLikeObjects(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	placements map[string]deporder.RoutinePlacement,
+) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
+	objects, routineNodes := p.relationRoutineViewLikes(diff, placements)
 	for _, view := range diff.ViewsAdded {
 		// The body travels WITH the change, so the dependency order this
 		// computes does not depend on finding the view again.
@@ -2476,6 +2544,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 	// dependency edge, and is created AFTER the view that reads it, so the plan
 	// renders cleanly and fails when it runs.
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
+		if object.Routine {
+			// Every overload of the name and its replacement statements, once.
+			result = append(result, routineNodes[object.Name]...)
+			delete(routineNodes, object.Name)
+			continue
+		}
 		if object.Materialized {
 			if view := findMaterializedView(diff.DeclaredViewLikes.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, modelast.FromMaterializedView(*view))

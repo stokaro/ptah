@@ -166,6 +166,10 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	if err != nil {
 		return err
 	}
+	strict, err := p.boolAttr(block, "strict", blockType, false)
+	if err != nil {
+		return err
+	}
 	returns, err := p.routineReturns(block, kind)
 	if err != nil {
 		return err
@@ -177,6 +181,7 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 		Settings:   settings,
 		Leakproof:  leakproof,
 		Parallel:   parallel,
+		Strict:     strict,
 		// Read only for a function. rejectUnsupportedRoutineAttrs refuses the
 		// attribute on a procedure, but the tolerant parser reports an unknown
 		// attribute instead of removing it, so the body still carries it and a
@@ -1266,6 +1271,7 @@ func (p *parser) rejectUnsupportedRoutineAttrs(block *hclsyntax.Block, blockType
 		"volatility":   true,
 		"leakproof":    blockType == routineBlockFunction,
 		"parallel":     blockType == routineBlockFunction,
+		"strict":       blockType == routineBlockFunction,
 		"set":          true,
 		"as":           true,
 		"comment":      true,

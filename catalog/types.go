@@ -423,9 +423,14 @@ func QualifyTableName(schema, table string) string {
 // answer from DataType, which reports the base type and drops the domain's
 // constraints with it. See stokaro/ptah#1242.
 type Column struct {
-	Name               string  `json:"name"`
-	DataType           string  `json:"data_type"`
-	UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
+	Name     string `json:"name"`
+	DataType string `json:"data_type"`
+	UDTName  string `json:"udt_name"` // For PostgreSQL enum types
+	// UDTSchema is the schema that holds the column's type, as
+	// information_schema reports it: pg_catalog for a built-in type, and the
+	// schema of an enum, domain or extension type. Empty from a reader that
+	// does not report it.
+	UDTSchema          string  `json:"udt_schema,omitempty"`
 	FormattedType      string  `json:"formatted_type,omitempty"` // Server's own spelling, where the catalog cannot express it
 	ColumnType         string  `json:"column_type"`              // For MySQL ENUM syntax
 	IsNullable         string  `json:"is_nullable"`              // YES/NO
@@ -601,6 +606,10 @@ type Domain struct {
 	// a serialized schema description declares what a domain must enforce,
 	// not what the server happened to name the constraint enforcing it.
 	CheckConstraints []DomainCheck `json:"-"`
+	// Comment is the domain's own comment, as obj_description reports it. It
+	// is empty where the domain has none and where the target cannot report
+	// one.
+	Comment string `json:"comment,omitempty"`
 }
 
 // DomainCheck is one named CHECK constraint of a domain, as the catalog
@@ -626,6 +635,8 @@ type CompositeType struct {
 	Name   string           `json:"name"`
 	Schema string           `json:"schema,omitempty"`
 	Fields []CompositeField `json:"fields"`
+	// Comment is the type's own comment, as obj_description reports it.
+	Comment string `json:"comment,omitempty"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
@@ -655,6 +666,8 @@ type Range struct {
 	// SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
 	// empty when the range has none.
 	SubtypeDiff string `json:"subtype_diff,omitempty"`
+	// Comment is the type's own comment, as obj_description reports it.
+	Comment string `json:"comment,omitempty"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

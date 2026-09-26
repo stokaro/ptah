@@ -165,7 +165,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		return nil, nil, err
 	}
 	merged.IdentifierSemantics = &semantics
-	diff, undecided := CompareReportingUndecidedAdditions(desired, database, merged)
+	diff, undecided := compareReportingUndecidedAdditions(desired, database, merged, info.Capabilities)
 	// The half of the SQLite virtual-table guard that only the comparator can
 	// answer. A table both sides name and describe differently is rebuilt by
 	// the SQLite planner -- drop, recreate, copy -- which destroys a module's
@@ -254,8 +254,25 @@ func CompareReportingUndecidedAdditions(
 	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object) {
+	return compareReportingUndecidedAdditions(desired, database, opts, nil)
+}
+
+// compareReportingUndecidedAdditions is [CompareReportingUndecidedAdditions]
+// with the target's capabilities, which decide what the comparison can expect
+// a read to report. Nil takes the dialect's default preset, which is all an
+// offline comparison has; a live one passes what the server's version
+// resolved to, because two releases of one engine can answer differently.
+func compareReportingUndecidedAdditions(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	opts *config.CompareOptions,
+	caps capability.Capabilities,
+) (*difftypes.SchemaDiff, []coverage.Object) {
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
+	}
+	if len(caps) == 0 {
+		caps = comparisonCapabilities(opts.Dialect)
 	}
 	if opts.Dialect != "" {
 		// The declared scope resolves first, so every later step -- coverage,
@@ -383,6 +400,10 @@ func CompareReportingUndecidedAdditions(
 		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics,
 	)
 
+	// Comments on the objects that take theirs through a statement of its
+	// own, compared only where the target stores and reports them.
+	compare.ObjectComments(desired, database, diff, opts, caps, identifierSemantics)
+
 	// Every comparator sorts its own lists after filtering them, but the
 	// undecided additions arrive from several comparators, and the order inside
 	// each one follows the map iteration that produced the planned list. A
@@ -397,6 +418,17 @@ func CompareReportingUndecidedAdditions(
 	})
 
 	return diff, undecided
+}
+
+// comparisonCapabilities is the capability set a comparison without a live
+// server assumes: the dialect's default preset, and PostgreSQL's where the
+// dialect is not named, which is what every comparator here takes an unnamed
+// dialect to mean.
+func comparisonCapabilities(dialect string) capability.Capabilities {
+	if dialect == "" {
+		return capability.ForDialect(platform.Postgres)
+	}
+	return capability.ForDialect(dialect)
 }
 
 func normalizeInlineEnumsForCompare(

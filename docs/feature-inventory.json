@@ -1084,13 +1084,13 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 8,
-          "expectations": 6
+          "steps": 10,
+          "expectations": 7
         },
         {
           "shell": "powershell",
-          "steps": 8,
-          "expectations": 6
+          "steps": 10,
+          "expectations": 7
         }
       ]
     },

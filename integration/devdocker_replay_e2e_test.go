@@ -41,9 +41,7 @@ const devReplayDockerURL = "docker://postgres/16-alpine/ptahreplay"
 
 // writeServerWideReplayDir writes a hashed Atlas directory whose first
 // migration creates role in a DO block. The role name is the caller's, so a
-// run against a shared server cannot collide with another test's. The
-// function is PL/pgSQL, whose body PostgreSQL does not resolve at creation,
-// so a plan that creates it before its table still runs (stokaro/ptah#3602).
+// run against a shared server cannot collide with another test's.
 func writeServerWideReplayDir(c *qt.C, role string) (dir, schema string) {
 	c.Helper()
 	root := c.TempDir()
@@ -63,7 +61,7 @@ GRANT USAGE ON SCHEMA public TO %[1]s;
     id    bigint PRIMARY KEY,
     total integer NOT NULL
 );
-CREATE FUNCTION order_count() RETURNS bigint LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN (SELECT count(*) FROM orders); END $$;
+CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM orders $$;
 GRANT SELECT ON orders TO %[1]s;
 `, role),
 	}
@@ -78,7 +76,7 @@ GRANT SELECT ON orders TO %[1]s;
     id    bigint PRIMARY KEY,
     total integer NOT NULL
 );
-CREATE FUNCTION order_count() RETURNS bigint LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN (SELECT count(*) FROM orders); END $$;
+CREATE FUNCTION order_count() RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM orders $$;
 `), 0o600), qt.IsNil)
 	return dir, schema
 }

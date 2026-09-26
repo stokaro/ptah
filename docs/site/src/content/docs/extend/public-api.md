@@ -239,6 +239,15 @@ captures metadata but cannot abort execution. Use the abort-capable `Preflight`
 hook for work that must run after static validation and before any schema or
 revision change.
 
+`MigrateUpOptions.PlanGuard` receives the same plan right after the observer
+and can refuse it. It runs for every selection, an empty one included, and a
+non-nil error stops the run before transaction-mode validation, `Preflight`, or
+any schema or revision change. Use it when the caller approved a plan earlier
+and has to know that the run executes that plan: the selection under the lock is
+the only one the run acts on, and a history that moved in between shows up
+there. `Preflight` does not fit that job, because it is skipped when the
+selection is empty.
+
 `MigrateUpOptions.DiscardRolledBackFailure` applies only to the Atlas
 revision-table format; it has no effect with native Ptah metadata. It removes
 only the failed revision written by the current invocation, and only after

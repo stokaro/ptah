@@ -89,6 +89,36 @@ type ModifyColumnOperation struct {
 	PreviousDefault string
 	// HasPreviousDefault reports whether PreviousDefault was populated.
 	HasPreviousDefault bool
+	// Changed names the properties the modification changes. It is read only
+	// when HasChanged is set.
+	//
+	// A renderer that alters one property per clause, as the PostgreSQL
+	// family does, writes a clause only for a property named here, so a
+	// default-only change is one SET DEFAULT. Restating the rest is not free:
+	// a TYPE clause naming the type the column already has still locks the
+	// table (stokaro/ptah#3645). A renderer whose statement states the whole
+	// new definition, such as MySQL's MODIFY, ignores the field.
+	Changed ColumnProperties
+	// HasChanged reports whether Changed was populated. Without it the
+	// operation restates the column: a renderer that alters one property per
+	// clause writes a clause for every property it can alter.
+	HasChanged bool
+}
+
+// ColumnProperties names the properties of a column that a
+// [ModifyColumnOperation] changes. The zero value names none.
+type ColumnProperties struct {
+	// Type is set when the column's data type changes.
+	Type bool
+	// Nullability is set when the column gains or loses NOT NULL.
+	Nullability bool
+	// Default is set when the column's default is set, replaced or dropped.
+	Default bool
+}
+
+// Any reports whether at least one property is named.
+func (p ColumnProperties) Any() bool {
+	return p.Type || p.Nullability || p.Default
 }
 
 // Accept hands the visitor this operation.

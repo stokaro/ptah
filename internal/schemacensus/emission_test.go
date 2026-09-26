@@ -127,10 +127,15 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// Documentation and privileges, which create no object.
 		"COMMENT ON COLUMN",
 		"COMMENT ON CONSTRAINT",
+		"COMMENT ON DOMAIN",
+		"COMMENT ON EXTENSION",
 		"COMMENT ON INDEX",
 		"COMMENT ON ROLE",
 		"COMMENT ON SCHEMA",
+		"COMMENT ON SEQUENCE",
 		"COMMENT ON TABLE",
+		"COMMENT ON TYPE",
+		"COMMENT ON VIEW",
 		// The third tail of a split function body.
 		"END",
 		// SQL Server's spelling of a comment.

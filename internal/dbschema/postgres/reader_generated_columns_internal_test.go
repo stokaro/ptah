@@ -27,7 +27,7 @@ var generatedColumnRow = []driver.Value{
 	"", "", "YES", nil, nil,
 	nil, nil, nil, "", int64(1),
 	"s", "(n + 1)", "",
-	"", "", "",
+	"", "", "", "pg_catalog",
 }
 
 // columnQueryColumns is the result shape readColumnsForSchema scans, in order.
@@ -36,7 +36,7 @@ var columnQueryColumns = []string{
 	"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
 	"numeric_precision", "numeric_scale", "datetime_precision", "collation_name", "ordinal_position",
 	"generated_kind", "generated_expression", "identity_kind",
-	"column_comment", "not_null_constraint_name", "owned_sequence_name",
+	"column_comment", "not_null_constraint_name", "owned_sequence_name", "udt_schema",
 }
 
 // servePostgres11 answers the column query the way a server whose engine is

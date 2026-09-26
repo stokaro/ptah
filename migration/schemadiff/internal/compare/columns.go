@@ -642,6 +642,10 @@ func columnTypeChange(
 		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
 	}
 
+	if sameQualifiedTypeName(genCol.Type, dbRawType, dbCol.UDTSchema, dialect) {
+		return ""
+	}
+
 	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 	switch {
 	case genType != dbType:
@@ -650,6 +654,65 @@ func columnTypeChange(
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 	return ""
+}
+
+// sameQualifiedTypeName reports whether a declared type written with a schema
+// or in quotes -- `app.mood`, `"app"."Mood"[]`, as pg_dump writes a type
+// outside the search path -- names the type the catalog reports.
+//
+// The catalog spells such a type its own way: unquoted where no quote is
+// needed, and by its bare name, udt_name, unless it is an array. Compared as
+// text, `"s".mood` against `mood` planned an ALTER COLUMN ... TYPE on every run
+// (stokaro/ptah#3620). So the two are compared as names: the same bare name,
+// the same array depth, and the same schema, which the catalog reports as
+// udtSchema when its spelling leaves it out. A reported type whose schema
+// nothing says is not matched, because two schemas may each hold a type of
+// that name and moving a column between them is a change.
+//
+// A declared type without a schema, or with a modifier list, is left to the
+// comparison below, which is what that comparison is for.
+func sameQualifiedTypeName(declared, reported, udtSchema, dialect string) bool {
+	if !isPostgresFamilyDialect(dialect) {
+		return false
+	}
+	declared, reported = strings.TrimSpace(declared), strings.TrimSpace(reported)
+	if !strings.ContainsAny(declared, `."`) || strings.ContainsAny(declared+reported, "()") {
+		return false
+	}
+	declaredBase, declaredDepth := splitArrayDepth(declared)
+	reportedBase, reportedDepth := splitArrayDepth(reported)
+	if declaredDepth != reportedDepth {
+		return false
+	}
+	declaredSchema, declaredName := splitQualifiedTypeName(declaredBase)
+	reportedSchema, reportedName := splitQualifiedTypeName(reportedBase)
+	if reportedSchema == "" {
+		reportedSchema = udtSchema
+	}
+	if foldDomainPart(declaredName) != foldDomainPart(reportedName) {
+		return false
+	}
+	return declaredSchema == "" || foldDomainPart(declaredSchema) == foldDomainPart(reportedSchema)
+}
+
+// splitArrayDepth splits the trailing [] pairs off a type name.
+func splitArrayDepth(typeName string) (base string, depth int) {
+	for {
+		trimmed, found := strings.CutSuffix(strings.TrimSpace(typeName), "[]")
+		if !found {
+			return typeName, depth
+		}
+		typeName, depth = trimmed, depth+1
+	}
+}
+
+func isPostgresFamilyDialect(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return true
+	default:
+		return false
+	}
 }
 
 // domainIdentity is what a domain IS: the schema that holds it and its own

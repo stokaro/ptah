@@ -160,8 +160,11 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 }
 
 func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
-	// Add comment if provided
-	if node.Comment != "" {
+	// For a domain, a composite and a range the node's comment is the type's
+	// own, written after the statement that creates it. The model keeps no
+	// comment for an enum, so on one the node's comment is a note for the
+	// script and stays one.
+	if _, enum := node.TypeDef.(*ast.EnumTypeDef); enum && node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
@@ -193,7 +196,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		for i, field := range typeDef.Fields {
 			fields[i] = fmt.Sprintf("%s %s", r.escapeIdentifier(field.Name), field.Type)
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(fields, ", "))
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS (%s);", target, strings.Join(fields, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	case *ast.DomainTypeDef:
 		// CREATE DOMAIN name AS base_type [NOT NULL] [DEFAULT value] [CHECK (constraint)]
@@ -220,6 +225,7 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		}
 
 		r.w.WriteLinef("%s;", sql)
+		r.writeCreatedObjectComment(ast.CommentedDomain, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
 
 	case *ast.RangeTypeDef:
 		// CREATE TYPE name AS RANGE (SUBTYPE = ..., [SUBTYPE_OPCLASS = ...], ...)
@@ -236,7 +242,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		if typeDef.SubtypeDiff != "" {
 			options = append(options, fmt.Sprintf("SUBTYPE_DIFF = %s", typeDef.SubtypeDiff))
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(options, ", "))
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", target, strings.Join(options, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	default:
 		return fmt.Errorf("unsupported type definition: %T", typeDef)
@@ -454,6 +462,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropIndex(n)
 	case *ast.CommentNode:
 		return r.renderComment(n)
+	case *ast.ObjectCommentNode:
+		return r.renderObjectComment(n)
 
 	// User-defined types.
 	case *ast.EnumNode:
@@ -1261,7 +1271,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			r.writeColumnOperation(node.Name, operation)
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
-			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
+			r.renderPostgreSQLModifyColumn(node.Name, op)
 		case *ast.AlterGeneratedColumnExpressionOperation:
 			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
 				// Name the capability, not the version. The gate is the
@@ -1664,13 +1674,8 @@ func (r *Renderer) renderExtension(node *ast.ExtensionNode) error {
 		parts = append(parts, fmt.Sprintf("VERSION %s", r.escapeValue(node.Version)))
 	}
 
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-
+	r.writeCreatedObjectComment(ast.CommentedExtension, r.escapeIdentifier(node.Name), node.Name, node.Comment)
 	return nil
 }
 
@@ -2214,15 +2219,42 @@ func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]str
 	}
 }
 
-// renderPostgreSQLModifyColumn renders PostgreSQL-specific column modifications
-func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.ColumnNode) {
-	// PostgreSQL requires separate ALTER statements for different column properties
+// renderPostgreSQLModifyColumn renders a column modification as PostgreSQL
+// spells it: one ALTER COLUMN statement per property.
+//
+// Only the properties the operation names are written. A clause for a property
+// that did not change is not harmless: a TYPE clause naming the type the column
+// already has takes an ACCESS EXCLUSIVE lock on the table, and SET NOT NULL on
+// a column that is NOT NULL brings the NULL backfill with it, a DO block a
+// confined dev replay refuses. Atlas CE writes one SET DEFAULT for a
+// default-only change, and so does this (stokaro/ptah#3645). An operation that
+// does not say which properties changed restates every one, which is what a
+// parsed `ALTER TABLE ... MODIFY` asks for.
+func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	changed := ast.ColumnProperties{Type: true, Nullability: true, Default: true}
+	if op.HasChanged {
+		changed = op.Changed
+	}
+	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
+		return
+	}
+	if changed.Nullability {
+		r.writeColumnNullabilityChange(tableName, column)
+	}
+	if changed.Default {
+		r.writeColumnDefaultChange(tableName, column)
+	}
+}
 
+// writeColumnTypeChange writes the TYPE clause of a column modification, and
+// reports whether the type could be rendered at all.
+func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNode) bool {
 	// Process the column type with enum support
 	columnType, err := r.processFieldType(column.Type, r.currentEnums)
 	if err != nil {
 		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
-		return
+		return false
 	}
 
 	// Change the column type. An enum target needs an explicit USING cast:
@@ -2248,7 +2280,12 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
 			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)
 	}
+	return true
+}
 
+// writeColumnNullabilityChange writes the NOT NULL clause of a column
+// modification, with the NULL backfill that has to run before SET NOT NULL.
+func (r *Renderer) writeColumnNullabilityChange(tableName string, column *ast.ColumnNode) {
 	// Change nullability.
 	//
 	// A primary key column is NOT NULL on every engine this renderer serves --
@@ -2267,8 +2304,11 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.updateNullValuesBeforeNotNull(tableName, column)
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
+}
 
-	// Change default value
+// writeColumnDefaultChange writes the SET DEFAULT or DROP DEFAULT clause of a
+// column modification.
+func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.ColumnNode) {
 	switch {
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
@@ -2281,55 +2321,48 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	}
 }
 
-// getDefaultValueForType returns a sensible default value for a column type when setting NOT NULL
-func (r *Renderer) getDefaultValueForType(columnType string) string {
-	switch {
-	case strings.Contains(strings.ToLower(columnType), "timestamp"):
-		return "CURRENT_TIMESTAMP"
-	case strings.Contains(strings.ToLower(columnType), "date"):
-		return "CURRENT_DATE"
-	case strings.Contains(strings.ToLower(columnType), "time"):
-		return "CURRENT_TIME"
-	case strings.Contains(strings.ToLower(columnType), "text") || strings.Contains(strings.ToLower(columnType), "varchar"):
-		return "''"
-	case strings.Contains(strings.ToLower(columnType), "int") || strings.Contains(strings.ToLower(columnType), "serial"):
-		return "0"
-	case strings.Contains(strings.ToLower(columnType), "decimal") || strings.Contains(strings.ToLower(columnType), "numeric"):
-		return "0.0"
-	case strings.Contains(strings.ToLower(columnType), "bool"):
-		return "false"
-	default:
-		return "" // No default available, let the constraint fail if there are NULLs
-	}
-}
-
-// updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
-// This prevents "column contains null values" errors during migrations
+// updateNullValuesBeforeNotNull fills a column's NULL rows with its declared
+// default before SET NOT NULL, the value the author wrote for a row that
+// states none.
+//
+// A column with no declared default is not filled. A value chosen by the
+// column's type, such as 0, false, CURRENT_TIMESTAMP or the empty string, is
+// data nobody wrote: filled with it, a change the server refuses reports
+// success and leaves the rows rewritten. Atlas CE v1.3.0 lets the statement
+// fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). The plan
+// says so in a comment beside the statement.
 func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
+	value := r.nullBackfillValue(column)
+	if value == "" {
+		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; the column declares no default to fill it with.",
+			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+		return
+	}
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
 	r.w.WriteLinef("DO $$")
 	r.w.WriteLinef("BEGIN")
 	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
 	columnIdentifier := r.escapeIdentifier(column.Name)
 	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier)
-
-	if column.Default != nil {
-		if column.Default.Expression != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, column.Default.Expression, columnIdentifier)
-		} else if column.Default.HasLiteral() {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, r.renderDefaultLiteral(column.Default.Value), columnIdentifier)
-		}
-	} else {
-		// If no default is specified, use a sensible default based on column type
-		defaultValue := r.getDefaultValueForType(column.Type)
-		if defaultValue != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, defaultValue, columnIdentifier)
-		}
-	}
-
+	r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier)
 	r.w.WriteLinef("    END IF;")
 	r.w.WriteLinef("END")
 	r.w.WriteLinef("$$;")
+}
+
+// nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a
+// NULL row: the column's declared default, or empty when it declares none.
+func (r *Renderer) nullBackfillValue(column *ast.ColumnNode) string {
+	if column.Default == nil {
+		return ""
+	}
+	if column.Default.Expression != "" {
+		return column.Default.Expression
+	}
+	if column.Default.HasLiteral() {
+		return r.renderDefaultLiteral(column.Default.Value)
+	}
+	return ""
 }
 
 func (r *Renderer) renderDropExtension(node *ast.DropExtensionNode) error {
@@ -2710,21 +2743,74 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 	return true
 }
 
+// objectCommentKeys names the capability that says a target stores a comment
+// of each kind and reports it back. The statements are separate, and the
+// engines take different subsets of them (stokaro/ptah#3627).
+var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
+	ast.CommentedView:      capability.ViewComments,
+	ast.CommentedSequence:  capability.SequenceComments,
+	ast.CommentedDomain:    capability.DomainComments,
+	ast.CommentedType:      capability.TypeComments,
+	ast.CommentedExtension: capability.ExtensionComments,
+}
+
+// renderObjectComment sets the comment of an object that already exists.
+//
+// A target that does not store the comment gets the named skip rather than
+// the statement, as a create node's comment does: the comparison does not ask
+// for a comment there, so a node that reaches this point was built by hand.
+func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
+	target := r.escapeQualifiedIdentifier(node.Name)
+	if node.Object == ast.CommentedExtension {
+		// An extension's name is database-wide, and splitting it on a dot
+		// would name an object that does not exist, for the reason
+		// renderExtension gives.
+		target = r.escapeIdentifier(node.Name)
+	}
+	return r.writeObjectComment(node.Object, target, node.Name, node.Comment)
+}
+
+// writeCreatedObjectComment writes the comment an object is created with,
+// right after the statement that creates it. PostgreSQL has no comment clause
+// on any of these statements, so the comment is a statement of its own; with
+// no comment there is nothing to write, since a new object has none.
+func (r *Renderer) writeCreatedObjectComment(object ast.CommentedObject, target, name, comment string) {
+	if comment == "" {
+		return
+	}
+	// The kinds passed here are the keys of objectCommentKeys, so the error
+	// an unknown kind would produce cannot arise.
+	_ = r.writeObjectComment(object, target, name, comment)
+}
+
+// writeObjectComment writes COMMENT ON for target, an escaped spelling of the
+// object name names, or the named skip where the target does not store the
+// kind's comment.
+func (r *Renderer) writeObjectComment(object ast.CommentedObject, target, name, comment string) error {
+	key, known := objectCommentKeys[object]
+	if !known {
+		return fmt.Errorf("%w: %s: COMMENT ON %q names no object kind this renderer comments",
+			ptaherr.ErrUnsupportedFeature, r.dialect, string(object))
+	}
+	if r.refuses(key, strings.ToLower(string(object))+" comment", name) {
+		return nil
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", object, target, r.commentLiteral(comment))
+	return nil
+}
+
 // renderCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
 func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	parts := []string{"CREATE SEQUENCE"}
 	if node.IfNotExists {
 		parts = append(parts, "IF NOT EXISTS")
 	}
-	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	target := r.sequenceIdentifier(node.Name, node.Schema)
+	parts = append(parts, target)
 
 	var cycle *bool
 	if node.Cycle {
@@ -2741,6 +2827,7 @@ func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 			parts = append(parts, fmt.Sprintf("START COUNTER WITH %d", *node.Start))
 		}
 		r.w.WriteLinef("%s;", strings.Join(parts, " "))
+		r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
 		return nil
 	}
 
@@ -2751,6 +2838,7 @@ func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	r.writeCreatedObjectComment(ast.CommentedSequence, target, node.Name, node.Comment)
 	return nil
 }
 
@@ -2907,20 +2995,18 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 		return nil
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	create := "CREATE VIEW"
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
-	r.w.WriteLinef("%s %s AS", create, r.escapeQualifiedIdentifier(node.Name))
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("%s %s AS", create, target)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")
 	}
 	r.w.WriteLine(";")
+	r.writeCreatedObjectComment(ast.CommentedView, target, node.Name, node.Comment)
 	return nil
 }
 

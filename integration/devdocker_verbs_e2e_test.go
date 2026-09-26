@@ -36,17 +36,21 @@ import (
 // current_database() answers it can only have run on the provisioned server.
 const devDockerVerbURL = "docker://postgres/16-alpine/ptahverbs"
 
-// runCompatVerb executes one ptah-compat invocation in process. The returned
-// text is what the compat tree itself wrote; a native runner it forwards to
-// writes its report elsewhere, so the assertions below read the error rather
-// than the report.
+// runCompatVerb executes one ptah-compat invocation in process and returns
+// what it wrote to its output and error writers, together with its error.
+//
+// The text is read after Execute returns. Read in the same return statement,
+// `return out.String(), cmd.Execute()`, it is taken before the command runs,
+// since Go evaluates the results left to right, and every invocation answered
+// an empty string.
 func runCompatVerb(args ...string) (string, error) {
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	return out.String(), cmd.Execute()
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 // devDockerVerbFixture is a hashed migration directory, a matching schema file

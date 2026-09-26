@@ -57,7 +57,7 @@ func normalizeGrantee(sourcePlatform, role string) string {
 		}
 		return name
 	}
-	normalized := normalizeSQLIdentifier(role)
+	normalized := normalizeSQLIdentifier(sourcePlatform, role)
 	quoted := strings.HasPrefix(strings.TrimSpace(role), `"`)
 	if (!quoted && strings.EqualFold(normalized, "PUBLIC")) || (quoted && normalized == "public") {
 		return "PUBLIC"
@@ -73,23 +73,23 @@ func roleTarget(sourcePlatform, value string) string {
 	if platform.IsPostgresFamily(sourcePlatform) {
 		return normalizeGrantee(sourcePlatform, value)
 	}
-	return normalizeSQLIdentifier(strings.TrimSpace(value))
+	return normalizeSQLIdentifier(sourcePlatform, strings.TrimSpace(value))
 }
 
 // setGrantTarget sets the target of a grant from a statement's object type and
 // name, which GRANT and REVOKE share.
-func setGrantTarget(grant *schemamodel.Grant, objectType, objectName, arguments string) {
+func setGrantTarget(grant *schemamodel.Grant, objectType, objectName, arguments, sourcePlatform string) {
 	switch kind := strings.ToUpper(objectType); {
 	case kind == "SCHEMA":
-		grant.OnSchema = normalizeSQLIdentifier(objectName)
+		grant.OnSchema = normalizeSQLIdentifier(sourcePlatform, objectName)
 	case kind == "SEQUENCE":
-		grant.OnSequence = normalizeSQLTableReference(objectName)
+		grant.OnSequence = normalizeSQLTableReference(sourcePlatform, objectName)
 	case routineObjectTypes[kind]:
-		grant.OnRoutine = normalizeSQLTableReference(objectName)
+		grant.OnRoutine = normalizeSQLTableReference(sourcePlatform, objectName)
 		grant.RoutineArguments = strings.TrimSpace(arguments)
 		grant.RoutineKind = kind
 	default:
-		grant.OnTable = normalizeSQLTableReference(objectName)
+		grant.OnTable = normalizeSQLTableReference(sourcePlatform, objectName)
 	}
 }
 
@@ -100,21 +100,21 @@ func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) schemamodel.Gr
 		WithOption: node.WithOption,
 		Comment:    node.Comment,
 	}
-	setGrantTarget(&grant, node.ObjectType, node.ObjectName, node.Arguments)
-	grant.Columns = normalizeColumns(node.Columns)
+	setGrantTarget(&grant, node.ObjectType, node.ObjectName, node.Arguments, sourcePlatform)
+	grant.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	grant.Canonicalize()
 	return grant
 }
 
 // normalizeColumns unquotes a column list, as a column name is compared with
 // the name the catalog reports.
-func normalizeColumns(columns []string) []string {
+func normalizeColumns(sourcePlatform string, columns []string) []string {
 	if len(columns) == 0 {
 		return nil
 	}
 	normalized := make([]string, 0, len(columns))
 	for _, column := range columns {
-		normalized = append(normalized, normalizeSQLIdentifier(column))
+		normalized = append(normalized, normalizeSQLIdentifier(sourcePlatform, column))
 	}
 	return normalized
 }
@@ -136,8 +136,8 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 // carries the privilege.
 func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode, sourcePlatform string) error {
 	revoked := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
-	setGrantTarget(&revoked, node.ObjectType, node.ObjectName, node.Arguments)
-	revoked.Columns = normalizeColumns(node.Columns)
+	setGrantTarget(&revoked, node.ObjectType, node.ObjectName, node.Arguments, sourcePlatform)
+	revoked.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	revoked.Canonicalize()
 	target := revoked.TargetKey()
 	privileges := expandAll(node.Privileges, node.ObjectType)
@@ -211,7 +211,7 @@ func appendDefaultPrivilegeRevoke(
 ) error {
 	revoked := schemamodel.DefaultPrivilege{
 		Grantor:    roleName(sourcePlatform, node.Grantor),
-		Schema:     normalizeSQLIdentifier(node.Schema),
+		Schema:     normalizeSQLIdentifier(sourcePlatform, node.Schema),
 		ObjectType: node.ObjectType,
 		Grantee:    roleTarget(sourcePlatform, node.Grantee),
 		Revoked:    expandAll(node.Privileges, node.ObjectType),

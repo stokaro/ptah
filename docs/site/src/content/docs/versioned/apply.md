@@ -226,6 +226,54 @@ lock earns a note on standard error and the replay goes ahead.
 refused. That surface answers to the Atlas contract, and what the Atlas CLI does
 with a lock timeout on a dialect that cannot lock is not measured here.
 
+## Run only the approved sequence
+
+A caller that approves a plan and applies it later reads the history twice:
+once when it computes the plan, and again when `up` selects under the migration
+lock. If the history moves in between, for example because a backup restored
+the database to an earlier version, `up` selects more than was approved and runs
+all of it.
+
+`--expect-sequence` names a JSON file that lists the approved migrations in
+order. `up` compares its selection under the lock with that list, and any
+difference refuses the run before the schema or the revision table changes. The
+message names both lists. The order is part of the approval, so the same
+migrations in another order are refused too. An empty selection is compared as
+well: a history that already moved past the approval is refused rather than
+reported up to date.
+
+Each entry names a migration by `version`, plus `version_key` when the directory
+gives one. The file is read strictly: an unknown field, a second document, a
+missing `migrations` list or a version below one is an error, because a field
+this build did not read would be a constraint the caller believes it set.
+
+The database this page migrated already records `1785255952`, so an approval
+naming it again describes a history that has since moved: `up` selects nothing
+under the lock, and the approval says something should run. Write the approval:
+
+```bash
+printf '{"migrations":[{"version":1785255952}]}\n' > expected.json
+```
+
+```powershell
+Set-Content expected.json '{"migrations":[{"version":1785255952}]}'
+```
+
+Run it. The command exits with status 2 and changes nothing:
+
+```console exits=2
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --expect-sequence expected.json
+```
+
+Expected output on standard error:
+
+```text
+error: error running migrations: the migrations selected under the migration lock are [], and the approved sequence is [1785255952]: the history moved after the sequence was approved, so nothing was run
+```
+
+With `--json`, the document records the refusal as a `failed` run with nothing
+applied.
+
 ## Check status
 
 ```console

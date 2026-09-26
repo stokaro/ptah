@@ -23,7 +23,7 @@ func parseOneIndex(c *qt.C, sql string) schemamodel.Index {
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	node, ok := statements.Statements[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
-	return sqlschema.ToIndex(node)
+	return sqlschema.ToIndex(node, "")
 }
 
 // TestToIndex_KeySuffixes pins the index key suffixes the SQL surface has to
@@ -157,7 +157,7 @@ func TestToIndex_StructuredPartsKeepTheirNullsOrdering(t *testing.T) {
 		{Name: "score", NullsOrder: ast.NullsOrderFirst},
 	})
 
-	c.Assert(sqlschema.ToIndex(node).Parts, qt.DeepEquals, []schemamodel.IndexPart{
+	c.Assert(sqlschema.ToIndex(node, "").Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "created_at", Desc: true, NullsOrder: schemamodel.NullsOrderLast},
 		{Name: "score", NullsOrder: schemamodel.NullsOrderFirst},
 	})

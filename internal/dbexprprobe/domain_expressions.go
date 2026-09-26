@@ -52,10 +52,10 @@ type DomainExpressionProbe struct {
 // and only one of them is a domain the caller may compare.
 //
 // Dialects other than the PostgreSQL family return nil: no other engine Ptah
-// targets has CREATE DOMAIN. A connection pinned to a session also returns
-// nil, for the reason the package documentation gives: the rollback the probe
-// needs would discard the session owner's work, so nothing is asked and the
-// domain stays uncompared.
+// targets has CREATE DOMAIN. A connection pinned to a session with a
+// transaction open also returns nil, for the reason the package documentation
+// gives: the rollback the probe needs would discard the session owner's work,
+// so nothing is asked and the domain stays uncompared.
 func ResolveDomainExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,

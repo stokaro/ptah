@@ -31,6 +31,7 @@ func TestAddColumnIfNotExists_HappyPath(t *testing.T) {
 		{name: "postgres writes the guard", dialect: "postgres", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "cockroachdb writes the guard", dialect: "cockroachdb", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "yugabytedb writes the guard", dialect: "yugabytedb", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
+		{name: "spanner writes the guard", dialect: "spanner", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "postgres without the guard", dialect: "postgres", wantSQL: `ALTER TABLE "users" ADD COLUMN "note" text;`},
 	}
 	for _, test := range tests {
@@ -49,7 +50,7 @@ func TestAddColumnIfNotExists_HappyPath(t *testing.T) {
 // rather than render a plain ADD COLUMN, which fails on a table that has the
 // column where the author asked it not to.
 func TestAddColumnIfNotExists_FailurePath(t *testing.T) {
-	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle", "spanner"} {
+	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

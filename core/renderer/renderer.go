@@ -633,7 +633,7 @@ func prepareAlterOperation(
 		if typed == nil {
 			return nil, invalidASTForeignKeyError(dialect, "add-column operation is nil")
 		}
-		if typed.IfNotExists && !rendersColumnExistenceGuard(dialect) {
+		if typed.IfNotExists && !rendersAddColumnIfNotExists(dialect) {
 			return nil, columnExistenceGuardUnsupportedError(dialect, "ADD COLUMN IF NOT EXISTS")
 		}
 		cloned := *typed
@@ -677,7 +677,7 @@ func validateColumnOperation(dialect string, operation ast.AlterOperation) error
 	}
 	switch typed := operation.(type) {
 	case *ast.DropColumnOperation:
-		if typed.IfExists && !rendersColumnExistenceGuard(dialect) {
+		if typed.IfExists && !rendersDropColumnIfExists(dialect) {
 			return columnExistenceGuardUnsupportedError(dialect, "DROP COLUMN IF EXISTS")
 		}
 	case *ast.AlterColumnOperation:
@@ -1021,11 +1021,29 @@ func invalidASTForeignKeyError(dialect, message string) error {
 	}
 }
 
-// rendersColumnExistenceGuard names the dialects whose ALTER TABLE takes
-// ADD COLUMN IF NOT EXISTS and DROP COLUMN IF EXISTS and whose renderer writes
-// them. Spanner is left out because its PostgreSQL interface has not been
-// measured to accept either form.
-func rendersColumnExistenceGuard(dialect string) bool {
+// rendersAddColumnIfNotExists names the dialects whose ALTER TABLE takes
+// ADD COLUMN IF NOT EXISTS and whose renderer writes it.
+//
+// Spanner is one of them. Measured on the Cloud Spanner emulator behind
+// PGAdapter v0.55.3: the guarded ADD adds the column once, and repeating it,
+// or naming a column the table already has, is accepted and changes nothing
+// (stokaro/ptah#3637).
+func rendersAddColumnIfNotExists(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
+}
+
+// rendersDropColumnIfExists names the dialects whose ALTER TABLE takes
+// DROP COLUMN IF EXISTS and whose renderer writes it.
+//
+// Spanner takes the guard on ADD and not here. Measured on the same emulator,
+// DROP COLUMN IF EXISTS answers `<IF [NOT] EXISTS> is not supported in <ALTER>
+// statement operations`, for a column the table has and for one it does not.
+func rendersDropColumnIfExists(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return true

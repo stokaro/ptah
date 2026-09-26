@@ -76,6 +76,7 @@ import (
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routinesetting"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
@@ -276,6 +277,11 @@ type functionSpec struct {
 	Language   stringScalar `yaml:"language"`
 	Security   stringScalar `yaml:"security"`
 	Volatility stringScalar `yaml:"volatility"`
+	// Leakproof, Parallel and Strict are the planner attributes; see
+	// [schemamodel.Function].
+	Leakproof bool         `yaml:"leakproof"`
+	Parallel  stringScalar `yaml:"parallel"`
+	Strict    bool         `yaml:"strict"`
 	// Settings are the routine's own configuration settings, each `name=value`.
 	Settings []stringScalar `yaml:"settings"`
 	Body     stringScalar   `yaml:"body"`
@@ -437,7 +443,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 		return nil, err
 	}
 	d.addExtensions(db)
-	d.addFunctions(db)
+	if err := d.addFunctions(db); err != nil {
+		return nil, err
+	}
 	if err := d.addViews(db); err != nil {
 		return nil, err
 	}
@@ -794,12 +802,23 @@ func (d document) addExtensions(db *schemamodel.Database) {
 	}
 }
 
-func (d document) addFunctions(db *schemamodel.Database) {
+func (d document) addFunctions(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Functions) {
 		spec := d.Functions[key]
 		parameters := string(spec.Parameters)
 		if parameters == "" {
 			parameters = string(spec.Params)
+		}
+		// An unrecognized level is refused rather than read as the default,
+		// for the reason the HCL reader gives: UNSAFE is the most
+		// restrictive, so a misspelled SAFE would forbid what was asked for.
+		parallel := strings.ToUpper(strings.TrimSpace(string(spec.Parallel)))
+		if parallel != "" && parallel != "SAFE" && parallel != "RESTRICTED" && parallel != "UNSAFE" {
+			return fmt.Errorf("function %q: parallel must be SAFE, RESTRICTED or UNSAFE, not %q", key, string(spec.Parallel))
+		}
+		settings := make([]string, 0, len(spec.Settings))
+		for _, setting := range spec.Settings {
+			settings = append(settings, string(setting))
 		}
 
 		fn := schemamodel.Function{
@@ -810,12 +829,19 @@ func (d document) addFunctions(db *schemamodel.Database) {
 			Language:   string(spec.Language),
 			Security:   string(spec.Security),
 			Volatility: string(spec.Volatility),
-			Body:       string(spec.Body),
-			Comment:    string(spec.Comment),
+			// The settings key was accepted and never read, so a YAML
+			// document's search_path reached nothing (stokaro/ptah#3630).
+			Settings:  routinesetting.NormalizeAll(settings),
+			Leakproof: spec.Leakproof,
+			Parallel:  parallel,
+			Strict:    spec.Strict,
+			Body:      string(spec.Body),
+			Comment:   string(spec.Comment),
 		}
 		fn.Canonicalize()
 		db.Functions = append(db.Functions, fn)
 	}
+	return nil
 }
 
 func (d document) addViews(db *schemamodel.Database) error {

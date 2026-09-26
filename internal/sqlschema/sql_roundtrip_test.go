@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
@@ -19,9 +20,15 @@ import (
 // PRIMARY KEY and ALTER TABLE ADD CONSTRAINT FOREIGN KEY survive (see #708).
 
 func parseToDatabase(c *qt.C, sql string) schemamodel.Database {
+	return parseToDatabaseAs(c, "", sql)
+}
+
+// parseToDatabaseAs reads sql as a document of dialect, which decides how an
+// unquoted name is folded.
+func parseToDatabaseAs(c *qt.C, dialect, sql string) schemamodel.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := sqlschema.ToDatabase(statements, "")
+	database, err := sqlschema.ToDatabase(statements, dialect)
 	c.Assert(err, qt.IsNil)
 	return database
 }
@@ -312,7 +319,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c.Assert(db.Indexes[0].Name, qt.Equals, "event`lookup")
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `audit."user""events"`)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"event]id"})
-	c.Assert(sqlschema.ToExtension(extension), qt.DeepEquals, schemamodel.Extension{
+	c.Assert(sqlschema.ToExtension(extension, ""), qt.DeepEquals, schemamodel.Extension{
 		Name:   "uuid-ossp",
 		Schema: "Extension Store",
 	})
@@ -325,7 +332,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	unquoted := parseToDatabase(c, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
+	unquoted := parseToDatabaseAs(c, platform.Postgres, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
 	c.Assert(unquoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Name:   "pgcrypto",
 		Schema: "extensions",
@@ -334,7 +341,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 
-	quoted := parseToDatabase(c, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
+	quoted := parseToDatabaseAs(c, platform.Postgres, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
 	c.Assert(quoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Name:   "PGCrypto",
 		Schema: " Extension Store ",
@@ -358,7 +365,7 @@ func TestToConstraint_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 			},
 		),
 		"Event",
-		`"audit"."events"`,
+		`"audit"."events"`, "",
 	)
 
 	c.Assert(ok, qt.IsTrue)
@@ -379,7 +386,7 @@ func TestToConstraint_LiteralDotForeignTableIsCanonicalized(t *testing.T) {
 			&ast.ForeignKeyRef{Table: `"tenant.data"`, Column: "id"},
 		),
 		"Event",
-		"events",
+		"events", "",
 	)
 
 	c.Assert(ok, qt.IsTrue)
@@ -392,7 +399,7 @@ func TestToConstraint_LiteralDotOwnerIsCanonicalized(t *testing.T) {
 	constraint, ok := sqlschema.ToConstraint(
 		ast.NewUniqueConstraint("tenant_data_key", "id"),
 		"Literal",
-		`"tenant.data"`,
+		`"tenant.data"`, "",
 	)
 
 	c.Assert(ok, qt.IsTrue)
@@ -408,7 +415,7 @@ func TestToIndex_ExpressionIsPreserved(t *testing.T) {
 		}},
 	)
 
-	got := sqlschema.ToIndex(index)
+	got := sqlschema.ToIndex(index, "")
 
 	c.Assert(got.Name, qt.Equals, "events_payload_idx")
 	c.Assert(got.TableName, qt.Equals, "events")

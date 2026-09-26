@@ -155,10 +155,10 @@ func TestToDatabase_TwoUnnamedIndexesBothSurvive(t *testing.T) {
 // TestToDatabase_UnnamedIndexNamesAreDialectSpecific keeps the rule where it
 // belongs.
 //
-// PostgreSQL derives a different name for the same declaration -- users_a_key
-// rather than a -- so applying MySQL's rule to a PostgreSQL document would put
-// a name in the desired model that its server never assigns, which is the same
-// defect this change removes, pointed at a different engine.
+// PostgreSQL derives a different name for the same declaration -- u_email_key
+// rather than email -- so applying MySQL's rule to a PostgreSQL document would
+// put a name in the desired model that its server never assigns. The
+// PostgreSQL document takes PostgreSQL's own name.
 func TestToDatabase_UnnamedIndexNamesAreDialectSpecific(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
@@ -170,7 +170,7 @@ func TestToDatabase_UnnamedIndexNamesAreDialectSpecific(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Constraints, qt.HasLen, 1)
-	c.Assert(database.Constraints[0].Name, qt.Equals, "")
+	c.Assert(database.Constraints[0].Name, qt.Equals, "u_email_key")
 }
 
 // TestToDatabase_UnnamedMySQLIndexNames_FailurePath refuses a document neither

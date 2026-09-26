@@ -69,8 +69,9 @@ const timescaleAggregateCatalog = "timescaledb_information.continuous_aggregates
 // statement would abort the transaction rather than degrade. The extension is
 // asked about inside the same rolled-back transaction the probes use, so a
 // server without it sees one read and no DDL. A connection pinned to a session
-// returns nil before any of that, for the reason the package documentation
-// gives: the rollback the probes need would discard the session owner's work.
+// with a transaction open returns nil before any of that, for the reason the
+// package documentation gives: the rollback the probes need would discard the
+// session owner's work.
 func ResolveContinuousAggregateBodies(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,

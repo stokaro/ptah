@@ -64,6 +64,7 @@ const (
 	plainHTTPFlag            = "plain-http"
 	skipReportFlag           = "skip-report"
 	jsonFlag                 = "json"
+	expectSequenceFlag       = "expect-sequence"
 )
 
 type options struct {
@@ -102,6 +103,7 @@ type options struct {
 	logLevel             string
 	metricsAddr          string
 	jsonOutput           bool
+	expectSequence       string
 }
 
 type parsedMigrationSettings struct {
@@ -232,6 +234,13 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		allowDirtyFlag,
 		false,
 		"Request a verified retry of a dirty migration; only an unchanged committed source prefix is skipped",
+	)
+	flags.StringVar(
+		&opts.expectSequence,
+		expectSequenceFlag,
+		"",
+		"Path to a JSON file naming the ordered migrations this run must select under the migration lock; "+
+			"any other selection is refused before the schema or the revision table changes",
 	)
 	flags.Uint64Var(&opts.limit, limitFlag, 0, "Apply only the first N pending migrations (0 applies all)")
 	// A string rather than an int64: a migration version is written the way the
@@ -399,6 +408,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// ValidateFlagGroups reads Changed, which an exported PTAH_LIMIT sets and a
 	// typed `--limit 0` sets too.
 	if err := cmdflags.ExclusiveValues(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
+		return err
+	}
+	// Read before anything connects, so a sequence that cannot be parsed is
+	// refused without having taken the migration lock.
+	expected, err := loadExpectedSequence(opts.expectSequence)
+	if err != nil {
 		return err
 	}
 	integrityPolicy, err := migrationintegrity.Resolve()
@@ -576,7 +591,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// cannot move underneath the answer, and the status read above happens
 	// before that lock exists. Returning here would report success for a run
 	// that never reached the version the operator named.
-	if !status.HasPendingChanges && toVersion == 0 {
+	//
+	// Nor does a run with an expected sequence, for the same reason: the
+	// comparison is with what the migrator selects under its lock, and an
+	// unlocked "nothing pending" is not that selection.
+	if !status.HasPendingChanges && toVersion == 0 && expected == nil {
 		// An applied migration whose file no longer accounts for the checksum
 		// the database recorded is neither a pending change nor a dirty
 		// revision, so both fields above are silent about it and this shortcut
@@ -634,7 +653,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook)
+	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook, expected)
 	// A pre-migration hook is work a run does before applying something, so a
 	// selection that came out empty passes none of them, the report above
 	// included. That report is what says why nothing was applied, and a bounded
@@ -789,6 +808,7 @@ func applyPendingMigrations(
 	opts *options,
 	toVersion int64,
 	preflightHook migrator.PreMigrationHook,
+	expected *expectedSequence,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
 	// The selected plan is captured rather than derived from the pending list
@@ -816,7 +836,12 @@ func applyPendingMigrations(
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions
 		},
+		// Nil when --expect-sequence was not given. It runs right after the
+		// plan observer and before the preflight hook, so no dump, lint or
+		// external command acts on a selection nobody approved.
+		PlanGuard: expected.guard(),
 	})
+
 	// The status read does not inherit the cancelation: after an interrupt it
 	// is the only account of which migrations committed before the signal.
 	status, statusErr := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))

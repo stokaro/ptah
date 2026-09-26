@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 8056,
-      "sourceBytes": 56091
+      "visibleWords": 9151,
+      "sourceBytes": 62484
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -1590,8 +1590,8 @@
         "/schema/export/",
         "/schema/security/"
       ],
-      "visibleWords": 1813,
-      "sourceBytes": 14313
+      "visibleWords": 1885,
+      "sourceBytes": 14733
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -1870,8 +1870,8 @@
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
-      "visibleWords": 3117,
-      "sourceBytes": 25337
+      "visibleWords": 3214,
+      "sourceBytes": 25899
     },
     {
       "path": "docs/site/src/content/docs/extend/query-builder.md",
@@ -5643,8 +5643,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 2339,
-      "sourceBytes": 18054
+      "visibleWords": 2718,
+      "sourceBytes": 20377
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
@@ -6633,8 +6633,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 6092,
-      "sourceBytes": 44070
+      "visibleWords": 6361,
+      "sourceBytes": 46161
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

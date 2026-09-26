@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/indexbacking"
+	"ptah.run/internal/uniquename"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -137,11 +138,9 @@ func convertTablesAndFields(
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
 ) map[string]string {
-	tableStructNames := make(map[string]string, len(dbSchema.Tables))
-	tableNameCounts := tableNameCounts(dbSchema.Tables)
+	tableStructNames := assignTableStructNames(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
-		structName := dbTableStructName(dbTable, tableNameCounts)
-		tableStructNames[dbTable.QualifiedName()] = structName
+		structName := tableStructNames[dbTable.QualifiedName()]
 		primaryKey := tablePrimaryKeys[dbTable.QualifiedName()]
 
 		table := schemamodel.Table{
@@ -201,6 +200,39 @@ func convertTablesAndFields(
 		}
 	}
 	return tableStructNames
+}
+
+// assignTableStructNames gives every table a struct name of its own, keyed by
+// its qualified name.
+//
+// The model joins a table's columns, indexes and constraints to it through the
+// struct name, and the name [dbTableStructName] derives is not one-to-one: it
+// capitalizes each underscore-separated part, so "Docs" and docs both derive
+// Docs, and "orderItems" and order_items both derive OrderItems. Sharing one,
+// two tables are one table to every consumer: `schema inspect` describes each
+// with the other's columns, two primary keys included, and `introspect` writes
+// one Go type holding both (stokaro/ptah#3647). So a table whose derived name
+// is already taken takes the first free numbered form, by the rule every
+// reader shares, [uniquename.Next].
+//
+// Tables claim their names in the byte order of their qualified names. The
+// catalog's own order follows the server's collation, which puts "Docs" before
+// docs under C and after it under most locales, so taken in that order the
+// numbered name would move from one table to the other between two servers
+// holding the same schema.
+func assignTableStructNames(tables []catalog.Table) map[string]string {
+	counts := tableNameCounts(tables)
+	ordered := slices.SortedFunc(slices.Values(tables), func(a, b catalog.Table) int {
+		return strings.Compare(a.QualifiedName(), b.QualifiedName())
+	})
+	names := make(map[string]string, len(tables))
+	taken := make(map[string]bool, len(tables))
+	for _, table := range ordered {
+		name := uniquename.Next(dbTableStructName(table, counts), func(name string) bool { return taken[name] })
+		taken[name] = true
+		names[table.QualifiedName()] = name
+	}
+	return names
 }
 
 func tableNameCounts(tables []catalog.Table) map[string]int {
@@ -383,6 +415,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			BaseType: domain.BaseType,
 			NotNull:  domain.NotNull,
 			Check:    domain.Check,
+			Comment:  domain.Comment,
 		}
 		setDomainDefaultFromDB(&converted, domain.Default)
 		database.Domains = append(database.Domains, converted)
@@ -393,9 +426,10 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
 		}
 		database.CompositeTypes = append(database.CompositeTypes, schemamodel.CompositeType{
-			Name:   composite.Name,
-			Schema: composite.Schema,
-			Fields: fields,
+			Name:    composite.Name,
+			Schema:  composite.Schema,
+			Fields:  fields,
+			Comment: composite.Comment,
 		})
 	}
 	for _, rangeType := range dbSchema.Ranges {
@@ -415,6 +449,7 @@ func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database
 			Collation:      rangeType.Collation,
 			Canonical:      rangeType.Canonical,
 			SubtypeDiff:    rangeType.SubtypeDiff,
+			Comment:        rangeType.Comment,
 		})
 	}
 }

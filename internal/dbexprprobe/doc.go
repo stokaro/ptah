@@ -19,20 +19,25 @@
 // session, one transaction that never commits -- plus plain statement
 // execution for the Oracle probe, whose DDL no transaction can take back.
 //
-// # Pinned connections resolve nothing
+// # Pinned connections
 //
-// On a connection pinned to a session ([dbschema.DatabaseConnection.WithSession]
-// and its wrappers), every resolver that probes inside a transaction returns a
-// nil map and a nil error without asking the server anything: the rolled-back
-// transaction the probes need would discard the session owner's work along
-// with the probe's. [ResolveGeneratedExpressions] is the one exception, for
-// the reason its own documentation gives: Oracle commits its DDL itself, so no
-// transaction could take the probe back on any connection, pinned or not.
-// The nil is deliberate and not an error, because a pinned connection
-// legitimately reaches a comparison -- `schema apply` rehearses its plan on a
-// dev database inside [dbschema.DatabaseConnection.WithUntrustedSQLSession],
-// and the rehearsal compares schemas on that pinned session. Refusing there
-// would fail the rehearsal to protect it. The cost of the nil is precision,
-// not correctness: the comparison proceeds with the declared spelling
-// uncompared, exactly as it does for a dialect that rewrites nothing.
+// Comparisons run on connections pinned to a session
+// ([dbschema.DatabaseConnection.WithSession] and its wrappers): `schema apply`
+// compares on the session that holds its apply lock, `migrate diff` on the
+// session its migration replay ran on, and a plan rehearsal on its dev
+// session. On such a connection the probes run on the pinned session itself,
+// inside a transaction they roll back, when the driver reports the session
+// outside any transaction.
+//
+// When it does not -- the owner has a transaction open, or the driver cannot
+// say -- every resolver that probes inside a transaction returns a nil map and
+// a nil error without asking the server anything: the rollback the probes need
+// would discard the owner's work along with the probe's.
+// [ResolveGeneratedExpressions] is the one exception, for the reason its own
+// documentation gives: Oracle commits its DDL itself, so no transaction could
+// take the probe back on any connection, pinned or not. The nil is deliberate
+// and not an error, because refusing there would fail a comparison to protect
+// it. What it costs is the server's spelling: the comparison proceeds with the
+// declared text, exactly as it does for a dialect that rewrites nothing, so an
+// expression the server rewrites plans a change it does not need.
 package dbexprprobe

@@ -83,14 +83,117 @@ its own read-back rarely match as text:
 | `CHECK (price >= 0)` on a numeric column | `(price >= (0)::numeric)` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
-column type and default, CHECK, policy clause, index expression and domain the
-way its catalog does. It creates a temporary object inside a transaction that is
-rolled back, reads the stored form, and compares like with like. A column is
-asked only when its default is declared or its type is not written the way the
-catalog reports it. A declaration the server refuses is compared with Ptah's own
-folding instead. So is every comparison without a connection, and one on a
-connection pinned to a session, where the rollback would discard the session's
-work.
+column type and default, CHECK, policy clause, index expression and predicate,
+and domain the way its catalog does. It creates a temporary object inside a
+transaction that is rolled back, reads the stored form, and compares like with
+like. A column is asked only when its default is declared or its type is not
+written the way the catalog reports it.
+
+The temporary table takes the name of the table the declaration is on, so an
+expression that names its own table, such as `CHECK (clients.n > 0)` or a policy
+subquery comparing with `clients.id`, resolves the way the server resolved it.
+The server stores that qualifier unqualified. The probe searches `pg_temp` last,
+so every other name in the expression, `public.clients` included, still reads
+the real table.
+
+The server asked is the one the other side was read from. `schema apply` asks
+the target. `migrate diff` and `migrations generate --replay` ask the dev
+database the migration directory was replayed on. Both compare on a session
+they hold for the whole run, the apply lock or the replay, and the probe
+transaction runs on that session while no transaction is open on it.
+
+`schema diff` asks the server its `--from` side was read from, while that
+connection is still open: the `--from` database itself, or the dev database
+session the `--from` migration directory was replayed on, before the replay's
+cleanup. It does so when `--to` is a schema file or another declaration. A
+`--from` database answers without `--dev-url`.
+
+A declaration the server refuses is compared with Ptah's own folding instead.
+So is a comparison on a session with a transaction open, where the rollback
+would discard the session's work, and every comparison without a connection.
+A `schema diff` whose `--from` is a schema file has no server behind that side
+and compares by text (stokaro/ptah#3658). One whose two sides are both
+databases or directories needs no server: both hold the server's spelling.
+
+A view or materialized view body is compared by folding, not by asking the
+server. The server expands a `*` into the column list when it creates the view,
+so `SELECT * FROM orders WHERE total > 100` reads back as
+`SELECT id, total FROM orders WHERE (total > 100)`. Ptah expands each top-level
+`*` of a view that reads one table into that table's declared columns before it
+compares, so the declaration and its read-back match. Because the declared
+columns are used, a view created before its table gained a column is replaced,
+and the new column appears in it. A `*` over a join or inside a subquery is
+compared as written, so such a view is replaced on every plan; list its
+columns instead.
+
+## Unnamed constraints in a SQL file
+
+PostgreSQL names a table-level `UNIQUE` or a `FOREIGN KEY` that the SQL leaves
+unnamed. A SQL schema file read for PostgreSQL gives the constraint the same
+name, so the file compares equal to the database its own SQL built, and a plan
+from the file creates the constraint under that name.
+
+The name is `<table>_<columns>_key` or `<table>_<columns>_fkey`, with the
+columns joined by underscores. A name longer than 63 bytes is cut, from the
+longer of the table part and the columns part first, at a character boundary.
+A name already taken in the schema is numbered `key1`, `fkey1` and on. For a
+`UNIQUE`, a table, view, sequence or index of that name counts as taken too.
+Measured on PostgreSQL 18.6:
+
+| Declared | Name |
+| --- | --- |
+| `parent_id bigint REFERENCES parent(id)` on `child` | `child_parent_id_fkey` |
+| `FOREIGN KEY (a, b) REFERENCES parent(id, k)` on `child` | `child_a_b_fkey` |
+| a second foreign key over `p` on `twice` | `twice_p_fkey1` |
+| `UNIQUE (a, b)` on `p` | `p_a_b_key` |
+| `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
+
+A column-level `UNIQUE` is compared by its columns, not by its name. A plan
+that adds one to an existing column writes `ADD CONSTRAINT` under the same
+`<table>_<column>_key` name, without a number, because the plan cannot see
+which names the target already holds. Other engines keep Ptah's own name for
+an unnamed foreign key, `fk_<table>_<column>`.
+
+## Object comments
+
+Ptah writes the comment of a view, a sequence, a domain, a composite or range
+type, and an extension with `COMMENT ON`, reads it back and compares it, as it
+does a table's and a column's. The comment is written right after the statement
+that creates the object, and a changed comment is planned as one `COMMENT ON`
+for the object, not as a drop and a create.
+
+An extension's comment is compared only when the declaration states one.
+`CREATE EXTENSION` gives every extension the comment its control file carries,
+so a declaration without a comment is not read as asking for none. The version
+of an extension follows the same rule.
+
+The other engines of the family take fewer of these statements. Ptah writes and
+compares a comment only where the server stores it and reports it back, which
+each statement's capability key records: `view_comments`, `sequence_comments`,
+`type_comments`, `domain_comments` and `extension_comments`. Where a key is
+false, the render names the comment it left out. CockroachDB accepts
+`COMMENT ON TYPE` and then reports no comment for the type, so its
+`type_comments` key is false, and the Spanner PostgreSQL interface refuses every
+`COMMENT ON`.
+
+A comment on a function, a materialized view, a trigger or a policy is not
+written yet, and an enum type has no comment in the model
+([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)).
+
+## Making a column NOT NULL
+
+A plan that makes an existing column `NOT NULL` writes
+`ALTER COLUMN ... SET NOT NULL`. PostgreSQL checks every row when the statement
+runs, and fails it with SQLSTATE 23502 if a row holds `NULL`.
+
+- **The column declares a default.** The plan fills the `NULL` rows with that
+  default first, then sets `NOT NULL`. The value is one the schema states.
+  Atlas CE fails this change on a `NULL` row, so here Ptah is deliberately more
+  permissive, with the author's own value.
+- **The column declares no default.** Nothing is filled. The plan carries a
+  comment saying the statement fails on a `NULL` row, and the safety report
+  lists it as a warning. Update those rows in a migration of their own first,
+  or declare a default.
 
 ## Unlogged tables
 
@@ -291,6 +394,22 @@ unverified security attributes. Role descriptions are applied with
 Ordering is dependency-aware: roles are created before the functions and
 policies that reference them, and grants are emitted after the roles and
 target objects exist.
+
+A function or procedure is created as early as its definition allows.
+PostgreSQL resolves a routine's parameter and return types when the routine is
+created, and a `LANGUAGE sql` body too, including a SQL-standard `RETURN` or
+`BEGIN ATOMIC` body. So a routine follows the types, tables, views and columns
+its definition names when the same plan creates them, and a view that calls
+the routine follows it. A PL/pgSQL body is read when the routine first runs,
+so it does not hold the routine back. A routine that names nothing the plan
+creates comes first, where a domain, a column default, a policy or a trigger
+can call it. `ptah schema render` places routines by the same rule, treating
+everything it declares as created.
+
+One order is refused on every path: a column default that calls a
+`LANGUAGE sql` routine reading a table the same plan creates. The routine waits
+for all new tables, so the table with the default comes too early. Create the
+two tables in separate plans, or write the routine in PL/pgSQL.
 
 Reading a live database describes only the roles the schemas being read
 actually use, because a PostgreSQL role belongs to the cluster rather than to
@@ -493,25 +612,21 @@ first declaration and renders it once. Two tables of the same name in
 different schemas — `tenanta.orders` and `tenantb.orders` — remain two tables,
 and a policy name on each remains two policies.
 
-Letter case is the other spelling that reaches one table, and it folds in one
-direction only. An unquoted PostgreSQL identifier folds to lower case, so a SQL
-schema file declaring `CREATE TABLE orders` and then naming `ORDERS` in
-`CREATE POLICY` or in `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is naming
-that same table. Ptah binds each declaration to the table it names and renders
-the declared spelling, so a policy or an enablement written as `ORDERS` no
-longer renders `ON "ORDERS"` — a table nothing declared, answered by
-`relation "ORDERS" does not exist`.
+Letter case is the other spelling that reaches one table, and a SQL schema
+file follows PostgreSQL's rule for it. Read with `--dialect postgres`, every
+unquoted name folds to lower case the way the server folds it: tables, columns,
+indexes, constraints, policies and the table any statement names. A quoted name
+keeps its case. So `CREATE TABLE Orders` declares `orders`, and `ALTER TABLE
+ORDERS ENABLE ROW LEVEL SECURITY` and `CREATE POLICY p ON orders` name that
+same table. A database the file created directly, through `psql` or another
+tool, compares equal to the file.
 
-The rule is that a reference folds down onto a table declared in lower case,
-and a declaration that preserves case is never a fold target. Ptah does not
-record whether an identifier was quoted, so `CREATE TABLE ORDERS` and
-`CREATE TABLE "ORDERS"` reach it as the same declaration while PostgreSQL reads
-them as two different relations — `orders` and `ORDERS`. A schema that declares
-only `"ORDERS"` and then writes `ON orders` therefore names a relation it does
-not declare, and Ptah keeps that spelling rather than guessing: the render
-reproduces PostgreSQL's own `relation "orders" does not exist` instead of
-quietly moving the policy onto `ORDERS`. Declaring both `orders` and `"ORDERS"`
-gives two tables, and a policy on each is two policies.
+`CREATE TABLE "Orders"` declares a different table, `Orders`. A schema that
+declares only `"Orders"` and then writes `ON orders` names a relation it does
+not declare, and the render keeps that name rather than guessing: it reproduces
+PostgreSQL's own `relation "orders" does not exist` instead of moving the
+policy onto `Orders`. Declaring both `orders` and `"Orders"` gives two tables,
+and a policy on each is two policies.
 
 ## Extensions
 

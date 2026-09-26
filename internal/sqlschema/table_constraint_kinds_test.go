@@ -67,7 +67,7 @@ func TestToConstraint_CarriesEveryKindTheParserProduces(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			constraint, ok := sqlschema.ToConstraint(test.node, "T", "t")
+			constraint, ok := sqlschema.ToConstraint(test.node, "T", "t", "")
 
 			c.Assert(ok, qt.Equals, test.wantCarry)
 			c.Assert(constraint.Type, qt.Equals, test.wantType)
@@ -86,7 +86,7 @@ func TestToConstraint_ACheckKeepsItsCondition(t *testing.T) {
 
 	constraint, ok := sqlschema.ToConstraint(&ast.ConstraintNode{
 		Type: ast.CheckConstraint, Name: `"t_a_positive"`, Expression: "a > 0",
-	}, "T", "t")
+	}, "T", "t", "")
 
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(constraint.Name, qt.Equals, "t_a_positive")
@@ -101,7 +101,7 @@ func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
 	constraint, ok := sqlschema.ToConstraint(&ast.ConstraintNode{
 		Type: ast.ExcludeConstraint, Name: "w_room_excl", UsingMethod: "gist",
 		ExcludeElements: `"room" WITH =`, WhereCondition: "room IS NOT NULL",
-	}, "W", "w")
+	}, "W", "w", "")
 
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(constraint.UsingMethod, qt.Equals, "gist")
@@ -119,7 +119,7 @@ func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
 func TestToConstraint_APrimaryKeyIsStillDeclined(t *testing.T) {
 	c := qt.New(t)
 
-	_, ok := sqlschema.ToConstraint(ast.NewPrimaryKeyConstraint("id"), "T", "t")
+	_, ok := sqlschema.ToConstraint(ast.NewPrimaryKeyConstraint("id"), "T", "t", "")
 
 	c.Assert(ok, qt.IsFalse)
 }

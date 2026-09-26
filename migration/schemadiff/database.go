@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 // CompareWithDatabase resolves live catalog identifier equivalence and compares
@@ -336,8 +337,9 @@ func resolveDomainExpressions(
 	return expressions, nil
 }
 
-// resolveCheckExpressions normalizes the declared expression of every table
-// CHECK the database also holds.
+// resolveCheckExpressions normalizes the expression of every CHECK the
+// comparison compares -- declared on the table, or synthesized from a column's
+// check or a table's checks list -- that the database also holds.
 //
 // Only those, for the reason [resolveDomainExpressions] gives: a constraint
 // being created carries its declaration into the ADD statement unchanged, and
@@ -367,22 +369,24 @@ func resolveCheckExpressions(
 	}
 	columns := liveTableColumns(database, semantics)
 
-	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(desired.Constraints))
-	for _, constraint := range desired.Constraints {
-		if !strings.EqualFold(constraint.Type, "CHECK") {
-			continue
-		}
+	// The checks the comparison compares, not only the declared ones: a
+	// column's check is compared as a synthesized constraint, and a check the
+	// resolver never saw is compared by text.
+	compared := compare.ComparedCheckConstraints(desired, database, semantics)
+	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(compared))
+	for _, constraint := range compared {
 		key := exprkey.Check(semantics, constraint.Table, constraint.Name)
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[exprkey.Table(semantics, constraint.Table)]
+		live, known := columns[exprkey.Table(semantics, constraint.Table)]
 		if !known {
 			continue
 		}
 		probes = append(probes, dbexprprobe.CheckExpressionProbe{
 			Key:        key,
-			Columns:    probeColumns,
+			Table:      live.name,
+			Columns:    live.columns,
 			Expression: constraint.CheckExpression,
 		})
 	}
@@ -425,13 +429,14 @@ func resolvePolicyExpressions(
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[exprkey.Table(semantics, policy.Table)]
+		live, known := columns[exprkey.Table(semantics, policy.Table)]
 		if !known {
 			continue
 		}
 		probes = append(probes, dbexprprobe.PolicyExpressionProbe{
 			Key:       key,
-			Columns:   probeColumns,
+			Table:     live.name,
+			Columns:   live.columns,
 			Using:     policy.UsingExpression,
 			WithCheck: policy.WithCheckExpression,
 		})
@@ -485,13 +490,14 @@ func resolveIndexExpressions(
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[exprkey.Table(semantics, owners[position])]
+		live, known := columns[exprkey.Table(semantics, owners[position])]
 		if !known {
 			continue
 		}
 		probes = append(probes, dbexprprobe.IndexExpressionProbe{
 			Key:        key,
-			Columns:    probeColumns,
+			Table:      live.name,
+			Columns:    live.columns,
 			Expression: expression,
 			Parts:      parts,
 			Predicate:  index.Condition,
@@ -529,13 +535,20 @@ func declaredIndexExpression(index schemamodel.Index) (expression string, parts 
 	return "", parts
 }
 
-// liveTableColumns projects every live table's columns into the shape a probe
-// needs, keyed by the table's bare name.
+// liveProbeTable is one live table in the shape a probe needs: its name as
+// the server stores it, which the probe table takes, and its columns.
+type liveProbeTable struct {
+	name    string
+	columns []dbexprprobe.CheckProbeColumn
+}
+
+// liveTableColumns projects every live table into the shape a probe needs,
+// keyed by the table's identity.
 func liveTableColumns(
 	current *catalog.Database,
 	semantics identifier.Semantics,
-) map[string][]dbexprprobe.CheckProbeColumn {
-	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(current.Tables))
+) map[string]liveProbeTable {
+	tables := make(map[string]liveProbeTable, len(current.Tables))
 	for _, table := range current.Tables {
 		probeColumns := make([]dbexprprobe.CheckProbeColumn, 0, len(table.Columns))
 		for _, column := range table.Columns {
@@ -544,9 +557,12 @@ func liveTableColumns(
 				Type: column.RawType(),
 			})
 		}
-		columns[exprkey.TableParts(semantics, table.Schema, table.Name)] = probeColumns
+		tables[exprkey.TableParts(semantics, table.Schema, table.Name)] = liveProbeTable{
+			name:    table.Name,
+			columns: probeColumns,
+		}
 	}
-	return columns
+	return tables
 }
 
 // resolveContinuousAggregateBodies normalizes the declared SELECT of every

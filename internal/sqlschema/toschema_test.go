@@ -592,7 +592,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := sqlschema.ToIndex(test.index)
+			result := sqlschema.ToIndex(test.index, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -638,7 +638,7 @@ func TestToEnum_BasicEnum(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := sqlschema.ToEnum(test.enum)
+			result := sqlschema.ToEnum(test.enum, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}

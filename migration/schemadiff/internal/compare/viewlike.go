@@ -95,6 +95,38 @@ var materializedViewFamily = viewLikeFamily[
 	Carry:   matViewFromCatalog,
 }
 
+// plainViewFamilyFor is the view family comparing bodies against desired's
+// declared columns, so a declared `*` matches the columns a server stores in
+// its place.
+func plainViewFamilyFor(desired *schemamodel.Database) viewLikeFamily[
+	difftypes.ViewChanges, []difftypes.ViewDiff,
+	schemamodel.View, catalog.View, difftypes.ViewDiff,
+] {
+	family := plainViewFamily
+	columns := declaredRelationColumns(desired)
+	family.Compare = func(genView schemamodel.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
+		return viewDefinitions(genView, dbView, dialect, columns)
+	}
+	return family
+}
+
+// materializedViewFamilyFor is [plainViewFamilyFor] for materialized views.
+func materializedViewFamilyFor(desired *schemamodel.Database) viewLikeFamily[
+	difftypes.MaterializedViewChanges, []difftypes.MaterializedViewDiff,
+	schemamodel.MaterializedView, catalog.MaterializedView, difftypes.MaterializedViewDiff,
+] {
+	family := materializedViewFamily
+	columns := declaredRelationColumns(desired)
+	family.Compare = func(
+		genView schemamodel.MaterializedView,
+		dbView catalog.MaterializedView,
+		dialect string,
+	) difftypes.MaterializedViewDiff {
+		return materializedViewDefinitions(genView, dbView, dialect, columns)
+	}
+	return family
+}
+
 // Views compares view definitions between generated and database schemas.
 func Views(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
 	ViewsWithDialect(desired, current, diff, "")
@@ -104,7 +136,7 @@ func Views(desired *schemamodel.Database, current *catalog.Database, diff *difft
 // for catalog readback forms that are semantically equivalent to Ptah-rendered
 // view SQL.
 func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	compareViewLikesByName(plainViewFamily, desired, current, diff, dialect)
+	compareViewLikesByName(plainViewFamilyFor(desired), desired, current, diff, dialect)
 }
 
 // ViewsWithSemantics compares view identity with the live database's resolved
@@ -116,7 +148,7 @@ func ViewsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 ) {
-	compareViewLikesByIdentity(plainViewFamily, desired, database, diff, dialect, semantics)
+	compareViewLikesByIdentity(plainViewFamilyFor(desired), desired, database, diff, dialect, semantics)
 }
 
 // MaterializedViews compares materialized view definitions between generated
@@ -150,7 +182,7 @@ func MaterializedViewsWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	compareViewLikesByName(materializedViewFamily, desired, database, diff, dialect)
+	compareViewLikesByName(materializedViewFamilyFor(desired), desired, database, diff, dialect)
 }
 
 // MaterializedViewsWithSemantics compares materialized-view identities using
@@ -162,7 +194,7 @@ func MaterializedViewsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 ) {
-	compareViewLikesByIdentity(materializedViewFamily, desired, database, diff, dialect, semantics)
+	compareViewLikesByIdentity(materializedViewFamilyFor(desired), desired, database, diff, dialect, semantics)
 }
 
 // compareViewLikesByName matches a declaration to a database row by its name:

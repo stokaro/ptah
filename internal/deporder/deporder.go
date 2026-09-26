@@ -22,6 +22,11 @@ type ViewLike struct {
 	Name         string
 	Body         string
 	Materialized bool
+	// Routine marks a function or procedure ordered among the view-likes
+	// because it names a relation the same plan creates; see
+	// [RoutineWithRelations]. Its Body is [RoutineOrderingBody], so a view that
+	// calls it follows it and a view it reads precedes it.
+	Routine bool
 
 	// DependsOn names objects this one must be created after, beyond the ones
 	// its body mentions.
@@ -937,7 +942,10 @@ func foreignReferenceTable(reference string) string {
 
 func viewLikeID(object ViewLike, index int) string {
 	kind := "view"
-	if object.Materialized {
+	switch {
+	case object.Routine:
+		kind = "routine"
+	case object.Materialized:
 		kind = "matview"
 	}
 	return kind + ":" + object.Name + ":" + strconv.Itoa(index)

@@ -860,6 +860,13 @@ func ViewDefinitions(genView schemamodel.View, dbView catalog.View) difftypes.Vi
 // ViewDefinitionsWithDialect performs detailed comparison between generated and
 // database view definitions with dialect-aware catalog readback normalization.
 func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
+	return viewDefinitions(genView, dbView, dialect, nil)
+}
+
+// viewDefinitions is [ViewDefinitionsWithDialect] with the desired relations'
+// columns, which is what lets a declared `*` match the column list a server
+// stores in its place.
+func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect string, columns relationColumns) difftypes.ViewDiff {
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
@@ -873,7 +880,7 @@ func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, d
 		PreviousBody: strings.TrimSpace(dbView.Body),
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
+	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, columns) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
@@ -966,13 +973,24 @@ func MaterializedViewDefinitionsWithDialect(
 	dbView catalog.MaterializedView,
 	dialect string,
 ) difftypes.MaterializedViewDiff {
+	return materializedViewDefinitions(genView, dbView, dialect, nil)
+}
+
+// materializedViewDefinitions is [MaterializedViewDefinitionsWithDialect] with
+// the desired relations' columns; see viewDefinitions.
+func materializedViewDefinitions(
+	genView schemamodel.MaterializedView,
+	dbView catalog.MaterializedView,
+	dialect string,
+	columns relationColumns,
+) difftypes.MaterializedViewDiff {
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 		Desired:  genView,
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
+	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, columns) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 	if desired, current, changed := refreshChange(genView, dbView); changed {
@@ -1054,6 +1072,19 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 			databaseSchema,
 			singlePartQualifierNames(desired),
 		)
+}
+
+// declaredBodyEqual is [schemaObjectBodiesEqual], and failing that the same
+// question with each `*` of a single-relation declaration replaced by the
+// relation's declared columns; see expandSelectStar. The text as written is
+// asked first, so a server that keeps the star, as SQL Server does, never
+// reaches the expansion.
+func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, columns relationColumns) bool {
+	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
+		return true
+	}
+	expanded, ok := expandSelectStar(normalizeSQLBody(generatedBody, dialect), columns)
+	return ok && schemaObjectBodiesEqual(expanded, databaseBody, dialect, databaseSchema)
 }
 
 func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {

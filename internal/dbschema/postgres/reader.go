@@ -830,7 +830,12 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			COALESCE(a.attidentity, '') AS identity_kind,
 			` + r.columnCommentExpr() + `,
 			` + r.notNullConstraintNameExpr() + `,
-			` + r.ownedSequenceExpr() + `
+			` + r.ownedSequenceExpr() + `,
+			-- udt_name says which type a user-defined column has and not
+			-- which schema holds it, so a declaration naming the schema could
+			-- not be told from one naming a same-named type elsewhere
+			-- (stokaro/ptah#3620).
+			COALESCE(col.udt_schema, '') AS udt_schema
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
 			AND tbl.table_name = col.table_name
@@ -882,6 +887,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			&col.Comment,
 			&col.NotNullConstraintName,
 			&ownedSequenceName,
+			&col.UDTSchema,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
@@ -1096,6 +1102,21 @@ const extensionOwnedTypeExclusion = `
 			  AND extdep.deptype = 'e'
 		)`
 
+// typeCommentExpr renders the projection carrying a domain's, a composite's or
+// a range's own comment, correlated on the query's pg_type row `t`, or a
+// constant where pg_catalog's helpers do not resolve.
+//
+// The catalog is named for the reason tableCommentExpr gives. On CockroachDB
+// the function answers NULL for every type, because the comment is stored
+// under the type's descriptor ID rather than its pg_type OID; the comparison
+// does not read type comments there (capability.TypeComments).
+func (r *Reader) typeCommentExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS type_comment"
+	}
+	return "COALESCE(obj_description(t.oid, 'pg_type'), '') AS type_comment"
+}
+
 // readDomains reads PostgreSQL domain types (typtype='d').
 func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 	var domains []catalog.Domain
@@ -1117,7 +1138,8 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 			` + r.domainBaseTypeExpr() + `,
 			t.typnotnull AS not_null,
 			COALESCE(t.typdefault, '') AS default_value,
-			` + r.domainCheckExpr() + `
+			` + r.domainCheckExpr() + `,
+			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		WHERE t.typtype = 'd' AND n.nspname = $1` +
@@ -1134,7 +1156,9 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 	for rows.Next() {
 		var domain catalog.Domain
 		var rawSchema string
-		if err := rows.Scan(&rawSchema, &domain.Name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check); err != nil {
+		if err := rows.Scan(
+			&rawSchema, &domain.Name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Comment,
+		); err != nil {
 			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
 		}
 		domain.Schema = r.outputSchema(rawSchema)
@@ -1212,13 +1236,14 @@ func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, e
 }
 
 func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]catalog.CompositeType, error) {
-	const query = `
+	query := `
 		SELECT
 			n.nspname AS schema_name,
 			t.typname AS type_name,
 			a.attname AS field_name,
 			format_type(a.atttypid, a.atttypmod) AS field_type,
-			a.attnum
+			a.attnum,
+			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
@@ -1237,15 +1262,15 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 	order := make([]key, 0)
 	byName := make(map[key]*catalog.CompositeType)
 	for rows.Next() {
-		var rawSchema, typeName, fieldName, fieldType string
+		var rawSchema, typeName, fieldName, fieldType, comment string
 		var attNum int
-		if err := rows.Scan(&rawSchema, &typeName, &fieldName, &fieldType, &attNum); err != nil {
+		if err := rows.Scan(&rawSchema, &typeName, &fieldName, &fieldType, &attNum, &comment); err != nil {
 			return nil, fmt.Errorf("failed to scan composite type for schema %s: %w", schemaName, err)
 		}
 		k := key{r.outputSchema(rawSchema), typeName}
 		composite, ok := byName[k]
 		if !ok {
-			composite = &catalog.CompositeType{Name: typeName, Schema: k.schema}
+			composite = &catalog.CompositeType{Name: typeName, Schema: k.schema, Comment: comment}
 			byName[k] = composite
 			order = append(order, k)
 		}
@@ -1281,7 +1306,7 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 	// names to compare and called a changed range converged (stokaro/ptah#931
 	// item 2). rngcanonical and rngsubdiff are regproc and hold 0 when the range
 	// has no such function, which renders as "-", so they are nulled first.
-	const query = `
+	query := `
 		SELECT
 			n.nspname AS schema_name,
 			t.typname AS range_name,
@@ -1289,7 +1314,8 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 			COALESCE(opc.opcname, '') AS subtype_opclass,
 			COALESCE(coll.collname, '') AS collation_name,
 			COALESCE(NULLIF(rng.rngcanonical, 0)::regproc::text, '') AS canonical,
-			COALESCE(NULLIF(rng.rngsubdiff, 0)::regproc::text, '') AS subtype_diff
+			COALESCE(NULLIF(rng.rngsubdiff, 0)::regproc::text, '') AS subtype_diff,
+			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
@@ -1317,6 +1343,7 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 			&rangeType.Collation,
 			&rangeType.Canonical,
 			&rangeType.SubtypeDiff,
+			&rangeType.Comment,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan range type for schema %s: %w", schemaName, err)
 		}
@@ -1405,9 +1432,22 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 			t.relname as tablename,
 			i.relname as indexname,
 			pg_get_indexdef(i.oid) as indexdef,
+			-- A key that is a column is read as the column's name, and only an
+			-- expression key as the text pg_get_indexdef prints for it. That
+			-- text quotes a name the way it has to be written, so a column
+			-- "ParentId", "order" or "my col" arrived with its quotes and never
+			-- matched the declared column: every comparison dropped the index
+			-- and created it again (stokaro/ptah#3615).
 			COALESCE((
-				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				SELECT json_agg(
+					CASE WHEN keys.attnum > 0 THEN keyatt.attname::text
+					ELSE pg_get_indexdef(i.oid, keys.ordinality::integer, true) END
+					ORDER BY keys.ordinality
+				)::text
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				LEFT JOIN pg_attribute keyatt
+					ON keyatt.attrelid = ix.indrelid
+					AND keyatt.attnum = keys.attnum
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_columns,
 			-- pg_index.indkey holds 0 for a key that is an expression rather
@@ -1476,9 +1516,15 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 			-- absent from indclass and indoption, which cover key columns
 			-- only, so they are read separately rather than filtered out of
 			-- the key list afterwards.
+			--
+			-- A payload entry is always a column, read by its name for the
+			-- reason the key columns above are.
 			COALESCE((
-				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				SELECT json_agg(includeatt.attname::text ORDER BY keys.ordinality)::text
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				JOIN pg_attribute includeatt
+					ON includeatt.attrelid = ix.indrelid
+					AND includeatt.attnum = keys.attnum
 				WHERE keys.ordinality > ix.indnkeyatts
 			), '[]') as index_include_columns,
 			-- The access method. Losing it is not always the quiet

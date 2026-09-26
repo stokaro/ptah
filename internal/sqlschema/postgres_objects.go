@@ -14,18 +14,18 @@ import (
 // the end of ToDatabase's switch, so a CREATE VIEW in a --schema-file parsed
 // cleanly and then vanished from the rendered schema.
 
-func toSequence(node *ast.CreateSequenceNode) schemamodel.Sequence {
+func toSequence(node *ast.CreateSequenceNode, sourcePlatform string) schemamodel.Sequence {
 	return schemamodel.Sequence{
-		Name:        normalizeSQLIdentifier(node.Name),
-		Schema:      normalizeSQLIdentifier(node.Schema),
-		AsType:      normalizeSQLIdentifier(node.AsType),
+		Name:        normalizeSQLIdentifier(sourcePlatform, node.Name),
+		Schema:      normalizeSQLIdentifier(sourcePlatform, node.Schema),
+		AsType:      normalizeSQLIdentifier(sourcePlatform, node.AsType),
 		Start:       node.Start,
 		Increment:   node.Increment,
 		MinValue:    node.MinValue,
 		MaxValue:    node.MaxValue,
 		Cache:       node.Cache,
 		Cycle:       node.Cycle,
-		OwnedBy:     normalizeSQLTableReference(node.OwnedBy),
+		OwnedBy:     normalizeSQLTableReference(sourcePlatform, node.OwnedBy),
 		IfNotExists: node.IfNotExists,
 		Comment:     node.Comment,
 	}
@@ -68,7 +68,7 @@ func toDefaultPrivilege(node *ast.DefaultPrivilegeNode, sourcePlatform string) s
 	}
 	defaultPrivilege := schemamodel.DefaultPrivilege{
 		Grantor:    roleName(sourcePlatform, node.Grantor),
-		Schema:     normalizeSQLIdentifier(node.Schema),
+		Schema:     normalizeSQLIdentifier(sourcePlatform, node.Schema),
 		ObjectType: node.ObjectType,
 		Grantee:    roleTarget(sourcePlatform, node.Grantee),
 		Privileges: privileges,
@@ -89,8 +89,8 @@ func toDefaultPrivilege(node *ast.DefaultPrivilegeNode, sourcePlatform string) s
 // not name (stokaro/ptah#1311).
 func toRLSPolicy(node *ast.CreatePolicyNode, sourcePlatform string) schemamodel.RLSPolicy {
 	return schemamodel.RLSPolicy{
-		Name:                normalizeSQLIdentifier(node.Name),
-		Table:               catalogPostgresTableReference(node.Table),
+		Name:                normalizeSQLIdentifier(sourcePlatform, node.Name),
+		Table:               normalizeSQLTableReference(sourcePlatform, node.Table),
 		PolicyFor:           node.PolicyFor,
 		ToRoles:             normalizeRoleList(sourcePlatform, node.ToRoles),
 		UsingExpression:     node.UsingExpression,
@@ -116,9 +116,9 @@ func normalizeRoleList(sourcePlatform, roles string) string {
 // toRLSEnabledTable resolves its table the same way [toRLSPolicy] does. The
 // enablement and the policies on it have to name one relation, or the render
 // turns row-level security on for one table and protects another.
-func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) schemamodel.RLSEnabledTable {
+func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode, sourcePlatform string) schemamodel.RLSEnabledTable {
 	return schemamodel.RLSEnabledTable{
-		Table:   catalogPostgresTableReference(node.Table),
+		Table:   normalizeSQLTableReference(sourcePlatform, node.Table),
 		Comment: node.Comment,
 	}
 }
@@ -130,10 +130,10 @@ func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) schemamodel.RLSEnabled
 // enablement by [applyForcedRowSecurity], which runs after every statement is
 // read because the ENABLE it qualifies may come later in the document. NO FORCE
 // is refused: a schema says the owner is exempt by not declaring FORCE.
-func appendRowSecurity(database *schemamodel.Database, stmt ast.Node) (bool, error) {
+func appendRowSecurity(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.AlterTableEnableRLSNode:
-		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
+		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node, sourcePlatform))
 		return true, nil
 	case *ast.AlterTableForceRLSNode:
 		if node.NoForce {
@@ -171,7 +171,7 @@ func applyForcedRowSecurity(database *schemamodel.Database, statements []ast.Nod
 		if !ok || force.NoForce {
 			continue
 		}
-		key := semantics.QualifiedTableIdentityKey(catalogPostgresTableReference(force.Table))
+		key := semantics.QualifiedTableIdentityKey(normalizeSQLTableReference(sourcePlatform, force.Table))
 		found := false
 		for index := range database.RLSEnabledTables {
 			if semantics.QualifiedTableIdentityKey(database.RLSEnabledTables[index].Table) == key {
@@ -189,27 +189,27 @@ func applyForcedRowSecurity(database *schemamodel.Database, statements []ast.Nod
 	return nil
 }
 
-func toView(node *ast.CreateViewNode) schemamodel.View {
+func toView(node *ast.CreateViewNode, sourcePlatform string) schemamodel.View {
 	return schemamodel.View{
-		Name:      normalizeSQLTableReference(node.Name),
+		Name:      normalizeSQLTableReference(sourcePlatform, node.Name),
 		Body:      strings.TrimSpace(node.Body),
 		WithCheck: node.WithCheck,
 		Comment:   node.Comment,
 	}
 }
 
-func toMaterializedView(node *ast.CreateMaterializedViewNode) schemamodel.MaterializedView {
+func toMaterializedView(node *ast.CreateMaterializedViewNode, sourcePlatform string) schemamodel.MaterializedView {
 	view := schemamodel.MaterializedView{
-		Name:    normalizeSQLTableReference(node.Name),
+		Name:    normalizeSQLTableReference(sourcePlatform, node.Name),
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,
 	}
 	return view
 }
 
-func toFunction(node *ast.CreateFunctionNode) schemamodel.Function {
+func toFunction(node *ast.CreateFunctionNode, sourcePlatform string) schemamodel.Function {
 	function := schemamodel.Function{
-		Name:       normalizeSQLTableReference(node.Name),
+		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
 		Language:   node.Language,
@@ -226,10 +226,10 @@ func toFunction(node *ast.CreateFunctionNode) schemamodel.Function {
 	return function
 }
 
-func toTrigger(node *ast.CreateTriggerNode) schemamodel.Trigger {
+func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.Trigger {
 	trigger := schemamodel.Trigger{
-		Name:    normalizeSQLIdentifier(node.Name),
-		Table:   normalizeSQLTableReference(node.Table),
+		Name:    normalizeSQLIdentifier(sourcePlatform, node.Name),
+		Table:   normalizeSQLTableReference(sourcePlatform, node.Table),
 		Timing:  node.Timing,
 		Event:   node.Event,
 		ForEach: node.ForEach,
@@ -238,15 +238,15 @@ func toTrigger(node *ast.CreateTriggerNode) schemamodel.Trigger {
 	}
 	trigger.Canonicalize()
 	if node.ExternalFunction && node.FunctionName != "" {
-		trigger.ExecuteFunction = normalizeSQLTableReference(node.FunctionName)
+		trigger.ExecuteFunction = normalizeSQLTableReference(sourcePlatform, node.FunctionName)
 	}
 	return trigger
 }
 
 // appendCreateType routes a CREATE TYPE node to the bucket its type definition
 // belongs in. CREATE DOMAIN also arrives here, as a DomainTypeDef.
-func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode) {
-	schema, name := normalizeSQLTableIdentifier(node.Name)
+func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode, sourcePlatform string) {
+	schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 	switch definition := node.TypeDef.(type) {
 	case *ast.EnumTypeDef:
 		database.Enums = append(database.Enums, schemamodel.Enum{
@@ -254,7 +254,7 @@ func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode) 
 			Values: definition.Values,
 		})
 	case *ast.CompositeTypeDef:
-		database.CompositeTypes = append(database.CompositeTypes, toCompositeType(schema, name, node, definition))
+		database.CompositeTypes = append(database.CompositeTypes, toCompositeType(schema, name, node, definition, sourcePlatform))
 	case *ast.RangeTypeDef:
 		database.Ranges = append(database.Ranges, toRange(schema, name, node, definition))
 	case *ast.DomainTypeDef:
@@ -262,11 +262,11 @@ func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode) 
 	}
 }
 
-func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *ast.CompositeTypeDef) schemamodel.CompositeType {
+func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *ast.CompositeTypeDef, sourcePlatform string) schemamodel.CompositeType {
 	fields := make([]schemamodel.CompositeField, 0, len(definition.Fields))
 	for _, field := range definition.Fields {
 		fields = append(fields, schemamodel.CompositeField{
-			Name: normalizeSQLIdentifier(field.Name),
+			Name: normalizeSQLIdentifier(sourcePlatform, field.Name),
 			Type: field.Type,
 		})
 	}
@@ -310,40 +310,6 @@ func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.Dom
 	}
 	domain.Canonicalize()
 	return domain
-}
-
-// applyRoleComment attaches a COMMENT ON ROLE statement to the role it names.
-// PostgreSQL has no inline role comment, so Ptah's renderer emits the comment
-// as a second statement; reading it back is what keeps the pair round-tripping.
-func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode, sourcePlatform string) {
-	name, comment, ok := parseRoleComment(node.Text, sourcePlatform)
-	if !ok {
-		return
-	}
-	for index := range database.Roles {
-		if database.Roles[index].Name == name {
-			database.Roles[index].Comment = comment
-			return
-		}
-	}
-}
-
-// parseRoleComment recognizes the COMMENT ON ROLE text that
-// Parser.parseCommentStatement builds. The shape is fixed by that function, so
-// this reads a known format rather than arbitrary SQL.
-func parseRoleComment(text, sourcePlatform string) (name, comment string, ok bool) {
-	const prefix = "COMMENT ON ROLE "
-	if !strings.HasPrefix(text, prefix) {
-		return "", "", false
-	}
-	rest := text[len(prefix):]
-	separator := strings.LastIndex(rest, " IS ")
-	if separator < 0 {
-		return "", "", false
-	}
-	name = roleName(sourcePlatform, rest[:separator])
-	comment = strings.TrimSpace(rest[separator+len(" IS "):])
-	return name, unquoteSQLStringLiteral(comment), true
 }
 
 func unquoteSQLStringLiteral(value string) string {
@@ -412,9 +378,9 @@ func trimTriggerFunctionWrapper(body string) string {
 // CREATE FUNCTION reaches this package as a CreateFunctionNode and CREATE
 // PROCEDURE as this one, so a schema's procedures were parsed and then not
 // converted (stokaro/ptah#2435).
-func toPostgresRoutine(node *ast.PostgresRoutineNode) schemamodel.Function {
+func toPostgresRoutine(node *ast.PostgresRoutineNode, sourcePlatform string) schemamodel.Function {
 	function := schemamodel.Function{
-		Name:       normalizeSQLTableReference(node.Name),
+		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Language:   node.Language,
@@ -425,9 +391,9 @@ func toPostgresRoutine(node *ast.PostgresRoutineNode) schemamodel.Function {
 }
 
 // toSQLServerRoutine converts a routine the SQL Server routine parser modelled.
-func toSQLServerRoutine(node *ast.SQLServerRoutineNode) schemamodel.Function {
+func toSQLServerRoutine(node *ast.SQLServerRoutineNode, sourcePlatform string) schemamodel.Function {
 	function := schemamodel.Function{
-		Name:       normalizeSQLTableReference(node.Name),
+		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
@@ -444,9 +410,9 @@ func toSQLServerRoutine(node *ast.SQLServerRoutineNode) schemamodel.Function {
 }
 
 // toMySQLRoutine converts a routine the MySQL routine parser modelled.
-func toMySQLRoutine(node *ast.MySQLRoutineNode) schemamodel.Function {
+func toMySQLRoutine(node *ast.MySQLRoutineNode, sourcePlatform string) schemamodel.Function {
 	function := schemamodel.Function{
-		Name:       normalizeSQLTableReference(node.Name),
+		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Kind:       string(node.Kind),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
