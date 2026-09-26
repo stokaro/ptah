@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectidentity"
 )
 
@@ -119,19 +120,42 @@ func TableParts(semantics identifier.Semantics, schema, table string) string {
 	return encode(objectidentity.NewBuilder(semantics).TableParts(schema, table))
 }
 
+// RoutineArguments is the key [config.CompareOptions.RoutineArguments] is held
+// under for a declared routine: whether it is a procedure, and its argument
+// list exactly as declared.
+//
+// It names no routine. What the server prints for an argument list depends on
+// the list and on the kind of routine it is declared on, not on the routine's
+// name, so two routines declaring one list share one answer, and a key built
+// from the declaration finds it without knowing which catalog routine the
+// declaration was paired with.
+func RoutineArguments(routine schemamodel.Function) string {
+	kind := schemamodel.FunctionKindFunction
+	if routine.IsProcedure() {
+		kind = schemamodel.FunctionKindProcedure
+	}
+	return lengthPrefixed(kind, routine.Parameters)
+}
+
 // encode renders an identity as an opaque string whose component boundaries
 // come from the lengths written in front of each component, never from a
 // separator a component could contain.
 func encode(id objectidentity.ID) string {
-	var b strings.Builder
-	for _, part := range []string{
+	return lengthPrefixed(
 		string(id.Kind),
 		id.Catalog.Normalized,
 		id.Schema.Normalized,
 		id.Parent.Normalized,
 		id.Name.Normalized,
 		id.Signature,
-	} {
+	)
+}
+
+// lengthPrefixed writes each part after its byte length, so the boundaries are
+// read from the lengths and never from the content.
+func lengthPrefixed(parts ...string) string {
+	var b strings.Builder
+	for _, part := range parts {
 		b.WriteString(strconv.Itoa(len(part)))
 		b.WriteByte(':')
 		b.WriteString(part)

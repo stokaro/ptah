@@ -87,12 +87,7 @@ func normalizeRoutineArgument(argument string) string {
 	// A default is not part of the identity, and the catalog drops it. The
 	// expression may contain anything, including commas already handled by the
 	// top-level split, so the whole tail goes.
-	if index := indexKeyword(text, "default"); index >= 0 {
-		text = strings.TrimSpace(text[:index])
-	}
-	if index := strings.Index(text, "="); index >= 0 {
-		text = strings.TrimSpace(text[:index])
-	}
+	text, _, _ = CutDefault(text)
 	mode := ""
 	lowered := strings.ToLower(text)
 	for _, candidate := range routineArgumentModes {
@@ -138,74 +133,92 @@ func normalizeRoutineType(text string) string {
 	return strings.ToLower(joined) + array
 }
 
-// indexKeyword finds a whole-word keyword outside quotes, so a DEFAULT inside a
-// string literal is not mistaken for the clause.
-func indexKeyword(text, keyword string) int {
-	lowered := strings.ToLower(text)
-	depth := 0
-	quoted := false
-	for i := 0; i < len(lowered); i++ {
-		switch lowered[i] {
-		case '\'':
-			quoted = !quoted
-		case '(':
-			if !quoted {
-				depth++
-			}
-		case ')':
-			if !quoted {
-				depth--
-			}
+// CutDefault splits one argument at its default: the declaration before a
+// top-level DEFAULT or `=`, and the expression after it, both trimmed. found is
+// false for an argument that declares no default, and declaration is then the
+// whole argument.
+//
+// The two spellings are one clause, and PostgreSQL prints both as DEFAULT. Only
+// a top-level occurrence counts, so `=` or DEFAULT inside a string literal, a
+// quoted name or the default's own parentheses is not taken for the clause.
+func CutDefault(argument string) (declaration, expression string, found bool) {
+	at, width := -1, 0
+	topLevel(argument, func(index int) bool {
+		switch {
+		case argument[index] == '=':
+			at, width = index, 1
+		case hasWordAt(argument, index, "default"):
+			at, width = index, len("default")
+		default:
+			return true
 		}
-		if quoted || depth != 0 {
-			continue
-		}
-		if !strings.HasPrefix(lowered[i:], keyword) {
-			continue
-		}
-		if i > 0 && lowered[i-1] != ' ' {
-			continue
-		}
-		after := i + len(keyword)
-		if after < len(lowered) && lowered[after] != ' ' {
-			continue
-		}
-		return i
+		return false
+	})
+	if at < 0 {
+		return strings.TrimSpace(argument), "", false
 	}
-	return -1
+	return strings.TrimSpace(argument[:at]), strings.TrimSpace(argument[at+width:]), true
 }
 
-// splitTopLevel splits an argument list on commas that are not inside
-// parentheses or a string literal, so `numeric(10,2)` stays one argument.
-func splitTopLevel(text string) []string {
-	parts := make([]string, 0)
+// hasWordAt reports whether word, in any case, stands at text[index] as a
+// whole word.
+func hasWordAt(text string, index int, word string) bool {
+	end := index + len(word)
+	return end <= len(text) && strings.EqualFold(text[index:end], word) &&
+		(index == 0 || !isWordByte(text[index-1])) &&
+		(end == len(text) || !isWordByte(text[end]))
+}
+
+// isWordByte reports whether a byte can be part of an unquoted SQL word.
+func isWordByte(character byte) bool {
+	return character == '_' || character == '$' ||
+		character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' || character >= 0x80
+}
+
+// topLevel calls visit with the index of every byte of text outside
+// parentheses, brackets, string literals and quoted identifiers, in order, and
+// stops when visit answers false. A default can hold all of them --
+// `ARRAY[1, 2]`, `'a,b'`, `lower('X')` -- and none of what is inside is part of
+// the argument list's own structure.
+func topLevel(text string, visit func(index int) bool) {
 	depth := 0
-	quoted := false
-	current := strings.Builder{}
+	var quote byte
 	for i := 0; i < len(text); i++ {
 		character := text[i]
-		switch character {
-		case '\'':
-			quoted = !quoted
-		case '(':
-			if !quoted {
-				depth++
+		switch {
+		case quote != 0:
+			if character == quote {
+				quote = 0
 			}
-		case ')':
-			if !quoted {
-				depth--
-			}
-		case ',':
-			if !quoted && depth == 0 {
-				parts = append(parts, current.String())
-				current.Reset()
-				continue
+		case character == '\'' || character == '"':
+			quote = character
+		case character == '(' || character == '[':
+			depth++
+		case character == ')' || character == ']':
+			depth--
+		case depth == 0:
+			if !visit(i) {
+				return
 			}
 		}
-		current.WriteByte(character)
 	}
-	if strings.TrimSpace(current.String()) != "" {
-		parts = append(parts, current.String())
+}
+
+// splitTopLevel splits an argument list on its top-level commas, so
+// `numeric(10,2)` and `DEFAULT 'a,b'` stay one argument each.
+func splitTopLevel(text string) []string {
+	parts := make([]string, 0)
+	start := 0
+	topLevel(text, func(index int) bool {
+		if text[index] == ',' {
+			parts = append(parts, text[start:index])
+			start = index + 1
+		}
+		return true
+	})
+	if rest := text[start:]; strings.TrimSpace(rest) != "" {
+		parts = append(parts, rest)
 	}
 	return parts
 }
@@ -227,13 +240,7 @@ func InputTypes(arguments string) string {
 	parts := splitTopLevel(arguments)
 	types := make([]string, 0, len(parts))
 	for _, part := range parts {
-		text := strings.TrimSpace(part)
-		if index := indexKeyword(text, "default"); index >= 0 {
-			text = strings.TrimSpace(text[:index])
-		}
-		if index := strings.Index(text, "="); index >= 0 {
-			text = strings.TrimSpace(text[:index])
-		}
+		text, _, _ := CutDefault(part)
 		mode, rest := splitArgumentMode(text)
 		if mode == "out" || rest == "" {
 			continue
@@ -264,13 +271,7 @@ func InputTypes(arguments string) string {
 func ImpliedResult(arguments string) string {
 	var types []string
 	for _, part := range splitTopLevel(arguments) {
-		text := strings.TrimSpace(part)
-		if index := indexKeyword(text, "default"); index >= 0 {
-			text = strings.TrimSpace(text[:index])
-		}
-		if index := strings.Index(text, "="); index >= 0 {
-			text = strings.TrimSpace(text[:index])
-		}
+		text, _, _ := CutDefault(part)
 		mode, rest := splitArgumentMode(text)
 		if (mode == "out" || mode == "inout") && rest != "" {
 			types = append(types, normalizeRoutineType(withoutParameterName(rest)))

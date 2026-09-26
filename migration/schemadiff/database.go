@@ -103,6 +103,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
+	arguments, err := resolveRoutineArguments(ctx, conn, desired, database)
+	if err != nil {
+		return nil, nil, err
+	}
 	// Every resolver's answer reaches the comparison the same way: a copy of
 	// the options carrying the maps that have something in them. The copy is
 	// what keeps the caller's options untouched, which matters because a
@@ -115,6 +119,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		indexes:    indexes,
 		columns:    columns,
 		triggers:   triggers,
+		arguments:  arguments,
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -132,6 +137,7 @@ type resolvedExpressions struct {
 	indexes    map[string]config.IndexExpression
 	columns    map[string]config.ColumnSpelling
 	triggers   map[string]config.TriggerCondition
+	arguments  map[string]config.RoutineArguments
 }
 
 // empty reports that no server answered for anything, which is every offline
@@ -139,7 +145,7 @@ type resolvedExpressions struct {
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
 		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.columns) == 0 &&
-		len(r.triggers) == 0
+		len(r.triggers) == 0 && len(r.arguments) == 0
 }
 
 // withResolvedExpressions returns the options the comparison should run under.
@@ -178,6 +184,9 @@ func withResolvedExpressions(
 	}
 	if len(resolved.triggers) > 0 {
 		merged.TriggerConditions = resolved.triggers
+	}
+	if len(resolved.arguments) > 0 {
+		merged.RoutineArguments = resolved.arguments
 	}
 	return merged
 }
@@ -227,6 +236,86 @@ func resolveTriggerConditions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return conditions, nil
+}
+
+// resolveRoutineArguments asks the server to spell the argument list of every
+// declared routine whose name the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: a routine being
+// created carries its declaration into the CREATE unchanged. The name is
+// matched loosely, on the routine's own name in any schema and case, because a
+// probe too many costs one CREATE in a rolled-back transaction and a probe too
+// few is a routine dropped and created on every plan.
+//
+// Each probe is the CREATE the renderer writes for the declared kind,
+// arguments and return type, in pg_temp and with a body nobody reads: the
+// server spells the arguments the way it would for the plan's own statement.
+func resolveRoutineArguments(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+) (map[string]config.RoutineArguments, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]bool, len(database.Functions))
+	for _, function := range database.Functions {
+		held[strings.ToLower(function.Name)] = true
+	}
+	dialect := conn.Info().Dialect
+	seen := make(map[string]bool, len(desired.Functions))
+	var probes []dbexprprobe.RoutineArgumentsProbe
+	for _, function := range desired.Functions {
+		key := exprkey.RoutineArguments(function)
+		if strings.TrimSpace(function.Parameters) == "" || seen[key] || !held[strings.ToLower(routineName(function.Name))] {
+			continue
+		}
+		seen[key] = true
+		if probe, ok := routineArgumentsProbe(function, key, len(probes), dialect); ok {
+			probes = append(probes, probe)
+		}
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	arguments, err := dbexprprobe.ResolveRoutineArguments(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return arguments, nil
+}
+
+// routineName is a declared routine's own name, without the schema a
+// declaration may qualify it with.
+func routineName(name string) string {
+	if ref, ok := tableref.Parse(name); ok {
+		return ref.Name
+	}
+	return name
+}
+
+// routineArgumentsProbe renders the probe for one declared routine, or reports
+// that the renderer refused it, in which case the arguments stay unresolved.
+func routineArgumentsProbe(
+	function schemamodel.Function,
+	key string,
+	index int,
+	dialect string,
+) (dbexprprobe.RoutineArgumentsProbe, bool) {
+	name := fmt.Sprintf("ptah_routine_probe_%d", index)
+	statement, err := renderer.RenderSQL(dialect, modelast.FromFunction(schemamodel.Function{
+		Name:       "pg_temp." + name,
+		Kind:       function.Kind,
+		Parameters: function.Parameters,
+		Returns:    function.Returns,
+		Language:   "sql",
+		Body:       "SELECT NULL",
+	}))
+	if err != nil {
+		return dbexprprobe.RoutineArgumentsProbe{}, false
+	}
+	return dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name, Statement: statement}, true
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of
