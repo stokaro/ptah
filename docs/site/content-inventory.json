@@ -330,8 +330,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14523,
-      "sourceBytes": 101179
+      "visibleWords": 14559,
+      "sourceBytes": 101405
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -598,8 +598,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12968,
-      "sourceBytes": 94874
+      "visibleWords": 13097,
+      "sourceBytes": 95605
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -710,8 +710,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2497,
-      "sourceBytes": 17822
+      "visibleWords": 2499,
+      "sourceBytes": 17787
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1483,8 +1483,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 2579,
-      "sourceBytes": 21270
+      "visibleWords": 2608,
+      "sourceBytes": 21423
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -4295,8 +4295,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14735,
-      "sourceBytes": 101858
+      "visibleWords": 14776,
+      "sourceBytes": 102089
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

@@ -907,7 +907,10 @@ Use a disposable dev database. Ptah only reads a database used as `--to`; it
 never cleans or mutates that database. Ptah rejects a desired database that
 identifies the same host, port, and database as `--dev-url`, even when
 credentials, connection options, scheme aliases, or an explicit default port
-differ. Repeated `--schema` values filter both sides of the comparison and the
+differ. After reading it, Ptah also asks both servers which database each
+session selected and refuses before the dev database is cleaned when the
+answers match, which catches a connection pooler serving one database under
+two names. Repeated `--schema` values filter both sides of the comparison and the
 generated output.
 
 They do not narrow the [dev database

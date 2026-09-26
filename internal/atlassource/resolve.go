@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
@@ -55,6 +56,14 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
+	// Protected are the databases the dev database must not be: the target a
+	// plan is computed for, and a database read as the other side of a
+	// comparison. A dev database that replays a migration directory or holds
+	// a materialized declaration is reset first, so each is compared live with
+	// the dev database after it is connected and before it is reset; see
+	// [devlock.EnsureDistinct]. A URL comparison of the same pair runs earlier
+	// and cannot see an alias a connection pooler serves under another name.
+	Protected []devlock.Protected
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own, as
 	// [ptah.run/internal/devdocker.DisposableServerDeclared] resolved it. A
@@ -433,6 +442,10 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 		return fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// The replay resets the dev database before its first migration.
+	if err := devlock.EnsureDistinct(ctx, conn, opts.Protected...); err != nil {
+		return err
+	}
 
 	var finishErr error
 	replay := migrationreplay.WithReplayedSnapshot

@@ -12,6 +12,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"
 )
@@ -319,4 +320,55 @@ func assertSQLiteDevEmpty(c *qt.C, devURL string) {
 	`, "main").Scan(&count)
 	c.Assert(err, qt.IsNil)
 	c.Assert(count, qt.Equals, 0)
+}
+
+// errDevIsProtected is the refusal the replay test protects a database with.
+var errDevIsProtected = errors.New("the dev database is a database this run reads")
+
+// TestResolve_MigrationDirRefusesADevDatabaseThatIsProtected replays a
+// directory with the dev database named as a protected database. The replay
+// resets the dev database before its first migration, so the refusal has to
+// come first, and the database keeps its table and its row.
+func TestResolve_MigrationDirRefusesADevDatabaseThatIsProtected(t *testing.T) {
+	c := qt.New(t)
+	dir := writeMigrationDir(t)
+	devURL := seedSQLite(t, "CREATE TABLE kept (id INTEGER PRIMARY KEY); INSERT INTO kept VALUES (1);")
+	set := classifySingle(t, "--to", "file://"+dir)
+
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect:     "sqlite",
+		DialectFlag: "--url",
+		DevURL:      devURL,
+		Protected:   []devlock.Protected{{URL: devURL, Refusal: errDevIsProtected}},
+	})
+
+	c.Assert(err, qt.ErrorIs, errDevIsProtected)
+	c.Assert(state.Schema, qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var rows int
+	c.Assert(conn.QueryRowContext(t.Context(), "SELECT count(*) FROM kept").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
+}
+
+// TestResolve_MigrationDirReplaysBesideAProtectedDatabase is the control: a
+// protected database that is not the dev database does not stop the replay.
+func TestResolve_MigrationDirReplaysBesideAProtectedDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := writeMigrationDir(t)
+	protectedURL := seedSQLite(t, "CREATE TABLE kept (id INTEGER PRIMARY KEY)")
+	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
+	set := classifySingle(t, "--to", "file://"+dir)
+
+	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect:     "sqlite",
+		DialectFlag: "--url",
+		DevURL:      devURL,
+		Protected:   []devlock.Protected{{URL: protectedURL, Refusal: errDevIsProtected}},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.Schema.Tables, qt.HasLen, 1)
+	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "replayed_users")
 }

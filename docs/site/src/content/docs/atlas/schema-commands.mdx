@@ -1207,6 +1207,13 @@ loopback host spellings, and driver-level endpoint/database overrides.
 Network URLs with the same dialect and selected database name fail closed
 across different endpoints; malformed comparison inputs fail before reset.
 
+A URL comparison cannot see a connection pooler that serves one database under
+two names, so after connecting Ptah also asks each server which database the
+session selected, and refuses when the dev database is the target or a
+database-URL `--to`. That answer is read before the dev database is reset:
+before the plan is rehearsed, and before a migration-directory `--to` is
+replayed on it.
+
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one
 target database. Strict CE mode first inventories an explicit `--schema` target
@@ -1687,8 +1694,12 @@ without a dev database, as native `ptah schema diff` does; see
 [Extension environment
 variables](../../reference/extension-variables/#ptah_atlas_diff_without_dev_url).
 
-Ptah does not execute Atlas's dev-database simulation. The dev URL selects the
-dialect and hosts migration-directory replays.
+The dev URL selects the dialect and hosts migration-directory replays. When
+`--to` is a database or a migration directory and `--from` is a schema file or
+directory, the `--from` side is also created on the dev database and read back,
+as on Atlas. Both reset the dev database first, so a database-URL side must not
+be the dev database: Ptah compares the URLs, then asks each server which
+database the session selected, and refuses before the reset when they match.
 
 PostgreSQL-family server namespaces are not migration-managed desired state.
 An authored `schema "pg_catalog" {}`, `schema "information_schema" {}`, or

@@ -104,6 +104,19 @@ const (
 	// `database` parameter.
 	MySQLSocket
 	MariaDBSocket
+	// PostgreSQLAliased is a database of its own on the PostgreSQL test server,
+	// and PostgreSQLAlias is the same database reached through the pooler
+	// under another name.
+	//
+	// They are engines of their own because the alias is what they are for:
+	// two URLs that name different databases and reach one. No comparison of
+	// the URLs can see that, only the server's answer about which database a
+	// session selected can, and a test proving a dev database is refused
+	// before it is reset needs a pair only that answer catches
+	// (stokaro/ptah#3769). The database is not ptah_test, so a regression
+	// empties it rather than the database every other test shares.
+	PostgreSQLAliased
+	PostgreSQLAlias
 )
 
 // source is where one engine's address comes from.
@@ -213,6 +226,14 @@ var sources = map[Engine]source{
 	MariaDBSocket: {
 		canonical: "MARIADB_SOCKET_TEST_URL",
 		scheme:    []string{"mariadb+unix", "maria+unix", "mysql+unix"},
+	},
+	PostgreSQLAliased: {
+		canonical: "POSTGRES_ALIASED_TEST_URL",
+		scheme:    []string{"postgres", "postgresql"},
+	},
+	PostgreSQLAlias: {
+		canonical: "POSTGRES_ALIAS_TEST_URL",
+		scheme:    []string{"postgres", "postgresql"},
 	},
 }
 
@@ -336,6 +357,10 @@ func engineName(engine Engine) string {
 		return "MySQL through its Unix socket"
 	case MariaDBSocket:
 		return "MariaDB through its Unix socket"
+	case PostgreSQLAliased:
+		return "PostgreSQL database that the pooler also serves under another name"
+	case PostgreSQLAlias:
+		return "PostgreSQL database reached through the pooler under another name"
 	}
 	return engine.String()
 }
@@ -523,7 +548,7 @@ func Engines() []Engine {
 	return []Engine{
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
-		MySQLSocket, MariaDBSocket,
+		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
 	}
 }
 

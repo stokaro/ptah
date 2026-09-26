@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -684,10 +685,17 @@ func loadDesiredApplySchema(
 		}
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:                   conn.Info().Dialect,
-		DialectFlag:               "--url",
-		DialectFromServer:         true,
-		DevURL:                    opts.DevURL,
+		Dialect:           conn.Info().Dialect,
+		DialectFlag:       "--url",
+		DialectFromServer: true,
+		DevURL:            opts.DevURL,
+		// A --to migration directory replays on the dev database, and the
+		// replay resets it first: the dev database must not be the target, or
+		// a database --to also names.
+		Protected: append(
+			[]devlock.Protected{{Conn: conn, Refusal: errReplayDevURLIsTarget}},
+			set.DevProtected()...,
+		),
 		DevServerDisposable:       opts.DevServerDisposable,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,

@@ -447,6 +447,28 @@ jobs:
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_realmdev'
 
+      # ptah_aliased on the PostgreSQL service, served by the PgBouncer
+      # service under a second name, ptah_alias. Two URLs naming the two reach
+      # one database, and no comparison of the URLs can see it: only the
+      # server says which database a session selected. The tests that use the
+      # pair prove a dev database is refused before it is reset
+      # (stokaro/ptah#3769). It is a database of its own, so a regression
+      # empties it rather than ptah_test.
+      #
+      # The image writes pgbouncer.ini from its environment and names each
+      # pooled database after the database it reaches, so the alias is added
+      # to the file and the pooler reloads it. The last line proves the alias
+      # reaches ptah_aliased before any test relies on it.
+      - name: Serve a PostgreSQL database under a second name
+        run: |
+          PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_aliased'
+          docker exec "${{ job.services.pgbouncer.id }}" sh -c \
+            'sed -i "/^\[databases\]/a ptah_alias = host=postgres port=5432 auth_user=ptah_user dbname=ptah_aliased" /etc/pgbouncer/pgbouncer.ini && kill -HUP 1'
+          sleep 1
+          PGPASSWORD=ptah_password psql -h localhost -p 6432 -U ptah_user -d ptah_alias \
+            -v ON_ERROR_STOP=1 -tAc 'SELECT current_database()' | grep -x ptah_aliased
+
       # The reference is a source archive pinned by checksum in
       # scripts/atlas-ce-reference.lock, so the lock file IS the identity of the
       # binary built from it and makes an exact cache key. Measured on run
@@ -496,6 +518,11 @@ jobs:
           MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
+          # One database twice: directly, and through PgBouncer under the
+          # second name the step "Serve a PostgreSQL database under a second
+          # name" gives it.
+          POSTGRES_ALIASED_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_aliased?sslmode=disable"
+          POSTGRES_ALIAS_TEST_URL: "postgres://ptah_user:ptah_password@localhost:6432/ptah_alias?sslmode=disable"
           # The same two servers through their Unix sockets, naming no
           # database: a test creates one over TCP and names it with the
           # `database` parameter.

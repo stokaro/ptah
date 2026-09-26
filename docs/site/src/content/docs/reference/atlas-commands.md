@@ -803,7 +803,8 @@ what the community binary does.
 directory; or one `env://` reference into the evaluated `atlas.hcl`
 environment. Source kinds cannot be mixed, the database source must use the
 `--dev-url` dialect, and a desired database must not identify the same database
-as `--dev-url`.
+as `--dev-url`, by its URL or by what the two servers answer about the database
+each session selected.
 
 **Flags**
 
@@ -1299,13 +1300,17 @@ a directory of SQL files or a migration directory, and the apply is refused
 without one, with Atlas's `--dev-url cannot be empty` sentence and its link to
 Atlas's dev-database page. A database, an HCL or YAML file or a directory of
 HCL files needs none, and `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file
-or directory without one. Before the apply, `--dev-url` rehearses the exact
-ordered plan on the dev database — reset, the target's current schema
-recreated, then the planned (or edited) statements executed under the same
-transaction mode. A failed rehearsal refuses the apply
-with the target unchanged; the dev database must not be the target and must
-share its schema scope. The rehearsal runs under `--dry-run` too, so a dry run
-cannot report a plan the real apply would refuse.
+or directory without one.
+
+Before the apply, `--dev-url` rehearses the exact ordered plan on the dev
+database — reset, the target's current schema recreated, then the planned (or
+edited) statements executed under the same transaction mode. A failed rehearsal
+refuses the apply with the target unchanged; the dev database must not be the
+target, by its URL
+or by what the two servers answer about the database each session selected,
+and must share its schema scope. Both comparisons run before the dev database
+is reset. The rehearsal runs under `--dry-run` too, so a dry run cannot report
+a plan the real apply would refuse.
 
 Native twin: [`ptah schema apply`](../native-commands/).
 

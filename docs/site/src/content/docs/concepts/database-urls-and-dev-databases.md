@@ -111,13 +111,13 @@ exercise a real server dialect — see
 - **Disposable means Ptah may drop everything it supports.** Dev and shadow
   database workflows clean user objects, and test seed steps bypass the
   seeder's protected-environment guards. Point these flags at scratch databases
-  only, never at a real environment. Rollback verification rejects a dev or
-  shadow URL that identifies the target database, including equivalent URL
-  aliases. Before reset it also compares the live dialect and selected
-  database/catalog realm from both connections. Equal network database names
-  fail closed across different endpoints because DNS aliases and replicated
-  members cannot be proven independent before destructive cleanup. Cleanup
-  rejects known system, template, metadata, and administrative database names.
+  only, never at a real environment. Rollback verification, `schema apply`,
+  `schema diff`, and `migrate diff` refuse, before any reset, a dev or shadow
+  URL naming a database they read, by URL or by the realm each server reports.
+  Equal network database names fail closed across different endpoints because
+  DNS aliases and replicated members cannot be proven independent before
+  destructive cleanup. Cleanup rejects known system, template, metadata, and
+  administrative database names.
 - **Migration-diff scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas `migrate diff` compares and emits. They do not
   limit which schemas a migration may create or which user schemas final

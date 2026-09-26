@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/pathguard"
@@ -483,9 +484,30 @@ func (s Set) EnsureDevIsolation(devURL string) error {
 		return fmt.Errorf("compare %s database identity with --dev-url: %w", s.Flag, err)
 	}
 	if same {
-		return fmt.Errorf("%s database must differ from --dev-url because the dev database is reset during planning", s.Flag)
+		return s.devIsolationError()
 	}
 	return nil
+}
+
+// DevProtected is the database this set reads, as the dev database must not
+// be it: a [devlock.Protected] carrying the refusal EnsureDevIsolation gives.
+// It is empty for a set that reads no database.
+//
+// EnsureDevIsolation compares URLs, before anything is connected, and cannot
+// see every alias. A caller that resets the dev database hands these to
+// [ResolveOptions.Protected], or to [devlock.EnsureDistinct] itself, so the
+// same pair is compared live before the reset.
+func (s Set) DevProtected() []devlock.Protected {
+	if s.Kind != KindDatabase || len(s.Sources) == 0 {
+		return nil
+	}
+	return []devlock.Protected{{URL: s.Sources[0].Raw, Refusal: s.devIsolationError()}}
+}
+
+// devIsolationError is the refusal of a dev database that is this set's
+// database, by URL or by what the server answers.
+func (s Set) devIsolationError() error {
+	return fmt.Errorf("%s database must differ from --dev-url because the dev database is reset during planning", s.Flag)
 }
 
 // ImpliedDialect returns the dialect implied by a database-URL set. Local-file
