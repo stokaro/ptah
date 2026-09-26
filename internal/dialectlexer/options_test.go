@@ -39,6 +39,17 @@ func TestOptions_HappyPath(t *testing.T) {
 			name:    "postgres",
 			dialect: "postgresql",
 			want: lexer.Options{
+				StandardStrings:           true,
+				PostgreSQLEscapeStrings:   true,
+				PostgreSQLStringConstants: true,
+			},
+		},
+		{
+			// CockroachDB 26.3 refuses a -- comment between continued strings
+			// and has no U&'...' strings, so it keeps only the E'...' prefix.
+			name:    "cockroachdb",
+			dialect: "cockroachdb",
+			want: lexer.Options{
 				StandardStrings:         true,
 				PostgreSQLEscapeStrings: true,
 			},

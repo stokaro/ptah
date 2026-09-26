@@ -91,6 +91,27 @@ type Options struct {
 	// strings.
 	PostgreSQLEscapeStrings bool
 
+	// PostgreSQLStringConstants reads the two string constant forms
+	// PostgreSQL's own scanner reads beyond E'...' and dollar quotes, each as
+	// one TokenString because each is one constant to the server:
+	//
+	//   - a quoted string continued by another: two single-quoted segments
+	//     separated only by whitespace that holds at least one newline, where
+	//     a -- comment counts as whitespace and a block comment does not
+	//     (section 4.1.2.2 of the PostgreSQL manual). A continued segment is
+	//     read the way the first one was, so an E'...' string's continuation
+	//     keeps its backslash escapes;
+	//   - U&'...', a Unicode escape string, with the UESCAPE clause that may
+	//     follow it.
+	//
+	// Two segments on one line stay two tokens, as they are two to the server,
+	// which refuses them. [StringValue] reads the text of either form.
+	//
+	// It is PostgreSQL's rule, not the family's: CockroachDB 26.3, measured,
+	// continues a string only across plain whitespace, refuses a -- comment in
+	// the gap, and has no U&'...' strings.
+	PostgreSQLStringConstants bool
+
 	// RequireWhitespaceAfterDashDash makes -- start a line comment only when
 	// the following character is whitespace or a control character. MySQL and
 	// MariaDB require this boundary; in other dialects -- always starts a line
@@ -241,6 +262,8 @@ func (l *Lexer) NextToken() Token {
 			return l.scanWhitespace()
 		case l.isPostgreSQLEscapeString(ch):
 			return l.scanPostgreSQLEscapeString()
+		case l.isUnicodeEscapeString(ch):
+			return l.scanUnicodeEscapeString()
 		case ch == '\'' || ch == '"':
 			return l.scanString()
 		case ch == '$':
@@ -386,6 +409,81 @@ func (l *Lexer) scanPostgreSQLEscapeString() Token {
 }
 
 func (l *Lexer) scanStringStandardWithBackslashMode(mode stringBackslashMode) Token {
+	if l.consumeQuoted(mode) == '\'' {
+		l.consumeContinuations(mode)
+	}
+	return l.emit(TokenString)
+}
+
+// scanUnicodeEscapeString scans U&'...', its continuations and the UESCAPE
+// clause after them. Its backslashes are ordinary characters to the scanner,
+// as in a standard string: the escapes are read from the whole constant once
+// it is complete, so one may even span two segments.
+func (l *Lexer) scanUnicodeEscapeString() Token {
+	l.advance() // consume U
+	l.advance() // consume &
+	l.consumeQuoted(stringBackslashLiteral)
+	l.consumeContinuations(stringBackslashLiteral)
+	l.consumeUnicodeEscapeClause()
+	return l.emit(TokenString)
+}
+
+// consumeContinuations advances over the segments that continue the quoted
+// string just read, each read in the same mode as the first.
+func (l *Lexer) consumeContinuations(mode stringBackslashMode) {
+	if !l.opts.PostgreSQLStringConstants {
+		return
+	}
+	for {
+		next, continued := continuationAt(l.input, l.pos)
+		if !continued {
+			return
+		}
+		l.pos = next
+		l.consumeQuoted(mode)
+	}
+}
+
+// consumeUnicodeEscapeClause advances over `UESCAPE '<character>'` after a
+// Unicode escape string, and over nothing when no clause follows. The server
+// takes any string constant but a Unicode escape string for the character,
+// and any whitespace and comments around the keyword.
+func (l *Lexer) consumeUnicodeEscapeClause() {
+	constant, found := unicodeEscapeClauseAt(l.input, l.pos)
+	if !found {
+		return
+	}
+	end := l.pos
+	l.pos = constant
+	if !l.consumeStringConstant() {
+		l.pos = end
+	}
+}
+
+// consumeStringConstant advances over the string constant at the current
+// position -- a quoted string with its continuations, an escape string, or a
+// dollar-quoted string -- and reports whether one was there.
+func (l *Lexer) consumeStringConstant() bool {
+	ch := l.peek()
+	switch {
+	case ch == '\'':
+		l.consumeQuoted(stringBackslashLiteral)
+		l.consumeContinuations(stringBackslashLiteral)
+	case l.isPostgreSQLEscapeString(ch):
+		l.advance() // consume E prefix
+		l.consumeQuoted(stringBackslashEscape)
+		l.consumeContinuations(stringBackslashEscape)
+	case ch == '$' && l.isDollarQuotedString():
+		return l.consumeDollarQuoted()
+	default:
+		return false
+	}
+	return true
+}
+
+// consumeQuoted advances over one quoted segment, from its opening quote
+// through its closing one, and returns the quote.
+func (l *Lexer) consumeQuoted(mode stringBackslashMode) rune {
 	quote := l.advance() // consume opening quote
 
 	for {
@@ -417,11 +515,16 @@ func (l *Lexer) scanStringStandardWithBackslashMode(mode stringBackslashMode) To
 		l.advance()
 	}
 
-	return l.emit(TokenString)
+	return quote
 }
 
 func (l *Lexer) isPostgreSQLEscapeString(ch rune) bool {
 	return l.opts.PostgreSQLEscapeStrings && (ch == 'e' || ch == 'E') && l.peekNext() == '\''
+}
+
+func (l *Lexer) isUnicodeEscapeString(ch rune) bool {
+	return l.opts.PostgreSQLStringConstants && (ch == 'u' || ch == 'U') && l.peekNext() == '&' &&
+		l.peekAfterNext() == '\''
 }
 
 func (l *Lexer) isDashDashComment() bool {
@@ -654,6 +757,19 @@ func (l *Lexer) isDollarQuotedString() bool {
 
 // scanDollarQuotedString scans a PostgreSQL dollar-quoted string literal
 func (l *Lexer) scanDollarQuotedString() Token {
+	tagStart := l.pos
+	if !l.consumeDollarQuoted() {
+		// Invalid tag character - treat as regular operator
+		l.pos = tagStart + 1
+		return l.emit(TokenOperator)
+	}
+	return l.emit(TokenString)
+}
+
+// consumeDollarQuoted advances over a dollar-quoted string. It reports false,
+// and advances over nothing, when the opening tag holds a character no tag
+// may.
+func (l *Lexer) consumeDollarQuoted() bool {
 	// Extract the opening tag (e.g., "$$" or "$tag$")
 	tagStart := l.pos
 	l.advance() // consume first $
@@ -666,9 +782,8 @@ func (l *Lexer) scanDollarQuotedString() Token {
 			break
 		}
 		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
-			// Invalid tag character - treat as regular operator
-			l.pos = tagStart + 1
-			return l.emit(TokenOperator)
+			l.pos = tagStart
+			return false
 		}
 		l.advance()
 	}
@@ -700,5 +815,5 @@ func (l *Lexer) scanDollarQuotedString() Token {
 		l.advance()
 	}
 
-	return l.emit(TokenString)
+	return true
 }

@@ -17,7 +17,14 @@ func Options(dialect string) lexer.Options {
 		DisableHashComments: dialect == platform.SQLServer,
 	}
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.Postgres:
+		options.PostgreSQLEscapeStrings = true
+		options.PostgreSQLStringConstants = true
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		// PostgreSQLStringConstants is PostgreSQL's scanner, which CockroachDB
+		// measurably is not, and which nobody has measured on YugabyteDB or on
+		// Spanner. Left off, a continued or a U& string there is two tokens
+		// and is refused, rather than read by a rule the server may not share.
 		options.PostgreSQLEscapeStrings = true
 	case platform.MySQL:
 		options.RequireWhitespaceAfterDashDash = true

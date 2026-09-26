@@ -72,6 +72,9 @@
 //   - Double-quoted strings: "example string"
 //   - Escape sequences within strings
 //   - Proper handling of quotes within strings
+//   - PostgreSQL's E'...', U&'...' and $tag$...$tag$ strings, and a string
+//     continued on the next line, each as one token where the options ask
+//     for them; [StringValue] reads the text any of them stands for
 //
 // # Comment Support
 //
@@ -88,7 +91,9 @@
 //   - Single-pass tokenization with O(n) complexity
 //   - Minimal memory allocation during tokenization
 //   - Efficient character-by-character processing
-//   - No backtracking or lookahead beyond one character
+//   - Lookahead beyond the current character only where a token's end
+//     depends on it: a dollar quote's tag, and the gap after a string that
+//     may continue it
 //
 // # Error Handling
 //
