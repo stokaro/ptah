@@ -39,6 +39,14 @@ type SourceMigration struct {
 	Repeatable        bool
 	UpNoTransaction   bool
 	DownNoTransaction bool
+	// Path is the slash-separated path, relative to the source root, of the
+	// Liquibase changelog the migration was read from, and Changeset is the
+	// changeset's author:id, as [SkippedChangeset] names one. Each migration
+	// is one changeset, so a caller that keeps only part of it can say which
+	// changeset lost what. Both are empty for the other tools, whose migration
+	// is a file of its own.
+	Path      string
+	Changeset string
 }
 
 // Parser reads a specific source tool's migration directory.

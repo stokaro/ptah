@@ -3,6 +3,8 @@ package atlas
 import (
 	"fmt"
 	"io/fs"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -131,25 +133,39 @@ func reportSkippedChangesets(cmd *cobra.Command, skipped []importer.SkippedChang
 	}
 }
 
-// reportDroppedRollbacks names the source files whose rollback the conversion
-// left behind.
+// reportDroppedRollbacks names each rollback the conversion left behind: the
+// source file, and for Liquibase the changeset in it.
 //
 // An Atlas single-file migration is up-only, so the undo file or down section a
 // source layout carries has nowhere to go. That is the conversion's shape; doing
-// it in silence was the defect. Every import of every layout exited 0 with
-// nothing on either stream, so an operator had no way to learn their undo
-// scripts stayed in the source directory (stokaro/ptah#3116).
+// it in silence would leave an operator no way to learn their undo scripts
+// stayed in the source directory (stokaro/ptah#3116, stokaro/ptah#3753).
 //
 // It goes to stderr, so the report does not enter output a caller parses.
-func reportDroppedRollbacks(cmd *cobra.Command, dropped []string) {
+func reportDroppedRollbacks(cmd *cobra.Command, dropped []atlasmigrateimport.DroppedRollback) {
 	if len(dropped) == 0 {
 		return
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"warning: an Atlas migration holds no rollback, so the rollback in %s was not imported:\n",
-		pluralizeFiles(len(dropped)))
-	for _, file := range dropped {
-		fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", file)
+	fmt.Fprintf(cmd.ErrOrStderr(), "warning: an Atlas migration holds no rollback, so %s not imported:\n",
+		droppedRollbackSubject(dropped))
+	for _, rollback := range dropped {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", strings.TrimSpace(rollback.Path+" "+rollback.Changeset))
+	}
+}
+
+// droppedRollbackSubject says whose rollback was left behind, with its verb: a
+// Liquibase changeset's, or a whole source file's.
+func droppedRollbackSubject(dropped []atlasmigrateimport.DroppedRollback) string {
+	changesets := slices.ContainsFunc(dropped, func(rollback atlasmigrateimport.DroppedRollback) bool {
+		return rollback.Changeset != ""
+	})
+	switch {
+	case changesets && len(dropped) == 1:
+		return "the rollback of this changeset was"
+	case changesets:
+		return fmt.Sprintf("the rollbacks of these %d changesets were", len(dropped))
+	default:
+		return "the rollback in " + pluralizeFiles(len(dropped)) + " was"
 	}
 }
 

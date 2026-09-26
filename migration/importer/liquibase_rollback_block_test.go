@@ -25,7 +25,7 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n/* liquibase rollback\n" +
 				"DROP TABLE t;\n*/\n",
 			want: []importer.SourceMigration{
-				{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE t (id int);", DownSQL: "DROP TABLE t;"},
+				{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);", DownSQL: "DROP TABLE t;"},
 			},
 		},
 		{
@@ -33,7 +33,7 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE a (id int);\n/* liquibase rollback\n" +
 				"DROP TABLE b;\nDROP TABLE a;\n*/\nCREATE TABLE b (id int);\n",
 			want: []importer.SourceMigration{{
-				Version: 1, Name: "s_1", UpSQL: "CREATE TABLE a (id int);\nCREATE TABLE b (id int);",
+				Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE a (id int);\nCREATE TABLE b (id int);",
 				DownSQL: "DROP TABLE b;DROP TABLE a;",
 			}},
 		},
@@ -43,7 +43,7 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 				"CREATE TABLE c (id int);\n--rollback DROP TABLE c;\n/* liquibase rollback\nDROP TABLE b;\n*/\n" +
 				"--rollback DROP TABLE a;\n",
 			want: []importer.SourceMigration{{
-				Version: 1, Name: "s_1",
+				Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1",
 				UpSQL:   "CREATE TABLE a (id int);\nCREATE TABLE b (id int);\nCREATE TABLE c (id int);",
 				DownSQL: "DROP TABLE c;\nDROP TABLE b;DROP TABLE a;",
 			}},
@@ -53,19 +53,19 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE a (id int);\n/* liquibase rollback\n" +
 				"DROP TABLE a;\n*/\n--changeset s:2\nCREATE TABLE b (id int);\n/* liquibase rollback\nDROP TABLE b;\n*/\n",
 			want: []importer.SourceMigration{
-				{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE a (id int);", DownSQL: "DROP TABLE a;"},
-				{Version: 2, Name: "s_2", UpSQL: "CREATE TABLE b (id int);", DownSQL: "DROP TABLE b;"},
+				{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE a (id int);", DownSQL: "DROP TABLE a;"},
+				{Version: 2, Name: "s_2", Path: "changelog.sql", Changeset: "s:2", UpSQL: "CREATE TABLE b (id int);", DownSQL: "DROP TABLE b;"},
 			},
 		},
 		{
 			name:    "a rollback that is not required",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback not required\n",
-			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE t (id int);"}},
+			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);"}},
 		},
 		{
 			name:    "an empty rollback",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback empty\n",
-			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", UpSQL: "CREATE TABLE t (id int);"}},
+			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);"}},
 		},
 		{
 			// Liquibase 5.0.4 read `--rollback;` as a comment in the SQL, and
@@ -74,7 +74,7 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE a (id int);\n--rollback;DROP TABLE b;\n" +
 				"--rollback DROP TABLE a;\n",
 			want: []importer.SourceMigration{{
-				Version: 1, Name: "s_1", UpSQL: "CREATE TABLE a (id int);\n--rollback;DROP TABLE b;",
+				Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE a (id int);\n--rollback;DROP TABLE b;",
 				DownSQL: "DROP TABLE a;",
 			}},
 		},

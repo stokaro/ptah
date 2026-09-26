@@ -12,7 +12,7 @@ import (
 
 // importedRollbackReport runs one import over a source directory the row
 // describes and returns what the conversion said it left behind.
-func importedRollbackReport(c *qt.C, format string, files map[string]string) []string {
+func importedRollbackReport(c *qt.C, format string, files map[string]string) []atlasmigrateimport.DroppedRollback {
 	c.Helper()
 	from := filepath.Join(c.TempDir(), "src")
 	c.Assert(os.MkdirAll(from, 0o755), qt.IsNil)
@@ -39,13 +39,16 @@ func importedRollbackReport(c *qt.C, format string, files map[string]string) []s
 //
 // The rows are the five layouts, each written the way its own tool writes a
 // rollback, and the assertion is the same for all of them: the source file
-// holding the rollback is named.
+// holding the rollback is named. A Liquibase rollback belongs to a changeset,
+// so the changeset is named with its file, on every path the import takes: a
+// numbered file copied whole, a changelog split into changesets, and an XML,
+// YAML or JSON changelog (stokaro/ptah#3753).
 func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
 		files  map[string]string
-		want   []string
+		want   []atlasmigrateimport.DroppedRollback
 	}{
 		{
 			name:   "golang-migrate keeps the rollback in its own file",
@@ -54,7 +57,7 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 				"1_create_users.up.sql":   "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"1_create_users.down.sql": "DROP TABLE users;\n",
 			},
-			want: []string{"1_create_users.down.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "1_create_users.down.sql"}},
 		},
 		{
 			name:   "flyway keeps it in an undo file",
@@ -63,7 +66,7 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 				"V1__create_users.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"U1__create_users.sql": "DROP TABLE users;\n",
 			},
-			want: []string{"U1__create_users.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "U1__create_users.sql"}},
 		},
 		{
 			name:   "goose keeps it in a Down section",
@@ -73,7 +76,7 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
 					"-- +goose Down\nDROP TABLE users;\n",
 			},
-			want: []string{"20260101000000_create_users.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "20260101000000_create_users.sql"}},
 		},
 		{
 			name:   "dbmate keeps it in a migrate:down section",
@@ -83,7 +86,7 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
 					"-- migrate:down\nDROP TABLE users;\n",
 			},
-			want: []string{"20260101000000_create_users.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "20260101000000_create_users.sql"}},
 		},
 		{
 			name:   "liquibase keeps it on a rollback line",
@@ -94,7 +97,7 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
 					"--rollback DROP TABLE users;\n",
 			},
-			want: []string{"20260101000000_create_users.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "20260101000000_create_users.sql", Changeset: "a:1"}},
 		},
 		{
 			name:   "liquibase keeps it in a rollback block",
@@ -105,7 +108,73 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
 					"/* liquibase rollback\nDROP TABLE users;\n*/\n",
 			},
-			want: []string{"20260101000000_create_users.sql"},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "20260101000000_create_users.sql", Changeset: "a:1"}},
+		},
+		{
+			name:   "liquibase names each changeset of a numbered file that had one",
+			format: "liquibase",
+			files: map[string]string{
+				"1_init.sql": "--liquibase formatted sql\n" +
+					"--changeset a:1\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE users;\n" +
+					"--changeset a:2\nCREATE TABLE audit (id INTEGER PRIMARY KEY);\n" +
+					"--changeset a:3\nCREATE TABLE posts (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE posts;\n",
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "1_init.sql", Changeset: "a:1"}, {Path: "1_init.sql", Changeset: "a:3"}},
+		},
+		{
+			name:   "liquibase splits a conventional changelog into changesets",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.sql": "--liquibase formatted sql\n" +
+					"--changeset a:1\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE users;\n" +
+					"--changeset a:2\nCREATE TABLE audit (id INTEGER PRIMARY KEY);\n" +
+					"--changeset a:3\nCREATE TABLE posts (id INTEGER PRIMARY KEY);\n" +
+					"/* liquibase rollback\nDROP TABLE posts;\n*/\n",
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "changelog.sql", Changeset: "a:1"}, {Path: "changelog.sql", Changeset: "a:3"}},
+		},
+		{
+			// A numbered file beside a conventional one is split as well, so
+			// each rollback is named once, by its changeset.
+			name:   "liquibase numbered and conventional files together",
+			format: "liquibase",
+			files: map[string]string{
+				"1_numbered.sql": "--liquibase formatted sql\n--changeset n:1\n" +
+					"CREATE TABLE numbered (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE numbered;\n",
+				"changelog.sql": "--liquibase formatted sql\n--changeset c:1\n" +
+					"CREATE TABLE conventional (id INTEGER PRIMARY KEY);\n--rollback DROP TABLE conventional;\n",
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "1_numbered.sql", Changeset: "n:1"}, {Path: "changelog.sql", Changeset: "c:1"}},
+		},
+		{
+			name:   "liquibase xml",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.xml": `<databaseChangeLog><changeSet id="1" author="a">` +
+					`<sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql><rollback>DROP TABLE users;</rollback>` +
+					`</changeSet></databaseChangeLog>`,
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "changelog.xml", Changeset: "a:1"}},
+		},
+		{
+			name:   "liquibase yaml",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.yaml": "databaseChangeLog:\n  - changeSet:\n      id: \"1\"\n      author: a\n" +
+					"      changes:\n        - sql: CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
+					"      rollback: DROP TABLE users;\n",
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "changelog.yaml", Changeset: "a:1"}},
+		},
+		{
+			name:   "liquibase json",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.json": `{"databaseChangeLog": [{"changeSet": {"id": "1", "author": "a", ` +
+					`"changes": [{"sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);"}], ` +
+					`"rollback": "DROP TABLE users;"}}]}`,
+			},
+			want: []atlasmigrateimport.DroppedRollback{{Path: "changelog.json", Changeset: "a:1"}},
 		},
 	}
 	for _, test := range tests {
@@ -149,6 +218,24 @@ func TestImport_ReportsNothingWhenNoRollbackWasWritten(t *testing.T) {
 			format: "golang-migrate",
 			files: map[string]string{
 				"1_create_users.up.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+			},
+		},
+		{
+			name:   "a liquibase changelog with an empty rollback and one with none",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.xml": `<databaseChangeLog><changeSet id="1" author="a">` +
+					`<sql>CREATE TABLE users (id INTEGER PRIMARY KEY);</sql><rollback/></changeSet>` +
+					`<changeSet id="2" author="a"><sql>CREATE TABLE posts (id INTEGER PRIMARY KEY);</sql></changeSet>` +
+					`</databaseChangeLog>`,
+			},
+		},
+		{
+			name:   "a conventional liquibase changelog whose rollback is not required",
+			format: "liquibase",
+			files: map[string]string{
+				"changelog.sql": "--liquibase formatted sql\n--changeset a:1\n" +
+					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n--rollback not required\n",
 			},
 		},
 		{

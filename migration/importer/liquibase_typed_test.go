@@ -93,7 +93,7 @@ const (
 )
 
 func TestLiquibaseTyped_ThreeSerializationsRenderAlike_HappyPath(t *testing.T) {
-	want := []importer.SourceMigration{{
+	migration := importer.SourceMigration{
 		Version: 1,
 		Name:    "simon_1",
 		UpSQL: `-- POSTGRES TABLE: public.subscriptions --
@@ -105,7 +105,8 @@ CREATE TABLE "public"."subscriptions" (
 CREATE INDEX "subscriptions_account_idx" ON "public"."subscriptions" ("account_id");`,
 		DownSQL: `DROP INDEX "public"."subscriptions_account_idx";
 DROP TABLE "public"."subscriptions";`,
-	}}
+		Changeset: "simon:1",
+	}
 	tests := []struct {
 		name    string
 		file    string
@@ -119,10 +120,13 @@ DROP TABLE "public"."subscriptions";`,
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
+			want := migration
+			want.Path = test.file
+
 			parsed, err := parseLiquibaseFor(c, "postgres", fstest.MapFS{test.file: {Data: []byte(test.content)}})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(parsed.Migrations, qt.DeepEquals, want)
+			c.Assert(parsed.Migrations, qt.DeepEquals, []importer.SourceMigration{want})
 		})
 	}
 }

@@ -10,8 +10,8 @@
 // changeset into a numbered Atlas migration; direct foreign-format apply keeps
 // its existing per-file behavior. Because Atlas single-file migrations are
 // up-only, conversion keeps each migration's up SQL and cannot carry its
-// down/rollback section; [Result.DroppedRollbacks] names the source files whose
-// rollback was left behind, so the loss is reported rather than silent.
+// down/rollback section; [Result.DroppedRollbacks] names each rollback left
+// behind, so the loss is reported rather than silent.
 package atlasmigrateimport
 
 import (
@@ -62,16 +62,16 @@ type Options struct {
 type Result struct {
 	Files   []string
 	SumFile string
-	// DroppedRollbacks names the source files whose rollback body the
-	// conversion could not carry, in directory order.
+	// DroppedRollbacks names each rollback the conversion could not carry, in
+	// directory order, and a Liquibase changeset's in changelog order within
+	// its file.
 	//
 	// An Atlas single-file migration is up-only, so a source layout's undo file
 	// or down section has nowhere to go. Dropping it is the conversion's
-	// documented shape; dropping it in silence was not, and every import of
-	// every layout did exactly that -- exit 0, nothing on either stream, and an
-	// operator with no way to learn their undo scripts stayed behind
-	// (stokaro/ptah#3116).
-	DroppedRollbacks []string
+	// documented shape; dropping it in silence would leave an operator no way
+	// to learn their undo scripts stayed behind (stokaro/ptah#3116,
+	// stokaro/ptah#3753).
+	DroppedRollbacks []DroppedRollback
 	// SkippedChangesets are the Liquibase changesets left out because their
 	// `ignore` is true. Liquibase never runs or records such a changeset, so
 	// leaving it out keeps the history; the caller still names each one.
@@ -91,6 +91,18 @@ type Entry struct {
 	Data []byte
 }
 
+// DroppedRollback is one rollback an import into the Atlas single-file layout
+// could not carry.
+type DroppedRollback struct {
+	// Path is the source file that held the rollback, relative to the source
+	// directory.
+	Path string
+	// Changeset is the Liquibase changeset the rollback belongs to, as
+	// author:id. It is empty for the other layouts, whose rollback belongs to
+	// a whole file.
+	Changeset string
+}
+
 // Loaded is a source migration directory read and converted to in-memory Atlas
 // single-file entries. It is produced by LoadFS or LoadDir and shared by the
 // import (write) path and the apply (in-memory execution) path.
@@ -105,6 +117,9 @@ type Loaded struct {
 	// runs them. Only the import reads a changelog changeset by changeset, so
 	// only it fills this.
 	Skipped []importer.SkippedChangeset
+	// DroppedRollbacks are the rollbacks the entries do not carry. Only the
+	// import reports them, so only it fills this.
+	DroppedRollbacks []DroppedRollback
 }
 
 // FS returns an in-memory fs.FS containing the converted Atlas single-file
@@ -313,28 +328,26 @@ func (c *CapturedImport) Write() (*Result, error) {
 	if len(sum.Entries) != len(entries) {
 		return nil, fmt.Errorf("atlas.sum contains %d entries, want %d", len(sum.Entries), len(entries))
 	}
-	// The SOURCE snapshot, not loaded.FS(): that one holds the converted Atlas
-	// entries, which by construction carry no rollback at all.
-	dropped, err := droppedRollbackFiles(c.Source, c.Format)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{Files: files, SumFile: sumFile, DroppedRollbacks: dropped, SkippedChangesets: loaded.Skipped}, nil
+	return &Result{
+		Files: files, SumFile: sumFile, DroppedRollbacks: loaded.DroppedRollbacks, SkippedChangesets: loaded.Skipped,
+	}, nil
 }
 
 // droppedRollbackFiles names the source files carrying a rollback the Atlas
-// single-file conversion leaves behind.
+// single-file conversion leaves behind, for the layouts other than Liquibase,
+// whose rollback belongs to a whole file. A Liquibase rollback belongs to a
+// changeset, and the Liquibase readings name it themselves.
 //
 // It asks each layout's own recognizer rather than a second table of markers:
 // the goose pragma parser, the dbmate directive parser, the Flyway sum-file
 // classifier and the golang-migrate name pattern all already answer "what is
 // this line, or this file". Only the accumulation is new.
-func droppedRollbackFiles(fsys fs.FS, format Format) ([]string, error) {
+func droppedRollbackFiles(fsys fs.FS, format Format) ([]DroppedRollback, error) {
 	files, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, fmt.Errorf("read source migration directory: %w", err)
 	}
-	dropped := make([]string, 0)
+	var dropped []DroppedRollback
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -344,13 +357,10 @@ func droppedRollbackFiles(fsys fs.FS, format Format) ([]string, error) {
 			return nil, err
 		}
 		if carries {
-			dropped = append(dropped, file.Name())
+			dropped = append(dropped, DroppedRollback{Path: file.Name()})
 		}
 	}
-	if len(dropped) == 0 {
-		return nil, nil
-	}
-	slices.Sort(dropped)
+	slices.SortFunc(dropped, func(a, b DroppedRollback) int { return strings.Compare(a.Path, b.Path) })
 	return dropped, nil
 }
 
@@ -363,16 +373,13 @@ func fileCarriesDroppedRollback(fsys fs.FS, name string, format Format) (bool, e
 	case FormatFlyway:
 		parsed, ok := parseFlywaySumFile(name)
 		return ok && parsed.kind == flywaySumUndo, nil
-	case FormatGoose, FormatDBMate, FormatLiquibase:
+	case FormatGoose, FormatDBMate:
 		if !numberedSQLFileRe.MatchString(name) {
 			return false, nil
 		}
 		data, err := readRawImportSQLFile(fsys, name)
 		if err != nil {
 			return false, err
-		}
-		if format == FormatLiquibase {
-			return liquibaseCarriesRollback(name, data)
 		}
 		return sourceBodyCarriesRollback(string(data), format), nil
 	default:
@@ -415,19 +422,44 @@ func sourceBodyCarriesRollback(body string, format Format) bool {
 	return false
 }
 
-// liquibaseCarriesRollback reports whether a formatted-SQL file holds a
-// changeset whose rollback runs something: SQL, or another changeset's
-// changes. A rollback of "empty" or "not required" runs nothing, and a copy
-// that leaves it out loses nothing.
-func liquibaseCarriesRollback(name string, data []byte) (bool, error) {
-	changelog, err := liquibaserun.ReadFormattedSQL(name, string(data))
-	if err != nil {
-		return false, err
+// liquibaseNumberedRollbacks names the changesets of the numbered
+// formatted-SQL files, copied whole, whose rollback the copy leaves out: one
+// that runs something, SQL or another changeset's changes. A rollback of
+// "empty" or "not required" runs nothing, and a copy that leaves it out loses
+// nothing.
+func liquibaseNumberedRollbacks(fsys fs.FS, names []string) ([]DroppedRollback, error) {
+	var dropped []DroppedRollback
+	for _, name := range slices.Sorted(slices.Values(names)) {
+		data, err := readRawImportSQLFile(fsys, name)
+		if err != nil {
+			return nil, err
+		}
+		changelog, err := liquibaserun.ReadFormattedSQL(name, string(data))
+		if err != nil {
+			return nil, err
+		}
+		for _, changeset := range changelog.Changesets {
+			kind := changeset.Rollback.Kind()
+			if kind == liquibaserun.SQLRollback || kind == liquibaserun.ChangesetRollback {
+				dropped = append(dropped, DroppedRollback{Path: name, Changeset: changeset.Name()})
+			}
+		}
 	}
-	return slices.ContainsFunc(changelog.Changesets, func(changeset liquibaserun.FormattedChangeset) bool {
-		kind := changeset.Rollback.Kind()
-		return kind == liquibaserun.SQLRollback || kind == liquibaserun.ChangesetRollback
-	}), nil
+	return dropped, nil
+}
+
+// liquibaseSplitRollbacks names the changesets whose rollback the changeset
+// parser read and the Atlas migration it became leaves out. The down is what
+// Liquibase runs to roll the changeset back, written or derived, and it is
+// empty when that is nothing.
+func liquibaseSplitRollbacks(migrations []importer.SourceMigration) []DroppedRollback {
+	var dropped []DroppedRollback
+	for _, migration := range migrations {
+		if migration.DownSQL != "" {
+			dropped = append(dropped, DroppedRollback{Path: migration.Path, Changeset: migration.Changeset})
+		}
+	}
+	return dropped
 }
 
 // loadCapturedForImport adds the one format adapter that belongs only to the
@@ -437,7 +469,17 @@ func liquibaseCarriesRollback(name string, data []byte) (bool, error) {
 // continues through loadCaptured and preserves its per-file behavior.
 func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Format) (*Loaded, error) {
 	if format != FormatLiquibase {
-		return loadCaptured(snapshot, dir, format)
+		loaded, err := loadCaptured(snapshot, dir, format)
+		if err != nil {
+			return nil, err
+		}
+		// The SOURCE snapshot, not loaded.FS(): that one holds the converted
+		// Atlas entries, which by construction carry no rollback at all.
+		loaded.DroppedRollbacks, err = droppedRollbackFiles(snapshot, format)
+		if err != nil {
+			return nil, err
+		}
+		return loaded, nil
 	}
 	// Serialized changelogs are converted HERE rather than in loadCaptured,
 	// which is also the direct-apply reading and deliberately keeps one entry
@@ -453,14 +495,14 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 		return nil, err
 	}
 	if len(changelogs) > 0 {
-		entries, skipped, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
+		read, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
 		if err != nil {
 			return nil, err
 		}
-		if err := checkDuplicateConvertedVersions(entries); err != nil {
+		if err := checkDuplicateConvertedVersions(read.entries); err != nil {
 			return nil, err
 		}
-		return &Loaded{Format: format, Dir: dir, Entries: entries, Skipped: skipped}, nil
+		return read.loaded(format, dir), nil
 	}
 	covered, err := SumFileNames(snapshot, format)
 	if err != nil {
@@ -469,28 +511,49 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 	if !slices.ContainsFunc(covered, func(name string) bool {
 		return !numberedSQLFileRe.MatchString(name)
 	}) {
-		return loadCaptured(snapshot, dir, format)
+		loaded, err := loadCaptured(snapshot, dir, format)
+		if err != nil {
+			return nil, err
+		}
+		loaded.DroppedRollbacks, err = liquibaseNumberedRollbacks(snapshot, covered)
+		if err != nil {
+			return nil, err
+		}
+		return loaded, nil
 	}
-	entries, skipped, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
+	read, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkDuplicateConvertedVersions(entries); err != nil {
+	if err := checkDuplicateConvertedVersions(read.entries); err != nil {
 		return nil, err
 	}
-	return &Loaded{Format: format, Dir: dir, Entries: entries, Skipped: skipped}, nil
+	return read.loaded(format, dir), nil
+}
+
+// liquibaseImport is what the import reading of a Liquibase directory that
+// splits changesets produced.
+type liquibaseImport struct {
+	entries []Entry
+	skipped []importer.SkippedChangeset
+	dropped []DroppedRollback
+}
+
+// loaded is the reading as a Loaded directory.
+func (r liquibaseImport) loaded(format Format, dir string) *Loaded {
+	return &Loaded{Format: format, Dir: dir, Entries: r.entries, Skipped: r.skipped, DroppedRollbacks: r.dropped}
 }
 
 func loadConventionalLiquibaseImportEntries(
 	snapshot fsnapshot.Snapshot,
 	covered []string,
-) ([]Entry, []importer.SkippedChangeset, error) {
+) (liquibaseImport, error) {
 	// A directory holding a serialized changelog never reaches this path: it is
 	// taken by the changelog branch of loadCapturedForImport, which refuses a
 	// directory mixing the two shapes rather than reading half of it.
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
-		return nil, nil, err
+		return liquibaseImport{}, err
 	}
 
 	type changeset struct {
@@ -499,22 +562,24 @@ func loadConventionalLiquibaseImportEntries(
 	}
 	changesets := make([]changeset, 0, len(covered))
 	var skipped []importer.SkippedChangeset
+	var dropped []DroppedRollback
 	for _, name := range covered {
 		singleFile, err := fsnapshot.CaptureMatching(snapshot, func(candidate string, _ fs.DirEntry) bool {
 			return candidate == name
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
+			return liquibaseImport{}, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
 		}
 		parsed, err := parser.Parse(singleFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parse liquibase source file %s: %w", name, err)
+			return liquibaseImport{}, fmt.Errorf("parse liquibase source file %s: %w", name, err)
 		}
 		skipped = append(skipped, parsed.Skipped...)
+		dropped = append(dropped, liquibaseSplitRollbacks(parsed.Migrations)...)
 		for _, migration := range parsed.Migrations {
 			identity := sanitizeName(migration.Name)
 			if identity == "" {
-				return nil, nil, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
+				return liquibaseImport{}, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
 			}
 			changesets = append(changesets, changeset{
 				identity: identity,
@@ -536,7 +601,7 @@ func loadConventionalLiquibaseImportEntries(
 		})
 	}
 	sortEntries(entries)
-	return entries, skipped, nil
+	return liquibaseImport{entries: entries, skipped: skipped, dropped: dropped}, nil
 }
 
 // liquibaseMigrationSQL is the Atlas file body for one Liquibase changeset: its
@@ -929,14 +994,14 @@ func snapshotLiquibaseChangelogNames(fsys fs.FS) ([]string, error) {
 // shared parser, which converts the changesets it can, refuses the constructs it
 // cannot by name, and refuses a directory mixing changelogs with formatted SQL
 // (stokaro/ptah#1629).
-func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, []importer.SkippedChangeset, error) {
+func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) (liquibaseImport, error) {
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
-		return nil, nil, err
+		return liquibaseImport{}, err
 	}
 	parsed, err := parser.Parse(fsys)
 	if err != nil {
-		return nil, nil, err
+		return liquibaseImport{}, err
 	}
 	migrations := parsed.Migrations
 	// The same padding the conventional path applies, and for the same measured
@@ -947,7 +1012,7 @@ func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, []
 	for index, migration := range migrations {
 		identity := sanitizeName(migration.Name)
 		if identity == "" {
-			return nil, nil, fmt.Errorf(
+			return liquibaseImport{}, fmt.Errorf(
 				"liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name",
 				migration.Name, strings.Join(changelogs, ", "))
 		}
@@ -957,7 +1022,7 @@ func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, []
 		})
 	}
 	sortEntries(entries)
-	return entries, parsed.Skipped, nil
+	return liquibaseImport{entries: entries, skipped: parsed.Skipped, dropped: liquibaseSplitRollbacks(migrations)}, nil
 }
 
 func rejectUnsupportedLiquibaseChangelogs(fsys fs.FS, files []fs.DirEntry) error {
