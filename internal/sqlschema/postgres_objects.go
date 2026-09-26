@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 )
 
 // This file converts the schema objects beyond tables, indexes and enums that
@@ -332,9 +333,13 @@ func adoptTriggerFunctions(database *schemamodel.Database) {
 	if len(database.Triggers) == 0 || len(database.Functions) == 0 {
 		return
 	}
+	// A trigger function takes no arguments, and only that overload of the
+	// name is the trigger's: another overload is a function of its own.
 	bodies := make(map[string]string, len(database.Functions))
 	for _, function := range database.Functions {
-		bodies[function.Name] = function.Body
+		if takesNoArguments(function) {
+			bodies[function.Name] = function.Body
+		}
 	}
 
 	owned := make(map[string]bool, len(database.Triggers))
@@ -357,11 +362,17 @@ func adoptTriggerFunctions(database *schemamodel.Database) {
 
 	functions := make([]schemamodel.Function, 0, len(database.Functions))
 	for _, function := range database.Functions {
-		if !owned[function.Name] {
+		if !owned[function.Name] || !takesNoArguments(function) {
 			functions = append(functions, function)
 		}
 	}
 	database.Functions = functions
+}
+
+// takesNoArguments reports whether a routine takes no input arguments, which
+// is the overload a trigger executes.
+func takesNoArguments(function schemamodel.Function) bool {
+	return routineargs.InputTypes(function.Parameters) == ""
 }
 
 // trimTriggerFunctionWrapper removes the BEGIN / END; envelope the PostgreSQL

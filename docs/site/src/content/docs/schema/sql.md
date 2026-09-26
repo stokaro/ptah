@@ -223,9 +223,9 @@ from:
   cast;
 - `IS NULL`.
 
-The SQL reader keeps one routine per name, so a document that declares two
-overloads of a function keeps only one of them
-([stokaro/ptah#3672](https://github.com/stokaro/ptah/issues/3672)).
+A document may declare several overloads of a function or a procedure, as
+`pg_dump` writes them. Each is a routine of its own, told apart by its input
+argument types, so `COMMENT ON FUNCTION app.f(integer, text)` names one of them.
 
 ## Row-level security
 

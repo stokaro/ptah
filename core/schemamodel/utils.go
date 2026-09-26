@@ -1135,17 +1135,21 @@ func sortFunctionsByDependencies(r *Database) {
 	r.Functions = sorted
 }
 
-// buildFunctionMap creates a map for quick function lookup by name.
-func buildFunctionMap(functions []Function) map[string]Function {
-	functionMap := make(map[string]Function)
+// buildFunctionMap creates a map for quick function lookup by name. A name
+// holds every overload declared under it, in declaration order: the graph is
+// drawn between names, because a call names a function by its name, and a map
+// holding one routine per name kept the last overload and dropped the others
+// (stokaro/ptah#3672).
+func buildFunctionMap(functions []Function) map[string][]Function {
+	functionMap := make(map[string][]Function)
 	for _, function := range functions {
-		functionMap[function.Name] = function
+		functionMap[function.Name] = append(functionMap[function.Name], function)
 	}
 	return functionMap
 }
 
 // performTopologicalSort implements Kahn's algorithm for function dependency sorting.
-func performTopologicalSort(dependencies map[string][]string, functionMap map[string]Function) []Function {
+func performTopologicalSort(dependencies map[string][]string, functionMap map[string][]Function) []Function {
 	var sorted []Function
 	inDegree := calculateInDegrees(dependencies)
 	queue := findZeroDegreeNodes(inDegree)
@@ -1154,9 +1158,7 @@ func performTopologicalSort(dependencies map[string][]string, functionMap map[st
 		current := queue[0]
 		queue = queue[1:]
 
-		if function, exists := functionMap[current]; exists {
-			sorted = append(sorted, function)
-		}
+		sorted = append(sorted, functionMap[current]...)
 
 		queue = updateInDegreesAndQueue(current, dependencies, inDegree, queue)
 	}
@@ -1225,10 +1227,13 @@ func addRemainingFunctions(sorted *[]Function, allFunctions []Function) {
 	}
 }
 
-// isFunctionInSorted checks if a function is already in the sorted list.
+// isFunctionInSorted checks if a function is already in the sorted list. It
+// asks by the routine's identity rather than its name, so one overload in the
+// list does not stand for another.
 func isFunctionInSorted(function Function, sorted []Function) bool {
+	identity := routineIdentityOf(function)
 	for _, sortedFunction := range sorted {
-		if sortedFunction.Name == function.Name {
+		if routineIdentityOf(sortedFunction) == identity {
 			return true
 		}
 	}
@@ -1320,9 +1325,7 @@ func deduplicateDatabase(
 	})
 	r.EmbeddedFields = deduplicateEmbeddedFields(r.EmbeddedFields, resolver, resolveScope)
 	r.Extensions = deduplicateExtensions(r.Extensions)
-	r.Functions = deduplicateNamedDefinitions(r.Functions, func(function Function) string {
-		return function.Name
-	})
+	r.Functions = deduplicateNamedDefinitions(r.Functions, routineIdentityOf)
 
 	deduplicateSchemaObjects(r)
 	rlsResolver := newRLSTableResolver(r.Tables, resolver)

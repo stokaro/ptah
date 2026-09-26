@@ -385,13 +385,15 @@ func TestRead_CommentOn_ResolvesAViewAsTheDialectDoes(t *testing.T) {
 }
 
 // overloadedBase is a document from an earlier file holding two overloads of
-// one function. It is built rather than read, because a read keeps one
-// function per name (stokaro/ptah#3672).
-func overloadedBase() *schemamodel.Database {
-	return &schemamodel.Database{Functions: []schemamodel.Function{
-		{Name: "app.f", Parameters: "a int", Returns: "int", Language: "sql", Body: "SELECT 1"},
-		{Name: "app.f", Parameters: "a int, b text", Returns: "int", Language: "sql", Body: "SELECT 2"},
-	}}
+// one function, read the way a schema directory reads it. A read keeps every
+// overload of a name (stokaro/ptah#3672).
+func overloadedBase(c *qt.C) *schemamodel.Database {
+	c.Helper()
+	database, _, err := sqlschema.Read([]byte(`CREATE FUNCTION app.f(a int) RETURNS int LANGUAGE sql AS $$SELECT 1$$;
+CREATE FUNCTION app.f(a int, b text) RETURNS int LANGUAGE sql AS $$SELECT 2$$;`), "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Functions, qt.HasLen, 2)
+	return &database
 }
 
 // A comment reaches the overload its argument types name, and a bare name
@@ -408,7 +410,7 @@ func TestReadOnto_CommentOnOneOverload(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			base := overloadedBase()
+			base := overloadedBase(c)
 
 			_, _, err := sqlschema.ReadOnto([]byte(test.statement), "postgres", base)
 
@@ -420,7 +422,7 @@ func TestReadOnto_CommentOnOneOverload(t *testing.T) {
 
 func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
 	c := qt.New(t)
-	base := overloadedBase()
+	base := overloadedBase(c)
 
 	_, _, err := sqlschema.ReadOnto([]byte("COMMENT ON FUNCTION app.f IS 'x';"), "postgres", base)
 

@@ -67,6 +67,7 @@ import (
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/tablelookup"
@@ -1385,6 +1386,9 @@ func validateDatabaseDeclarations(
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
 		return err
 	}
+	if err := validateRoutineOverloads(dialect, database.Functions); err != nil {
+		return err
+	}
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
@@ -1480,6 +1484,95 @@ func validateRoutineIdentityCollisions(dialect string, functions []schemamodel.F
 		seen[key] = function.Name
 	}
 	return nil
+}
+
+// validateRoutineOverloads refuses two routines of one kind and one name with
+// different argument lists on a target that has no routine overloading.
+//
+// PostgreSQL tells overloads apart by their argument types, so the model keeps
+// both declarations (stokaro/ptah#3672). MySQL, MariaDB, SQL Server and Oracle
+// keep one routine per name, and what each does with the second declaration is
+// [routineOverloadConsequence]. On none of them does the plan end with both,
+// so a document declaring both is refused before any statement is planned. A
+// function and a procedure of one name are left to the server: MySQL keeps
+// them in two namespaces, and the others refuse the second by name.
+func validateRoutineOverloads(dialect string, functions []schemamodel.Function) error {
+	consequence, refused := routineOverloadConsequence(dialect)
+	if !refused {
+		return nil
+	}
+	// The schema keeps its spelling. The routine's own name is folded where
+	// the target folds it, as validateRoutineIdentityCollisions keys it, and
+	// kept as written on SQL Server, whose collation decides.
+	type routineName struct {
+		procedure    bool
+		schema, name string
+	}
+	seen := make(map[routineName]schemamodel.Function, len(functions))
+	for _, function := range functions {
+		ref, ok := tableref.Parse(function.Name)
+		if !ok {
+			continue
+		}
+		name := ref.Name
+		if routineNamesAreCaseInsensitive(dialect) {
+			name = mysqlroutine.IdentityKey(name)
+		}
+		key := routineName{procedure: function.IsProcedure(), schema: ref.Schema, name: name}
+		previous, declared := seen[key]
+		if !declared {
+			seen[key] = function
+			continue
+		}
+		if routineargs.InputTypes(previous.Parameters) == routineargs.InputTypes(function.Parameters) {
+			continue
+		}
+		kind := schemamodel.FunctionKindFunction
+		if function.IsProcedure() {
+			kind = schemamodel.FunctionKindProcedure
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s %q is declared twice, as %s(%s) and %s(%s), and %s has no routine overloading, "+
+					"so the target cannot hold both: %s. Keep one of them",
+				kind, function.Name, previous.Name, previous.Parameters, function.Name, function.Parameters,
+				dialect, consequence),
+		}
+	}
+	return nil
+}
+
+// routineOverloadConsequence names what a target without routine overloading
+// does with the second of two same-named routines, applied as Ptah writes
+// them, and reports false for a target that holds both.
+//
+// Measured with two functions and two procedures of one name each:
+//
+//   - MySQL 8.4.11 and MariaDB 11.8.9 answer the second CREATE with Error 1304,
+//     "FUNCTION ptah_ovl already exists", and keep the first.
+//   - SQL Server 2022 (16.0.4295.3) takes the second CREATE OR ALTER without an
+//     error and keeps it in place of the first, so a call with the first one's
+//     arguments answers Msg 313.
+//   - Oracle is not measured for this case. It keeps one standalone routine per
+//     name, and the CREATE OR REPLACE Ptah writes replaced the first of two
+//     case-folded names without an error on 23.26.2.0.0, which is the same
+//     statement against the same object.
+func routineOverloadConsequence(dialect string) (string, bool) {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return "the second CREATE fails with Error 1304, after the statements before it have run, " +
+			"and the first stays", true
+	case platform.SQLServer:
+		return "Ptah writes CREATE OR ALTER, so the second replaces the first without an error, " +
+			"and a call with the first one's arguments fails", true
+	case platform.Oracle:
+		return "Ptah writes CREATE OR REPLACE, and Oracle keeps one standalone routine per name, " +
+			"so the second takes the place of the first", true
+	default:
+		return "", false
+	}
 }
 
 // routineIdentities folds nothing of its own: the routine name arrives already
