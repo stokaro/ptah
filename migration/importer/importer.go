@@ -18,6 +18,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/liquibaserun"
 )
 
 // SourceMigration is one migration read from a source tool's directory,
@@ -133,6 +134,54 @@ func WithDialectCapabilities(parser Parser, dialect string, caps capability.Capa
 	return rendering.withDialect(normalized, caps.Clone()), nil
 }
 
+// dbmsSelector is a Parser whose source can limit a changeset to some
+// databases, so importing that changeset needs the name of the database the
+// history ran on.
+type dbmsSelector interface {
+	withDBMS(shortName string) Parser
+}
+
+// WithLiquibaseDBMS returns parser set to import the history a Liquibase
+// changelog applied to one database, the one Liquibase called shortName.
+//
+// shortName is Liquibase's own name for the database, such as "postgresql",
+// "mysql", "mariadb", "mssql", "oracle", "sqlite" or "cockroachdb" -- not a Ptah
+// dialect name. The two are not the same thing: Liquibase calls a YugabyteDB
+// server "yugabytedb" when its extension is installed and "postgresql" when it
+// is not, and a Spanner database "cloudspanner" or "postgresql" depending on how
+// it connected, so the name has to be the one the history ran under. It matches
+// in any case, and a name Liquibase does not know is refused.
+//
+// A changeset whose `dbms` does not select shortName is left out, and so is a
+// sql, sqlFile, insert or createProcedure change whose own `dbms` does not; each
+// is named in [ParseResult.Skipped], with [SkippedChangeset.Change] set for a
+// change. A changeset or change whose `dbms` selects it imports without the
+// attribute. A changeset whose every change is left out is left out too.
+// Matching follows Liquibase's rule: a comma-separated list, where `all`
+// matches first, then `none` matches nothing, then `!name` excludes a database,
+// and a list naming no database without `!` matches every one it does not
+// exclude. A name in the list that Liquibase does not know is refused, as
+// Liquibase's validation refuses it.
+//
+// Without it a `dbms` attribute is refused. Only a Liquibase parser takes it;
+// any other is refused. The parser passed in is not modified, and the result
+// keeps a dialect set by [WithDialect].
+func WithLiquibaseDBMS(parser Parser, shortName string) (Parser, error) {
+	if parser == nil {
+		return nil, errors.New("a Liquibase database name needs a source tool: choose or detect the parser first")
+	}
+	name := strings.ToLower(strings.TrimSpace(shortName))
+	if !liquibaserun.KnownDBMS(name) {
+		return nil, fmt.Errorf("%q is not a database name Liquibase knows (known: %s)",
+			shortName, strings.Join(liquibaserun.KnownDBMSNames(), ", "))
+	}
+	selector, ok := parser.(dbmsSelector)
+	if !ok {
+		return nil, fmt.Errorf("a Liquibase database name applies only to a Liquibase source, not to %s", parser.Name())
+	}
+	return selector.withDBMS(name), nil
+}
+
 // DetectParser returns the single parser that recognizes fsys. It errors when no
 // parser matches, or when more than one does (ambiguous — the caller should pass
 // an explicit --from).
@@ -203,8 +252,9 @@ type Options struct {
 // that would decline SQL-carrying source files fails with a
 // *[PartialImportError] unless opts.AllowPartial is set (a dry run reports the
 // declines instead of failing); a successful result still lists every
-// unconverted file in [EmitResult.Declined], and a caller owes the user that
-// list. It is the single entry point the CLI uses.
+// unconverted file in [EmitResult.Declined], and every changeset left out
+// because the source tool never runs it in [EmitResult.Skipped], and a caller
+// owes the user both lists. It is the single entry point the CLI uses.
 func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error) {
 	if parser == nil {
 		detected, err := DetectParser(sourceFS)
@@ -229,6 +279,7 @@ func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitRe
 	if err != nil {
 		return nil, err
 	}
+	result.Skipped = parsed.Skipped
 	return result, nil
 }
 

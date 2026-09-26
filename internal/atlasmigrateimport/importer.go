@@ -72,6 +72,10 @@ type Result struct {
 	// operator with no way to learn their undo scripts stayed behind
 	// (stokaro/ptah#3116).
 	DroppedRollbacks []string
+	// SkippedChangesets are the Liquibase changesets left out because their
+	// `ignore` is true. Liquibase never runs or records such a changeset, so
+	// leaving it out keeps the history; the caller still names each one.
+	SkippedChangesets []importer.SkippedChangeset
 }
 
 type localDirURL struct {
@@ -97,6 +101,10 @@ type Loaded struct {
 	Dir string
 	// Entries are the converted Atlas single-file migrations, sorted by name.
 	Entries []Entry
+	// Skipped are the Liquibase changesets left out because Liquibase never
+	// runs them. Only the import reads a changelog changeset by changeset, so
+	// only it fills this.
+	Skipped []importer.SkippedChangeset
 }
 
 // FS returns an in-memory fs.FS containing the converted Atlas single-file
@@ -311,7 +319,7 @@ func (c *CapturedImport) Write() (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Files: files, SumFile: sumFile, DroppedRollbacks: dropped}, nil
+	return &Result{Files: files, SumFile: sumFile, DroppedRollbacks: dropped, SkippedChangesets: loaded.Skipped}, nil
 }
 
 // droppedRollbackFiles names the source files carrying a rollback the Atlas
@@ -444,14 +452,14 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 		return nil, err
 	}
 	if len(changelogs) > 0 {
-		entries, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
+		entries, skipped, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
 		if err != nil {
 			return nil, err
 		}
 		if err := checkDuplicateConvertedVersions(entries); err != nil {
 			return nil, err
 		}
-		return &Loaded{Format: format, Dir: dir, Entries: entries}, nil
+		return &Loaded{Format: format, Dir: dir, Entries: entries, Skipped: skipped}, nil
 	}
 	covered, err := SumFileNames(snapshot, format)
 	if err != nil {
@@ -462,23 +470,26 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 	}) {
 		return loadCaptured(snapshot, dir, format)
 	}
-	entries, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
+	entries, skipped, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
 	if err != nil {
 		return nil, err
 	}
 	if err := checkDuplicateConvertedVersions(entries); err != nil {
 		return nil, err
 	}
-	return &Loaded{Format: format, Dir: dir, Entries: entries}, nil
+	return &Loaded{Format: format, Dir: dir, Entries: entries, Skipped: skipped}, nil
 }
 
-func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered []string) ([]Entry, error) {
+func loadConventionalLiquibaseImportEntries(
+	snapshot fsnapshot.Snapshot,
+	covered []string,
+) ([]Entry, []importer.SkippedChangeset, error) {
 	// A directory holding a serialized changelog never reaches this path: it is
 	// taken by the changelog branch of loadCapturedForImport, which refuses a
 	// directory mixing the two shapes rather than reading half of it.
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	type changeset struct {
@@ -486,25 +497,27 @@ func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered
 		data     []byte
 	}
 	changesets := make([]changeset, 0, len(covered))
+	var skipped []importer.SkippedChangeset
 	for _, name := range covered {
 		singleFile, err := fsnapshot.CaptureMatching(snapshot, func(candidate string, _ fs.DirEntry) bool {
 			return candidate == name
 		})
 		if err != nil {
-			return nil, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
+			return nil, nil, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
 		}
 		parsed, err := parser.Parse(singleFile)
 		if err != nil {
-			return nil, fmt.Errorf("parse liquibase source file %s: %w", name, err)
+			return nil, nil, fmt.Errorf("parse liquibase source file %s: %w", name, err)
 		}
+		skipped = append(skipped, parsed.Skipped...)
 		for _, migration := range parsed.Migrations {
 			identity := sanitizeName(migration.Name)
 			if identity == "" {
-				return nil, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
+				return nil, nil, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
 			}
 			changesets = append(changesets, changeset{
 				identity: identity,
-				data:     normalizeSQL([]byte(migration.UpSQL)),
+				data:     liquibaseMigrationSQL(migration),
 			})
 		}
 	}
@@ -522,7 +535,18 @@ func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered
 		})
 	}
 	sortEntries(entries)
-	return entries, nil
+	return entries, skipped, nil
+}
+
+// liquibaseMigrationSQL is the Atlas file body for one Liquibase changeset: its
+// up SQL, marked as a no-transaction migration when the changeset set
+// runInTransaction to false.
+func liquibaseMigrationSQL(migration importer.SourceMigration) []byte {
+	data := normalizeSQL([]byte(migration.UpSQL))
+	if migration.UpNoTransaction && data != nil {
+		return addAtlasNoTransactionDirective(data)
+	}
+	return data
 }
 
 // LoadDir securely snapshots the source migration directory at dir and
@@ -904,14 +928,14 @@ func snapshotLiquibaseChangelogNames(fsys fs.FS) ([]string, error) {
 // shared parser, which converts the changesets it can, refuses the constructs it
 // cannot by name, and refuses a directory mixing changelogs with formatted SQL
 // (stokaro/ptah#1629).
-func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, error) {
+func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, []importer.SkippedChangeset, error) {
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	parsed, err := parser.Parse(fsys)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	migrations := parsed.Migrations
 	// The same padding the conventional path applies, and for the same measured
@@ -922,17 +946,17 @@ func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, er
 	for index, migration := range migrations {
 		identity := sanitizeName(migration.Name)
 		if identity == "" {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name",
 				migration.Name, strings.Join(changelogs, ", "))
 		}
 		entries = append(entries, Entry{
 			Name: fmt.Sprintf("%0*d_%s.sql", width, index+1, identity),
-			Data: normalizeSQL([]byte(migration.UpSQL)),
+			Data: liquibaseMigrationSQL(migration),
 		})
 	}
 	sortEntries(entries)
-	return entries, nil
+	return entries, parsed.Skipped, nil
 }
 
 func rejectUnsupportedLiquibaseChangelogs(fsys fs.FS, files []fs.DirEntry) error {
@@ -2127,16 +2151,24 @@ func dbmateDirective(line string) (string, bool) {
 //
 // The file is copied whole rather than split into changesets, which is what
 // keeps each converted file byte for byte the one Atlas CE writes. A changeset
-// Liquibase runs on some databases only, or runs again after its first run,
-// would lose that in the copy and run everywhere, once, so it is refused here as
-// the changeset parser refuses it; liquibaserun is the one recognizer both use.
+// attribute the copy cannot carry -- one that makes Liquibase run it on some
+// databases only, run it again, or never run it -- is refused here as the
+// changeset parser refuses it; liquibaserun is the one recognizer both use.
 // Atlas CE v1.3.0 copies such a file and applies it everywhere, and refusing it
 // is deliberately stricter. The parser's other refusals are about splitting a
 // file -- a header with no changeset, SQL before the first one -- and a copy
 // loses nothing there, so they do not apply: `ptah-compat migrate new` writes a
 // header-only file itself.
+//
+// A file whose changesets all set runInTransaction to false, which is how
+// `ptah-compat migrate diff` writes a no-transaction migration in this layout,
+// becomes a no-transaction Atlas migration. Atlas CE v1.3.0 reads the attribute
+// as nothing and runs such a file in a transaction, where a statement like
+// VACUUM fails; this conversion carries it, and the converted bytes gain the
+// Atlas directive for that reason.
 func liquibaseSQL(name string, data []byte) ([]byte, error) {
-	if err := liquibaserun.ScanFormattedSQL(name, string(data)); err != nil {
+	noTransaction, err := liquibaserun.ScanFormattedSQL(name, string(data))
+	if err != nil {
 		return nil, err
 	}
 	var out []string
@@ -2147,7 +2179,11 @@ func liquibaseSQL(name string, data []byte) ([]byte, error) {
 		}
 		out = append(out, line)
 	}
-	return normalizeSQL([]byte(strings.Join(out, "\n"))), nil
+	converted := normalizeSQL([]byte(strings.Join(out, "\n")))
+	if noTransaction && converted != nil {
+		return addAtlasNoTransactionDirective(converted), nil
+	}
+	return converted, nil
 }
 
 // trimSQL normalizes a body the way the community binary normalizes a goose file

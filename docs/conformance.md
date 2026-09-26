@@ -616,6 +616,22 @@ nothing. The rest of the changeset parser's refusals are about splitting a file
 into changesets and do not apply to a copy, so a header-only file, which
 `ptah-compat migrate new` writes, still converts.
 
+Two changeset attributes convert on every path rather than refuse, and both
+depart from the pinned community binary on purpose. Measured 2026-09-26 with
+Atlas CE v1.3.0 on SQLite:
+
+| Source | Atlas CE v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| numbered `2_vacuum.sql`, `--changeset atlas:2-1 runInTransaction:false` and `VACUUM;`, after `migrate hash`, through `migrate apply` | exit 1, `cannot VACUUM from within a transaction` | exit 0; the conversion adds `-- atlas:txmode none` |
+| `changelog.sql` whose second changeset sets `ignore:true` over `DROP TABLE t;`, through `migrate import` then `migrate apply` | exit 0; the copy runs the `DROP TABLE` | exit 0; the changeset is left out and named in a warning on stderr |
+
+`runInTransaction:false` is the attribute `ptah-compat migrate diff` writes in
+this layout for a statement that cannot run in a transaction, so the first row
+is also Ptah reading its own output back. Liquibase never runs or records a
+changeset with `ignore` set to true, which is why the second row leaves it out.
+Other changeset attributes a migration has no form for, such as
+`failOnError:false`, are refused by name on every path.
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

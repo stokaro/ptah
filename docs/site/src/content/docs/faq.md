@@ -218,6 +218,9 @@ of these is refused by name rather than half-converted. Rewrite those changesets
 in Liquibase first, or leave that history where it is and adopt the database with
 baseline instead.
 
+A changelog split by `dbms` alone imports once `--liquibase-dbms` names the
+database the history ran on, such as `postgresql`.
+
 - [Migrate from Liquibase](../migrate-from/liquibase/)
 - [Import from another tool](../versioned/import/)
 

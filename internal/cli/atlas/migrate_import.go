@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/migratevalidate"
+	"ptah.run/migration/importer"
 )
 
 func newAtlasMigrateImportCommand(policy atlascompatpolicy.Policy) *cobra.Command {
@@ -107,8 +108,27 @@ func runAtlasMigrateImport(
 		return cmdutil.Fail(cmd, err)
 	}
 	reportDroppedRollbacks(cmd, result.DroppedRollbacks)
+	reportSkippedChangesets(cmd, result.SkippedChangesets)
 
 	return nil
+}
+
+// reportSkippedChangesets names the Liquibase changesets the import left out
+// because their `ignore` is true.
+//
+// Liquibase never runs or records such a changeset, so leaving it out keeps
+// the history, and the import succeeds. Atlas CE v1.3.0 copies a formatted-SQL
+// file whole and would run it; saying which changesets were left out is what
+// keeps that difference from being a silent one. It goes to stderr, like the
+// dropped rollbacks.
+func reportSkippedChangesets(cmd *cobra.Command, skipped []importer.SkippedChangeset) {
+	if len(skipped) == 0 {
+		return
+	}
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: Liquibase never runs these changesets, so they were not imported:")
+	for _, entry := range skipped {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s: %s\n", entry.Path, entry.Changeset, entry.Reason)
+	}
 }
 
 // reportDroppedRollbacks names the source files whose rollback the conversion

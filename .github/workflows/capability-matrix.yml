@@ -488,6 +488,10 @@ jobs:
           path: results/
           if-no-files-found: error
           retention-days: 7
+          # A rerun of a failed cell uploads under the same name. Without
+          # overwrite the run keeps both, and the report downloads the failed
+          # attempt's result, so a rerun could never turn the matrix green.
+          overwrite: true
 
       - name: Report this cell's verdict
         env:

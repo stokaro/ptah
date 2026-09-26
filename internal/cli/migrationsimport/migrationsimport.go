@@ -29,6 +29,7 @@ type options struct {
 	allowPartial  bool
 	dialect       string
 	serverVersion string
+	liquibaseDBMS string
 }
 
 // NewMigrationsImportCommand returns the migrations import command.
@@ -53,12 +54,21 @@ addForeignKeyConstraint, renameTable and renameColumn have no SQL until a
 database is chosen, so they import only with --dialect, and the migrations
 they become are written for that dialect alone. A changeset without an
 explicit rollback gets the rollback Liquibase would derive, where every change
-in it can be undone. Any other construct -- include, preConditions, context,
-labels, dbms on a changeset or a change, runAlways or runOnChange set to true,
-and the remaining change types -- is refused by name rather than dropped, so
-an import either carries the whole changelog or does not happen. --dialect
+in it can be undone. A changeset with runInTransaction="false" becomes a
+no-transaction migration, and one with ignore="true", which Liquibase never
+runs, is left out and named on stderr. Any other construct -- include,
+preConditions, context, labels, dbms on a changeset or a change, runAlways or
+runOnChange set to true, a changeset attribute such as failOnError="false" or
+runOrder that a migration cannot carry, one Ptah does not read, and the
+remaining change types -- is refused by name rather than dropped, so an import
+either carries the whole changelog or does not happen. --dialect
 does not make dbms convert: the name Liquibase gives some databases depends on
 how it connected, so a changeset's dbms cannot be matched to a dialect.
+--liquibase-dbms names it instead: Liquibase's own name for the database the
+history ran on, such as postgresql or mysql. With it, a changeset or a sql,
+sqlFile, insert or createProcedure change whose dbms does not select that
+database is left out and named on stderr, as Liquibase leaves it out there, and
+one whose dbms does select it imports.
 
 A source migration with no rollback file gets a placeholder down migration. A
 Flyway repeatable (R__) migration is imported as a one-time migration ordered
@@ -87,6 +97,7 @@ for each file they leave behind.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the migrations that would be written without writing them")
 	flags.BoolVar(&opts.allowPartial, "allow-partial", false, "Import and write ptah.sum even though some source files were not converted")
 	flags.StringVar(&opts.dialect, "dialect", "", "Target dialect Liquibase typed changes such as createTable are rendered for (Liquibase sources only)")
+	flags.StringVar(&opts.liquibaseDBMS, "liquibase-dbms", "", "Liquibase's name for the database the history ran on, such as postgresql; changesets and changes whose dbms does not select it are left out (Liquibase sources only)")
 	serverversion.Register(flags, &opts.serverVersion)
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
@@ -112,22 +123,29 @@ func runImport(cmd *cobra.Command, opts *options) error {
 	if opts.serverVersion != "" && opts.dialect == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s requires --dialect", serverversion.FlagName))
 	}
-	if opts.dialect != "" {
-		// The dialect belongs to the parser, so a detected one is resolved
-		// here rather than inside Import; WithDialectCapabilities then refuses
-		// a source tool whose migrations are SQL already.
-		if parser == nil {
-			detected, err := importer.DetectParser(source)
-			if err != nil {
-				return cmdutil.Fail(cmd, err)
-			}
-			parser = detected
+	// The dialect and the Liquibase database name belong to the parser, so a
+	// detected one is resolved here rather than inside Import; each option then
+	// refuses a source tool it does not apply to.
+	if parser == nil && (opts.dialect != "" || opts.liquibaseDBMS != "") {
+		detected, err := importer.DetectParser(source)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
 		}
+		parser = detected
+	}
+	if opts.dialect != "" {
 		rendering, err := renderingParser(cmd, parser, opts)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 		parser = rendering
+	}
+	if opts.liquibaseDBMS != "" {
+		selecting, err := importer.WithLiquibaseDBMS(parser, opts.liquibaseDBMS)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("--liquibase-dbms: %w", err))
+		}
+		parser = selecting
 	}
 
 	result, err := importer.Import(source, parser, opts.migrationsDir, importer.Options{
@@ -156,6 +174,7 @@ func runImport(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintf(out, "  %s\n", name)
 	}
 	reportDeclined(cmd.ErrOrStderr(), result.Declined)
+	reportSkipped(cmd.ErrOrStderr(), result.Skipped)
 	return nil
 }
 
@@ -183,6 +202,41 @@ func renderingParser(cmd *cobra.Command, parser importer.Parser, opts *options) 
 		return nil, fmt.Errorf("--dialect: %w", err)
 	}
 	return rendering, nil
+}
+
+// reportSkipped names every changeset the import left out because the source
+// tool does not run it, and why: a Liquibase changeset with ignore="true", or
+// one whose dbms does not select the database --liquibase-dbms names.
+//
+// Leaving it out is faithful -- Liquibase did not run it -- so the import is not
+// refused. It is still reported, on stderr beside the declined files, because a
+// changeset that is in the changelog and not in the directory would otherwise be
+// found only by comparing the two.
+//
+// A change left out of a changeset that was imported -- one whose own dbms
+// selects another database -- is listed apart from the changesets, because the
+// changeset it belongs to is in the directory.
+func reportSkipped(errOut io.Writer, skipped []importer.SkippedChangeset) {
+	var changesets, changes []importer.SkippedChangeset
+	for _, entry := range skipped {
+		if entry.Change == "" {
+			changesets = append(changesets, entry)
+		} else {
+			changes = append(changes, entry)
+		}
+	}
+	if len(changesets) > 0 {
+		fmt.Fprintf(errOut, "Skipped %d changeset(s):\n", len(changesets))
+		for _, entry := range changesets {
+			fmt.Fprintf(errOut, "  %s %s: %s\n", entry.Path, entry.Changeset, entry.Reason)
+		}
+	}
+	if len(changes) > 0 {
+		fmt.Fprintf(errOut, "Skipped %d change(s) inside imported changesets:\n", len(changes))
+		for _, entry := range changes {
+			fmt.Fprintf(errOut, "  %s %s %s: %s\n", entry.Path, entry.Changeset, entry.Change, entry.Reason)
+		}
+	}
 }
 
 // reportDeclined names every source file the import did not convert, and why.

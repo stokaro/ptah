@@ -37,6 +37,29 @@ type DeclinedFile struct {
 	CarriesSQL bool
 }
 
+// SkippedChangeset is a changeset, or a change inside one, that a parser left
+// out on purpose because the source tool does not run it: a Liquibase changeset
+// whose `ignore` is true, or, with [WithLiquibaseDBMS], a changeset or change
+// whose `dbms` does not select the named database.
+//
+// Leaving it out is what the source tool does with it, so the import stays a
+// faithful copy and ptah.sum is written. A caller still owes the user the list,
+// because a changeset that is in the changelog and not in the directory is one
+// a reader would otherwise have to find by diffing the two.
+type SkippedChangeset struct {
+	// Path is the changelog's slash-separated path relative to the source root.
+	Path string
+	// Changeset identifies the changeset as the source tool does, such as
+	// Liquibase's author:id.
+	Changeset string
+	// Change names one change left out of a changeset that was imported, as
+	// the changelog spells it, such as <sql>. It is empty when the whole
+	// changeset was left out.
+	Change string
+	// Reason says why the changeset was left out.
+	Reason string
+}
+
 // ParseResult is what a Parser read from one source directory.
 //
 // Consumed and Declined together are how the importer proves it looked at
@@ -53,6 +76,9 @@ type ParseResult struct {
 	// Declined are the paths the parser declined for a reason it knows, such as
 	// a Flyway baseline or a file below a top level the tool does not read.
 	Declined []DeclinedFile
+	// Skipped are the changesets the parser left out because the source tool
+	// never runs them, in the order they were read.
+	Skipped []SkippedChangeset
 }
 
 // consume records that path became part of a migration.
