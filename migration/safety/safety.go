@@ -227,8 +227,9 @@ func AssessRenderedWithCapabilities(
 		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
 			statements = []string{strings.TrimSpace(rendered)}
 		}
+		keepsNull := keepsNullability(node)
 		for _, statement := range statements {
-			assessment := AssessSQL(statement)
+			assessment := assessStatement(statement, keepsNull)
 			assessment.NodeType = nodeAssessment.NodeType
 			if assessment.Subject == "" {
 				assessment.Subject = nodeAssessment.Subject
@@ -249,13 +250,19 @@ func AssessRenderedWithCapabilities(
 // spelled; a statement matching no known destructive or warning shape is
 // reported Safe with the default reason.
 func AssessSQL(statement string) StatementAssessment {
+	return assessStatement(statement, false)
+}
+
+// assessStatement is [AssessSQL] for a statement whose operation is known to
+// leave the column's nullability alone; see [assessRawSQL].
+func assessStatement(statement string, keepsNullability bool) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",
 		Statement: strings.TrimSpace(statement),
 		Severity:  Safe,
 		Reason:    "does not remove data or tighten constraints",
 	}
-	return assessRawSQL(statement, assessment)
+	return assessRawSQL(statement, assessment, keepsNullability)
 }
 
 // HighestAssessment returns the highest severity from statement assessments.
@@ -488,7 +495,7 @@ func assessNode(node ast.Node) StatementAssessment {
 		return assessAlterType(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
-		return assessRawSQL(n.SQL, assessment)
+		return assessRawSQL(n.SQL, assessment, false)
 	}
 	return assessment
 }
@@ -599,7 +606,11 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 	}
 }
 
-func assessRawSQL(sql string, assessment StatementAssessment) StatementAssessment {
+// assessRawSQL classifies one statement by its words. keepsNullability says
+// the statement comes from a column modification that states its changes and
+// leaves nullability alone, so a NOT NULL it restates is the column's
+// existing constraint and not a new one.
+func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words := rawWords(sql)
 	switch {
 	case hasWordPrefix(words, "DROP", "TABLE"):
@@ -647,6 +658,9 @@ func assessRawSQL(sql string, assessment StatementAssessment) StatementAssessmen
 	case hasWordSequence(words, "SET", "NOT", "NULL"):
 		assessment.Severity = Warning
 		assessment.Reason = "SET NOT NULL can fail when existing rows contain NULL"
+	case !keepsNullability && restatesNotNull(sql):
+		assessment.Severity = Warning
+		assessment.Reason, _ = restatedNotNullReason(sql)
 	case hasWordPrefix(words, "CREATE", "UNIQUE", "INDEX"):
 		assessment.Severity = Warning
 		assessment.Reason = "CREATE UNIQUE INDEX can fail on existing duplicate values"
@@ -662,11 +676,17 @@ func raiseAssessment(target *StatementAssessment, source StatementAssessment) {
 	target.Reason = source.Reason
 }
 
+// isTypeChangeSQL reports whether a statement changes a column's type or
+// restates its whole definition, the statements the node's own verdict is
+// folded into when a node renders several. A restatement carries whatever
+// the operation changes, so its words alone under-report it: SQL Server's
+// ALTER COLUMN [c] INT NULL reads safe and may drop a NOT NULL.
 func isTypeChangeSQL(statement string) bool {
 	words := rawWords(statement)
 	return hasWordSequence(words, "ALTER", "COLUMN") && hasWordSequence(words, "TYPE") ||
 		hasWordSequence(words, "MODIFY", "COLUMN") ||
-		hasWordSequence(words, "CHANGE", "COLUMN")
+		hasWordSequence(words, "CHANGE", "COLUMN") ||
+		restatesColumn(statement)
 }
 
 func add(findings *[]Finding, category string, count int, severity Severity) {

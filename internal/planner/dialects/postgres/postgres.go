@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/rlsscope"
@@ -807,7 +808,7 @@ func (p *Planner) modifyExistingTableColumns(
 		// a NOT NULL constraint rename are written from the diff alone, so they
 		// are emitted above this and reach a column the diff carries no
 		// definition for.
-		changed := changedColumnProperties(colDiff)
+		changed := columnchange.Properties(colDiff)
 		_, uniqueChanged := colDiff.Changes["unique"]
 		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
@@ -868,24 +869,6 @@ func addedColumnUnique(tableName string, colDiff difftypes.ColumnDiff) ast.Node 
 		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{
 			Constraint: ast.NewUniqueConstraint(pgname.ColumnKey(table, colDiff.ColumnName), colDiff.ColumnName),
 		}},
-	}
-}
-
-// changedColumnProperties names the properties a column diff changes that an
-// ALTER COLUMN clause carries, so the renderer writes a clause for those and
-// for nothing else (stokaro/ptah#3645).
-//
-// The keys are the comparator's: a default is recorded under "default" or
-// "default_expr", depending on how the live side spelled it.
-func changedColumnProperties(colDiff difftypes.ColumnDiff) ast.ColumnProperties {
-	_, typeChanged := colDiff.Changes["type"]
-	_, nullabilityChanged := colDiff.Changes["nullable"]
-	_, literalDefaultChanged := colDiff.Changes["default"]
-	_, expressionDefaultChanged := colDiff.Changes["default_expr"]
-	return ast.ColumnProperties{
-		Type:        typeChanged,
-		Nullability: nullabilityChanged,
-		Default:     literalDefaultChanged || expressionDefaultChanged,
 	}
 }
 

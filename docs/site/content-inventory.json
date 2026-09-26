@@ -1014,8 +1014,8 @@
         "/databases/overview/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2400,
-      "sourceBytes": 15044
+      "visibleWords": 2555,
+      "sourceBytes": 15911
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",

@@ -210,6 +210,23 @@ or trigger because its body can reference the cleanup realm without a catalog
 dependency. Grant these privileges only to credentials used with a dedicated
 disposable dev database.
 
+## Making a column NOT NULL
+
+A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with
+the whole new definition. What the server does with a row that holds `NULL`
+depends on the session's SQL mode:
+
+- Under strict SQL mode, the default on both servers, the statement fails:
+  MySQL answers error 1138 and MariaDB error 1265, and the row keeps its `NULL`.
+- Without `STRICT_TRANS_TABLES`, both servers apply the statement and rewrite
+  the `NULL` to the type's zero value, such as `0` or the empty string, with a
+  warning. A `DEFAULT` in the same `MODIFY` is not what they write.
+
+The safety report lists the statement as a warning for both reasons. Update
+the `NULL` rows in a migration of their own first. A `MODIFY` that repeats
+`NOT NULL` for a column that already has it, because its type or default
+changed, is judged by that change instead.
+
 ## Online DDL for large tables
 
 For large tables, `ptah migrations up` and `down` can route `ALTER TABLE`
