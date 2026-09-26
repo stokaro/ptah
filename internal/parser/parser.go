@@ -2411,15 +2411,39 @@ func (p *Parser) handleDefault(column *ast.ColumnNode) error {
 	return nil
 }
 
-func (p *Parser) handleCheck(column *ast.ColumnNode) error {
-	// Handle CHECK
+// handleColumnCheck reads a CHECK written on a column, under name when the
+// column wrote `CONSTRAINT name` in front of it.
+//
+// The model keeps one CHECK on a column, and a column may carry several:
+// PostgreSQL 18.6 creates two constraints for `a int CHECK (a > 0) CHECK (a <
+// 10)`, named `h2_a_check` and `h2_a_check1`. The first stays on the column.
+// Each later one is read as the table-level CHECK it is equivalent to, which is
+// where a renderer writes it back. Kept on the column, the second would replace
+// the first, and a comparison against the database the same file built would
+// plan the first for DROP.
+//
+// A column ALTER TABLE adds or modifies has no table body to carry a second
+// CHECK, so one there is refused rather than dropped.
+func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.ColumnNode, name string) error {
+	position := p.current.Start
 	p.advance()
 	p.skipWhitespace()
 	checkExpr, err := p.parseCheckExpression()
 	if err != nil {
 		return fmt.Errorf("expected check expression: %w", err)
 	}
-	column.SetCheck(checkExpr)
+	if column.Check == "" {
+		column.SetCheck(checkExpr)
+		column.SetCheckName(name)
+		return nil
+	}
+	if table == nil {
+		return fmt.Errorf(
+			"column %s carries a second CHECK at position %d: a column added or modified by ALTER TABLE "+
+				"keeps one CHECK; add the next with ALTER TABLE ... ADD CHECK",
+			column.Name, position)
+	}
+	table.AddConstraint(&ast.ConstraintNode{Type: ast.CheckConstraint, Name: name, Expression: checkExpr})
 	return nil
 }
 
@@ -2884,7 +2908,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "DEFAULT":
 		return p.handleDefault(column)
 	case "CHECK":
-		return p.handleCheck(column)
+		return p.handleColumnCheck(table, column, "")
 	case "CONSTRAINT":
 		return p.handleColumnConstraint(table, column)
 	case "REFERENCES":
@@ -2954,7 +2978,7 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 	p.advance()
 	p.skipWhitespace()
 	if p.constraintSymbolOmitted(columnConstraintKindWords) {
-		return p.handleSymbolLessColumnConstraint(column, start)
+		return p.handleSymbolLessColumnConstraint(table, column, start)
 	}
 	name, err := p.expectIdentifier()
 	if err != nil {
@@ -2963,11 +2987,7 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 	p.skipWhitespace()
 	switch {
 	case p.current.MatchIdentifierValue("CHECK"):
-		if err := p.handleCheck(column); err != nil {
-			return err
-		}
-		column.SetCheckName(name)
-		return nil
+		return p.handleColumnCheck(table, column, name)
 	case p.current.MatchIdentifierValue("REFERENCES"):
 		if err := p.refuseColumnReferences(name); err != nil {
 			return err

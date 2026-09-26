@@ -15,11 +15,13 @@ import (
 // The server stores a rewrite of each declaration below rather than the text
 // it was given: a CHECK and a policy clause come back from their parse tree
 // with parentheses and casts, an index predicate the same, a column default
-// with its casts spelled out, and an unnamed UNIQUE or foreign key under the
-// name the server chose. A schema file identical to the migration that built
-// the database compared unequal to it, and `migrate diff` and `schema apply`
-// dropped and recreated every one of them, or added a second foreign key
-// beside the first (stokaro/ptah#3643).
+// with its casts spelled out, and an unnamed CHECK, UNIQUE or foreign key under
+// the name the server chose. A schema file identical to the migration that
+// built the database compares unequal to it unless the comparison asks the
+// server and names each unnamed constraint as the server does; without that,
+// `migrate diff` and `schema apply` drop and recreate every one of them, or add
+// a second foreign key beside the first (stokaro/ptah#3643,
+// stokaro/ptah#3729).
 var serverRewrittenDeclarations = []struct {
 	name string
 	sql  string
@@ -85,6 +87,19 @@ CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true A
   secret bytea NOT NULL DEFAULT ''::bytea);`,
 	},
 	{
+		// PostgreSQL 18.6 names these a_plan_check, b_plan_check, c_check,
+		// c_lo_check, d_lo_check, d_check, d_hi_check, e_check, h2_a_check and
+		// h2_a_check1.
+		name: "unnamed CHECKs, on a column and on the table",
+		sql: `CREATE TABLE a (plan text, CHECK (plan IN ('x','y')));
+CREATE TABLE b (plan text CHECK (plan IN ('x','y')));
+CREATE TABLE c (lo int, hi int, CHECK (lo < hi));
+ALTER TABLE c ADD CHECK (lo > 0);
+CREATE TABLE d (lo int CHECK (lo > 0), hi int, CHECK (lo < hi), CHECK (hi > 0));
+CREATE TABLE e (a int CHECK (a IS NULL OR b IS NOT NULL), b int);
+CREATE TABLE h2 (a int CHECK (a > 0) CHECK (a < 10));`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -106,6 +121,12 @@ var serverRewrittenControls = []struct {
 		migration:  `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (n > 0));`,
 		schema:     `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (n > 1));`,
 		wantInPlan: "n > 1",
+	},
+	{
+		name:       "an unnamed CHECK bound moves",
+		migration:  `CREATE TABLE c (lo int, hi int, CHECK (lo < hi));`,
+		schema:     `CREATE TABLE c (lo int, hi int, CHECK (lo <= hi));`,
+		wantInPlan: "lo <= hi",
 	},
 	{
 		name: "a policy names another setting",

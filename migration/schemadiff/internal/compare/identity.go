@@ -103,7 +103,7 @@ func recordSynthesized(
 	semantics identifier.Semantics,
 ) {
 	for _, constraint := range synthesized {
-		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
+		key := newDeclaredConstraintKey(constraint, semantics)
 		if _, declared := into[key]; declared {
 			continue
 		}
