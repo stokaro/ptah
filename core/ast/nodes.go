@@ -53,6 +53,10 @@ type EnumNode struct {
 	Name string
 	// Values contains the list of allowed enum values
 	Values []string
+	// Comment is the type's own comment. The PostgreSQL family writes it with
+	// COMMENT ON TYPE after the CREATE; a dialect that writes an enum inline in
+	// a column has no type to put it on.
+	Comment string
 }
 
 // NewEnum creates a new enum node with the specified name and values.
@@ -1556,18 +1560,24 @@ func (n *CommentNode) Accept(visitor Visitor) error { return visitor.VisitNode(n
 // comment of. Its value is the keyword COMMENT ON spells the kind with.
 type CommentedObject string
 
-// The kinds an [ObjectCommentNode] can name. A composite type and a range
-// type are both CommentedType: the statement does not tell them apart.
+// The kinds an [ObjectCommentNode] can name. A composite, a range and an enum
+// type are all CommentedType: the statement does not tell them apart.
 const (
-	CommentedView      CommentedObject = "VIEW"
-	CommentedSequence  CommentedObject = "SEQUENCE"
-	CommentedDomain    CommentedObject = "DOMAIN"
-	CommentedType      CommentedObject = "TYPE"
-	CommentedExtension CommentedObject = "EXTENSION"
+	CommentedView             CommentedObject = "VIEW"
+	CommentedSequence         CommentedObject = "SEQUENCE"
+	CommentedDomain           CommentedObject = "DOMAIN"
+	CommentedType             CommentedObject = "TYPE"
+	CommentedExtension        CommentedObject = "EXTENSION"
+	CommentedFunction         CommentedObject = "FUNCTION"
+	CommentedProcedure        CommentedObject = "PROCEDURE"
+	CommentedMaterializedView CommentedObject = "MATERIALIZED VIEW"
+	CommentedTrigger          CommentedObject = "TRIGGER"
+	CommentedPolicy           CommentedObject = "POLICY"
 )
 
 // ObjectCommentNode sets or removes the comment of an existing view,
-// sequence, domain, type or extension.
+// sequence, domain, type, extension, function, procedure, materialized view,
+// trigger or policy.
 //
 // It is a statement rather than a field of the node that creates the object:
 // a create node carries the comment the object is created with, and this node
@@ -1584,8 +1594,18 @@ type ObjectCommentNode struct {
 	Object CommentedObject
 	// Name is the object's name, schema-qualified where the object has a
 	// schema. An extension's name is database-wide and is never split on a
-	// dot.
+	// dot. A trigger's and a policy's name is scoped to Table and is never
+	// qualified.
 	Name string
+	// Table is the table a trigger or a policy belongs to, which the
+	// statement names after ON. It is empty for every other kind.
+	Table string
+	// Arguments is the argument list that addresses a function or a
+	// procedure, and nil for every other kind. Nil and an empty list are
+	// different statements for a routine, for the reason
+	// [DropFunctionNode.Parameters] gives: an empty list names the overload
+	// that takes no arguments, and nil names the routine by its name alone.
+	Arguments *string
 	// Comment is what the comment should become. Empty removes it.
 	Comment string
 }
@@ -1594,6 +1614,21 @@ type ObjectCommentNode struct {
 // object named name. An empty comment removes the comment.
 func NewObjectComment(object CommentedObject, name, comment string) *ObjectCommentNode {
 	return &ObjectCommentNode{Object: object, Name: name, Comment: comment}
+}
+
+// SetTable sets the table a trigger or a policy belongs to and returns the
+// node for chaining.
+func (n *ObjectCommentNode) SetTable(table string) *ObjectCommentNode {
+	n.Table = table
+	return n
+}
+
+// SetArguments sets the argument list that addresses a function or a
+// procedure and returns the node for chaining. See [ObjectCommentNode.Arguments]
+// for why an empty list is not the same as none.
+func (n *ObjectCommentNode) SetArguments(arguments string) *ObjectCommentNode {
+	n.Arguments = &arguments
+	return n
 }
 
 // Accept implements the Node interface for ObjectCommentNode.

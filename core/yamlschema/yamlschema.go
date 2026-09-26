@@ -238,7 +238,8 @@ type constraintSpec struct {
 }
 
 type enumSpec struct {
-	Values stringList `yaml:"values"`
+	Values  stringList   `yaml:"values"`
+	Comment stringScalar `yaml:"comment"`
 }
 
 func (s *enumSpec) UnmarshalYAML(value *yaml.Node) error {
@@ -480,8 +481,9 @@ func (d document) toDatabase() (*schemamodel.Database, error) {
 func (d document) addEnums(db *schemamodel.Database) {
 	for _, name := range sortedKeys(d.Enums) {
 		db.Enums = append(db.Enums, schemamodel.Enum{
-			Name:   name,
-			Values: cleanStrings(d.Enums[name].Values),
+			Name:    name,
+			Values:  cleanStrings(d.Enums[name].Values),
+			Comment: strings.TrimSpace(string(d.Enums[name].Comment)),
 		})
 	}
 }

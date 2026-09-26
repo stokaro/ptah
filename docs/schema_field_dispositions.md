@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-378 fields are reachable from the desired schema, and each one carries
+379 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 316 | reaches rendered SQL on at least one target |
+| `ddl` | 317 | reaches rendered SQL on at least one target |
 | `comparison` | 8 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -190,6 +190,7 @@ None.
 | `schemamodel.EmbeddedField.Type` | `ddl` | — |
 | `schemamodel.EmbeddedSources.Definitions` | `derived` | the embedded declarations retained so materialization can run again after a merge; the columns they produce are what reaches DDL |
 | `schemamodel.EmbeddedSources.Fields` | `ddl` | — |
+| `schemamodel.Enum.Comment` | `ddl` | — |
 | `schemamodel.Enum.Name` | `ddl` | — |
 | `schemamodel.Enum.Schema` | `ddl` | — |
 | `schemamodel.Enum.Values` | `ddl` | — |

@@ -6,38 +6,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routineargs"
 )
-
-// commentStatement is one COMMENT ON statement as Parser.parseCommentStatement
-// spells it: `COMMENT ON <KIND> <name> IS <literal>`. The shape is fixed by
-// that function, so this reads a known format rather than arbitrary SQL.
-type commentStatement struct {
-	kind    string
-	name    string
-	comment string
-}
-
-// parseCommentStatement splits a COMMENT ON text. The name ends at the first
-// " IS ": a literal may contain the word, and an unquoted name cannot.
-func parseCommentStatement(text string) (commentStatement, bool) {
-	rest, found := strings.CutPrefix(text, "COMMENT ON ")
-	if !found {
-		return commentStatement{}, false
-	}
-	kind, rest, found := strings.Cut(rest, " ")
-	if !found {
-		return commentStatement{}, false
-	}
-	name, literal, found := strings.Cut(rest, " IS ")
-	if !found {
-		return commentStatement{}, false
-	}
-	return commentStatement{
-		kind:    kind,
-		name:    strings.TrimSpace(name),
-		comment: unquoteSQLStringLiteral(strings.TrimSpace(literal)),
-	}, true
-}
 
 // applyComment attaches a COMMENT ON statement to the object it names.
 //
@@ -64,10 +34,13 @@ func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, s
 	case target == &unmodeledKind:
 		return fmt.Errorf("%w: COMMENT ON %s: Ptah keeps no comment for this kind of object",
 			ErrUnmodeledStatement, statement.kind)
-	case target == &unmodeledEnum:
-		return fmt.Errorf("%w: COMMENT ON TYPE %s names an enum type, and Ptah keeps no comment for one "+
-			"(stokaro/ptah#3646)",
-			ErrUnmodeledStatement, statement.name)
+	case target == &unmodeledDomainConstraint:
+		return fmt.Errorf("%w: COMMENT ON CONSTRAINT %s ON DOMAIN %s: Ptah keeps no comment for a domain's constraint",
+			ErrUnmodeledStatement, statement.name, statement.table)
+	case target == &ambiguousRoutine:
+		return fmt.Errorf("%w: COMMENT ON %s %s names more than one declared overload; "+
+			"write its argument types to name one",
+			ErrUnmodeledStatement, statement.kind, statement.name)
 	case !found:
 		return fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare",
 			ErrUnmodeledStatement, statement.kind, statement.name)
@@ -80,11 +53,15 @@ func applyComment(database, base *schemamodel.Database, node *ast.CommentNode, s
 // model has no place for. It is compared by address.
 var unmodeledKind string
 
-// unmodeledEnum is the target commentTarget answers with for COMMENT ON TYPE
-// naming an enum. The statement is the same for every kind of type and only an
-// enum has no comment in the model, so it is refused by name rather than as a
-// type the document does not declare.
-var unmodeledEnum string
+// unmodeledDomainConstraint is the target commentTarget answers with for
+// COMMENT ON CONSTRAINT ... ON DOMAIN. The model keeps a domain's CHECK as an
+// expression, with no name and no comment.
+var unmodeledDomainConstraint string
+
+// ambiguousRoutine is the target commentTarget answers with for a function or
+// a procedure named without the argument list that would select one of its
+// declared overloads.
+var ambiguousRoutine string
 
 // commentTarget returns the Comment field the statement sets, and whether the
 // document declares the object. Where the model has no place for the comment
@@ -114,6 +91,13 @@ func commentTarget(
 		return typeCommentTarget(databases, normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
 	case "EXTENSION":
 		return extensionCommentTarget(databases, identifierPart(sourcePlatform, statement.name), sourcePlatform)
+	case "MATERIALIZED VIEW":
+		return materializedViewCommentTarget(databases,
+			normalizeSQLTableReference(sourcePlatform, statement.name), sourcePlatform)
+	case "FUNCTION", "PROCEDURE":
+		return routineCommentTarget(databases, statement, sourcePlatform)
+	case "TRIGGER", "POLICY", "CONSTRAINT":
+		return tableMemberCommentTarget(databases, statement, sourcePlatform)
 	default:
 		return &unmodeledKind, false
 	}
@@ -124,8 +108,7 @@ func commentTarget(
 // case-insensitive rule where the server has one.
 
 // resolvedCommentTarget answers the comment field of the declared name written
-// reaches, and whether one does. An enum's field is &unmodeledEnum, which
-// applyComment refuses by name.
+// reaches, and whether one does.
 func resolvedCommentTarget(sourcePlatform, written string, targets []*string, names []string) (*string, bool) {
 	index := resolveDeclaredName(sourcePlatform, written, names)
 	if index < 0 {
@@ -170,9 +153,8 @@ func domainCommentTarget(databases []*schemamodel.Database, qualified, sourcePla
 	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
 }
 
-// typeCommentTarget finds the composite or range type COMMENT ON TYPE names,
-// and answers &unmodeledEnum for an enum. The three kinds share one namespace,
-// so they are resolved together.
+// typeCommentTarget finds the composite, range or enum type COMMENT ON TYPE
+// names. The three kinds share one namespace, so they are resolved together.
 func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
 	var targets []*string
 	var names []string
@@ -186,8 +168,8 @@ func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatf
 			names = append(names, database.Ranges[i].QualifiedName())
 		}
 		for i := range database.Enums {
-			targets = append(targets, &unmodeledEnum)
-			names = append(names, database.Enums[i].Name)
+			targets = append(targets, &database.Enums[i].Comment)
+			names = append(names, database.Enums[i].QualifiedName())
 		}
 	}
 	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
@@ -267,4 +249,98 @@ func columnCommentTarget(databases []*schemamodel.Database, name, sourcePlatform
 		return new(string), false
 	}
 	return &field.Comment, true
+}
+
+func materializedViewCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
+	var targets []*string
+	var names []string
+	for _, database := range databases {
+		for i := range database.MaterializedViews {
+			targets = append(targets, &database.MaterializedViews[i].Comment)
+			names = append(names, database.MaterializedViews[i].Name)
+		}
+	}
+	return resolvedCommentTarget(sourcePlatform, qualified, targets, names)
+}
+
+// routineCommentTarget finds the function or procedure COMMENT ON names.
+//
+// A name may carry several overloads, so the argument list is compared by
+// input types, the way GRANT and REVOKE name a routine: `f(integer)` and a
+// declaration `f(a int DEFAULT 1)` are one routine. Without an argument list
+// the name has to carry exactly one declared routine of the kind, which is
+// the case PostgreSQL resolves the bare name in too.
+func routineCommentTarget(
+	databases []*schemamodel.Database, statement commentStatement, sourcePlatform string,
+) (*string, bool) {
+	written := normalizeSQLTableReference(sourcePlatform, statement.name)
+	procedure := statement.kind == "PROCEDURE"
+	var candidates []*string
+	for _, database := range databases {
+		for i := range database.Functions {
+			function := &database.Functions[i]
+			if function.IsProcedure() != procedure ||
+				resolveDeclaredName(sourcePlatform, written, []string{function.Name}) < 0 {
+				continue
+			}
+			if statement.arguments != nil &&
+				routineargs.InputTypes(function.Parameters) != routineargs.InputTypes(*statement.arguments) {
+				continue
+			}
+			candidates = append(candidates, &function.Comment)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		return new(string), false
+	case 1:
+		return candidates[0], true
+	default:
+		return &ambiguousRoutine, false
+	}
+}
+
+// tableMemberCommentTarget finds the trigger, policy or constraint COMMENT ON
+// names ON a table. Each name is scoped to its table, so the table is
+// resolved with the name: two tables may each have a trigger called audit.
+func tableMemberCommentTarget(
+	databases []*schemamodel.Database, statement commentStatement, sourcePlatform string,
+) (*string, bool) {
+	if statement.onDomain {
+		return &unmodeledDomainConstraint, false
+	}
+	if statement.table == "" {
+		return new(string), false
+	}
+	var targets []*string
+	var names []string
+	for _, database := range databases {
+		switch statement.kind {
+		case "TRIGGER":
+			for i := range database.Triggers {
+				targets = append(targets, &database.Triggers[i].Comment)
+				names = append(names, memberName(database.Triggers[i].Table, database.Triggers[i].Name))
+			}
+		case "POLICY":
+			for i := range database.RLSPolicies {
+				targets = append(targets, &database.RLSPolicies[i].Comment)
+				names = append(names, memberName(database.RLSPolicies[i].Table, database.RLSPolicies[i].Name))
+			}
+		default:
+			for i := range database.Constraints {
+				targets = append(targets, &database.Constraints[i].Comment)
+				names = append(names, memberName(database.Constraints[i].Table, database.Constraints[i].Name))
+			}
+		}
+	}
+	written := memberName(normalizeSQLTableReference(sourcePlatform, statement.table),
+		normalizeSQLIdentifier(sourcePlatform, statement.name))
+	return resolvedCommentTarget(sourcePlatform, written, targets, names)
+}
+
+// memberName spells an object scoped to a table as one name the resolver can
+// compare: the table's qualified name, then the object's own. A name cannot
+// hold the separator, which no identifier the reader records contains.
+func memberName(table, name string) string {
+	return table + "\x00" + name
 }

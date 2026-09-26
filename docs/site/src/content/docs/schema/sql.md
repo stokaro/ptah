@@ -192,13 +192,42 @@ COMMENT ON TABLE notes IS 'what users wrote';
 COMMENT ON COLUMN notes.body IS 'the text, as typed';
 ```
 
-`COMMENT ON` is read for a table, a column, an index, a schema, a role, a view,
-a sequence, a domain, a composite or range type, and an extension, and the
-plan writes each of them to the database. `COMMENT ON TYPE` naming an enum
-type is refused, because Ptah keeps no comment for one, and a comment on a
-function, a materialized view, a trigger or a policy cannot be read yet
-([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)). A comment
-on an object the document does not declare is refused too, as is `IS NULL`.
+`COMMENT ON` is read in the forms `pg_dump` writes for the objects Ptah models:
+
+```sql
+COMMENT ON FUNCTION app.score(integer, text) IS 'ranks a note';
+COMMENT ON MATERIALIZED VIEW app.totals IS 'refreshed nightly';
+COMMENT ON TRIGGER stamp_notes ON app.notes IS 'sets updated_at';
+COMMENT ON POLICY own_notes ON app.notes IS 'owners only';
+COMMENT ON CONSTRAINT positive ON app.notes IS 'ids start at one';
+COMMENT ON TYPE app.mood IS 'how a user feels';
+```
+
+That covers a table, a column, an index, a constraint, a schema, a role, a
+view, a materialized view, a sequence, a domain, a composite, range or enum
+type, an extension, a function, a procedure, a trigger and a policy, and the
+plan writes each of them to the database. A function or a procedure may be
+named with its argument list, with or without argument names, or by its name
+alone when the document declares one routine of that name. A trigger, a policy
+and a constraint are named `ON` their table. A constraint's comment is written
+when the constraint is created, and a changed one is not compared yet
+([stokaro/ptah#3678](https://github.com/stokaro/ptah/issues/3678)).
+
+A statement that cannot be applied is refused by name, with the file it came
+from:
+
+- a comment on an object the document does not declare, or on a trigger or a
+  policy of another table;
+- a routine named by its name alone when the document declares more than one
+  overload of it, or a function named as a procedure;
+- a comment on a domain's constraint (`ON DOMAIN`), which the model keeps no
+  comment for, and on any other kind of object, such as a foreign table or a
+  cast;
+- `IS NULL`.
+
+The SQL reader keeps one routine per name, so a document that declares two
+overloads of a function keeps only one of them
+([stokaro/ptah#3672](https://github.com/stokaro/ptah/issues/3672)).
 
 ## Row-level security
 

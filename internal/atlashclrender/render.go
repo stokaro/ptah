@@ -616,6 +616,7 @@ func (r *renderer) renderEnums() {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.rawAttr(1, "values", stringList(enum.Values))
+		r.stringAttr(1, "comment", enum.Comment)
 		r.line("}")
 		r.line("")
 	}

@@ -163,7 +163,7 @@ seven of them as open capabilities regardless.
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
 | Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, EXCLUDE constraint block, column enum, table checks/custom, index ops, ClickHouse granularity, seed data block. |
-| SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders; DO blocks, COMMENT ON and raw routine bodies still parse and are dropped. |
+| SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders. COMMENT ON sets the comment of the object it names or is refused; DO blocks are dropped. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |
 
 </div>

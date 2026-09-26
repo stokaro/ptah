@@ -425,6 +425,10 @@
         "attributes": {
           "additionalProperties": false,
           "properties": {
+            "comment": {
+              "description": "Enum type comment.",
+              "type": "string"
+            },
             "name": {
               "description": "Enum type name.",
               "type": "string"

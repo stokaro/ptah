@@ -62,33 +62,7 @@ func TriggersWithSemantics(
 	//
 	// Views never had it: they resolve through objectlookup, which applies the
 	// three tiers. This applies the same ones.
-	// Two passes, exact spellings first.
-	//
-	// A declaration that names the table exactly as the reader does gets that
-	// trigger before one relying on a tier is offered it. Without the ordering,
-	// a schema spelling the same trigger both ways would hand the database's
-	// one to whichever declaration came first in the slice -- the coin toss
-	// objectlookup declines to make elsewhere.
-	paired := make([]bool, len(database.Triggers))
-	matched := make([]int, len(desired.Triggers))
-	for position := range matched {
-		matched[position] = -1
-	}
-	for position, declared := range desired.Triggers {
-		matched[position] = exactDatabaseTrigger(database.Triggers, paired, declared, semantics)
-		if matched[position] >= 0 {
-			paired[matched[position]] = true
-		}
-	}
-	for position, declared := range desired.Triggers {
-		if matched[position] >= 0 {
-			continue
-		}
-		matched[position] = matchingDatabaseTrigger(database.Triggers, paired, declared, semantics)
-		if matched[position] >= 0 {
-			paired[matched[position]] = true
-		}
-	}
+	matched, paired := pairTriggers(desired, database, semantics)
 
 	for position, declared := range desired.Triggers {
 		canonical := declared
@@ -304,4 +278,47 @@ func splitExecuteFunction(reference string) (schema, name string) {
 		return qualifier, bare
 	}
 	return "", trimmed
+}
+
+// pairTriggers matches each declared trigger to the database trigger it is,
+// and reports which database triggers were claimed. matched holds the index
+// into database.Triggers for each declared trigger, or -1.
+//
+// It is the one pairing every comparison of triggers uses, the definition and
+// the comment alike, so a trigger the definition comparison treats as the same
+// object is the one whose comment is compared.
+func pairTriggers(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) (matched []int, paired []bool) {
+	// Two passes, exact spellings first.
+	//
+	// A declaration that names the table exactly as the reader does gets that
+	// trigger before one relying on a tier is offered it. Without the ordering,
+	// a schema spelling the same trigger both ways would hand the database's
+	// one to whichever declaration came first in the slice -- the coin toss
+	// objectlookup declines to make elsewhere.
+	paired = make([]bool, len(database.Triggers))
+	matched = make([]int, len(desired.Triggers))
+	for position := range matched {
+		matched[position] = -1
+	}
+	for position, declared := range desired.Triggers {
+		matched[position] = exactDatabaseTrigger(database.Triggers, paired, declared, semantics)
+		if matched[position] >= 0 {
+			paired[matched[position]] = true
+		}
+	}
+	for position, declared := range desired.Triggers {
+		if matched[position] >= 0 {
+			continue
+		}
+		matched[position] = matchingDatabaseTrigger(database.Triggers, paired, declared, semantics)
+		if matched[position] >= 0 {
+			paired[matched[position]] = true
+		}
+	}
+
+	return matched, paired
 }

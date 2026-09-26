@@ -312,6 +312,7 @@ func (ctx *renderContext) writeEnums(w *sourceWriter) {
 		w.writeComment(annotation("ptah:schema:enum",
 			attr{name: "name", value: enum.Name, set: true},
 			attr{name: "values", value: strings.Join(enum.Values, ","), set: len(enum.Values) > 0},
+			attr{name: "comment", value: enum.Comment, set: enum.Comment != ""},
 		))
 	}
 	if len(ctx.db.Enums) > 0 {

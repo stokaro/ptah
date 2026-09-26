@@ -450,6 +450,10 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	if len(values) == 0 {
 		return p.blockError(block, "enum %q requires values", labels.name)
 	}
+	comment, err := p.stringAttr(block, "comment", "enum")
+	if err != nil {
+		return err
+	}
 	// The `schema` attribute is read rather than merely tolerated. It was
 	// accepted by rejectUnsupportedEnumAttrs and then discarded, so a document
 	// declaring `enum "mood" { schema = schema.extra }` was read back as an
@@ -457,9 +461,10 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	// schema the connection defaulted to (stokaro/ptah#1276). A `function`
 	// block's schema has always been read here; an enum's is the same fact.
 	p.db.Enums = append(p.db.Enums, schemamodel.Enum{
-		Name:   labels.name,
-		Schema: labels.schema,
-		Values: values,
+		Name:    labels.name,
+		Schema:  labels.schema,
+		Values:  values,
+		Comment: comment,
 	})
 	return nil
 }
@@ -1772,8 +1777,9 @@ func (p *parser) rejectUnsupportedEnumAttrs(block *hclsyntax.Block) error {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema": true,
-		"values": true,
+		"schema":  true,
+		"values":  true,
+		"comment": true,
 	}, "enum")
 }
 

@@ -222,7 +222,11 @@ func applyTablePrimaryKeys(schema *catalog.Database, tables []schemamodel.Table)
 func toDBEnums(enums []schemamodel.Enum) []catalog.Enum {
 	out := make([]catalog.Enum, 0, len(enums))
 	for _, enum := range enums {
-		out = append(out, catalog.Enum{Name: enum.Name, Values: append([]string(nil), enum.Values...)})
+		out = append(out, catalog.Enum{
+			Name:    enum.Name,
+			Values:  append([]string(nil), enum.Values...),
+			Comment: enum.Comment,
+		})
 	}
 	return out
 }

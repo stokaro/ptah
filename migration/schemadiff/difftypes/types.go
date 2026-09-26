@@ -1217,10 +1217,11 @@ type SchemaDiff struct {
 	// schemas but have different definitions (expressions, roles, etc.)
 	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
 
-	// ObjectCommentsChanged holds the comment transitions of views, sequences,
-	// domains, composite and range types, and extensions whose comment is all
-	// that differs, or whose comment differs beside a change the lists above
-	// carry.
+	// ObjectCommentsChanged holds the comment transitions of views,
+	// materialized views, sequences, domains, composite, range and enum types,
+	// extensions, functions, procedures, triggers and policies whose comment
+	// is all that differs, or whose comment differs beside a change the lists
+	// above carry.
 	//
 	// It is a list of its own rather than a field on each kind's diff because
 	// a comment is the one change these objects take in place: a domain whose
@@ -2001,6 +2002,12 @@ const (
 	CommentedCompositeType CommentedObjectKind = "composite_type"
 	CommentedRangeType     CommentedObjectKind = "range_type"
 	CommentedExtension     CommentedObjectKind = "extension"
+	CommentedEnumType      CommentedObjectKind = "enum_type"
+	CommentedFunction      CommentedObjectKind = "function"
+	CommentedProcedure     CommentedObjectKind = "procedure"
+	CommentedMatView       CommentedObjectKind = "materialized_view"
+	CommentedTrigger       CommentedObjectKind = "trigger"
+	CommentedPolicy        CommentedObjectKind = "policy"
 )
 
 // ObjectCommentChange is the comment transition of one object that is neither
@@ -2011,8 +2018,16 @@ type ObjectCommentChange struct {
 	// Kind says which kind of object Name names.
 	Kind CommentedObjectKind `json:"kind"`
 	// Name is the object's name as the declaration qualifies it. An
-	// extension's name is database-wide and carries no schema.
+	// extension's name is database-wide and carries no schema, and a
+	// trigger's and a policy's is scoped to Table.
 	Name string `json:"name"`
+	// Table is the table a trigger or a policy belongs to, and empty for
+	// every other kind.
+	Table string `json:"table,omitempty"`
+	// Arguments is the argument list that addresses a function or a
+	// procedure, as the database records its identity, and nil for every
+	// other kind and for a routine whose identity nothing recorded.
+	Arguments *string `json:"arguments,omitempty"`
 	// Current is what the database holds, empty when it holds none.
 	Current string `json:"current"`
 	// Desired is what the declaration asks for, empty to remove it.

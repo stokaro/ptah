@@ -336,9 +336,10 @@ func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDif
 // nothing is lost.
 func enumFromCatalog(reported catalog.Enum) schemamodel.Enum {
 	return schemamodel.Enum{
-		Name:   reported.Name,
-		Schema: reported.Schema,
-		Values: slices.Clone(reported.Values),
+		Name:    reported.Name,
+		Schema:  reported.Schema,
+		Values:  slices.Clone(reported.Values),
+		Comment: reported.Comment,
 	}
 }
 

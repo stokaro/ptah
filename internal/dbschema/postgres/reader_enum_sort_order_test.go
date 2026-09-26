@@ -17,10 +17,10 @@ import (
 // ask for -- 0, 1, 1.5, 2 for `queued`, `sent` plus a BEFORE and a preceding
 // insert -- so the only thing the reader can go on is the order itself.
 var evolvedEnumRows = [][]driver.Value{
-	{"delivery_state", "draft"},
-	{"delivery_state", "queued"},
-	{"delivery_state", "processing"},
-	{"delivery_state", "sent"},
+	{"delivery_state", "draft", ""},
+	{"delivery_state", "queued", ""},
+	{"delivery_state", "processing", ""},
+	{"delivery_state", "sent", ""},
 }
 
 // enumCatalog answers a full schema read, capturing the enum query on the way
@@ -36,7 +36,7 @@ func enumCatalog(capturedSQL *string) dbtest.QueryHandler {
 		if strings.Contains(query, "pg_enum") {
 			*capturedSQL = strings.Join(strings.Fields(query), " ")
 			return dbtest.QueryResult{
-				Columns: []string{"enum_name", "enum_value"},
+				Columns: []string{"enum_name", "enum_value", "type_comment"},
 				Rows:    evolvedEnumRows,
 			}, nil
 		}

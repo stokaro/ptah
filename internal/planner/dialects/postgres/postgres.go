@@ -268,8 +268,8 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesRemoved) > 0 {
-			values, ok := postgresEnumValues(diff.DeclaredUserTypes, enumDiff.EnumName, semantics)
-			if !ok {
+			declared, rebuilt := enumRebuild(diff.DeclaredUserTypes, enumDiff, semantics)
+			if !rebuilt {
 				result = append(result, ast.NewComment(fmt.Sprintf(
 					"WARNING: Cannot remove enum values %v from %s because the target enum definition was not found",
 					enumDiff.ValuesRemoved,
@@ -279,9 +279,14 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 			}
 			result = append(result, ast.NewRawSQL(postgresEnumValueRemovalSQL(
 				enumDiff.EnumName,
-				values,
+				declared.Values,
 				enumDiff.Usages,
 			)))
+			// The enum the rebuild creates is a new type, and the comment
+			// stayed on the old one it dropped.
+			if declared.Comment != "" {
+				result = append(result, ast.NewObjectComment(ast.CommentedType, enumDiff.EnumName, declared.Comment))
+			}
 			continue
 		}
 
@@ -295,21 +300,27 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 	return result
 }
 
-// postgresEnumValues answers with the values a declared enum holds, from the
-// vocabulary the diff carries rather than from the declaration.
+// enumRebuild answers with the declaration an enum is rebuilt from. PostgreSQL
+// has no statement that removes a value, so an enum that loses one is renamed,
+// created again from the declaration, and the old type dropped.
 //
-// The vocabulary is the same four lists a created column is typed against,
+// It is the one answer to whether an enum is rebuilt. modifyExistingEnums
+// writes the rebuild from it, and changeObjectComments reads it to know that
+// the enum is a new type and that the rebuild wrote its comment.
+//
+// The declaration comes from the vocabulary the diff carries rather than from
+// the document: it is the same four lists a created column is typed against,
 // and the comparison fills it on every run (stokaro/ptah#2315).
-func postgresEnumValues(
+func enumRebuild(
 	vocabulary difftypes.UserTypeVocabulary,
-	enumName string,
+	enumDiff difftypes.EnumDiff,
 	semantics identifier.Semantics,
-) ([]string, bool) {
-	enum := objectlookup.Qualified(vocabulary.Enums, enumName, semantics)
-	if enum == nil {
+) (*schemamodel.Enum, bool) {
+	if len(enumDiff.ValuesRemoved) == 0 {
 		return nil, false
 	}
-	return append([]string(nil), enum.Values...), true
+	enum := objectlookup.Qualified(vocabulary.Enums, enumDiff.EnumName, semantics)
+	return enum, enum != nil
 }
 
 func postgresEnumValueRemovalSQL(enumName string, values []string, usages []difftypes.EnumColumnUsage) string {
@@ -1838,10 +1849,6 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
 
-	// 6.9. Comments on objects that already existed, after every step that
-	// creates, replaces or recreates one of them.
-	result = p.changeObjectComments(result, diff)
-
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
 
@@ -1871,6 +1878,11 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	if err != nil {
 		return nil, err
 	}
+
+	// 9.1. Comments on objects that already existed, after every step that
+	// creates, replaces or recreates one of them. The policies are the last
+	// of those.
+	result = p.changeObjectComments(result, diff)
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
 	result = p.addNewGrants(result, diff)
@@ -2315,10 +2327,11 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 		result = append(result, drop)
 	}
 
-	functionNode := modelast.FromFunction(target)
-	functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
-	result = append(result, functionNode)
-	return result
+	// The note is a statement of its own: the create node's comment is the
+	// routine's, which the renderer writes with COMMENT ON.
+	result = append(result, ast.NewComment(fmt.Sprintf("Modify function %s: %s",
+		target.Name, summarizeFunctionChanges(fnDiff))))
+	return append(result, modelast.FromFunction(target))
 }
 
 // replacementIsRefused reports whether PostgreSQL refuses this modification
@@ -3250,13 +3263,13 @@ func (p *Planner) modifyExistingRLSPolicies(
 		if policy.Name == "" {
 			return nil, unrenderableRLSPolicy("modified", policyDiff.PolicyName, policyDiff.TableName)
 		}
-		policyNode := modelast.FromRLSPolicy(policy).SetReplace()
-		policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
+		// The note is a statement of its own, for the reason the modified
+		// function's is.
+		result = append(result, ast.NewComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
 			policyDiff.PolicyName,
 			policyDiff.TableName,
 			summarizeRLSChanges(policyDiff),
-		))
-		result = append(result, policyNode)
+		)), modelast.FromRLSPolicy(policy).SetReplace())
 	}
 	return result, nil
 }
