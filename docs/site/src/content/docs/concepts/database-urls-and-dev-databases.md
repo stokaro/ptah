@@ -42,16 +42,14 @@ alias list is on the
 unrecognized scheme fails with `unsupported database dialect`.
 
 A MySQL or MariaDB server behind a Unix socket takes the Atlas CLI socket
-form, `mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app`, with
-`mariadb+unix://` and `maria+unix://` for MariaDB. The URL path is the socket
-and the `database` parameter names the database; a host in that URL is
-ignored. The Go-driver form `mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app`
-reaches the same socket.
+form, `mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app`, or
+`mariadb+unix://` and `maria+unix://`: the path is the socket, `database`
+names the database, and a host is ignored. The Go-driver form
+`mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app` reaches the same socket.
 
-A MySQL or MariaDB URL must name a database, over TCP or through a socket. The
-Atlas CLI reads a URL that names none as the whole server; Ptah refuses it
-([stokaro/ptah#3761](https://github.com/stokaro/ptah/issues/3761)). An empty
-`database` parameter is refused too.
+A MySQL or MariaDB URL must name a database, and an empty `database` parameter
+is refused. The Atlas CLI reads a URL that names none as the whole server
+([stokaro/ptah#3761](https://github.com/stokaro/ptah/issues/3761)).
 
 ## The four database roles
 
@@ -84,12 +82,11 @@ rather than a namespace — MySQL, MariaDB, and ClickHouse — a plan carrying t
 target's schema name is re-scoped onto the dev database before it is rehearsed,
 and a statement naming some third database is refused instead of run.
 
-The MySQL-family schemes `mysql://`, `mariadb://` and `maria://` open one
-driver, and whether the server behind one is MySQL or MariaDB is read from the
-server's version banner, not from the scheme. So a dev URL may spell the family
-differently from its target, and a `mysql://` URL and a `mariadb://` URL naming
-one database count as one database. `schema apply` and `migrate diff` refuse a
-MySQL dev database for a MariaDB target, and the reverse, whatever the spelling.
+`mysql://`, `mariadb://` and `maria://` open one driver, and the server's
+version banner, not the scheme, says which engine answers. A dev URL may spell
+the family differently from its target, and two spellings of one database are
+one database. `schema apply` and `migrate diff` refuse a MySQL dev database for
+a MariaDB target, and the reverse.
 
 **A shadow database** (`--shadow-db`) is a disposable verification target for
 commands that write or record migrations: `ptah migrations generate` replays
