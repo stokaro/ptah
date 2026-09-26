@@ -1466,7 +1466,8 @@
         "/start/choose-a-workflow/",
         "/start/install/",
         "/versioned/generate/",
-        "/versioned/overview/"
+        "/versioned/overview/",
+        "/versioned/reference-data/"
       ],
       "inboundLinks": [
         "/atlas/schema-commands/",
@@ -1482,8 +1483,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 2139,
-      "sourceBytes": 18690
+      "visibleWords": 2247,
+      "sourceBytes": 19368
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -7161,6 +7162,7 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/direct/apply/",
         "/direct/compare-and-drift/",
         "/faq/",
         "/operate/overview/",
@@ -7169,8 +7171,8 @@
         "/schema/dbml/",
         "/versioned/overview/"
       ],
-      "visibleWords": 2463,
-      "sourceBytes": 16204
+      "visibleWords": 2554,
+      "sourceBytes": 16717
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.mdx",

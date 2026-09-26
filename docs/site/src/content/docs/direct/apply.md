@@ -287,6 +287,15 @@ combine under the rule a versioned migration's directive answers to, and
 header wins, except under `--tx-mode all`, where a plan carrying a header is
 refused before the database is contacted.
 
+`--protected-table` belongs to the plan, not to the apply of one. `ptah schema
+plan --protected-table` refuses to save a plan that would change a fenced row
+set. `ptah schema apply --plan` refuses the fence, typed or set as
+`PTAH_PROTECTED_TABLE`, before it reads the plan: the file records its
+statements and not which declared row sets they change, so the apply has
+nothing to check the fence against.
+[Fencing a table off](../../versioned/reference-data/#fencing-a-table-off) has
+the rule.
+
 A plan file can also carry a reviewer's signature. `ptah schema approve` signs
 one with an SSH key and `ptah schema apply --plan --require-approval` refuses a
 plan that carries no signature from a list of approvers you commit:
@@ -413,6 +422,10 @@ than as `applied`.
 
 A consumer that does not know a code still knows what `refused` means, and
 reads `error` for the rest.
+
+`apply --plan` never raises `protected-table`. A fence passed to it is a usage
+error, reported as `failed` with no refusal code, because the plan was never
+checked against the fence.
 
 ## Hybrid patterns
 

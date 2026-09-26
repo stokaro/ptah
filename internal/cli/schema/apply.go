@@ -136,7 +136,10 @@ for the same lock, so it is refused on the same targets. With --edit the
 planned SQL opens in $VISUAL or $EDITOR before confirmation, and the edited
 SQL is what gets applied. With --plan <path>, a pre-approved plan file saved
 by "ptah schema plan" is executed instead of re-planning, after verifying the
-database still matches the plan's source fingerprint. --schemas and --include
+database still matches the plan's source fingerprint. --plan refuses
+--protected-table, typed or set in the environment: the fence is read when the
+plan is computed, so pass it to "ptah schema plan", which refuses to save a
+plan that would change a fenced table. --schemas and --include
 positively select what both comparison sides see; --exclude subtracts from the
 result. An --include selection that matches neither the target nor the desired
 schema refuses the apply rather than reporting a synced schema for work that
@@ -168,7 +171,8 @@ confirmation prompt, goes to standard error.`,
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.protectedTables, applyProtectedTableFlag, nil,
-		"Declared row set this apply refuses to change, by table or schema.table; repeat to add more. There is no override")
+		"Declared row set this apply refuses to change, by table or schema.table; repeat to add more. There is no override. "+
+			"Refused with --plan: fence the plan with \"ptah schema plan --protected-table\" instead")
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")
 	flags.BoolVar(&opts.requireApproval, applyRequireApprovalFlag, false,
 		"Refuse to execute a --plan that does not carry a verified approval")
@@ -617,6 +621,17 @@ func runSchemaApplyPlanFileOnLockedSession(
 // validateSchemaApplyPlanOptions rejects flags that would recompute or
 // reshape the pre-approved plan: the plan file already fixes the desired
 // schema, the exclude patterns, and the exact SQL that was reviewed.
+//
+// It also rejects the protected-table fence, which this path cannot decide.
+// The computed path refuses a fenced row set only where its own statements
+// change it, and a plan file records neither that nor anything it could be
+// derived from: managed_rows names the row sets the plan read, and a table the
+// plan creates has its rows inserted without a read. A fence accepted here
+// would promise a check nothing makes.
+//
+// Changed is also set for a value a PTAH_* variable supplied, so an exported
+// fence is refused as well, and the refusal names the variable rather than a
+// flag the command line never carried.
 func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 	conflicts := []struct {
 		flag   string
@@ -630,11 +645,20 @@ func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 		{applyEditFlag, "a pre-approved plan must execute exactly as reviewed; recompute the plan with `ptah schema plan` instead"},
 		{dbcli.SchemasFlagName, "the plan file already fixes the planned schema objects"},
 		{applyIncludeFlag, "the plan file already fixes the planned schema objects"},
+		{applyProtectedTableFlag, "the fence is read when the plan is computed, and the plan file does not record " +
+			"which declared row sets its statements change; pass it to `ptah schema plan --protected-table`, " +
+			"which refuses to save a plan that would change a fenced table, and apply the plan without it"},
 	}
+	flags := cmd.Flags()
 	for _, conflict := range conflicts {
-		if cmd.Flags().Changed(conflict.flag) {
-			return fmt.Errorf("ptah schema apply --%s cannot be combined with --%s: %s", applyPlanFlag, conflict.flag, conflict.reason)
+		if !flags.Changed(conflict.flag) {
+			continue
 		}
+		source := "--" + conflict.flag
+		if envName, fromEnv := cmdflags.AppliedEnvName(flags, conflict.flag); fromEnv {
+			source = envName
+		}
+		return fmt.Errorf("ptah schema apply --%s cannot be combined with %s: %s", applyPlanFlag, source, conflict.reason)
 	}
 	return nil
 }
