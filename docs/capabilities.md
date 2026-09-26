@@ -1249,6 +1249,13 @@ file, exactly as any other command reaching the same URL would.
   `attishidden` is a CockroachDB column; PostgreSQL and YugabyteDB have neither
   it nor `information_schema.columns.is_hidden`.
 
+  The constraint read leaves out a constraint whose every column is hidden, for
+  the same reason: a description cannot hold it without the column. The keyless
+  table's key over `rowid`, `<table>_pkey`, is the case that matters. Described,
+  it would make every comparison plan `DROP CONSTRAINT <table>_pkey`, which
+  CockroachDB refuses. A hash-sharded primary key also spans a declared column,
+  so it is kept.
+
   Two refusals are about values rather than names. A zero or negative knob is
   refused because the server rejects the negative one and accepts zero while
   storing the parameter nowhere, so neither reads back. A `false` boolean

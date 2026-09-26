@@ -2135,6 +2135,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			tc.table_name,
 			tc.constraint_name,
 			tc.constraint_type
+		` + r.hiddenKeyFilter() + `
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
 
 	rows, err := r.db.QueryContext(ctx, constraintsQuery, schemaName)

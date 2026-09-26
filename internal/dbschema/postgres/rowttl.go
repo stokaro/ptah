@@ -78,8 +78,54 @@ func readRowTTL(encoded string) (*ast.RowTTLSpec, error) {
 // COALESCE covers the LEFT JOIN: a column with no pg_attribute row is not
 // hidden, and a NULL there must not filter it out.
 func (r *Reader) hiddenColumnFilter() string {
-	if !r.caps.Has(capability.RowLevelTTL) {
+	if !r.hasHiddenColumns() {
 		return ""
 	}
-	return "AND COALESCE(a.attishidden, false) = false"
+	return "AND " + hiddenAttribute("a") + " = false"
+}
+
+// hiddenKeyFilter excludes a constraint whose every column is one
+// [Reader.hiddenColumnFilter] leaves out, and adds nothing on a target that has
+// no hidden columns. It is a HAVING clause over the constraint read, which
+// groups one constraint's key columns into one row.
+//
+// The shape it exists for is the key CockroachDB gives a table that declares
+// none. Measured on v25.4.16, v26.2.7 and v26.3.2, `CREATE TABLE t (id INT8)`
+// reports `t_pkey` in pg_constraint with contype 'p' and conkey {2}, the attnum
+// of the hidden rowid, and information_schema.table_constraints lists it as a
+// PRIMARY KEY. Described, it names a column the description does not have: the
+// comparison plans `DROP CONSTRAINT t_pkey` against every schema that declares
+// the table as it was written, and the server refuses the statement -- v26 with
+// SQLSTATE 57000 because the table is schema_locked, v25.4 with 0A000 because a
+// primary key cannot be dropped without adding another (stokaro/ptah#3738).
+//
+// Every column rather than any, and whatever the constraint type. A hash-sharded
+// primary key spans the hidden shard column and the declared one, conkey {1,2}
+// on v26.3.2, and is the author's key, so it stays. The CHECK CockroachDB puts
+// on the shard column alone is the engine's, like the key over rowid, and goes.
+// A column the author declared NOT VISIBLE is hidden too, and its key goes with
+// it for the reason the column does: the description cannot hold one without
+// the other.
+//
+// bool_and over a constraint with no key column is NULL, and COALESCE keeps it.
+func (r *Reader) hiddenKeyFilter() string {
+	if !r.hasHiddenColumns() {
+		return ""
+	}
+	return "HAVING NOT COALESCE(bool_and(" + hiddenAttribute("local_column") + "), false)"
+}
+
+// hasHiddenColumns reports whether the target has CockroachDB's hidden columns,
+// which is what both filters above are gated on. See [Reader.hiddenColumnFilter]
+// for why the key is RowLevelTTL.
+func (r *Reader) hasHiddenColumns() bool {
+	return r.caps.Has(capability.RowLevelTTL)
+}
+
+// hiddenAttribute is the one spelling of "CockroachDB hides this column" over a
+// pg_attribute alias. The column read and the constraint read have to agree on
+// it: a constraint the second keeps over a column the first drops is a
+// description naming a column it does not hold.
+func hiddenAttribute(alias string) string {
+	return "COALESCE(" + alias + ".attishidden, false)"
 }
