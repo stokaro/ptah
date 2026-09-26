@@ -426,10 +426,11 @@ func TestKnownDBMS_HappyPath(t *testing.T) {
 	}
 }
 
-// FormattedLines keeps what Liquibase reads and drops an --ignoreLines
+// ReadFormattedSQL keeps what Liquibase reads and drops an --ignoreLines
 // directive with the lines it skips. Each row was checked against Liquibase
-// 5.0.4 where it concerns a changelog Liquibase runs (stokaro/ptah#3727).
-func TestFormattedLines_HappyPath(t *testing.T) {
+// 5.0.4 where it concerns a changelog Liquibase runs (stokaro/ptah#3727). No
+// row holds a changeset Liquibase reads, so every line kept is preamble.
+func TestReadFormattedSQL_IgnoreLines_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -494,16 +495,18 @@ func TestFormattedLines_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			lines, err := liquibaserun.FormattedLines("c.sql", test.content)
+			read, err := liquibaserun.ReadFormattedSQL("c.sql", test.content)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(lines, qt.DeepEquals, test.want)
+			c.Assert(read.Preamble, qt.DeepEquals, test.want)
+			c.Assert(read.Changesets, qt.HasLen, 0)
 		})
 	}
 }
 
-// The spellings Liquibase refuses are refused, with the line that holds them.
-func TestFormattedLines_FailurePath(t *testing.T) {
+// The spellings of --ignoreLines Liquibase refuses are refused, with the line
+// that holds them.
+func TestReadFormattedSQL_IgnoreLines_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -539,10 +542,11 @@ func TestFormattedLines_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			lines, err := liquibaserun.FormattedLines("c.sql", test.content)
+			read, err := liquibaserun.ReadFormattedSQL("c.sql", test.content)
 
 			c.Assert(err, qt.ErrorMatches, test.message)
-			c.Assert(lines, qt.IsNil)
+			c.Assert(read.Preamble, qt.IsNil)
+			c.Assert(read.Changesets, qt.IsNil)
 		})
 	}
 }
@@ -627,6 +631,12 @@ func TestScanFormattedSQL_PropertyReference_FailurePath(t *testing.T) {
 			message: `liquibase changeset s:1 in "1_x.sql" uses the property reference \$\{t\}; .*`,
 		},
 		{
+			name: "in a rollback block",
+			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n" +
+				"/* liquibase rollback\nDROP TABLE ${t};\n*/\n",
+			message: `liquibase changeset s:1 in "1_x.sql" uses the property reference \$\{t\}; .*`,
+		},
+		{
 			name:    "a directive Liquibase refuses",
 			content: "--liquibase formatted sql\n--changeset s:1\n--ignoreLines:START\nSELECT 1;\n",
 			message: `liquibase changelog "1_x.sql" line 3: "--ignoreLines:START" names neither start nor a number of lines, .*`,
@@ -642,4 +652,35 @@ func TestScanFormattedSQL_PropertyReference_FailurePath(t *testing.T) {
 			c.Assert(scanned, qt.DeepEquals, liquibaserun.FormattedCopy{})
 		})
 	}
+}
+
+// A copy is up-only, so it holds neither a changeset's --rollback lines nor its
+// /* liquibase rollback block: left in, the block would be a SQL comment that
+// ends at its first */, and the rest of it would run as up SQL.
+func TestScanFormattedSQL_Rollback_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	content := "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback DROP TABLE t;\n" +
+		"/* liquibase rollback\nDROP TABLE u; /* u last */ DROP TABLE t;\n*/\nCREATE TABLE u (id int);\n" +
+		"--rollback;this is SQL to Liquibase"
+
+	scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql", content)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scanned.Lines, qt.DeepEquals, []string{
+		"--liquibase formatted sql", "--changeset s:1", "CREATE TABLE t (id int);", "CREATE TABLE u (id int);",
+		"--rollback;this is SQL to Liquibase",
+	})
+}
+
+// Liquibase fills in a property reference only in a rollback it runs as SQL,
+// so one in a rollback of "not required" does not refuse the copy.
+func TestScanFormattedSQL_PropertyReferenceInAnEmptyRollback_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	scanned, err := liquibaserun.ScanFormattedSQL("1_x.sql",
+		"--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback not required for ${env}")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scanned.Lines, qt.DeepEquals,
+		[]string{"--liquibase formatted sql", "--changeset s:1", "CREATE TABLE t (id int);"})
 }

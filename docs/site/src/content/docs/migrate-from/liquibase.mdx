@@ -345,6 +345,14 @@ migration, and one with `ignore="true"`, which Liquibase never runs, is left
 out of the import and named on standard error. In formatted SQL, the lines an
 `--ignoreLines` directive skips are left out as well.
 
+In formatted SQL, a `/* liquibase rollback` block becomes the down file the way
+a `--rollback` line does, and `--rollback empty` or `--rollback not required`
+becomes a down file that runs nothing. Liquibase joins the lines of a block with
+nothing between them, so `DELETE FROM t` and `WHERE id = 1;` on two lines run as
+`DELETE FROM tWHERE id = 1;`. A rollback that Liquibase would run as different
+SQL from what is written is refused by name; rewrite it as `--rollback` lines,
+which Liquibase keeps apart.
+
 A property reference such as `${schema}` is refused. Liquibase fills it in when
 it runs, and an environment variable or command-line parameter of that name
 wins over the changelog's own `property`, so the changelog does not say what

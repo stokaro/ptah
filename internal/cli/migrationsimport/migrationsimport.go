@@ -64,7 +64,11 @@ reference such as ${schema}, whose value Liquibase takes from the environment
 it runs in, and the remaining change types -- is refused by name rather than
 dropped, so an import either carries the whole changelog or does not happen.
 In formatted SQL, an --ignoreLines directive and the lines it skips are left
-out, as Liquibase leaves them out. --dialect
+out, as Liquibase leaves them out. A changeset's --rollback lines and
+/* liquibase rollback blocks become its down migration, joined as Liquibase
+joins them, and a rollback of empty or not required becomes one that runs
+nothing. A rollback whose lines Liquibase runs together into other SQL, or one
+that names another changeset, is refused. --dialect
 does not make dbms convert: the name Liquibase gives some databases depends on
 how it connected, so a changeset's dbms cannot be matched to a dialect.
 --liquibase-dbms names it instead: Liquibase's own name for the database the

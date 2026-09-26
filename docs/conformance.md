@@ -642,6 +642,17 @@ neither, since the copy leaves out the directive and the lines it skips. A
 property reference such as `${tbl}`, which Liquibase fills in from its
 environment and which Atlas CE copies as it is, refuses the conversion.
 
+A `/* liquibase rollback` block is read as Liquibase reads it as well: it ends
+at the first line that ends in `*/`, and the numbered copy leaves it out, with
+the changeset's `--rollback` lines, and names the file in the warning about
+dropped rollbacks. Measured 2026-09-26 on SQLite with a numbered `1_init.sql`
+that creates `accounts`, then holds a block whose line
+`DROP TABLE accounts; /* accounts first */ DROP TABLE ledgers;` carries a
+comment of its own, then creates `ledgers`: Liquibase 5.0.4 `update` creates
+both tables. Atlas CE v1.3.0 `migrate apply` ends the comment at `first */`,
+runs `DROP TABLE ledgers;` as up SQL and exits 1 with `no such table: ledgers`.
+`ptah-compat migrate apply` creates both tables.
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

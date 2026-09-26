@@ -138,12 +138,36 @@ versions in file order — files are ordered by name, changesets within a file b
 appearance — with the `author:id` carried into the name
 (`0000000001_alice_create_users...`).
 
-In formatted SQL each `--rollback` line contributes the down, and a normal `--`
-SQL comment is kept in the up. An `--ignoreLines:start` ... `--ignoreLines:end`
+In formatted SQL a changeset's rollback is the down, and a normal `--` SQL
+comment is kept in the up. An `--ignoreLines:start` ... `--ignoreLines:end`
 block, or `--ignoreLines:<n>` and the next n lines, is left out, as Liquibase
 leaves it out: before the first changeset, inside one, or around a whole
 `--changeset`. A block with no end runs to the end of the file. The spellings
-Liquibase refuses, such as `--ignoreLines:START`, are refused. In a changelog the changes are the up and
+Liquibase refuses, such as `--ignoreLines:START`, are refused.
+
+The rollback is read as Liquibase 5.0.4 reads it, from two forms that may be
+mixed in one changeset:
+
+- A `--rollback <SQL>` line. The blank after the keyword is part of it, so
+  `--rollback;` is a comment in the up, as it is to Liquibase.
+- A `/* liquibase rollback` block. The opening line holds only those words, in
+  any case, and the block ends at the first line that ends in `*/`. A block no
+  line closes is refused, as Liquibase refuses it. An `--ignoreLines` directive
+  or a `--changeset` marker inside a block is part of the rollback.
+
+Liquibase ends each `--rollback` line with a line break, but joins the lines of
+a block, and a block and a `--rollback` line after it, with nothing between
+them. The down holds the text Liquibase runs: a block of one statement per line
+becomes `DROP TABLE b;DROP TABLE a;`. Where the join changes the SQL, the
+changeset is refused by name, because Liquibase does not run what the author
+wrote: `DELETE FROM t` and `WHERE id = 1;` on two lines run as
+`DELETE FROM tWHERE id = 1;`, and a `--` comment runs on over the next line.
+Write such a rollback as `--rollback` lines. A rollback of `empty` or
+`not required` becomes a down migration that runs nothing, as Liquibase runs
+nothing to roll that changeset back. A rollback that names `changesetId` is refused, because Liquibase
+reads it as a reference to another changeset and Ptah does not follow it.
+
+In a changelog the changes are the up and
 `rollback` is the down, whether it is written as a change list, a nested
 `<sql>`, or bare SQL text. A `sql` change reads `splitStatements`,
 `stripComments` and a `comment`, and refuses any other attribute by name, such

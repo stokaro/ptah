@@ -371,6 +371,9 @@ func fileCarriesDroppedRollback(fsys fs.FS, name string, format Format) (bool, e
 		if err != nil {
 			return false, err
 		}
+		if format == FormatLiquibase {
+			return liquibaseCarriesRollback(name, data)
+		}
 		return sourceBodyCarriesRollback(string(data), format), nil
 	default:
 		return false, nil
@@ -402,13 +405,6 @@ func sourceBodyCarriesRollback(body string, format Format) bool {
 				inRollback = directive == "down"
 				continue
 			}
-		case FormatLiquibase:
-			// Liquibase writes the rollback inline, one directive per line,
-			// which is why this layout needs no section state.
-			if rollback, ok := liquibaseRollbackSQL(line); ok && rollback != "" {
-				return true
-			}
-			continue
 		default:
 			return false
 		}
@@ -419,14 +415,19 @@ func sourceBodyCarriesRollback(body string, format Format) bool {
 	return false
 }
 
-// liquibaseRollbackSQL returns the SQL a `--rollback` line carries.
-func liquibaseRollbackSQL(line string) (string, bool) {
-	trimmed := strings.TrimSpace(line)
-	const prefix = "--rollback"
-	if !strings.HasPrefix(strings.ToLower(trimmed), prefix) {
-		return "", false
+// liquibaseCarriesRollback reports whether a formatted-SQL file holds a
+// changeset whose rollback runs something: SQL, or another changeset's
+// changes. A rollback of "empty" or "not required" runs nothing, and a copy
+// that leaves it out loses nothing.
+func liquibaseCarriesRollback(name string, data []byte) (bool, error) {
+	changelog, err := liquibaserun.ReadFormattedSQL(name, string(data))
+	if err != nil {
+		return false, err
 	}
-	return strings.TrimSpace(trimmed[len(prefix):]), true
+	return slices.ContainsFunc(changelog.Changesets, func(changeset liquibaserun.FormattedChangeset) bool {
+		kind := changeset.Rollback.Kind()
+		return kind == liquibaserun.SQLRollback || kind == liquibaserun.ChangesetRollback
+	}), nil
 }
 
 // loadCapturedForImport adds the one format adapter that belongs only to the
@@ -2145,9 +2146,14 @@ func dbmateDirective(line string) (string, bool) {
 	return strings.ToLower(name), true
 }
 
-// liquibaseSQL keeps a Liquibase formatted-SQL body, dropping the header and any
-// --rollback directive lines. Liquibase has no up/down section marker, so the
-// remainder is the up SQL.
+// liquibaseSQL keeps a Liquibase formatted-SQL body, dropping the header and
+// each changeset's rollback: its `--rollback` lines and its
+// `/* liquibase rollback` blocks, which liquibaserun reads as Liquibase reads
+// them. Liquibase has no up/down section marker, so the remainder is the up SQL.
+// A block left in would be a SQL comment only by chance: Liquibase ends it at
+// the first line that ends in `*/`, and SQL ends a comment at the first `*/`,
+// so a `/* note */` inside the block would end the comment early and run the
+// rest of the rollback as up SQL.
 //
 // The file is copied whole rather than split into changesets, which is what
 // keeps each converted file byte for byte the one Atlas CE writes. A changeset
@@ -2177,8 +2183,7 @@ func liquibaseSQL(name string, data []byte) ([]byte, error) {
 	}
 	var out []string
 	for _, line := range scanned.Lines {
-		trimmed := strings.TrimSpace(strings.ToLower(line))
-		if trimmed == "--liquibase formatted sql" || strings.HasPrefix(trimmed, "--rollback") {
+		if strings.TrimSpace(strings.ToLower(line)) == "--liquibase formatted sql" {
 			continue
 		}
 		out = append(out, line)

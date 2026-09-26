@@ -15,11 +15,10 @@ import (
 
 // Liquibase formatted-SQL changelog markers. A formatted-SQL changelog begins
 // with a `--liquibase formatted sql` header line and splits its migrations into
-// changesets marked by `--changeset <author>:<id>`; rollback SQL for a changeset
-// is given by `--rollback <sql>` lines.
+// changesets marked by `--changeset <author>:<id>`; [liquibaserun] reads the
+// changesets and their rollbacks.
 var (
-	liquibaseHeaderRE   = regexp.MustCompile(`(?i)^--\s*liquibase\s+formatted\s+sql\b`)
-	liquibaseRollbackRE = regexp.MustCompile(`(?i)^\s*--\s*rollback\b(.*)$`)
+	liquibaseHeaderRE = regexp.MustCompile(`(?i)^--\s*liquibase\s+formatted\s+sql\b`)
 	// liquibaseNameSepRE collapses runs of non-alphanumerics (e.g. the ':' and
 	// '-' common in changeset ids) to a single '_' when building a Ptah name.
 	liquibaseNameSepRE = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -185,13 +184,14 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 }
 
 // parseLiquibaseFormattedSQL splits one formatted-SQL changelog into changesets.
-// It reads the lines [liquibaserun.FormattedLines] keeps, so an `--ignoreLines`
-// directive and the lines it skips are not read at all. Lines before the first
-// `--changeset` (the header and any preamble) are ignored; within a changeset,
-// `--rollback` lines contribute the down SQL and every other line is up SQL. A
-// property reference in either is refused ([liquibaserun.PropertyReferencesErr]).
-// Version is left zero here — the caller assigns sequential versions across all
-// files.
+// It reads the changelog as [liquibaserun.ReadFormattedSQL] splits it, so an
+// `--ignoreLines` directive and the lines it skips are not read at all. Lines
+// before the first `--changeset` (the header and any preamble) are ignored;
+// within a changeset, the rollback -- its `--rollback` lines and
+// `/* liquibase rollback` blocks, as Liquibase joins them -- is the down SQL and
+// every other line is up SQL. A property reference in either is refused
+// ([liquibaserun.PropertyReferencesErr]). Version is left zero here — the caller
+// assigns sequential versions across all files.
 //
 // The attributes of a `--changeset` line and its `--preconditions` lines go to
 // [liquibaserun.Attribute], the same recognizer the XML, YAML and JSON readers
@@ -200,68 +200,53 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 // migrations. dbms is the database the history ran on, as [WithLiquibaseDBMS]
 // names it, or empty.
 func parseLiquibaseFormattedSQL(fileName, content, dbms string) ([]SourceMigration, []SkippedChangeset, error) {
+	changelog, err := liquibaserun.ReadFormattedSQL(fileName, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Only the `--liquibase formatted sql` header, comments, and blank lines
+	// may precede the first changeset; real SQL there would be lost, so reject
+	// it rather than drop it.
+	for _, line := range changelog.Preamble {
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+			return nil, nil, fmt.Errorf("liquibase changelog %q has SQL before the first --changeset: %q", fileName, trimmed)
+		}
+	}
+
 	var changesets []SourceMigration
 	var skipped []SkippedChangeset
 	seen := make(map[string]bool) // author:id within this file
-	var current *liquibaseFormattedChangeSet
-
-	flush := func() error {
-		if current == nil {
-			return nil
+	for _, read := range changelog.Changesets {
+		// A marker missing its author:id is still a marker, so it is refused
+		// rather than absorbed as the previous changeset's SQL.
+		author, id, err := parseLiquibaseChangesetID(read.Args, fileName)
+		if err != nil {
+			return nil, nil, err
+		}
+		key := author + ":" + id
+		if seen[key] {
+			return nil, nil, fmt.Errorf("duplicate liquibase changeset %s in %q", key, fileName)
+		}
+		seen[key] = true
+		current := &liquibaseFormattedChangeSet{
+			liquibaseChangeSet: liquibaseChangeSet{author: author, id: id},
+			rollback:           read.Rollback,
+		}
+		for _, attribute := range liquibaserun.Attributes(read.Args) {
+			current.run.Note(attribute[0], attribute[1])
+		}
+		for _, line := range read.Body {
+			current.addLine(line)
 		}
 		migration, left, err := current.finish(fileName, dbms)
 		switch {
 		case err != nil:
-			return err
+			return nil, nil, err
 		case left != nil:
 			skipped = append(skipped, *left)
 		default:
 			changesets = append(changesets, migration)
 		}
-		return nil
-	}
-
-	// Only the lines Liquibase reads: an --ignoreLines directive and the lines
-	// it skips are neither SQL nor markers.
-	lines, err := liquibaserun.FormattedLines(fileName, content)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, line := range lines {
-		// A marker missing its author:id is still a marker, so it is refused
-		// rather than absorbed as the previous changeset's SQL.
-		if args, ok := liquibaserun.ChangesetArgs(line); ok {
-			if err := flush(); err != nil {
-				return nil, nil, err
-			}
-			author, id, err := parseLiquibaseChangesetID(args, fileName)
-			if err != nil {
-				return nil, nil, err
-			}
-			key := author + ":" + id
-			if seen[key] {
-				return nil, nil, fmt.Errorf("duplicate liquibase changeset %s in %q", key, fileName)
-			}
-			seen[key] = true
-			current = &liquibaseFormattedChangeSet{liquibaseChangeSet: liquibaseChangeSet{author: author, id: id}}
-			for _, attribute := range liquibaserun.Attributes(args) {
-				current.run.Note(attribute[0], attribute[1])
-			}
-			continue
-		}
-		if current == nil {
-			// Only the `--liquibase formatted sql` header, comments, and blank
-			// lines may precede the first changeset; real SQL there would be lost,
-			// so reject it rather than drop it.
-			if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-				return nil, nil, fmt.Errorf("liquibase changelog %q has SQL before the first --changeset: %q", fileName, trimmed)
-			}
-			continue // header / preamble before the first changeset
-		}
-		current.addLine(line)
-	}
-	if err := flush(); err != nil {
-		return nil, nil, err
 	}
 	return changesets, skipped, nil
 }
@@ -270,20 +255,13 @@ func parseLiquibaseFormattedSQL(fileName, content, dbms string) ([]SourceMigrati
 // lines are read.
 type liquibaseFormattedChangeSet struct {
 	liquibaseChangeSet
-	up, down strings.Builder
+	up       strings.Builder
+	rollback liquibaserun.Rollback
 }
 
-// addLine files one line of the changeset: a `--rollback` line into the down, a
-// `--preconditions` line into the run conditions, and any other line into the
-// up.
+// addLine files one line of the changeset body: a `--preconditions` line into
+// the run conditions, and any other line into the up.
 func (cs *liquibaseFormattedChangeSet) addLine(line string) {
-	if match := liquibaseRollbackRE.FindStringSubmatch(line); match != nil {
-		if payload := strings.TrimSpace(match[1]); payload != "" {
-			cs.down.WriteString(payload)
-			cs.down.WriteByte('\n')
-		}
-		return
-	}
 	if liquibaserun.IsPreconditions(line) {
 		// A comment to the database, and a condition to Liquibase: kept in the
 		// up, it would run unconditionally what ran conditionally.
@@ -317,6 +295,11 @@ func (cs *liquibaseFormattedChangeSet) finish(fileName, dbms string) (SourceMigr
 }
 
 // migration is the changeset as a migration, or the refusal that stops it.
+//
+// The down is the rollback's SQL ([liquibaserun.Rollback.SQL]), which is empty
+// for a rollback of "empty" or "not required": Liquibase runs nothing to roll
+// such a changeset back, and the down migration the emitter writes for an
+// empty down runs nothing either.
 func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigration, error) {
 	if err := cs.run.Err(cs.author+":"+cs.id, fileName); err != nil {
 		return SourceMigration{}, err
@@ -325,7 +308,10 @@ func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigrati
 	if upSQL == "" {
 		return SourceMigration{}, fmt.Errorf("liquibase changeset %s:%s in %q has no SQL", cs.author, cs.id, fileName)
 	}
-	downSQL := strings.TrimSpace(cs.down.String())
+	downSQL, err := cs.rollback.SQL()
+	if err != nil {
+		return SourceMigration{}, fmt.Errorf("liquibase changeset %s:%s in %q %w", cs.author, cs.id, fileName, err)
+	}
 	if err := liquibaserun.PropertyReferencesErr(upSQL, downSQL); err != nil {
 		return SourceMigration{}, fmt.Errorf("liquibase changeset %s:%s in %q %w", cs.author, cs.id, fileName, err)
 	}
