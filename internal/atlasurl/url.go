@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -416,7 +417,16 @@ func networkEndpoint(host, port, dialect string) string {
 	return normalizedDatabaseHost(host) + "\x00" + port
 }
 
+// normalizedDatabaseHost folds a host to the one spelling of the server it
+// names. A socket path in a URL is a POSIX path whatever machine reads it, so a
+// leading slash is cleaned with slash semantics on every platform:
+// filepath.IsAbs answers false on Windows for /run/mysqld/mysqld.sock, and the
+// same socket spelled with a `..` segment would then read as another server. A
+// drive-letter path is still cleaned the Windows way.
 func normalizedDatabaseHost(host string) string {
+	if path.IsAbs(host) {
+		return path.Clean(host)
+	}
 	if filepath.IsAbs(host) {
 		return filepath.Clean(host)
 	}
