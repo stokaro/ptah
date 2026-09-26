@@ -192,6 +192,58 @@ func TestLiquibaseImportRunConditionsCompatE2E_FailurePath(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
+// TestLiquibaseNumberedRunConditionsCompatE2E_FailurePath covers the
+// compatibility surface's one-file conversion, which reads a directory of
+// numbered formatted-SQL files by copying each file whole (stokaro/ptah#3713).
+// A copy of a changeset Liquibase runs on MySQL alone runs everywhere, and the
+// pinned community binary v1.3.0 imports and applies it; the conversion refuses
+// it on import and on direct apply, which read the directory the same way.
+func TestLiquibaseNumberedRunConditionsCompatE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	t.Cleanup(cancel)
+	binary := filepath.Join(c.TempDir(), "ptah-compat")
+	buildPtahCompat(c, ctx, e2eRepoRoot(t), binary)
+	const refusal = `liquibase changeset s:1 in "1_only_mysql.sql" is conditional on dbms` + liquibaseSelectorRefusal
+
+	tests := []struct {
+		name   string
+		args   []string
+		stderr string
+	}{
+		{
+			name:   "import",
+			args:   []string{"migrate", "import", "--from", "file://legacy?format=liquibase", "--to", "file://migrations"},
+			stderr: "Error: " + refusal,
+		},
+		{
+			name:   "apply",
+			args:   []string{"migrate", "apply", "--dir", "file://legacy?format=liquibase", "--url", "sqlite://apply.db"},
+			stderr: "Error: atlas migrate apply --dir: " + refusal,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			work := c.TempDir()
+			writeLiquibaseSource(c, work, "1_only_mysql.sql",
+				"--liquibase formatted sql\n--changeset s:1 dbms:mysql\nCREATE TABLE only_on_mysql (id int);\n")
+			_, hashErr, err := runCLIProcess(ctx, work, binary, "migrate", "hash", "--dir", "file://legacy?format=liquibase")
+			c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("migrate hash: %s", hashErr))
+
+			stdout, stderr, err := runCLIProcess(ctx, work, binary, test.args...)
+
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, test.stderr)
+			_, statErr := os.Stat(filepath.Join(work, "migrations"))
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+			_, dbErr := os.Stat(filepath.Join(work, "apply.db"))
+			c.Assert(dbErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
 // writeLiquibaseSource writes one changelog into work/legacy.
 func writeLiquibaseSource(c *qt.C, work, name, content string) {
 	c.Helper()

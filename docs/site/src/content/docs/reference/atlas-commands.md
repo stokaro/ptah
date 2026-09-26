@@ -858,7 +858,10 @@ importer parse every covered SQL file and emit one numeric Atlas file per
 changeset, in lexical file and changeset appearance order. Versions are padded
 to the digit width of the final version so lexical checksum order stays numeric.
 Headerless or malformed members refuse the whole import before destination
-creation.
+creation. On either path, a changeset Liquibase runs on one database only, or
+runs again after its first run (`dbms`, `context`, `labels`, preconditions,
+`runAlways`, `runOnChange`), refuses the import by name; Atlas CE copies it and
+applies it everywhere.
 
 A successful compatibility import is silent; inspect the destination directory
 and its `atlas.sum` instead of relying on a progress message. Failures are still
