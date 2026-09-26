@@ -490,8 +490,8 @@ anything is recorded.
 The gate is enforced on PostgreSQL, MySQL, MariaDB, and SQLite. Other dialects
 are not gated, because the behavior to match has not been measured on them.
 Realm scope is enforced on PostgreSQL only: a MySQL URL that names no database
-is refused by the connection before the gate is reached, so that combination
-never applies anything either. Native
+is refused before Ptah connects, so that combination never applies anything
+either. Native
 [`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
 [#1231](https://github.com/stokaro/ptah/issues/1231).
 

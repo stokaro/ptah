@@ -133,9 +133,10 @@ func fromQuery(query url.Values) Selection {
 // rather than less.
 //
 // MySQL-family connections answer from the connected schema instead of the URL
-// because dbschema resolves the database for both URL spellings, and an empty
-// answer is unreachable today: a MySQL URL with no database fails to connect
-// before any of this runs, on a NULL DATABASE() scan.
+// because dbschema resolves the database for every URL form, and an empty
+// answer cannot reach here: dbschema.ConnectToDatabase refuses a MySQL URL
+// that names no database before it connects (stokaro/ptah#3789 owns reading
+// one as the whole server).
 //
 // Two callers share this: the not-clean adoption gate (stokaro/ptah#1257) and
 // the Atlas-compatible `schema inspect` surface (stokaro/ptah#1264), which had

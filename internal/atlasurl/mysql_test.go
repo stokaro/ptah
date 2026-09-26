@@ -157,7 +157,7 @@ func TestParseMySQLURL_FailurePath(t *testing.T) {
 			// would open the whole server for a URL that asked for one.
 			name:    "an empty database parameter",
 			rawURL:  "mysql+unix://app:secret@/run/x.sock?database=",
-			wantErr: `invalid mysql\+unix URL: the database parameter is empty; name a database, or leave the parameter out`,
+			wantErr: `invalid mysql\+unix URL: the database parameter is empty; name the database in it, as in \?database=app`,
 		},
 		{
 			name:    "an unterminated driver address",

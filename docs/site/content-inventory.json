@@ -330,8 +330,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14559,
-      "sourceBytes": 101405
+      "visibleWords": 14554,
+      "sourceBytes": 101381
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -710,8 +710,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2499,
-      "sourceBytes": 17787
+      "visibleWords": 2497,
+      "sourceBytes": 17772
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
