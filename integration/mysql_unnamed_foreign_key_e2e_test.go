@@ -21,6 +21,10 @@ import (
 // Ptah's own `fk_<table>_<columns>` instead, the file plans a rename and a
 // DROP INDEX against the database it built, and applying that plan fails
 // halfway (stokaro/ptah#3725). Atlas CE v1.3.0 reports each row synced.
+//
+// A key written `CONSTRAINT FOREIGN KEY`, with the keyword and no symbol, is
+// unnamed too, and the server numbers it in the same sequence as the keys
+// written without the keyword (stokaro/ptah#3730).
 var mysqlUnnamedForeignKeys = []struct {
 	name     string
 	schema   string
@@ -63,6 +67,30 @@ CREATE TABLE c (id int PRIMARY KEY, a int, b int, FOREIGN KEY (a, b) REFERENCES 
 CREATE TABLE c (id int PRIMARY KEY, p_id int, o int, KEY p_id (o), FOREIGN KEY (p_id) REFERENCES p(id));`,
 		wantKeys: "c_ibfk_1(p_id)",
 		wantIdx:  "p_id(o) p_id_2(p_id)",
+	},
+	{
+		name: "a CONSTRAINT without a symbol",
+		schema: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id));`,
+		wantKeys: "c_ibfk_1(p_id)",
+		wantIdx:  "p_id(p_id)",
+	},
+	{
+		name: "CONSTRAINT without a symbol numbered with the other unnamed keys",
+		schema: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, x int, y int, z int, w int, FOREIGN KEY (x) REFERENCES p(id),
+  CONSTRAINT FOREIGN KEY (y) REFERENCES p(id), CONSTRAINT c_ibfk_5 FOREIGN KEY (z) REFERENCES p(id),
+  CONSTRAINT FOREIGN KEY (w) REFERENCES p(id));`,
+		wantKeys: "c_ibfk_1(x) c_ibfk_2(y) c_ibfk_3(w) c_ibfk_5(z)",
+		wantIdx:  "c_ibfk_5(z) w(w) x(x) y(y)",
+	},
+	{
+		name: "ALTER TABLE adds a CONSTRAINT without a symbol",
+		schema: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, x int, y int, CONSTRAINT c_ibfk_5 FOREIGN KEY (x) REFERENCES p(id));
+ALTER TABLE c ADD CONSTRAINT FOREIGN KEY (y) REFERENCES p(id);`,
+		wantKeys: "c_ibfk_5(x) c_ibfk_6(y)",
+		wantIdx:  "c_ibfk_5(x) y(y)",
 	},
 	{
 		name: "an unnamed key before an unnamed descending index",

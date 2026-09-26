@@ -2913,6 +2913,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 }
 
 // handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.
+// A CONSTRAINT written without a name is handleSymbolLessColumnConstraint's.
 //
 // Every column constraint may be named in the SQL every supported engine
 // accepts -- measured on PostgreSQL 17.11, which takes a name in front of NOT
@@ -2949,8 +2950,12 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // carries the name, the owning column and is_system_named, so the identity is
 // real there. That is its own vertical slice.
 func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode) error {
+	start := p.current.Start
 	p.advance()
 	p.skipWhitespace()
+	if p.constraintSymbolOmitted(columnConstraintKindWords) {
+		return p.handleSymbolLessColumnConstraint(column, start)
+	}
 	name, err := p.expectIdentifier()
 	if err != nil {
 		return fmt.Errorf("expected column constraint name: %w", err)
@@ -3814,15 +3819,23 @@ func (p *Parser) parseReferentialActionColumns(action, actionValue string) ([]st
 	return columns, nil
 }
 
+// handleTableConstraintName reads the CONSTRAINT keyword and the symbol after
+// it, when the element has them.
+//
+// The symbol is optional on the MySQL family, and a CONSTRAINT written without
+// one leaves the element unnamed, exactly as if the keyword were absent; see
+// admitSymbolLessTableConstraint.
 func (p *Parser) handleTableConstraintName(constraint *ast.ConstraintNode) error {
 	if !p.current.MatchIdentifierValue("CONSTRAINT") {
 		return nil
 	}
-
+	start := p.current.Start
 	p.advance()
 	p.skipWhitespace()
 
-	// Get constraint name
+	if p.constraintSymbolOmitted(tableElementKindWords) {
+		return p.admitSymbolLessTableConstraint(start)
+	}
 	name, err := p.expectIdentifier()
 	if err != nil {
 		return fmt.Errorf("expected constraint name: %w", err)
@@ -3830,7 +3843,7 @@ func (p *Parser) handleTableConstraintName(constraint *ast.ConstraintNode) error
 	constraint.Name = name
 	p.skipWhitespace()
 
-	return nil
+	return p.refuseConstraintBeforeIndex(start)
 }
 
 func (p *Parser) handleTableConstraintPrimaryKey(constraint *ast.ConstraintNode) error {
