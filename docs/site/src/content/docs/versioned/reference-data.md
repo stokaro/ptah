@@ -285,6 +285,14 @@ The fence is read where the change is planned, on both paths. A plan file saved
 before the entry existed, and a data migration already written, are applied as
 written: the statements are there and the declaration is not.
 
+So `ptah schema apply --plan` refuses the fence instead of taking it, whether it
+arrives as `--protected-table` or as `PTAH_PROTECTED_TABLE`. A plan file records
+its statements and not which declared row sets they change, so the apply cannot
+decide the fence, and accepting it would promise a check nothing makes. Pass the
+fence to `ptah schema plan`, which refuses to save a plan that would change a
+fenced table, and run the apply without it. A reconciler that exports the
+variable scopes it to the plan step.
+
 Convergence includes the rows. A rehearsal or a post-apply verification whose
 schema matches and whose reference table does not is not a verification of the
 desired schema.
