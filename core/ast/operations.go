@@ -163,7 +163,10 @@ const (
 //
 // It differs from [ModifyColumnOperation], which carries a whole new column
 // definition, the way MySQL's MODIFY and SQL Server's ALTER COLUMN state one.
-// The PostgreSQL family renders it; other renderers refuse it.
+// The PostgreSQL family renders every action. SQL Server renders the two
+// default actions, where a default is a constraint of its own: SET DEFAULT
+// replaces the column's default, and DROP DEFAULT drops it when there is one.
+// Other renderers refuse it, and SQL Server refuses the other actions.
 type AlterColumnOperation struct {
 	// ColumnName is the column to change.
 	ColumnName string

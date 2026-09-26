@@ -87,14 +87,14 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "status",
 				Changes: map[string]string{
-					"default": "'inactive' -> 'active'",
+					"unique": "false -> true",
 				},
 			}},
 		}},
 	}
 	_, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
-	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
+	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports type, nullability and default changes on users\.status; unsupported changes: unique.*`)
 }
 
 func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T) {

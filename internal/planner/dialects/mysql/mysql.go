@@ -463,26 +463,76 @@ func (p *Planner) modifyExistingColumns(
 		result = append(result, astCommentNode)
 
 		// Generate ALTER COLUMN statements using AST
-		alterNode := &ast.AlterTableNode{
-			Name: tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
-				Column:              columnNode,
-				PreviousType:        previousColumnType(colDiff.Changes["type"]),
-				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-				HasPreviousNullable: colDiff.Changes["nullable"] != "",
-				PreviousDefault:     previousColumnDefault(colDiff.Changes),
-				HasPreviousDefault:  columnDefaultChanged(colDiff.Changes),
-				// Stated although MODIFY restates the whole column, because the
-				// statement cannot say what changed: it repeats NOT NULL on a
-				// type change as on a nullability change, and migration/safety
-				// reads which of the two it is from here.
-				Changed:    columnchange.Properties(colDiff),
-				HasChanged: true,
-			}},
+		modify := &ast.ModifyColumnOperation{
+			Column:              columnNode,
+			PreviousType:        previousColumnType(colDiff.Changes["type"]),
+			PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+			HasPreviousNullable: colDiff.Changes["nullable"] != "",
+			PreviousDefault:     previousColumnDefault(colDiff.Changes),
+			HasPreviousDefault:  columnDefaultChanged(colDiff.Changes),
+			// Stated although MODIFY restates the whole column, because the
+			// statement cannot say what changed: it repeats NOT NULL on a
+			// type change as on a nullability change, and migration/safety
+			// reads which of the two it is from here.
+			Changed:    columnchange.Properties(colDiff),
+			HasChanged: true,
 		}
-		result = append(result, alterNode)
+		if p.targetDialect() == platform.SQLServer {
+			result = append(result, sqlServerColumnChange(tableDiff.TableName, modify)...)
+			continue
+		}
+		result = append(result, &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{modify}})
 	}
 	return result, nil
+}
+
+// sqlServerColumnChange plans a column change of table the way SQL Server
+// takes it: modify, the ALTER COLUMN that restates the column's type and
+// nullability, and the column's default as a change of its own.
+//
+// SQL Server's ALTER COLUMN cannot carry a default, because a default is a
+// constraint there rather than a property of the column. Setting or dropping
+// one is an [ast.AlterColumnOperation], which the renderer spells as dropping
+// the constraint and adding one.
+//
+// A type change needs the default out of the way first: ALTER COLUMN that
+// changes the data type of a column a default is bound to answers Msg 5074,
+// "The object 'DF__...' is dependent on column", so the default is dropped
+// before and set again after. A longer length of the same type is accepted,
+// but telling the two apart needs the declared type in the server's spelling,
+// so every type change takes the drop; it costs two statements and changes
+// nothing. Nullability needs no such step, since ALTER COLUMN ... NOT NULL
+// leaves the default where it is. Measured on SQL Server 2022.
+func sqlServerColumnChange(table string, modify *ast.ModifyColumnOperation) []ast.Node {
+	column, changed := modify.Column, modify.Changed
+	declaresDefault := column.Default != nil && (column.Default.HasLiteral() || column.Default.Expression != "")
+	// A default the comparison did not report is the declared one, so the
+	// live column holds a default exactly when the declaration has one.
+	holdsDefault := declaresDefault
+	if changed.Default {
+		holdsDefault = modify.PreviousDefault != ""
+	}
+	alter := func(operation ast.AlterOperation) ast.Node {
+		return &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{operation}}
+	}
+	var nodes []ast.Node
+	if holdsDefault && (changed.Type || !declaresDefault) {
+		nodes = append(nodes, alter(&ast.AlterColumnOperation{
+			ColumnName: column.Name,
+			Action:     ast.AlterColumnDropDefault,
+		}))
+	}
+	if changed.Type || changed.Nullability {
+		nodes = append(nodes, alter(modify))
+	}
+	if declaresDefault && (changed.Type || changed.Default) {
+		nodes = append(nodes, alter(&ast.AlterColumnOperation{
+			ColumnName: column.Name,
+			Action:     ast.AlterColumnSetDefault,
+			Default:    column.Default,
+		}))
+	}
+	return nodes
 }
 
 // findGeneratedTable resolves the declared table a TableDiff names.
@@ -523,7 +573,7 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 	var unsupported []string
 	for changeType := range colDiff.Changes {
 		switch changeType {
-		case "type", "nullable":
+		case "type", "nullable", "default", "default_expr":
 		default:
 			unsupported = append(unsupported, changeType)
 		}
@@ -537,7 +587,7 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 		Feature: "column modification",
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf(
-			"SQL Server planner only supports ALTER COLUMN for type/nullability changes on %s.%s; unsupported changes: %s",
+			"SQL Server planner only supports type, nullability and default changes on %s.%s; unsupported changes: %s",
 			tableName,
 			colDiff.ColumnName,
 			strings.Join(unsupported, ", "),
