@@ -263,3 +263,50 @@ func schemaApplyErrorText(err error) string {
 	}
 	return err.Error()
 }
+
+// A schema directory is judged by the files it holds, because its own name has
+// no extension to read (stokaro/ptah#3676). Measured against the pinned
+// community binary on PostgreSQL with no --dev-url, `schema apply --to
+// file://hcldir` plans and `--to file://sqldir` refuses: the directory takes
+// the rule of the format inside it.
+func TestSchemaApplyDevURLRuleReadsADirectory_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "hcldir")
+	c.Assert(os.MkdirAll(schemaDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "schema.hcl"), []byte("schema \"main\" {\n}\n"+
+		"table \"parity_hcl_dir\" {\n  schema = schema.main\n"+
+		"  column \"id\" {\n    null = false\n    type = integer\n  }\n"+
+		"  primary_key {\n    columns = [column.id]\n  }\n}\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+
+	out, err := runSchemaApply(c,
+		"--url", "sqlite://"+dbPath,
+		"--to", "file://"+schemaDir,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "parity_hcl_dir"), qt.Equals, 1)
+}
+
+// TestSchemaApplyDevURLRuleReadsADirectory_FailurePath is the SQL half: a
+// directory of SQL files is a script a dev database has to run first.
+func TestSchemaApplyDevURLRuleReadsADirectory_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "sqldir")
+	c.Assert(os.MkdirAll(schemaDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "schema.sql"),
+		[]byte("CREATE TABLE parity_sql_dir (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "target.db")
+
+	out, err := runSchemaApply(c,
+		"--url", "sqlite://"+dbPath,
+		"--to", "file://"+schemaDir,
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`, qt.Commentf("output:\n%s", out))
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "parity_sql_dir"), qt.Equals, 0)
+}

@@ -304,6 +304,27 @@ func compatDevURLSchemaRows() []compatDevURLRow {
 			wantErr:    true,
 		},
 		{
+			// An HCL document on both sides needs a dev database on both binaries.
+			// Without the refusal this surface answers in its own words, naming
+			// the dialect it cannot choose (stokaro/ptah#3676).
+			name: "schema diff refuses an absent dev-url in the pinned binary's words",
+			verb: "schema diff",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{"schema", "diff", "--from", fx.desiredURL, "--to", fx.desiredURL}
+			},
+			wantStderr: compatDevURLCannotBeEmpty,
+			wantErr:    true,
+		},
+		{
+			name: "schema diff answers an empty dev-url like an absent one",
+			verb: "schema diff",
+			args: func(fx compatDevURLFixture) []string {
+				return []string{"schema", "diff", "--from", fx.desiredURL, "--to", fx.desiredURL, "--dev-url", ""}
+			},
+			wantStderr: compatDevURLCannotBeEmpty,
+			wantErr:    true,
+		},
+		{
 			// The target is unreachable and never contacted: on both binaries the
 			// dev-url verdict lands first. Without this row the schema apply cell
 			// could only be measured against a live server.

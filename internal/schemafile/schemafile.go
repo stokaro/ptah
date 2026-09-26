@@ -499,24 +499,11 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 			filepath.Base(dir), atlasSumFileName,
 		)
 	}
-	entries, err := os.ReadDir(dir)
+	listing, err := listSchemaDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read schema directory: %w", err)
+		return nil, err
 	}
-	// os.ReadDir sorts by filename, which is the order the files are merged in.
-	var sqlNames, hclNames, subdirNames []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			subdirNames = append(subdirNames, entry.Name())
-			continue
-		}
-		switch strings.ToLower(filepath.Ext(entry.Name())) {
-		case dirSQLExtension:
-			sqlNames = append(sqlNames, entry.Name())
-		case dirHCLExtension:
-			hclNames = append(hclNames, entry.Name())
-		}
-	}
+	sqlNames, hclNames, subdirNames := listing.sql, listing.hcl, listing.subdirs
 	if len(sqlNames) > 0 && len(hclNames) > 0 {
 		return nil, fmt.Errorf("ambiguous schema: both SQL and HCL files found: %q, %q", sqlNames[0], hclNames[0])
 	}
@@ -547,6 +534,58 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	}
 	schemamodel.Finalize(merged)
 	return merged, nil
+}
+
+// schemaDirListing is a schema directory's entries, split the way
+// [loadSchemaDir] reads them. Each list is in filename order, which is the
+// order the files are merged in.
+type schemaDirListing struct {
+	sql     []string
+	hcl     []string
+	subdirs []string
+}
+
+// listSchemaDir reads dir and sorts its entries into [schemaDirListing]. A
+// file with any other extension is left out.
+func listSchemaDir(dir string) (schemaDirListing, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return schemaDirListing{}, fmt.Errorf("read schema directory: %w", err)
+	}
+	var listing schemaDirListing
+	for _, entry := range entries {
+		if entry.IsDir() {
+			listing.subdirs = append(listing.subdirs, entry.Name())
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case dirSQLExtension:
+			listing.sql = append(listing.sql, entry.Name())
+		case dirHCLExtension:
+			listing.hcl = append(listing.hcl, entry.Name())
+		}
+	}
+	return listing, nil
+}
+
+// IsHCLSchemaDir reports whether dir is a schema directory [LoadPath] reads as
+// HCL: it carries no atlas.sum, and it holds at least one .hcl file and no .sql
+// file.
+//
+// It is the loader's own format decision, for a caller that has to know before
+// loading whether a directory is already a schema definition or a SQL script a
+// dev database has to run. A directory holding both formats, or neither, or one
+// that cannot be read answers false; the loader refuses each of those itself
+// when it is reached.
+func IsHCLSchemaDir(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, atlasSumFileName)); err == nil {
+		return false
+	}
+	listing, err := listSchemaDir(dir)
+	if err != nil {
+		return false
+	}
+	return len(listing.hcl) > 0 && len(listing.sql) == 0
 }
 
 // atlasSumFileName is the marker that makes a directory a migration directory

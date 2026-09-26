@@ -392,18 +392,26 @@ func (s *Set) validate() error {
 // than SQL a dev database has to replay to become one.
 //
 // It exists because "local file" is not one answer to "does this need a dev
-// database". Measured against the pinned community binary, which separates the
-// two on `schema apply` and on nothing else:
+// database". Measured against the pinned community binary with no --dev-url,
+// which separates the two on every verb: `schema apply` accepts one and refuses
+// the other, and `schema inspect` and `schema diff` refuse both in two different
+// sentences (See: stands for the link the binary appends):
 //
-//	verb              file://x.hcl   file://x.sql
-//	schema apply      applies        --dev-url cannot be empty
-//	schema inspect    refuses        refuses
-//	schema diff       refuses        refuses
+//	verb              file://x.hcl                file://x.sql
+//	schema apply      applies                     --dev-url cannot be empty. See: …
+//	schema inspect    --dev-url cannot be empty   --dev-url cannot be empty. See: …
+//	schema diff       --dev-url cannot be empty   --dev-url cannot be empty. See: …
 //
 // The set must be declarative in FULL. A set mixing the two needs the dev
 // database its SQL half needs -- and the community binary refuses that mixture
 // earlier still, with `ambiguous schema: both SQL and HCL files found`
 // (stokaro/ptah#1334).
+//
+// A schema directory is judged by what it holds, with the loader's own
+// [schemafile.IsHCLSchemaDir]: a directory of .hcl files is declarative and a
+// directory of .sql files is not. Judged by its name, a directory has no
+// extension and reads as SQL, while the same binary applies
+// `schema apply --to file://hcldir` with no dev database (stokaro/ptah#3676).
 //
 // YAML is Ptah's own spelling of the same declarative document and is treated
 // with HCL for the reason AGENTS.md gives: compatibility never removes a
@@ -414,13 +422,25 @@ func (s Set) DeclarativeLocalFiles() bool {
 		return false
 	}
 	for _, source := range s.Sources {
-		switch strings.ToLower(filepath.Ext(source.Path)) {
-		case ".hcl", ".yaml", ".yml":
-		default:
+		if !declarativeLocalFile(source.Path) {
 			return false
 		}
 	}
 	return true
+}
+
+// declarativeLocalFile reports whether path is one local schema source already
+// written as a schema definition. See [Set.DeclarativeLocalFiles].
+func declarativeLocalFile(path string) bool {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return schemafile.IsHCLSchemaDir(path)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".hcl", ".yaml", ".yml":
+		return true
+	default:
+		return false
+	}
 }
 
 // EnsureDevDatabase verifies that sources requiring a dev-database replay have

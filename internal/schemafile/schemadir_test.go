@@ -166,3 +166,40 @@ func TestLoadAllMixesDirectoriesAndFiles(t *testing.T) {
 	c.Assert(tableNames(db), qt.Contains, "users")
 	c.Assert(tableNames(db), qt.Contains, "extra")
 }
+
+// IsHCLSchemaDir is the loader's format decision asked before loading: a
+// directory LoadPath reads as HCL answers true, and every directory it reads as
+// SQL, refuses, or does not read as a schema directory at all answers false.
+func TestIsHCLSchemaDir(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  bool
+	}{
+		{name: "HCL files", files: map[string]string{"a.hcl": "", "b.hcl": ""}, want: true},
+		{name: "HCL files beside a file the loader ignores", files: map[string]string{"a.hcl": "", "README.md": ""}, want: true},
+		{name: "SQL files", files: map[string]string{"a.sql": ""}, want: false},
+		{name: "both formats", files: map[string]string{"a.hcl": "", "b.sql": ""}, want: false},
+		{name: "neither format", files: map[string]string{"README.md": ""}, want: false},
+		// atlas.sum makes the directory a migration directory, which is replayed
+		// rather than read, whatever else it holds.
+		{name: "HCL files beside atlas.sum", files: map[string]string{"a.hcl": "", "atlas.sum": ""}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeSchemaDir(c, tt.files)
+
+			c.Assert(schemafile.IsHCLSchemaDir(dir), qt.Equals, tt.want)
+		})
+	}
+}
+
+// A path that cannot be listed is not an HCL directory; the loader reports why
+// when it is reached.
+func TestIsHCLSchemaDirOnAMissingPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(schemafile.IsHCLSchemaDir(filepath.Join(c.TempDir(), "missing")), qt.IsFalse)
+}

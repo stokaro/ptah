@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -42,8 +43,10 @@ schema is introspected, one migration directory (a file:// directory containing
 atlas.sum) replayed on the required --dev-url dev database, or one
 env://<attribute> reference (src, schema.src, url, dev, migration.dir) resolved
 through the evaluated atlas.hcl env. All URLs of one flag must be one source
-kind. The SQL dialect is pinned by --dev-url first, then by --from and --to
-database URLs; local schema files alone still require --dev-url. Unsupported
+kind. A side that is a schema file, a schema directory or a migration
+directory requires --dev-url, and the run is refused without one before any
+database is contacted; two database URLs need none. The SQL dialect is pinned
+by --dev-url first, then by --from and --to database URLs. Unsupported
 schemes such as atlas:// fail during validation. When --env is set, the
 selected atlas.hcl env can provide schema.src, dev, exclude, schema.mode,
 format.schema.diff, and supported diff policy values. --schema and --include
@@ -68,7 +71,12 @@ and opens it. The diagram draws the end state plus the tables that leave it,
 marking each table added, changed or removed. Nothing is published and nothing
 is fetched. The path is printed on stderr, so the diff on stdout is unchanged,
 and a run that cannot open a browser still writes the file and exits 0. Set
-PTAH_SKIP_BROWSER_OPEN to write the file without opening it.`
+PTAH_SKIP_BROWSER_OPEN to write the file without opening it.
+
+Set ` + "`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1`" + ` to compare a schema file with a
+database without a dev database, reading the file as written, which native
+` + "`ptah schema diff`" + ` does and the binary this surface stands in for
+refuses.`
 	}
 	cmd := &cobra.Command{
 		Use:   "diff",
@@ -114,6 +122,12 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	// Only a side that is a migration directory replays; the declaration is
 	// resolved on every diff so a malformed value cannot wait for one.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// Resolved on every diff, before the dev database is settled, so a
+	// malformed value is refused on the runs that supply one too.
+	withoutDevURL, err := atlasDiffWithoutDevURL.Resolve()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -190,7 +204,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		}
 		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", projectToURLs)
 	}
-	if err := validateAtlasSchemaDiffOptions(cmd, opts, projectEnv); err != nil {
+	if err := validateAtlasSchemaDiffOptions(opts, projectEnv, withoutDevURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	schemaVars, err := atlasVarFlagValues(cmd)
@@ -265,9 +279,9 @@ func needsAtlasSchemaDiffConfig(cmd *cobra.Command) bool {
 }
 
 func validateAtlasSchemaDiffOptions(
-	cmd *cobra.Command,
 	opts atlasSchemaDiffOptions,
 	projectEnv atlassource.ProjectEnv,
+	withoutDevURL bool,
 ) error {
 	if len(opts.fromURLs) == 0 {
 		return fmt.Errorf("--from is required")
@@ -291,21 +305,94 @@ func validateAtlasSchemaDiffOptions(
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
 		return err
 	}
-	// Classification rejects unsupported schemes and source conflicts, and
-	// migration-directory sources require a dev database, before any database
-	// is contacted. --from is validated first, then --to.
+	// Classification rejects unsupported schemes and source conflicts, and a
+	// side that needs a dev database is refused without one, before any
+	// database is contacted. --from is validated first, then --to, so the
+	// first side that needs one names the refusal.
+	devRule := atlasDiffDevURLRule{devURL: opts.devURL, withoutDevURL: withoutDevURL}
 	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv)
 	if err != nil {
 		return err
 	}
-	if err := fromSet.EnsureDevDatabase(opts.devURL); err != nil {
+	if err := devRule.ensure(fromSet); err != nil {
 		return err
 	}
 	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
 	if err != nil {
 		return err
 	}
-	return toSet.EnsureDevDatabase(opts.devURL)
+	return devRule.ensure(toSet)
+}
+
+// diffWithoutDevURLEnvVar allows comparing a local schema file with a database
+// when no dev database is given.
+//
+// The default refuses it, because the pinned community binary v1.3.0 refuses
+// it: measured on 2026-09-26, `schema diff` exits 1 with no --dev-url whenever
+// either side is a schema file, a schema directory or a migration directory.
+// Without the refusal this binary compares a file with a database and exits 0
+// (stokaro/ptah#3676). Native `ptah schema diff` compares the two without a dev
+// database by design -- the file is read as written -- and the capability is
+// not deleted with the default, per AGENTS.md: compatibility never removes a
+// capability. It is an environment variable rather than a flag because the
+// conformance cli-surface tier asserts flag parity.
+//
+// It lifts the refusal and nothing else. Two schema files alone still need
+// --dev-url to choose a dialect, and a migration directory still needs a dev
+// database to be replayed on; both keep their own diagnostics.
+const diffWithoutDevURLEnvVar = "PTAH_ATLAS_DIFF_WITHOUT_DEV_URL"
+
+// atlasDiffWithoutDevURL is the declaration of the variable, made once, on the
+// verb that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: diffing a schema file with no dev
+// database is behavior the pinned binary does not offer.
+var atlasDiffWithoutDevURL = envbool.New(diffWithoutDevURLEnvVar, false, envbool.Gated)
+
+// atlasDiffDevURLRule is the dev-database requirement one `schema diff` run
+// applies to each of its sides: the merged --dev-url, and the resolved
+// [diffWithoutDevURLEnvVar].
+type atlasDiffDevURLRule struct {
+	devURL        string
+	withoutDevURL bool
+}
+
+// ensure refuses one comparison side that needs a dev database when --dev-url
+// is absent or empty, in the pinned binary's words.
+//
+// A local schema file and a migration directory need one; a database does not,
+// and two database sides diff with no dev database on both binaries. The
+// sentence depends on the side's format, so the side refused first decides it:
+// `--from file://schema.sql --to file://schema.hcl` prints the linked SQL
+// sentence and the reverse prints the bare one, as measured.
+//
+// An atlas.hcl external schema program or remote schema is left alone: the
+// pinned binary refuses both data sources outright, as not supported by its
+// edition, so it has no dev-database answer to match for them.
+//
+// The pinned binary reads the whole --from side, connecting to a database
+// --from, before it refuses a --to file. This check runs before anything is
+// opened, so an unreachable --from database with a --to file is refused for
+// the dev database rather than the connection. A missing file and a directory
+// holding both formats, or neither, are refused for the dev database too, where
+// that binary names the file first. Every one of these exits 1 on both.
+func (r atlasDiffDevURLRule) ensure(set atlassource.Set) error {
+	if strings.TrimSpace(r.devURL) != "" {
+		return nil
+	}
+	switch set.Kind {
+	case atlassource.KindLocalFile:
+		if r.withoutDevURL {
+			return nil
+		}
+		return atlasEmptyDevURLError(set)
+	case atlassource.KindMigrationDir:
+		if r.withoutDevURL {
+			return set.EnsureDevDatabase(r.devURL)
+		}
+		return atlasEmptyDevURLError(set)
+	default:
+		return nil
+	}
 }
 
 func ensureLocalSchemaURLs(flag string, urls []string) error {

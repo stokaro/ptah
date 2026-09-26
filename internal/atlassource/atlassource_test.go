@@ -628,10 +628,9 @@ func TestPinDialect_NothingPins(t *testing.T) {
 }
 
 // A local file is not one answer to "does this need a dev database". Measured
-// against the pinned community binary, which separates the two formats on
-// `schema apply` and on nothing else: `--to file://x.hcl` applies with no
-// --dev-url, `--to file://x.sql` refuses with `--dev-url cannot be empty`
-// (stokaro/ptah#1334).
+// against the pinned community binary with no --dev-url: `schema apply --to
+// file://x.hcl` applies and `--to file://x.sql` refuses (stokaro/ptah#1334),
+// and `schema diff` refuses both in two different sentences.
 func TestSet_DeclarativeLocalFiles(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -691,6 +690,60 @@ func TestSet_DeclarativeLocalFiles(t *testing.T) {
 			c.Assert(set.DeclarativeLocalFiles(), qt.Equals, tt.want)
 		})
 	}
+}
+
+// A schema directory is judged by the files it holds, because its own name has
+// no extension to read. Measured against the pinned community binary with no
+// --dev-url, `schema apply --to file://hcldir` applies and `--to
+// file://sqldir` refuses (stokaro/ptah#3676).
+func TestSet_DeclarativeLocalFilesReadsADirectory(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{name: "a directory of HCL files", files: []string{"a.hcl", "b.hcl"}, want: true},
+		{name: "a file the loader ignores changes nothing", files: []string{"a.hcl", "README.md"}, want: true},
+		{name: "a directory of SQL files", files: []string{"a.sql"}, want: false},
+		{name: "a directory holding both formats", files: []string{"a.hcl", "b.sql"}, want: false},
+		{name: "a directory holding neither", files: []string{"README.md"}, want: false},
+		// The loader reads .sql and .hcl in a directory and nothing else, so a
+		// directory of YAML holds no schema file for it.
+		{name: "a directory of YAML files", files: []string{"a.yaml"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			for _, name := range tt.files {
+				c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(""), 0o600), qt.IsNil)
+			}
+
+			set, err := atlassource.ClassifySet("--to", []string{"file://" + dir}, atlassource.ProjectEnv{})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(set.DeclarativeLocalFiles(), qt.Equals, tt.want)
+		})
+	}
+}
+
+// A directory of HCL files beside a SQL file is a set with a SQL half, and the
+// whole set needs the dev database that half needs.
+func TestSet_DeclarativeLocalFilesJoinsADirectoryAndAFile(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "hcldir")
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.hcl"), []byte(""), 0o600), qt.IsNil)
+	sqlFile := filepath.Join(root, "extra.sql")
+	c.Assert(os.WriteFile(sqlFile, []byte(""), 0o600), qt.IsNil)
+
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + dir, "file://" + sqlFile}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(set.DeclarativeLocalFiles(), qt.IsFalse)
 }
 
 // The controls on the kind, which the format check must never answer for: a

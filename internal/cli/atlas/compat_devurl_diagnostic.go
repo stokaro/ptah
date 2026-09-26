@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"ptah.run/internal/atlassource"
 )
 
 // This file owns the Atlas-compatible surface's `--dev-url` error boundary, the
@@ -101,6 +103,33 @@ const atlasDevURLDockerScheme = "docker"
 // requires before it opens anything.
 func atlasRequiredDevURLError() error {
 	return errors.New(atlasRequiredDevURLMessage)
+}
+
+// atlasEmptyDevURLMessage is the pinned binary's refusal of a desired state
+// that needs a dev database when none was given, for a source that is already
+// a schema definition: an HCL file or a directory of them.
+const atlasEmptyDevURLMessage = "--dev-url cannot be empty"
+
+// atlasEmptyDevURLSQLMessage is the same refusal for a source a dev database
+// has to run first: a SQL file, a directory of them, or a migration directory.
+// The binary appends a link to its own page on dev databases, and the sentence
+// is matched with the link.
+const atlasEmptyDevURLSQLMessage = atlasEmptyDevURLMessage +
+	". See: https://atlasgo.io/atlas-schema/sql#dev-database"
+
+// atlasEmptyDevURLError returns the refusal the pinned binary prints for set
+// when --dev-url is absent or empty, choosing between the two sentences above
+// with [atlassource.Set.DeclarativeLocalFiles], the rule `schema apply` uses to
+// decide whether a dev database is needed at all. Measured on 2026-09-26 for
+// `schema diff` on PostgreSQL and SQLite: a .sql file, a directory of them and
+// a migration directory print the linked sentence, and an .hcl file and a
+// directory of them print the bare one. YAML has no answer on that binary and
+// takes the bare sentence with HCL.
+func atlasEmptyDevURLError(set atlassource.Set) error {
+	if set.DeclarativeLocalFiles() {
+		return errors.New(atlasEmptyDevURLMessage)
+	}
+	return errors.New(atlasEmptyDevURLSQLMessage)
 }
 
 // atlasDevURLOpenDiagnostic reports how this surface refuses rawURL as a dev

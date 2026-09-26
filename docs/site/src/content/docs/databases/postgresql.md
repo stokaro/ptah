@@ -122,6 +122,8 @@ A `schema diff` from a schema file to a database without `--dev-url` is one of
 those: the file's expressions are compared as written, and a rewritten default,
 CHECK or policy is planned again. Pass `--dev-url` for that direction. A key
 column is NOT NULL on the file's side either way, as the server holds it.
+`ptah-compat schema diff` refuses a schema file without `--dev-url`, as Atlas
+CE does, unless `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1` is set.
 
 A view or materialized view body is compared by folding, not by asking the
 server. The server expands a `*` into the column list when it creates the view,

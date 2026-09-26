@@ -53,6 +53,7 @@ community CLI does on the same input.
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
 | [`PTAH_ALLOW_EXTERNAL_SCHEMA`](#ptah_allow_external_schema) | Evaluate `data "external_schema"` |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
+| [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
 | [`PTAH_STRICT_DIR_QUERY`](#ptah_strict_dir_query) | Refuse an unknown `--dir` query key |
 | [`PTAH_ATLAS_LINT_ALL_VERSIONS`](#ptah_atlas_lint_all_versions) | Lint the whole directory |
 | [`PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR`](#ptah_atlas_plan_lint_fail_on_error) | Let a plan-lint error decide the exit code |
@@ -185,6 +186,19 @@ it required and exits 1 without it. Ptah's analyzers read the migration files
 and need no database, so set it to `1` and the run proceeds with no dev database
 and reports what the static analysis finds. Native `ptah migrations lint` needs
 no opt-in.
+
+## `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`
+
+By default, `ptah-compat schema diff` refuses a side that is a schema file, a
+schema directory or a migration directory when no `--dev-url` is given, because
+the community CLI refuses it. The message is the community CLI's own:
+`--dev-url cannot be empty`, with a link to its dev-database page when that side
+is SQL. Set it to `1` and a schema file is compared with a database without a
+dev database, which native `ptah schema diff` does with no opt-in. The file is
+then compared as written, not as the server would spell it; see
+[PostgreSQL](../../databases/postgresql/) for what that plans. Two schema files
+still need `--dev-url` to choose a dialect, and a migration directory still
+needs one to be replayed on.
 
 ## `PTAH_STRICT_DIR_QUERY`
 
