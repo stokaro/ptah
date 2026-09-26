@@ -149,10 +149,10 @@ columns instead.
 
 ## Unnamed constraints in a SQL file
 
-PostgreSQL names a table-level `UNIQUE` or a `FOREIGN KEY` that the SQL leaves
-unnamed. A SQL schema file read for PostgreSQL gives the constraint the same
-name, so the file compares equal to the database its own SQL built, and a plan
-from the file creates the constraint under that name.
+PostgreSQL names a `CHECK`, a table-level `UNIQUE` or a `FOREIGN KEY` that the
+SQL leaves unnamed. A SQL schema file read for PostgreSQL gives the constraint
+the same name, so the file compares equal to the database its own SQL built,
+and a plan from the file creates the constraint under that name.
 
 The name is `<table>_<columns>_key` or `<table>_<columns>_fkey`, with the
 columns joined by underscores. A name longer than 63 bytes is cut, from the
@@ -169,6 +169,30 @@ Measured on PostgreSQL 18.6:
 | `UNIQUE (a, b)` on `p` | `p_a_b_key` |
 | `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
 
+A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
+column of the table, and `<table>_check` when it names none or more than one.
+It makes no difference whether the `CHECK` is written on the column or on the
+table. A string literal, a function, a type, a collation and a qualifier are
+not columns. The name is cut to 63 bytes the same way and numbered `check1`,
+`check2` and on. A name counts as taken when another constraint in the schema
+holds it; a table or an index of that name does not. A column may carry more
+than one `CHECK`, and each is kept. Measured on PostgreSQL 18.6:
+
+| Declared | Name |
+| --- | --- |
+| `CHECK (plan IN ('x','y'))` on `a` | `a_plan_check` |
+| `CHECK (lo < hi)` on `c` | `c_check` |
+| `a int CHECK (a IS NULL OR b IS NOT NULL)` on `e` | `e_check` |
+| `CHECK (s COLLATE "C" > '')` on `co`, which has a column `C` | `co_s_check` |
+| `a int CHECK (a > 0) CHECK (a < 10)` on `h2` | `h2_a_check`, `h2_a_check1` |
+
+PostgreSQL numbers two `CHECK`s that derive one name in the order the statement
+writes them. Ptah names the `CHECK`s written on columns before those written on
+the table. Where a table-level `CHECK` comes before a column's `CHECK` and both
+derive one name, as in `CREATE TABLE h (CHECK (a > 0), a int CHECK (a < 10))`,
+the two names are swapped: the plan drops both and adds them back under the
+names the file gives them.
+
 A foreign key is compared by its name, whether the file declares it on its
 column or on its table. When the database holds the key under another name,
 the plan drops that key and adds the declared one, so the table ends with the
@@ -182,6 +206,9 @@ that adds one to an existing column writes `ADD CONSTRAINT` under the same
 which names the target already holds. MySQL names an unnamed foreign key
 `<table>_ibfk_<n>`, which the [MySQL page](../mysql/) describes. The other
 engines keep Ptah's own name for an unnamed foreign key, `fk_<table>_<column>`.
+A `CHECK` left unnamed in a file read for another engine stays unnamed. Two of
+them on one table are compared by their conditions, so a plan never merges one
+into the other.
 
 ## Object comments
 

@@ -1021,7 +1021,7 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.AddColumnOperation:
-		return applyAlterTableAddColumn(database, base, target.written, target.structName, typed, sourcePlatform)
+		return applyAlterTableAddColumn(database, base, target, typed)
 	case *ast.AddConstraintOperation:
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
@@ -1121,10 +1121,10 @@ func describeAlterOperation(op ast.AlterOperation) string {
 
 func applyAlterTableAddColumn(
 	database, base *schemamodel.Database,
-	tableName, structName string,
+	target alterTarget,
 	operation *ast.AddColumnOperation,
-	sourcePlatform string,
 ) error {
+	tableName, structName, sourcePlatform := target.written, target.structName, target.sourcePlatform
 	if operation.Column == nil {
 		return fmt.Errorf("ALTER TABLE %s ADD COLUMN carries no column", tableName)
 	}
@@ -1159,6 +1159,7 @@ func applyAlterTableAddColumn(
 		// to agree, not the case they were written in.
 		restated := field
 		restated.Name = existing.Name
+		adoptDerivedConstraintNames(&restated, existing, target)
 		if !reflect.DeepEqual(existing, restated) {
 			return fmt.Errorf(
 				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s declares the column differently from the "+
@@ -1168,8 +1169,30 @@ func applyAlterTableAddColumn(
 		}
 		return nil
 	}
+	nameAddedColumnCheck(&field, target, append(names, field.Name))
 	database.Fields = append(database.Fields, field)
 	return nil
+}
+
+// adoptDerivedConstraintNames gives the CHECK and the foreign key a restated
+// column leaves unnamed the names the declared column carries, where the source
+// dialect derives names for unnamed constraints.
+//
+// The declared column's unnamed constraints were given the names PostgreSQL
+// gives them, and the restatement creates nothing -- the server skips the whole
+// column -- so it has no name of its own to disagree with. Compared as written,
+// `ALTER TABLE t ADD COLUMN IF NOT EXISTS a int CHECK (a > 0)` restating `a int
+// CHECK (a > 0)` differs in the name alone and is refused.
+func adoptDerivedConstraintNames(restated *schemamodel.Field, existing schemamodel.Field, target alterTarget) {
+	if !namesConstraintsLikePostgres(target.sourcePlatform) {
+		return
+	}
+	if restated.CheckName == "" {
+		restated.CheckName = existing.CheckName
+	}
+	if restated.ForeignKeyName == "" {
+		restated.ForeignKeyName = existing.ForeignKeyName
+	}
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary

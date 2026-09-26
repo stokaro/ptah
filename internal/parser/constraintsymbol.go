@@ -159,7 +159,7 @@ func (p *Parser) refuseConstraintBeforeIndex(start int) error {
 // CONSTRAINT without a symbol, as the same constraint written without the
 // keyword, on the engine that accepts it, and refuses it by name everywhere
 // else.
-func (p *Parser) handleSymbolLessColumnConstraint(column *ast.ColumnNode, start int) error {
+func (p *Parser) handleSymbolLessColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode, start int) error {
 	kind := strings.ToUpper(p.current.Value)
 	accepted, family := mysqlSymbolLessColumnKinds[p.dialect]
 	if !family {
@@ -173,7 +173,7 @@ func (p *Parser) handleSymbolLessColumnConstraint(column *ast.ColumnNode, start 
 			start, kind, p.dialect, accepted)
 	}
 	if kind == "CHECK" {
-		return p.handleCheck(column)
+		return p.handleColumnCheck(table, column, "")
 	}
 	return p.handleReferences(column)
 }

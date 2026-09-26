@@ -127,13 +127,19 @@ func ConstraintsWithSemantics(
 
 	// Sort for consistent output. One list per direction now, ordered by host
 	// then name, so a plan lists its constraint work the same way whatever the
-	// map iteration produced (stokaro/ptah#2315).
-	sort.Slice(diff.ConstraintsAdded, func(i, j int) bool {
-		a, b := diff.ConstraintsAdded[i], diff.ConstraintsAdded[j]
-		if a.TableName != b.TableName {
-			return a.TableName < b.TableName
-		}
-		return a.Name < b.Name
+	// map iteration produced (stokaro/ptah#2315). Unnamed constraints share a
+	// name, so their definitions order them.
+	slices.SortFunc(diff.ConstraintsAdded, func(a, b difftypes.ConstraintAdditionInfo) int {
+		return cmp.Or(
+			strings.Compare(a.TableName, b.TableName),
+			strings.Compare(a.Name, b.Name),
+			strings.Compare(a.Type, b.Type),
+			strings.Compare(a.CheckExpression, b.CheckExpression),
+			slices.Compare(a.Columns, b.Columns),
+			strings.Compare(a.ExcludeElements, b.ExcludeElements),
+			strings.Compare(a.ForeignTable, b.ForeignTable),
+			slices.Compare(a.ForeignColumns, b.ForeignColumns),
+		)
 	})
 	sort.Slice(diff.ConstraintsRemoved, func(i, j int) bool {
 		a, b := diff.ConstraintsRemoved[i], diff.ConstraintsRemoved[j]
@@ -219,9 +225,7 @@ func collectDatabaseConstraints(
 		if isFieldLevelConstraint(constraint, desired, semantics) {
 			continue
 		}
-		key := newConstraintKey(
-			constraint.QualifiedTableName(), constraint.Name, constraint.Type, semantics,
-		)
+		key := newCatalogConstraintKey(constraint, semantics)
 		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
 			uniqueConstraintOwnedByDeclaredIndex(
 				constraint,
@@ -408,7 +412,7 @@ func declaredConstraint(
 	constraint schemamodel.Constraint, tables []schemamodel.Table, semantics identifier.Semantics,
 ) (schemamodel.Constraint, tableMemberKey) {
 	constraint.Table = generatedConstraintTableName(constraint, tables)
-	return constraint, newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
+	return constraint, newDeclaredConstraintKey(constraint, semantics)
 }
 
 // ComparedCheckConstraints returns every CHECK constraint the constraint
@@ -437,7 +441,11 @@ func ComparedCheckConstraints(
 		}
 	}
 	slices.SortFunc(checks, func(a, b schemamodel.Constraint) int {
-		return cmp.Or(strings.Compare(a.Table, b.Table), strings.Compare(a.Name, b.Name))
+		return cmp.Or(
+			strings.Compare(a.Table, b.Table),
+			strings.Compare(a.Name, b.Name),
+			strings.Compare(a.CheckExpression, b.CheckExpression),
+		)
 	})
 	return checks
 }

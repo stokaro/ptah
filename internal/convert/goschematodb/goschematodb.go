@@ -8,6 +8,7 @@ package goschematodb
 import (
 	"maps"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -318,6 +319,12 @@ func toDBConstraints(
 		schema string
 		table  string
 		name   string
+		// definition tells unnamed constraints apart. Keyed by the empty name
+		// alone, every unnamed constraint of a table after the first would be
+		// dropped here, and a `schema diff` whose current side declares two
+		// unnamed CHECKs on one table would compare against one of them
+		// (stokaro/ptah#3729).
+		definition string
 	}
 	seen := make(map[constraintIdentity]struct{})
 	appendConstraint := func(constraint catalog.Constraint) {
@@ -325,6 +332,9 @@ func toDBConstraints(
 			schema: constraint.Schema,
 			table:  constraint.TableName,
 			name:   constraint.Name,
+		}
+		if constraint.Name == "" {
+			key.definition = unnamedConstraintDefinition(constraint)
 		}
 		if _, ok := seen[key]; ok {
 			return
@@ -385,6 +395,27 @@ func toDBConstraints(
 		}
 	}
 	return out
+}
+
+// unnamedConstraintDefinition spells what a constraint without a name declares,
+// for telling it apart from another unnamed constraint of the same table.
+func unnamedConstraintDefinition(constraint catalog.Constraint) string {
+	deref := func(value *string) string {
+		if value == nil {
+			return ""
+		}
+		return *value
+	}
+	return strings.Join([]string{
+		constraint.Type,
+		strings.Join(constraint.ColumnNamesOrDefault(), "\x01"),
+		deref(constraint.CheckClause),
+		deref(constraint.UsingMethod),
+		deref(constraint.ExcludeElements),
+		deref(constraint.WhereCondition),
+		constraint.QualifiedForeignTableName(),
+		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
+	}, "\x00")
 }
 
 func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field) []catalog.Constraint {

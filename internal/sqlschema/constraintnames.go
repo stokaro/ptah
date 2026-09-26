@@ -30,8 +30,9 @@ const (
 	uniqueLabel     = "key"
 )
 
-// namesConstraintsLikePostgres reports whether an unnamed UNIQUE or FOREIGN KEY
-// read from a source of this dialect takes the name PostgreSQL gives it.
+// namesConstraintsLikePostgres reports whether an unnamed CHECK, UNIQUE or
+// FOREIGN KEY read from a source of this dialect takes the name PostgreSQL
+// gives it.
 //
 // PostgreSQL alone: every rule here was measured on PostgreSQL 18.6. The other
 // engines name an unnamed constraint differently or not in a way anyone
@@ -42,8 +43,9 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 	return platform.NormalizeDialect(sourcePlatform) == platform.Postgres
 }
 
-// nameCreatedConstraints gives every unnamed table-level UNIQUE and every
-// unnamed FOREIGN KEY one CREATE TABLE declared the name PostgreSQL gives it.
+// nameCreatedConstraints gives every unnamed CHECK, every unnamed table-level
+// UNIQUE and every unnamed FOREIGN KEY one CREATE TABLE declared the name
+// PostgreSQL gives it.
 //
 // The name has to be decided on the desired model, because the other side of a
 // comparison is a catalog, and a catalog holds the name the server chose. A
@@ -51,20 +53,28 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 // server's `<table>_<column>_fkey` and added a second, identical key named
 // Ptah's `fk_<table>_<column>` beside it, and dropped the server's
 // `<table>_<columns>_key` to add the same UNIQUE back without a name, which the
-// server named again (stokaro/ptah#3643).
+// server named again (stokaro/ptah#3643). Left unnamed, a CHECK never pairs
+// with the server's `<table>_check`, and the comparison drops the server's
+// CHECK to add the same one back (stokaro/ptah#3729).
 //
 // The order is the server's. PostgreSQL creates the table and its CHECK
 // constraints, then the index behind each UNIQUE, then the foreign keys, and
 // each derived name avoids every name that exists by then. So every name the
 // schema already holds is claimed first -- in this file, in the earlier files
 // the document read, and the table's own explicitly named constraints -- then
-// the UNIQUE names, then the foreign key names. Measured, `REFERENCES
+// the CHECK names, then the UNIQUE names, then the foreign key names. A named
+// CHECK written after an unnamed one that derives its name is refused by the
+// server, so claiming the explicit names first changes no name a server
+// accepts. Measured, `REFERENCES
 // parent(id)` beside `CONSTRAINT dup_parent_id_fkey CHECK (...)` becomes
 // `dup_parent_id_fkey1`, and `UNIQUE (a)` beside `CONSTRAINT s_a_key CHECK
 // (...)` becomes `s_a_key1`. Inline foreign keys are named before table-level
-// ones. The server follows the document's order across the two, which the
-// model does not hold; the order decides only which of two keys over the same
-// columns takes the numbered name.
+// ones, and a CHECK written on a column before one written on the table. The
+// server follows the document's order across the two, which the model does not
+// hold; the order decides only which of two constraints deriving the same name
+// takes the numbered one. Measured on PostgreSQL 18.6, `CREATE TABLE h (CHECK
+// (a > 0), a int CHECK (a < 10))` gives `a > 0` the name `h_a_check`, where the
+// model gives it to `a < 10`.
 //
 // A column-level UNIQUE is not named here: the model keeps it on the column,
 // and the comparison matches it by its columns.
@@ -80,6 +90,7 @@ func nameCreatedConstraints(
 	databases := []*schemamodel.Database{database, base}
 	constraints := constraintNamesInSchema(databases, table.Schema)
 	relations := relationNamesInSchema(databases, table.Schema)
+	nameCreatedChecks(database, table, fieldsStart, constraintsStart, constraints)
 	for i := constraintsStart; i < len(database.Constraints); i++ {
 		constraint := &database.Constraints[i]
 		if !strings.EqualFold(constraint.Type, "UNIQUE") || constraint.Name != "" {
@@ -212,9 +223,52 @@ func isForeignKey(constraint schemamodel.Constraint) bool {
 	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 }
 
-// nameAddedConstraint names an unnamed UNIQUE or FOREIGN KEY an ALTER TABLE
-// adds, by the rule [nameCreatedConstraints] follows, against every name the
-// schema already holds -- in this file and in the earlier ones the document
+// nameCreatedChecks names the unnamed CHECKs of the table whose fields start at
+// fieldsStart and whose constraints start at constraintsStart: those written on
+// a column first, in column order, then those written on the table, in the
+// order the table declared them. See [pgname.Check] for the rule.
+func nameCreatedChecks(
+	database *schemamodel.Database,
+	table schemamodel.Table,
+	fieldsStart, constraintsStart int,
+	constraints namespaceNames,
+) {
+	fields := database.Fields[fieldsStart:]
+	columns := make([]string, 0, len(fields))
+	for _, field := range fields {
+		columns = append(columns, field.Name)
+	}
+	for i := range fields {
+		field := &fields[i]
+		if field.Check == "" || field.CheckName != "" {
+			continue
+		}
+		field.CheckName = claimCheckName(table.Name, field.Check, columns, constraints)
+	}
+	for i := constraintsStart; i < len(database.Constraints); i++ {
+		constraint := &database.Constraints[i]
+		if !strings.EqualFold(constraint.Type, "CHECK") || constraint.Name != "" {
+			continue
+		}
+		constraint.Name = claimCheckName(table.Name, constraint.CheckExpression, columns, constraints)
+	}
+}
+
+// nameAddedColumnCheck names the unnamed CHECK a column added by ALTER TABLE
+// carries, by the rule [nameCreatedChecks] follows. columns are the table's
+// columns with the added one among them: `ALTER TABLE t ADD COLUMN d int CHECK
+// (d > a)` names the CHECK `t_check`, measured on PostgreSQL 18.6.
+func nameAddedColumnCheck(field *schemamodel.Field, target alterTarget, columns []string) {
+	if !namesConstraintsLikePostgres(target.sourcePlatform) || field.Check == "" || field.CheckName != "" {
+		return
+	}
+	schema, table := splitQualifiedTable(target.qualified)
+	field.CheckName = claimCheckName(table, field.Check, columns, constraintNamesInSchema(target.databases, schema))
+}
+
+// nameAddedConstraint names an unnamed CHECK, UNIQUE or FOREIGN KEY an ALTER
+// TABLE adds, by the rule [nameCreatedConstraints] follows, against every name
+// the schema already holds -- in this file and in the earlier ones the document
 // read. An unnamed foreign key read for MySQL takes MySQL's name instead; see
 // [nameAddedMySQLForeignKey].
 func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget) error {
@@ -230,6 +284,9 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	schema, table := splitQualifiedTable(target.qualified)
 	constraints := constraintNamesInSchema(target.databases, schema)
 	switch {
+	case strings.EqualFold(constraint.Type, "CHECK"):
+		_, columns := tableColumns(target.databases, target.structName)
+		constraint.Name = claimCheckName(table, constraint.CheckExpression, columns, constraints)
 	case strings.EqualFold(constraint.Type, "UNIQUE"):
 		relations := relationNamesInSchema(target.databases, schema)
 		constraint.Name = claimDerivedName(table, constraint.Columns, uniqueLabel, constraints, relations)
@@ -237,6 +294,16 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 		constraint.Name = claimDerivedName(table, constraint.Columns, foreignKeyLabel, constraints)
 	}
 	return nil
+}
+
+// claimCheckName derives the name of an unnamed CHECK on table and claims it in
+// the constraint namespace. A CHECK has no index behind it, so the relation
+// namespace does not constrain it: measured, an index already called
+// `l_a_check` leaves `CHECK (a > 0)` on `l` named `l_a_check`.
+func claimCheckName(table, expression string, columns []string, constraints namespaceNames) string {
+	name := pgname.Check(table, expression, columns, constraints.taken)
+	constraints.claim(name)
+	return name
 }
 
 // claimDerivedName derives the first name none of the sets holds and claims it
@@ -278,8 +345,8 @@ func (n namespaceNames) claim(name string) {
 // its own constraints, and a table's named primary key.
 //
 // Explicit names and the names derived here are the only ones that can
-// collide with a derived `_fkey` or `_key`: every other name PostgreSQL
-// derives ends in a label of its own, such as `_pkey`, `_check` or
+// collide with a derived `_check`, `_fkey` or `_key`: every other name
+// PostgreSQL derives ends in a label of its own, such as `_pkey` or
 // `_not_null`.
 func constraintNamesInSchema(databases []*schemamodel.Database, schema string) namespaceNames {
 	names := make(namespaceNames)
