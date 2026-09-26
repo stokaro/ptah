@@ -67,6 +67,21 @@ func TestCheckPlanStatementsSandboxableRefusesEscapes(t *testing.T) {
 			construct: "pg_read_file",
 		},
 		{
+			// An escape string is read with its escapes undone, as the
+			// server reads it; read as a plain string, the call inside was
+			// never seen (stokaro/ptah#3691).
+			name:      "postgres_function_body_in_escape_string",
+			statement: `CREATE FUNCTION pwn() RETURNS text AS E'SELECT pg_read_file(\'/etc/passwd\')' LANGUAGE sql`,
+			dialect:   "postgres",
+			construct: "pg_read_file",
+		},
+		{
+			name:      "postgres_do_block_in_escape_string",
+			statement: `DO E'BEGIN PERFORM pg_read_file(\'/etc/passwd\'); END' LANGUAGE plpgsql`,
+			dialect:   "postgres",
+			construct: "pg_read_file",
+		},
+		{
 			name:      "postgres_function_body_with_tagged_dollar_quote",
 			statement: "CREATE OR REPLACE FUNCTION pwn() RETURNS void AS $body$ BEGIN PERFORM dblink('dbname=target', 'SELECT 1'); END $body$ LANGUAGE plpgsql",
 			construct: "dblink",

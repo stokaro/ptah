@@ -1210,12 +1210,28 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 	}
 
 	body := p.current.Value
-	function.SetBody(stripSQLStringDelimiters(body))
+	text, ok := lexer.StringValue(body, p.stringLiteralOptions())
+	if !ok {
+		return fmt.Errorf("unsupported CREATE FUNCTION body: %s is not a complete string literal at position %d",
+			abbreviatedToken(body), p.current.Start)
+	}
+	function.SetBody(text)
 	if p.isPostgresRoutineDialect() {
 		function.RoutineBody = &ast.PostgresRoutineBody{Delimiter: dollarQuoteDelimiter(body)}
 	}
 	p.advance()
 	return nil
+}
+
+// stringLiteralOptions are the rules this parser's lexer read its string
+// literals by, for undoing them. With no dialect the lexer is the permissive
+// one, which takes a backslash in a string as an escape.
+func (p *Parser) stringLiteralOptions() lexer.Options {
+	options := lexerOptions(p.dialect)
+	if p.dialect == "" {
+		options.BackslashEscapes = true
+	}
+	return options
 }
 
 func (p *Parser) parseFunctionReturnBody(function *ast.CreateFunctionNode) error {
@@ -1807,28 +1823,6 @@ func (p *Parser) collectTriggerBody() (string, error) {
 		return "", fmt.Errorf("expected trigger body BEGIN at position %d", p.current.Start)
 	}
 	return "", fmt.Errorf("unterminated trigger body at position %d", p.current.Start)
-}
-
-func stripSQLStringDelimiters(value string) string {
-	if len(value) < 2 {
-		return value
-	}
-	if value[0] == '\'' && value[len(value)-1] == '\'' {
-		return value[1 : len(value)-1]
-	}
-	if value[0] != '$' {
-		return value
-	}
-
-	end := strings.Index(value[1:], "$")
-	if end < 0 {
-		return value
-	}
-	tag := value[:end+2]
-	if !strings.HasSuffix(value, tag) {
-		return value
-	}
-	return value[len(tag) : len(value)-len(tag)]
 }
 
 func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
