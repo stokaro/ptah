@@ -1166,8 +1166,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10616,
-      "sourceBytes": 72474
+      "visibleWords": 10663,
+      "sourceBytes": 72750
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -5653,8 +5653,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 3317,
-      "sourceBytes": 24963
+      "visibleWords": 3319,
+      "sourceBytes": 24973
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",

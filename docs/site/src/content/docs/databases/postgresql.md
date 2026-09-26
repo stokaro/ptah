@@ -841,9 +841,12 @@ Domains, composite types, and range types are declared with
 extensions and enums but before tables, and their drops are classified as
 destructive by the safety gate. Reconciliation is deliberately conservative:
 
-- A domain's `check` and `default` are create-only. PostgreSQL rewrites those
-  expressions on read-back, so Ptah does not diff them; change them with a
-  manual migration.
+- A domain's `check` and `default` are compared through the server.
+  PostgreSQL rewrites both on read-back, so against a live database Ptah asks
+  the server to normalize the declaration and compares that with the catalog.
+  A changed `CHECK` plans `ALTER DOMAIN ... DROP CONSTRAINT` and `ADD CHECK`,
+  and a changed `DEFAULT` plans `ALTER DOMAIN ... SET DEFAULT`. A declaration
+  that leaves either out does not remove the one the database holds.
 - A domain base-type or nullability change has no in-place `ALTER`, so it is
   emitted as a non-`CASCADE` drop and recreate; if a column still uses the
   domain, the drop fails loudly instead of dropping the column.

@@ -281,10 +281,10 @@ it too. Read with `--dialect mysql`, where a backslash escapes, the same bytes
 are a valid default.
 
 **A PostgreSQL string constant is read in every spelling the server reads.**
-With `--dialect postgres`, a comment, a column default and an enum label may
-each be written as a dollar-quoted string, an `E'...'` escape string, a
-`U&'...'` Unicode escape string with an optional `UESCAPE` clause, or a string
-continued on the next line:
+With `--dialect postgres`, a comment, a column or domain default and an enum
+label may each be written as a dollar-quoted string, an `E'...'` escape string,
+a `U&'...'` Unicode escape string with an optional `UESCAPE` clause, or a
+string continued on the next line:
 
 ```sql
 COMMENT ON COLUMN notes.body IS 'the text, '
