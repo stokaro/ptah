@@ -352,6 +352,11 @@ one back out, and they are already folded by the target's rules — which is why
 `identity.name` can differ in case from `name` on MySQL and MariaDB, where the
 server resolves a constraint name case-insensitively.
 
+A foreign key the schema declares and one the database holds are one object
+only when their identities agree, whether the schema declares the key on its
+column or on its table. A key the database holds under another name is in
+`constraints_removed`, and the declared key is in `constraints_added`.
+
 The same pair identifies a policy everywhere else it is named: the plan resolves
 `rls_policies_added`, `rls_policies_removed` and `rls_policies_modified` by the
 owning table together with the policy name, and the table is matched under the

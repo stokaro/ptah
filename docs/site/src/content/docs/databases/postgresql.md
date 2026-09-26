@@ -169,6 +169,13 @@ Measured on PostgreSQL 18.6:
 | `UNIQUE (a, b)` on `p` | `p_a_b_key` |
 | `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
 
+A foreign key is compared by its name, whether the file declares it on its
+column or on its table. When the database holds the key under another name,
+the plan drops that key and adds the declared one, so the table ends with the
+keys a new database built from the file has. For a migration that names the
+key `c_p_fk` and a schema file that writes `p_id bigint REFERENCES p(id)` on
+`c`, the plan drops `c_p_fk` and adds `c_p_id_fkey`, as Atlas CE does.
+
 A column-level `UNIQUE` is compared by its columns, not by its name. A plan
 that adds one to an existing column writes `ADD CONSTRAINT` under the same
 `<table>_<column>_key` name, without a number, because the plan cannot see

@@ -178,26 +178,15 @@ func pairedConstraints(
 	// TABLE / ALTER TABLE ADD CONSTRAINT, so emitting an ADD CONSTRAINT here
 	// would double-create it in the same migration step.
 	//
-	// synthesizedFKKeys records the table.constraint_name of every synthesized
-	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
-	// through to the comparison instead of filtering it out — otherwise
-	// foreignKeyConstraintChanged would never run for field-level FKs. Every
-	// synthesized key is recorded, including one an explicit declaration
-	// already holds: the DB-side row has to reach the comparison either way.
-	fieldLevelForeignKeys := synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics)
-	synthesizedFKKeys := make(map[tableMemberKey]struct{}, len(fieldLevelForeignKeys))
-	for _, synthesized := range fieldLevelForeignKeys {
-		synthesizedFKKeys[newConstraintKey(
-			synthesized.Table, synthesized.Name, synthesized.Type, semantics,
-		)] = struct{}{}
-	}
-	recordSynthesized(genConstraints, fieldLevelForeignKeys, semantics)
+	// Every database foreign key stays in the comparison and is paired by
+	// name, whichever form declares its counterpart; see
+	// [isFieldLevelConstraint] for why none is excused by its column.
+	recordSynthesized(genConstraints, synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics), semantics)
 
 	dbConstraints = collectDatabaseConstraints(
 		desired,
 		database,
 		genConstraints,
-		synthesizedFKKeys,
 		dialect,
 		semantics,
 	)
@@ -221,14 +210,13 @@ func collectDatabaseConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	genConstraints map[tableMemberKey]schemamodel.Constraint,
-	synthesizedFKKeys map[tableMemberKey]struct{},
 	dialect string,
 	semantics identifier.Semantics,
 ) map[tableMemberKey]catalog.Constraint {
 	declaredIndexes := generatedIndexIdentities(desired, semantics)
 	dbConstraints := make(map[tableMemberKey]catalog.Constraint, len(database.Constraints))
 	for _, constraint := range database.Constraints {
-		if isFieldLevelConstraint(constraint, desired, synthesizedFKKeys, semantics) {
+		if isFieldLevelConstraint(constraint, desired, semantics) {
 			continue
 		}
 		key := newConstraintKey(

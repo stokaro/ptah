@@ -108,15 +108,13 @@ func widgetReportingUpperCaseConstraint() *catalog.Database {
 //
 // A field-level `Foreign:` declaration is synthesized into the generated set
 // under a generated name -- `fk_<table>_<column>`, always lower case -- and the
-// database side is then asked whether the catalog's foreign key is that
-// synthesized one. The set is built in ConstraintsWithSemantics and read in
-// isFieldLevelConstraint, so the two must fold the name the same way.
+// catalog's foreign key is paired with it by name, so the two keys must fold
+// the name the same way.
 //
-// Built under one rule and read under the other, a catalog reporting
-// `FK_WIDGET_PARENT` does not answer to the synthesized `fk_widget_parent`: the
-// row is taken for a field-level constraint, leaves the comparison, and the
-// declaration is reported as an addition -- CREATE for a foreign key the
-// database already has.
+// Folded under one rule on one side and another on the other, a catalog
+// reporting `FK_WIDGET_PARENT` does not answer to the synthesized
+// `fk_widget_parent`: the catalog's key is dropped and the declaration is
+// added -- DROP and CREATE for a foreign key the database already has.
 func TestConstraints_ASynthesizedForeignKeyMatchesTheCatalogsSpelling(t *testing.T) {
 	tests := []struct {
 		name            string

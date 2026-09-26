@@ -30,20 +30,22 @@ func buildTablePrimaryKeyColumnSets(
 }
 
 // isFieldLevelConstraint determines if a database constraint represents a field-level constraint
-// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY).
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE).
 //
-// synthesizedFKKeys holds the table.constraint_name of every field-level FK that
-// Constraints() synthesized into the generated set (see
-// synthesizeFieldLevelForeignKeyConstraints). When a DB-side FK has a synthesized
-// counterpart it is NOT treated as field-level here, so it stays in the
-// comparison and on_delete / on_update drift flows through
-// foreignKeyConstraintChanged (issue #189). FKs without a synthesized
-// counterpart (e.g. a column that is not yet in the database, which never gets
-// synthesized) keep the previous filter-out behavior.
+// A foreign key is never one of them, although a column can declare it. By the
+// time the comparison runs, every foreign key the desired side declares has a
+// name: the author's, the one PostgreSQL would give a key a SQL file read for
+// PostgreSQL leaves unnamed, or Ptah's default. The comparison synthesizes a
+// column's key under that name (see synthesizeFieldLevelForeignKeyConstraints)
+// and adds it when the database holds no key of that name, so the database's
+// keys have to be paired by name too. Excusing a database key because its
+// column declares one leaves the two sides asymmetric: a key under another
+// name, or a composite key led by the column, is kept beside the one the plan
+// adds, and the table ends with two foreign keys where the declaration has one
+// (stokaro/ptah#3718).
 func isFieldLevelConstraint(
 	dbConstraint catalog.Constraint,
 	desired *schemamodel.Database,
-	synthesizedFKKeys map[tableMemberKey]struct{},
 	semantics identifier.Semantics,
 ) bool {
 	// Create a map of table.column -> field for quick lookup
@@ -92,30 +94,6 @@ func isFieldLevelConstraint(
 		// Check if there's a field with unique=true for this column
 		key := newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
 		if field, exists := fieldMap[key]; exists && field.Unique {
-			return true
-		}
-	case "FOREIGN KEY":
-		// A field-level FK that was synthesized into the generated set (see
-		// synthesizeFieldLevelForeignKeyConstraints) must participate in the
-		// comparison so on_delete / on_update drift is detected (issue #189).
-		// Letting the DB-side FK through means it gets matched by name against
-		// the synthesized entry, so add / remove / action-change cases all
-		// flow through the standard Constraints() comparison path. Match on
-		// the constraint name rather than the column, because the synthesized
-		// name is keyed on table.constraint_name and getConstraintColumn does
-		// not always resolve the FK column.
-		key := newConstraintKey(
-			dbConstraint.QualifiedTableName(), dbConstraint.Name, dbConstraint.Type, semantics,
-		)
-		if _, synthesized := synthesizedFKKeys[key]; synthesized {
-			return false
-		}
-		// Check if there's a field with foreign key reference for this column.
-		// No synthesized counterpart (e.g. the column is not yet in the
-		// database): keep the historical behavior and treat it as field-level
-		// so it is owned by the column/table lifecycle.
-		key = newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
-		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
 		}
 	case "CHECK":
