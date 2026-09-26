@@ -119,10 +119,14 @@ func TriggersWithSemanticsAndConditions(
 		if paired[index] {
 			continue
 		}
-		diff.TriggersRemoved = append(diff.TriggersRemoved, difftypes.TriggerRef{
-			TriggerName: trigger.Name,
-			TableName:   trigger.QualifiedTable(),
-		})
+		removal := difftypes.TriggerRef{TriggerName: trigger.Name, TableName: trigger.QualifiedTable()}
+		// The catalog reports every function a trigger runs, the generated
+		// one included; the removal carries it only when it is declared on its
+		// own, which is what a DROP must leave in place.
+		if (schemamodel.Trigger{Name: trigger.Name, Table: removal.TableName}).RunsDeclaredFunction(trigger.ExecuteFunction) {
+			removal.ExecuteFunction = trigger.ExecuteFunction
+		}
+		diff.TriggersRemoved = append(diff.TriggersRemoved, removal)
 	}
 
 	sortTriggerRefs(diff.TriggersAdded)

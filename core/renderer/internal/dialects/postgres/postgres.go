@@ -3290,8 +3290,9 @@ func renderPostgreSQLTriggerFunctionBody(body string) string {
 	return "BEGIN\n" + body + "\nEND;"
 }
 
-// renderDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
-// trigger function when its deterministic name is known.
+// renderDropTrigger renders a DROP TRIGGER statement and drops the function Ptah
+// generated for the trigger. A trigger that runs a separately declared function
+// keeps it: that function is part of the schema in its own right.
 func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if r.refuses(capability.Triggers, "trigger", node.Name) {
 		return nil
@@ -3310,6 +3311,9 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 		parts = append(parts, "CASCADE")
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	if node.ExternalFunction {
+		return nil
+	}
 
 	functionName := node.FunctionName
 	if functionName == "" {

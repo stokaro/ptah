@@ -148,3 +148,119 @@ func TestGenerateDownMigrationSQL_RecreatesATriggerTheUpDirectionDropped(t *test
 	c.Assert(down, qt.Contains, priorBody,
 		qt.Commentf("with the body the database held\n%s", down))
 }
+
+// sharedFunctionSchema declares one function and two triggers on one table:
+// `shared` runs the function, `owned` carries its own body, so Ptah generates a
+// function for it. The pair is the whole of stokaro/ptah#3722: a DROP takes the
+// generated function with its trigger and leaves the declared one alone.
+func sharedFunctionSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "User", Name: "email", Type: "TEXT"},
+		},
+		Functions: []schemamodel.Function{{
+			Name: "public.normalize_email", Returns: "TRIGGER", Language: "plpgsql",
+			Body: "BEGIN NEW.email := lower(NEW.email); RETURN NEW; END;",
+		}},
+		Triggers: []schemamodel.Trigger{
+			{
+				Name: "shared", Table: "users", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW",
+				ExecuteFunction: "public.normalize_email",
+			},
+			{
+				Name: "owned", Table: "users", Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
+				Body: "NEW.email := lower(NEW.email); RETURN NEW;",
+			},
+		},
+	}
+}
+
+// TestGenerateDownMigrationSQL_LeavesASharedTriggerFunctionInPlace drives the
+// rollback of an addition through compare, reversal, planner and renderer. The
+// rollback drops both triggers, the generated function of the one with a body,
+// and no function under a generated name for the one that runs a declared
+// function: that trigger never had one.
+func TestGenerateDownMigrationSQL_LeavesASharedTriggerFunctionInPlace(t *testing.T) {
+	c := qt.New(t)
+	desired := sharedFunctionSchema()
+	database := &catalog.Database{}
+
+	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	c.Assert(upDiff.TriggersAdded, qt.HasLen, 2)
+
+	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, capability.Postgres17())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(down, qt.Contains, `DROP TRIGGER IF EXISTS "shared" ON "users" CASCADE;`)
+	c.Assert(down, qt.Not(qt.Contains), `"ptah_trigger_users_shared"`,
+		qt.Commentf("the rollback drops a generated function the trigger never had\n%s", down))
+	c.Assert(down, qt.Contains, `DROP TRIGGER IF EXISTS "owned" ON "users" CASCADE;`)
+	c.Assert(down, qt.Contains, `DROP FUNCTION IF EXISTS "ptah_trigger_users_owned"();`,
+		qt.Commentf("the trigger with a body still takes its generated function\n%s", down))
+}
+
+// TestGenerateUpMigrationSQL_DropsATriggerButNotTheFunctionItShares is the
+// forward direction: the database holds a trigger that runs a declared
+// function, and the desired schema no longer has the trigger. The database
+// reader reports ExecuteFunction only for a function that is not the generated
+// one, which is what the removal reads.
+func TestGenerateUpMigrationSQL_DropsATriggerButNotTheFunctionItShares(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}},
+	}
+	// The shape the PostgreSQL reader produces for the schema it was pointed
+	// at: no schema on the trigger, and the function each trigger runs by its
+	// bare name, the generated one included.
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Name: "users"}},
+		Triggers: []catalog.Trigger{
+			{
+				Name: "shared", Table: "users", Timing: "BEFORE", Event: "INSERT",
+				ForEach: "ROW", Body: "BEGIN NEW.email := lower(NEW.email); RETURN NEW; END;",
+				ExecuteFunction: "normalize_email",
+			},
+			{
+				Name: "owned", Table: "users", Timing: "BEFORE", Event: "UPDATE",
+				ForEach: "ROW", Body: "BEGIN RETURN NEW; END;",
+				ExecuteFunction: "ptah_trigger_users_owned",
+			},
+		},
+	}
+
+	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	c.Assert(upDiff.TriggersRemoved, qt.HasLen, 2)
+
+	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, capability.Postgres17())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `DROP TRIGGER IF EXISTS "shared" ON "users" CASCADE;`)
+	c.Assert(up, qt.Not(qt.Contains), `"ptah_trigger_users_shared"`,
+		qt.Commentf("the plan drops a generated function the trigger never had\n%s", up))
+	c.Assert(up, qt.Not(qt.Contains), `normalize_email`,
+		qt.Commentf("the declared function stays\n%s", up))
+	c.Assert(up, qt.Contains, `DROP FUNCTION IF EXISTS "ptah_trigger_users_owned"();`,
+		qt.Commentf("a trigger running its generated function still takes it\n%s", up))
+}
+
+// TestReverseSchemaDiff_ARolledBackTriggerAdditionKeepsItsExecutedFunction pins
+// the one fact of the declaration a removal keeps: which function the trigger
+// runs when that function is declared on its own.
+func TestReverseSchemaDiff_ARolledBackTriggerAdditionKeepsItsExecutedFunction(t *testing.T) {
+	c := qt.New(t)
+
+	removals := triggerRemovalsFromAdditions([]difftypes.TriggerRef{{
+		TriggerName: "shared", TableName: "users",
+		Desired: schemamodel.Trigger{
+			Name: "shared", Table: "users", Timing: "BEFORE", Event: "INSERT",
+			ForEach: "ROW", ExecuteFunction: "public.normalize_email",
+		},
+	}})
+
+	c.Assert(removals, qt.HasLen, 1)
+	c.Assert(removals[0].ExecuteFunction, qt.Equals, "public.normalize_email")
+	c.Assert(removals[0].Desired, qt.DeepEquals, schemamodel.Trigger{})
+}
