@@ -50,7 +50,7 @@ func ConstraintComments(
 		if _, stated := declared[key]; !stated || !exists {
 			continue
 		}
-		if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, checkExpressionsOf(opts)) {
+		if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) {
 			continue
 		}
 		desiredComment := strings.TrimSpace(genConstraint.Comment)

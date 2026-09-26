@@ -115,7 +115,7 @@ func ConstraintsWithSemantics(
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, checkExpressionsOf(opts)) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
@@ -327,7 +327,7 @@ func constraintDefinitionsChanged(
 	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
-	checks map[string]config.CheckExpression,
+	opts *config.CompareOptions,
 ) bool {
 	// Basic constraint type comparison
 	if genConstraint.Type != dbConstraint.Type {
@@ -337,9 +337,9 @@ func constraintDefinitionsChanged(
 	// Type-specific comparisons
 	switch genConstraint.Type {
 	case "EXCLUDE":
-		return excludeConstraintChanged(genConstraint, dbConstraint)
+		return excludeConstraintChanged(genConstraint, dbConstraint, excludeExpressionsOf(opts), semantics)
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint, checks, semantics)
+		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), semantics)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint)
 	case "PRIMARY KEY":
@@ -357,24 +357,38 @@ func primaryKeyConstraintChanged(genConstraint schemamodel.Constraint, dbConstra
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns)
 }
 
-// excludeConstraintChanged compares EXCLUDE constraint definitions
-func excludeConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
-	// Compare using method
-	if genConstraint.UsingMethod != getStringValue(dbConstraint.UsingMethod) {
+// excludeConstraintChanged compares EXCLUDE constraint definitions.
+//
+// A resolved entry holds the declared elements and WHERE clause as the server
+// prints them, split the way the reader splits a live constraint, so the two
+// are compared as like with like. PostgreSQL 18.6 stores `WHERE (s > 0)` as
+// `WHERE ((s > 0))` and casts a literal to the type of the column it meets, so
+// a text comparison planned an unchanged constraint again on every run
+// (stokaro/ptah#3767). Without a resolver the texts are compared as they are.
+func excludeConstraintChanged(
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
+	excludes map[string]config.ExcludeExpression,
+	semantics identifier.Semantics,
+) bool {
+	if !strings.EqualFold(genConstraint.UsingMethod, getStringValue(dbConstraint.UsingMethod)) {
 		return true
 	}
-
-	// Compare exclude elements
-	if genConstraint.ExcludeElements != getStringValue(dbConstraint.ExcludeElements) {
-		return true
+	elements, where := genConstraint.ExcludeElements, genConstraint.WhereCondition
+	if resolved, ok := excludes[exprkey.Exclude(semantics, genConstraint.Table, genConstraint.Name)]; ok && resolved.Resolved {
+		elements, where = resolved.Elements, resolved.Where
 	}
+	return elements != getStringValue(dbConstraint.ExcludeElements) ||
+		where != getStringValue(dbConstraint.WhereCondition)
+}
 
-	// Compare WHERE condition
-	if genConstraint.WhereCondition != getStringValue(dbConstraint.WhereCondition) {
-		return true
+// excludeExpressionsOf reads the resolved map out of the options, which may be
+// nil on every offline path.
+func excludeExpressionsOf(opts *config.CompareOptions) map[string]config.ExcludeExpression {
+	if opts == nil {
+		return nil
 	}
-
-	return false
+	return opts.ExcludeExpressions
 }
 
 // declaredAndCheckConstraints collects the desired side's declared constraints
@@ -419,6 +433,31 @@ func declaredConstraint(
 ) (schemamodel.Constraint, tableMemberKey) {
 	constraint.Table = generatedConstraintTableName(constraint, tables)
 	return constraint, newDeclaredConstraintKey(constraint, semantics)
+}
+
+// ComparedExcludeConstraints returns every EXCLUDE constraint the desired side
+// declares, with its table named the way the comparison names it, ordered by
+// table and name. The resolver that asks the server to spell each one reads
+// this set, so it keys each answer as the comparison looks it up.
+func ComparedExcludeConstraints(
+	desired *schemamodel.Database,
+	semantics identifier.Semantics,
+) []schemamodel.Constraint {
+	if desired == nil {
+		return nil
+	}
+	var excludes []schemamodel.Constraint
+	for _, constraint := range desired.Constraints {
+		if !strings.EqualFold(constraint.Type, "EXCLUDE") {
+			continue
+		}
+		constraint, _ = declaredConstraint(constraint, desired.Tables, semantics)
+		excludes = append(excludes, constraint)
+	}
+	slices.SortFunc(excludes, func(a, b schemamodel.Constraint) int {
+		return cmp.Or(strings.Compare(a.Table, b.Table), strings.Compare(a.Name, b.Name))
+	})
+	return excludes
 }
 
 // ComparedCheckConstraints returns every CHECK constraint the constraint

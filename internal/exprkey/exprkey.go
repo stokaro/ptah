@@ -53,6 +53,19 @@ func CheckParts(semantics identifier.Semantics, schema, table, constraint string
 	return encode(objectidentity.NewBuilder(semantics).ConstraintParts(schema, table, constraint))
 }
 
+// Exclude is the key for an EXCLUDE constraint whose table arrives as one
+// possibly qualified string. It is [Check]'s key: both name a constraint of a
+// table, and the families never share a map.
+func Exclude(semantics identifier.Semantics, qualifiedTable, constraint string) string {
+	return Check(semantics, qualifiedTable, constraint)
+}
+
+// ExcludeParts is [Exclude] for a catalog, which reports the schema, the table
+// and the constraint separately.
+func ExcludeParts(semantics identifier.Semantics, schema, table, constraint string) string {
+	return CheckParts(semantics, schema, table, constraint)
+}
+
 // Policy is the key for a row-level security policy whose table arrives as one
 // possibly qualified string.
 func Policy(semantics identifier.Semantics, qualifiedTable, policy string) string {

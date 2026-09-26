@@ -242,6 +242,26 @@ type CompareOptions struct {
 	// and as `lower(code)` over text (stokaro/ptah#2047).
 	IndexExpressions map[string]IndexExpression
 
+	// ExcludeExpressions carries each declared EXCLUDE constraint's elements
+	// and WHERE clause as the target server itself spells them, keyed by the
+	// constraint's table and name.
+	//
+	// The same rewrite as [CompareOptions.CheckExpressions]: PostgreSQL stores
+	// an exclusion constraint's elements and predicate parsed and prints them
+	// back. Measured on 18.6:
+	//
+	//	declared                          stored
+	//	(lower(t)) WITH =              -> lower(t) WITH =
+	//	WHERE (s > 0)                  -> WHERE ((s > 0))
+	//	WHERE (n >= 0) over numeric    -> WHERE ((n >= (0)::numeric))
+	//
+	// The last row depends on the column's type, so no fold over the text
+	// reaches it (stokaro/ptah#3767).
+	//
+	// A nil map means nobody could ask a server, and the comparison compares
+	// the two texts as they are.
+	ExcludeExpressions map[string]ExcludeExpression
+
 	// TriggerConditions carries each declared trigger's WHEN condition as the
 	// target server itself prints it, keyed by the trigger's table and name.
 	//
@@ -331,6 +351,22 @@ type IndexExpression struct {
 	// Predicate is the normalized WHERE clause, empty for a full index.
 	Predicate string
 	// Resolved reports that a server answered for this index.
+	Resolved bool
+}
+
+// ExcludeExpression is one EXCLUDE constraint's elements and predicate in the
+// target server's own spelling. See [CompareOptions.ExcludeExpressions].
+//
+// The zero value carries the same meaning [PolicyExpression]'s does.
+type ExcludeExpression struct {
+	// Elements is the element list as pg_get_constraintdef prints it, without
+	// its enclosing parentheses.
+	Elements string
+	// Where is the WHERE clause as pg_get_constraintdef prints it, without the
+	// parentheses around the whole clause, and empty for a constraint that
+	// declares none.
+	Where string
+	// Resolved reports that a server answered for this constraint.
 	Resolved bool
 }
 

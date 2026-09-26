@@ -2420,7 +2420,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 
 		// Parse constraint definition for EXCLUDE constraints
 		if stdType == "EXCLUDE" {
-			parsed, err := r.ParseExcludeConstraintDefinition(definition)
+			parsed, err := ParseExcludeConstraintDefinition(definition)
 			if err != nil {
 				// Log the error but continue processing other constraints
 				continue
@@ -2453,9 +2453,14 @@ type ExcludeConstraintDefinition struct {
 	WhereCondition string
 }
 
-// ParseExcludeConstraintDefinition parses an EXCLUDE constraint definition from pg_get_constraintdef
-// Example input: "EXCLUDE USING gist (room_id WITH =, during WITH &&) WHERE (is_active = true)"
-func (r *Reader) ParseExcludeConstraintDefinition(definition string) (*ExcludeConstraintDefinition, error) {
+// ParseExcludeConstraintDefinition parses an EXCLUDE constraint definition as
+// pg_get_constraintdef prints it, such as
+// "EXCLUDE USING gist (room_id WITH =, during WITH &&) WHERE (is_active = true)".
+//
+// It is the one reading of that text: the reader parses a live constraint with
+// it, and the probe that asks the server to spell a declared EXCLUDE parses the
+// probe's constraint with it, so the two sides are split the same way.
+func ParseExcludeConstraintDefinition(definition string) (*ExcludeConstraintDefinition, error) {
 	// Remove leading/trailing whitespace
 	definition = strings.TrimSpace(definition)
 
