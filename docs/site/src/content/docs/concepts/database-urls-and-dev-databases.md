@@ -48,10 +48,17 @@ native commands, `--url` on Atlas-compatible ones. It is the only database
 whose state matters after the command exits.
 
 **A dev database** (`--dev-url`) is a disposable replay target used for
-validation: `ptah migrations validate` and `ptah migrations lint` clean it and
-replay the migration directory on it to prove the SQL executes, `schema apply`
-rehearses its plan on it before touching the target, and Atlas-compatible verbs
-use it for planning, linting, and rollback verification. Ptah cleans the replay
+validation:
+
+- `ptah migrations validate` and `ptah migrations lint` clean it and replay the
+  migration directory on it to prove the SQL executes;
+- `schema apply` rehearses its plan on it before touching the target;
+- `schema diff` replays a migration directory on it, and creates a `--from`
+  schema file on it when `--to` is a database or migration directory;
+- Atlas-compatible verbs use it for planning, linting, and rollback
+  verification.
+
+Ptah cleans the replay
 realm before migration execution, after a failed replay, and after a successful
 replay. Commands that inspect the replayed state do so between execution and
 the final cleanup on the same pinned database session. No fixed time limit

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/tableref"
 )
 
@@ -43,7 +44,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 
 	out := &catalog.Database{
 		Schemas:     toDBSchemas(db.Schemas),
-		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables),
+		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
 		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct),
@@ -91,6 +92,7 @@ func toDBTables(
 	tables []schemamodel.Table,
 	fields []schemamodel.Field,
 	rlsEnabledTables []schemamodel.RLSEnabledTable,
+	dialect string,
 ) []catalog.Table {
 	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
@@ -105,7 +107,7 @@ func toDBTables(
 			Schema:       table.Schema,
 			Type:         "TABLE",
 			Comment:      table.Comment,
-			Columns:      toDBColumns(fieldsByStruct[table.StructName]),
+			Columns:      toDBColumns(table, fieldsByStruct[table.StructName], dialect),
 			RLSEnabled:   rlsEnabled,
 			RLSForced:    rlsEnabled && enablement.Forced,
 			Strict:       table.Strict,
@@ -139,9 +141,22 @@ func tableRLSEnablement(
 	return enabledTables[index], true
 }
 
-func toDBColumns(fields []schemamodel.Field) []catalog.Column {
+// toDBColumns describes a table's columns the way the server would report
+// them.
+//
+// A key column is NOT NULL on the server whatever it declares -- on SQLite,
+// depending on the table's shape -- and the comparison normalizes the desired
+// side to that answer. A schema file read as the current side of a diff keeps
+// `id bigint PRIMARY KEY` as a nullable field, so without the same answer here
+// the same file compared with itself planned SET NOT NULL on every key column
+// (stokaro/ptah#3658).
+func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect string) []catalog.Column {
+	keyColumns := sqlitekey.KeyColumns(table, fields)
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
+		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) {
+			field.Nullable = false
+		}
 		out = append(out, toDBColumn(field, i+1))
 	}
 	return out

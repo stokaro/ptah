@@ -203,3 +203,75 @@ func TestKeyColumns(t *testing.T) {
 		})
 	}
 }
+
+// TestKeyColumnIsNotNull covers the rule across engines: every engine but
+// SQLite holds a key column NOT NULL, SQLite decides by the table's shape, and
+// a column the key does not cover is never NOT NULL on this account.
+func TestKeyColumnIsNotNull(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		table      schemamodel.Table
+		keyColumns []string
+		field      schemamodel.Field
+		want       bool
+	}{
+		{
+			name:       "PostgreSQL column key",
+			dialect:    "postgres",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "bigint", Primary: true, Nullable: true},
+			want:       true,
+		},
+		{
+			name:       "PostgreSQL table-level key column",
+			dialect:    "postgres",
+			table:      schemamodel.Table{Name: "t", PrimaryKey: []string{"a", "b"}},
+			keyColumns: []string{"a", "b"},
+			field:      schemamodel.Field{Name: "b", Type: "text", Nullable: true},
+			want:       true,
+		},
+		{
+			name:       "MySQL column key",
+			dialect:    "mysql",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "INT", Primary: true, Nullable: true},
+			want:       true,
+		},
+		{
+			name:       "a column outside the key",
+			dialect:    "postgres",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "note", Type: "text", Nullable: true},
+			want:       false,
+		},
+		{
+			name:       "SQLite rowid table key",
+			dialect:    "sqlite",
+			table:      schemamodel.Table{Name: "t"},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true, Nullable: true},
+			want:       false,
+		},
+		{
+			name:       "SQLite STRICT table key",
+			dialect:    "sqlite",
+			table:      schemamodel.Table{Name: "t", Strict: true},
+			keyColumns: []string{"id"},
+			field:      schemamodel.Field{Name: "id", Type: "TEXT", Primary: true, Nullable: true},
+			want:       true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := sqlitekey.KeyColumnIsNotNull(test.dialect, test.table, test.keyColumns, test.field)
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

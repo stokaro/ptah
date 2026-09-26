@@ -705,8 +705,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2234,
-      "sourceBytes": 16099
+      "visibleWords": 2261,
+      "sourceBytes": 16253
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -1158,8 +1158,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 9151,
-      "sourceBytes": 62484
+      "visibleWords": 9242,
+      "sourceBytes": 63015
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4380,8 +4380,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8982,
-      "sourceBytes": 88745
+      "visibleWords": 8989,
+      "sourceBytes": 88817
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
