@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
@@ -41,6 +43,56 @@ func resolveProbes[Probe any, Answer any](
 		return nil, err
 	}
 	return resolved, nil
+}
+
+// probeRelation is the temporary table one probe creates: how the probe's
+// statements name it, the text its ::regclass lookup takes, and the statements
+// that run before it is created.
+type probeRelation struct {
+	name     string
+	regclass string
+	setup    []string
+}
+
+// statements returns the relation's setup followed by the probe's own
+// statements, in a slice of its own.
+func (r probeRelation) statements(probe ...string) []string {
+	return slices.Concat(r.setup, probe)
+}
+
+// searchPathWithTempLast puts pg_temp at the end of the transaction's search
+// path. set_config's third argument makes it local to the transaction, and the
+// savepoint each probe rolls back to undoes it with the rest of the probe.
+const searchPathWithTempLast = `SELECT set_config('search_path', CASE
+	WHEN current_setting('search_path') = '' THEN 'pg_temp'
+	ELSE current_setting('search_path') || ', pg_temp' END, true)`
+
+// newProbeRelation names the probe table after the table the declaration is
+// on, inside pg_temp, when that table is known.
+//
+// A declaration may name its own table: `CHECK (clients.n > 0)`, an index
+// predicate `WHERE clients.parent_id IS NOT NULL`, a policy whose subquery
+// compares with `clients.id`. The server resolves that name against the table
+// the object is on and stores it unqualified. Under a numbered probe name
+// PostgreSQL 18.6 refuses the same declaration with `missing FROM-clause entry
+// for table "clients"`, and the comparison falls back to text, which plans the
+// object again on every run (stokaro/ptah#3654).
+//
+// Named after the real table, the probe table would shadow it: pg_temp is
+// searched first, so a subquery reading `public.clients` prints it qualified in
+// the probe and unqualified in the catalog. pg_temp goes last in the search path
+// for the probe, so every name but the object's own qualifier resolves as it
+// does for the real object. Measured on 18.6, the policy, CHECK and predicate
+// above print identically on the probe table and on the real one.
+//
+// Without a table name the probe keeps a numbered one.
+func newProbeRelation(table, prefix string, index int) probeRelation {
+	if strings.TrimSpace(table) == "" {
+		name := fmt.Sprintf("%s_%d", prefix, index)
+		return probeRelation{name: name, regclass: "pg_temp." + name}
+	}
+	name := "pg_temp." + quoteCheckProbeIdentifier(table)
+	return probeRelation{name: name, regclass: name, setup: []string{searchPathWithTempLast}}
 }
 
 // runProbe creates one probe's objects inside a savepoint, reads the answer
