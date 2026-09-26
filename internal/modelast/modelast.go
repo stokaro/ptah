@@ -1236,7 +1236,9 @@ func FromExtension(extension schemamodel.Extension) *ast.ExtensionNode {
 // Returns an *ast.EnumNode ready for SQL generation by dialect-specific visitors.
 // The visitor implementation determines how the enum is rendered for each database type.
 func FromEnum(enum schemamodel.Enum) *ast.EnumNode {
-	return ast.NewEnum(enum.QualifiedName(), enum.Values...)
+	node := ast.NewEnum(enum.QualifiedName(), enum.Values...)
+	node.Comment = enum.Comment
+	return node
 }
 
 // qualifyTypeName returns schema.name when schema is set, or name otherwise. The

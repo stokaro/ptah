@@ -132,6 +132,7 @@ var registry = []Entry{
 	{Field: "schemamodel.EmbeddedField.Type", Disposition: DDL},
 	{Field: "schemamodel.EmbeddedSources.Definitions", Disposition: Derived, Reason: "the embedded declarations retained so materialization can run again after a merge; the columns they produce are what reaches DDL"},
 	{Field: "schemamodel.EmbeddedSources.Fields", Disposition: DDL},
+	{Field: "schemamodel.Enum.Comment", Disposition: DDL},
 	{Field: "schemamodel.Enum.Name", Disposition: DDL},
 	{Field: "schemamodel.Enum.Schema", Disposition: DDL},
 	{Field: "schemamodel.Enum.Values", Disposition: DDL},

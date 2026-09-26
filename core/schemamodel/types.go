@@ -833,6 +833,10 @@ type Enum struct {
 	// uses it against the wrong type (stokaro/ptah#1276).
 	Schema string
 	Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
+	// Comment is the type's own comment. The PostgreSQL family stores it with
+	// COMMENT ON TYPE; a dialect that writes an enum inline in a column has no
+	// type to hold one.
+	Comment string
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

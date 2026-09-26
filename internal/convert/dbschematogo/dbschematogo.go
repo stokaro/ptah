@@ -124,9 +124,10 @@ func newDatabase() *schemamodel.Database {
 func convertEnums(database *schemamodel.Database, dbEnums []catalog.Enum) {
 	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, schemamodel.Enum{
-			Name:   dbEnum.Name,
-			Schema: dbEnum.Schema,
-			Values: dbEnum.Values,
+			Name:    dbEnum.Name,
+			Schema:  dbEnum.Schema,
+			Values:  dbEnum.Values,
+			Comment: dbEnum.Comment,
 		})
 	}
 }

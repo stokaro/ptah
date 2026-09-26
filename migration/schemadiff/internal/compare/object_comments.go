@@ -13,8 +13,9 @@ import (
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
-// ObjectComments records the comment transitions of the views, sequences,
-// domains, composite and range types, and extensions both sides hold.
+// ObjectComments records the comment transitions of the views, materialized
+// views, sequences, domains, composite, range and enum types, extensions,
+// functions, procedures, triggers and policies both sides hold.
 //
 // A kind is compared only where caps says the target stores its comment and
 // reads it back. Everywhere else the reader reports no comment whatever was
@@ -51,13 +52,27 @@ func ObjectComments(
 	if caps.Has(capability.TypeComments) {
 		changes = append(changes, compositeComments(desired, database, semantics)...)
 		changes = append(changes, rangeComments(desired, database, semantics)...)
+		changes = append(changes, enumComments(desired, database, semantics)...)
 	}
 	if caps.Has(capability.ExtensionComments) {
 		changes = append(changes, extensionComments(desired, database, opts)...)
 	}
-	sort.Slice(changes, func(i, j int) bool {
+	if caps.Has(capability.MaterializedViewComments) {
+		changes = append(changes, materializedViewComments(desired, database, semantics)...)
+	}
+	changes = append(changes, routineComments(desired, database, opts.Dialect, semantics, caps)...)
+	if caps.Has(capability.TriggerComments) {
+		changes = append(changes, triggerComments(desired, database, semantics)...)
+	}
+	if caps.Has(capability.PolicyComments) {
+		changes = append(changes, policyComments(desired, database, semantics)...)
+	}
+	sort.SliceStable(changes, func(i, j int) bool {
 		if changes[i].Kind != changes[j].Kind {
 			return changes[i].Kind < changes[j].Kind
+		}
+		if changes[i].Table != changes[j].Table {
+			return changes[i].Table < changes[j].Table
 		}
 		return changes[i].Name < changes[j].Name
 	})
@@ -214,6 +229,135 @@ func extensionComments(
 		); changed {
 			changes = append(changes, change)
 		}
+	}
+	return changes
+}
+
+func enumComments(
+	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
+) []difftypes.ObjectCommentChange {
+	dbByIdentity := make(map[objectIdentity]catalog.Enum, len(database.Enums))
+	dbByName := make(map[string][]catalog.Enum, len(database.Enums))
+	for _, enum := range database.Enums {
+		schema, name := enumParts(enum.Schema, enum.Name)
+		dbByIdentity[newObjectIdentity(objectidentity.KindEnum, schema, name, semantics)] = enum
+		dbByName[semantics.TableIdentityKey(name)] = append(dbByName[semantics.TableIdentityKey(name)], enum)
+	}
+	var changes []difftypes.ObjectCommentChange
+	for _, enum := range desired.Enums {
+		current, exists := findDatabaseEnum(enum, dbByIdentity, dbByName, semantics)
+		if !exists {
+			continue
+		}
+		if change, changed := commentTransition(
+			difftypes.CommentedEnumType, enum.QualifiedName(), enum.Comment, current.Comment,
+		); changed {
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+func materializedViewComments(
+	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
+) []difftypes.ObjectCommentChange {
+	reported := make(map[objectIdentity]catalog.MaterializedView, len(database.MatViews))
+	for _, view := range database.MatViews {
+		reported[newObjectIdentity(objectidentity.KindMatView, view.Schema, view.Name, semantics)] = view
+	}
+	var changes []difftypes.ObjectCommentChange
+	for _, view := range desired.MaterializedViews {
+		current, exists := reported[newQualifiedObjectIdentity(objectidentity.KindMatView, view.Name, semantics)]
+		if !exists {
+			continue
+		}
+		if change, changed := commentTransition(
+			difftypes.CommentedMatView, view.Name, view.Comment, current.Comment,
+		); changed {
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+// routineComments records the comment transitions of the functions and
+// procedures a definition comparison pairs, each kind where the target
+// stores its comment. The argument list is the one the database records,
+// which is what addresses one overload among several.
+func routineComments(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+	caps capability.Capabilities,
+) []difftypes.ObjectCommentChange {
+	functions, procedures := caps.Has(capability.FunctionComments), caps.Has(capability.ProcedureComments)
+	if !functions && !procedures {
+		return nil
+	}
+	groups := groupRoutines(desired, database, dialect, semantics.Normalize(""))
+	var changes []difftypes.ObjectCommentChange
+	for identity, declared := range groups.declared {
+		pairs, _, _ := pairRoutineOverloads(declared, groups.recorded[identity])
+		for _, pair := range pairs {
+			kind, stored := difftypes.CommentedFunction, functions
+			if identity.Kind() == objectidentity.KindProcedure {
+				kind, stored = difftypes.CommentedProcedure, procedures
+			}
+			if !stored {
+				continue
+			}
+			change, changed := commentTransition(kind, pair.declared.Name, pair.declared.Comment, pair.recorded.Comment)
+			if !changed {
+				continue
+			}
+			change.Arguments = pair.recorded.DropIdentity()
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+func triggerComments(
+	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
+) []difftypes.ObjectCommentChange {
+	matched, _ := pairTriggers(desired, database, semantics.Normalize(""))
+	var changes []difftypes.ObjectCommentChange
+	for position, declared := range desired.Triggers {
+		if matched[position] < 0 {
+			continue
+		}
+		change, changed := commentTransition(
+			difftypes.CommentedTrigger, declared.Name, declared.Comment, database.Triggers[matched[position]].Comment,
+		)
+		if !changed {
+			continue
+		}
+		change.Table = declared.Table
+		changes = append(changes, change)
+	}
+	return changes
+}
+
+func policyComments(
+	desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics,
+) []difftypes.ObjectCommentChange {
+	reported := make(map[tableMemberKey]catalog.RLSPolicy, len(database.RLSPolicies))
+	for _, policy := range database.RLSPolicies {
+		reported[newTableMemberKey(policy.Table, policy.Name, semantics)] = policy
+	}
+	var changes []difftypes.ObjectCommentChange
+	for _, policy := range desired.RLSPolicies {
+		current, exists := reported[newTableMemberKey(policy.Table, policy.Name, semantics)]
+		if !exists {
+			continue
+		}
+		change, changed := commentTransition(difftypes.CommentedPolicy, policy.Name, policy.Comment, current.Comment)
+		if !changed {
+			continue
+		}
+		change.Table = policy.Table
+		changes = append(changes, change)
 	}
 	return changes
 }

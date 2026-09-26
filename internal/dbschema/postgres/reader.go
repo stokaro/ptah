@@ -966,7 +966,8 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 	enumsQuery := `
 		SELECT
 			t.typname AS enum_name,
-			e.enumlabel AS enum_value
+			e.enumlabel AS enum_value,
+			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_enum e ON t.oid = e.enumtypid
 		JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
@@ -980,6 +981,8 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 	defer rows.Close()
 
 	enumMap := make(map[string][]string)
+	// The comment is the type's, so every row of one enum carries the same one.
+	enumComments := make(map[string]string)
 	// The order the rows arrive in, which the query's ORDER BY already fixed.
 	// Ranging enumMap to build the result discarded it, so two reads of one
 	// unchanged schema returned the enum TYPES in different orders while the
@@ -988,11 +991,12 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 	// current_schema_digest hash, so the swap reads as a stale plan.
 	var enumOrder []string
 	for rows.Next() {
-		var enumName, enumValue string
-		err := rows.Scan(&enumName, &enumValue)
+		var enumName, enumValue, comment string
+		err := rows.Scan(&enumName, &enumValue, &comment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan enum: %w", err)
 		}
+		enumComments[enumName] = comment
 
 		if _, seen := enumMap[enumName]; !seen {
 			enumOrder = append(enumOrder, enumName)
@@ -1023,8 +1027,9 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 			// connection's own schema, named otherwise. Filters rebuild the
 			// qualified spelling from the connection's default, which is what
 			// makes `--exclude app.color` reach this enum (stokaro/ptah#933).
-			Schema: r.outputSchema(schemaName),
-			Values: values,
+			Schema:  r.outputSchema(schemaName),
+			Values:  values,
+			Comment: enumComments[name],
 		})
 	}
 

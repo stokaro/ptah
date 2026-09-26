@@ -6947,6 +6947,15 @@ func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
 }
 
 // parseCommentStatement parses COMMENT ON statements (PostgreSQL).
+//
+// The target between ON and IS is kept as it was written rather than read
+// into parts here, because its shape depends on the kind of object: a
+// qualified name, a name with an argument list (FUNCTION f(int)), a name ON
+// a table (TRIGGER t ON orders, CONSTRAINT c ON DOMAIN d), a two-word kind
+// (MATERIALIZED VIEW) or a form of its own (CAST (a AS b)). The reader that
+// applies the statement decides which of them it models and refuses the rest
+// by name, so every form has to parse. The target ends at the IS that is
+// outside any parentheses and followed by the comment's string literal.
 func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "COMMENT"); err != nil {
 		return nil, err
@@ -6960,38 +6969,31 @@ func (p *Parser) parseCommentStatement() (*ast.CommentNode, error) {
 
 	p.skipWhitespace()
 
-	// Parse the object type (TABLE, COLUMN, etc.)
-	objectType, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected object type: %w", err)
+	start := p.current.Start
+	depth := 0
+	for {
+		if p.isAtEnd() || p.current.MatchOperatorValue(";") {
+			return nil, fmt.Errorf("expected IS and the comment text after the object at position %d", start)
+		}
+		switch {
+		case p.current.MatchOperatorValue("("):
+			depth++
+		case p.current.MatchOperatorValue(")"):
+			depth--
+		}
+		if depth == 0 && p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "IS") &&
+			p.current.Start > start {
+			isAt := p.current.Start
+			p.advance()
+			p.skipWhitespace()
+			if p.current.Type != lexer.TokenString {
+				return nil, fmt.Errorf("expected string for comment text at position %d", p.current.Start)
+			}
+			target := strings.TrimSpace(p.input[start:isAt])
+			commentText := fmt.Sprintf("COMMENT ON %s IS %s", target, p.current.Value)
+			p.advance()
+			return ast.NewComment(commentText), nil
+		}
+		p.advance()
 	}
-
-	p.skipWhitespace()
-
-	// Parse the object name (could be table.column for columns). Quoted
-	// identifiers have to be accepted here because that is how Ptah's own
-	// renderer spells the role in COMMENT ON ROLE.
-	objectName, err := p.parseQualifiedIdentifier("comment object name")
-	if err != nil {
-		return nil, err
-	}
-
-	p.skipWhitespace()
-
-	if err := p.expect(lexer.TokenIdentifier, "IS"); err != nil {
-		return nil, fmt.Errorf("expected IS after object name: %w", err)
-	}
-
-	p.skipWhitespace()
-
-	// Get the comment text
-	if p.current.Type != lexer.TokenString {
-		return nil, fmt.Errorf("expected string for comment text at position %d", p.current.Start)
-	}
-
-	commentText := fmt.Sprintf("COMMENT ON %s %s IS %s",
-		strings.ToUpper(objectType), objectName, p.current.Value)
-	p.advance()
-
-	return ast.NewComment(commentText), nil
 }

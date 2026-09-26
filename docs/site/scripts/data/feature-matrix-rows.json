@@ -23,8 +23,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders; DO blocks, COMMENT ON and raw routine bodies still parse and are dropped.",
-    "evidence": "ptah schema render --help; ptah-compat schema diff --help (.sql accepted on --from/--to). Round-trip measured by internal/schemafile.TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint: the 16 statements rendered from the docs/atlas_hcl_schema.md PostgreSQL-objects example load again and re-render identically apart from object comments emitted as bare `--` lines. Silent drops that remain: ast.RawSQLNode and ast.CommentNode (other than COMMENT ON ROLE) have no case in internal/convert/toschema.appendStatement. docs/site/src/content/docs/atlas/docs-coverage.md:202 (Atlas: 'Open sources include SQL, HCL, and external schema')"
+    "note": "Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders. COMMENT ON sets the comment of the object it names or is refused; DO blocks are dropped.",
+    "evidence": "ptah schema render --help; ptah-compat schema diff --help (.sql accepted on --from/--to). Round-trip measured by internal/schemafile.TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint: the 16 statements rendered from the docs/atlas_hcl_schema.md PostgreSQL-objects example load again and re-render identically apart from object comments emitted as bare `--` lines. COMMENT ON: internal/sqlschema.applyComment sets the comment of the declared object each form names, and refuses an undeclared object or a kind the model keeps no comment for by name (internal/sqlschema/comment_on_test.go, stokaro/ptah#3646). A DO block and a raw statement are deliberately not modeled (internal/sqlschema/toschema.go, appendStatement). docs/site/src/content/docs/atlas/docs-coverage.md:202 (Atlas: 'Open sources include SQL, HCL, and external schema')"
   },
   {
     "area": "Schema sources",

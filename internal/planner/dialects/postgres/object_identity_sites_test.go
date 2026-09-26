@@ -47,7 +47,7 @@ func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 }
 
 // TestEnumLookupResolvesAcrossSchemaSpellings pins addNewEnums and
-// postgresEnumValues, the two enum sites the sweep converted.
+// enumRebuild, the two enum sites the sweep converted.
 //
 // Both were still green with the raw `QualifiedName() == enumName` loop back in
 // place. The first drops the CREATE TYPE for a new enum, so the columns typed

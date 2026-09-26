@@ -835,8 +835,9 @@ func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
 	}
 
 	s.globalEnumsMap[kv["name"]] = schemamodel.Enum{
-		Name:   kv["name"],
-		Values: splitCommaList(kv["values"]),
+		Name:    kv["name"],
+		Values:  splitCommaList(kv["values"]),
+		Comment: kv["comment"],
 	}
 	return nil
 }

@@ -12,7 +12,7 @@ import (
 // back.
 const probeComment = "ptah capability probe"
 
-// withObjectComments answers the five object-comment keys in a dialect's plan.
+// withObjectComments answers the object-comment keys in a dialect's plan.
 // They are added where the plan is assembled rather than inside each family's
 // plan, because every dialect answers them the same way for its kind: the
 // PostgreSQL family runs the experiments, a dialect with no COMMENT ON at all
@@ -20,7 +20,9 @@ const probeComment = "ptah capability probe"
 func withObjectComments(p plan, dialect string) plan {
 	switch dialect {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		p.experiments = append(p.experiments, objectCommentExperiments(postgresFamilySpelling(dialect))...)
+		t := postgresFamilySpelling(dialect)
+		p.experiments = append(p.experiments, objectCommentExperiments(t)...)
+		p.experiments = append(p.experiments, routineCommentExperiments(t)...)
 	case platform.SQLServer:
 		p.experiments = append(p.experiments, objectCommentRefusals("T-SQL has no COMMENT ON statement at all; "+
 			"SQL Server carries a comment as an extended property, which this key does not name")...)
@@ -42,9 +44,10 @@ func withObjectComments(p plan, dialect string) plan {
 	return p
 }
 
-// objectCommentExperiments asks the PostgreSQL family the five object-comment
-// questions, one experiment per statement, because the engines take different
-// subsets of them (stokaro/ptah#3627).
+// objectCommentExperiments asks the PostgreSQL family the object-comment
+// questions of views, sequences, types, domains and extensions, one experiment
+// per statement, because the engines take different subsets of them
+// (stokaro/ptah#3627).
 //
 // Each object is created by the experiment inside the probe's own schema, so
 // dropping that schema at the end of the run removes it. The extension is the
@@ -97,6 +100,59 @@ func objectCommentExperiments(t tableSpelling) []experiment {
 	}
 }
 
+// routineCommentExperiments asks the PostgreSQL family the comment questions of
+// functions, procedures, materialized views, triggers and policies
+// (stokaro/ptah#3646). Each read-back addresses the object the way Ptah's
+// reader does: a routine through pg_proc in the probe's schema, a trigger and
+// a policy through the table they belong to.
+func routineCommentExperiments(t tableSpelling) []experiment {
+	const inProbeSchema = "JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = current_schema() "
+	return []experiment{
+		objectComment(capability.FunctionComments,
+			[]capability.Capability{capability.Functions},
+			[]string{"CREATE FUNCTION fncm(a int) RETURNS int LANGUAGE sql AS 'SELECT 1'"},
+			[]string{"COMMENT ON FUNCTION fncm(int) IS '" + probeComment + "'"},
+			"SELECT COUNT(*) FROM pg_proc p "+inProbeSchema+
+				"AND p.proname = 'fncm' AND obj_description(p.oid, 'pg_proc') = '"+probeComment+"'",
+		),
+		objectComment(capability.ProcedureComments,
+			[]capability.Capability{capability.Procedures},
+			[]string{"CREATE PROCEDURE prcm(a int) LANGUAGE sql AS 'SELECT 1'"},
+			[]string{"COMMENT ON PROCEDURE prcm(int) IS '" + probeComment + "'"},
+			"SELECT COUNT(*) FROM pg_proc p "+inProbeSchema+
+				"AND p.proname = 'prcm' AND obj_description(p.oid, 'pg_proc') = '"+probeComment+"'",
+		),
+		objectComment(capability.MaterializedViewComments,
+			[]capability.Capability{capability.MaterializedViews},
+			[]string{t.table("mvcm_t", "n int", "n"), "CREATE MATERIALIZED VIEW mvcm AS SELECT n FROM mvcm_t"},
+			[]string{"COMMENT ON MATERIALIZED VIEW mvcm IS '" + probeComment + "'"},
+			"SELECT COUNT(*) WHERE obj_description('mvcm'::regclass, 'pg_class') = '"+probeComment+"'",
+		),
+		objectComment(capability.TriggerComments,
+			[]capability.Capability{capability.Triggers},
+			[]string{
+				t.table("tgcm_t", "n int", "n"),
+				"CREATE FUNCTION tgcm_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+				"CREATE TRIGGER tgcm BEFORE INSERT ON tgcm_t FOR EACH ROW EXECUTE FUNCTION tgcm_fn()",
+			},
+			[]string{"COMMENT ON TRIGGER tgcm ON tgcm_t IS '" + probeComment + "'"},
+			"SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = 'tgcm_t'::regclass AND tgname = 'tgcm' "+
+				"AND obj_description(oid, 'pg_trigger') = '"+probeComment+"'",
+		),
+		objectComment(capability.PolicyComments,
+			[]capability.Capability{capability.RowLevelSecurity},
+			[]string{
+				t.table("plcm_t", "n int", "n"),
+				"ALTER TABLE plcm_t ENABLE ROW LEVEL SECURITY",
+				"CREATE POLICY plcm ON plcm_t USING (true)",
+			},
+			[]string{"COMMENT ON POLICY plcm ON plcm_t IS '" + probeComment + "'"},
+			"SELECT COUNT(*) FROM pg_policy WHERE polrelid = 'plcm_t'::regclass AND polname = 'plcm' "+
+				"AND obj_description(oid, 'pg_policy') = '"+probeComment+"'",
+		),
+	}
+}
+
 // objectComment decides one object-comment key by writing a comment and
 // reading it back through obj_description, the function Ptah's reader uses.
 //
@@ -142,35 +198,48 @@ func objectCommentObservation(read Attempt, stored int64) observation {
 	return decided(true)
 }
 
+// objectCommentStatements is the COMMENT ON form each object-comment key
+// names, for a dialect asked to refuse it.
+var objectCommentStatements = []struct {
+	key       capability.Capability
+	statement string
+}{
+	{capability.ViewComments, "COMMENT ON VIEW vcm IS 'probe'"},
+	{capability.SequenceComments, "COMMENT ON SEQUENCE scm IS 'probe'"},
+	{capability.TypeComments, "COMMENT ON TYPE tcm IS 'probe'"},
+	{capability.DomainComments, "COMMENT ON DOMAIN dcm IS 'probe'"},
+	{capability.ExtensionComments, "COMMENT ON EXTENSION ecm IS 'probe'"},
+	{capability.FunctionComments, "COMMENT ON FUNCTION fncm(int) IS 'probe'"},
+	{capability.ProcedureComments, "COMMENT ON PROCEDURE prcm(int) IS 'probe'"},
+	{capability.MaterializedViewComments, "COMMENT ON MATERIALIZED VIEW mvcm IS 'probe'"},
+	{capability.TriggerComments, "COMMENT ON TRIGGER tgcm ON tgcm_t IS 'probe'"},
+	{capability.PolicyComments, "COMMENT ON POLICY plcm ON plcm_t IS 'probe'"},
+}
+
 // objectCommentRefusals asks a dialect with no COMMENT ON statement at all
-// each of the five questions, so its answers are refusals the run recorded
+// each object-comment question, so its answers are refusals the run recorded
 // rather than values a preset asserted. The statement names no object that
 // exists because the grammar is what is refused, not the name.
 func objectCommentRefusals(note string) []experiment {
-	return []experiment{
-		acceptanceNote(capability.ViewComments, nil, "COMMENT ON VIEW vcm IS 'probe'", note),
-		acceptanceNote(capability.SequenceComments, nil, "COMMENT ON SEQUENCE scm IS 'probe'", note),
-		acceptanceNote(capability.TypeComments, nil, "COMMENT ON TYPE tcm IS 'probe'", note),
-		acceptanceNote(capability.DomainComments, nil, "COMMENT ON DOMAIN dcm IS 'probe'", note),
-		acceptanceNote(capability.ExtensionComments, nil, "COMMENT ON EXTENSION ecm IS 'probe'", note),
+	experiments := make([]experiment, 0, len(objectCommentStatements))
+	for _, form := range objectCommentStatements {
+		experiments = append(experiments, acceptanceNote(form.key, nil, form.statement, note))
 	}
+	return experiments
 }
 
 // withObjectCommentsUndecided returns a copy of undecided that also declares
-// the five object-comment keys undecidable, with the same reason for each, on a
+// every object-comment key undecidable, with the same reason for each, on a
 // dialect where no statement could separate them.
 func withObjectCommentsUndecided(
 	undecided map[capability.Capability]string, reason string,
 ) map[capability.Capability]string {
 	merged := maps.Clone(undecided)
 	if merged == nil {
-		merged = make(map[capability.Capability]string, 5)
+		merged = make(map[capability.Capability]string, len(objectCommentStatements))
 	}
-	for _, key := range []capability.Capability{
-		capability.ViewComments, capability.SequenceComments, capability.TypeComments,
-		capability.DomainComments, capability.ExtensionComments,
-	} {
-		merged[key] = reason
+	for _, form := range objectCommentStatements {
+		merged[form.key] = reason
 	}
 	return merged
 }

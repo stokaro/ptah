@@ -959,7 +959,7 @@ func indexFullTextFixture() schemamodel.Database {
 
 func enumFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Enums = []schemamodel.Enum{{Name: "mood", Schema: "public", Values: []string{"ok", "bad"}}}
+	db.Enums = []schemamodel.Enum{{Name: "mood", Schema: "public", Values: []string{"ok", "bad"}, Comment: "feelings"}}
 	return db
 }
 

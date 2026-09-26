@@ -618,7 +618,19 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "API export metadata", present: len(schemamodel.ExportMetadataIn(database)) > 0},
 		{name: "table partitioning", present: hasTablePartitioning(database)},
 		{name: "platform overrides", present: hasPlatformOverrides(database)},
+		// An enum is a type the Community Edition models, and its comment is
+		// not. Measured on v1.3.0 against PostgreSQL 18: it accepts `comment`
+		// on an `enum` block and renders CREATE TYPE without a COMMENT ON,
+		// and its inspection of a commented enum type leaves the comment out.
+		// Strict mode refuses the comment rather than dropping it too.
+		{name: "enum comments", present: hasEnumComments(database)},
 	}
+}
+
+func hasEnumComments(database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.Enums, func(enum schemamodel.Enum) bool {
+		return enum.Comment != ""
+	})
 }
 
 func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) []strictCEDesiredObject {

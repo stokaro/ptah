@@ -19,8 +19,19 @@ const commentFixture = "CREATE SCHEMA app;\nCREATE TABLE app.u (id int PRIMARY K
 	"CREATE DOMAIN app.e AS int;\nCREATE DOMAIN app.d AS int;\n" +
 	"CREATE TYPE app.k AS (n int);\nCREATE TYPE app.c AS (n int);\n" +
 	"CREATE TYPE app.x AS RANGE (subtype = int4);\nCREATE TYPE app.r AS RANGE (subtype = int8);\n" +
-	"CREATE TYPE app.mood AS ENUM ('ok');\n" +
-	"CREATE EXTENSION hstore;\nCREATE EXTENSION pgcrypto;\n"
+	"CREATE TYPE app.calm AS ENUM ('ok');\nCREATE TYPE app.mood AS ENUM ('ok');\n" +
+	"CREATE EXTENSION hstore;\nCREATE EXTENSION pgcrypto;\n" +
+	"CREATE MATERIALIZED VIEW app.mu AS SELECT id FROM app.u;\nCREATE MATERIALIZED VIEW app.mt AS SELECT id FROM app.t;\n" +
+	"CREATE FUNCTION app.f(a int, b text DEFAULT 'x') RETURNS int LANGUAGE sql AS 'SELECT 2';\n" +
+	"CREATE FUNCTION app.g() RETURNS int LANGUAGE sql AS 'SELECT 3';\n" +
+	"CREATE PROCEDURE app.p(a int) LANGUAGE sql AS 'SELECT 1';\n" +
+	"CREATE FUNCTION app.touch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;\n" +
+	"CREATE TRIGGER audit BEFORE INSERT ON app.u FOR EACH ROW EXECUTE FUNCTION app.touch();\n" +
+	"CREATE TRIGGER audit BEFORE INSERT ON app.t FOR EACH ROW EXECUTE FUNCTION app.touch();\n" +
+	"ALTER TABLE app.u ENABLE ROW LEVEL SECURITY;\nALTER TABLE app.t ENABLE ROW LEVEL SECURITY;\n" +
+	"CREATE POLICY own ON app.u USING (true);\nCREATE POLICY own ON app.t USING (true);\n" +
+	"ALTER TABLE app.u ADD CONSTRAINT positive CHECK (a > 0);\n" +
+	"ALTER TABLE app.t ADD CONSTRAINT positive CHECK (a > 0);\n"
 
 // appTStructName is the struct name the reader gives app.t, read back rather
 // than spelled here.
@@ -68,6 +79,28 @@ func commentsOf(database schemamodel.Database) map[string]string {
 	for _, extension := range database.Extensions {
 		comments["extension "+extension.Name] = extension.Comment
 	}
+	for _, enum := range database.Enums {
+		comments["enum "+enum.QualifiedName()] = enum.Comment
+	}
+	for _, view := range database.MaterializedViews {
+		comments["materialized view "+view.Name] = view.Comment
+	}
+	for _, function := range database.Functions {
+		kind := "function"
+		if function.IsProcedure() {
+			kind = "procedure"
+		}
+		comments[kind+" "+function.Name+"("+function.Parameters+")"] = function.Comment
+	}
+	for _, trigger := range database.Triggers {
+		comments["trigger "+trigger.Name+" on "+trigger.Table] = trigger.Comment
+	}
+	for _, policy := range database.RLSPolicies {
+		comments["policy "+policy.Name+" on "+policy.Table] = policy.Comment
+	}
+	for _, constraint := range database.Constraints {
+		comments["constraint "+constraint.Name+" on "+constraint.Table] = constraint.Comment
+	}
 	return comments
 }
 
@@ -104,6 +137,47 @@ func TestRead_CommentOn_HappyPath(t *testing.T) {
 		{name: "a range type", statement: "COMMENT ON TYPE app.r IS 'the range';", wantKey: "range app.r", want: "the range"},
 		{name: "an extension", statement: "COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';", wantKey: "extension pgcrypto", want: "cryptographic functions"},
 		{name: "a quoted extension", statement: `COMMENT ON EXTENSION "pgcrypto" IS 'quoted';`, wantKey: "extension pgcrypto", want: "quoted"},
+		{name: "an enum type", statement: "COMMENT ON TYPE app.mood IS 'the enum';", wantKey: "enum app.mood", want: "the enum"},
+		{
+			name: "a materialized view", statement: "COMMENT ON MATERIALIZED VIEW app.mt IS 'the matview';",
+			wantKey: "materialized view app.mt", want: "the matview",
+		},
+		{
+			name: "a materialized view, the kind spread over lines", statement: "COMMENT ON MATERIALIZED\n  VIEW app.mt IS 'x';",
+			wantKey: "materialized view app.mt", want: "x",
+		},
+		{
+			name: "a function by its argument types", statement: "COMMENT ON FUNCTION app.f(integer, text) IS 'two';",
+			wantKey: "function app.f(a int, b text default 'x')", want: "two",
+		},
+		{
+			name: "a function by names and types", statement: "COMMENT ON FUNCTION app.f(a int4, b text) IS 'two';",
+			wantKey: "function app.f(a int, b text default 'x')", want: "two",
+		},
+		{
+			name: "a function with one overload, by its name alone", statement: "COMMENT ON FUNCTION app.g IS 'g';",
+			wantKey: "function app.g()", want: "g",
+		},
+		{
+			name: "a function with no arguments", statement: "COMMENT ON FUNCTION app.g() IS 'g';",
+			wantKey: "function app.g()", want: "g",
+		},
+		{
+			name: "a procedure", statement: "COMMENT ON PROCEDURE app.p(int) IS 'the procedure';",
+			wantKey: "procedure app.p(a int)", want: "the procedure",
+		},
+		{
+			name: "a trigger on its table", statement: "COMMENT ON TRIGGER audit ON app.t IS 'the trigger';",
+			wantKey: "trigger audit on app.t", want: "the trigger",
+		},
+		{
+			name: "a policy on its table", statement: "COMMENT ON POLICY own ON app.t IS 'the policy';",
+			wantKey: "policy own on app.t", want: "the policy",
+		},
+		{
+			name: "a constraint on its table", statement: "COMMENT ON CONSTRAINT positive ON app.t IS 'the check';",
+			wantKey: "constraint positive on app.t", want: "the check",
+		},
 		{name: "IS inside the text", statement: "COMMENT ON TABLE app.t IS 'it IS here';", wantKey: "table app.t", want: "it IS here"},
 		{name: "a quote inside the text", statement: "COMMENT ON COLUMN app.t.a IS 'it''s a';", wantKey: "column " + appTStructName + ".a", want: "it's a"},
 	}
@@ -165,10 +239,40 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 			wantErr:   `the schema model has no place for this statement: COMMENT ON DATABASE: Ptah keeps no comment for this kind of object`,
 		},
 		{
-			name:      "an enum type, whose comment the model does not keep",
-			statement: "COMMENT ON TYPE app.mood IS 'x';",
-			wantErr: `the schema model has no place for this statement: COMMENT ON TYPE app.mood names an enum type, ` +
-				`and Ptah keeps no comment for one \(stokaro/ptah#3646\)`,
+			name:      "an overload the document does not declare",
+			statement: "COMMENT ON FUNCTION app.f(bigint) IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON FUNCTION app.f names an object this schema does not declare`,
+		},
+		{
+			name:      "a function named as a procedure",
+			statement: "COMMENT ON PROCEDURE app.g() IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON PROCEDURE app.g names an object this schema does not declare`,
+		},
+		{
+			name:      "a trigger on a table it is not on",
+			statement: "COMMENT ON TRIGGER audit ON app.w IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON TRIGGER audit names an object this schema does not declare`,
+		},
+		{
+			name:      "a policy without its table",
+			statement: "COMMENT ON POLICY own IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON POLICY own names an object this schema does not declare`,
+		},
+		{
+			name:      "a domain's constraint",
+			statement: "COMMENT ON CONSTRAINT positive ON DOMAIN app.d IS 'x';",
+			wantErr: `the schema model has no place for this statement: COMMENT ON CONSTRAINT positive ON DOMAIN app.d: ` +
+				`Ptah keeps no comment for a domain's constraint`,
+		},
+		{
+			name:      "a kind of more than one word the model has no comment for",
+			statement: "COMMENT ON FOREIGN TABLE app.ft IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON FOREIGN TABLE: Ptah keeps no comment for this kind of object`,
+		},
+		{
+			name:      "a kind with a form of its own",
+			statement: "COMMENT ON CAST (int AS text) IS 'x';",
+			wantErr:   `the schema model has no place for this statement: COMMENT ON CAST: Ptah keeps no comment for this kind of object`,
 		},
 		{
 			name:      "a view the document does not declare",
@@ -278,6 +382,52 @@ func TestRead_CommentOn_ResolvesAViewAsTheDialectDoes(t *testing.T) {
 			c.Assert(commentsOf(database)["view "+test.want], qt.Equals, "x")
 		})
 	}
+}
+
+// overloadedBase is a document from an earlier file holding two overloads of
+// one function. It is built rather than read, because a read keeps one
+// function per name (stokaro/ptah#3672).
+func overloadedBase() *schemamodel.Database {
+	return &schemamodel.Database{Functions: []schemamodel.Function{
+		{Name: "app.f", Parameters: "a int", Returns: "int", Language: "sql", Body: "SELECT 1"},
+		{Name: "app.f", Parameters: "a int, b text", Returns: "int", Language: "sql", Body: "SELECT 2"},
+	}}
+}
+
+// A comment reaches the overload its argument types name, and a bare name
+// that could be either overload is refused rather than applied to one.
+func TestReadOnto_CommentOnOneOverload(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		want      []string
+	}{
+		{name: "the first", statement: "COMMENT ON FUNCTION app.f(integer) IS 'x';", want: []string{"x", ""}},
+		{name: "the second", statement: "COMMENT ON FUNCTION app.f(int, text) IS 'x';", want: []string{"", "x"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			base := overloadedBase()
+
+			_, _, err := sqlschema.ReadOnto([]byte(test.statement), "postgres", base)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert([]string{base.Functions[0].Comment, base.Functions[1].Comment}, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
+	c := qt.New(t)
+	base := overloadedBase()
+
+	_, _, err := sqlschema.ReadOnto([]byte("COMMENT ON FUNCTION app.f IS 'x';"), "postgres", base)
+
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+	c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: COMMENT ON FUNCTION app.f names more than one `+
+		`declared overload; write its argument types to name one`)
+	c.Assert([]string{base.Functions[0].Comment, base.Functions[1].Comment}, qt.DeepEquals, []string{"", ""})
 }
 
 // A later file of a directory may comment on what an earlier file declared.

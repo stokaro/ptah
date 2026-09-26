@@ -247,8 +247,9 @@ func TestCompare_AnRLSPolicyResolvesTheDefaultSchemaSpelling(t *testing.T) {
 			nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(nodes, qt.HasLen, 1)
-			policy, ok := nodes[0].(*ast.CreatePolicyNode)
+			// A note naming the change, then the policy.
+			c.Assert(nodes, qt.HasLen, 2)
+			policy, ok := nodes[1].(*ast.CreatePolicyNode)
 			c.Assert(ok, qt.IsTrue)
 			// The declared spelling is what is rendered: only the matching is
 			// normalized.

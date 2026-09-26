@@ -582,6 +582,8 @@ type Enum struct {
 	// nothing and silently kept the enum (stokaro/ptah#933).
 	Schema string   `json:"schema,omitempty"`
 	Values []string `json:"values"`
+	// Comment is the type's own comment, as obj_description reports it.
+	Comment string `json:"comment,omitempty"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

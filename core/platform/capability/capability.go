@@ -448,9 +448,10 @@ const (
 	// ViewComments names.
 	SequenceComments Capability = "sequence_comments"
 
-	// TypeComments marks a target that stores a comment against a composite
-	// or range type through `COMMENT ON TYPE` and reports it back through
-	// obj_description(oid, 'pg_type').
+	// TypeComments marks a target that stores a comment against a composite,
+	// range or enum type through `COMMENT ON TYPE` and reports it back through
+	// obj_description(oid, 'pg_type'). The enum answers the same way as the
+	// other two on every measured line (stokaro/ptah#3646).
 	//
 	// The read-back is part of the key. CockroachDB v25.4.16, v26.2.7 and
 	// v26.3.1 accept the statement and then report NULL for it: the comment
@@ -472,6 +473,46 @@ const (
 	// EXTENSION statements and answers `unimplemented` to this one on every
 	// measured line (stokaro/ptah#3627).
 	ExtensionComments Capability = "extension_comments"
+
+	// FunctionComments marks a target that stores a comment against a
+	// function through `COMMENT ON FUNCTION name(arguments)` and reports it
+	// back through obj_description(oid, 'pg_proc').
+	//
+	// The five routine and relation keys below are separate for the reason
+	// ViewComments gives. Measured 2026-09-26: PostgreSQL 14 and 18 and
+	// YugabyteDB 2024.2, 2025.2 and 2026.1 take all five and read each one
+	// back. CockroachDB v26.3.1 takes COMMENT ON FUNCTION and COMMENT ON
+	// PROCEDURE and reads both back, and answers `syntax error` to the other
+	// three; v26.2.7 and v25.4.16 answer `unimplemented` or `syntax error` to
+	// all five. The Spanner PostgreSQL interface answers `Unknown statement`
+	// to each (stokaro/ptah#3646).
+	FunctionComments Capability = "function_comments"
+
+	// ProcedureComments marks a target that stores a comment against a
+	// procedure through `COMMENT ON PROCEDURE name(arguments)` and reports it
+	// back through obj_description(oid, 'pg_proc'). The engines that take it
+	// are the ones FunctionComments names.
+	ProcedureComments Capability = "procedure_comments"
+
+	// MaterializedViewComments marks a target that stores a comment against a
+	// materialized view through `COMMENT ON MATERIALIZED VIEW` and reports it
+	// back through obj_description(oid, 'pg_class'). CockroachDB creates
+	// materialized views and answers `syntax error` to this statement on every
+	// measured line.
+	MaterializedViewComments Capability = "materialized_view_comments"
+
+	// TriggerComments marks a target that stores a comment against a trigger
+	// through `COMMENT ON TRIGGER name ON table` and reports it back through
+	// obj_description(oid, 'pg_trigger'). CockroachDB creates triggers and
+	// answers `syntax error` to this statement on every measured line.
+	TriggerComments Capability = "trigger_comments"
+
+	// PolicyComments marks a target that stores a comment against a
+	// row-level security policy through `COMMENT ON POLICY name ON table` and
+	// reports it back through obj_description(oid, 'pg_policy'). CockroachDB
+	// creates policies and answers `syntax error` to this statement on every
+	// measured line.
+	PolicyComments Capability = "policy_comments"
 
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
@@ -1015,7 +1056,7 @@ var registry = map[Capability]spec{
 		requires: []Capability{Sequences},
 	},
 	TypeComments: {
-		doc: "COMMENT ON TYPE for a composite or range type, stored where obj_description reads it back",
+		doc: "COMMENT ON TYPE for a composite, range or enum type, stored where obj_description reads it back",
 	},
 	DomainComments: {
 		doc:      "COMMENT ON DOMAIN, stored where obj_description reads it back",
@@ -1023,6 +1064,26 @@ var registry = map[Capability]spec{
 	},
 	ExtensionComments: {
 		doc: "COMMENT ON EXTENSION, stored where obj_description reads it back",
+	},
+	FunctionComments: {
+		doc:      "COMMENT ON FUNCTION, stored where obj_description reads it back",
+		requires: []Capability{Functions},
+	},
+	ProcedureComments: {
+		doc:      "COMMENT ON PROCEDURE, stored where obj_description reads it back",
+		requires: []Capability{Procedures},
+	},
+	MaterializedViewComments: {
+		doc:      "COMMENT ON MATERIALIZED VIEW, stored where obj_description reads it back",
+		requires: []Capability{MaterializedViews},
+	},
+	TriggerComments: {
+		doc:      "COMMENT ON TRIGGER, stored where obj_description reads it back",
+		requires: []Capability{Triggers},
+	},
+	PolicyComments: {
+		doc:      "COMMENT ON POLICY, stored where obj_description reads it back",
+		requires: []Capability{RowLevelSecurity},
 	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
@@ -1301,6 +1362,11 @@ func MySQL84() Capabilities {
 		TypeComments:                    false,
 		DomainComments:                  false,
 		ExtensionComments:               false,
+		FunctionComments:                false,
+		ProcedureComments:               false,
+		MaterializedViewComments:        false,
+		TriggerComments:                 false,
+		PolicyComments:                  false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1448,6 +1514,11 @@ func MariaDB1011() Capabilities {
 		TypeComments:                    false,
 		DomainComments:                  false,
 		ExtensionComments:               false,
+		FunctionComments:                false,
+		ProcedureComments:               false,
+		MaterializedViewComments:        false,
+		TriggerComments:                 false,
+		PolicyComments:                  false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1536,12 +1607,17 @@ func Postgres16() Capabilities {
 		// Measured on PostgreSQL 17: accepted, and obj_description reads it back (stokaro/ptah#2651).
 		SchemaComments: true,
 		// Measured on PostgreSQL 14 and 18.6: each COMMENT ON is accepted and
-		// obj_description reads it back (stokaro/ptah#3627).
+		// obj_description reads it back (stokaro/ptah#3627, stokaro/ptah#3646).
 		ViewComments:                    true,
 		SequenceComments:                true,
 		TypeComments:                    true,
 		DomainComments:                  true,
 		ExtensionComments:               true,
+		FunctionComments:                true,
+		ProcedureComments:               true,
+		MaterializedViewComments:        true,
+		TriggerComments:                 true,
+		PolicyComments:                  true,
 		XMLType:                         true,
 		AdvisoryLocks:                   true,
 		RowLevelTTL:                     false,
@@ -1752,14 +1828,19 @@ func ClickHouse24() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// ClickHouse comments a database in CREATE DATABASE; there is no COMMENT ON SCHEMA.
-		SchemaComments:    false,
-		ViewComments:      false,
-		SequenceComments:  false,
-		TypeComments:      false,
-		DomainComments:    false,
-		ExtensionComments: false,
-		XMLType:           false,
-		AdvisoryLocks:     false,
+		SchemaComments:           false,
+		ViewComments:             false,
+		SequenceComments:         false,
+		TypeComments:             false,
+		DomainComments:           false,
+		ExtensionComments:        false,
+		FunctionComments:         false,
+		ProcedureComments:        false,
+		MaterializedViewComments: false,
+		TriggerComments:          false,
+		PolicyComments:           false,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
 		// key names a row-expiry policy declared as STORAGE PARAMETERS, the
 		// shape CockroachDB answers and the probe reads back out of
@@ -1848,19 +1929,24 @@ func SQLite3() Capabilities {
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
 		// SQLite has neither schemas in this sense nor comment statements.
-		SchemaComments:          false,
-		ViewComments:            false,
-		SequenceComments:        false,
-		TypeComments:            false,
-		DomainComments:          false,
-		ExtensionComments:       false,
-		XMLType:                 false,
-		AdvisoryLocks:           false,
-		RowLevelTTL:             false,
-		RowDeletionPolicy:       false,
-		NamedNotNullConstraints: false,
-		MigrationTimeouts:       false,
-		TransactionalDDL:        true,
+		SchemaComments:           false,
+		ViewComments:             false,
+		SequenceComments:         false,
+		TypeComments:             false,
+		DomainComments:           false,
+		ExtensionComments:        false,
+		FunctionComments:         false,
+		ProcedureComments:        false,
+		MaterializedViewComments: false,
+		TriggerComments:          false,
+		PolicyComments:           false,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
+		RowLevelTTL:              false,
+		RowDeletionPolicy:        false,
+		NamedNotNullConstraints:  false,
+		MigrationTimeouts:        false,
+		TransactionalDDL:         true,
 		// Both keys name a PostgreSQL catalog, and SQLite has neither.
 		// Measured on 3.53.4: `SELECT COUNT(*) FROM pg_inherits` answers `no
 		// such table: pg_inherits`, and the recursive query over pg_class
@@ -2015,18 +2101,23 @@ func SQLServer2022() Capabilities {
 		Sequences:                true,
 		SequenceStartCounterOnly: false,
 		// SQL Server carries this as an extended property, not COMMENT ON.
-		SchemaComments:          false,
-		ViewComments:            false,
-		SequenceComments:        false,
-		TypeComments:            false,
-		DomainComments:          false,
-		ExtensionComments:       false,
-		XMLType:                 true,
-		AdvisoryLocks:           false,
-		RowLevelTTL:             false,
-		RowDeletionPolicy:       false,
-		NamedNotNullConstraints: false,
-		MigrationTimeouts:       false,
+		SchemaComments:           false,
+		ViewComments:             false,
+		SequenceComments:         false,
+		TypeComments:             false,
+		DomainComments:           false,
+		ExtensionComments:        false,
+		FunctionComments:         false,
+		ProcedureComments:        false,
+		MaterializedViewComments: false,
+		TriggerComments:          false,
+		PolicyComments:           false,
+		XMLType:                  true,
+		AdvisoryLocks:            false,
+		RowLevelTTL:              false,
+		RowDeletionPolicy:        false,
+		NamedNotNullConstraints:  false,
+		MigrationTimeouts:        false,
 		// TransactionalDDL is on because both halves the key needs are here.
 		// The engine rolls a schema change back: measured on 17.0.4075.5, one
 		// session inside a throwaway database, six DDL batches -- CREATE TABLE,
@@ -2161,6 +2252,15 @@ func CockroachDB23() Capabilities {
 		With(TypeComments, false).
 		With(DomainComments, false).
 		With(ExtensionComments, false).
+		// Measured 2026-09-26 on v25.4.16 and v26.2.7: `unimplemented` to
+		// COMMENT ON FUNCTION and `syntax error` to COMMENT ON PROCEDURE,
+		// MATERIALIZED VIEW, TRIGGER and POLICY, although each object is
+		// created (stokaro/ptah#3646).
+		With(FunctionComments, false).
+		With(ProcedureComments, false).
+		With(MaterializedViewComments, false).
+		With(TriggerComments, false).
+		With(PolicyComments, false).
 		With(RowLevelTTL, true)
 }
 
@@ -2246,12 +2346,17 @@ func CockroachDB26() Capabilities {
 // Measured 2026-09-25 on v26.3.1: both are accepted and obj_description reads
 // each one back, while v26.2.7 answers `syntax error` to both. COMMENT ON
 // DOMAIN is still a syntax error here, so DomainComments stays false beside
-// the domains themselves (stokaro/ptah#3627).
+// the domains themselves (stokaro/ptah#3627). It also takes COMMENT ON
+// FUNCTION and COMMENT ON PROCEDURE, measured 2026-09-26 on v26.3.1 and read
+// back through pg_proc, while COMMENT ON MATERIALIZED VIEW, TRIGGER and POLICY
+// stay syntax errors (stokaro/ptah#3646).
 func CockroachDB263() Capabilities {
 	return CockroachDB26().
 		With(DomainTypes, true).
 		With(ViewComments, true).
-		With(SequenceComments, true)
+		With(SequenceComments, true).
+		With(FunctionComments, true).
+		With(ProcedureComments, true)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -2372,12 +2477,19 @@ func SpannerPostgres() Capabilities {
 		With(SchemaComments, false).
 		// Measured 2026-09-25 on the same emulator behind PGAdapter 0.55.3:
 		// COMMENT ON VIEW, SEQUENCE, TYPE and EXTENSION all answer `Unknown
-		// statement`, as COMMENT ON TABLE and COLUMN do (stokaro/ptah#3627).
+		// statement`, as COMMENT ON TABLE and COLUMN do (stokaro/ptah#3627),
+		// and so, measured 2026-09-26, do COMMENT ON FUNCTION, PROCEDURE,
+		// MATERIALIZED VIEW, TRIGGER and POLICY (stokaro/ptah#3646).
 		With(ViewComments, false).
 		With(SequenceComments, false).
 		With(TypeComments, false).
 		With(DomainComments, false).
 		With(ExtensionComments, false).
+		With(FunctionComments, false).
+		With(ProcedureComments, false).
+		With(MaterializedViewComments, false).
+		With(TriggerComments, false).
+		With(PolicyComments, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -2604,13 +2716,18 @@ func Oracle23() Capabilities {
 		// than about the type -- which is a property of that account, not of
 		// the engine.
 		// Oracle comments tables and columns; there is no COMMENT ON SCHEMA.
-		SchemaComments:    false,
-		ViewComments:      false,
-		SequenceComments:  false,
-		TypeComments:      false,
-		DomainComments:    false,
-		ExtensionComments: false,
-		XMLType:           true,
+		SchemaComments:           false,
+		ViewComments:             false,
+		SequenceComments:         false,
+		TypeComments:             false,
+		DomainComments:           false,
+		ExtensionComments:        false,
+		FunctionComments:         false,
+		ProcedureComments:        false,
+		MaterializedViewComments: false,
+		TriggerComments:          false,
+		PolicyComments:           false,
+		XMLType:                  true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
 		AdvisoryLocks:           false,

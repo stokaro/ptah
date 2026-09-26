@@ -164,11 +164,23 @@ an unnamed foreign key, `fk_<table>_<column>`.
 
 ## Object comments
 
-Ptah writes the comment of a view, a sequence, a domain, a composite or range
-type, and an extension with `COMMENT ON`, reads it back and compares it, as it
-does a table's and a column's. The comment is written right after the statement
-that creates the object, and a changed comment is planned as one `COMMENT ON`
-for the object, not as a drop and a create.
+Ptah writes the comment of a view, a materialized view, a sequence, a domain, a
+composite, range or enum type, an extension, a function, a procedure, a trigger
+and a row-level security policy with `COMMENT ON`, reads it back and compares
+it, as it does a table's and a column's. The comment is written right after the
+statement that creates the object, and a changed comment is planned as one
+`COMMENT ON` for the object, not as a drop and a create.
+
+A function or a procedure is named by the argument list the server records, so
+the statement addresses one overload. A trigger and a policy are named `ON`
+their table.
+
+An object the plan writes again ends with the comment the declaration states.
+`CREATE OR REPLACE` keeps the comment a function, a procedure or a trigger had,
+so a removed comment is cleared after the replacement. A materialized view and
+a policy are dropped and created again, and an enum that loses a value is
+renamed, created again and the old type dropped; each new object is written
+with the declared comment.
 
 An extension's comment is compared only when the declaration states one.
 `CREATE EXTENSION` gives every extension the comment its control file carries,
@@ -177,16 +189,20 @@ of an extension follows the same rule.
 
 The other engines of the family take fewer of these statements. Ptah writes and
 compares a comment only where the server stores it and reports it back, which
-each statement's capability key records: `view_comments`, `sequence_comments`,
-`type_comments`, `domain_comments` and `extension_comments`. Where a key is
+each statement's capability key records: `view_comments`,
+`materialized_view_comments`, `sequence_comments`, `type_comments`,
+`domain_comments`, `extension_comments`, `function_comments`,
+`procedure_comments`, `trigger_comments` and `policy_comments`. Where a key is
 false, the render names the comment it left out. CockroachDB accepts
 `COMMENT ON TYPE` and then reports no comment for the type, so its
-`type_comments` key is false, and the Spanner PostgreSQL interface refuses every
+`type_comments` key is false. CockroachDB 26.3 stores a function's and a
+procedure's comment and refuses the statement for a materialized view, a
+trigger and a policy. The Spanner PostgreSQL interface refuses every
 `COMMENT ON`.
 
-A comment on a function, a materialized view, a trigger or a policy is not
-written yet, and an enum type has no comment in the model
-([stokaro/ptah#3646](https://github.com/stokaro/ptah/issues/3646)).
+A table constraint's comment is written when the constraint is created, and a
+changed one is not compared yet
+([stokaro/ptah#3678](https://github.com/stokaro/ptah/issues/3678)).
 
 ## Making a column NOT NULL
 

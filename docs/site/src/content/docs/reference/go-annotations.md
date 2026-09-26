@@ -358,6 +358,7 @@ Declares a reusable enum type.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
+| `comment` | No | Enum type comment. |
 | `name` | Yes | Enum type name. |
 | `values` | Yes | Comma-separated enum values. |
 

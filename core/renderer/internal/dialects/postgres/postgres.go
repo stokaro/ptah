@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
+	"ptah.run/internal/routineargs"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -161,13 +162,8 @@ func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
 }
 
 func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
-	// For a domain, a composite and a range the node's comment is the type's
-	// own, written after the statement that creates it. The model keeps no
-	// comment for an enum, so on one the node's comment is a note for the
-	// script and stays one.
-	if _, enum := node.TypeDef.(*ast.EnumTypeDef); enum && node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
+	// The node's comment is the type's own, written after the statement that
+	// creates it.
 
 	// Every branch below decides against the key for its own kind. The four
 	// user-type kinds do not travel together -- CockroachDB takes a composite
@@ -189,7 +185,9 @@ func (r *Renderer) renderCreateType(node *ast.CreateTypeNode) error {
 		for i, value := range typeDef.Values {
 			values[i] = r.escapeValue(value)
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(values, ", "))
+		target := r.escapeQualifiedIdentifier(node.Name)
+		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", target, strings.Join(values, ", "))
+		r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 
 	case *ast.CompositeTypeDef:
 		// CREATE TYPE name AS (field1 type1, field2 type2, ...)
@@ -1691,7 +1689,9 @@ func (r *Renderer) renderEnum(node *ast.EnumNode) error {
 		values[i] = r.escapeValue(value)
 	}
 
-	r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(values, ", "))
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", target, strings.Join(values, ", "))
+	r.writeCreatedObjectComment(ast.CommentedType, target, node.Name, node.Comment)
 	return nil
 }
 
@@ -2477,11 +2477,9 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	} else if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
-
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
+	// The comment follows the statement, whichever of the endings below
+	// writes it.
+	defer r.writeCreatedRoutineComment(node)
 
 	// Build CREATE OR REPLACE FUNCTION statement
 	var parts []string
@@ -2535,11 +2533,6 @@ func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 		return nil
 	}
 
-	// Add comment if provided
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	// If Replace is true, drop the policy first to avoid conflicts
 	if node.Replace {
 		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))
@@ -2578,7 +2571,8 @@ func (r *Renderer) renderCreatePolicy(node *ast.CreatePolicyNode) error {
 	}
 
 	r.w.WriteLinef(";")
-
+	r.writeCreatedObjectComment(ast.CommentedPolicy, r.scopedCommentTarget(node.Name, node.Table),
+		policyIdentity(node.Name, node.Table), node.Comment)
 	return nil
 }
 
@@ -2760,11 +2754,16 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 // of each kind and reports it back. The statements are separate, and the
 // engines take different subsets of them (stokaro/ptah#3627).
 var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
-	ast.CommentedView:      capability.ViewComments,
-	ast.CommentedSequence:  capability.SequenceComments,
-	ast.CommentedDomain:    capability.DomainComments,
-	ast.CommentedType:      capability.TypeComments,
-	ast.CommentedExtension: capability.ExtensionComments,
+	ast.CommentedView:             capability.ViewComments,
+	ast.CommentedSequence:         capability.SequenceComments,
+	ast.CommentedDomain:           capability.DomainComments,
+	ast.CommentedType:             capability.TypeComments,
+	ast.CommentedExtension:        capability.ExtensionComments,
+	ast.CommentedFunction:         capability.FunctionComments,
+	ast.CommentedProcedure:        capability.ProcedureComments,
+	ast.CommentedMaterializedView: capability.MaterializedViewComments,
+	ast.CommentedTrigger:          capability.TriggerComments,
+	ast.CommentedPolicy:           capability.PolicyComments,
 }
 
 // renderObjectComment sets the comment of an object that already exists.
@@ -2773,14 +2772,54 @@ var objectCommentKeys = map[ast.CommentedObject]capability.Capability{
 // the statement, as a create node's comment does: the comparison does not ask
 // for a comment there, so a node that reaches this point was built by hand.
 func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
-	target := r.escapeQualifiedIdentifier(node.Name)
-	if node.Object == ast.CommentedExtension {
+	switch node.Object {
+	case ast.CommentedExtension:
 		// An extension's name is database-wide, and splitting it on a dot
 		// would name an object that does not exist, for the reason
 		// renderExtension gives.
-		target = r.escapeIdentifier(node.Name)
+		return r.writeObjectComment(node.Object, r.escapeIdentifier(node.Name), node.Name, node.Comment)
+	case ast.CommentedTrigger, ast.CommentedPolicy:
+		if node.Table == "" {
+			return fmt.Errorf("%w: %s: COMMENT ON %s %s names no table, and the statement addresses one ON its table",
+				ptaherr.ErrInvalidSchemaDiff, r.dialect, node.Object, node.Name)
+		}
+		return r.writeObjectComment(node.Object, r.scopedCommentTarget(node.Name, node.Table),
+			node.Name+" on "+node.Table, node.Comment)
+	case ast.CommentedFunction, ast.CommentedProcedure:
+		return r.writeObjectComment(node.Object, r.routineCommentTarget(node.Name, node.Arguments), node.Name, node.Comment)
+	default:
+		return r.writeObjectComment(node.Object, r.escapeQualifiedIdentifier(node.Name), node.Name, node.Comment)
 	}
-	return r.writeObjectComment(node.Object, target, node.Name, node.Comment)
+}
+
+// scopedCommentTarget spells a trigger or a policy for COMMENT ON: the object's
+// own name, which is scoped to its table, and the table after ON.
+func (r *Renderer) scopedCommentTarget(name, table string) string {
+	return r.escapeIdentifier(name) + " ON " + r.escapeQualifiedIdentifier(table)
+}
+
+// routineCommentTarget spells a function or a procedure for COMMENT ON. A
+// routine may be overloaded, so the argument list is what selects one; nil
+// leaves only the name, which a server resolves when the name has one
+// overload and refuses when it has several.
+func (r *Renderer) routineCommentTarget(name string, arguments *string) string {
+	if arguments == nil {
+		return r.escapeQualifiedIdentifier(name)
+	}
+	return r.escapeFunctionSignature(name, *arguments)
+}
+
+// writeCreatedRoutineComment writes the comment a function or a procedure is
+// created with. The declared parameters are reduced to the routine's identity
+// -- names, modes and types, without the defaults COMMENT ON refuses -- so the
+// statement addresses the overload the CREATE just wrote.
+func (r *Renderer) writeCreatedRoutineComment(node *ast.CreateFunctionNode) {
+	object := ast.CommentedFunction
+	if node.IsProcedure() {
+		object = ast.CommentedProcedure
+	}
+	arguments := routineargs.Signature(node.Parameters)
+	r.writeCreatedObjectComment(object, r.routineCommentTarget(node.Name, &arguments), node.Name, node.Comment)
 }
 
 // writeCreatedObjectComment writes the comment an object is created with,
@@ -3055,13 +3094,12 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 	// view: there is no clause here that could schedule one, so a declared
 	// schedule reaches the output nowhere and the view is populated once.
 	r.sink.RecordLostRefresh(node.Name, node.Refresh)
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
 
-	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", r.escapeQualifiedIdentifier(node.Name))
+	target := r.escapeQualifiedIdentifier(node.Name)
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", target)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	r.w.WriteLine(";")
+	r.writeCreatedObjectComment(ast.CommentedMaterializedView, target, node.Name, node.Comment)
 	return nil
 }
 
@@ -3129,10 +3167,6 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 		return nil
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	functionName := node.FunctionName
 	if functionName == "" {
 		functionName = postgresTriggerFunctionName(node.Table, node.Name)
@@ -3168,6 +3202,8 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 		r.escapeQualifiedIdentifier(node.Table),
 		forEach,
 		r.escapeQualifiedIdentifier(functionName))
+	r.writeCreatedObjectComment(ast.CommentedTrigger, r.scopedCommentTarget(node.Name, node.Table),
+		node.Name+" on "+node.Table, node.Comment)
 	return nil
 }
 

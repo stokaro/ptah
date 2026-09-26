@@ -57,6 +57,50 @@ func TestPlanner_ObjectCommentChangeIsSetInPlace(t *testing.T) {
 			exclude: "CREATE EXTENSION",
 		},
 		{
+			name:    "an enum type",
+			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedEnumType, Name: "app.e", Current: "old", Desired: "new"},
+			want:    `COMMENT ON TYPE "app"."e" IS 'new';`,
+			exclude: "ENUM",
+		},
+		{
+			name: "a function, by the arguments the server recorded",
+			change: difftypes.ObjectCommentChange{
+				Kind: difftypes.CommentedFunction, Name: "app.f", Arguments: new("a integer"), Current: "old", Desired: "new",
+			},
+			want:    `COMMENT ON FUNCTION "app"."f"(a integer) IS 'new';`,
+			exclude: "CREATE",
+		},
+		{
+			name: "a procedure",
+			change: difftypes.ObjectCommentChange{
+				Kind: difftypes.CommentedProcedure, Name: "app.p", Arguments: new("IN a integer"), Current: "old", Desired: "new",
+			},
+			want:    `COMMENT ON PROCEDURE "app"."p"(IN a integer) IS 'new';`,
+			exclude: "CREATE",
+		},
+		{
+			name:    "a materialized view",
+			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedMatView, Name: "app.m", Current: "old", Desired: "new"},
+			want:    `COMMENT ON MATERIALIZED VIEW "app"."m" IS 'new';`,
+			exclude: "CREATE",
+		},
+		{
+			name: "a trigger",
+			change: difftypes.ObjectCommentChange{
+				Kind: difftypes.CommentedTrigger, Name: "tg", Table: "app.t", Current: "old", Desired: "new",
+			},
+			want:    `COMMENT ON TRIGGER "tg" ON "app"."t" IS 'new';`,
+			exclude: "CREATE",
+		},
+		{
+			name: "a policy",
+			change: difftypes.ObjectCommentChange{
+				Kind: difftypes.CommentedPolicy, Name: "pol", Table: "app.t", Current: "old", Desired: "new",
+			},
+			want:    `COMMENT ON POLICY "pol" ON "app"."t" IS 'new';`,
+			exclude: "CREATE",
+		},
+		{
 			name:    "a comment removed",
 			change:  difftypes.ObjectCommentChange{Kind: difftypes.CommentedView, Name: "app.v", Current: "old", Desired: ""},
 			want:    `COMMENT ON VIEW "app"."v" IS NULL;`,

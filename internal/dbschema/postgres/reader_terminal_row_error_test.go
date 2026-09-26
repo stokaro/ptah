@@ -49,8 +49,8 @@ func catalogAnswers(truncation func(index int, query string, answer dbtest.Query
 		}
 		if strings.Contains(query, enumMarker) {
 			result = dbtest.QueryResult{
-				Columns: []string{"enum_name", "enum_value"},
-				Rows:    [][]driver.Value{{"color", "red"}},
+				Columns: []string{"enum_name", "enum_value", "type_comment"},
+				Rows:    [][]driver.Value{{"color", "red", ""}},
 			}
 		}
 		return truncation(index, query, result), nil

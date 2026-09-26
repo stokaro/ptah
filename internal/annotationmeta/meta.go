@@ -468,6 +468,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Enum type name.", valueString, true, false),
 			attr("values", "Comma-separated enum values.", valueList, true, false),
+			attr("comment", "Enum type comment.", valueString, false, false),
 		},
 	},
 	{

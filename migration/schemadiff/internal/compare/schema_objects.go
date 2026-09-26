@@ -265,28 +265,9 @@ func FunctionsWithSemantics(
 		return
 	}
 
-	generatedFunctions := make(map[objectIdentity][]schemamodel.Function, len(desired.Functions))
-	generatedNames := make(map[objectIdentity]string, len(desired.Functions))
-	for _, function := range desired.Functions {
-		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
-		// string lowercased the SCHEMA too, while the database loop below folds
-		// only the routine name and leaves function.Schema to the identifier
-		// semantics. The two sides then disagreed about the schema component of
-		// `Sales.Foo`, so an unchanged function was reported as both added and
-		// removed and the plan tried to create one that already existed.
-		identity := newQualifiedObjectIdentity(routineIdentityKind(function.Kind),
-			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
-		generatedFunctions[identity] = append(generatedFunctions[identity], function)
-		generatedNames[identity] = function.Name
-	}
-	databaseFunctions := make(map[objectIdentity][]catalog.Function, len(database.Functions))
-	databaseNames := make(map[objectIdentity]string, len(database.Functions))
-	for _, function := range database.Functions {
-		identity := newObjectIdentity(routineIdentityKind(function.Kind),
-			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
-		databaseFunctions[identity] = append(databaseFunctions[identity], function)
-		databaseNames[identity] = function.QualifiedName()
-	}
+	groups := groupRoutines(desired, database, dialect, semantics)
+	generatedFunctions, generatedNames := groups.declared, groups.declaredNames
+	databaseFunctions, databaseNames := groups.recorded, groups.recordedNames
 
 	for identity, declared := range generatedFunctions {
 		recorded := databaseFunctions[identity]
@@ -1226,4 +1207,51 @@ func routineFromRemoval(removal difftypes.RoutineRemoval) difftypes.RoutineChang
 // sortRoutines orders by the key the name list was sorted on.
 func sortRoutines(routines difftypes.FunctionChanges) {
 	sort.Slice(routines, func(i, j int) bool { return routines[i].Name < routines[j].Name })
+}
+
+// routineGroups is every declared and every recorded routine, grouped by the
+// identity a comparison pairs them on, with the name each side spells the
+// group by.
+type routineGroups struct {
+	declared      map[objectIdentity][]schemamodel.Function
+	declaredNames map[objectIdentity]string
+	recorded      map[objectIdentity][]catalog.Function
+	recordedNames map[objectIdentity]string
+}
+
+// groupRoutines groups both sides' routines by identity. It is the one
+// grouping every comparison of routines uses, the definition and the comment
+// alike, so the overloads a definition comparison pairs are the ones whose
+// comments are compared.
+func groupRoutines(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) routineGroups {
+	groups := routineGroups{
+		declared:      make(map[objectIdentity][]schemamodel.Function, len(desired.Functions)),
+		declaredNames: make(map[objectIdentity]string, len(desired.Functions)),
+		recorded:      make(map[objectIdentity][]catalog.Function, len(database.Functions)),
+		recordedNames: make(map[objectIdentity]string, len(database.Functions)),
+	}
+	for _, function := range desired.Functions {
+		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
+		// string lowercased the SCHEMA too, while the database loop below folds
+		// only the routine name and leaves function.Schema to the identifier
+		// semantics. The two sides then disagreed about the schema component of
+		// `Sales.Foo`, so an unchanged function was reported as both added and
+		// removed and the plan tried to create one that already existed.
+		identity := newQualifiedObjectIdentity(routineIdentityKind(function.Kind),
+			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
+		groups.declared[identity] = append(groups.declared[identity], function)
+		groups.declaredNames[identity] = function.Name
+	}
+	for _, function := range database.Functions {
+		identity := newObjectIdentity(routineIdentityKind(function.Kind),
+			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
+		groups.recorded[identity] = append(groups.recorded[identity], function)
+		groups.recordedNames[identity] = function.QualifiedName()
+	}
+	return groups
 }

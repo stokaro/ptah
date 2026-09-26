@@ -556,11 +556,11 @@ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 				SetLanguage("sql").
 				SetBody("SELECT 42").
 				SetComment("Test function for unit tests"),
-			expected: `-- Test function for unit tests
-CREATE OR REPLACE FUNCTION test_function() RETURNS INTEGER AS $$
+			expected: `CREATE OR REPLACE FUNCTION test_function() RETURNS INTEGER AS $$
 SELECT 42
 $$
 LANGUAGE sql;
+COMMENT ON FUNCTION test_function() IS 'Test function for unit tests';
 `,
 		},
 		{
@@ -640,10 +640,10 @@ func TestPostgreSQLRenderer_VisitCreatePolicy(t *testing.T) {
 				SetToRoles("PUBLIC").
 				SetUsingExpression("user_id = current_user_id()").
 				SetComment("Allow users to see only their orders"),
-			expected: `-- Allow users to see only their orders
-CREATE POLICY select_policy ON orders FOR SELECT TO PUBLIC
+			expected: `CREATE POLICY select_policy ON orders FOR SELECT TO PUBLIC
     USING (user_id = current_user_id())
 ;
+COMMENT ON POLICY select_policy ON orders IS 'Allow users to see only their orders';
 `,
 		},
 	}

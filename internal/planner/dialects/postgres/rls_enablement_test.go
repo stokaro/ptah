@@ -199,7 +199,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				},
 			},
 			want: []string{
-				"-- Modify RLS policy tenant_isolation on table tenants: using",
+				"-- Modify RLS policy tenant_isolation on table tenants: using --",
 				`DROP POLICY IF EXISTS "tenant_isolation" ON "tenants";`,
 				`CREATE POLICY "tenant_isolation" ON "tenants" FOR ALL TO "app"`,
 				";",
