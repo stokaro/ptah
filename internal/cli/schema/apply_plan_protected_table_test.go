@@ -73,8 +73,8 @@ var protectedTableSources = []struct {
 
 // TestSchemaApplyPlanRefusesAProtectedTable is the fence on the plan-file path.
 // A saved plan records its statements, not which declared row sets they
-// change, so this apply cannot decide the fence. It used to take the fence and
-// apply the plan anyway, and the row the fence named changed.
+// change, so this apply cannot decide the fence. Without the refusal it takes
+// the fence and applies the plan anyway, and the row the fence names changes.
 func TestSchemaApplyPlanRefusesAProtectedTable(t *testing.T) {
 	for _, tc := range protectedTableSources {
 		t.Run(tc.name, func(t *testing.T) {
