@@ -84,6 +84,13 @@ rather than a namespace — MySQL, MariaDB, and ClickHouse — a plan carrying t
 target's schema name is re-scoped onto the dev database before it is rehearsed,
 and a statement naming some third database is refused instead of run.
 
+The MySQL-family schemes `mysql://`, `mariadb://` and `maria://` open one
+driver, and whether the server behind one is MySQL or MariaDB is read from the
+server's version banner, not from the scheme. So a dev URL may spell the family
+differently from its target, and a `mysql://` URL and a `mariadb://` URL naming
+one database count as one database. `schema apply` and `migrate diff` refuse a
+MySQL dev database for a MariaDB target, and the reverse, whatever the spelling.
+
 **A shadow database** (`--shadow-db`) is a disposable verification target for
 commands that write or record migrations: `ptah migrations generate` replays
 the directory — including the new migration, up, down, and up again — before

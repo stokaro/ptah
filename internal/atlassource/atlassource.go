@@ -500,7 +500,8 @@ func (s Set) ImpliedDialect() string {
 // PinDialect determines the SQL dialect shared by the dev database and all
 // database desired-state sources. Precedence is deterministic: --dev-url pins
 // first, then each set in argument order. Every later database source must
-// match the pinned dialect. The returned flag names the pinning source for
+// match the pinned dialect as atlasurl.SchemeDialectMatches compares them,
+// since every dialect here is read from a URL scheme. The returned flag names the pinning source for
 // error messages; the dialect is empty when nothing pins one.
 func PinDialect(devURL string, sets ...Set) (dialect, pinnedBy string, err error) {
 	dialect, err = atlasurl.DialectFromURL(devURL)
@@ -517,7 +518,7 @@ func PinDialect(devURL string, sets ...Set) (dialect, pinnedBy string, err error
 			dialect, pinnedBy = implied, set.Flag
 			continue
 		}
-		if implied != dialect {
+		if !atlasurl.SchemeDialectMatches(implied, dialect) {
 			return "", "", fmt.Errorf("%s database dialect %q does not match %s dialect %q", set.Flag, implied, pinnedBy, dialect)
 		}
 	}

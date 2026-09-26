@@ -98,6 +98,10 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 		{name: "exact dialect", rawURL: "mysql://localhost/dev", targetDialect: "mysql"},
 		{name: "target alias", rawURL: "postgres://localhost/dev", targetDialect: "postgresql"},
 		{name: "docker dialect", rawURL: "docker://mariadb/11/dev", targetDialect: "mariadb"},
+		// A MySQL-family scheme does not say whether its server is MySQL or
+		// MariaDB, so it names a server of either.
+		{name: "a mysql dev URL for a MariaDB target", rawURL: "mysql://localhost/dev", targetDialect: "mariadb"},
+		{name: "a maria dev URL for a MySQL target", rawURL: "maria://localhost/dev", targetDialect: "mysql"},
 	}
 
 	for _, test := range tests {
@@ -120,6 +124,12 @@ func TestValidateDialectMatch_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		err := atlasurl.ValidateDialectMatch("mysql://localhost/dev", "postgres")
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mysql" does not match --url dialect "postgres"`)
+	})
+
+	t.Run("a MariaDB dev URL for a PostgreSQL target", func(t *testing.T) {
+		c := qt.New(t)
+		err := atlasurl.ValidateDialectMatch("mariadb://localhost/dev", "postgres")
+		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mariadb" does not match --url dialect "postgres"`)
 	})
 }
 
@@ -177,6 +187,12 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 			name:  "maria and mariadb spell one dialect and one server",
 			left:  "maria://root:pa)ss@tcp(localhost:3306)/app",
 			right: "mariadb://reader@localhost/app",
+			want:  true,
+		},
+		{
+			name:  "mysql and mariadb spellings of one server and database",
+			left:  "mysql://writer@localhost:3306/app",
+			right: "mariadb://reader@127.0.0.1/app",
 			want:  true,
 		},
 		{
@@ -359,6 +375,27 @@ func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
 			name:  "a socket URL naming no database fails closed",
 			left:  "mysql+unix://root@/run/mysqld/mysqld.sock",
 			right: "mysql://root@127.0.0.1:3306/dev",
+			want:  true,
+		},
+		// The schemes cannot tell MySQL from MariaDB, so two spellings naming
+		// one database name are not proven distinct. Proven distinct, the dev
+		// URL below is reset as a dev database while it is the target.
+		{
+			name:  "mysql and mariadb spellings naming one database fail closed",
+			left:  "mysql://root@localhost/app",
+			right: "mariadb://root@localhost/app",
+			want:  true,
+		},
+		{
+			name:  "maria and mysql spellings naming two databases prove distinct realms",
+			left:  "maria://root@localhost/app",
+			right: "mysql://root@localhost/dev",
+			want:  false,
+		},
+		{
+			name:  "a mariadb socket URL and a mysql TCP URL naming one database fail closed",
+			left:  "mariadb+unix://root@/run/mysqld/mysqld.sock?database=app",
+			right: "mysql://root@127.0.0.1:3306/app",
 			want:  true,
 		},
 	}
@@ -573,6 +610,51 @@ func TestWithDatabaseName_KeepsTheMySQLForm(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestSchemeDialectMatches_HappyPath(t *testing.T) {
+	tests := []struct {
+		name          string
+		schemeDialect string
+		other         string
+	}{
+		{name: "one dialect", schemeDialect: "postgres", other: "postgres"},
+		{name: "an alias of the other", schemeDialect: "postgresql", other: "postgres"},
+		{name: "mysql names a MariaDB server", schemeDialect: "mysql", other: "mariadb"},
+		{name: "mariadb names a MySQL server", schemeDialect: "mariadb", other: "mysql"},
+		{name: "maria names a MySQL server", schemeDialect: "maria", other: "mysql"},
+		{name: "letter case", schemeDialect: "MySQL", other: "MariaDB"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.SchemeDialectMatches(test.schemeDialect, test.other), qt.IsTrue)
+		})
+	}
+}
+
+// TestSchemeDialectMatches_FailurePath keeps the MySQL family a family of two.
+// The PostgreSQL-wire dialects are not joined: a CockroachDB or Spanner server
+// may announce itself as PostgreSQL, so there the scheme is evidence.
+func TestSchemeDialectMatches_FailurePath(t *testing.T) {
+	tests := []struct {
+		name          string
+		schemeDialect string
+		other         string
+	}{
+		{name: "MySQL and PostgreSQL", schemeDialect: "mysql", other: "postgres"},
+		{name: "MariaDB and SQLite", schemeDialect: "mariadb", other: "sqlite"},
+		{name: "two PostgreSQL-wire dialects", schemeDialect: "cockroachdb", other: "postgres"},
+		{name: "a dialect and nothing", schemeDialect: "mysql", other: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasurl.SchemeDialectMatches(test.schemeDialect, test.other), qt.IsFalse)
 		})
 	}
 }

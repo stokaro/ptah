@@ -290,6 +290,27 @@ func TestSchemaTestCommand_GoAnnotationDirectoryIsTheControl(t *testing.T) {
 	c.Assert(out, qt.Contains, "no such table: orders_from_db")
 }
 
+// TestSchemaTestCommand_AcceptsTheOtherMySQLFamilySpelling passes the dialect
+// gate with a throwaway database spelled as the other member of the MySQL
+// family. The schemes do not say whether a server is MySQL or MariaDB, so the
+// gate cannot refuse the pair; both URLs point at a port nothing listens on, so
+// the run goes on to fail at the connection, which is what shows the gate let
+// it through (stokaro/ptah#3756).
+func TestSchemaTestCommand_AcceptsTheOtherMySQLFamilySpelling(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeLiveSourceFixture(c)
+
+	out, err := runSchemaTestCommand(
+		"--dir", fixture.testsDir,
+		"--root-dir", "mysql://root@127.0.0.1:1/nope",
+		"--db-url", "mariadb://root@127.0.0.1:1/nope",
+	)
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Not(qt.Contains), "does not match")
+	c.Assert(err.Error(), qt.Contains, "127.0.0.1:1")
+}
+
 // TestSchemaTestCommand_RefusesCrossDialectDatabaseSource pins the dialect gate.
 //
 // The source URL is syntactically valid but unreachable on purpose: asserting

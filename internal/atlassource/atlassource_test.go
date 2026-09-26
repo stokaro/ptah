@@ -618,6 +618,37 @@ func TestPinDialect_ConflictBetweenSides(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--to database dialect "mysql" does not match --from dialect "postgres"`)
 }
 
+// TestPinDialect_MySQLFamilySpellingsAgree pins a MySQL-family dev URL beside a
+// source spelled as the other member of the family. The schemes do not say
+// whether a server is MySQL or MariaDB, and the pinned community binary v1.3.0
+// accepts any pair of them (stokaro/ptah#3756).
+func TestPinDialect_MySQLFamilySpellingsAgree(t *testing.T) {
+	tests := []struct {
+		name   string
+		devURL string
+		source string
+		want   string
+	}{
+		{name: "mysql dev URL, mariadb source", devURL: "mysql://localhost/dev", source: "mariadb://localhost/app", want: "mysql"},
+		{name: "mariadb dev URL, mysql source", devURL: "mariadb://localhost/dev", source: "mysql://localhost/app", want: "mariadb"},
+		{name: "maria dev URL, mysql source", devURL: "maria://localhost/dev", source: "mysql://localhost/app", want: "mariadb"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			set, err := atlassource.ClassifySet("--from", []string{test.source}, atlassource.ProjectEnv{})
+			c.Assert(err, qt.IsNil)
+
+			dialect, pinnedBy, err := atlassource.PinDialect(test.devURL, set)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(dialect, qt.Equals, test.want)
+			c.Assert(pinnedBy, qt.Equals, "--dev-url")
+		})
+	}
+}
+
 func TestPinDialect_NothingPins(t *testing.T) {
 	c := qt.New(t)
 
