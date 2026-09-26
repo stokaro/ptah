@@ -423,25 +423,24 @@ func TestReports_OutcomeAndRefusalValues(t *testing.T) {
 	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 1)
 }
 
-func TestReadPlanFileDigest_HappyPath(t *testing.T) {
+// TestDecodePlanFile_HappyPath holds the digest and the plan to the bytes the
+// caller hands in. The path names a file holding a different plan, and a
+// decoder that opened it for either answer would report that plan or its
+// digest instead.
+func TestDecodePlanFile_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	plan := atlasschema.PlanFile{
-		FormatVersion:   atlasschema.PlanFormatVersion,
-		Name:            "add_orders",
-		Dialect:         platform.SQLite,
-		FromFingerprint: "sha256:" + fmt.Sprintf("%064x", 7),
-		ToFingerprint:   "sha256:" + fmt.Sprintf("%064x", 8),
-		Statements:      []atlasschema.PlanStatement{{SQL: `CREATE TABLE "orders" ("id" integer)`, Severity: safety.Safe}},
-	}
+	plan := decodePlanFixture("add_orders", `CREATE TABLE "orders" ("id" integer)`)
 	document, err := atlasschema.MarshalPlanFile(plan)
 	c.Assert(err, qt.IsNil)
 	// A reformatted document is the same plan and different bytes, so the
-	// digest is of what was read rather than of a re-encoding.
+	// digest is of what was handed in rather than of a re-encoding.
 	reformatted := append([]byte("\n"), document...)
+	other, err := atlasschema.MarshalPlanFile(decodePlanFixture("add_invoices", `CREATE TABLE "invoices" ("id" integer)`))
+	c.Assert(err, qt.IsNil)
 	path := filepath.Join(c.TempDir(), "add_orders.plan.json")
-	c.Assert(os.WriteFile(path, reformatted, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, other, 0o600), qt.IsNil)
 
-	got, gotDigest, err := atlasschema.ReadPlanFileDigest(path)
+	got, gotDigest, err := atlasschema.DecodePlanFile(reformatted, path)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, plan)
@@ -449,14 +448,24 @@ func TestReadPlanFileDigest_HappyPath(t *testing.T) {
 	c.Assert(gotDigest, qt.Not(qt.Equals), digest.FromBytes(document).String())
 }
 
-func TestReadPlanFileDigest_FailurePath(t *testing.T) {
+func TestDecodePlanFile_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	path := filepath.Join(c.TempDir(), "empty.plan.json")
-	c.Assert(os.WriteFile(path, []byte(`{"format_version": 1, "statements": []}`), 0o600), qt.IsNil)
 
-	got, gotDigest, err := atlasschema.ReadPlanFileDigest(path)
+	got, gotDigest, err := atlasschema.DecodePlanFile(
+		[]byte(`{"format_version": 1, "statements": []}`), "empty.plan.json")
 
-	c.Assert(err, qt.ErrorMatches, `invalid plan file .*: plan dialect is required`)
+	c.Assert(err, qt.ErrorMatches, `invalid plan file empty\.plan\.json: plan dialect is required`)
 	c.Assert(got, qt.DeepEquals, atlasschema.PlanFile{})
 	c.Assert(gotDigest, qt.Equals, "")
+}
+
+func decodePlanFixture(name, statement string) atlasschema.PlanFile {
+	return atlasschema.PlanFile{
+		FormatVersion:   atlasschema.PlanFormatVersion,
+		Name:            name,
+		Dialect:         platform.SQLite,
+		FromFingerprint: "sha256:" + fmt.Sprintf("%064x", 7),
+		ToFingerprint:   "sha256:" + fmt.Sprintf("%064x", 8),
+		Statements:      []atlasschema.PlanStatement{{SQL: statement, Severity: safety.Safe}},
+	}
 }

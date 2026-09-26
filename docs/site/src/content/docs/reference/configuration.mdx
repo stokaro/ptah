@@ -46,6 +46,7 @@ written into a command line somebody wrote:
 | `--auto-approve` | `ptah schema apply`, `ptah db drop-all`, `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
 | `--allow-database-inspect` | `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
 | `--db-url` | `ptah schema test`, `ptah migrations test` |
+| `--json` | `ptah schema plan`, `ptah schema apply` |
 
 Every other flag in the native CLI binds to one.
 
@@ -64,6 +65,12 @@ approve every later run in that shell.
 
 A Kubernetes Job passes it in `args:` rather than `env:`, which is the same
 distinction: what the workload *is* versus what it is *configured with*.
+
+`--json` on the two schema verbs decides what standard output is. `PTAH_JSON`
+is the variable the versioned commands read, and bound here, a value exported
+for `ptah migrations up --json` would turn every plan preview and apply
+transcript in that environment into a JSON document. A caller that parses the
+document types the flag.
 
 ## Boolean environment variables
 

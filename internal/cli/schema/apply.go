@@ -145,14 +145,26 @@ result. An --include selection that matches neither the target nor the desired
 schema refuses the apply rather than reporting a synced schema for work that
 did not happen.
 
---json prints one versioned JSON document on standard output, on success and
-on failure: the outcome, the statements the run listed, the plan file's name
-and digest with --plan, and a typed refusal code when the apply refused before
-anything reached the database. Everything written for a person, including the
-confirmation prompt, goes to standard error.`,
+--json prints one versioned JSON document on standard output once the run
+starts, on success and on failure: the outcome, the statements the run listed,
+the plan file's name and digest with --plan, and a typed refusal code when the
+apply refused before anything reached the database. Everything written for a
+person, including the confirmation prompt, goes to standard error. A command
+line refused before the run starts -- an unknown flag, a flag value that does
+not parse, flags that cannot be combined, a positional argument -- prints no
+document. --json reads no environment variable and cannot be combined with
+--edit.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSchemaApply(cmd, opts)
+			if err := runSchemaApply(cmd, opts); err != nil {
+				return err
+			}
+			// The work is finite and it is done, so an interrupt arriving
+			// between here and the process exit stopped nothing, and the exit
+			// status agrees with the outcome the document reported. See
+			// cmdutil.ReportWorkFinished.
+			cmdutil.ReportWorkFinished(cmd.Context())
+			return nil
 		},
 	}
 	flags := cmd.Flags()
@@ -196,6 +208,7 @@ confirmation prompt, goes to standard error.`,
 	if err := cmdflags.DisableEnvBinding(flags, applyAutoApproveFlag); err != nil {
 		panic(err)
 	}
+	disableJSONEnvBinding(flags, applyJSONFlag)
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applyRootDirFlag)
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applySchemaFileFlag)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -224,16 +237,28 @@ func runSchemaApplyWithLockSession(
 	lockSession schemaApplyLockSession,
 ) error {
 	run := &applyRun{human: opts.humanOutput(cmd)}
+	document := newResultDocument(cmd, opts.jsonOutput)
+	// A panic skips the document write below, so without this a caller
+	// parsing standard output finds nothing there, possibly after statements
+	// reached the database. The document says what the evidence says so far:
+	// unknown once the statements were dispatched, failed before. The panic
+	// then continues, so the process still reports an internal error and
+	// exits 2.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			run.evidence.Err = cmdutil.InternalError(recovered)
+			document.writeOnPanic(atlasschema.NewApplyReport(run.evidence))
+			panic(recovered)
+		}
+	}()
 	outcome, err := applySchema(cmd, opts, lockSession, run)
 	if err == nil && outcome == atlasschema.ApplyOutcomeApplied {
 		fmt.Fprintln(run.human, "Schema apply completed successfully.")
 	}
-	if opts.jsonOutput {
-		run.evidence.Completed = outcome
-		run.evidence.Err = err
-		if writeErr := writeReport(cmd.OutOrStdout(), atlasschema.NewApplyReport(run.evidence)); writeErr != nil && err == nil {
-			err = writeErr
-		}
+	run.evidence.Completed = outcome
+	run.evidence.Err = err
+	if writeErr := document.write(atlasschema.NewApplyReport(run.evidence)); writeErr != nil && err == nil {
+		err = writeErr
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -246,6 +271,26 @@ func runSchemaApplyWithLockSession(
 type applyRun struct {
 	human    io.Writer
 	evidence atlasschema.ApplyEvidence
+}
+
+// refuseEditWithJSON refuses --edit under --json. The document is for a
+// program, and the editor waits for a person on the terminal. Whatever the
+// editor writes shares standard output with the document, and a caller with no
+// terminal has nobody to finish the edit.
+//
+// The refusal names the spelling that set --edit, because PTAH_EDIT exported
+// in the environment is not on the command line the operator reads.
+func refuseEditWithJSON(cmd *cobra.Command, opts schemaApplyOptions) error {
+	if !opts.jsonOutput || !opts.edit {
+		return nil
+	}
+	spelling := "--" + applyEditFlag
+	if envName, fromEnv := cmdflags.AppliedEnvName(cmd.Flags(), applyEditFlag); fromEnv {
+		spelling = envName
+	}
+	return fmt.Errorf(
+		"%s cannot be combined with --%s: the JSON document is read by a program, and --%s waits for a person in an editor",
+		spelling, applyJSONFlag, applyEditFlag)
 }
 
 // applySchema runs one apply and says how it ended. The outcome is empty when
@@ -265,6 +310,9 @@ func applySchema(
 	}
 	opts.devServerDisposable = devServerDisposable
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return "", err
+	}
+	if err := refuseEditWithJSON(cmd, opts); err != nil {
 		return "", err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
@@ -518,16 +566,24 @@ func applySchemaPlanFile(
 	if err != nil {
 		return "", fmt.Errorf("--%s %q: %w", applyPlanFlag, opts.planPath, err)
 	}
-	// The approval gate runs on the resolved path, before the plan is parsed
-	// and long before the database is contacted: a plan nobody approved must
-	// not reach a connection, and refusing after a connect would leave the
-	// operator wondering what already ran (stokaro/ptah#1857).
+	// The file is read once. The approval is verified over these bytes, the
+	// plan is decoded from them, the report's digest names them, and the
+	// statements that run are theirs. A second read would let a file replaced
+	// after the approval check execute bytes nobody approved.
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read plan file: %w", err)
+	}
+	// The approval gate runs before the plan is parsed and long before the
+	// database is contacted: a plan nobody approved must not reach a
+	// connection, and refusing after a connect would leave the operator
+	// wondering what already ran (stokaro/ptah#1857).
 	if opts.requireApproval {
-		if err := requirePlanApproval(cmd, path, opts.allowedSigners, opts.approvalSigner); err != nil {
+		if err := requirePlanApproval(cmd, path, contents, opts.allowedSigners, opts.approvalSigner); err != nil {
 			return "", err
 		}
 	}
-	plan, planDigest, err := atlasschema.ReadPlanFileDigest(path)
+	plan, planDigest, err := atlasschema.DecodePlanFile(contents, path)
 	if err != nil {
 		return "", err
 	}

@@ -3,6 +3,7 @@ package schema
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -87,8 +88,13 @@ which reports who approved it.`,
 			if planPath == "" {
 				return cmdutil.Fail(cmd, fmt.Errorf("--%s is required", approvalPlanFlag))
 			}
+			plan, err := os.ReadFile(planPath)
+			if err != nil {
+				return cmdutil.Fail(cmd, fmt.Errorf("read plan %s: %w", planPath, err))
+			}
 			approval, err := planapproval.Verify(cmd.Context(), planapproval.VerifyOptions{
 				PlanPath:       planPath,
+				Plan:           plan,
 				AllowedSigners: effectiveAllowedSigners(allowedSigners),
 				Signer:         signer,
 			})
@@ -125,13 +131,20 @@ func effectiveAllowedSigners(explicit string) string {
 
 // requirePlanApproval enforces --require-approval before a plan executes.
 //
+// plan is the content the caller read from planPath and is about to decode and
+// execute. The approval is checked against those bytes rather than against the
+// file, because the file can be replaced between a check that reads it and an
+// execution that reads it again, and the plan that ran would then be one
+// nobody approved.
+//
 // It reports the unapproved case in its own words rather than as a verification
 // failure: a plan nobody reviewed and a plan whose approval does not check out
 // are different problems, and telling an operator their plan was tampered with
 // when it was merely unreviewed sends them looking for an attacker.
-func requirePlanApproval(cmd *cobra.Command, planPath, allowedSigners, signer string) error {
+func requirePlanApproval(cmd *cobra.Command, planPath string, plan []byte, allowedSigners, signer string) error {
 	approval, err := planapproval.Verify(cmd.Context(), planapproval.VerifyOptions{
 		PlanPath:       planPath,
+		Plan:           plan,
 		AllowedSigners: effectiveAllowedSigners(allowedSigners),
 		Signer:         signer,
 	})

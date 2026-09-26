@@ -470,21 +470,26 @@ func MarshalPlanFile(plan PlanFile) ([]byte, error) {
 // Atlas-compatible command tree reads both encodings through
 // [ReadPlanDocument].
 func ReadPlanFile(path string) (PlanFile, error) {
-	plan, _, err := ReadPlanFileDigest(path)
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return PlanFile{}, fmt.Errorf("read plan file: %w", err)
+	}
+	plan, _, err := DecodePlanFile(contents, path)
 	return plan, err
 }
 
-// ReadPlanFileDigest reads a plan file as [ReadPlanFile] does, and also
-// returns the SHA-256 of the bytes it decoded, in sha256:<hex> form.
+// DecodePlanFile decodes and validates a plan document the caller has already
+// read, under the rules [ReadPlanFile] states, and returns the SHA-256 of
+// contents in sha256:<hex> form. path names the document in errors and is
+// never opened.
 //
-// The digest is taken from the same read the plan is decoded from, so it names
-// the document that was executed even when the file is replaced a moment
-// later. The digest is empty whenever the error is not nil.
-func ReadPlanFileDigest(path string) (PlanFile, string, error) {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return PlanFile{}, "", fmt.Errorf("read plan file: %w", err)
-	}
+// The caller reads the file once and hands the bytes here, so the digest, the
+// decoded plan and anything else the caller checks against those bytes -- an
+// approval signature above all -- describe one read. A second read of the same
+// path can return different bytes, and an identity taken from one read beside a
+// plan decoded from another names a document that did not run. The digest is
+// empty whenever the error is not nil.
+func DecodePlanFile(contents []byte, path string) (PlanFile, string, error) {
 	if DetectPlanFormat(contents) == PlanFormatHCL {
 		return PlanFile{}, "", fmt.Errorf(
 			"plan file %s is in the Atlas %s format, which the native `ptah schema apply --plan` does not read; "+

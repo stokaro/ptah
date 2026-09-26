@@ -50,12 +50,12 @@ func TestSignThenVerifyReportsTheSigner(t *testing.T) {
 
 	c.Assert(planapproval.Sign(ctx, planPath, keyPath), qt.IsNil)
 	approval, err := planapproval.Verify(ctx, planapproval.VerifyOptions{
-		PlanPath: planPath, AllowedSigners: allowedSigners,
+		PlanPath: planPath, Plan: readPlan(c, planPath), AllowedSigners: allowedSigners,
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(approval.Signer, qt.Equals, "alice@example.com")
-	c.Assert(approval.Digest, qt.HasLen, 64)
+	c.Assert(approval.Digest, qt.Equals, planapproval.Digest(readPlan(c, planPath)))
 }
 
 // TestVerifyRefusesAPlanEditedAfterApproval is the property the whole feature
@@ -77,7 +77,7 @@ func TestVerifyRefusesAPlanEditedAfterApproval(t *testing.T) {
 		0o600), qt.IsNil)
 
 	_, err := planapproval.Verify(ctx, planapproval.VerifyOptions{
-		PlanPath: planPath, AllowedSigners: allowedSigners,
+		PlanPath: planPath, Plan: readPlan(c, planPath), AllowedSigners: allowedSigners,
 	})
 
 	c.Assert(err, qt.IsNotNil)
@@ -100,7 +100,7 @@ func TestVerifyRefusesAKeyTheRepositoryDoesNotList(t *testing.T) {
 	c.Assert(planapproval.Sign(ctx, planPath, strangerKey), qt.IsNil)
 
 	_, err = planapproval.Verify(ctx, planapproval.VerifyOptions{
-		PlanPath: planPath, AllowedSigners: allowedSigners,
+		PlanPath: planPath, Plan: readPlan(c, planPath), AllowedSigners: allowedSigners,
 	})
 
 	c.Assert(err, qt.IsNotNil)
@@ -118,7 +118,7 @@ func TestVerifyDistinguishesUnapprovedFromTampered(t *testing.T) {
 	planPath, _, allowedSigners := approvalFixture(c, "alice@example.com")
 
 	_, err := planapproval.Verify(ctx, planapproval.VerifyOptions{
-		PlanPath: planPath, AllowedSigners: allowedSigners,
+		PlanPath: planPath, Plan: readPlan(c, planPath), AllowedSigners: allowedSigners,
 	})
 
 	c.Assert(err, qt.ErrorIs, planapproval.ErrNoApproval)
@@ -138,11 +138,61 @@ func TestVerifyRefusesASignatureMadeForAnotherPurpose(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	_, err = planapproval.Verify(ctx, planapproval.VerifyOptions{
-		PlanPath: planPath, AllowedSigners: allowedSigners,
+		PlanPath: planPath, Plan: readPlan(c, planPath), AllowedSigners: allowedSigners,
 	})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "either the plan changed after it was approved")
+}
+
+// TestVerifyCoversTheBytesItIsHanded is the property a caller that executes
+// the plan depends on: the approval is checked against the bytes the caller
+// read, and the file at the path plays no part. The two rows move the file and
+// the bytes in opposite directions. A Verify that opened the path would pass
+// the first and approve the second.
+func TestVerifyCoversTheBytesItIsHanded(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	planPath, keyPath, allowedSigners := approvalFixture(c, "alice@example.com")
+	c.Assert(planapproval.Sign(ctx, planPath, keyPath), qt.IsNil)
+	approved := readPlan(c, planPath)
+	edited := []byte(`{"format_version":1,"name":"p","statements":[{"sql":"DROP TABLE users"}]}`)
+
+	c.Assert(os.WriteFile(planPath, edited, 0o600), qt.IsNil)
+	approval, err := planapproval.Verify(ctx, planapproval.VerifyOptions{
+		PlanPath: planPath, Plan: approved, AllowedSigners: allowedSigners,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(approval.Digest, qt.Equals, planapproval.Digest(approved))
+
+	c.Assert(os.WriteFile(planPath, approved, 0o600), qt.IsNil)
+	_, err = planapproval.Verify(ctx, planapproval.VerifyOptions{
+		PlanPath: planPath, Plan: edited, AllowedSigners: allowedSigners,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `approval does not verify against .*: either the plan changed after it was approved.*`)
+}
+
+// TestVerifyRefusesAMissingPlan keeps a caller that forgot the bytes from
+// reading as a tampered plan.
+func TestVerifyRefusesAMissingPlan(t *testing.T) {
+	c := qt.New(t)
+	planPath, _, allowedSigners := approvalFixture(c, "alice@example.com")
+
+	approval, err := planapproval.Verify(context.Background(), planapproval.VerifyOptions{
+		PlanPath: planPath, AllowedSigners: allowedSigners,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `verify the approval of .*plan\.json: the plan's content is required`)
+	c.Assert(approval, qt.DeepEquals, planapproval.Approval{})
+}
+
+func readPlan(c *qt.C, path string) []byte {
+	c.Helper()
+	plan, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	return plan
 }
 
 // TestDigestIsTheFileBytes pins what an approval attests to.
