@@ -208,12 +208,16 @@ desired-schema workflow.
 
 The file format is not what decides it. A changeset that carries SQL imports,
 whether you wrote it as formatted SQL or as `<sql>` inside XML, YAML or JSON.
-A changeset that carries a typed change such as `<createTable>` has no SQL to
-convert, and one carrying `context`, `contexts`, `labels` or `preConditions` is
-conditional in a way a migration directory cannot express; both are refused by
-name rather than half-converted. Rewrite those changesets in Liquibase first,
-or leave that history where it is and adopt the database with baseline instead.
+A changeset that carries a typed change such as `<createTable>` has no SQL until
+a database is chosen: name the dialect with `--dialect` and it converts, for
+that dialect alone. A changeset carrying `context`, `contexts`, `labels` or
+`preConditions` is conditional in a way a migration directory cannot express,
+and a change type Ptah does not render, such as `<loadData>`, has no SQL at all;
+both are refused by name rather than half-converted. Rewrite those changesets in
+Liquibase first, or leave that history where it is and adopt the database with
+baseline instead.
 
+- [Migrate from Liquibase](../migrate-from/liquibase/)
 - [Import from another tool](../versioned/import/)
 
 ### Can I replace Atlas with Ptah without rewriting every command and config at once? {#replace-atlas-gradually}

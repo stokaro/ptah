@@ -10,10 +10,14 @@ package importer
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
+
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // SourceMigration is one migration read from a source tool's directory,
@@ -74,6 +78,59 @@ func ParserByName(tool string) (Parser, error) {
 		}
 	}
 	return nil, fmt.Errorf("unsupported source tool %q (supported: %s)", tool, supportedTools())
+}
+
+// dialectRenderer is a Parser whose source can describe a change without
+// writing its SQL, so converting that change needs a target dialect.
+type dialectRenderer interface {
+	withDialect(dialect string, caps capability.Capabilities) Parser
+}
+
+// WithDialect returns parser set to render, for dialect, the changes its source
+// describes without SQL -- Liquibase's typed changes such as createTable.
+//
+// Only a Liquibase parser takes a dialect. Every other supported tool's
+// migrations are SQL already, so a dialect handed to one of them is refused
+// rather than ignored, and so is a nil parser. dialect is any spelling
+// core/platform.NormalizeDialect accepts; an unknown one is refused. The parser
+// passed in is not modified.
+//
+// A migration converted from a typed change is written for that dialect and no
+// other. A changeset whose changes are all SQL converts the same with or
+// without a dialect.
+//
+// The changes are rendered against the dialect's default capability preset.
+// [WithDialectCapabilities] names the release line instead.
+func WithDialect(parser Parser, dialect string) (Parser, error) {
+	return WithDialectCapabilities(parser, dialect, capability.ForDialect(dialect))
+}
+
+// WithDialectCapabilities is [WithDialect] for a concrete server capability
+// set, the way core/renderer.NewRendererWithCapabilities is NewRenderer for
+// one. Use it when the release line the migrations will run on is known: a
+// statement one release line accepts and another does not is rendered the way
+// caps says.
+//
+// caps is a preset for dialect, and one that fails caps.Validate is refused.
+// The returned parser keeps its own copy, so changing caps afterwards does not
+// change what it renders. The refusals WithDialect describes apply here too.
+func WithDialectCapabilities(parser Parser, dialect string, caps capability.Capabilities) (Parser, error) {
+	if parser == nil {
+		return nil, errors.New("a target dialect needs a source tool: choose or detect the parser first")
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		return nil, fmt.Errorf("unsupported dialect %q", dialect)
+	}
+	if err := caps.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid capabilities for %s: %w", normalized, err)
+	}
+	rendering, ok := parser.(dialectRenderer)
+	if !ok {
+		return nil, fmt.Errorf(
+			"a target dialect applies only to a Liquibase source; %s migrations are SQL already", parser.Name())
+	}
+	return rendering.withDialect(normalized, caps.Clone()), nil
 }
 
 // DetectParser returns the single parser that recognizes fsys. It errors when no

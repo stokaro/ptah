@@ -1970,6 +1970,7 @@
         "/extend/components/",
         "/extend/public-api/",
         "/inference/overview/",
+        "/migrate-from/liquibase/",
         "/operate/ai-agent-permissions/",
         "/operate/kubernetes-operator/",
         "/operate/oci-registry/",
@@ -1994,8 +1995,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [],
-      "visibleWords": 4591,
-      "sourceBytes": 34978
+      "visibleWords": 4626,
+      "sourceBytes": 35209
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -3400,11 +3401,12 @@
         "/versioned/import/"
       ],
       "inboundLinks": [
+        "/faq/",
         "/migrate-from/overview/",
         "/versioned/import/"
       ],
-      "visibleWords": 573,
-      "sourceBytes": 9939
+      "visibleWords": 684,
+      "sourceBytes": 11402
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
@@ -4378,8 +4380,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8976,
-      "sourceBytes": 88691
+      "visibleWords": 8982,
+      "sourceBytes": 88745
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -6799,8 +6801,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 736,
-      "sourceBytes": 6763
+      "visibleWords": 774,
+      "sourceBytes": 6991
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

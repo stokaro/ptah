@@ -92,6 +92,41 @@ func GetOrderedCreateStatementsReportingOmissions(
 	return statements, publicOmissions(platform.NormalizeDialect(dialect), sink), nil
 }
 
+// RenderSQLReportingOmissions renders nodes the way
+// [RenderSQLWithCapabilities] does and reports every declaration the target
+// could not carry.
+//
+// It is the node-level counterpart of
+// [GetOrderedCreateStatementsReportingOmissions]: the same renderer and the
+// same preparation, with a diagnostic sink attached. A caller that converts a
+// description written for another tool reads the omissions to refuse a
+// conversion that would lose something, rather than write SQL that is quietly
+// smaller than its input.
+//
+// The SQL is exactly what RenderSQLWithCapabilities returns for the same
+// arguments. The omissions are ordered deterministically, and their coverage is
+// the one that function documents: it is not exhaustive. A non-nil error means
+// an empty string and no omissions.
+func RenderSQLReportingOmissions(
+	dialect string,
+	caps capability.Capabilities,
+	nodes ...ast.Node,
+) (string, []Omission, error) {
+	r, err := NewRendererWithCapabilities(dialect, caps)
+	if err != nil {
+		return "", nil, err
+	}
+	sink := &renderdiag.Sink{}
+	if reporter, ok := r.(omissionReporter); ok {
+		reporter.ReportOmissionsTo(sink)
+	}
+	output, err := visitorRenderSQL(r, nodes...)
+	if err != nil {
+		return "", nil, err
+	}
+	return output, publicOmissions(platform.NormalizeDialect(dialect), sink), nil
+}
+
 // publicOmissions stamps the target onto each record and converts it.
 //
 // The target is stamped here because this is the one place that holds the

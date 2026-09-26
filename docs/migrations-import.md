@@ -25,6 +25,8 @@ ptah migrations import \
 | `--from` | Source tool. Auto-detected from the directory layout when omitted. |
 | `--dry-run` | Print the migrations that would be written without writing them. |
 | `--allow-partial` | Import and write `ptah.sum` even though some source files were not converted. |
+| `--dialect` | Target dialect Liquibase typed changes such as `createTable` are rendered for. Refused for any other source tool. See [Typed changes](#typed-changes). |
+| `--server-version` | Release line of that dialect's server, such as `17` or `10.11.6-MariaDB`, so the rendering follows what that release accepts. Requires `--dialect`. |
 
 The source tool is auto-detected; pass `--from` to be explicit or to disambiguate.
 
@@ -137,9 +139,39 @@ appearance — with the `author:id` carried into the name
 (`0000000001_alice_create_users...`).
 
 In formatted SQL each `--rollback` line contributes the down, and a normal `--`
-SQL comment is kept in the up. In a changelog the `sql` changes are the up and
+SQL comment is kept in the up. In a changelog the changes are the up and
 `rollback` is the down, whether it is written as a change list, a nested
 `<sql>`, or bare SQL text.
+
+### Typed changes
+
+A typed change describes a schema change without SQL, and Liquibase writes the
+SQL when it runs, for the database it is pointed at. An import has to write it
+now, so these changes convert only with `--dialect`:
+
+`createTable`, `dropTable`, `addColumn`, `dropColumn`, `createIndex`,
+`dropIndex`, `addPrimaryKey`, `addForeignKeyConstraint`, `renameTable`,
+`renameColumn`.
+
+The change is lowered to Ptah's AST and rendered by the same renderer that
+writes every other Ptah migration, so the migration it becomes is written for
+that dialect and no other. Nothing connects to a server, so the rendering
+follows the dialect's default release line unless `--server-version` names
+another; a value naming a different server product is refused. `sqlFile` converts without a dialect: the file it
+names, which must lie inside the source directory, is SQL already.
+
+Each change reads the attributes it understands and refuses any other by name,
+because an attribute nothing reads is an attribute dropped. A declaration the
+target cannot carry, such as `autoIncrement` on ClickHouse, refuses the
+conversion for the same reason. A property reference (`${name}`) is refused:
+its value is defined outside the changelog.
+
+A changeset with no `rollback` gets the rollback Liquibase derives: the inverse
+of each change, last change first. A changeset holding a change with no
+inverse — a drop, whose definition the changelog no longer has, or SQL — gets
+no derived rollback, which is also when Liquibase requires one to be written.
+A `rollback` that names another changeset is refused, because Ptah does not
+follow the reference.
 
 ### Constructs that are refused
 
@@ -152,7 +184,8 @@ and is wrong, which is worse than an import that did not happen.
 | --- | --- |
 | `include`, `includeAll` | They compose other changelog files. Ptah imports one changelog at a time, so the changesets those files hold would be left out. Import the referenced files instead. |
 | `preConditions`, `contexts`, `labels` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. |
-| Typed refactorings (`createTable`, `addColumn`, …) | They are not SQL text, and rendering them would mean reimplementing Liquibase's generator for every dialect. Rewrite the changeset as a `sql` change. |
+| A typed change without `--dialect` | It has no SQL until a database is chosen. Pass `--dialect`, or rewrite the changeset as a `sql` change. |
+| Any other change type (`loadData`, `customChange`, …) | It is not SQL text and Ptah does not render it. Rewrite the changeset as a `sql` change, or import it by hand. |
 
 A directory holding both a changelog and formatted-SQL files is refused as well:
 the two shapes order changesets by different rules, and a changelog may

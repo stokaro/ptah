@@ -214,3 +214,31 @@ func ExampleGetOrderedCreateStatementsReportingOmissions() {
 	// table "users": table option AUTO_INCREMENT=100 would be skipped
 	// table "users": table option ENGINE=InnoDB would be skipped
 }
+
+// ExampleRenderSQLReportingOmissions renders one node and reads what the
+// target left out of it. The column asks the server to generate its value,
+// which PostgreSQL does only through a sequence-backed type or an identity
+// clause. Neither is declared, so the statement renders without it, and the
+// omission is how a caller finds out before it writes the SQL anywhere.
+func ExampleRenderSQLReportingOmissions() {
+	table := &ast.CreateTableNode{
+		Name: "orders",
+		Columns: []*ast.ColumnNode{
+			{Name: "id", Type: "bigint", AutoInc: true, Primary: true},
+		},
+	}
+
+	_, omissions, err := renderer.RenderSQLReportingOmissions("postgres", capability.Postgres17(), table)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, omission := range omissions {
+		fmt.Printf("%s %q: %s\n", omission.Kind, omission.Name, omission.Message())
+		fmt.Println("remedy:", omission.Remedy)
+	}
+
+	// Output:
+	// column "orders.id": auto-increment would be skipped
+	// remedy: declare the column type as SERIAL or BIGSERIAL, or give it an identity clause with identity_generation
+}

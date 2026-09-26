@@ -91,6 +91,11 @@ func offlineDialectVerbs() []dialectVerb {
 				"and nothing here connects to a server",
 		},
 		{
+			verb: "migrations import",
+			why: "--dialect selects the capability preset a Liquibase typed change is rendered " +
+				"against, and the import reads files without connecting to a server",
+		},
+		{
 			verb: "migrations lint",
 			why: "--dialect gates dialect-specific rules by name and also resolves the capability " +
 				"preset a rule reads off lint.Target, which every analyzed statement carries. " +

@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"ptah.run/core/platform/capability"
 )
 
 // Liquibase formatted-SQL changelog markers. A formatted-SQL changelog begins
@@ -30,17 +32,31 @@ var (
 	liquibaseChangelogRootRE = regexp.MustCompile(`(?m)<databaseChangeLog|"databaseChangeLog"|^\s*databaseChangeLog\s*:`)
 )
 
-// liquibaseChangelogExts are the changelog file extensions whose XML/YAML/JSON
-// formats this importer does not yet parse (only formatted SQL is supported).
+// liquibaseChangelogExts are the extensions of the XML, YAML and JSON
+// changelogs, which liquibase_changelog.go reads.
 var liquibaseChangelogExts = map[string]bool{".xml": true, ".yaml": true, ".yml": true, ".json": true}
 
-// liquibaseParser imports Liquibase formatted-SQL changelogs: a `.sql` file that
-// opens with `--liquibase formatted sql` and groups statements into changesets.
-// Changesets have no numeric version — they are identified by `author:id` and
-// applied in file order — so they are assigned sequential Ptah versions in that
-// order, with the `author:id` carried into the name. XML, YAML, and JSON
-// changelogs are detected and rejected with an actionable message.
-type liquibaseParser struct{}
+// liquibaseParser imports Liquibase changelogs: formatted SQL -- a `.sql` file
+// that opens with `--liquibase formatted sql` and groups statements into
+// changesets -- and the XML, YAML and JSON changelogs. Changesets have no
+// numeric version -- they are identified by `author:id` and applied in file
+// order -- so they are assigned sequential Ptah versions in that order, with
+// the `author:id` carried into the name.
+//
+// dialect is the target a typed change is rendered for, and caps the preset it
+// is rendered against. Both are empty until [WithDialectCapabilities] sets
+// them; without a dialect a typed change is refused.
+type liquibaseParser struct {
+	dialect string
+	caps    capability.Capabilities
+}
+
+// withDialect returns the parser set to render typed changes for dialect.
+func (p liquibaseParser) withDialect(dialect string, caps capability.Capabilities) Parser {
+	p.dialect = dialect
+	p.caps = caps
+	return p
+}
 
 func (liquibaseParser) Name() string { return "liquibase" }
 
@@ -97,11 +113,16 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 					"would reorder or duplicate history -- import them separately",
 				strings.Join(changelogFiles, ", "), strings.Join(sqlFiles, ", "))
 		}
-		migrations, err := parseLiquibaseChangelogFiles(fsys, changelogFiles)
+		migrations, read, err := parseLiquibaseChangelogFiles(fsys, changelogFiles, p.dialect, p.caps)
 		if err != nil {
 			return nil, err
 		}
 		for _, name := range changelogFiles {
+			result.consume(name)
+		}
+		// A file a sqlFile change read became part of a migration, so it is
+		// accounted for as consumed rather than reported as left behind.
+		for _, name := range read {
 			result.consume(name)
 		}
 		if len(migrations) == 0 {

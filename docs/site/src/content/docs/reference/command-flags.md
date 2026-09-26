@@ -816,9 +816,11 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--allow-partial` | `bool` | `false` | `PTAH_ALLOW_PARTIAL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--from` | `string` | — | `PTAH_FROM` | — |
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
 
 </div>

@@ -28,13 +28,14 @@ is what the changeset carries.
 A changeset that carries SQL converts, whether you wrote it as formatted SQL or
 as `<sql>` inside XML. A changeset that carries a typed change — `<createTable>`,
 `<addColumn>`, and the rest of Liquibase's database-independent vocabulary — has
-no SQL to carry over, and Ptah refuses it by name rather than generating SQL it
-would have to guess the dialect for.
+no SQL yet. Liquibase writes that SQL when it runs, for the database it is
+pointed at. Ptah writes it during the import, for the dialect you name with
+`--dialect`, and refuses the changeset by name when you name none.
 
-Carrying SQL is necessary and not sufficient. `context`, `contexts`, `labels`
-and `preConditions` decide at run time whether a changeset applies, and a
-migration directory cannot express that, so a changeset carrying one is refused
-as well. Importing it would turn a conditional history into an unconditional
+Converting the changes is necessary and not sufficient. `context`, `contexts`,
+`labels` and `preConditions` decide at run time whether a changeset applies,
+and a migration directory cannot express that, so a changeset carrying one is
+refused as well. Importing it would turn a conditional history into an unconditional
 one, which is a worse outcome than a refusal.
 
 This page converts what converts and reads both refusals.
@@ -171,7 +172,7 @@ Wrote ./xml/migrations/ptah.sum
 
 XML is read. Nothing about the format stops the conversion.
 
-### A changeset carrying a typed change is refused, by name
+### A changeset carrying a typed change needs a dialect
 
 <Tabs syncKey="shell">
 <TabItem label="Bash">
@@ -183,7 +184,12 @@ cat > typed/legacy/changelog.xml <<'XML'
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
   <changeSet id="1" author="alice">
     <createTable tableName="users">
-      <column name="id" type="int"/>
+      <column name="id" type="int">
+        <constraints primaryKey="true"/>
+      </column>
+      <column name="email" type="varchar(255)">
+        <constraints nullable="false"/>
+      </column>
     </createTable>
   </changeSet>
 </databaseChangeLog>
@@ -200,7 +206,12 @@ New-Item -ItemType Directory typed/legacy | Out-Null
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
   <changeSet id="1" author="alice">
     <createTable tableName="users">
-      <column name="id" type="int"/>
+      <column name="id" type="int">
+        <constraints primaryKey="true"/>
+      </column>
+      <column name="email" type="varchar(255)">
+        <constraints nullable="false"/>
+      </column>
     </createTable>
   </changeSet>
 </databaseChangeLog>
@@ -217,18 +228,50 @@ ptah migrations import --from liquibase --source-dir ./typed/legacy --migrations
 Expected output on standard error:
 
 ```text
-error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" uses <createTable>, which is not SQL text and which Ptah does not generate per dialect; rewrite it as a `sql` change or import it by hand
+error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" uses <createTable>, which is not SQL text; Ptah renders it for one target dialect, so pass --dialect to choose it, or rewrite it as a `sql` change
 ```
 
-The message names the changeset, the file and the element, so a changelog with
-one offender tells you which one on the first run. Work through them by
-rewriting each as a `sql` change in Liquibase first, where you can still run
-`liquibase update-sql` to see what it would have generated, and convert once
-they all carry SQL.
+The message names the changeset, the file and the element. A typed change is
+database-independent, so turning it into SQL means choosing a database, and
+Ptah does not choose one on your behalf. Name it:
 
-That is also the honest reason for the refusal: a typed change is
-database-independent, and turning it into SQL means choosing a dialect. Ptah
-will not choose one on your behalf inside an import.
+```console
+ptah migrations import --from liquibase --source-dir ./typed/legacy --migrations-dir ./typed/migrations --dialect sqlite
+```
+
+Expected output on standard output:
+
+```text
+Wrote 2 migration file(s) to ./typed/migrations
+Wrote ./typed/migrations/ptah.sum
+  0000000001_alice_1.up.sql
+  0000000001_alice_1.down.sql
+```
+
+The up file holds SQL for SQLite and for no other database, so name the
+dialect of the database the history will run on. The changeset declares no
+rollback, so the down file holds the one Liquibase would derive: it drops the
+table.
+
+Apply the result, which is how you find out whether the server accepts the SQL:
+
+```console
+ptah migrations up --db-url sqlite://typed.db --migrations-dir ./typed/migrations
+```
+
+Expected output includes, on standard output:
+
+```text
+Database is now at version: 1
+```
+
+These typed changes convert: `createTable`, `dropTable`, `addColumn`,
+`dropColumn`, `createIndex`, `dropIndex`, `addPrimaryKey`,
+`addForeignKeyConstraint`, `renameTable` and `renameColumn`. `sqlFile` converts
+as well, and needs no dialect because the file it names is SQL already. Any
+other change type, and any attribute a converted change sets that Ptah does not
+read, is refused by name. Rewrite such a changeset as a `sql` change in
+Liquibase first, where `liquibase update-sql` shows the SQL it would have run.
 
 ### A changeset carrying a selector is refused too
 
