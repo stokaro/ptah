@@ -653,6 +653,24 @@ both tables. Atlas CE v1.3.0 `migrate apply` ends the comment at `first */`,
 runs `DROP TABLE ledgers;` as up SQL and exits 1 with `no such table: ledgers`.
 `ptah-compat migrate apply` creates both tables.
 
+`migrate diff` into the Liquibase layout writes each rollback line as
+`--rollback <SQL>`, where Atlas CE v1.3.0 writes `--rollback: <SQL>`, and it
+does so under `PTAH_ATLAS_STRICT_COMPAT=1` too. Liquibase 5.0.4 reads a rollback
+line only with one blank after the keyword, so the colon makes the line a
+comment in the changeset's SQL. Measured 2026-09-26 on SQLite, with a diff that
+creates `widgets` into an empty directory:
+
+| Changeset written by | Liquibase 5.0.4 `update` | `rollback-count --count=1` |
+| --- | --- | --- |
+| Atlas CE v1.3.0 (`--rollback: DROP TABLE \`widgets\`;`) | creates `widgets` | exit 1, `Liquibase does not support automatic rollback generation for raw sql changes`; `widgets` stays |
+| `ptah-compat` (`--rollback DROP TABLE IF EXISTS "widgets";`) | creates `widgets` | exit 0; `widgets` is dropped |
+
+A second diff that drops `widgets` writes the `CREATE TABLE` over four
+`--rollback` lines, and Liquibase rolled it back to the table with both
+columns. Ptah's own layout is not Atlas CE's bytes in either profile -- one
+changeset per migration, Ptah's renderer's SQL -- so copying the colon would buy
+no parity and would lose the rollback the plan wrote.
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

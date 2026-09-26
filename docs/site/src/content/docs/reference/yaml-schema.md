@@ -170,7 +170,7 @@ holds it for that identity, whether or not the schema declares the role in
 `for_role`. A database the schema creates has nothing to revoke, so the entry
 renders no statement of its own.
 
-Writing the cluster-wide form, which omits `IN SCHEMA`, is not possible here.
+Writing the global form, which omits `IN SCHEMA`, is not possible here.
 `schema` is required, and a default privilege with no schema is a different
 object that Ptah does not model.
 

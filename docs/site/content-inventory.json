@@ -309,6 +309,7 @@
         "/atlas/conformance/",
         "/atlas/output-and-redaction/",
         "/atlas/overview/",
+        "/atlas/retained-divergences/",
         "/atlas/schema-commands/",
         "/concepts/database-urls-and-dev-databases/",
         "/reference/atlas-commands/",
@@ -529,6 +530,7 @@
       ],
       "inboundLinks": [
         "/atlas/feature-matrix/",
+        "/atlas/migrate-commands/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
         "/atlas/strict-ce-mode/",
@@ -537,8 +539,8 @@
         "/reference/atlas-commands/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 7019,
-      "sourceBytes": 48506
+      "visibleWords": 7322,
+      "sourceBytes": 50781
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.mdx",
@@ -653,8 +655,8 @@
         "/migrate-from/atlas/",
         "/reference/extension-variables/"
       ],
-      "visibleWords": 526,
-      "sourceBytes": 4591
+      "visibleWords": 557,
+      "sourceBytes": 4775
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -1166,8 +1168,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10919,
-      "sourceBytes": 74211
+      "visibleWords": 10963,
+      "sourceBytes": 74720
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4630,7 +4632,7 @@
         "/start/install-options/"
       ],
       "visibleWords": 5599,
-      "sourceBytes": 43192
+      "sourceBytes": 43186
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4974,7 +4976,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 1526,
-      "sourceBytes": 12060
+      "sourceBytes": 12054
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",

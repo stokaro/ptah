@@ -607,8 +607,8 @@ var defaultPrivilegeObjectClasses = map[string]bool{
 // Both scope clauses are optional in PostgreSQL and required here. FOR ROLE
 // absent means the role running the statement and IN SCHEMA absent means every
 // schema in the database, and the node models neither -- the grantor is part of
-// the object's identity, and the cluster-wide default is what
-// internal/devclean refuses during replay. Without the refusals in
+// the object's identity, and the global default is what internal/devclean
+// refuses during replay. Without the refusals in
 // [Parser.parseDefaultPrivilegeScope] the parser builds a node whose Grantor or
 // Schema is empty, which the PostgreSQL renderer then declines to spell, so the
 // statement would be read and lost rather than read and rejected.
@@ -686,7 +686,7 @@ func (p *Parser) parseDefaultPrivilegeScope() (grantor, schema string, err error
 	}
 	if schema == "" {
 		return "", "", fmt.Errorf(
-			"ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the cluster-wide default has no representation here")
+			"ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the global default has no representation here")
 	}
 	return grantor, schema, nil
 }

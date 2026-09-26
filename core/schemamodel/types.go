@@ -1918,9 +1918,11 @@ func (g Grant) ByColumn() []Grant {
 // a non-member of that role with `permission denied to change default
 // privileges`, measured on 17.
 //
-// Schema is required. The clause-less form sets a cluster-wide default, which
-// internal/devclean refuses during replay, so this type has no spelling for it
-// and the reader that fills it drops those rows.
+// Schema is required. The clause-less form sets the global default for every
+// schema of the database, which internal/devclean refuses during replay, so
+// this type has no spelling for it. The reader that fills it leaves those rows
+// out of the description and lists them in
+// catalog.Database.GlobalDefaultPrivileges, which the read surfaces report.
 //
 // Example:
 //

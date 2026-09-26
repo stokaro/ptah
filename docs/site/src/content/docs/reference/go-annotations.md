@@ -783,7 +783,7 @@ parsed, rather than kept as a declaration nothing can render.
 
 `object_type` accepts those four keywords and nothing else; any other value is
 refused at parse time. `SCHEMAS` is refused with the rest, because the form
-that would name it sets a cluster-wide default instead of a schema-scoped one,
+that would name it sets a global default instead of a schema-scoped one,
 and `schema` is required here.
 
 ### `//ptah:schema:rls:enable`

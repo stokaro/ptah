@@ -3624,9 +3624,9 @@ func (n *RevokePrivilegeNode) Accept(visitor Visitor) error { return visitor.Vis
 // non-member is refused with `permission denied to change default privileges`,
 // measured on 17.
 //
-// Schema is required. A statement with no IN SCHEMA sets the cluster-wide
-// default, which internal/devclean refuses during replay, so the node has no
-// spelling for it.
+// Schema is required. A statement with no IN SCHEMA sets the global default,
+// which applies in every schema of the database and which internal/devclean
+// refuses during replay, so the node has no spelling for it.
 //
 // WithOption is per privilege rather than per node, because the catalog records
 // grantability that way: one identity granted SELECT plainly and INSERT WITH

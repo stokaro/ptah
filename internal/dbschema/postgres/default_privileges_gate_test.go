@@ -35,7 +35,19 @@ func answersOneDefaultPrivilege(asked *[]string) dbtest.QueryHandler {
 	}
 }
 
+// isGlobalDefaultPrivilegeRead names the second read over pg_default_acl, the
+// one listing the rows recorded without a schema.
+func isGlobalDefaultPrivilegeRead(query string) bool {
+	return strings.Contains(query, "pg_default_acl") && strings.Contains(query, "defaclnamespace = 0")
+}
+
 func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.QueryResult {
+	if isGlobalDefaultPrivilegeRead(query) {
+		return dbtest.QueryResult{
+			Columns: []string{"grantor", "object_type"},
+			Rows:    [][]driver.Value{{"app_owner", "FUNCTIONS"}, {"", "TYPES"}},
+		}
+	}
 	if !isDefaultPrivilegeRead(query) {
 		return result
 	}
@@ -57,11 +69,16 @@ func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.Que
 // on the wider key alone costs the whole description on a server that manages
 // roles without that catalog, and one gated on the narrower key alone asks a
 // server that models no roles at all.
+//
+// The global rows are read under the same two keys, since they live in the same
+// relation. The empty grantor is CockroachDB's FOR ALL ROLES, which the read
+// leaves empty rather than naming role 0.
 func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testing.T) {
 	tests := []struct {
-		name string
-		caps capability.Capabilities
-		want []catalog.DefaultPrivilege
+		name       string
+		caps       capability.Capabilities
+		want       []catalog.DefaultPrivilege
+		wantGlobal []catalog.GlobalDefaultPrivilege
 	}{
 		{
 			name: "role management and the catalog relation",
@@ -73,6 +90,10 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 				Grantee:    "app_reader",
 				Privilege:  "SELECT",
 			}},
+			wantGlobal: []catalog.GlobalDefaultPrivilege{
+				{Grantor: "app_owner", ObjectType: "FUNCTIONS"},
+				{ObjectType: "TYPES"},
+			},
 		},
 		{
 			name: "role management without the catalog relation",
@@ -98,6 +119,7 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema, qt.IsNotNil)
 			c.Assert(schema.DefaultPrivileges, qt.DeepEquals, test.want)
+			c.Assert(schema.GlobalDefaultPrivileges, qt.DeepEquals, test.wantGlobal)
 		})
 	}
 }

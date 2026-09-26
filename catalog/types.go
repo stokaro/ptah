@@ -94,6 +94,16 @@ type Database struct {
 	// dialect that has no such catalog byte-identical.
 	DefaultPrivileges []DefaultPrivilege `json:"default_privileges,omitempty"`
 
+	// GlobalDefaultPrivileges are the default privileges this read found set
+	// without IN SCHEMA, one per grantor and object class. The description does
+	// not carry them: see [GlobalDefaultPrivilege] for why.
+	//
+	// They are recorded to be reported rather than compared: a description
+	// applied to another database leaves them behind, and the operator cannot
+	// see that from the statements. This field is not part of the
+	// description, so it is never serialized and never rendered.
+	GlobalDefaultPrivileges []GlobalDefaultPrivilege `json:"-"`
+
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
 	//
@@ -1709,6 +1719,28 @@ type DefaultPrivilege struct {
 // rather than a name the catalog stores.
 func (d DefaultPrivilege) QualifiedName() string {
 	return d.ObjectType + " in " + d.Schema + " for " + d.Grantor + " to " + d.Grantee
+}
+
+// GlobalDefaultPrivilege is one pg_default_acl row recorded with
+// defaclnamespace 0: the default privileges ALTER DEFAULT PRIVILEGES sets
+// without IN SCHEMA, which apply in every schema of the database.
+//
+// Only the identity is kept, because the row is reported rather than
+// described. Its ACL is a different kind of value from a schema-scoped row's:
+// PostgreSQL stores the whole ACL, the built-in default included, so REVOKE
+// EXECUTE ON FUNCTIONS FROM PUBLIC is recorded as {owner=X/owner}, and
+// CockroachDB records the same revoke as {owner=X/} but a global grant on
+// tables without the owner. No desired-state source can declare the global
+// form, and internal/devclean refuses it during replay.
+type GlobalDefaultPrivilege struct {
+	// Grantor is the role whose newly created objects the privileges apply
+	// to. It is empty for CockroachDB's FOR ALL ROLES, which the catalog
+	// records as role 0.
+	Grantor string `json:"grantor"`
+	// ObjectType is the object class, as the keyword a statement writes:
+	// TABLES, SEQUENCES, FUNCTIONS, TYPES, SCHEMAS or LARGE OBJECTS. A code
+	// the reader does not know is kept as the catalog spells it.
+	ObjectType string `json:"object_type"`
 }
 
 // Grant represents a privilege grant read from the database.

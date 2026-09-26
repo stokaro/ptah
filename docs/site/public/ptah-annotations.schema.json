@@ -332,7 +332,7 @@
               "type": "string"
             },
             "schema": {
-              "description": "Schema the default applies in. The cluster-wide form, written without IN SCHEMA, has no spelling here.",
+              "description": "Schema the default applies in. The global form, written without IN SCHEMA, has no spelling here.",
               "type": "string"
             }
           },

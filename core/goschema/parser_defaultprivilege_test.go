@@ -131,7 +131,7 @@ func TestDefaultPrivilegeAnnotationParsing_FailurePath(t *testing.T) {
 			wantText:   `invalid "object_type" value "ROUTINES" on //ptah:schema:defaultprivilege at AccessControl: must be one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,
 		},
 		{
-			name:       "the cluster-wide form, which SCHEMAS would spell",
+			name:       "the global-only object class SCHEMAS",
 			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="SCHEMAS" grantee="app_reader" privileges="USAGE"`,
 			wantIs:     ptaherr.ErrInvalidAttributeValue,
 			wantText:   `invalid "object_type" value "SCHEMAS" on //ptah:schema:defaultprivilege at AccessControl: must be one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,

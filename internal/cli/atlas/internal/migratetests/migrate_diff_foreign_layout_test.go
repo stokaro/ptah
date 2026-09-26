@@ -1,6 +1,7 @@
 package migratetests_test
 
 import (
+	"bytes"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
 
@@ -26,6 +29,9 @@ import (
 //	goose           one file: "-- +goose Up" … "-- +goose Down" …
 //	dbmate          one file: "-- migrate:up" … "-- migrate:down" …
 //	liquibase       one file: "--changeset atlas:<v>-1" … "--rollback: …"
+//
+// Ptah writes the Liquibase rollback as `--rollback …`, the spelling Liquibase
+// runs; see TestCompatMigrateDiff_LiquibaseRollbackIsOneLiquibaseRuns.
 //
 // Ptah refused every one of them until this change, because its `migrate diff`
 // planned forward statements only. It now injects the shared bidirectional
@@ -209,7 +215,7 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 			format:   "liquibase",
 			forward:  "*_demo.sql",
 			rollback: "*_demo.sql",
-			opener:   "--rollback: ",
+			opener:   "--rollback ",
 		},
 	}
 
@@ -300,4 +306,50 @@ func compatNewestNameMatching(c *qt.C, names []string, pattern string) string {
 	matched := compatNamesMatching(c, names, pattern)
 	c.Assert(len(matched) > 0, qt.IsTrue, qt.Commentf("no file matching %q in %v", pattern, names))
 	return matched[len(matched)-1]
+}
+
+// TestCompatMigrateDiff_LiquibaseRollbackIsOneLiquibaseRuns pins the spelling
+// of the Liquibase rollback lines `migrate diff` writes, under both policies.
+//
+// The pinned community binary v1.3.0 writes `--rollback: <SQL>`. Liquibase
+// 5.0.4 reads a rollback line only with one blank after the keyword, so it
+// reads that one as a comment in the changeset's SQL; measured on SQLite, the
+// changeset then has no rollback and rollback-count refuses it
+// (stokaro/ptah#3752). Ptah writes `--rollback <SQL>` in both profiles: the
+// layout it writes is its own either way -- one changeset per migration, its
+// own renderer's SQL -- and copying the colon would only lose the rollback.
+func TestCompatMigrateDiff_LiquibaseRollbackIsOneLiquibaseRuns(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy atlascompatpolicy.Policy
+	}{
+		{name: "default", policy: atlascompatpolicy.Full()},
+		{name: "strict", policy: atlascompatpolicy.StrictCE()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := filepath.Join(c.TempDir(), "migrations")
+			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+			target := filepath.Join(c.TempDir(), "target.sql")
+			c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+			cmd := atlas.NewCompatCommandWithPolicy("atlas", test.policy)
+			var out, errOut bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&errOut)
+			cmd.SetArgs([]string{"migrate", "diff", "demo",
+				"--dir", "file://" + dir + "?format=liquibase",
+				"--dev-url", "sqlite://" + filepath.Join(c.TempDir(), "dev.db"),
+				"--to", "file://" + target})
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", errOut.String()))
+			contents, err := os.ReadFile(filepath.Join(dir, compatNewestNameMatching(c, atlasDirEntryNames(c, dir), "*_demo.sql")))
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(contents), qt.Contains, "\n--rollback DROP TABLE IF EXISTS \"widgets\";\n")
+			c.Assert(string(contents), qt.Not(qt.Contains), "--rollback:")
+		})
+	}
 }

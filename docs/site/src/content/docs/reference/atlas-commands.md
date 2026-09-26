@@ -522,17 +522,19 @@ directory over that layout's covered file set first. `migrate diff` composes
 each layout's own files: a forward and a rollback file for `golang-migrate`
 (`.up.sql` / `.down.sql`) and `flyway` (`V…` / `U…`), both halves under
 directives in one file for `goose` and `dbmate`, and a changeset carrying
-`--rollback:` lines for `liquibase`. `atlas.sum` is written over that layout's
+`--rollback` lines for `liquibase`. `atlas.sum` is written over that layout's
 covered file set, so the community binary's own `migrate validate` reads back
 what Ptah wrote.
 
 The generated SQL is Ptah's renderer's, on every layout including `atlas` — the
 layout is what these follow, not the DDL text. On `liquibase`, Ptah writes ONE
-changeset carrying the whole migration and all of its `--rollback:` lines, where
+changeset carrying the whole migration and all of its `--rollback` lines, where
 the community binary writes one changeset per statement; rolling the migration
 back is exact either way, but Ptah does not offer per-statement rollback there,
 because pairing each forward statement with a reverse statement would be a guess
-about a reverse plan that is computed for the run as a whole.
+about a reverse plan that is computed for the run as a whole. Each rollback line
+is `--rollback <SQL>`, which Liquibase runs, where the community binary writes
+`--rollback: <SQL>`, which Liquibase reads as a comment.
 
 The rollback half is planned against the state the migration starts from, not
 the state it produces, so a forward migration that DROPS a table rolls back into
