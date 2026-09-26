@@ -119,9 +119,20 @@ func (c *liquibaseConverter) convert(change liquibaseChange) (liquibaseConverted
 
 // sql reads the statement a `sql` change holds.
 //
-// Its attributes are not interpreted. The ones that decide whether the change
-// runs at all, such as `dbms`, are an open gap (stokaro/ptah#3631).
+// `dbms` never reaches it: [liquibaseChange.withoutRunCondition] takes the
+// attribute off first. `splitStatements` and `stripComments` are accepted and
+// not needed, for the reason [liquibaseConverter.sqlFile] gives, and a `comment`
+// documents the change. Any other attribute or element is refused by name, as
+// every other converter refuses one, because an attribute nothing reads is an
+// attribute dropped: `endDelimiter` would leave a delimiter Ptah does not know
+// in the SQL.
 func (c *liquibaseConverter) sql(change liquibaseChange) (liquibaseConverted, error) {
+	if err := change.only("sql", "comment", "splitStatements", "stripComments"); err != nil {
+		return liquibaseConverted{}, err
+	}
+	if err := change.childrenOnly("comment"); err != nil {
+		return liquibaseConverted{}, err
+	}
 	text := change.text
 	if text == "" {
 		text = strings.TrimSpace(change.attrs["sql"])
@@ -945,13 +956,23 @@ func (ch liquibaseChange) referentialAction(key string) (string, error) {
 // liquibaseBool reads Liquibase's boolean spelling. Anything else is refused:
 // an attribute that did not parse is an attribute nothing read.
 func liquibaseBool(display, key, value string) (bool, error) {
+	parsed, ok := liquibaseParseBool(value)
+	if !ok {
+		return false, fmt.Errorf("%s %s %q is not true or false", display, key, value)
+	}
+	return parsed, nil
+}
+
+// liquibaseParseBool is the one grammar for a Liquibase boolean, and reports
+// false for a value that is not one.
+func liquibaseParseBool(value string) (parsed, ok bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "true":
-		return true, nil
+		return true, true
 	case "false":
-		return false, nil
+		return false, true
 	default:
-		return false, fmt.Errorf("%s %s %q is not true or false", display, key, value)
+		return false, false
 	}
 }
 

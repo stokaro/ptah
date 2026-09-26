@@ -141,7 +141,9 @@ appearance — with the `author:id` carried into the name
 In formatted SQL each `--rollback` line contributes the down, and a normal `--`
 SQL comment is kept in the up. In a changelog the changes are the up and
 `rollback` is the down, whether it is written as a change list, a nested
-`<sql>`, or bare SQL text.
+`<sql>`, or bare SQL text. A `sql` change reads `splitStatements`,
+`stripComments` and a `comment`, and refuses any other attribute by name, such
+as `endDelimiter`, whose delimiter would stay in the SQL.
 
 ### Typed changes
 
@@ -183,9 +185,21 @@ and is wrong, which is worse than an import that did not happen.
 | Construct | Why it is refused |
 | --- | --- |
 | `include`, `includeAll` | They compose other changelog files. Ptah imports one changelog at a time, so the changesets those files hold would be left out. Import the referenced files instead. |
-| `preConditions`, `contexts`, `labels` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. |
+| `preConditions`, `context`, `contexts`, `labels`, `dbms` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. `dbms` is refused on a changeset and on the changes Liquibase selects by it: `sql`, `sqlFile`, `insert` and `createProcedure`. |
+| `runAlways`, `runOnChange` set to `true` | Liquibase can run such a changeset again on a later update, and a Ptah migration runs once. Import it by hand. `false`, the default, is accepted. |
 | A typed change without `--dialect` | It has no SQL until a database is chosen. Pass `--dialect`, or rewrite the changeset as a `sql` change. |
 | Any other change type (`loadData`, `customChange`, …) | It is not SQL text and Ptah does not render it. Rewrite the changeset as a `sql` change, or import it by hand. |
+
+The same attributes are refused in formatted SQL, where they follow `author:id`
+on the `--changeset` line (`--changeset alice:1 dbms:mysql`), and a
+`--preconditions` line is refused as `preConditions` is.
+
+`--dialect` does not make `dbms` convert. Keeping only the changesets whose
+`dbms` names the target would need the name Liquibase gives the target, and for
+some targets that name depends on how Liquibase connected: YugabyteDB is
+`yugabytedb` with the Liquibase extension installed and `postgresql` without it,
+and Spanner is `cloudspanner` through its JDBC driver and `postgresql` through
+PGAdapter.
 
 A directory holding both a changelog and formatted-SQL files is refused as well:
 the two shapes order changesets by different rules, and a changelog may

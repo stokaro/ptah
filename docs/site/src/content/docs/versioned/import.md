@@ -170,10 +170,11 @@ and rerun.
 **A Liquibase changeset that cannot convert is rejected by name.** A typed
 change such as `<createTable>` carries no SQL until a database is chosen, so it
 converts only with `--dialect`, and the migration it becomes is written for
-that dialect alone. `context`, `contexts`, `labels` and `preConditions` decide
-at run time whether a changeset applies, which a migration directory cannot
-express, so no flag converts them. The message names the changeset, the file
-and the construct.
+that dialect alone. `context`, `contexts`, `labels`, `dbms` and `preConditions`
+decide at run time whether a changeset applies, and `runAlways` and
+`runOnChange` make Liquibase run it again. A migration directory cannot express
+either, so no flag converts them, `--dialect` included. The message names the
+changeset, the file and the construct.
 [Migrate from Liquibase](../../migrate-from/liquibase/) works through both.
 
 ## Next steps
