@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14354,
-      "sourceBytes": 100124
+      "visibleWords": 14394,
+      "sourceBytes": 100344
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -3413,8 +3413,8 @@
         "/migrate-from/overview/",
         "/versioned/import/"
       ],
-      "visibleWords": 879,
-      "sourceBytes": 12615
+      "visibleWords": 941,
+      "sourceBytes": 12977
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
@@ -4292,8 +4292,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14660,
-      "sourceBytes": 101395
+      "visibleWords": 14682,
+      "sourceBytes": 101528
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -6811,8 +6811,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 877,
-      "sourceBytes": 7689
+      "visibleWords": 889,
+      "sourceBytes": 7765
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

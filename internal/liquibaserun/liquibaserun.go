@@ -5,12 +5,16 @@
 // preconditions, runAlways, runOnChange -- and the attributes Ptah has no form
 // for, such as failOnError="false".
 //
+// It also reads what both formatted-SQL readers must read alike: which lines of
+// a file Liquibase reads at all ([FormattedLines]), and the property references
+// Liquibase fills in when it runs ([PropertyReferences]).
+//
 // Every Ptah reader of a Liquibase changelog asks this package. The changeset
 // parser in migration/importer splits a changelog into one migration per
 // changeset, and the one-file conversion in internal/atlasmigrateimport copies a
 // numbered formatted-SQL file whole. A list per reader drops, in the reader that
 // was not told, whatever the other learned to read (stokaro/ptah#3713,
-// stokaro/ptah#3714).
+// stokaro/ptah#3714, stokaro/ptah#3727).
 package liquibaserun
 
 import (
@@ -18,6 +22,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -396,7 +401,156 @@ var (
 	// `--precondition-<type>` line that follows it, the formatted-SQL spelling
 	// of a changeset's preConditions.
 	preconditionsRE = regexp.MustCompile(`(?i)^\s*--\s*precondition(?:s|-)`)
+	// ignoreLinesRE is Liquibase's `--ignoreLines:<start|end|count>` directive.
+	// Like Liquibase's own pattern it must fill the line: no blank before the
+	// dashes, nothing after the word.
+	ignoreLinesRE = regexp.MustCompile(`(?i)^--\s*ignoreLines:(\w+)$`)
+	// ignoreLinesOneDashRE and ignoreRE are the spellings Liquibase refuses
+	// rather than reads as a comment: `-ignoreLines:` with one dash, and
+	// `--ignore:` for `--ignoreLines:`. Inside a skipped block Liquibase refuses
+	// only the first.
+	ignoreLinesOneDashRE = regexp.MustCompile(`(?i)^-\s*ignoreLines:\w+.*$`)
+	ignoreRE             = regexp.MustCompile(`(?i)^--\s*ignore:\w+$`)
 )
+
+// FormattedLines returns the lines of a formatted-SQL changelog that Liquibase
+// reads, in order: every line but an `--ignoreLines` directive and the lines it
+// skips. Both readers take their lines from here, so a line Liquibase skips
+// reaches neither the SQL nor the changeset markers.
+//
+// It follows Liquibase's formatted-SQL parser. `--ignoreLines:start` skips every
+// line up to the next `--ignoreLines:end`, and to the end of the file when there
+// is none. `--ignoreLines:<n>` skips the next n lines. The directive must fill
+// its line, its name matches in any case, and start and end match only in lower
+// case. Any other word, such as `START`, is an error, as it is to Liquibase, and
+// so are the spellings Liquibase refuses: `-ignoreLines:` with one dash, and
+// `--ignore:`. A line's trailing carriage return is ignored when matching and
+// kept in what is returned.
+func FormattedLines(file, content string) ([]string, error) {
+	lines := strings.Split(content, "\n")
+	var kept []string
+	for number := 0; number < len(lines); number++ {
+		line := strings.TrimSuffix(lines[number], "\r")
+		match := ignoreLinesRE.FindStringSubmatch(line)
+		switch {
+		case match == nil && (ignoreLinesOneDashRE.MatchString(line) || ignoreRE.MatchString(line)):
+			return nil, misspelledIgnoreLines(file, number, line)
+		case match == nil:
+			kept = append(kept, lines[number])
+		case match[1] == "start":
+			end, misspelled := ignoreLinesBlockEnd(lines, number)
+			if misspelled >= 0 {
+				return nil, misspelledIgnoreLines(file, misspelled, lines[misspelled])
+			}
+			number = end
+		default:
+			count, err := strconv.ParseInt(match[1], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("liquibase changelog %q line %d: %q names neither start nor a number of "+
+					"lines, so Liquibase refuses it", file, number+1, line)
+			}
+			number += int(min(count, int64(len(lines))))
+		}
+	}
+	return kept, nil
+}
+
+// ignoreLinesBlockEnd returns the index of the `--ignoreLines:end` that closes
+// the block opened at start, or the last index when nothing closes it: an
+// unterminated block runs to the end of the file, as it does in Liquibase. It
+// also returns the index of a one-dash `-ignoreLines:` inside the block, which
+// Liquibase refuses there too, or -1.
+func ignoreLinesBlockEnd(lines []string, start int) (end, misspelled int) {
+	for number := start + 1; number < len(lines); number++ {
+		line := strings.TrimSuffix(lines[number], "\r")
+		match := ignoreLinesRE.FindStringSubmatch(line)
+		switch {
+		case match != nil && match[1] == "end":
+			return number, -1
+		case match == nil && ignoreLinesOneDashRE.MatchString(line):
+			return number, number
+		}
+	}
+	return len(lines) - 1, -1
+}
+
+// misspelledIgnoreLines refuses a spelling of the directive Liquibase refuses.
+func misspelledIgnoreLines(file string, number int, line string) error {
+	return fmt.Errorf("liquibase changelog %q line %d: %q is not a directive Liquibase reads, and Liquibase "+
+		"refuses it -- write --ignoreLines:<count|start|end>", file, number+1, strings.TrimSuffix(line, "\r"))
+}
+
+// PropertyReferences returns the property references Liquibase fills in when it
+// runs -- `${name}` -- in the order they appear in text, each once and as
+// written. A `${` with no closing brace is text to Liquibase and is not
+// returned; a reference inside another, `${a${b}}`, is returned as the outer
+// one.
+func PropertyReferences(text string) []string {
+	var references []string
+	for offset := 0; ; {
+		start := strings.Index(text[offset:], "${")
+		if start < 0 {
+			return references
+		}
+		start += offset
+		end := propertyReferenceEnd(text, start+2)
+		if end < 0 {
+			return references
+		}
+		if reference := text[start : end+1]; !slices.Contains(references, reference) {
+			references = append(references, reference)
+		}
+		offset = end + 1
+	}
+}
+
+// propertyReferenceEnd returns the index of the brace that closes a reference
+// whose name starts at from, counting the references nested in it, or -1.
+func propertyReferenceEnd(text string, from int) int {
+	depth := 1
+	for index := from; index < len(text); index++ {
+		switch {
+		case strings.HasPrefix(text[index:], "${"):
+			depth++
+			index++
+		case text[index] == '}':
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+// PropertyReferencesErr refuses texts holding a property reference, naming
+// each one, and returns nil when they hold none. The message continues a
+// sentence whose subject the caller names: "<sql> " + err.Error().
+//
+// A reference is refused rather than filled in because the changelog does not
+// record its value. Liquibase takes it, in order, from an environment variable
+// or Java system property of that name, matched in any case, from a
+// command-line or liquibase.properties parameter, and only then from a property
+// the changelog defines, each filtered by its own context, labels and dbms.
+// Measured with Liquibase 5.0.4: a changelog property tbl was overridden by the
+// environment variable TBL and by the parameter -Dtbl.
+func PropertyReferencesErr(texts ...string) error {
+	var references []string
+	for _, text := range texts {
+		for _, reference := range PropertyReferences(text) {
+			if !slices.Contains(references, reference) {
+				references = append(references, reference)
+			}
+		}
+	}
+	if len(references) == 0 {
+		return nil
+	}
+	return fmt.Errorf("uses the property reference %s; Liquibase fills it in when it runs, and an environment "+
+		"variable, a Java system property or a command-line parameter of that name wins over any property the "+
+		"changelog defines, so the changelog does not record the value that ran -- write the value in, or "+
+		"import the changeset by hand", strings.Join(references, ", "))
+}
 
 // ChangesetArgs reports whether line is a formatted-SQL `--changeset` marker,
 // and returns what follows the keyword: the author:id and the attributes.
@@ -433,25 +587,43 @@ func Attributes(args string) [][2]string {
 	return attributes
 }
 
-// ScanFormattedSQL reads the changeset attributes of a formatted-SQL file that
-// a reader copies whole rather than splits, refuses the file when one of its
-// changesets asks for something a copy cannot carry, and otherwise reports
-// whether the copy has to run outside a transaction. The refusal names the
-// first such changeset by its author:id.
+// FormattedCopy is what a formatted-SQL file copied whole carries, once
+// [ScanFormattedSQL] has read it.
+type FormattedCopy struct {
+	// Lines are the lines Liquibase reads, from [FormattedLines]: the copy is
+	// made of these and nothing else.
+	Lines []string
+	// NoTransaction reports that every changeset in the file sets
+	// runInTransaction to false, so the copy runs outside a transaction.
+	NoTransaction bool
+}
+
+// ScanFormattedSQL reads a formatted-SQL file that a reader copies whole rather
+// than splits, and refuses the file when one of its changesets asks for
+// something a copy cannot carry. The refusal names the first such changeset by
+// its author:id.
 //
-// A copy is one migration, so the changesets in it share one transaction mode.
-// Every changeset setting runInTransaction to false makes the copy a
-// no-transaction migration; a file mixing the two modes is refused, because
-// either mode would run one of its changesets differently from Liquibase. A
-// changeset Liquibase never runs (ignore="true") is refused as well, because a
-// copy cannot leave one changeset out.
+// It reads the lines [FormattedLines] keeps, so a changeset inside an
+// `--ignoreLines` block is not read at all, as Liquibase does not read it. A
+// changeset whose attributes refuse it, or whose SQL holds a property reference
+// ([PropertyReferencesErr]), refuses the file. A copy is one migration, so the
+// changesets in it share one transaction mode: every changeset setting
+// runInTransaction to false makes the copy a no-transaction migration, and a
+// file mixing the two modes is refused, because either mode would run one of
+// its changesets differently from Liquibase. A changeset Liquibase never runs
+// (ignore="true") is refused as well, because a copy cannot leave one changeset
+// out.
 //
-// It reads the attributes and nothing else, so a file the changeset parser in
-// migration/importer would refuse for its layout -- a header with no changeset,
-// SQL before the first one -- passes here. A copy loses nothing in those
-// shapes.
-func ScanFormattedSQL(file, content string) (noTransaction bool, err error) {
+// It reads nothing else, so a file the changeset parser in migration/importer
+// would refuse for its layout -- a header with no changeset, SQL before the
+// first one -- passes here. A copy loses nothing in those shapes.
+func ScanFormattedSQL(file, content string) (FormattedCopy, error) {
+	lines, err := FormattedLines(file, content)
+	if err != nil {
+		return FormattedCopy{}, err
+	}
 	var current *Changeset
+	var body []string
 	name := ""
 	changesets, noTransactionChangesets := 0, 0
 	finish := func() error {
@@ -466,37 +638,44 @@ func ScanFormattedSQL(file, content string) (noTransaction bool, err error) {
 				"a file copied whole cannot leave one changeset out -- remove the changeset or import it by hand",
 				name, file)
 		}
+		if err := PropertyReferencesErr(body...); err != nil {
+			return fmt.Errorf("liquibase changeset %s in %q %w", name, file, err)
+		}
 		changesets++
 		if current.NoTransaction() {
 			noTransactionChangesets++
 		}
 		return nil
 	}
-	for line := range strings.SplitSeq(content, "\n") {
+	for _, line := range lines {
 		if args, ok := ChangesetArgs(line); ok {
 			if err := finish(); err != nil {
-				return false, err
+				return FormattedCopy{}, err
 			}
-			current = &Changeset{}
+			current, body = &Changeset{}, nil
 			name = changesetName(args)
 			for _, attribute := range Attributes(args) {
 				current.Note(attribute[0], attribute[1])
 			}
 			continue
 		}
-		if current != nil && IsPreconditions(line) {
+		if current == nil {
+			continue
+		}
+		if IsPreconditions(line) {
 			current.NoteKnown("preconditions", "")
 		}
+		body = append(body, line)
 	}
 	if err := finish(); err != nil {
-		return false, err
+		return FormattedCopy{}, err
 	}
 	if noTransactionChangesets > 0 && noTransactionChangesets < changesets {
-		return false, fmt.Errorf("liquibase file %q sets runInTransaction to false on some changesets and not "+
-			"on others, and a file copied whole runs as one migration in one mode -- give each mode a file of "+
-			"its own", file)
+		return FormattedCopy{}, fmt.Errorf("liquibase file %q sets runInTransaction to false on some changesets "+
+			"and not on others, and a file copied whole runs as one migration in one mode -- give each mode a "+
+			"file of its own", file)
 	}
-	return noTransactionChangesets > 0, nil
+	return FormattedCopy{Lines: lines, NoTransaction: noTransactionChangesets > 0}, nil
 }
 
 // changesetName is the author:id a `--changeset` marker names, as the author

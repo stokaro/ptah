@@ -632,6 +632,16 @@ changeset with `ignore` set to true, which is why the second row leaves it out.
 Other changeset attributes a migration has no form for, such as
 `failOnError:false`, are refused by name on every path.
 
+Two formatted-SQL constructs are read as Liquibase reads them, on the numbered
+copy and on the path that splits changesets. Measured 2026-09-26 on SQLite with
+a numbered `1_ignore.sql` holding an `--ignoreLines:start` ... `--ignoreLines:end`
+block around `CREATE TABLE ignored_block` and an `--ignoreLines:1` before
+`CREATE TABLE ignored_count`: Atlas CE v1.3.0 `migrate apply` creates both
+tables, and Liquibase 5.0.4 creates neither; `ptah-compat migrate apply` creates
+neither, since the copy leaves out the directive and the lines it skips. A
+property reference such as `${tbl}`, which Liquibase fills in from its
+environment and which Atlas CE copies as it is, refuses the conversion.
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

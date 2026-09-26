@@ -183,7 +183,8 @@ it:
 
 - `runInTransaction="false"` becomes a no-transaction migration.
 - A changeset with `ignore="true"`, which Liquibase never runs, is left out and
-  named on standard error.
+  named on standard error, and so are the lines an `--ignoreLines` directive
+  skips in formatted SQL.
 - `dbms` converts once `--liquibase-dbms` names the database the history ran
   on, in Liquibase's spelling (`postgresql`, `mysql`). The import keeps the
   changesets and changes whose `dbms` selects it, and names the rest on

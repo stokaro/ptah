@@ -59,9 +59,12 @@ no-transaction migration, and one with ignore="true", which Liquibase never
 runs, is left out and named on stderr. Any other construct -- include,
 preConditions, context, labels, dbms on a changeset or a change, runAlways or
 runOnChange set to true, a changeset attribute such as failOnError="false" or
-runOrder that a migration cannot carry, one Ptah does not read, and the
-remaining change types -- is refused by name rather than dropped, so an import
-either carries the whole changelog or does not happen. --dialect
+runOrder that a migration cannot carry, one Ptah does not read, a property
+reference such as ${schema}, whose value Liquibase takes from the environment
+it runs in, and the remaining change types -- is refused by name rather than
+dropped, so an import either carries the whole changelog or does not happen.
+In formatted SQL, an --ignoreLines directive and the lines it skips are left
+out, as Liquibase leaves them out. --dialect
 does not make dbms convert: the name Liquibase gives some databases depends on
 how it connected, so a changeset's dbms cannot be matched to a dialect.
 --liquibase-dbms names it instead: Liquibase's own name for the database the
