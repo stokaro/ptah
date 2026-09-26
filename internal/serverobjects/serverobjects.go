@@ -23,17 +23,30 @@ import (
 // 2026.1.2 installs pg_stat_statements and postgres_fdw. On 2026.1.2 neither
 // can be dropped: the gv$ foreign tables of the built-in yb_global_views_server
 // depend on both, and DROP EXTENSION answers "cannot drop extension ...
-// because other objects depend on it" (stokaro/ptah#3687).
+// because other objects depend on it" (stokaro/ptah#3687, stokaro/ptah#3693).
+//
+// It is the one list of them. The comparison reads it so that it never plans
+// their removal, and the realm cleanup reads it so that it never attempts one.
+// Two copies agreed when the second was written and would stop agreeing when
+// the next line adds an extension to one of them.
 var yugabyteDBExtensions = []string{"pg_stat_statements", "postgres_fdw"}
 
-// IsExtension reports whether the server a dialect names installs the
-// extension called name in every database it creates. The name is compared
-// exactly, as the catalog reports it. A dialect with no such extensions
-// answers false for every name.
+// Extensions returns the extensions the server a dialect names installs in
+// every database it creates, sorted by name, in a slice the caller owns. A
+// dialect with no such extensions returns none.
 //
-// PostgreSQL's plpgsql is not answered here: a PostgreSQL user may drop it, and
+// PostgreSQL's plpgsql is not among them: a PostgreSQL user may drop it, and
 // the comparison leaves it alone through the default ignore list, which a
 // caller can clear.
+func Extensions(dialect string) []string {
+	if platform.NormalizeDialect(dialect) != platform.YugabyteDB {
+		return nil
+	}
+	return slices.Sorted(slices.Values(yugabyteDBExtensions))
+}
+
+// IsExtension reports whether name is one of [Extensions] for the dialect. The
+// name is compared exactly, as the catalog reports it.
 func IsExtension(dialect, name string) bool {
-	return platform.NormalizeDialect(dialect) == platform.YugabyteDB && slices.Contains(yugabyteDBExtensions, name)
+	return slices.Contains(Extensions(dialect), name)
 }

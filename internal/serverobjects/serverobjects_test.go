@@ -35,3 +35,33 @@ func TestIsExtension(t *testing.T) {
 		})
 	}
 }
+
+// The list comes back sorted, for every spelling of the dialect, and a
+// caller that changes its copy changes nothing the next caller reads.
+func TestExtensions(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		want    []string
+	}{
+		{name: "YugabyteDB", dialect: "yugabytedb", want: []string{"pg_stat_statements", "postgres_fdw"}},
+		{name: "the dialect's other spelling", dialect: "ysql", want: []string{"pg_stat_statements", "postgres_fdw"}},
+		{name: "PostgreSQL", dialect: "postgres", want: nil},
+		{name: "CockroachDB", dialect: "cockroachdb", want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(serverobjects.Extensions(test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestExtensions_ReturnsACopy(t *testing.T) {
+	c := qt.New(t)
+	first := serverobjects.Extensions("yugabytedb")
+	first[0] = "changed"
+
+	c.Assert(serverobjects.Extensions("yugabytedb"), qt.DeepEquals, []string{"pg_stat_statements", "postgres_fdw"})
+}
