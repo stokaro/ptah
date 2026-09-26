@@ -42,6 +42,9 @@ type EmitResult struct {
 	// An import that declined anything is not a faithful copy of the source,
 	// and the caller has to say so.
 	Declined []DeclinedFile
+	// Skipped are the changesets left out because the source tool never runs
+	// them. [Import] fills it from the parse; [Emit] never sees a changeset.
+	Skipped []SkippedChangeset
 }
 
 type plannedFile struct {

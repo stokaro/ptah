@@ -331,7 +331,13 @@ connected, so Ptah cannot tell which changesets ran on yours.
 
 `runAlways="true"` and `runOnChange="true"` are refused as well, because
 Liquibase can run such a changeset again on a later update and a Ptah migration
-runs once. The value `false` is the default and imports.
+runs once. The value `false` is the default and imports. So are the changeset
+attributes a migration has no form for, such as `failOnError="false"` and
+`runOrder`, and any attribute Ptah does not read.
+
+A changeset with `runInTransaction="false"` becomes a no-transaction
+migration, and one with `ignore="true"`, which Liquibase never runs, is left
+out of the import and named on standard error.
 
 ## Apply the result
 

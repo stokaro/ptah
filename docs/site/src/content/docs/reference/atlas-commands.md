@@ -863,9 +863,13 @@ runs again after its first run (`dbms`, `context`, `labels`, preconditions,
 `runAlways`, `runOnChange`), refuses the import by name; Atlas CE copies it and
 applies it everywhere.
 
-A successful compatibility import is silent; inspect the destination directory
-and its `atlas.sum` instead of relying on a progress message. Failures are still
-reported on stderr. The native `ptah migrations import` converts the same source
+A Liquibase changeset whose `ignore` is true is left out, because Liquibase
+never runs it, and each one is named in a warning on stderr; `runInTransaction`
+set to false becomes an Atlas no-transaction migration.
+
+A successful compatibility import writes nothing to stdout; inspect the
+destination directory and its `atlas.sum` instead of relying on a progress
+message. Failures, and warnings about what the import left out, go to stderr. The native `ptah migrations import` converts the same source
 formats into Ptah-native migrations instead, and reports what it wrote.
 
 `--from` and `--to` are resolved by the same rules as every other verb's

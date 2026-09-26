@@ -187,12 +187,32 @@ and is wrong, which is worse than an import that did not happen.
 | `include`, `includeAll` | They compose other changelog files. Ptah imports one changelog at a time, so the changesets those files hold would be left out. Import the referenced files instead. |
 | `preConditions`, `context`, `contexts`, `labels`, `dbms` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. `dbms` is refused on a changeset and on the changes Liquibase selects by it: `sql`, `sqlFile`, `insert` and `createProcedure`. |
 | `runAlways`, `runOnChange` set to `true` | Liquibase can run such a changeset again on a later update, and a Ptah migration runs once. Import it by hand. `false`, the default, is accepted. |
+| `failOnError="false"`, `runOrder`, `runWith` other than `jdbc`, `runWithSpoolFile`, `objectQuotingStrategy` other than `LEGACY`, `endDelimiter` other than `;` | Each changes how Liquibase runs the changeset in a way a migration has no form for: it records a failed changeset as run, moves it in the order, runs it through a native client, quotes typed changes' names differently, or ends statements with a delimiter Ptah does not know. The message names the attribute and what it changes. |
+| A changeset attribute Ptah does not read | Liquibase may read it, so importing without it could change what runs. Remove it, or import the changeset by hand. |
 | A typed change without `--dialect` | It has no SQL until a database is chosen. Pass `--dialect`, or rewrite the changeset as a `sql` change. |
 | Any other change type (`loadData`, `customChange`, …) | It is not SQL text and Ptah does not render it. Rewrite the changeset as a `sql` change, or import it by hand. |
 
 The same attributes are refused in formatted SQL, where they follow `author:id`
 on the `--changeset` line (`--changeset alice:1 dbms:mysql`), and a
-`--preconditions` line is refused as `preConditions` is.
+`--preconditions` line is refused as `preConditions` is. An attribute of the
+`<databaseChangeLog>` element, such as `context`, applies to every changeset in
+the file and is read the same way.
+
+These attributes have a form in a Ptah migration, so they convert rather than
+refuse:
+
+- `runInTransaction="false"` makes the migration a no-transaction one in both
+  directions, since Liquibase rolls a changeset back in its own mode. A
+  statement such as SQLite's `VACUUM` or PostgreSQL's
+  `CREATE INDEX CONCURRENTLY` then applies, where it fails inside a
+  transaction.
+- `ignore="true"` means Liquibase never runs the changeset and never records it,
+  so the import leaves it out and names it on stderr under `Skipped`. The rest
+  of the changelog imports, and `ptah.sum` is written.
+
+Attributes that decide nothing a migration carries import as if absent:
+`created`, `logicalFilePath`, `onValidationFail`, `validCheckSum`, `comment`,
+and a value that spells out Liquibase's default.
 
 `--dialect` does not make `dbms` convert. Keeping only the changesets whose
 `dbms` names the target would need the name Liquibase gives the target, and for

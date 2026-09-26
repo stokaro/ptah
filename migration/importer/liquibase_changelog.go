@@ -42,9 +42,18 @@ import (
 //     [liquibaseDbmsTargeted];
 //   - `runAlways` and `runOnChange` set to true, because Liquibase runs such a
 //     changeset again on a later update and a Ptah migration runs once;
+//   - a changeset attribute Ptah has no form for, such as `failOnError="false"`
+//     or `runOrder`, and one Ptah does not read at all;
 //   - a typed change with no target dialect, because its SQL does not exist
 //     until a dialect is chosen;
 //   - every change type outside [liquibaseConverters].
+//
+// Two changeset attributes convert rather than refuse. `runInTransaction="false"`
+// becomes a no-transaction migration in both directions, since Liquibase runs
+// the rollback in the same mode. `ignore="true"` means Liquibase never runs the
+// changeset and never records it, so the changeset is left out and reported in
+// [ParseResult.Skipped]. [liquibaserun.Attribute] says what every changeset
+// attribute asks for.
 //
 // A target dialect does not make `dbms` convert. Keeping the changesets whose
 // `dbms` names the target needs the name Liquibase gave that target, and for
@@ -78,7 +87,7 @@ type liquibaseChangeSet struct {
 	// differs: a change type can be rewritten as `sql`, and a run condition
 	// cannot be rewritten at all -- it has no equivalent in a migration
 	// directory.
-	run liquibaserun.Conditions
+	run liquibaserun.Changeset
 }
 
 // liquibaseDbmsTargeted are the change types that run only on the databases
@@ -89,7 +98,7 @@ type liquibaseChangeSet struct {
 var liquibaseDbmsTargeted = []string{"sql", "sqlFile", "insert", "createProcedure"}
 
 // withoutRunCondition takes the `dbms` attribute off a change Liquibase targets
-// by it, and returns the selector it names, if any, for [liquibaserun.Conditions].
+// by it, and returns the selector it names, if any, for [liquibaserun.Changeset].
 //
 // The converter then never sees the attribute. An empty one runs everywhere,
 // which is what the converted change does, and a non-empty one refuses the
@@ -104,8 +113,8 @@ func (ch liquibaseChange) withoutRunCondition() (liquibaseChange, []string) {
 	for _, key := range slices.Sorted(maps.Keys(ch.attrs)) {
 		value := ch.attrs[key]
 		if strings.EqualFold(key, "dbms") {
-			if kind, binds, _ := liquibaserun.Condition(key, value); kind == liquibaserun.Selector {
-				if binds {
+			if effect, _ := liquibaserun.Attribute(key, value); effect == liquibaserun.Selector || effect == liquibaserun.NoEffect {
+				if effect == liquibaserun.Selector {
 					selectors = append(selectors, ch.display+" "+key)
 				}
 				continue
@@ -129,8 +138,18 @@ func liquibaseWithoutRunConditions(changes []liquibaseChange) ([]liquibaseChange
 	return stripped, selectors
 }
 
+// liquibaseChangelogRead is what the XML, YAML and JSON changelogs of a source
+// yielded.
+type liquibaseChangelogRead struct {
+	migrations []SourceMigration
+	// consumed are the source files a sqlFile change read.
+	consumed []string
+	// skipped are the changesets left out because Liquibase never runs them.
+	skipped []SkippedChangeset
+}
+
 // parseLiquibaseChangelogFiles reads XML, YAML and JSON changelogs in name
-// order and returns their changesets.
+// order.
 //
 // Name order is the same rule the formatted-SQL reader applies for the same
 // reason: absent a master changelog naming an order, the file name is the only
@@ -140,32 +159,46 @@ func parseLiquibaseChangelogFiles(
 	names []string,
 	dialect string,
 	caps capability.Capabilities,
-) ([]SourceMigration, []string, error) {
+) (liquibaseChangelogRead, error) {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 
-	var migrations []SourceMigration
-	var consumed []string
+	var read liquibaseChangelogRead
 	for _, name := range sorted {
 		content, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, nil, fmt.Errorf("read %q: %w", name, err)
+			return liquibaseChangelogRead{}, fmt.Errorf("read %q: %w", name, err)
 		}
 		changesets, err := parseLiquibaseChangelog(name, content)
 		if err != nil {
-			return nil, nil, err
+			return liquibaseChangelogRead{}, err
 		}
 		converter := &liquibaseConverter{fsys: fsys, file: name, dialect: dialect, caps: caps}
 		for _, changeset := range changesets {
+			if changeset.run.Skipped() {
+				read.skipped = append(read.skipped, liquibaseIgnored(name, changeset.author+":"+changeset.id))
+				continue
+			}
 			migration, err := liquibaseMigrationFrom(converter, changeset)
 			if err != nil {
-				return nil, nil, err
+				return liquibaseChangelogRead{}, err
 			}
-			migrations = append(migrations, migration)
+			read.migrations = append(read.migrations, migration)
 		}
-		consumed = append(consumed, converter.consumed...)
+		read.consumed = append(read.consumed, converter.consumed...)
 	}
-	return migrations, consumed, nil
+	return read, nil
+}
+
+// liquibaseIgnored reports a changeset left out because its `ignore` is true.
+// Liquibase never runs such a changeset and never records it, so leaving it out
+// is what Liquibase does; saying so is what keeps it from being a silent drop.
+func liquibaseIgnored(file, changeset string) SkippedChangeset {
+	return SkippedChangeset{
+		Path:      file,
+		Changeset: changeset,
+		Reason:    `ignore="true": Liquibase never runs this changeset`,
+	}
 }
 
 // parseLiquibaseChangelog dispatches on the file extension.
@@ -203,6 +236,8 @@ func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseCh
 	if changeset.rollbackRefusal != "" {
 		return SourceMigration{}, fmt.Errorf("liquibase changeset %s in %q: %s", name, converter.file, changeset.rollbackRefusal)
 	}
+	// Liquibase runs a rollback in the changeset's own transaction mode.
+	noTransaction := changeset.run.NoTransaction()
 
 	var refusal liquibaseRefusal
 	up := refusal.convertAll(converter, changes)
@@ -224,7 +259,10 @@ func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseCh
 	} else {
 		downSQL = liquibaseDerivedRollback(up)
 	}
-	return SourceMigration{Name: name, UpSQL: upSQL, DownSQL: downSQL}, nil
+	return SourceMigration{
+		Name: name, UpSQL: upSQL, DownSQL: downSQL,
+		UpNoTransaction: noTransaction, DownNoTransaction: noTransaction,
+	}, nil
 }
 
 // liquibaseRefusal collects what stopped a changeset's conversion.
@@ -314,6 +352,7 @@ func liquibaseJoin(converted []liquibaseConverted, text func(liquibaseConverted)
 
 type liquibaseXMLRoot struct {
 	XMLName xml.Name          `xml:"databaseChangeLog"`
+	Attrs   []xml.Attr        `xml:",any,attr"`
 	Nodes   []liquibaseXMLAny `xml:",any"`
 }
 
@@ -341,11 +380,19 @@ func parseLiquibaseXML(name string, content []byte) ([]liquibaseChangeSet, error
 		return nil, fmt.Errorf("parse liquibase changelog %q: %w", name, err)
 	}
 
+	// An attribute of the changelog itself -- `context`, `objectQuotingStrategy`
+	// -- applies to every changeset in it, so each changeset starts from it.
+	var inherited liquibaserun.Changeset
+	for _, attr := range root.Attrs {
+		if !liquibaseXMLDeclaration(attr) {
+			inherited.Note(attr.Name.Local, attr.Value)
+		}
+	}
 	var changesets []liquibaseChangeSet
 	for _, node := range root.Nodes {
 		switch node.XMLName.Local {
 		case "changeSet":
-			changesets = append(changesets, liquibaseXMLChangeSet(node))
+			changesets = append(changesets, liquibaseXMLChangeSet(node, inherited))
 		case "include", "includeAll":
 			// Composition: the changesets those files hold would be missing
 			// from the imported directory.
@@ -365,28 +412,37 @@ func parseLiquibaseXML(name string, content []byte) ([]liquibaseChangeSet, error
 	return changesets, nil
 }
 
-func liquibaseXMLChangeSet(node liquibaseXMLAny) liquibaseChangeSet {
-	changeset := liquibaseChangeSet{id: node.ID, author: node.Author}
+func liquibaseXMLChangeSet(node liquibaseXMLAny, inherited liquibaserun.Changeset) liquibaseChangeSet {
+	changeset := liquibaseChangeSet{id: node.ID, author: node.Author, run: inherited.Clone()}
 	for _, attr := range node.Attrs {
-		changeset.run.Note(attr.Name.Local, attr.Value)
+		if !liquibaseXMLDeclaration(attr) {
+			changeset.run.Note(attr.Name.Local, attr.Value)
+		}
 	}
 	for _, child := range node.Children {
 		switch child.XMLName.Local {
 		case "rollback":
 			changeset.rollbackDeclared = true
 			changeset.rollback, changeset.rollbackRefusal = liquibaseXMLRollback(child)
-		case "comment", "":
-			// A comment documents the changeset, and an empty name is the
-			// chardata between elements.
+		case "":
+			// The chardata between elements.
 		default:
 			// Liquibase reads a changeset attribute written as a nested element
-			// as well, and <preConditions> is one of these.
-			if !changeset.run.Note(child.XMLName.Local, strings.TrimSpace(child.Text)) {
+			// as well, and <preConditions>, <comment> and <validCheckSum> are
+			// among them. Any other element is a change.
+			if !changeset.run.NoteKnown(child.XMLName.Local, strings.TrimSpace(child.Text)) {
 				changeset.changes = append(changeset.changes, liquibaseXMLChange(child))
 			}
 		}
 	}
 	return changeset
+}
+
+// liquibaseXMLDeclaration reports an attribute that belongs to XML rather than
+// to Liquibase: a namespace declaration, or an attribute in another namespace
+// such as xsi:schemaLocation.
+func liquibaseXMLDeclaration(attr xml.Attr) bool {
+	return attr.Name.Space != "" || attr.Name.Local == "xmlns"
 }
 
 // liquibaseXMLRollback reads a rollback's changes: nested changes, or SQL
@@ -487,7 +543,12 @@ func liquibaseDocumentChangeSet(value any) liquibaseChangeSet {
 	}
 	mapping, _ := value.(map[string]any)
 	for _, key := range slices.Sorted(maps.Keys(mapping)) {
-		changeset.run.Note(key, liquibaseStringValue(value, key))
+		switch key {
+		case "id", "author", "changes", "rollback", "modifySql":
+			// The changeset's identity and contents, read below.
+		default:
+			changeset.run.Note(key, liquibaseStringValue(value, key))
+		}
 	}
 	changes, _ := liquibaseMapValue(value, "changes")
 	changeset.changes = liquibaseDocumentChanges(changes)
