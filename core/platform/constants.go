@@ -36,12 +36,16 @@ func NormalizeDialect(dialect string) string {
 	switch strings.ToLower(strings.TrimSpace(dialect)) {
 	case "pgx", "postgresql", "postgres":
 		return Postgres
-	case "mysql":
+	// The `+unix` spellings are a transport, not a dialect, as `libsql+ws`
+	// below is: the pinned community binary v1.3.0 opens each over a Unix
+	// socket with the same MySQL driver as the plain scheme, so only the
+	// connection differs (stokaro/ptah#3755).
+	case "mysql", "mysql+unix":
 		return MySQL
 	// `maria` is a MariaDB spelling the pinned community binary v1.3.0
 	// accepts as a URL scheme, on every verb that opens a database, and as a
 	// docker dev-URL engine (stokaro/ptah#3744).
-	case "mariadb", "maria":
+	case "mariadb", "maria", "mariadb+unix", "maria+unix":
 		return MariaDB
 	case "clickhouse", "ch":
 		return ClickHouse

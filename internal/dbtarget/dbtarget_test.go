@@ -314,6 +314,24 @@ func TestLookupDriverDSN_RendersTheNetworkFormTheDriverParses(t *testing.T) {
 			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://root@localhost/db") },
 			want:   "root@tcp(localhost:3306)/db",
 		},
+		{
+			// The socket is the path and the database a parameter, so the
+			// driver's socket form is rebuilt rather than spliced.
+			name:   "a socket URL becomes the driver's socket form",
+			engine: dbtarget.MySQLSocket,
+			set: func(t *testing.T) {
+				t.Setenv("MYSQL_SOCKET_TEST_URL", "mysql+unix://root:pass@/run/mysqld/mysqld.sock?database=db")
+			},
+			want: "root:pass@unix(/run/mysqld/mysqld.sock)/db",
+		},
+		{
+			name:   "a MariaDB socket URL naming no database",
+			engine: dbtarget.MariaDBSocket,
+			set: func(t *testing.T) {
+				t.Setenv("MARIADB_SOCKET_TEST_URL", "mariadb+unix://root:pass@/run/mysqld/mysqld.sock")
+			},
+			want: "root:pass@unix(/run/mysqld/mysqld.sock)/",
+		},
 	}
 
 	for _, test := range tests {

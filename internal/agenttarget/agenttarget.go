@@ -28,6 +28,7 @@ import (
 
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/atlasurl"
 )
 
 // ErrUnknown reports a target identity nothing configured matches.
@@ -191,12 +192,43 @@ func identify(name, connectionURL string) string {
 	return "target:" + hex.EncodeToString(sum[:])[:16]
 }
 
+// unnamedTarget is the name a target carries when neither the operator nor
+// the URL names a database.
+const unnamedTarget = "database"
+
+// DefaultName is the name a target carries when the operator gives none: the
+// database the URL selects, or "database" when it selects none or cannot be
+// read.
+//
+// It is a label only. Nothing reads trust out of it: the class comes from the
+// operator and from nowhere else, so a database called "production" on a host
+// called "prod" is still unclassified until an operator says otherwise.
+//
+// A MySQL-family URL is read by the parser the connection uses. Its
+// go-sql-driver form is not a URL, and in a +unix URL the path is the socket,
+// so reading the path would name the target after a socket file.
+func DefaultName(connectionURL string) string {
+	name := ""
+	if mysqlURL, err := atlasurl.ParseMySQLURL(connectionURL); err == nil {
+		name = mysqlURL.Database()
+	} else if parsed, err := url.Parse(connectionURL); err == nil {
+		name = strings.Trim(parsed.Path, "/")
+	}
+	if name == "" {
+		return unnamedTarget
+	}
+	return name
+}
+
 // display renders a URL without its credential.
 //
 // Nothing here parses a class out of the result. It is for a person reading an
 // approval prompt and for an audit record, and a host name is a label somebody
 // chose, not a fact about trust.
 func display(connectionURL string) string {
+	if mysqlURL, err := atlasurl.ParseMySQLURL(connectionURL); err == nil {
+		return displayMySQL(mysqlURL)
+	}
 	parsed, err := url.Parse(connectionURL)
 	if err != nil || parsed.Scheme == "" {
 		// Unparseable, so nothing can be safely shown from it. The name and the
@@ -212,6 +244,25 @@ func display(connectionURL string) string {
 		return fmt.Sprintf("%s://%s", parsed.Scheme, host)
 	}
 	return fmt.Sprintf("%s://%s/%s", parsed.Scheme, host, path)
+}
+
+// displayMySQL renders a MySQL-family URL the way [display] renders the rest,
+// from the parser the connection uses. net/url refuses the go-sql-driver form,
+// and a socket URL names its database in the `database` parameter, which is the
+// one parameter shown: without it the prompt would name a socket and no
+// database.
+func displayMySQL(mysqlURL atlasurl.MySQLURL) string {
+	rendered := mysqlURL.URL()
+	rendered.User = nil
+	if user := mysqlURL.User(); user != "" {
+		rendered.User = url.User(user)
+	}
+	query := url.Values{}
+	if mysqlURL.Network() == "unix" && mysqlURL.Database() != "" {
+		query.Set("database", mysqlURL.Database())
+	}
+	rendered.RawQuery = query.Encode()
+	return rendered.String()
 }
 
 // validClass reports whether a class is one Ptah knows.

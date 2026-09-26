@@ -40,6 +40,11 @@ func TestNormalizeDialect_MySQLFamilyAliases_HappyPath(t *testing.T) {
 		" Maria ":   platform.MariaDB,
 		"MARIA":     platform.MariaDB,
 		" MariaDB ": platform.MariaDB,
+		// The socket transports the pinned community binary v1.3.0 opens.
+		"mysql+unix":   platform.MySQL,
+		"mariadb+unix": platform.MariaDB,
+		"maria+unix":   platform.MariaDB,
+		"MARIA+UNIX":   platform.MariaDB,
 	}
 
 	for input, expected := range tests {

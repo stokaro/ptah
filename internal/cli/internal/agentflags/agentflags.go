@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -468,24 +467,13 @@ func resolveTargets(opts *Options) (*agenttarget.Set, error) {
 	return agenttarget.NewSet(target)
 }
 
-// defaultTargetName is what a caller names the database by.
-//
-// Derived from the URL's database segment only as a label. Nothing reads trust
-// out of it: the class comes from --database-class and from nowhere else, so a
-// database called "production" on a host called "prod" is still unclassified
-// until an operator says otherwise.
+// defaultTargetName is what a caller names the database by: the operator's
+// name, or the label agenttarget.DefaultName derives from the URL.
 func defaultTargetName(opts *Options) string {
 	if opts.DatabaseName != "" {
 		return opts.DatabaseName
 	}
-	parsed, err := url.Parse(opts.DatabaseURL)
-	if err != nil {
-		return "database"
-	}
-	if name := strings.Trim(parsed.Path, "/"); name != "" {
-		return name
-	}
-	return "database"
+	return agenttarget.DefaultName(opts.DatabaseURL)
 }
 
 // resolveSourceRoots is where declared schemas may be read from.

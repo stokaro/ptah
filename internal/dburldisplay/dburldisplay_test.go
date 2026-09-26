@@ -78,6 +78,11 @@ func TestFormat(t *testing.T) {
 			expected: "maria://root:***@localhost:3306/testdb",
 		},
 		{
+			name:     "socket URL with password",
+			input:    "mysql+unix://root:password@/run/mysqld/mysqld.sock?database=testdb",
+			expected: "mysql+unix://root:***@/run/mysqld/mysqld.sock?database=testdb",
+		},
+		{
 			name:     "SQL Server URL with password and query secret",
 			input:    "sqlserver://sa:VerySecret@localhost:1433?database=ptah&password=querysecret&encrypt=disable",
 			expected: "sqlserver://sa:***@localhost:1433?database=ptah&encrypt=disable&password=redacted",

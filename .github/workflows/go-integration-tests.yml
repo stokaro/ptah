@@ -149,6 +149,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
           --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1024m
+        # The socket directory is shared with the runner, so a test can reach
+        # this server through `mysql+unix` as well as over TCP. Docker creates
+        # the host directory and the image's entrypoint hands it to the server
+        # account; the socket itself is world-writable (stokaro/ptah#3755).
+        volumes:
+          - /tmp/ptah-mysql-socket:/var/run/mysqld
         ports:
           - 3306:3306
 
@@ -165,6 +171,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
           --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1024m
+        # Shared with the runner for `mariadb+unix` and `maria+unix`, as the
+        # MySQL service shares its socket.
+        volumes:
+          - /tmp/ptah-mariadb-socket:/run/mysqld
         ports:
           - 3307:3306
 
@@ -486,6 +496,11 @@ jobs:
           MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
+          # The same two servers through their Unix sockets, naming no
+          # database: a test creates one over TCP and names it with the
+          # `database` parameter.
+          MYSQL_SOCKET_TEST_URL: "mysql+unix://root:root_password@/tmp/ptah-mysql-socket/mysqld.sock"
+          MARIADB_SOCKET_TEST_URL: "mariadb+unix://root:root_password@/tmp/ptah-mariadb-socket/mysqld.sock"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"

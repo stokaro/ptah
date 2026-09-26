@@ -17,6 +17,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -1286,6 +1287,8 @@ func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 		{name: "a mariadb socket target too", url: "mariadb://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
 		{name: "a maria socket target too", url: "maria://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
 		{name: "a maria TCP target", url: "maria://u:p@tcp(127.0.0.1:3306)/shop", want: "shop"},
+		{name: "a socket URL names its database in the query", url: "mysql+unix://u:p@/tmp/mysql.sock?database=shop", want: "shop"},
+		{name: "a socket URL in upper case", url: "MARIADB+UNIX://u@/tmp/mysql.sock?database=shop", want: "shop"},
 		{name: "the TCP spelling is unchanged", url: "mysql://user:pass@tcp(127.0.0.1:3306)/shop", want: "shop"},
 	}
 
@@ -1376,6 +1379,8 @@ func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
 		{name: "the MariaDB scheme reads the same", url: "mariadb://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
 		{name: "the maria spelling reads the same", url: "maria://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
 		{name: "a scheme in upper case reads the same", url: "MARIA://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
+		{name: "a socket URL becomes the driver's socket form", url: "mysql+unix://user:pass@/tmp/mysql.sock?database=shop", want: "user:pass@unix(/tmp/mysql.sock)/shop"},
+		{name: "a socket URL keeps its other parameters", url: "maria+unix://user@/tmp/mysql.sock?database=shop&parseTime=true", want: "user@unix(/tmp/mysql.sock)/shop?parseTime=true"},
 		{name: "credentials are still carried", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
 		{name: "a driver DSN with no scheme is left alone", url: "tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
 	}
@@ -1389,19 +1394,62 @@ func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
 	}
 }
 
-// TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter is the control
-// that keeps the two ends of [ConnectToDatabase] from drifting apart again.
+// mysqlSessionAnswers is a MariaDB server whose session has no default
+// database, as a URL naming none leaves it.
+var mysqlSessionAnswers = map[string]dbtest.QueryResult{
+	"SELECT VERSION()":  {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
+	"SELECT DATABASE()": {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{nil}}},
+}
+
+// TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL checks that the database a
+// socket URL names is the one the connection reports. The path of that URL is
+// the socket, so a reader of the path reports a database called
+// run/mysqld/mysqld.sock while the driver connects to shop.
+func TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL(t *testing.T) {
+	c := qt.New(t)
+	const socketURL = "mariadb+unix://root@/run/mysqld/mysqld.sock?database=shop"
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return mysqlSessionAnswers[query], nil
+	})
+	parsedURL, err := parseDatabaseURL(socketURL)
+	c.Assert(err, qt.IsNil)
+
+	info, err := getDatabaseInfo(t.Context(), db.SQL, platform.MariaDB, parsedURL, socketURL, resolveSchemaFromSession)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Schema, qt.Equals, "shop")
+	c.Assert(info.Dialect, qt.Equals, platform.MariaDB)
+}
+
+// TestGetDatabaseInfo_RefusesAMySQLURLThatNamesNoDatabase names the missing
+// database rather than failing on the NULL DATABASE() answers. The pinned
+// community binary reads such a URL as the whole server, which Ptah does not
+// (stokaro/ptah#3761).
+func TestGetDatabaseInfo_RefusesAMySQLURLThatNamesNoDatabase(t *testing.T) {
+	c := qt.New(t)
+	const socketURL = "mariadb+unix://root@/run/mysqld/mysqld.sock"
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return mysqlSessionAnswers[query], nil
+	})
+	parsedURL, err := parseDatabaseURL(socketURL)
+	c.Assert(err, qt.IsNil)
+
+	info, err := getDatabaseInfo(t.Context(), db.SQL, platform.MariaDB, parsedURL, socketURL, resolveSchemaFromSession)
+
+	c.Assert(err, qt.ErrorIs, errMySQLURLNamesNoDatabase)
+	c.Assert(info.Schema, qt.Equals, "")
+}
+
+// TestMySQLDatabaseAgreesBetweenParserAndConverter is the control that keeps
+// the two ends of [ConnectToDatabase] from drifting apart.
 //
-// It compares behavior, not the shared list. A control that asked the same
-// helper twice would agree with itself and stay green while the converter
-// stopped calling it -- which is precisely the state stokaro/ptah#1540
-// reported, so a control that cannot see it is no control.
-//
-// The equivalence is: the parser finds a network wrapper exactly when the
-// converter hands the address to the driver with only its scheme removed.
-// Where there is no wrapper the converter assembles a DSN instead, and the
-// result differs from the address by more than the scheme.
-func TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter(t *testing.T) {
+// parseDatabaseURL says which database getDatabaseInfo reports, and
+// convertMySQLURL says which database the driver connects to. The expected
+// side is the driver's own reading of the DSN, not the parser both functions
+// share: a control that asked that parser twice would agree with itself and
+// stay green while one end stopped calling it, which is the state
+// stokaro/ptah#1540 reported.
+func TestMySQLDatabaseAgreesBetweenParserAndConverter(t *testing.T) {
 	addresses := []string{
 		"mysql://tcp(localhost:3306)/shop",
 		"mysql://unix(/tmp/mysql.sock)/shop",
@@ -1412,16 +1460,22 @@ func TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter(t *testing.T) {
 		"MARIA://unix(/tmp/mysql.sock)/shop",
 		"mysql://user:pass@localhost:3306/shop",
 		"maria://user:pass@localhost:3306/shop",
+		"mysql+unix://user:pass@/tmp/mysql.sock?database=shop",
+		"MARIA+UNIX://user@/run/mysqld/mysqld.sock?database=shop&parseTime=true",
+		"mariadb+unix://user:pass@/tmp/mysql.sock",
+		"mysql://user:pass@localhost:3306/my%2Fshop",
 	}
 
 	for _, address := range addresses {
 		t.Run(address, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, parserFoundNetwork := withoutMySQLNetwork(address)
-			convertedIsAddressWithoutScheme := convertMySQLURL(address) == withoutMySQLScheme(address)
+			parsed, err := parseDatabaseURL(address)
+			c.Assert(err, qt.IsNil)
+			driverConfig, err := mysqldriver.ParseDSN(convertMySQLURL(address))
+			c.Assert(err, qt.IsNil)
 
-			c.Assert(convertedIsAddressWithoutScheme, qt.Equals, parserFoundNetwork)
+			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, driverConfig.DBName)
 		})
 	}
 }
@@ -1444,19 +1498,6 @@ func TestConnectToDatabase_ReachesTheDriverForACredentialFreeSocketTarget(t *tes
 	_, err := ConnectToDatabase(t.Context(), "mysql://unix("+socket+")/shop")
 
 	c.Assert(err, qt.ErrorMatches, `.*dial unix `+regexp.QuoteMeta(socket)+`.*`)
-}
-
-// withoutMySQLScheme removes the scheme an address carries. Every address the
-// control above names carries a MySQL-family one, so the text before "://" is
-// the scheme whatever its spelling. It is not atlasurl.CutMySQLScheme: a
-// control that asked the converter's own predicate would agree with it when
-// that predicate missed a spelling.
-func withoutMySQLScheme(address string) string {
-	_, rest, found := strings.Cut(address, "://")
-	if !found {
-		return address
-	}
-	return rest
 }
 
 // TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath keeps the Windows

@@ -1,8 +1,8 @@
 package onlineddl
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 
 	"ptah.run/internal/atlasurl"
 )
@@ -16,92 +16,39 @@ type DSN struct {
 	Database string
 }
 
-// ParseDatabaseURL extracts tool connection endpoints from the database URLs
-// ptah accepts for the MySQL family:
+// ParseDatabaseURL extracts tool connection endpoints from a MySQL-family
+// database URL.
 //
-//	mysql://user:pass@host:port/dbname
-//	mysql://user:pass@tcp(host:port)/dbname
+// The URL is read by atlasurl.ParseMySQLURL, which is also what
+// dbschema.ConnectToDatabase reads it with, so the tool receives the
+// credentials, the server and the database Ptah connects to, in every form the
+// URL takes. The go-sql-driver form, user:pass@tcp(host:port)/dbname, is handed
+// to the driver as written, so its credentials are not percent-decoded; the
+// URL form is decoded by net/url. Host defaults to 127.0.0.1 and port to 3306,
+// as the driver's do.
 //
-// (and the mariadb:// spellings of both). It mirrors how
-// dbschema.ConnectToDatabase treats each form so the tool receives the same
-// credentials ptah connects with: the go-sql-driver @tcp(...) form is passed
-// to the driver verbatim, so its user/password are NOT percent-decoded, while
-// the plain URL form is decoded by net/url. Host defaults to 127.0.0.1 and
-// port to 3306 when absent; a missing database name is an error because both
-// gh-ost and pt-online-schema-change require one.
+// A socket address is refused: gh-ost and pt-online-schema-change are given a
+// host and a port here, and a socket path handed to either as a host would
+// reach some other server or none. A missing database name is refused because
+// both tools require one.
 func ParseDatabaseURL(dbURL string) (DSN, error) {
-	var dsn DSN
-	if strings.Contains(dbURL, "@tcp(") {
-		dsn = parseTCPForm(dbURL)
-	} else {
-		var err error
-		if dsn, err = parseURLForm(dbURL); err != nil {
-			return DSN{}, err
-		}
-	}
-
-	if dsn.Host == "" {
-		dsn.Host = "127.0.0.1"
-	}
-	if dsn.Port == "" {
-		dsn.Port = "3306"
-	}
-	if dsn.Database == "" {
-		// The raw URL is deliberately not echoed: it may carry credentials.
-		return DSN{}, fmt.Errorf("database URL carries no database name; online-DDL tools require one")
-	}
-	return dsn, nil
-}
-
-// parseURLForm parses the plain mysql://user:pass@host:port/db form, which
-// net/url percent-decodes exactly as dbschema.convertMySQLURL does.
-func parseURLForm(dbURL string) (DSN, error) {
-	parsed, err := atlasurl.Parse(dbURL)
+	parsed, err := atlasurl.ParseMySQLURL(dbURL)
 	if err != nil {
 		return DSN{}, fmt.Errorf("failed to parse database URL: %w", err)
 	}
-	dsn := DSN{
-		Host:     parsed.Hostname(),
-		Port:     parsed.Port(),
-		Database: strings.TrimPrefix(parsed.Path, "/"),
+	host, port, tcp := parsed.HostPort()
+	if !tcp {
+		return DSN{}, errors.New("database URL reaches the server through a Unix socket; online-DDL tools are given a TCP host and port")
 	}
-	if parsed.User != nil {
-		dsn.User = parsed.User.Username()
-		dsn.Password, _ = parsed.User.Password()
+	if parsed.Database() == "" {
+		// The raw URL is deliberately not echoed: it may carry credentials.
+		return DSN{}, errors.New("database URL carries no database name; online-DDL tools require one")
 	}
-	return dsn, nil
-}
-
-// parseTCPForm parses mysql://user:pass@tcp(host:port)/db without
-// percent-decoding, matching what ptah hands go-sql-driver for this form.
-func parseTCPForm(dbURL string) DSN {
-	body := dbURL
-	if after, ok := atlasurl.CutMySQLScheme(dbURL); ok {
-		body = after
-	}
-
-	var dsn DSN
-	if creds, rest, ok := strings.Cut(body, "@tcp("); ok {
-		if user, pass, hasPass := strings.Cut(creds, ":"); hasPass {
-			dsn.User, dsn.Password = user, pass
-		} else {
-			dsn.User = creds
-		}
-		body = rest
-	}
-
-	hostPort, rest, _ := strings.Cut(body, ")")
-	if host, port, ok := strings.Cut(hostPort, ":"); ok {
-		dsn.Host, dsn.Port = host, port
-	} else {
-		dsn.Host = hostPort
-	}
-
-	rest = strings.TrimPrefix(rest, "/")
-	if db, _, ok := strings.Cut(rest, "?"); ok {
-		dsn.Database = db
-	} else {
-		dsn.Database = rest
-	}
-	return dsn
+	return DSN{
+		Host:     host,
+		Port:     port,
+		User:     parsed.User(),
+		Password: parsed.Password(),
+		Database: parsed.Database(),
+	}, nil
 }

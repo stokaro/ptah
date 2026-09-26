@@ -41,11 +41,17 @@ alias list is on the
 [Database support matrix](../../databases/support-matrix/). A URL with an
 unrecognized scheme fails with `unsupported database dialect`.
 
-A MySQL or MariaDB server behind a Unix socket takes the Go-driver form,
-`mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app`. The Atlas CLI socket
-schemes `mysql+unix://`, `maria+unix://` and `mariadb+unix://` are refused as
-unrecognized schemes
-([stokaro/ptah#3755](https://github.com/stokaro/ptah/issues/3755)).
+A MySQL or MariaDB server behind a Unix socket takes the Atlas CLI socket
+form, `mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app`, with
+`mariadb+unix://` and `maria+unix://` for MariaDB. The URL path is the socket
+and the `database` parameter names the database; a host in that URL is
+ignored. The Go-driver form `mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app`
+reaches the same socket.
+
+A MySQL or MariaDB URL must name a database, over TCP or through a socket. The
+Atlas CLI reads a URL that names none as the whole server; Ptah refuses it
+([stokaro/ptah#3761](https://github.com/stokaro/ptah/issues/3761)). An empty
+`database` parameter is refused too.
 
 ## The four database roles
 

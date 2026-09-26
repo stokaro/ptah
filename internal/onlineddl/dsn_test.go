@@ -91,6 +91,24 @@ func TestParseDatabaseURL_FailurePath(t *testing.T) {
 			url:     "mysql://app:secret@db:3306/",
 			wantErr: ".*no database name.*",
 		},
+		// A socket path handed to either tool as a host would reach some other
+		// server or none. Read from the path, the socket URL below would hand
+		// gh-ost a database called run/mysqld/mysqld.sock instead.
+		{
+			name:    "a socket URL",
+			url:     "mysql+unix://app:secret@/run/mysqld/mysqld.sock?database=shop",
+			wantErr: "database URL reaches the server through a Unix socket; online-DDL tools are given a TCP host and port",
+		},
+		{
+			name:    "the driver's socket form",
+			url:     "mariadb://app:secret@unix(/run/mysqld/mysqld.sock)/shop",
+			wantErr: "database URL reaches the server through a Unix socket; online-DDL tools are given a TCP host and port",
+		},
+		{
+			name:    "a URL of another dialect",
+			url:     "postgres://app@db/shop",
+			wantErr: "failed to parse database URL: not a MySQL or MariaDB URL",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
