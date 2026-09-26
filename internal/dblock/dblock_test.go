@@ -145,6 +145,16 @@ func TestTimeoutError(t *testing.T) {
 	c.Assert(err.Error(), qt.Equals, `timed out acquiring advisory lock "ptah_schema_apply" on postgres after 250ms`)
 }
 
+// A negative timeout is a refusal to wait, so the error names the holder
+// rather than a wait that never happened.
+func TestTimeoutErrorUnderNoWait(t *testing.T) {
+	c := qt.New(t)
+
+	err := &dblock.TimeoutError{Dialect: "postgres", Name: "ptah_schema_apply", Timeout: dblock.NoWait}
+	c.Assert(err.Error(), qt.Equals, `advisory lock "ptah_schema_apply" on postgres is held by another session`)
+	c.Assert(dblock.IsTimeout(err), qt.IsTrue)
+}
+
 func TestIsTimeout(t *testing.T) {
 	c := qt.New(t)
 

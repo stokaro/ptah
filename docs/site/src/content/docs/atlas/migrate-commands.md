@@ -512,6 +512,12 @@ ptah-compat migrate apply 2 \
   --dir file://migrations
 ```
 
+`--tx-mode` takes `file` (the default), `all` or `none`, spelled exactly. Any
+other value, an empty one included, is refused with Atlas's
+`unknown tx-mode "<value>"` before the run connects. Atlas's own dry run
+accepts such a value, and its real run refuses it only after creating the
+revision table; Ptah refuses both, so a dry run cannot pass a run that fails.
+
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`,
 `--to-version`, `--lock-name`, `--skip-lock`, and `--format`. The pinned
@@ -587,8 +593,9 @@ ptah-compat migrate apply \
 migration runs (`ptah_migrate` by default). Two runs serialize only when they
 name the same lock, so this is how a Ptah run coordinates with another tool on
 the same database. A lock another process holds makes the run wait, bounded by
-`--lock-timeout`; an elapsed timeout fails the run before any migration
-executes. An empty value is refused rather than falling back to the default
+`--lock-timeout`: a duration, `10s` by default, where zero or a negative value
+tries the lock once without waiting, as on Atlas. An elapsed timeout fails the
+run before any migration executes. An empty value is refused rather than falling back to the default
 name.
 
 `--skip-lock` acquires no lock at all: no wait, no timeout, and no
@@ -1008,7 +1015,8 @@ ptah-compat migrate diff add_users \
 ```
 
 Use `--lock-timeout` to bound waiting for both the migration-directory lock and
-the exclusive dev-database lock. The default migration-file format matches
+the exclusive dev-database lock. It defaults to `10s`, and zero or a negative
+value tries each lock once without waiting, as on Atlas. The default migration-file format matches
 Atlas's two-space SQL indentation template. Use `--format` to render the
 generated migration SQL through Atlas-style Go templates with `sql` and
 `.MarshalSQL`, for example to disable indentation:

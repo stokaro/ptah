@@ -51,7 +51,7 @@ type atlasSchemaApplyOptions struct {
 	schemas     []string
 	include     []string
 	planURL     string
-	lockTimeout string
+	lockTimeout time.Duration
 	lock        atlasLockOptions
 	edit        bool
 	skipLint    bool
@@ -317,12 +317,12 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from apply")
-	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
+	flags.StringVar(&opts.txMode, "tx-mode", string(migrator.MigrationTxModeFile), "Transaction mode: file or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in apply")
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
-	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
+	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring the database lock; zero or less tries it once")
 	if !policy.IsStrictCE() {
 		registerAtlasLockNameFlag(flags, &opts.lock)
 		registerAtlasSkipLockFlag(flags, &opts.lock)
@@ -518,14 +518,11 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		preparedTo = &toSet
 	}
-	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
+	txMode, err := parseAtlasTxMode(opts.txMode, atlasSchemaApplyTxModes)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
+	lockTimeout := atlasLockWait(opts.lockTimeout)
 	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -574,7 +571,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lock, applyLock, conn.Info().Dialect)
 
 	schemaVars, err := atlasVarFlagValues(cmd)
 	if err != nil {
@@ -789,14 +786,14 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err := validateAtlasSchemaApplyPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// A saved plan is a Ptah capability the community binary does not offer,
+	// and its `-- atlas:txmode` directives are refused against a global `all`,
+	// so `all` is not `file` here and the native parser decides the value.
 	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
+	lockTimeout := atlasLockWait(opts.lockTimeout)
 	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -872,7 +869,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
-	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, opts.lock, applyLock, conn.Info().Dialect)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lock, applyLock, conn.Info().Dialect)
 
 	// A JSON plan always carries a fingerprint contract; a Ptah-written
 	// `.plan.hcl` carries one too (round-trip). Foreign Atlas hashes cannot be
@@ -1315,14 +1312,11 @@ func validateAtlasSchemaApplyOptions(
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
 		return err
 	}
-	// Classification rejects unsupported schemes and source conflicts, and the
-	// dev-database requirement is checked here, before the target database is
-	// contacted.
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
-	if err != nil {
-		return err
-	}
-	return set.EnsureDevDatabase(opts.devURL)
+	// Classification rejects unsupported schemes and source conflicts before
+	// the target database is contacted. The dev-database requirement is
+	// [ensureAtlasSchemaApplyDevURL]'s, after the flag values are parsed.
+	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	return err
 }
 
 // applyWithoutDevURLEnvVar restores planning a non-database desired state with
@@ -1347,24 +1341,34 @@ const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
 // The rule is scoped, not universal, and every boundary of the scope is
 // measured against the pinned community binary rather than reasoned about:
 //
-//	--to                              community binary        this binary
-//	sqlite://target.db                applies                 applies
-//	file://schema.hcl                 applies                 applies
-//	file://schema.sql                 --dev-url cannot be…    --dev-url cannot be…
+//	--to                              community binary and this binary
+//	sqlite://target.db                applies
+//	file://schema.hcl, file://hcldir  applies
+//	file://schema.sql, file://sqldir  --dev-url cannot be empty. See: …
+//	file://migrations                 --dev-url cannot be empty. See: …
 //
-// The middle row is the one a rule about FILES gets wrong: an HCL desired state
+// The second row is the one a rule about FILES gets wrong: an HCL desired state
 // is already a schema definition and needs nothing replayed, so refusing it
 // breaks `schema apply` for the most common Atlas source there is. A fixture
 // using only a SQL file cannot separate a rule about FILES from a rule about
-// SQL, which is why the table above carries both.
+// SQL, which is why the table above carries both. The refusal is
+// [atlasEmptyDevURLError]'s linked sentence, measured on 2026-09-26 on
+// PostgreSQL for all three refused shapes (stokaro/ptah#3680).
 //
 // `schema inspect` and `schema diff` refuse BOTH formats on both binaries, so
 // they are not this rule and are deliberately left alone
 // (internal/atlasschema/inspect_source.go).
 //
-// A migration directory keeps its own longer diagnostic from
-// [atlassource.Set.EnsureDevDatabase], which names why the replay needs a dev
-// database. Both exit 1; this one only speaks for the sources that had no rule.
+// The refusal comes after the flag values are parsed, as on the pinned binary:
+// with a bad --tx-mode or --lock-timeout it names the flag first. That binary
+// connects to --url before it asks for a dev database; this one asks first and
+// contacts nothing for a run it will refuse, so an unreachable --url with a SQL
+// --to is refused for the dev database here and for the connection there. Both
+// exit 1.
+//
+// [applyWithoutDevURLEnvVar] lifts the refusal for a schema file. A migration
+// directory still has to be replayed on a dev database, so under the variable
+// it keeps [atlassource.Set.EnsureDevDatabase]'s sentence, which says why.
 func ensureAtlasSchemaApplyDevURL(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
@@ -1389,10 +1393,10 @@ func ensureAtlasSchemaApplyDevURL(
 		// can improve on it.
 		return nil //nolint:nilerr // the caller already refused on this error
 	}
-	if allowed {
-		return nil
+	if !allowed {
+		return atlasEmptyDevURLError(set)
 	}
-	return errors.New("--dev-url cannot be empty")
+	return set.EnsureDevDatabase(opts.devURL)
 }
 
 // atlasApplyWithoutDevURL is the declaration of the variable, made once, on the
@@ -1487,7 +1491,6 @@ func releaseAtlasSchemaApplyLock(cmd *cobra.Command, lock *atlasschema.ApplyLock
 // none.
 func noteAtlasSchemaApplyLockUnsupported(
 	cmd *cobra.Command,
-	requestedTimeout string,
 	lockOpts atlasLockOptions,
 	lock *atlasschema.ApplyLock,
 	dialect string,
@@ -1501,7 +1504,9 @@ func noteAtlasSchemaApplyLockUnsupported(
 			dialect, lock.Name())
 		return
 	}
-	if strings.TrimSpace(requestedTimeout) == "" {
+	// --lock-timeout always holds a value, its default included, so only a
+	// value the operator passed asks for a lock.
+	if !cmd.Flags().Changed("lock-timeout") {
 		return
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(),

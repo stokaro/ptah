@@ -348,6 +348,35 @@ func TestGenerateDiff_LockTimeout(t *testing.T) {
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
+// TestGenerateDiff_NegativeLockTimeoutDoesNotWait: a negative timeout tries
+// the directory lock once, and a held lock refuses the run at once.
+func TestGenerateDiff_NegativeLockTimeoutDoesNotWait(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	releaseLock, err := testutils.AcquireExclusiveFileLock(diffLockPath(migrationsDir))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(releaseLock(), qt.IsNil)
+	})
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE locked_diff (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	result, err := atlasmigrate.GenerateDiff(t.Context(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "locked_diff",
+		LockTimeout: -time.Second,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `migration directory lock is held by another process: .*\.ptah-migrate-diff\.lock`)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
+}
+
 func TestGenerateDiff_LockCoversMigrationDirectoryDesiredResolution(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -405,7 +434,7 @@ func TestGenerateDiff_RejectsInvalidFormatBeforeCreatingDirectory(t *testing.T) 
 		Format:  `{{ json . }}`,
 	})
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*function "json" not defined.*`)
 	c.Assert(result.Synced, qt.IsFalse)
 	c.Assert(fileExists(migrationsDir), qt.IsFalse)
 }
@@ -439,7 +468,7 @@ CREATE TABLE users (
 		LockTimeout: time.Second,
 	})
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unexpected number of arguments: 2.*`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
 	c.Assert(result.Synced, qt.IsFalse)
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 	c.Assert(fileExists(filepath.Join(migrationsDir, "atlas.sum")), qt.IsFalse)

@@ -284,6 +284,18 @@ view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.
 
+A function with `OUT` or `INOUT` arguments may leave `RETURNS` out. PostgreSQL
+then records the type those arguments imply, and Ptah compares the declaration
+against that type: the type of the one such argument, or `record` for two or
+more. `f(a integer, OUT b text)` returns `text`, and
+`f(a integer, OUT b integer, OUT c text)` returns `record`.
+
+A routine or `DO` body in a SQL schema file may be written in any quoting
+PostgreSQL takes: `'...'` with doubled quotes, `E'...'` with backslash
+escapes, or a dollar quote. Ptah reads the body as the server does, with the
+quoting undone, and writes it between dollar quotes the body does not contain:
+`$$`, or `$ptah$` when the body holds `$$`.
+
 ## Triggers
 
 A SQL schema file declares a trigger with the statement `pg_dump` writes, and
@@ -323,9 +335,12 @@ trigger. MySQL and MariaDB take one event and none of these clauses. SQLite
 takes one event, which may be `UPDATE OF`. SQL Server takes an event list
 without `UPDATE OF`, and Oracle takes both. None of them takes `TRUNCATE`,
 transition tables, or a PostgreSQL `WHEN` condition; SQLite and Oracle keep
-a `WHEN` of their own grammar in the trigger body. `schema inspect` in HCL leaves out a trigger
-with an event list, a condition or transition tables, and says so, because
-the HCL trigger block has no attribute for them.
+a `WHEN` of their own grammar in the trigger body.
+
+`schema inspect` in HCL writes each event as an attribute of the timing block,
+so `INSERT OR UPDATE` is `insert = true` and `update = true`. It leaves out a
+trigger with `UPDATE OF` columns, a condition or transition tables, and says
+so, because the HCL trigger block has no attribute for them.
 
 ## Materialized view refresh
 

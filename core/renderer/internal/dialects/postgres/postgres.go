@@ -2366,16 +2366,22 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.Modif
 		return
 	}
 	value := r.nullBackfillValue(column)
-	// First check if there are any NULL values to avoid unnecessary UPDATE operations
-	r.w.WriteLinef("DO $$")
-	r.w.WriteLinef("BEGIN")
 	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
 	columnIdentifier := r.escapeIdentifier(column.Name)
-	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier)
-	r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier)
-	r.w.WriteLinef("    END IF;")
-	r.w.WriteLinef("END")
-	r.w.WriteLinef("$$;")
+	// First check if there are any NULL values to avoid unnecessary UPDATE operations
+	body := strings.Join([]string{
+		"BEGIN",
+		fmt.Sprintf("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier),
+		fmt.Sprintf("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, value, columnIdentifier),
+		"    END IF;",
+		"END",
+	}, "\n")
+	// The default is the author's, and a default such as '$$' would end the
+	// block's quoting where it stands.
+	quote := dollarQuote(body)
+	r.w.WriteLinef("DO %s", quote)
+	r.w.WriteLine(body)
+	r.w.WriteLinef("%s;", quote)
 }
 
 // nullBackfillValue is the value updateNullValuesBeforeNotNull writes into a
@@ -2528,18 +2534,42 @@ func (r *Renderer) renderCreateFunction(node *ast.CreateFunctionNode) error {
 	}
 
 	// Function body with dollar quoting
-	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
+	quote := dollarQuote(node.Body)
+	r.w.WriteLinef("%s AS %s", strings.Join(parts, " "), quote)
 	r.w.WriteLinef("%s", node.Body)
 
 	// Close the function with attributes
 	if len(attributes) > 0 {
-		r.w.WriteLinef("$$")
+		r.w.WriteLinef("%s", quote)
 		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
 		return nil
 	}
-	r.w.WriteLinef("$$;")
+	r.w.WriteLinef("%s;", quote)
 
 	return nil
+}
+
+// dollarQuote answers a dollar quote that does not occur in body: `$$` where
+// it can, and otherwise the first of `$ptah$`, `$ptah1$`, `$ptah2$`, ... that
+// the body does not hold.
+//
+// The body is written between two of them and the server ends the literal at
+// the first one it meets, so a body holding the quote is cut there and the
+// rest is read as SQL. A body declared as `$f$SELECT $$x$$$f$`, or as the
+// string `'SELECT $$x$$'`, holds `$$` (stokaro/ptah#3691).
+func dollarQuote(body string) string {
+	if !strings.Contains(body, "$$") {
+		return "$$"
+	}
+	for index := 0; ; index++ {
+		quote := "$ptah$"
+		if index > 0 {
+			quote = fmt.Sprintf("$ptah%d$", index)
+		}
+		if !strings.Contains(body, quote) {
+			return quote
+		}
+	}
 }
 
 // renderCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
@@ -3190,10 +3220,12 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	// An external function is referenced, never defined: emitting a body for it
 	// would overwrite whatever it already contains.
 	if !node.ExternalFunction {
+		body := renderPostgreSQLTriggerFunctionBody(node.Body)
+		quote := dollarQuote(body)
 		r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", r.escapeQualifiedIdentifier(functionName))
-		r.w.WriteLine("RETURNS trigger AS $$")
-		r.w.WriteLine(renderPostgreSQLTriggerFunctionBody(node.Body))
-		r.w.WriteLine("$$ LANGUAGE plpgsql;")
+		r.w.WriteLinef("RETURNS trigger AS %s", quote)
+		r.w.WriteLine(body)
+		r.w.WriteLinef("%s LANGUAGE plpgsql;", quote)
 	}
 
 	if node.Replace && !r.capabilities().Has(capability.CreateOrReplaceTrigger) {

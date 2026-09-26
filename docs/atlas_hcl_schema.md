@@ -144,7 +144,11 @@ current schema IR:
   differ in ownership: `as` gives the trigger a body, and Ptah generates a
   private function per trigger and drops it with the trigger; `execute {
   function = function.f }` binds the trigger to a function the schema declares
-  separately, which several triggers may share. Declaring both is refused
+  separately, which several triggers may share. Declaring both is refused. The
+  timing block sets each event the trigger fires on, `insert`, `update`,
+  `delete` or `truncate`, to `true`, and every event it sets is read: a `before`
+  block setting `insert` and `update` is `BEFORE INSERT OR UPDATE`. An event
+  attribute that is not a bool is refused rather than read as unset
 - PostgreSQL `policy` blocks with `on`, `as`, `for`, `to`, `using`, `check`,
   and `comment`. `as` takes `PERMISSIVE` (the default, left unwritten) or
   `RESTRICTIVE`; any other value is refused, because permissive is the weaker
@@ -781,7 +785,8 @@ Atlas features that Ptah cannot represent without losing semantics, including:
   them from `set`. The attribute name `config_params` is refused, like any other
   name the block does not define
 - view and materialized-view column types, which the server derives
-- trigger `referencing`, `when`, constraint, and deferrable metadata
+- trigger `update_of` column lists, `referencing`, `when`, constraint, and
+  deferrable metadata
 - permission targets other than schema, table, and sequence
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types

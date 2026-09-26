@@ -53,11 +53,11 @@ func NewSchemaClean(opts SchemaCleanOptions) SchemaClean {
 }
 
 func WriteSchemaClean(w io.Writer, format string, result SchemaClean) error {
-	return renderAtlasGoTemplate(w, "atlas-schema-clean-format", format, result)
+	return renderAtlasGoTemplate(w, ptahTemplateWording("atlas-schema-clean-format"), format, result)
 }
 
 func ValidateSchemaCleanTemplate(format string) error {
-	return renderAtlasGoTemplate(io.Discard, "atlas-schema-clean-format", format, sampleSchemaClean())
+	return renderAtlasGoTemplate(io.Discard, ptahTemplateWording("atlas-schema-clean-format"), format, sampleSchemaClean())
 }
 
 func sampleSchemaClean() SchemaClean {

@@ -15,7 +15,9 @@ const migrationAdvisoryLockName = "ptah_migrate"
 const migrationAdvisoryUnlockTimeout = dblock.DefaultReleaseTimeout
 
 // MigrationLockTimeoutError reports that another runner held the migration
-// advisory lock longer than this migrator was configured to wait.
+// advisory lock longer than this migrator was configured to wait, or held it
+// at all when the migrator was configured not to wait. Timeout is the
+// configured value, negative in the second case.
 type MigrationLockTimeoutError struct {
 	Dialect string
 	Name    string
@@ -23,6 +25,9 @@ type MigrationLockTimeoutError struct {
 }
 
 func (e *MigrationLockTimeoutError) Error() string {
+	if e.Timeout < 0 {
+		return fmt.Sprintf("migration lock %q for %s is held by another runner", e.Name, e.Dialect)
+	}
 	return fmt.Sprintf("timed out acquiring migration lock %q for %s after %s", e.Name, e.Dialect, e.Timeout)
 }
 
@@ -34,7 +39,8 @@ func IsMigrationLockTimeout(err error) bool {
 
 // WithMigrationLockTimeout returns a copy of the migrator that limits how long
 // it waits for the session-level migration advisory lock. Zero means wait
-// indefinitely.
+// indefinitely. A negative timeout means do not wait: the lock is tried once,
+// and a lock another runner holds is a [MigrationLockTimeoutError] at once.
 func (m *Migrator) WithMigrationLockTimeout(timeout time.Duration) *Migrator {
 	tmp := *m
 	tmp.migrationLockTimeout = timeout

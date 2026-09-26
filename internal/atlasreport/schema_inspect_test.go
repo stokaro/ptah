@@ -55,7 +55,7 @@ func TestValidateSchemaInspectTemplate_FailurePath(t *testing.T) {
 
 	err := atlasreport.ValidateSchemaInspectTemplate(`{{ unknown . }}`)
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "unknown" not defined.*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*function "unknown" not defined.*`)
 }
 
 func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T) {
@@ -164,7 +164,7 @@ func TestRenderSchemaInspect_SQLSplitRejectsDuplicatePaths(t *testing.T) {
 
 	output, err := atlasreport.RenderSchemaInspect(format, report)
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*split generated duplicate output path "tables/users.sql"`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*split generated duplicate output path "tables/users.sql"`)
 	c.Assert(output.Text, qt.Equals, "")
 }
 
@@ -248,7 +248,7 @@ func TestRenderSchemaInspect_SplitRejectsUnsupportedMode(t *testing.T) {
 
 	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split "table" }}`, report)
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unsupported split mode "table": supported modes are object, schema, and type`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*unsupported split mode "table": supported modes are object, schema, and type`)
 	c.Assert(output.Text, qt.Equals, "")
 }
 
@@ -272,7 +272,7 @@ func TestRenderSchemaInspect_SplitRejectsUnsafeExtension(t *testing.T) {
 
 			output, err := atlasreport.RenderSchemaInspect(format, report)
 
-			c.Assert(err, qt.ErrorMatches, `execute --format template: `+test.wantErr)
+			c.Assert(err, qt.ErrorMatches, `template: format:`+test.wantErr)
 			c.Assert(output.Text, qt.Equals, "")
 		})
 	}
@@ -328,7 +328,7 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 			c := qt.New(t)
 			output, err := atlasreport.RenderSchemaInspect(test.format, report)
 
-			c.Assert(err, qt.ErrorMatches, `execute --format template: .*split requires hcl or sql schema output`)
+			c.Assert(err, qt.ErrorMatches, `template: format:.*split requires hcl or sql schema output`)
 			c.Assert(output.Text, qt.Equals, "")
 		})
 	}

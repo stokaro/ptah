@@ -153,13 +153,13 @@ type SchemaInspectOutput struct {
 // touches the filesystem.
 func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInspectOutput, error) {
 	var files []SchemaInspectFile
-	tmpl, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, report, &files)
+	tmpl, err := newAtlasSchemaInspectTemplate(format, report, &files)
 	if err != nil {
 		return SchemaInspectOutput{}, err
 	}
 	var out strings.Builder
 	if err := tmpl.Execute(&out, report); err != nil {
-		return SchemaInspectOutput{}, fmt.Errorf("execute --format template: %w", err)
+		return SchemaInspectOutput{}, atlasSchemaVerbTemplateWording.executeError(err)
 	}
 	return SchemaInspectOutput{Text: out.String(), Files: files}, nil
 }
@@ -196,7 +196,7 @@ func NewSchemaInspectReport(
 
 func ValidateSchemaInspectTemplate(format string) error {
 	var files []SchemaInspectFile
-	_, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, nil, &files)
+	_, err := newAtlasSchemaInspectTemplate(format, nil, &files)
 	return err
 }
 
@@ -206,7 +206,7 @@ func ValidateSchemaInspectTemplate(format string) error {
 // substring matching authored template text.
 func SchemaInspectTemplateFunctions(format string) ([]string, error) {
 	var files []SchemaInspectFile
-	tmpl, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, nil, &files)
+	tmpl, err := newAtlasSchemaInspectTemplate(format, nil, &files)
 	if err != nil {
 		return nil, err
 	}
@@ -285,12 +285,12 @@ func NormalizeSchemaInspectFormat(format string) (string, error) {
 // write appends planned files to files instead of touching the filesystem.
 // report may be nil for parse-only validation.
 func newAtlasSchemaInspectTemplate(
-	name,
 	format string,
 	report *SchemaInspectReport,
 	files *[]SchemaInspectFile,
 ) (*template.Template, error) {
-	tmpl, err := template.New(name).Funcs(template.FuncMap{
+	wording := atlasSchemaVerbTemplateWording
+	tmpl, err := template.New(wording.name).Funcs(template.FuncMap{
 		"base64url": atlasSchemaInspectBase64URL,
 		"hcl":       atlasSchemaInspectHCL,
 		"json":      atlasTemplateJSON,
@@ -305,7 +305,7 @@ func newAtlasSchemaInspectTemplate(
 		},
 	}).Parse(format)
 	if err != nil {
-		return nil, fmt.Errorf("parse --format template: %w", err)
+		return nil, wording.parseError(err)
 	}
 	return tmpl, nil
 }

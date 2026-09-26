@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routineparallel"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
@@ -389,6 +390,21 @@ func canonicalizePostgresReturns(returns string) string {
 		}
 	}
 	return canonicalizePostgresType(trimmed)
+}
+
+// impliedPostgresReturns answers a declared function's return clause, filling
+// in the type PostgreSQL derives from OUT arguments when the declaration leaves
+// RETURNS out. The server records that type, and pg_get_function_result prints
+// it. Left empty, the declared clause differs from the catalog's, and every
+// plan drops the function and creates it again (stokaro/ptah#3690).
+//
+// A procedure has no result, and one with OUT arguments reports none, so it is
+// left as declared.
+func impliedPostgresReturns(function schemamodel.Function) string {
+	if function.IsProcedure() || strings.TrimSpace(function.Returns) != "" {
+		return function.Returns
+	}
+	return routineargs.ImpliedResult(function.Parameters)
 }
 
 // cutPrefixFold is strings.CutPrefix with the prefix matched case-insensitively,
@@ -764,7 +780,7 @@ func FunctionDefinitionsWithDialect(
 	// CREATE OR REPLACE on every run, applied it, changed nothing, and planned
 	// it again (stokaro/ptah#3155).
 	if platform.IsPostgresFamily(dialect) {
-		genFunction.Returns = canonicalizePostgresReturns(genFunction.Returns)
+		genFunction.Returns = canonicalizePostgresReturns(impliedPostgresReturns(genFunction))
 		dbFunction.Returns = canonicalizePostgresReturns(dbFunction.Returns)
 	}
 

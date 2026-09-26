@@ -137,8 +137,9 @@ func WithApplyLockSession(
 // AcquireApplyLock takes the dialect-specific session advisory lock that
 // serializes schema apply runs on conn's database. It must be held before the
 // target inspection and planning that the apply serializes. A zero timeout
-// waits indefinitely; context cancellation always interrupts the wait, and an
-// elapsed timeout surfaces as a wrapped [dblock.TimeoutError] recognized by
+// waits indefinitely and a negative one does not wait ([dblock.NoWait]);
+// context cancellation always interrupts the wait, and an elapsed or refused
+// wait surfaces as a wrapped [dblock.TimeoutError] recognized by
 // [IsLockTimeout].
 //
 // An empty or whitespace-only name selects [ApplyLockName]. Naming the lock is

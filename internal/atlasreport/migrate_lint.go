@@ -113,11 +113,11 @@ func WriteMigrateLintFormat(w io.Writer, format string, opts MigrateLintOptions)
 	if err != nil {
 		return err
 	}
-	return renderAtlasGoTemplate(w, "atlas-migrate-lint-format", format, result)
+	return renderAtlasGoTemplate(w, atlasMigrateVerbTemplateWording, format, result)
 }
 
 func ValidateMigrateLintTemplate(format string) error {
-	return validateAtlasGoTemplate("atlas-migrate-lint-format", format)
+	return validateAtlasGoTemplate(atlasMigrateVerbTemplateWording, format)
 }
 
 func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {

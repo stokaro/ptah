@@ -189,7 +189,7 @@ func TestSplitRefusesAMalformedRecordRatherThanDroppingIt(t *testing.T) {
 
 	output, err := atlasreport.RenderSchemaInspect(format, sampleSchemaInspectReport())
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unknown coverage kind "wibble".*`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*unknown coverage kind "wibble".*`)
 	c.Assert(output.Text, qt.Equals, "")
 }
 

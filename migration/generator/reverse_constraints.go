@@ -212,9 +212,12 @@ func foreignKeyAdditionFromDBConstraint(
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)
 	}
-	if dbFK.ForeignTable != nil {
-		info.ForeignTable = *dbFK.ForeignTable
-	}
+	// Qualified, because the reader keeps the referenced table's schema apart
+	// from its name. A bare name resolves through the connection's
+	// search_path, so without the schema a key into another schema is added
+	// back against a table the server cannot find, or against another table
+	// of the same name (stokaro/ptah#3688).
+	info.ForeignTable = dbFK.QualifiedForeignTableName()
 	if foreignColumns := dbFK.ForeignColumnsOrDefault(); len(foreignColumns) > 0 {
 		foreignColumns = uniqueStringsPreserveOrder(foreignColumns)
 		info.ForeignColumn = foreignColumns[0]

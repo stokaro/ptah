@@ -126,7 +126,7 @@ func TestInspect_FailurePath(t *testing.T) {
 		renderedResult, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{
 			Format: "{{ if }}",
 		})
-		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+		c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 		c.Assert(renderedResult.Rendered, qt.Equals, "")
 	})
 

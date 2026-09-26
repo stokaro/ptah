@@ -349,7 +349,7 @@ func TestWriteMigrateStatusFormat_RejectsInvalidTemplate(t *testing.T) {
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*`)
 	c.Assert(out.String(), qt.Equals, "")
 }
 

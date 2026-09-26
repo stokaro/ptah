@@ -38,6 +38,9 @@ const MaxNesting = 4
 type scanContext struct {
 	tokens []lexer.Token
 	inBody bool
+	// options are the rules the tokens were read by, which say what text a
+	// string token stands for.
+	options lexer.Options
 }
 
 // tokenMatcher reports whether a statement matches one escape construct.
@@ -413,7 +416,7 @@ func scanStatement(statement string, backslashEscapes bool, dialect string, dept
 	if len(tokens) == 0 {
 		return Finding{}, false, nil
 	}
-	ctx := scanContext{tokens: tokens, inBody: depth > 0}
+	ctx := scanContext{tokens: tokens, inBody: depth > 0, options: tokenOptions(backslashEscapes, dialect)}
 	normalized := platform.NormalizeDialect(dialect)
 	for _, rule := range escapeRules {
 		if len(rule.dialects) > 0 && !slices.Contains(rule.dialects, normalized) {
@@ -465,11 +468,11 @@ func codeBearingStrings(ctx scanContext) []string {
 			continue
 		}
 		if routineBody && followsKeyword(ctx.tokens, i, "AS") {
-			nested = append(nested, unquoteStringLiteral(token.Value))
+			nested = append(nested, stringText(token.Value, ctx.options))
 			continue
 		}
 		if followsDynamicExecutor(ctx.tokens, i) {
-			nested = append(nested, unquoteStringLiteral(token.Value))
+			nested = append(nested, stringText(token.Value, ctx.options))
 		}
 	}
 	return nested
@@ -532,6 +535,22 @@ func dollarQuotedBody(value string) (string, bool) {
 	tag := value[:end+2]
 	body := strings.TrimPrefix(value, tag)
 	return strings.TrimSuffix(body, tag), true
+}
+
+// stringText answers the code a string token carries, as the server reads it.
+//
+// It is the lexer's own reading, [lexer.StringValue], under the rules the
+// token was lexed by, so an `E'...'` body is read with its escapes undone. Read
+// as a plain string, `AS E'SELECT pg_read_file(\'/etc/passwd\')'` is the
+// text `E'SELECT ...`, and the call inside it goes unseen
+// (stokaro/ptah#3691). A token that is not a whole literal -- the lexer
+// returns an unterminated one to the end of the statement -- falls back to
+// [unquoteStringLiteral], so its text is still scanned.
+func stringText(value string, options lexer.Options) string {
+	if text, ok := lexer.StringValue(value, options); ok {
+		return text
+	}
+	return unquoteStringLiteral(value)
 }
 
 // unquoteStringLiteral returns the text of a quoted string literal, collapsing
@@ -1040,9 +1059,7 @@ func SignificantTokens(statement string, backslashEscapes bool, dialect string) 
 	// dropped as a comment by a lexer that did not know the rule. Escape mode
 	// is the one field that varies, because it is session state; every other
 	// rule the dialect has is fixed and belongs to dialectlexer.
-	options := dialectlexer.Options(dialect)
-	options.BackslashEscapes = backslashEscapes
-	lexr := lexer.NewLexerWithOptions(statement, options)
+	lexr := lexer.NewLexerWithOptions(statement, tokenOptions(backslashEscapes, dialect))
 	var tokens []lexer.Token
 	for {
 		token := lexr.NextToken()
@@ -1054,6 +1071,14 @@ func SignificantTokens(statement string, backslashEscapes bool, dialect string) 
 		}
 		tokens = append(tokens, token)
 	}
+}
+
+// tokenOptions are the lexer rules a statement is scanned by: the dialect's
+// own, with the escape mode the caller asked for.
+func tokenOptions(backslashEscapes bool, dialect string) lexer.Options {
+	options := dialectlexer.Options(dialect)
+	options.BackslashEscapes = backslashEscapes
+	return options
 }
 
 // foldUnicodeEscapedIdentifiers rewrites the `U&"..."` spelling of an

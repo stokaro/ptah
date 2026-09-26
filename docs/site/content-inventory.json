@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14104,
-      "sourceBytes": 98677
+      "visibleWords": 14208,
+      "sourceBytes": 99254
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -596,8 +596,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12813,
-      "sourceBytes": 93984
+      "visibleWords": 12968,
+      "sourceBytes": 94874
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -708,8 +708,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2314,
-      "sourceBytes": 16562
+      "visibleWords": 2354,
+      "sourceBytes": 16810
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -975,8 +975,8 @@
         "/databases/support-matrix/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1310,
-      "sourceBytes": 9791
+      "visibleWords": 1402,
+      "sourceBytes": 10367
     },
     {
       "path": "docs/site/src/content/docs/databases/mysql.md",
@@ -4290,8 +4290,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14452,
-      "sourceBytes": 100223
+      "visibleWords": 14576,
+      "sourceBytes": 100890
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -4387,7 +4387,7 @@
         "/reference/overview/"
       ],
       "visibleWords": 8989,
-      "sourceBytes": 88817
+      "sourceBytes": 88832
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4675,8 +4675,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 2225,
-      "sourceBytes": 17589
+      "visibleWords": 2240,
+      "sourceBytes": 17670
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",

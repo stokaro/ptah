@@ -149,7 +149,10 @@ Non-database sources require `--dev-url`, mirroring Atlas dev-database
 normalization: the dev database is reset destructively, the source is
 materialized on it (schema files executed, migration directories replayed),
 and the result is introspected. Inspecting a file without `--dev-url` fails
-with Atlas's `--dev-url cannot be empty` message.
+with Atlas's `--dev-url cannot be empty` message, and with Atlas's link to its
+dev-database page when the source is SQL or a migration directory. A
+`--dev-url` made of spaces is a value, and fails as Atlas fails it:
+`sql/sqlclient: missing driver`.
 
 One kind of object is not materialized: a role the dev database's **server**
 already has. The reset empties the dev database, and a role is not in it —
@@ -1100,9 +1103,12 @@ mentions is never planned for removal. An `atlas.hcl` environment's `schemas`
 attribute restricts the universe the same way, and `--schema` outranks all of
 them.
 
-Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
+Use `--tx-mode=file`, the default, to execute the generated plan in one
 transaction, or `--tx-mode=none` to execute statements without transaction
-wrapping. With `--edit`, the planned SQL opens in `$VISUAL` or `$EDITOR`
+wrapping. Those are the two values Atlas accepts here, spelled exactly; any
+other, `all` and an empty value included, is refused with Atlas's
+`unknown tx-mode "<value>"`. A saved plan applied with `--plan` also takes
+`all`, where it refuses a `-- atlas:txmode` directive. With `--edit`, the planned SQL opens in `$VISUAL` or `$EDITOR`
 before the plan is shown and approved, and the edited SQL is what gets
 applied.
 
@@ -1160,7 +1166,9 @@ ptah-compat schema apply --env local --dry-run
 `--dev-url` must match the target database dialect. It is required when
 `--to` is SQL a dev database has to run first — a SQL file, a directory of SQL
 files, a migration directory, or an `env://` reference to one of those — and
-without one the apply is refused before the target is contacted. A database
+without one the apply is refused before the target is contacted, with Atlas's
+`--dev-url cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database`.
+A database
 `--to`, an HCL file or a directory of HCL files needs none, as on Atlas, and
 neither does a YAML schema file: each is already a schema definition.
 `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file or directory with no dev
@@ -1209,9 +1217,13 @@ The lock then covers the authoritative target reinspection, planning,
 simulation, confirmation, and execution. It is released on every exit path,
 including cancellation.
 
-An empty value waits indefinitely. An elapsed timeout fails the apply before
-the locked target reinspection; a strict target-policy refusal happens before
-the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
+It is a duration and defaults to `10s`, as on Atlas. Zero or a negative value
+does not wait: the lock is tried once, and a lock another apply holds fails
+the run at once, which is how Atlas reads the same values. A value that is not
+a duration, an empty one included, is refused by the flag parser with Atlas's
+`invalid argument "…" for "--lock-timeout" flag` sentence. An elapsed timeout
+fails the apply before the locked target reinspection; a strict target-policy
+refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
 database locks.
 

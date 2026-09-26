@@ -11,8 +11,9 @@ import (
 
 // TestRender_LeavesOutATriggerItCannotSpell reports a trigger whose clauses the
 // HCL trigger block has no attribute for, and writes no block for it. Written
-// without the clause, the block would describe a trigger that fires on other
-// rows, or whose function reads transition tables that do not exist.
+// without the clause, the block would describe a trigger that fires on every
+// UPDATE rather than one of named columns, fires on other rows, or whose
+// function reads transition tables that do not exist.
 func TestRender_LeavesOutATriggerItCannotSpell(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -20,8 +21,16 @@ func TestRender_LeavesOutATriggerItCannotSpell(t *testing.T) {
 		want    atlashclrender.Diagnostic
 	}{
 		{
-			name:    "an event list",
-			trigger: schemamodel.Trigger{Event: "INSERT OR UPDATE"},
+			name:    "no event",
+			trigger: schemamodel.Trigger{Event: ""},
+			want: atlashclrender.Diagnostic{
+				Severity: atlashclrender.SeverityWarning, Path: `triggers["t"]["trg"]`,
+				Message: "trigger event cannot be represented in HCL schema output",
+			},
+		},
+		{
+			name:    "an update column list",
+			trigger: schemamodel.Trigger{Event: "INSERT OR UPDATE OF id"},
 			want: atlashclrender.Diagnostic{
 				Severity: atlashclrender.SeverityWarning, Path: `triggers["t"]["trg"]`,
 				Message: "trigger event cannot be represented in HCL schema output",
