@@ -909,6 +909,10 @@ func appendCreateTable(
 	if err := nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform); err != nil {
 		return err
 	}
+	checks := declaredChecks(database, node, fieldsStart, constraintsStart)
+	if err := nameCreatedMySQLFamilyChecks(database, base, tableSchema, checks, sourcePlatform); err != nil {
+		return err
+	}
 	return nameCreatedMySQLForeignKeys(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform)
 }
 
@@ -935,6 +939,9 @@ func declaredOrder(
 	}
 	order := make([]namedElement, 0, len(node.Elements))
 	for _, element := range node.Elements {
+		if element.Column != nil {
+			continue
+		}
 		if element.Index != nil {
 			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
@@ -957,11 +964,13 @@ func declaredOrder(
 func ordersEverything(node *ast.CreateTableNode) bool {
 	indexes, constraints := 0, 0
 	for _, element := range node.Elements {
-		if element.Index != nil {
+		switch {
+		case element.Column != nil:
+		case element.Index != nil:
 			indexes++
-			continue
+		default:
+			constraints++
 		}
-		constraints++
 	}
 	return indexes == len(node.Indexes) && constraints == len(node.Constraints)
 }
@@ -1002,11 +1011,12 @@ func unorderedElements(
 // object base declares is made to base, in place. See [alterTarget].
 func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode, sourcePlatform string) error {
 	target, declared := findAlterTarget(database, base, node.Name, sourcePlatform)
-	statement := newAlterStatement(target)
-	for _, op := range node.Operations {
+	statement := newAlterStatement(target, node.Operations)
+	for i, op := range node.Operations {
 		if !declared {
 			return undeclaredTableError(node.Name, describeAlterOperation(op))
 		}
+		statement.laterDrops = droppedConstraintNames(node.Operations[i+1:], sourcePlatform)
 		target.statement = statement
 		if err := applyAlterOperation(database, base, target, op, sourcePlatform); err != nil {
 			return err
@@ -1183,6 +1193,11 @@ func applyAlterTableAddColumn(
 		return nil
 	}
 	nameAddedColumnCheck(&field, target, append(names, field.Name))
+	if field.Check != "" {
+		if err := nameAddedMySQLFamilyCheck(&field.CheckName, &field, target); err != nil {
+			return err
+		}
+	}
 	database.Fields = append(database.Fields, field)
 	return nil
 }
@@ -1191,13 +1206,14 @@ func applyAlterTableAddColumn(
 // column leaves unnamed the names the declared column carries, where the source
 // dialect derives names for unnamed constraints.
 //
-// The declared column's unnamed constraints were given the names PostgreSQL
-// gives them, and the restatement creates nothing -- the server skips the whole
-// column -- so it has no name of its own to disagree with. Compared as written,
+// The declared column's unnamed constraints were given the names its server
+// gives them -- PostgreSQL's derived names, or on MariaDB the column's own name
+// for its CHECK -- and the restatement creates nothing: the server skips the
+// whole column, so it has no name of its own to disagree with. Compared as written,
 // `ALTER TABLE t ADD COLUMN IF NOT EXISTS a int CHECK (a > 0)` restating `a int
 // CHECK (a > 0)` differs in the name alone and is refused.
 func adoptDerivedConstraintNames(restated *schemamodel.Field, existing schemamodel.Field, target alterTarget) {
-	if !namesConstraintsLikePostgres(target.sourcePlatform) {
+	if !namesConstraintsLikePostgres(target.sourcePlatform) && !namesColumnChecksAfterColumns(target.sourcePlatform) {
 		return
 	}
 	if restated.CheckName == "" {

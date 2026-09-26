@@ -155,11 +155,11 @@ func TestReadOnto_PostgresUnnamedCheckNames_ClaimsEarlierFiles(t *testing.T) {
 }
 
 // TestRead_UnnamedCheckStaysUnnamedOutsidePostgres keeps the rule to the engine
-// it was measured on. MySQL names an unnamed CHECK `<table>_chk_<n>` and SQLite
-// keeps no name; neither is modeled, so a document read for either keeps the
-// CHECK unnamed.
+// it was measured on. SQLite keeps no name for an unnamed CHECK, so a document
+// read for it keeps the CHECK unnamed. MySQL and MariaDB have rules of their
+// own, in mysql_check_names_test.go.
 func TestRead_UnnamedCheckStaysUnnamedOutsidePostgres(t *testing.T) {
-	for _, dialect := range []string{"mysql", "sqlite"} {
+	for _, dialect := range []string{"sqlite"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

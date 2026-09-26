@@ -1,6 +1,6 @@
-// Package mysqlname derives the names MySQL and MariaDB give a foreign key a
-// statement leaves unnamed, `<table>_ibfk_<n>`, and recognizes the name of the
-// index the server builds for one.
+// Package mysqlname derives the names MySQL and MariaDB give a foreign key or
+// a CHECK a statement leaves unnamed, and recognizes the name of the index the
+// server builds for a foreign key.
 //
 // Three parts of Ptah need the same answer. The SQL parser reads which object
 // the name written inside a FOREIGN KEY clause names. The SQL schema reader
@@ -22,6 +22,9 @@
 // rather than to the database. A schema file does not say which line it is for,
 // so the reader derives the first name, and the comparison accepts the second
 // for the same key; see [IsNumberedForeignKeyName].
+//
+// The CHECK rules were measured on MySQL 8.4.11 and 26.7.0 and on MariaDB
+// 11.8.9; see [Check] and [MariaDBCheck].
 package mysqlname
 
 import (

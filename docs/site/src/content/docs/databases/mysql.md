@@ -143,12 +143,27 @@ SQL:
   definition. A document whose older name would collide, or would pass 64
   characters, is refused on every line, including the lines that accept it
   ([stokaro/ptah#3762](https://github.com/stokaro/ptah/issues/3762)).
+- A `CHECK` the author did not name is read with the name its server gives
+  it. MySQL names it `<table>_chk_<n>`: in `CREATE TABLE` the unnamed checks
+  are numbered from 1 in the order they are written, on a column or on the
+  table, and a named check does not move the count. A check that
+  `ALTER TABLE` adds takes one more than the highest `<table>_chk_<n>` the
+  table holds once the statement's drops are made; a check the statement adds
+  under a name does not count. A derived name that another check of the
+  database already holds is refused, because MySQL refuses it with
+  `ERROR 3822`, and so is a name past 64 characters, which MySQL refuses with
+  `ERROR 1059`. MariaDB names a check written on a column after the column,
+  and one written on the table `CONSTRAINT_<n>`, with the smallest number no
+  check of the table holds, the names the same statement writes included.
+  MariaDB takes one check on a column and answers `ERROR 1064` to a second,
+  and Ptah refuses it the same way.
 - Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
   `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
   `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as
   the same clause written without the keyword, which is how the server builds
-  it: it takes the name that clause takes, and an unnamed foreign key counts in
-  the same `<table>_ibfk_<n>` sequence as the other unnamed keys of its table.
+  it: it takes the name that clause takes, so an unnamed foreign key counts in
+  the same `<table>_ibfk_<n>` sequence as the other unnamed keys of its table,
+  and an unnamed `CHECK` in the same sequence as the table's other checks.
   The server answers `ERROR 1064` to every other symbol-less spelling and to a
   `CONSTRAINT` in front of `KEY`, `INDEX`, `FULLTEXT` or `SPATIAL`, with a name
   or without one, and Ptah refuses each of them by name.

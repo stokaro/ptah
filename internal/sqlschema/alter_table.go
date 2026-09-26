@@ -48,16 +48,35 @@ type alterStatement struct {
 	// nextForeignKey is the number the next unnamed foreign key of the
 	// statement takes, on an engine [mysqlname.NamesForeignKeys] speaks for.
 	nextForeignKey int
+	// nextCheck is the number the next unnamed CHECK of the statement takes
+	// on MySQL. MySQL counts the CHECKs the table holds once the statement's
+	// drops are made, and not the ones the statement adds under a name:
+	// measured on 8.4.11 and 26.7.0, `ALTER TABLE s1 ADD CONSTRAINT s1_chk_5
+	// CHECK (...), ADD CHECK (...)` names the second `s1_chk_1`, and `ALTER TABLE
+	// s2 DROP CHECK s2_chk_3, ADD CHECK (...)` names it `s2_chk_1`.
+	nextCheck uint32
+	// checkNames are the CHECK names MariaDB's `CONSTRAINT_<n>` must avoid:
+	// the table's once the statement's drops are made, and every name the
+	// statement writes, before an unnamed CHECK or after it. Measured on
+	// 11.8.9, `ALTER TABLE s1 ADD CHECK (...), ADD CONSTRAINT CONSTRAINT_1
+	// CHECK (...)` names the first `CONSTRAINT_2`.
+	checkNames []string
+	// laterDrops are the constraint names the operations after the current
+	// one drop. See [refuseCheckNameDroppedLater].
+	laterDrops []string
 }
 
 // newAlterStatement reads what the statement's operations share from the
 // table before the first of them runs.
-func newAlterStatement(target alterTarget) *alterStatement {
-	statement := &alterStatement{nextForeignKey: 1}
+func newAlterStatement(target alterTarget, operations []ast.AlterOperation) *alterStatement {
+	statement := &alterStatement{nextForeignKey: 1, nextCheck: 1}
 	if target.table == nil {
 		return statement
 	}
 	statement.nextForeignKey = mysqlname.NextForeignKeyNumber(target.table.Name, target.foreignKeyNames())
+	held := remainingCheckNames(tableCheckNames(target.databases, *target.table), operations, target.sourcePlatform)
+	statement.nextCheck = mysqlname.NextCheckNumber(target.table.Name, held)
+	statement.checkNames = slices.Concat(held, addedCheckNames(operations, target.sourcePlatform))
 	return statement
 }
 

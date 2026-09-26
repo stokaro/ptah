@@ -357,6 +357,11 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 			return nameAddedMySQLUnique(constraint, target)
 		}
 	}
+	if isCheck(*constraint) {
+		if err := nameAddedMySQLFamilyCheck(&constraint.Name, nil, target); err != nil {
+			return err
+		}
+	}
 	if !namesConstraintsLikePostgres(target.sourcePlatform) {
 		return nil
 	}

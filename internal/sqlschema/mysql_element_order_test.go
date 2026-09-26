@@ -250,9 +250,10 @@ func TestToDatabase_AForeignKeyNoKeyCoversClaimsItsOwnName_FailurePath(t *testin
 // came first, and the conversion has to name it anyway -- constraints before
 // indexes, which is the order every reader saw before the recorded one existed.
 //
-// The empty Elements is asserted rather than assumed: it is the premise of the
-// whole test, and a node that quietly started recording an order would turn
-// this into a test of the other branch without failing.
+// Elements holding the columns alone is asserted rather than assumed: it is
+// the premise of the whole test, and a node that quietly started recording the
+// constraints and indexes too would turn this into a test of the other branch
+// without failing.
 //
 // The unique constraint and the two indexes all derive from the same column, so
 // the assertion distinguishes the fallback from its alternative: naming the
@@ -268,7 +269,7 @@ func TestToDatabase_ATableWithNoRecordedOrderIsNamedConstraintsThenIndexes(t *te
 		ast.NewIndex("", "u", "a"),
 		ast.NewIndex("", "u", "a", "b"),
 	}
-	c.Assert(table.Elements, qt.HasLen, 0)
+	c.Assert(table.Elements, qt.DeepEquals, []ast.TableElement{{Column: table.Columns[0]}, {Column: table.Columns[1]}})
 
 	database, err := sqlschema.ToDatabase(
 		&ast.StatementList{Statements: []ast.Node{table}}, platform.MySQL)
@@ -303,8 +304,8 @@ func TestToDatabase_ABuilderBuiltTableStillNamesItsUniqueConstraint(t *testing.T
 		Unique("", "a").
 		Build()
 
-	c.Assert(table.Elements, qt.HasLen, 1)
-	c.Assert(table.Elements[0].Constraint, qt.Equals, table.Constraints[0])
+	c.Assert(table.Elements, qt.HasLen, 3)
+	c.Assert(table.Elements[2].Constraint, qt.Equals, table.Constraints[0])
 
 	database, err := sqlschema.ToDatabase(
 		&ast.StatementList{Statements: []ast.Node{table}}, platform.MySQL)
