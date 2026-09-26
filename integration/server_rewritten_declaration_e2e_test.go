@@ -109,6 +109,18 @@ CREATE TABLE ex3 (t text, EXCLUDE USING btree (lower(t) WITH =));
 CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&));`,
 	},
 	{
+		// PostgreSQL 18.6 prints these back as WHERE ((s > 0)), lower(t) WITH
+		// =, WHERE ((n >= (0)::numeric)) and WHERE (((t)::text <> 'x'::text))
+		// (stokaro/ptah#3767).
+		name: "EXCLUDE elements and predicates the server rewrites",
+		sql: `CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE TABLE ex4 (r int, s int, CONSTRAINT ex4_named EXCLUDE USING gist (r WITH =) WHERE (s > 0));
+CREATE TABLE ex6 (t text, CONSTRAINT ex6_named EXCLUDE USING btree ((lower(t)) WITH =));
+CREATE TABLE ex7 (r int, s int, EXCLUDE USING GIST (r WITH =, s WITH <>) WHERE (s > 0 AND r IS NOT NULL));
+CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (n >= 0));
+CREATE TABLE ex9 (t varchar(10), EXCLUDE USING btree (t WITH =) WHERE (t <> 'x'));`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -142,6 +154,14 @@ var serverRewrittenControls = []struct {
 		migration:  `CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&));`,
 		schema:     `CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH -|-));`,
 		wantInPlan: "-|-",
+	},
+	{
+		name: "an EXCLUDE predicate bound moves",
+		migration: `CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (n >= 0));`,
+		schema: `CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (n >= 1));`,
+		wantInPlan: "n >= 1",
 	},
 	{
 		name: "a policy names another setting",

@@ -92,13 +92,7 @@ func TestParseExcludeConstraintDefinition(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			// Create a reader instance to access the method
-			reader := &postgres.Reader{}
-
-			// Use reflection to access the private method for testing
-			// In a real implementation, you might want to make this method public for testing
-			// or create a separate parsing package
-			parsed, err := reader.ParseExcludeConstraintDefinition(tt.definition)
+			parsed, err := postgres.ParseExcludeConstraintDefinition(tt.definition)
 
 			if tt.expectError {
 				c.Assert(err, qt.IsNotNil)

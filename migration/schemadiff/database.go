@@ -95,6 +95,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
+	excludes, err := resolveExcludeExpressions(ctx, conn, desired, database, semantics)
+	if err != nil {
+		return nil, nil, err
+	}
 	columns, err := resolveColumnSpellings(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, nil, err
@@ -117,6 +121,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		checks:     checks,
 		policies:   policies,
 		indexes:    indexes,
+		excludes:   excludes,
 		columns:    columns,
 		triggers:   triggers,
 		arguments:  arguments,
@@ -135,6 +140,7 @@ type resolvedExpressions struct {
 	checks     map[string]config.CheckExpression
 	policies   map[string]config.PolicyExpression
 	indexes    map[string]config.IndexExpression
+	excludes   map[string]config.ExcludeExpression
 	columns    map[string]config.ColumnSpelling
 	triggers   map[string]config.TriggerCondition
 	arguments  map[string]config.RoutineArguments
@@ -144,7 +150,7 @@ type resolvedExpressions struct {
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
-		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.columns) == 0 &&
+		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.excludes) == 0 && len(r.columns) == 0 &&
 		len(r.triggers) == 0 && len(r.arguments) == 0
 }
 
@@ -178,6 +184,9 @@ func withResolvedExpressions(
 	}
 	if len(resolved.indexes) > 0 {
 		merged.IndexExpressions = resolved.indexes
+	}
+	if len(resolved.excludes) > 0 {
+		merged.ExcludeExpressions = resolved.excludes
 	}
 	if len(resolved.columns) > 0 {
 		merged.ColumnSpellings = resolved.columns
@@ -597,6 +606,59 @@ func resolvePolicyExpressions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return policies, nil
+}
+
+// resolveExcludeExpressions normalizes the elements and WHERE clause of every
+// declared EXCLUDE constraint the database holds under the same name.
+//
+// Only those: a constraint the plan adds is created from its declaration, and
+// one the database lacks has nothing to be compared with.
+func resolveExcludeExpressions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) (map[string]config.ExcludeExpression, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if strings.EqualFold(constraint.Type, "EXCLUDE") {
+			held[exprkey.ExcludeParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)] = struct{}{}
+		}
+	}
+	columns := liveTableColumns(database, semantics)
+
+	var probes []dbexprprobe.ExcludeExpressionProbe
+	for _, constraint := range compare.ComparedExcludeConstraints(desired, semantics) {
+		key := exprkey.Exclude(semantics, constraint.Table, constraint.Name)
+		if _, exists := held[key]; !exists {
+			continue
+		}
+		live, known := columns[exprkey.Table(semantics, constraint.Table)]
+		if !known {
+			continue
+		}
+		probes = append(probes, dbexprprobe.ExcludeExpressionProbe{
+			Key:         key,
+			Table:       live.name,
+			Columns:     live.columns,
+			UsingMethod: constraint.UsingMethod,
+			Elements:    constraint.ExcludeElements,
+			Where:       constraint.WhereCondition,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	excludes, err := dbexprprobe.ResolveExcludeExpressions(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return excludes, nil
 }
 
 // resolveIndexExpressions normalizes the declared expression and predicate of

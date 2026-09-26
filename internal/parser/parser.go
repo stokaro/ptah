@@ -4781,9 +4781,14 @@ func (p *Parser) parseExcludeWhereCondition() (string, error) {
 		return "", fmt.Errorf("expected '(' after WHERE: %w", err)
 	}
 
-	// Parse WHERE condition until closing parenthesis
+	// Parse WHERE condition until closing parenthesis. The lexer reads an
+	// operator one character at a time, so the condition keeps the spacing it
+	// was written with -- a run of whitespace read as one space -- rather than
+	// a space between every two tokens, which would turn `n >= 0` into
+	// `n > = 0`, a condition PostgreSQL refuses.
 	var condition strings.Builder
 	parenCount := 1
+	lastWasSpace := false
 	for parenCount > 0 && !p.isAtEnd() {
 		if p.current.Type == lexer.TokenOperator {
 			switch p.current.Value {
@@ -4794,12 +4799,13 @@ func (p *Parser) parseExcludeWhereCondition() (string, error) {
 			}
 		}
 		if parenCount > 0 {
-			// Skip whitespace tokens but preserve structure
-			if p.current.Type != lexer.TokenWhitespace {
-				if condition.Len() > 0 {
-					condition.WriteString(" ")
-				}
+			switch {
+			case p.current.Type != lexer.TokenWhitespace:
 				condition.WriteString(p.current.Value)
+				lastWasSpace = false
+			case !lastWasSpace && condition.Len() > 0:
+				condition.WriteString(" ")
+				lastWasSpace = true
 			}
 		}
 		p.advance()

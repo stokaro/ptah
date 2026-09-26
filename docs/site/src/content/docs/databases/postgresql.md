@@ -85,9 +85,9 @@ its own read-back rarely match as text:
 | routine argument `c numeric(10,2) = 1.5` | `c numeric DEFAULT 1.5` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
-column type and default, CHECK, policy clause, index expression and predicate,
-trigger WHEN condition, domain, and routine argument list the way its catalog
-does. It creates a temporary object inside a transaction that is rolled back,
+column type and default, CHECK, `EXCLUDE` element list and predicate, policy
+clause, index expression and predicate, trigger WHEN condition, domain, and
+routine argument list the way its catalog does. It creates a temporary object inside a transaction that is rolled back,
 reads the stored form, and compares like with like. A column is asked only when
 its default is declared or its type is not written the way the catalog reports
 it. A routine is asked only when it takes arguments and the database holds a
@@ -185,10 +185,14 @@ is, past tables, views, sequences and indexes as well. Measured on PostgreSQL
 | `EXCLUDE USING btree ((r + 1) WITH =)` on `f` | `f_expr_excl` |
 | `EXCLUDE USING gist (r WITH =, r WITH <>)` on `h` | `h_r_r1_excl` |
 
-An `EXCLUDE` is compared by its name and then by its text. An element or a
-`WHERE` clause the server prints with other parentheses, such as `(lower(t))`
-or `WHERE (s > 0)`, is still planned again
-([#3767](https://github.com/stokaro/ptah/issues/3767)).
+An `EXCLUDE` is paired by its name and compared by its access method, written
+in any case, its elements and its `WHERE` clause. The server prints the
+elements and the clause back its own way: `(lower(t)) WITH =` as
+`lower(t) WITH =`, `WHERE (s > 0)` as `WHERE ((s > 0))`, and `WHERE (n >= 0)`
+over a numeric column as `WHERE ((n >= (0)::numeric))`. With a connection the
+declaration is spelled by the server first, as
+[How a declaration is compared with what the server stored](#how-a-declaration-is-compared-with-what-the-server-stored)
+describes; without one the texts are compared as written.
 
 A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
 column of the table, and `<table>_check` when it names none or more than one.
