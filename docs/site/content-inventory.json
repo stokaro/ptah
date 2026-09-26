@@ -975,8 +975,8 @@
         "/databases/support-matrix/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1310,
-      "sourceBytes": 9791
+      "visibleWords": 1402,
+      "sourceBytes": 10367
     },
     {
       "path": "docs/site/src/content/docs/databases/mysql.md",

@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/serverobjects"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -199,6 +200,13 @@ func ExtensionsWithSemantics(
 			continue
 		}
 		if needed[extensionName] {
+			continue
+		}
+		// An extension the server installs in every database is the
+		// server's, whatever the ignore list says. Only the removal is
+		// withheld: where a line of the server lacks the extension, a
+		// declaration of it is still created (stokaro/ptah#3687).
+		if serverobjects.IsExtension(opts.Dialect, extensionName) {
 			continue
 		}
 		diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionFromCatalog(databaseExtension))
