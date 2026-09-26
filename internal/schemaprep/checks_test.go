@@ -46,8 +46,9 @@ func columnCheckFields() []schemamodel.Field {
 // PostgreSQL names were read back from pg_constraint on PostgreSQL 18.6 after
 // `CREATE TABLE e (a INTEGER CHECK (a IS NULL OR b IS NOT NULL), b INTEGER
 // CHECK (b IS NULL OR a IS NOT NULL), c INTEGER CHECK (c > 0), ...)`, which is
-// the table the renderer writes for these fields (stokaro/ptah#3750). Every
-// other target keeps `<table>_<column>_check`.
+// the table the renderer writes for these fields (stokaro/ptah#3750). A target
+// that names an unnamed CHECK by no measured rule keeps
+// `<table>_<column>_check`.
 func TestColumnCheckNames(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -58,7 +59,7 @@ func TestColumnCheckNames(t *testing.T) {
 			want:    map[string]string{"a": "e_check", "b": "e_check1", "c": "e_c_check", "d": "e_d_positive"},
 		},
 		{
-			dialect: "mysql",
+			dialect: "sqlite",
 			want:    map[string]string{"a": "e_a_check", "b": "e_b_check", "c": "e_c_check", "d": "e_d_positive"},
 		},
 	}
@@ -68,6 +69,46 @@ func TestColumnCheckNames(t *testing.T) {
 			table := schemamodel.Table{StructName: "E", Name: "e"}
 
 			got := schemaprep.ColumnCheckNames(table, columnCheckFields(), nil, test.dialect)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestColumnCheckNames_MySQLFamily names the CHECKs of columns a, b and d,
+// none named, beside c's named one. Measured on MySQL 8.4.11, the table the
+// renderer writes holds `e_chk_1`, `e_chk_2` and `e_chk_3`: the numbers follow
+// the columns and the named CHECK does not take one. Measured on MariaDB
+// 11.8.9, it holds `a`, `b` and `d`, each CHECK under its column's name
+// (stokaro/ptah#3792).
+func TestColumnCheckNames_MySQLFamily(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    map[string]string
+	}{
+		{
+			dialect: "mysql",
+			want:    map[string]string{"a": "e_chk_1", "b": "e_chk_2", "c": "e_c_positive", "d": "e_chk_3"},
+		},
+		{
+			dialect: "mariadb",
+			want:    map[string]string{"a": "a", "b": "b", "c": "e_c_positive", "d": "d"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			table := schemamodel.Table{StructName: "E", Name: "e"}
+			fields := []schemamodel.Field{
+				{StructName: "E", Name: "id", Type: "INT", Primary: true},
+				{StructName: "E", Name: "a", Type: "INT", Check: "a > 0"},
+				{StructName: "E", Name: "b", Type: "INT", Check: "b > 0"},
+				{StructName: "E", Name: "c", Type: "INT", Check: "c > 0", CheckName: "e_c_positive"},
+				{StructName: "E", Name: "d", Type: "INT", Check: "d > 0"},
+				{StructName: "E", Name: "n", Type: "INT"},
+			}
+
+			got := schemaprep.ColumnCheckNames(table, fields, nil, test.dialect)
 
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -108,8 +149,8 @@ func TestColumnCheckNames_DeclaredNameIsTaken(t *testing.T) {
 // the name a column's CHECK takes. PostgreSQL creates the column's CHECK first,
 // as `f_check` for `c > a`, and an entry named `f_check` beside it is refused
 // with `check constraint "f_check" already exists`; measured on 18.6, the
-// entry named `f_check1` is accepted. MySQL takes `<table>_chk_<n>`, which no
-// entry name collides with.
+// entry named `f_check1` is accepted. MySQL numbers a column's CHECK
+// `<table>_chk_<n>`, a name no entry takes, so the entry keeps `f_check`.
 func TestTableCheckConstraints_NumberedPastColumnChecks(t *testing.T) {
 	tests := []struct {
 		dialect string

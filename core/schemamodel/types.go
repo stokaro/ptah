@@ -294,10 +294,11 @@ type Field struct {
 	Enum      []string // Enum values for ENUM type fields
 	Check     string   // Check constraint expression
 	// CheckName is an optional constraint name for the column-level CHECK.
-	// Left empty, the CHECK is rendered unnamed, and a comparison against
-	// PostgreSQL expects the name the server gives it: `<table>_<column>_check`
-	// when the condition names exactly one column, `<table>_check` otherwise.
-	// Other targets expect `<table>_<column>_check`.
+	// Left empty, the CHECK is rendered unnamed, and a comparison expects the
+	// name the server gives it: on PostgreSQL `<table>_<column>_check` when
+	// the condition names exactly one column and `<table>_check` otherwise, on
+	// MySQL `<table>_chk_<n>` in column order, on MariaDB the column's own
+	// name. Other targets expect `<table>_<column>_check`.
 	CheckName string
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
