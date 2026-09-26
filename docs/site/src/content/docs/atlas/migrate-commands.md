@@ -1838,6 +1838,11 @@ does, where Atlas CE copies it and runs all of it:
   in a warning on stderr; a numbered file holding one is refused, since a copy
   cannot leave it out.
 - An `--ignoreLines` directive and the lines it skips are left out.
+- A changeset's rollback, as `--rollback` lines or a `/* liquibase rollback`
+  block, is left out, since an Atlas migration is up-only, and a numbered file
+  that held one is named in the warning about dropped rollbacks. The block ends
+  at the first line that ends in `*/`, as Liquibase ends it, which is not always
+  where a SQL comment ends.
 - A property reference such as `${tbl}` refuses the conversion, since Liquibase
   fills it in from the environment it ran in.
 

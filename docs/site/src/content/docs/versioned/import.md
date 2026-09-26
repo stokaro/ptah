@@ -185,6 +185,11 @@ it:
 - A changeset with `ignore="true"`, which Liquibase never runs, is left out and
   named on standard error, and so are the lines an `--ignoreLines` directive
   skips in formatted SQL.
+- A formatted-SQL rollback becomes the down migration whether it is written as
+  `--rollback` lines or as a `/* liquibase rollback` block, joined as Liquibase
+  joins it. `--rollback empty` and `--rollback not required` become a down
+  migration that runs nothing. A block whose lines Liquibase runs together into
+  other SQL is refused by name.
 - `dbms` converts once `--liquibase-dbms` names the database the history ran
   on, in Liquibase's spelling (`postgresql`, `mysql`). The import keeps the
   changesets and changes whose `dbms` selects it, and names the rest on

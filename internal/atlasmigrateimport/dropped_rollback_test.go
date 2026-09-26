@@ -96,6 +96,17 @@ func TestImport_NamesTheRollbacksItCannotCarry(t *testing.T) {
 			},
 			want: []string{"20260101000000_create_users.sql"},
 		},
+		{
+			name:   "liquibase keeps it in a rollback block",
+			format: "liquibase",
+			files: map[string]string{
+				"20260101000000_create_users.sql": "--liquibase formatted sql\n" +
+					"--changeset a:1\n" +
+					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
+					"/* liquibase rollback\nDROP TABLE users;\n*/\n",
+			},
+			want: []string{"20260101000000_create_users.sql"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,6 +149,25 @@ func TestImport_ReportsNothingWhenNoRollbackWasWritten(t *testing.T) {
 			format: "golang-migrate",
 			files: map[string]string{
 				"1_create_users.up.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+			},
+		},
+		{
+			// Liquibase rolls such a changeset back by running nothing.
+			name:   "liquibase with a rollback that is not required",
+			format: "liquibase",
+			files: map[string]string{
+				"20260101000000_create_users.sql": "--liquibase formatted sql\n--changeset a:1\n" +
+					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n--rollback not required\n",
+			},
+		},
+		{
+			// A comment to Liquibase, which reads no rollback without the
+			// blank after the keyword.
+			name:   "liquibase with rollback and no blank after it",
+			format: "liquibase",
+			files: map[string]string{
+				"20260101000000_create_users.sql": "--liquibase formatted sql\n--changeset a:1\n" +
+					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n--rollback;\n",
 			},
 		},
 	}
