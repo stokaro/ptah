@@ -1,13 +1,28 @@
 package sqlschema
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
 )
+
+// ErrDuplicateForeignKeyName is the class of a foreign key MySQL would name
+// after another one already holds the name.
+//
+// The server does not move a derived name out of the way. Measured on MySQL
+// 8.4.11, an unnamed key of `c5` beside an explicit `c5_ibfk_1`, on the same
+// table or on another table of the database, and in either case of spelling,
+// is `ERROR 1826 (HY000): Duplicate foreign key constraint name`. A model
+// holding both keys under one name would lose one of them to the deduplication
+// in schemamodel.Finalize without a word, so the document is refused, as the
+// server refuses it.
+var ErrDuplicateForeignKeyName = errors.New("two foreign keys claim the same name")
 
 // The labels PostgreSQL ends a derived constraint name with.
 const (
@@ -20,8 +35,9 @@ const (
 //
 // PostgreSQL alone: every rule here was measured on PostgreSQL 18.6. The other
 // engines name an unnamed constraint differently or not in a way anyone
-// measured here -- MySQL writes `<table>_ibfk_<n>` for a foreign key, SQLite
-// keeps no name -- and they keep the name the rest of Ptah derives.
+// measured here -- SQLite keeps no name -- and they keep the name the rest of
+// Ptah derives. MySQL's foreign keys have a rule of their own; see
+// [namesForeignKeysLikeMySQL].
 func namesConstraintsLikePostgres(sourcePlatform string) bool {
 	return platform.NormalizeDialect(sourcePlatform) == platform.Postgres
 }
@@ -88,13 +104,128 @@ func nameCreatedConstraints(
 	}
 }
 
+// namesForeignKeysLikeMySQL reports whether an unnamed FOREIGN KEY read from a
+// source of this dialect takes the name MySQL gives it.
+//
+// MySQL alone: [mysqlname] holds the rule and what it was measured on.
+// MariaDB was not measured, and keeps the name the rest of Ptah derives.
+func namesForeignKeysLikeMySQL(sourcePlatform string) bool {
+	return platform.NormalizeDialect(sourcePlatform) == platform.MySQL
+}
+
+// nameCreatedMySQLForeignKeys gives every unnamed foreign key one CREATE TABLE
+// declared the name MySQL gives it, `<table>_ibfk_<n>`, numbered from 1 in the
+// order the statement writes the unnamed keys.
+//
+// The name has to be decided on the desired model, for the reason
+// [nameCreatedConstraints] gives: the other side of a comparison is a catalog,
+// which holds the name the server chose. Left to Ptah's `fk_<table>_<column>`,
+// a schema file compared with the database its own SQL built plans to add the
+// key again under that name and drop the server's (stokaro/ptah#3725).
+//
+// A named key does not move the count, and a derived name is not moved out of
+// the way of a named one: the server answers a collision with an error, and so
+// does this; see [ErrDuplicateForeignKeyName].
+//
+// It runs after [nameMySQLInlineIndexes], which reads an empty name as a key
+// the author left unnamed: the index the server builds for such a key is named
+// after its column, not after the constraint.
+func nameCreatedMySQLForeignKeys(
+	database, base *schemamodel.Database, table schemamodel.Table, constraintsStart int, sourcePlatform string,
+) error {
+	if !namesForeignKeysLikeMySQL(sourcePlatform) {
+		return nil
+	}
+	databases := []*schemamodel.Database{database, base}
+	next := 1
+	for i := constraintsStart; i < len(database.Constraints); i++ {
+		constraint := &database.Constraints[i]
+		if !isForeignKey(*constraint) || constraint.Name != "" {
+			continue
+		}
+		name := mysqlname.ForeignKey(table.Name, next)
+		if err := refuseHeldForeignKeyName(databases, table.Schema, name, table.Name); err != nil {
+			return err
+		}
+		constraint.Name = name
+		next++
+	}
+	return nil
+}
+
+// nameAddedMySQLForeignKey names an unnamed foreign key an ALTER TABLE adds:
+// one more than the highest `<table>_ibfk_<n>` among the keys the table holds
+// at that point of the document, in this file and in the earlier ones.
+func nameAddedMySQLForeignKey(constraint *schemamodel.Constraint, target alterTarget) error {
+	table := target.table
+	if table == nil {
+		return nil
+	}
+	highest := 0
+	for _, database := range target.databases {
+		if database == nil {
+			continue
+		}
+		for _, held := range database.Constraints {
+			if !isForeignKey(held) || held.Table != target.qualified {
+				continue
+			}
+			if n, ok := mysqlname.ForeignKeyNumber(table.Name, held.Name); ok && n > highest {
+				highest = n
+			}
+		}
+	}
+	name := mysqlname.ForeignKey(table.Name, highest+1)
+	if err := refuseHeldForeignKeyName(target.databases, table.Schema, name, table.Name); err != nil {
+		return err
+	}
+	constraint.Name = name
+	return nil
+}
+
+// refuseHeldForeignKeyName refuses a derived name another foreign key of the
+// same database already holds, compared without case as the server compares
+// it. Every key of the schema counts, because a MySQL database is one
+// namespace for foreign key names.
+func refuseHeldForeignKeyName(databases []*schemamodel.Database, schema, name, table string) error {
+	for _, database := range databases {
+		if database == nil {
+			continue
+		}
+		for _, held := range database.Constraints {
+			if !isForeignKey(held) || !strings.EqualFold(held.Name, name) {
+				continue
+			}
+			if heldSchema, _ := splitQualifiedTable(held.Table); heldSchema != schema {
+				continue
+			}
+			return fmt.Errorf("%w: %s, the name MySQL gives an unnamed foreign key of %s, "+
+				"is held by another foreign key, and MySQL answers ERROR 1826",
+				ErrDuplicateForeignKeyName, held.Name, table)
+		}
+	}
+	return nil
+}
+
+// isForeignKey reports whether a constraint of the model is a foreign key.
+func isForeignKey(constraint schemamodel.Constraint) bool {
+	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
+}
+
 // nameAddedConstraint names an unnamed UNIQUE or FOREIGN KEY an ALTER TABLE
 // adds, by the rule [nameCreatedConstraints] follows, against every name the
 // schema already holds -- in this file and in the earlier ones the document
-// read.
-func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget) {
-	if !namesConstraintsLikePostgres(target.sourcePlatform) || constraint.Name != "" {
-		return
+// read. An unnamed foreign key read for MySQL takes MySQL's name instead; see
+// [nameAddedMySQLForeignKey].
+func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget) error {
+	if constraint.Name != "" {
+		return nil
+	}
+	if namesForeignKeysLikeMySQL(target.sourcePlatform) && isForeignKey(*constraint) {
+		return nameAddedMySQLForeignKey(constraint, target)
+	}
+	if !namesConstraintsLikePostgres(target.sourcePlatform) {
+		return nil
 	}
 	schema, table := splitQualifiedTable(target.qualified)
 	constraints := constraintNamesInSchema(target.databases, schema)
@@ -105,6 +236,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 	case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
 		constraint.Name = claimDerivedName(table, constraint.Columns, foreignKeyLabel, constraints)
 	}
+	return nil
 }
 
 // claimDerivedName derives the first name none of the sets holds and claims it

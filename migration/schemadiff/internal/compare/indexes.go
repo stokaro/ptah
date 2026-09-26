@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -333,7 +334,7 @@ func mysqlForeignKeyBackingIndexes(
 	table := constraint.QualifiedTableName()
 	var refs []difftypes.IndexRef
 	for _, index := range database.Indexes {
-		if !identifiersEqual(semantics, index.Name, constraint.Name) {
+		if !mysqlEngineCouldNameIndex(index, constraint, columns[0], semantics, dialect) {
 			continue
 		}
 		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
@@ -348,6 +349,40 @@ func mysqlForeignKeyBackingIndexes(
 		}))
 	}
 	return refs
+}
+
+// mysqlEngineCouldNameIndex is the NAME signal of
+// [mysqlForeignKeyBackingIndexes]: whether the engine could have given the
+// index this name when it built one for the key.
+//
+// A key with a name gets an index under the key's name, on both engines. A key
+// written without one is named `<table>_ibfk_<n>` by MySQL, and its index is
+// named after the key's first column instead, `_2` and on when that is taken:
+// measured on MySQL 8.4.11, `FOREIGN KEY (p_id) REFERENCES p(id)` holds
+// `c_ibfk_1` over an index called `p_id`. Without the second shape the index
+// reads as one nobody declared, and a schema file compared with the database
+// it built plans `DROP INDEX p_id`, which the server refuses while the key
+// needs it (stokaro/ptah#3725). The constraint's name is what keeps a
+// column-named index of the author's out: a key whose name the engine could
+// not have chosen was written with one, and its index carries that name.
+//
+// MariaDB was not measured, so it keeps the first shape alone.
+func mysqlEngineCouldNameIndex(
+	index catalog.Index,
+	constraint catalog.Constraint,
+	firstColumn string,
+	semantics identifier.Semantics,
+	dialect string,
+) bool {
+	if identifiersEqual(semantics, index.Name, constraint.Name) {
+		return true
+	}
+	if dialect != platform.MySQL || !mysqlname.IsForeignKeyName(constraint.TableName, constraint.Name) {
+		return false
+	}
+	return mysqlname.IsUnnamedKeyIndexName(firstColumn, index.Name, func(a, b string) bool {
+		return identifiersEqual(semantics, a, b)
+	})
 }
 
 // mysqlAnotherIndexCoversForeignKey reports whether some index other than the

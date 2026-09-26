@@ -1015,10 +1015,11 @@
       ],
       "inboundLinks": [
         "/databases/overview/",
+        "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2612,
-      "sourceBytes": 16257
+      "visibleWords": 2753,
+      "sourceBytes": 17044
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1144,6 +1145,7 @@
         "/concepts/dialects-and-capabilities/",
         "/databases/clickhouse/",
         "/databases/distributed/",
+        "/databases/mysql/",
         "/extend/components/",
         "/reference/configuration/",
         "/reference/go-annotations/",
@@ -1164,8 +1166,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10460,
-      "sourceBytes": 70316
+      "visibleWords": 10474,
+      "sourceBytes": 70420
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",

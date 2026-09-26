@@ -906,7 +906,10 @@ func appendCreateTable(
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
 	// them onto one empty key.
-	return nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform)
+	if err := nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform); err != nil {
+		return err
+	}
+	return nameCreatedMySQLForeignKeys(database, base, tableSchema, constraintsStart, sourcePlatform)
 }
 
 // declaredOrder appends this table's indexes and constraints to the model and
@@ -1079,10 +1082,13 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 		return applyAlterTablePrimaryKey(target, operation.Constraint, target.sourcePlatform)
 	}
 	constraintSchema, ok := ToConstraint(operation.Constraint, target.structName, target.qualified, target.sourcePlatform)
-	if ok {
-		nameAddedConstraint(&constraintSchema, target)
-		database.Constraints = append(database.Constraints, constraintSchema)
+	if !ok {
+		return nil
 	}
+	if err := nameAddedConstraint(&constraintSchema, target); err != nil {
+		return err
+	}
+	database.Constraints = append(database.Constraints, constraintSchema)
 	return nil
 }
 
