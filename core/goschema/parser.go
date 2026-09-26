@@ -2157,8 +2157,9 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 // defaultPrivilegeObjectTypes is the closed set ALTER DEFAULT PRIVILEGES names,
 // and the set the catalog reader folds pg_default_acl's defaclobjtype into.
 //
-// SCHEMAS is absent deliberately: this family is schema-scoped, and a default
-// privilege on schemas is the cluster-wide form the model has no spelling for.
+// SCHEMAS is absent deliberately: this family is schema-scoped, and PostgreSQL
+// accepts a default privilege on schemas only in the global form, without
+// IN SCHEMA, which the model has no spelling for.
 var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
 
 // parseDefaultPrivilegeComment reads one //ptah:schema:defaultprivilege

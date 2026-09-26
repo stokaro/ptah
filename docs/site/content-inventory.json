@@ -1166,8 +1166,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10919,
-      "sourceBytes": 74211
+      "visibleWords": 10963,
+      "sourceBytes": 74720
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4630,7 +4630,7 @@
         "/start/install-options/"
       ],
       "visibleWords": 5599,
-      "sourceBytes": 43192
+      "sourceBytes": 43186
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4974,7 +4974,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 1526,
-      "sourceBytes": 12060
+      "sourceBytes": 12054
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",

@@ -125,6 +125,7 @@ func excludeDatabase(
 	filtered.DefaultPrivileges = state.filterDefaultPrivileges(filtered.DefaultPrivileges)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
+	state.noteGlobalDefaultPrivileges(filtered.GlobalDefaultPrivileges)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
 }
 
@@ -997,6 +998,22 @@ func (s *exclusionState) noteUnregisteredVirtualTables(tables []catalog.VirtualT
 	}
 }
 
+// noteGlobalDefaultPrivileges asks the patterns about the grantors of the global
+// default privileges the read left out.
+//
+// They are cloned but never filtered, for the reason [noteRolesOutOfScope]
+// gives: they are not part of the description, so there is nothing to
+// subtract, and what they feed is the note saying what the READ left out. A
+// selector cannot put a global default into the description, so it must not
+// take one out of that note either. A global default names no object, so what
+// a selector reaches is its grantor, which is asked the way
+// [filterDefaultPrivileges] asks a schema-scoped one's.
+func (s *exclusionState) noteGlobalDefaultPrivileges(privileges []catalog.GlobalDefaultPrivilege) {
+	for _, privilege := range privileges {
+		s.matches("role", privilege.Grantor)
+	}
+}
+
 // filterIndexes asks the patterns whether they name the index BEFORE the
 // parent short-circuits decide, so a selector that names an index inside an
 // already-excluded table still counts as having matched something. The keep
@@ -1843,6 +1860,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// would leave every dangerous row in the comparison and take away the
 		// only thing that knew. See stokaro/ptah#1028.
 		UnregisteredVirtualTables: slices.Clone(schema.UnregisteredVirtualTables),
+		// What the read left out stays what it left out: a filter narrows the
+		// description, and the global default privileges were never in it.
+		GlobalDefaultPrivileges: slices.Clone(schema.GlobalDefaultPrivileges),
 	}
 }
 

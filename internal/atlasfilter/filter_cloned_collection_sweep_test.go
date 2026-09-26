@@ -269,6 +269,17 @@ func clonedCollectionRows() []clonedCollectionRow {
 					catalog.VirtualTable{Name: "legacy_docs", Module: "fts4"})
 			},
 		},
+		{
+			// Not filtered, for the reason RolesOutOfScope is not: the read left
+			// these out of the description, and the note reporting that must not
+			// lose one to a selector. The grantor is what a selector reaches, and
+			// no other row uses this name.
+			field: "GlobalDefaultPrivileges", present: "global_defaults_owner", absent: "nosuch_global_owner",
+			seed: func(s *catalog.Database) {
+				s.GlobalDefaultPrivileges = append(s.GlobalDefaultPrivileges,
+					catalog.GlobalDefaultPrivilege{Grantor: "global_defaults_owner", ObjectType: "FUNCTIONS"})
+			},
+		},
 	}
 }
 

@@ -34,10 +34,11 @@ import (
 // The fixture carries a grant and a revoke for tables and for functions, in
 // the default schema, in a second schema, and in the global form, which has no
 // IN SCHEMA. The global entries are not described -- the model has no spelling
-// for them, and every desired-state source refuses one (stokaro/ptah#3737) --
-// so the read must neither fail on them nor render a statement for them. The schema-scoped
-// entries must arrive in the fresh database exactly as pg_default_acl holds
-// them in the source.
+// for them, and every desired-state source refuses one -- so the read must
+// neither fail on them nor render a statement for them, and both read surfaces
+// name them in a note on stderr (stokaro/ptah#3737). The schema-scoped entries
+// must arrive in the fresh database exactly as pg_default_acl holds them in
+// the source.
 //
 // CockroachDB and YugabyteDB are in the table because the same reader serves
 // them and both hold the same pg_default_acl rows for this fixture.
@@ -61,10 +62,12 @@ func TestDefaultPrivilegeReadRoundTripE2E_HappyPath(t *testing.T) {
 			read, readErr, err := runPtahSplitStreams(ctx, []string{"db", "read", "--db-url", fixture.sourceURL})
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", readErr))
 			c.Assert(defaultPrivilegeStatements(read), qt.DeepEquals, fixture.statements("public"))
+			c.Assert(readErr, qt.Contains, fixture.globalNote())
 
 			inspected, inspectErr, err := runCompatSQLInspect(ctx, fixture.sourceURL)
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", inspectErr))
 			c.Assert(defaultPrivilegeStatements(inspected), qt.DeepEquals, fixture.statements("public", "app"))
+			c.Assert(inspectErr, qt.Contains, fixture.globalNote())
 
 			both, bothErr, err := runPtahSplitStreams(ctx, []string{
 				"db", "read", "--db-url", fixture.sourceURL, "--schemas", "public,app",
@@ -204,6 +207,16 @@ func (f defaultPrivilegeFixture) statements(schemas ...string) []string {
 	}
 	slices.Sort(want)
 	return want
+}
+
+// globalNote is the note a read of the source prints for the seed's two global
+// entries, the grant on tables and the revoke on functions. The source's
+// catalog is what says they exist; see [defaultPrivilegeFixture.globalEntries].
+func (f defaultPrivilegeFixture) globalNote() string {
+	return "note: 2 global default privileges, set by ALTER DEFAULT PRIVILEGES without IN SCHEMA," +
+		" are not described, because no schema source can declare one; a description applied" +
+		" to another database does not carry them: FUNCTIONS for " + f.grantor +
+		", TABLES for " + f.grantor + ".\n"
 }
 
 // schemaScopedACL is every schema-scoped pg_default_acl row of one database,

@@ -805,7 +805,7 @@ var directives = []Directive{
 			attr("for_role", "Role whose newly created objects the privileges apply to. "+
 				"PostgreSQL refuses the statement from a non-member of this role, so it is "+
 				"part of the object's identity rather than a decoration.", valueString, true, false),
-			attr("schema", "Schema the default applies in. The cluster-wide form, written "+
+			attr("schema", "Schema the default applies in. The global form, written "+
 				"without IN SCHEMA, has no spelling here.", valueString, true, false),
 			attr("object_type", "TABLES, SEQUENCES, FUNCTIONS or TYPES.", valueString, true, false),
 			attr("grantee", "Role receiving the privileges; PUBLIC names every role.", valueString, true, false),

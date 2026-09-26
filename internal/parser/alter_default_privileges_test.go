@@ -228,9 +228,9 @@ func TestParser_ParseAlterDefaultPrivileges_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "no IN SCHEMA sets the cluster-wide default",
+			name:    "no IN SCHEMA sets the global default",
 			sql:     "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;",
-			wantErr: `ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the cluster-wide default has no representation here`,
+			wantErr: `ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the global default has no representation here`,
 		},
 		{
 			name:    "no FOR ROLE leaves the grantor to the session",
