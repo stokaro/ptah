@@ -87,6 +87,11 @@ type ApplyOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
+	// rows from its declared default first; see
+	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// compatibility policy.
+	OmitNullBackfill bool
 	// Diagnostics receives out-of-band notices, such as an --exclude selector
 	// that named no object. Nil discards them.
 	Diagnostics io.Writer
@@ -157,6 +162,8 @@ type ApplyRuntimeOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
+	// OmitNullBackfill is [ApplyOptions.OmitNullBackfill].
+	OmitNullBackfill bool
 	// ValidateDesiredSchema applies a caller-selected desired-schema policy;
 	// see [ApplyOptions.ValidateDesiredSchema].
 	ValidateDesiredSchema func(*schemamodel.Database) error
@@ -412,6 +419,7 @@ func computeApplyPlan(
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
 			),
+			OmitNullBackfill: opts.OmitNullBackfill,
 		})
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
@@ -765,6 +773,7 @@ func PrepareApply(
 		ValidateLiveObject:        opts.ValidateLiveObject,
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
+		OmitNullBackfill:          opts.OmitNullBackfill,
 
 		Diagnostics:            opts.Diagnostics,
 		RefuseUnmatchedExclude: true,

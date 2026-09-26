@@ -126,6 +126,15 @@ type Options struct {
 	// deferring to the coarse destructive gate. Currently honored by the
 	// PostgreSQL-family planner.
 	SkipChangeKinds []diffpolicy.ChangeKind
+	// OmitNullBackfill plans a column made NOT NULL without first filling its
+	// NULL rows from the column's declared default, so SET NOT NULL fails on a
+	// NULL row whether or not the column declares one.
+	//
+	// The zero value keeps the fill, which only a PostgreSQL-family plan
+	// writes: the value is the author's own, and the UPDATE is in the plan for
+	// review. Atlas CE v1.3.0 writes no fill, and ptah-compat sets this under
+	// its strict Community Edition policy to plan what that binary plans.
+	OmitNullBackfill bool
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the
@@ -491,6 +500,11 @@ func GenerateSchemaDiffASTWithOptions(
 		// the plan emits carries the request, and the dialect planners build
 		// them in a dozen places. A pass over the result cannot miss one.
 		nodes = requestOnlineAlter(nodes, dialect, opts.CapabilitiesFor(dialect))
+	}
+	if opts.OmitNullBackfill {
+		// After the dialect planner for the reason the online request is:
+		// a pass over the result reaches every column modification.
+		omitNullBackfill(nodes)
 	}
 	return nodes, nil
 }

@@ -68,6 +68,11 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
+	// rows from its declared default first; see
+	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// compatibility policy.
+	OmitNullBackfill bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
 	// authored states before comparison. Nil accepts every modeled object.
 	ValidateSchema func(*schemamodel.Database) error
@@ -297,6 +302,7 @@ func diffResolvedStates(
 			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
 				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
 			),
+			OmitNullBackfill: opts.OmitNullBackfill,
 		})
 
 		if err != nil {

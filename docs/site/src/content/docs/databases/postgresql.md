@@ -196,8 +196,12 @@ runs, and fails it with SQLSTATE 23502 if a row holds `NULL`.
 
 - **The column declares a default.** The plan fills the `NULL` rows with that
   default first, then sets `NOT NULL`. The value is one the schema states.
-  Atlas CE fails this change on a `NULL` row, so here Ptah is deliberately more
-  permissive, with the author's own value.
+  The safety report lists the fill as a warning, because it rewrites rows, and
+  the `SET NOT NULL` after it as safe. Atlas CE fails this change on a `NULL`
+  row, so here Ptah is deliberately more permissive, with the author's own
+  value. Under `PTAH_ATLAS_STRICT_COMPAT=1`, `ptah-compat` writes no fill and
+  the statement fails as it does in Atlas CE; see
+  [Strict CE mode](../../atlas/strict-ce-mode/#plans-strict-mode-writes-as-atlas-ce-does).
 - **The column declares no default.** Nothing is filled. The plan carries a
   comment saying the statement fails on a `NULL` row, and the safety report
   lists it as a warning. Update those rows in a migration of their own first,

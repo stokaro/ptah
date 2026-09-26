@@ -99,6 +99,11 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames selects the desired-state HCL unknown-name policy;
 	// see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
+	// rows from its declared default first; see
+	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// compatibility policy.
+	OmitNullBackfill bool
 	// ValidateDesiredSchema applies a caller-selected policy after the desired
 	// source is resolved and before migration-directory planning. Nil accepts
 	// every modeled object.
@@ -159,6 +164,9 @@ type BidirectionalPlanInput struct {
 	Capabilities          capability.Capabilities
 	ConcurrentIndexCreate bool
 	ConcurrentIndexDrop   bool
+	// OmitNullBackfill is [DiffOptions.OmitNullBackfill], carried to the
+	// injected planner.
+	OmitNullBackfill bool
 }
 
 // BidirectionalPlan is the primitive output internal migrate-diff rendering
@@ -542,6 +550,7 @@ func planDiffFileContents(
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			OnlineAlter:          opts.Policy.OnlineAlter,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			OmitNullBackfill:     opts.OmitNullBackfill,
 		})
 
 		if err != nil {
@@ -558,6 +567,7 @@ func planDiffFileContents(
 			Capabilities:          info.Capabilities,
 			ConcurrentIndexCreate: opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrop:   opts.Policy.ConcurrentIndexDrop,
+			OmitNullBackfill:      opts.OmitNullBackfill,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)

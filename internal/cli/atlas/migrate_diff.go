@@ -373,6 +373,7 @@ func runAtlasMigrateDiff(
 		Diagnostics:               cmd.ErrOrStderr(),
 		Vars:                      schemaVars,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		OmitNullBackfill:          !opts.policy.FillsNullRowsWithDefault(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
@@ -477,8 +478,9 @@ func planCompatBidirectionalSchemaDiff(
 		Dialect:       input.Dialect,
 		Capabilities:  input.Capabilities,
 		Policy: generator.BidirectionalPlanPolicy{
-			Create: createMode,
-			Drop:   dropMode,
+			Create:           createMode,
+			Drop:             dropMode,
+			OmitNullBackfill: input.OmitNullBackfill,
 		},
 	})
 	if err != nil {

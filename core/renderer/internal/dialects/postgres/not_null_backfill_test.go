@@ -91,3 +91,46 @@ func TestPostgres_RestatedNotNullColumn_InventsNoBackfillValue(t *testing.T) {
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" DROP DEFAULT;\n\n")
 }
+
+// An operation that asks to omit the fill gets SET NOT NULL alone even when
+// the column declares a default, which is what Atlas CE v1.3.0 writes; the
+// comment says why the statement can fail. With no default the comment is the
+// one a column without a default always gets.
+func TestPostgres_SetNotNull_OmittedBackfill(t *testing.T) {
+	tests := []struct {
+		name   string
+		column *ast.ColumnNode
+		reason string
+	}{
+		{
+			name:   "a default declared",
+			column: ast.NewColumn("c", "INTEGER").SetNotNull().SetDefault("9"),
+			reason: "this plan does not fill it with the column's default",
+		},
+		{
+			name:   "no default declared",
+			column: ast.NewColumn("c", "INTEGER").SetNotNull(),
+			reason: "the column declares no default to fill it with",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			alter := &ast.AlterTableNode{
+				Name: "t",
+				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+					Column:           test.column,
+					Changed:          ast.ColumnProperties{Nullability: true},
+					HasChanged:       true,
+					OmitNullBackfill: true,
+				}},
+			}
+
+			got := renderPostgres(c, alter)
+
+			c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
+				"-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; "+test.reason+".\n"+
+				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
+		})
+	}
+}

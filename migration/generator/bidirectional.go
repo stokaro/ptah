@@ -48,6 +48,10 @@ type BidirectionalPlanPolicy struct {
 	// answer the same question about one plan: what the server is asked to do
 	// while the tables stay open to writers.
 	OnlineAlter bool
+	// OmitNullBackfill plans both directions' SET NOT NULL without filling
+	// the column's NULL rows from its declared default first. See
+	// [planner.Options.OmitNullBackfill].
+	OmitNullBackfill bool
 }
 
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
@@ -175,6 +179,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		ConcurrentIndexRefs:     forwardCreateRefs,
 		ConcurrentIndexDropRefs: forwardDropRefs,
 		OnlineAlter:             opts.Policy.OnlineAlter,
+		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, dialect, forwardOpts)
 	if err != nil {
@@ -232,6 +237,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		Capabilities:            caps,
 		ConcurrentIndexRefs:     reverseCreate,
 		ConcurrentIndexDropRefs: reverseDrop,
+		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 	}
 	// The rollback's target is the schema the database currently holds, and it
 	// is validated here because this is where that schema exists. The forward

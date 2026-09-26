@@ -642,16 +642,18 @@
         "/atlas/conformance/",
         "/atlas/feature-matrix/",
         "/atlas/retained-divergences/",
+        "/databases/postgresql/",
         "/reference/extension-variables/"
       ],
       "inboundLinks": [
         "/atlas/overview/",
         "/atlas/schema-commands/",
+        "/databases/postgresql/",
         "/migrate-from/atlas/",
         "/reference/extension-variables/"
       ],
-      "visibleWords": 416,
-      "sourceBytes": 3933
+      "visibleWords": 526,
+      "sourceBytes": 4591
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -1137,6 +1139,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/migrate-commands/",
+        "/atlas/strict-ce-mode/",
         "/concepts/dialects-and-capabilities/",
         "/databases/clickhouse/",
         "/databases/distributed/",
@@ -1150,6 +1153,7 @@
       ],
       "inboundLinks": [
         "/atlas/schema-commands/",
+        "/atlas/strict-ce-mode/",
         "/concepts/dialects-and-capabilities/",
         "/databases/distributed/",
         "/databases/overview/",
@@ -1158,8 +1162,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 9266,
-      "sourceBytes": 63155
+      "visibleWords": 9312,
+      "sourceBytes": 63483
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",

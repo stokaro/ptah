@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/core/renderer/internal/dialects/internal/nodedispatch"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
 )
@@ -2240,7 +2241,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 		return
 	}
 	if changed.Nullability {
-		r.writeColumnNullabilityChange(tableName, column)
+		r.writeColumnNullabilityChange(tableName, op)
 	}
 	if changed.Default {
 		r.writeColumnDefaultChange(tableName, column)
@@ -2285,7 +2286,8 @@ func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNod
 
 // writeColumnNullabilityChange writes the NOT NULL clause of a column
 // modification, with the NULL backfill that has to run before SET NOT NULL.
-func (r *Renderer) writeColumnNullabilityChange(tableName string, column *ast.ColumnNode) {
+func (r *Renderer) writeColumnNullabilityChange(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
 	// Change nullability.
 	//
 	// A primary key column is NOT NULL on every engine this renderer serves --
@@ -2301,7 +2303,7 @@ func (r *Renderer) writeColumnNullabilityChange(tableName string, column *ast.Co
 	if column.Nullable && !column.Primary {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
-		r.updateNullValuesBeforeNotNull(tableName, column)
+		r.updateNullValuesBeforeNotNull(tableName, op)
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
 }
@@ -2329,15 +2331,26 @@ func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.Column
 // column's type, such as 0, false, CURRENT_TIMESTAMP or the empty string, is
 // data nobody wrote: filled with it, a change the server refuses reports
 // success and leaves the rows rewritten. Atlas CE v1.3.0 lets the statement
-// fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). The plan
-// says so in a comment beside the statement.
-func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
-	value := r.nullBackfillValue(column)
-	if value == "" {
-		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; the column declares no default to fill it with.",
-			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+// fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). Nor is a
+// column whose operation asks to omit the fill, which is how ptah-compat plans
+// under PTAH_ATLAS_STRICT_COMPAT=1: Atlas CE writes no fill even where the
+// column declares a default. Either way the plan says so in a comment beside
+// the statement.
+//
+// Whether to fill is [notnullfill.FillsNullRows], the answer migration/safety
+// judges the rendered statements by.
+func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	if !notnullfill.FillsNullRows(op) {
+		reason := "the column declares no default to fill it with"
+		if notnullfill.DeclaresDefault(column) {
+			reason = "this plan does not fill it with the column's default"
+		}
+		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; %s.",
+			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), reason)
 		return
 	}
+	value := r.nullBackfillValue(column)
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
 	r.w.WriteLinef("DO $$")
 	r.w.WriteLinef("BEGIN")

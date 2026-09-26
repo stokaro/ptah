@@ -476,6 +476,15 @@ func TestStrictCEUnknownHCLPolicy(t *testing.T) {
 	c.Assert(atlascompatpolicy.Full().IgnoreUnknownHCLNames(), qt.IsTrue)
 }
 
+// The full surface keeps the PostgreSQL fill from a column's declared default
+// before SET NOT NULL; strict CE mode plans without it, as Atlas CE v1.3.0
+// does.
+func TestStrictCENullBackfillPolicy(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(atlascompatpolicy.StrictCE().FillsNullRowsWithDefault(), qt.IsFalse)
+	c.Assert(atlascompatpolicy.Full().FillsNullRowsWithDefault(), qt.IsTrue)
+}
+
 func TestStrictCERejectsProSchemaInspectTemplateFunctions(t *testing.T) {
 	for _, name := range []string{"hcl", "split", "write"} {
 		t.Run(name, func(t *testing.T) {
