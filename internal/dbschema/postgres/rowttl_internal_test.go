@@ -262,3 +262,47 @@ func TestReadColumnsForSchema_LeavesOutTheColumnsTheEngineOwns(t *testing.T) {
 		})
 	}
 }
+
+// TestReadBasicConstraintsForSchema_LeavesOutTheKeyOverHiddenColumns pins the
+// constraint half of the hidden-column rule: the statement the reader sends
+// drops a constraint whose every column is hidden, and only where the target
+// has hidden columns.
+//
+// Whether the clause keeps the right constraints is a question for the server,
+// which the live test answers: the key over rowid goes, a hash-sharded key that
+// spans the hidden shard column and a declared one stays. What a fake can
+// answer is that the clause reaches the statement, spelled with the predicate
+// the column read uses, and that PostgreSQL and YugabyteDB, which have no
+// pg_attribute.attishidden, are never asked about it.
+func TestReadBasicConstraintsForSchema_LeavesOutTheKeyOverHiddenColumns(t *testing.T) {
+	const clause = "HAVING NOT COALESCE(bool_and(COALESCE(local_column.attishidden, false)), false)"
+	tests := []struct {
+		name      string
+		caps      capability.Capabilities
+		wantAsked bool
+	}{
+		{name: "cockroachdb leaves the engine's key out", caps: capability.CockroachDB263(), wantAsked: true},
+		{name: "postgres has no hidden columns", caps: capability.Postgres18(), wantAsked: false},
+		{name: "yugabytedb has no hidden columns", caps: capability.YugabyteDB25(), wantAsked: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var sent []string
+			db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				sent = append(sent, strings.Join(strings.Fields(query), " "))
+				return dbtest.QueryResult{}, nil
+			})
+			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
+
+			_, err := reader.readBasicConstraintsForSchema(t.Context(), "public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sent, qt.HasLen, 1)
+			c.Assert(strings.Contains(sent[0], clause), qt.Equals, test.wantAsked)
+			c.Assert(strings.Contains(sent[0], "attishidden"), qt.Equals, test.wantAsked)
+		})
+	}
+}
