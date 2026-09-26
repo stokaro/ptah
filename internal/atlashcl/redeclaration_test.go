@@ -648,14 +648,9 @@ table "comments" {
 		{
 			// A PostgreSQL function's identity includes its argument types, so two
 			// blocks sharing a name can be two legal overloads. Refusing them by
-			// name would refuse a document PostgreSQL accepts.
-			//
-			// Functions is 1, and that is the measured value rather than the
-			// intended one: the document is READ rather than refused, which is
-			// what this row is here for, but the overload is not modeled
-			// separately. Stating the count is how that stops being invisible --
-			// the row asserted only "no error" before, so nothing said which of
-			// the two blocks survived.
+			// name would refuse a document PostgreSQL accepts, and both are
+			// modeled: the second block's argument list makes it a routine of its
+			// own (stokaro/ptah#3672).
 			name: "two function blocks sharing a name are not a redeclaration",
 			source: `schema "public" {}
 function "get_tenant" {
@@ -672,7 +667,7 @@ function "get_tenant" {
   as     = "SELECT 'y'"
 }
 `,
-			want: documentCounts{Schemas: 1, Functions: 1},
+			want: documentCounts{Schemas: 1, Functions: 2},
 		},
 	}
 

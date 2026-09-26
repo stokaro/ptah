@@ -112,6 +112,11 @@ refused, because Oracle reports determinism as `YES` or `NO` only — `IMMUTABLE
 is the `DETERMINISTIC` clause and `VOLATILE` is its absence, and there is no
 third cell that does not either lie to a function-based index or diff forever.
 
+A standalone routine has no overloads. A schema that declares two functions, or
+two procedures, of one name with different parameters is refused before any
+statement is planned. Ptah writes `CREATE OR REPLACE`, and Oracle keeps one
+standalone routine per name, so the second would take the place of the first.
+
 The semicolon that closes a PL/SQL block belongs to the block rather than to the
 client, which is why Oracle's own tooling ends one with a `/` on the next line.
 A `CREATE` handed to the server without it returns **no error at all** and

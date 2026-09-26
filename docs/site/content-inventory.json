@@ -1017,8 +1017,8 @@
         "/databases/overview/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2555,
-      "sourceBytes": 15911
+      "visibleWords": 2612,
+      "sourceBytes": 16257
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -1056,8 +1056,8 @@
       "inboundLinks": [
         "/databases/support-matrix/"
       ],
-      "visibleWords": 1107,
-      "sourceBytes": 7713
+      "visibleWords": 1159,
+      "sourceBytes": 8024
     },
     {
       "path": "docs/site/src/content/docs/databases/overview.mdx",
@@ -1164,8 +1164,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10286,
-      "sourceBytes": 69410
+      "visibleWords": 10344,
+      "sourceBytes": 69705
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -1255,8 +1255,8 @@
         "/concepts/dialects-and-capabilities/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 2302,
-      "sourceBytes": 17335
+      "visibleWords": 2349,
+      "sourceBytes": 17621
     },
     {
       "path": "docs/site/src/content/docs/databases/support-evidence.md",
@@ -5651,8 +5651,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 2856,
-      "sourceBytes": 21497
+      "visibleWords": 2872,
+      "sourceBytes": 21539
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
