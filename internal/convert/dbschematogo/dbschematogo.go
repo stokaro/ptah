@@ -870,6 +870,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		OnDeleteColumns: slices.Clone(dbConstraint.OnDeleteColumns),
 		Deferrable:      dbConstraint.Deferrable,
 		Initially:       dbConstraint.Initially,
+		Comment:         dbConstraint.Comment,
 		// The index backing this constraint is dropped above so the constraint
 		// renders once; what that index needed does not go with it.
 		RequiresExtensions: slices.Clone(dbConstraint.RequiresExtensions),

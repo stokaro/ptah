@@ -125,6 +125,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.ResetRowTTLOperation{}},
 	{node: &ast.SetCommentOperation{}},
+	{node: &ast.SetConstraintCommentOperation{}},
 	{node: &ast.SetRowDeletionPolicyOperation{}},
 	{node: &ast.SetRowTTLOperation{}},
 

@@ -391,6 +391,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
+	compare.ConstraintComments(desired, database, diff, opts, caps, identifierSemantics)
 
 	// The declaration of every table those constraints name, for a target that
 	// rebuilds a table to change one. It is filled here rather than beside the

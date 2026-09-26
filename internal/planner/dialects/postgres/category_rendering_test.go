@@ -480,6 +480,13 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
+			"ConstraintCommentsChanged",
+			&difftypes.SchemaDiff{ConstraintCommentsChanged: []difftypes.ConstraintCommentChange{{
+				TableName: "t", Name: "t_pos", Current: "old", Desired: "new",
+			}}},
+			&schemamodel.Database{},
+		},
+		{
 			"ObjectCommentsChanged",
 			&difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{{
 				Kind: difftypes.CommentedView, Name: "v", Current: "old", Desired: "new",

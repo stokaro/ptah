@@ -922,6 +922,12 @@ type Constraint struct {
 	// the class, because a class is printed exactly when it is not the default
 	// (stokaro/ptah#1286).
 	RequiresExtensions []string `json:"requires_extensions,omitempty"`
+
+	// Comment is the constraint's description, empty when it has none. A
+	// reader fills it where the target stores one against the constraint:
+	// PostgreSQL and the engines that share its catalog, through
+	// obj_description(oid, 'pg_constraint').
+	Comment string `json:"comment,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.

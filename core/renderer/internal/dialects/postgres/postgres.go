@@ -614,6 +614,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTypeOperation,
 		*ast.ResetRowTTLOperation,
 		*ast.SetCommentOperation,
+		*ast.SetConstraintCommentOperation,
 		*ast.SetRowDeletionPolicyOperation,
 		*ast.SetRowTTLOperation:
 		return r.nodeNeedsParent(node)
@@ -1035,10 +1036,22 @@ func (r *Renderer) writeConstraintComment(table string, constraint *ast.Constrai
 	if constraint == nil || !constraintHasComment(constraint) {
 		return
 	}
+	r.writeSetConstraintComment(table, constraint.Name, constraint.Comment)
+}
+
+// writeSetConstraintComment sets the comment of one constraint of table, with
+// NULL for none, or names the comment it left out where the target does not
+// store a constraint's comment. The Spanner interface answers `Unknown
+// statement` to COMMENT ON CONSTRAINT, so writing it there would fail the
+// whole plan for a comment (stokaro/ptah#3678).
+func (r *Renderer) writeSetConstraintComment(table, constraint, comment string) {
+	if r.refuses(capability.ConstraintComments, "constraint comment", constraint+" on "+table) {
+		return
+	}
 	r.w.WriteLinef("COMMENT ON CONSTRAINT %s ON %s IS %s;",
-		r.escapeIdentifier(constraint.Name),
+		r.escapeIdentifier(constraint),
 		r.escapeQualifiedIdentifier(table),
-		r.escapeValue(constraint.Comment))
+		r.commentLiteral(comment))
 }
 
 // constraintHasComment reports whether a constraint carries one that can be
@@ -1318,7 +1331,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			if err := r.writeRowExpiryOperation(node, operation); err != nil {
 				return err
 			}
-		case *ast.SetCommentOperation, *ast.RenameConstraintOperation:
+		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation:
 			// Both render a complete statement of their own rather than an
 			// ALTER TABLE clause, and they share one branch for the same reason
 			// the row-expiry operations above do: this switch has a complexity
@@ -1415,6 +1428,8 @@ func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOpe
 	switch op := operation.(type) {
 	case *ast.SetCommentOperation:
 		r.writeSetComment(table, op)
+	case *ast.SetConstraintCommentOperation:
+		r.writeSetConstraintComment(table, op.Constraint, op.Comment)
 	case *ast.RenameConstraintOperation:
 		r.writeRenameConstraint(table, op)
 	}

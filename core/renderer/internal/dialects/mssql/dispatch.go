@@ -167,6 +167,7 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		*ast.RenameTableOperation,
 		*ast.ResetRowTTLOperation,
 		*ast.SetCommentOperation,
+		*ast.SetConstraintCommentOperation,
 		*ast.SetRowDeletionPolicyOperation,
 		*ast.SetRowTTLOperation,
 		*ast.AddEnumValueOperation,

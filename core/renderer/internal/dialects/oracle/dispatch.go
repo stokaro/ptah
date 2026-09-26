@@ -195,6 +195,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddSkippingIndexOperation,
 		*ast.RenameTableOperation,
 		*ast.SetCommentOperation,
+		*ast.SetConstraintCommentOperation,
 		*ast.ModifyTTLOperation,
 		*ast.SetRowTTLOperation,
 		*ast.ResetRowTTLOperation,

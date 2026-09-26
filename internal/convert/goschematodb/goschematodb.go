@@ -363,6 +363,7 @@ func toDBConstraints(
 				constraint.ExcludeElements,
 			),
 			WhereCondition: optionalStringPtr(constraint.WhereCondition),
+			Comment:        constraint.Comment,
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)

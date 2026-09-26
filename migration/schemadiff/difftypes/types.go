@@ -1452,6 +1452,29 @@ type SchemaDiff struct {
 	// and does not independently make the diff non-empty. See [SupplementLists]
 	// for what that means to a reader.
 	ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables" ptah:"supplement=constraints_removed"`
+
+	// ConstraintCommentsChanged holds the comment transitions of the table
+	// constraints both sides hold with the same definition, compared only
+	// where the target stores a constraint's comment and reads it back.
+	//
+	// A constraint this diff adds, or drops and adds again because its
+	// definition changed, is not here: the statement that adds it writes its
+	// comment, and a new constraint has no other (stokaro/ptah#3678).
+	ConstraintCommentsChanged []ConstraintCommentChange `json:"constraint_comments_changed"`
+}
+
+// ConstraintCommentChange is the comment transition of one table constraint.
+type ConstraintCommentChange struct {
+	// TableName is the table the constraint belongs to, qualified the way
+	// [ConstraintRemovalInfo.TableName] is.
+	TableName string `json:"table_name"`
+	// Name is the constraint's name as the database holds it, which is the
+	// spelling COMMENT ON CONSTRAINT has to address.
+	Name string `json:"name"`
+	// Current is what the database holds, empty when it holds none.
+	Current string `json:"current"`
+	// Desired is what the declaration asks for, empty to remove it.
+	Desired string `json:"desired"`
 }
 
 // EffectiveIdentifierSemantics returns live semantics stored on the diff, or
@@ -1765,7 +1788,7 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 // constraints and answered false, and every check built on HasChanges reported
 // a synced schema (stokaro/ptah#2315).
 func (d *SchemaDiff) hasConstraintChanges() bool {
-	return len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0
+	return len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0 || len(d.ConstraintCommentsChanged) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.

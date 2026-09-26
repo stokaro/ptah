@@ -209,9 +209,7 @@ type, an extension, a function, a procedure, a trigger and a policy, and the
 plan writes each of them to the database. A function or a procedure may be
 named with its argument list, with or without argument names, or by its name
 alone when the document declares one routine of that name. A trigger, a policy
-and a constraint are named `ON` their table. A constraint's comment is written
-when the constraint is created, and a changed one is not compared yet
-([stokaro/ptah#3678](https://github.com/stokaro/ptah/issues/3678)).
+and a constraint are named `ON` their table.
 
 A statement that cannot be applied is refused by name, with the file it came
 from:

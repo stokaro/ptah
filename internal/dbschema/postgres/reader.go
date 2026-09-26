@@ -2100,7 +2100,8 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 				COALESCE(bool_or(pc.condeferrable), false),
 				COALESCE(bool_or(pc.condeferred), false),
 				` + r.constraintCheckExpr() + `,
-				` + r.constraintDefinitionExpr() + `
+				` + r.constraintDefinitionExpr() + `,
+				COALESCE(max(obj_description(pc.oid, 'pg_constraint')), '')
 		FROM information_schema.table_constraints AS tc
 		JOIN pg_namespace AS constraint_schema
 			ON constraint_schema.nspname = tc.table_schema
@@ -2163,6 +2164,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			&deferred,
 			&checkClause,
 			&constraintDefinition,
+			&constraint.Comment,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan constraint: %w", err)
@@ -2363,7 +2365,8 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 			-- an integer column needs btree_gist and says nothing of it, while
 			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
 			-- class. See requiredExtensionsProjection.
-			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions
+			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions,
+			COALESCE(obj_description(c.oid, 'pg_constraint'), '') AS constraint_comment
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
 		JOIN pg_namespace n ON cl.relnamespace = n.oid
@@ -2383,8 +2386,9 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 	var constraints []catalog.Constraint
 	for rows.Next() {
 		var schemaName, constraintName, tableName, constraintType, definition string
-		var requiredExtensions string
-		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions)
+		var requiredExtensions, comment string
+		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions,
+			&comment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
@@ -2410,6 +2414,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 			Schema:             r.outputSchema(schemaName),
 			Type:               stdType,
 			RequiresExtensions: required,
+			Comment:            comment,
 		}
 
 		// Parse constraint definition for EXCLUDE constraints

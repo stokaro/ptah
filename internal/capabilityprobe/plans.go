@@ -16,19 +16,29 @@ import (
 // of "nobody wrote a decider for this yet".
 func planFor(dialect string) (plan, bool) {
 	normalized := platform.NormalizeDialect(dialect)
-	switch normalized {
+	family, ok := familyPlan(normalized)
+	if !ok {
+		return plan{}, false
+	}
+	return withConstraintComments(withObjectComments(family, normalized), normalized), true
+}
+
+// familyPlan returns the experiments a dialect's family answers, before the
+// comment keys every dialect answers the same way for its kind are added.
+func familyPlan(dialect string) (plan, bool) {
+	switch dialect {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return withObjectComments(postgresFamilyPlan(normalized), normalized), true
+		return postgresFamilyPlan(dialect), true
 	case platform.MySQL, platform.MariaDB:
-		return withObjectComments(mysqlFamilyPlan(normalized), normalized), true
+		return mysqlFamilyPlan(dialect), true
 	case platform.ClickHouse:
-		return withObjectComments(clickHousePlan(), normalized), true
+		return clickHousePlan(), true
 	case platform.Oracle:
-		return withObjectComments(oraclePlan(), normalized), true
+		return oraclePlan(), true
 	case platform.SQLServer:
-		return withObjectComments(sqlServerPlan(), normalized), true
+		return sqlServerPlan(), true
 	case platform.SQLite:
-		return withObjectComments(sqlitePlan(), normalized), true
+		return sqlitePlan(), true
 	default:
 		return plan{}, false
 	}

@@ -202,9 +202,26 @@ procedure's comment and refuses the statement for a materialized view, a
 trigger and a policy. The Spanner PostgreSQL interface refuses every
 `COMMENT ON`.
 
-A table constraint's comment is written when the constraint is created, and a
-changed one is not compared yet
-([stokaro/ptah#3678](https://github.com/stokaro/ptah/issues/3678)).
+### Constraint comments
+
+A table constraint's comment is written with `COMMENT ON CONSTRAINT ... ON`
+its table, right after the statement that adds the constraint. Ptah reads it
+back and compares it, and a changed comment is planned as one
+`COMMENT ON CONSTRAINT`, not as a drop and an add. A constraint whose
+definition changed is dropped and added again, and the statement that adds it
+writes the declared comment. A rollback that adds back a dropped CHECK, UNIQUE
+or foreign key constraint writes the comment it had.
+
+Only a constraint the declaration states as a constraint is compared. A
+primary key from a primary-key column, a column's check or foreign key, and a
+table's list of checks have no place for a comment, so the comparison leaves
+the comment the database holds on them alone. An unnamed constraint gets no
+comment, because the statement has to name it.
+
+The `constraint_comments` key records where the server stores the comment and
+reports it back. PostgreSQL, CockroachDB and YugabyteDB do. The Spanner
+PostgreSQL interface refuses the statement, so there the render names the
+comment it left out.
 
 ## Making a column NOT NULL
 
