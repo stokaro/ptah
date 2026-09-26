@@ -113,9 +113,22 @@ SQL:
   such a key after the key's first column, then `_2` and on, and that index is
   read as the key's, so a schema file compares equal to the database its own
   SQL built. A derived name that another foreign key of the database already
-  holds is refused, because MySQL refuses it with `ERROR 1826`. MariaDB was
-  not measured, and an unnamed key there takes Ptah's own name,
-  `fk_<table>_<columns>`.
+  holds is refused, because MySQL refuses it with `ERROR 1826`. MariaDB names
+  an unnamed key `<table>_ibfk_<n>` too, but Ptah reads it there with its own
+  name, `fk_<table>_<columns>`, so a MariaDB file with an unnamed key plans a
+  rename against the database it built
+  ([stokaro/ptah#3743](https://github.com/stokaro/ptah/issues/3743)).
+- Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
+  `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
+  `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as
+  the same clause written without the keyword, which is how the server builds
+  it: it takes the name that clause takes, and an unnamed foreign key counts in
+  the same `<table>_ibfk_<n>` sequence as the other unnamed keys of its table.
+  On a column, MySQL accepts the form only before `CHECK` and MariaDB only
+  before `REFERENCES`. The server answers `ERROR 1064` to every other
+  symbol-less spelling and to a `CONSTRAINT` in front of `KEY`, `INDEX`,
+  `FULLTEXT` or `SPATIAL`, with a name or without one, and Ptah refuses each of
+  them by name.
 - A non-ASCII index name is refused, rather than compared. The two engines fold
   such names differently and not in a way one rule covers: measured on MySQL
   8.4.11 and MariaDB 11.8.9 over a `utf8mb4` connection, `I` beside dotless

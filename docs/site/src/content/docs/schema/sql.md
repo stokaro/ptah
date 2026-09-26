@@ -418,6 +418,29 @@ CREATE TABLE "pets" (
 
   A name written beside an explicit `CONSTRAINT` symbol is accepted and
   ignored, because both engines record the symbol for the backing index too.
+- `CONSTRAINT` without a name is read under `--dialect mysql` and
+  `--dialect mariadb`, where the name is optional, and refused elsewhere. On
+  those engines `CONSTRAINT FOREIGN KEY (a) REFERENCES parents (id)` is the
+  same unnamed key as `FOREIGN KEY (a) REFERENCES parents (id)`, and it takes
+  the same name. Every other dialect requires the name:
+
+  ```sql
+  CREATE TABLE child (a INT, CONSTRAINT FOREIGN KEY (a) REFERENCES parents (id));
+  ```
+
+  ```text
+  CONSTRAINT at position 27 is followed by FOREIGN, not by a name: postgres
+  requires a name after CONSTRAINT, and only MySQL and MariaDB accept the
+  keyword without one; name the constraint, or drop the CONSTRAINT keyword
+  ```
+
+  The MySQL family accepts the form at table level before `PRIMARY KEY`,
+  `UNIQUE`, `FOREIGN KEY` and `CHECK`. On a column, MySQL accepts it only
+  before `CHECK` and MariaDB only before `REFERENCES`. The engine answers
+  `ERROR 1064` to every other column spelling, and Ptah refuses it too. A
+  `CONSTRAINT` in front of `KEY`, `INDEX`, `FULLTEXT` or `SPATIAL` is refused
+  on every dialect, with a name or without one, because an index takes no
+  `CONSTRAINT` keyword.
 - A column-level `REFERENCES` clause is refused under `--dialect mysql`. MySQL
   accepts the syntax and builds nothing from it, so reading it as a foreign key
   would make rendering add a constraint the source schema never had:
