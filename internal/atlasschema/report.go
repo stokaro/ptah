@@ -92,7 +92,7 @@ const (
 	// transaction the transaction mode asks for.
 	RefusalTransactionPreflight RefusalCode = "transaction-preflight"
 	// RefusalSimulationFailed means the plan failed its rehearsal on the
-	// --dev-url database, before the target was touched.
+	// --dev-url database, and the command did not send it to the target.
 	RefusalSimulationFailed RefusalCode = "simulation-failed"
 )
 
@@ -123,11 +123,18 @@ type PlanReport struct {
 	// PlanDigest is the SHA-256 of the plan document's canonical bytes, in
 	// sha256:<hex> form: the file --save and --output write and the document
 	// --dry-run prints without --json. It is present with the plan.
+	//
+	// Those bytes are not in this report. Plan is the same document decoded
+	// and encoded again inside the report, so its bytes do not hash to
+	// PlanDigest, and no encoder a caller has is promised to reproduce the
+	// canonical form. A caller that needs the bytes -- to digest, sign or pass
+	// to `schema apply --plan` -- runs with --output and reads the file.
 	PlanDigest string `json:"plan_digest,omitempty"`
 	// PlanPath is where --save or --output wrote the plan document, and empty
 	// under --dry-run.
 	PlanPath string `json:"plan_path,omitempty"`
-	// Plan is the plan document, present when Outcome is changes.
+	// Plan is the plan document's content, present when Outcome is changes.
+	// See PlanDigest for why it is not the document's bytes.
 	Plan *PlanFile `json:"plan,omitempty"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
@@ -179,8 +186,10 @@ type ApplyReport struct {
 	Outcome ApplyOutcome `json:"outcome"`
 	// PlanName and PlanDigest identify the plan file --plan read: the name it
 	// records, and the SHA-256 of the bytes it was decoded from, in
-	// sha256:<hex> form. Both are empty for a plan computed from a desired
-	// schema.
+	// sha256:<hex> form. The file is read once, so those are also the bytes
+	// --require-approval verified and the statements that ran. Both are empty
+	// for a plan computed from a desired schema, and for a run that stopped
+	// before it decoded the file.
 	PlanName   string `json:"plan_name,omitempty"`
 	PlanDigest string `json:"plan_digest,omitempty"`
 	// Statements are the statements the run listed as its planned changes, in
@@ -250,8 +259,10 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 // Every error recognized here is raised before a statement is sent to the
 // target. That is what lets a refusal promise that nothing reached the target
 // database, and it is why [NewApplyReport] asks only once it knows the
-// statements were not dispatched. A failed rehearsal is no exception: its
-// statements ran on the dev database and never on the target.
+// statements were not dispatched. A failed rehearsal is no exception, and its
+// promise is as narrow as the one [SimulationError] makes: the command did not
+// send the plan to the target. The statements did run on the dev database, and
+// what they did there, or through it, is outside what the error can speak for.
 func refusalFor(err error) *Refusal {
 	var stale *StalePlanError
 	var fenced *ProtectedTableError

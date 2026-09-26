@@ -166,7 +166,7 @@ func runCommand(cmd *cobra.Command, args ...string) int {
 func executeWithRecovery(cmd *cobra.Command) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = exitcode.New(2, fmt.Errorf("internal error: %v", recovered))
+			err = exitcode.New(2, cmdutil.InternalError(recovered))
 			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", cmdutil.ErrorPrefix(cmd), err)
 		}
 	}()

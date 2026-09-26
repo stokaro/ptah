@@ -1,12 +1,20 @@
 package schema_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	digest "github.com/opencontainers/go-digest"
+
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/schema"
+	"ptah.run/migration/safety"
 )
 
 // `--require-approval` is the gate: a plan nobody reviewed must not execute.
@@ -145,4 +153,126 @@ func TestSchemaApplyReportsMissingApprovalBeforeAnyOtherPlanComplaint(t *testing
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out+err.Error(), qt.Contains, "carries no approval")
 	c.Assert(out+err.Error(), qt.Not(qt.Contains), "from_fingerprint is required")
+}
+
+// swapOnApproval is standard error for a run whose plan file is replaced the
+// moment the command reports the approval verified. That line is written after
+// the signature check and before the plan is decoded, which is the window in
+// which a second read of the file would find the replacement.
+type swapOnApproval struct {
+	bytes.Buffer
+	planPath    string
+	replacement []byte
+	swapped     bool
+	swapErr     error
+}
+
+func (w *swapOnApproval) Write(p []byte) (int, error) {
+	n, err := w.Buffer.Write(p)
+	if !w.swapped && strings.Contains(w.String(), "Plan approved by ") {
+		w.swapped = true
+		w.swapErr = os.WriteFile(w.planPath, w.replacement, 0o600)
+	}
+	return n, err
+}
+
+// TestSchemaApplyRequireApprovalExecutesTheBytesItVerified is the approval
+// gate against a file replaced after the check. The replacement is a plan for
+// the same database state whose one statement nobody reviewed, and it lands on
+// disk between the signature check and the decode. What runs has to be what
+// was verified: the reviewed statement, under the reviewed digest.
+func TestSchemaApplyRequireApprovalExecutesTheBytesItVerified(t *testing.T) {
+	c := qt.New(t)
+	approverDir, _, keyPath := approvedPlanFixture(c)
+	f := newPlanFixture(c)
+	planPath := f.savePlan(c)
+	out, err := runSchema("", "approve", "--plan", planPath, "--key", keyPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	approved, err := os.ReadFile(planPath)
+	c.Assert(err, qt.IsNil)
+	plan, err := atlasschema.ReadPlanFile(planPath)
+	c.Assert(err, qt.IsNil)
+	unreviewed := plan
+	unreviewed.Statements = []atlasschema.PlanStatement{
+		{SQL: `CREATE TABLE "unreviewed" ("id" INTEGER PRIMARY KEY)`, Severity: safety.Safe},
+	}
+	replacement, err := atlasschema.MarshalPlanFile(unreviewed)
+	c.Assert(err, qt.IsNil)
+	stderr := &swapOnApproval{planPath: planPath, replacement: replacement}
+	var stdout bytes.Buffer
+	cmd := schema.NewSchemaCommand()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(stderr)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs([]string{"apply",
+		"--db-url", f.dbURL, "--plan", planPath, "--require-approval",
+		"--allowed-signers", signersPath(approverDir), "--auto-approve", "--json"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stderr.swapped, qt.IsTrue, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stderr.swapErr, qt.IsNil)
+	c.Assert(fileDigest(c, planPath), qt.Equals, digest.FromBytes(replacement).String())
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout.String()), qt.DeepEquals, atlasschema.ApplyReport{
+		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Outcome:         atlasschema.ApplyOutcomeApplied,
+		PlanName:        plan.Name,
+		PlanDigest:      digest.FromBytes(approved).String(),
+		Statements:      plan.StatementSQL(),
+	})
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "users"})
+}
+
+// TestSchemaApplyJSONReportsAnUnapprovedPlanAsFailed is the gate's refusal in
+// the document. It has no refusal code, and it comes before the plan is
+// decoded, so the document names no plan.
+func TestSchemaApplyJSONReportsAnUnapprovedPlanAsFailed(t *testing.T) {
+	c := qt.New(t)
+	approverDir, _, _ := approvedPlanFixture(c)
+	f := newPlanFixture(c)
+	planPath := f.savePlan(c)
+
+	stdout, stderr, err := runSchemaStreams("apply",
+		"--db-url", f.dbURL, "--plan", planPath, "--require-approval",
+		"--allowed-signers", signersPath(approverDir), "--auto-approve", "--json")
+
+	c.Assert(err, qt.ErrorMatches, `--require-approval: .*add-orders\.plan\.json carries no approval; sign it with `+"`ptah schema approve`")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
+		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Outcome:         atlasschema.ApplyOutcomeFailed,
+		Error:           err.Error(),
+	})
+	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
+}
+
+// TestSchemaApplyJSONReportsAPlanEditedAfterApprovalAsFailed is the refusal a
+// review gate exists for, in the document.
+func TestSchemaApplyJSONReportsAPlanEditedAfterApprovalAsFailed(t *testing.T) {
+	c := qt.New(t)
+	approverDir, _, keyPath := approvedPlanFixture(c)
+	f := newPlanFixture(c)
+	planPath := f.savePlan(c)
+	out, err := runSchema("", "approve", "--plan", planPath, "--key", keyPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	plan, err := atlasschema.ReadPlanFile(planPath)
+	c.Assert(err, qt.IsNil)
+	plan.Statements = append(plan.Statements, atlasschema.PlanStatement{SQL: `DROP TABLE "users"`, Severity: safety.Destructive})
+	edited, err := atlasschema.MarshalPlanFile(plan)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(planPath, edited, 0o600), qt.IsNil)
+
+	stdout, _, err := runSchemaStreams("apply",
+		"--db-url", f.dbURL, "--plan", planPath, "--require-approval",
+		"--allowed-signers", signersPath(approverDir), "--auto-approve", "--json")
+
+	c.Assert(err, qt.ErrorMatches, `--require-approval: approval does not verify against .*: either the plan changed after it was approved.*`)
+	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
+		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Outcome:         atlasschema.ApplyOutcomeFailed,
+		Error:           err.Error(),
+	})
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }

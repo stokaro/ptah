@@ -196,7 +196,8 @@ Schema apply completed successfully.
 ```
 
 `--edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval, and the
-edited SQL is what gets applied.
+edited SQL is what gets applied. It is refused together with `--json`, whose
+standard output belongs to a program rather than to an editor.
 
 ### Statements that cannot run inside a transaction
 
@@ -323,10 +324,27 @@ confirmation with
 ## Read the result in a script
 
 `--json` on `ptah schema plan` and `ptah schema apply` prints one JSON document
-on standard output, on success and on failure. The text a person reads goes to
-standard error instead: the planned statements, the confirmation prompt, and
-the `error:` line. The exit codes stay the same. A caller parses standard
-output and does not match any sentence on either stream.
+on standard output for every run that starts, on success and on failure. The
+text a person reads goes to standard error instead: the planned statements, the
+confirmation prompt, and the `error:` line. The exit codes stay the same. A
+caller parses standard output and does not match any sentence on either stream.
+An internal error writes a document too, `failed` if nothing was sent and
+`unknown` once statements were, before the command exits `2` with `error:
+internal error: ...`.
+
+A command line refused before the run starts prints no document, because no
+run exists to report. An unknown flag, a flag value that does not parse
+(`--json=maybe`, or a `PTAH_*` variable such as `PTAH_DRY_RUN=maybe`), flags
+that cannot be combined (`--save` with `--dry-run`, `--to` with `--root-dir`)
+and a positional argument each leave standard output empty, print the
+`error:` line on standard error, and exit `2`. Nothing ran.
+
+`--json` has to be typed on the command line: it reads no environment variable.
+`PTAH_JSON` is what the versioned commands read, and a value exported for them
+must not change what standard output means for a schema verb that never asked
+for a document. `--edit` is refused under `--json` and reported as `failed`,
+because the editor waits for a person and writes to the stream the document is
+on.
 
 Against the database this page has converged, a plan reports that nothing is
 left to change:
@@ -383,12 +401,19 @@ means the database already matches the desired schema, and no file is written.
 no refusal code. The document does not depend on when it was written, so two
 plans against an unchanged database print the same bytes.
 
+`plan` is the plan's content, not its bytes. `plan_digest` covers the bytes of
+the plan file, and those are not in the document: encoding `plan` again does not
+reproduce them, and no encoder is promised to. A caller that needs the bytes, to
+compare them with `plan_digest`, to sign them with `ptah schema approve` or to
+pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
+--json` and reads the file.
+
 ### The apply document
 
 | Field | Meaning |
 | --- | --- |
 | `outcome` | How the run ended; see the next table |
-| `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read |
+| `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read. The file is read once, so with `--require-approval` these are also the bytes the signature was checked against |
 | `statements` | The statements the run listed as its planned changes, in order |
 | `refusal` | Why the apply refused; see below |
 | `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
@@ -418,14 +443,16 @@ than as `applied`.
 | `protected-table` | `plan`, and `apply` without `--plan` | `tables` lists the fenced tables the plan would change |
 | `lock-timeout` | `apply` | Another session held the schema apply lock longer than `--lock-timeout` |
 | `transaction-preflight` | `apply` | A statement cannot run inside the transaction `--tx-mode` opens |
-| `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database |
+| `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
 
 A consumer that does not know a code still knows what `refused` means, and
 reads `error` for the rest.
 
 `apply --plan` never raises `protected-table`. A fence passed to it is a usage
 error, reported as `failed` with no refusal code, because the plan was never
-checked against the fence.
+checked against the fence. A plan that `--require-approval` turns away, with no
+approval or with one that does not verify, is `failed` too, and the document
+names no plan, because the gate runs before the file is decoded.
 
 ## Hybrid patterns
 

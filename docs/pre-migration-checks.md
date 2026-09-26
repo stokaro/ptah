@@ -266,7 +266,7 @@ variable, `PTAH_SKIP_CHECKS`:
 PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 ```
 
-The name is not a second convention. Ptah binds every native flag to a
+The name is not a second convention. Ptah binds its native flags to a
 `PTAH_<FLAG>` environment twin, so `ptah migrations up --skip-checks` already
 answers to `PTAH_SKIP_CHECKS`; `ptah-compat migrate apply` reads the same
 variable. A run with the bypass active prints a warning on stderr, because

@@ -174,6 +174,22 @@ func TestApprovalFor_NoApprovalAtAllIsNotAnError(t *testing.T) {
 	c.Assert(approval, qt.IsNil)
 }
 
+// TestPlanDigestIn_ReadsTheBytesItIsHanded holds the digest check to the read
+// the signature was verified over. The path names a file that binds another
+// plan; a reader that opened it would compare the plan built now against a
+// digest no signature was checked for.
+func TestPlanDigestIn_ReadsTheBytesItIsHanded(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "cutover.plan")
+	c.Assert(os.WriteFile(path, []byte(planDigestKey+": "+strings.Repeat("d", 64)+"\n"), 0o600), qt.IsNil)
+	verified := []byte("operation: cutover\n" + planDigestKey + ": " + strings.Repeat("a", 64) + "\n")
+
+	got, err := planDigestIn(path, verified)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, strings.Repeat("a", 64))
+}
+
 // signedPlanFor writes a plan file and signs it with a fresh key.
 func signedPlanFor(c *qt.C, plan planIdentity, principal string) (path, allowedSigners string) {
 	c.Helper()

@@ -144,7 +144,10 @@ With `--json` the command says so in a document rather than a sentence:
 `outcome` is `no-changes`. The same document carries the plan, its digest and
 a typed refusal code when planning refuses, and `ptah schema apply --json`
 reports the apply the same way; see
-[Read the result in a script](../apply/#read-the-result-in-a-script).
+[Read the result in a script](../apply/#read-the-result-in-a-script). The
+digest covers the bytes of the file `--output` writes, and the document carries
+the plan's content rather than those bytes, so the file is what gets approved
+and applied.
 
 ## List the approvers
 
@@ -367,6 +370,11 @@ A verified approval proves what was signed, and by whom:
 - The plan file holds exactly the bytes that a key listed in `allowed_signers`
   signed, in the `ptah-plan` namespace.
 - The principal that key is listed under, which `verify-approval` prints.
+
+`ptah schema apply --require-approval` reads the plan file once. The signature
+is checked against those bytes, and the same bytes are decoded, digested and
+executed, so a file replaced after the check does not run in place of the plan
+that was approved.
 
 It does not prove any of the following, and a process built on it has to cover
 them some other way:

@@ -235,8 +235,8 @@
         "/migrate-from/atlas/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8395,
-      "sourceBytes": 59100
+      "visibleWords": 8400,
+      "sourceBytes": 59097
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -1483,8 +1483,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 2247,
-      "sourceBytes": 19368
+      "visibleWords": 2579,
+      "sourceBytes": 21270
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1702,8 +1702,8 @@
         "/reference/native-commands/",
         "/start/quick-start-direct/"
       ],
-      "visibleWords": 1607,
-      "sourceBytes": 14652
+      "visibleWords": 1680,
+      "sourceBytes": 15082
     },
     {
       "path": "docs/site/src/content/docs/extend/components.md",
@@ -4391,8 +4391,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 9008,
-      "sourceBytes": 89006
+      "visibleWords": 9006,
+      "sourceBytes": 88990
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4447,8 +4447,8 @@
         "/schema/orm-and-external/",
         "/versioned/apply/"
       ],
-      "visibleWords": 3332,
-      "sourceBytes": 23690
+      "visibleWords": 3395,
+      "sourceBytes": 24077
     },
     {
       "path": "docs/site/src/content/docs/reference/exit-codes.md",
