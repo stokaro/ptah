@@ -255,7 +255,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateRenderedVirtualTables: opts.policy.ValidateRenderedVirtualTables,
 		OmitAtlasRefusedBlocks:        omitRefusedBlocks,
 		CompatibilityHCLFraming:       true,
-		DevURLDiagnostic:              atlasDevURLDriverDiagnostic,
+		DevURLDiagnostic:              atlasInspectDevURLDiagnostic,
 		Vars:                          schemaVars,
 	})
 	if err != nil {

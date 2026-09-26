@@ -18,6 +18,12 @@ import (
 // and under --auto-approve alike.
 const unreachableDevURL = "sqlite:///nonexistent-dir-940-xyz/dev.db"
 
+// schemaApplySQLDevURLRefusal is the pinned binary's refusal of a SQL desired
+// state with no dev database, as a regular expression: the sentence carries a
+// link to that binary's page on dev databases, measured on 2026-09-26
+// (stokaro/ptah#3680).
+const schemaApplySQLDevURLRefusal = `--dev-url cannot be empty\. See: https://atlasgo\.io/atlas-schema/sql#dev-database`
+
 func writeSchemaApplyGateFixture(c *qt.C, dir, table string) string {
 	c.Helper()
 	schemaPath := filepath.Join(dir, "schema.sql")
@@ -137,7 +143,7 @@ func TestSchemaApplyRequiresDevURLForNonDatabaseSource(t *testing.T) {
 				"--to", "file://" + schemaPath,
 			}, test.args...)...)
 
-			c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches, schemaApplySQLDevURLRefusal, qt.Commentf("%s", out))
 			c.Assert(atlastest.SqliteTableCount(c, dbPath, "gate_users"), qt.Equals, 0)
 		})
 	}
@@ -198,7 +204,7 @@ func TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning(t *testing.T) {
 // answers, measured on the same schema:
 //
 //	schema apply --url sqlite://x.db --to file://schema.hcl --auto-approve  -> exit 0, creates the table
-//	schema apply --url sqlite://x.db --to file://schema.sql --auto-approve  -> exit 1, --dev-url cannot be empty
+//	schema apply --url sqlite://x.db --to file://schema.sql --auto-approve  -> exit 1, --dev-url cannot be empty. See: …
 //
 // An HCL document is already a schema definition and needs nothing replayed. A
 // SQL file is a script that has to be run somewhere first, and that somewhere
@@ -228,7 +234,7 @@ func TestSchemaApplyDevURLRuleSeparatesTheFileFormats(t *testing.T) {
 			name:      "a SQL desired state still requires one",
 			file:      "schema.sql",
 			contents:  "CREATE TABLE parity_sql (id INTEGER PRIMARY KEY);\n",
-			wantError: "--dev-url cannot be empty",
+			wantError: "--dev-url cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database",
 		},
 	}
 
@@ -307,6 +313,56 @@ func TestSchemaApplyDevURLRuleReadsADirectory_FailurePath(t *testing.T) {
 		"--auto-approve",
 	)
 
-	c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`, qt.Commentf("output:\n%s", out))
+	c.Assert(err, qt.ErrorMatches, schemaApplySQLDevURLRefusal, qt.Commentf("output:\n%s", out))
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "parity_sql_dir"), qt.Equals, 0)
+}
+
+// TestSchemaApplyMigrationDirWithoutDevURL_FailurePath: a migration directory
+// has to be replayed on a dev database, so `schema apply` refuses one without
+// it. By default the refusal is the pinned binary's linked sentence, and it
+// comes after the flag values are parsed, where that binary names a bad
+// --tx-mode first (measured on 2026-09-26, stokaro/ptah#3680). Under
+// PTAH_ATLAS_APPLY_WITHOUT_DEV_URL the directory is still refused, in the
+// sentence that says why it needs one.
+func TestSchemaApplyMigrationDirWithoutDevURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		optIn   string
+		extra   []string
+		wantErr string
+	}{
+		{
+			name:    "by default",
+			optIn:   "0",
+			wantErr: schemaApplySQLDevURLRefusal,
+		},
+		{
+			name:    "a bad --tx-mode is named first",
+			optIn:   "0",
+			extra:   []string{"--tx-mode", "bogus"},
+			wantErr: `invalid tx-mode "bogus": expected file, all, or none`,
+		},
+		{
+			name:    "under the opt-in",
+			optIn:   "1",
+			wantErr: `--to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlastest.ApplyWithoutDevURLEnvVar, tt.optIn)
+			fx := newSchemaDiffDevURLFixture(c)
+			dbPath := filepath.Join(c.TempDir(), "target.db")
+
+			out, err := runSchemaApply(c, append([]string{
+				"--url", "sqlite://" + dbPath, "--to", fx.migrationDir, "--auto-approve",
+			}, tt.extra...)...)
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr, qt.Commentf("%s", out))
+			_, statErr := os.Stat(dbPath)
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+		})
+	}
 }

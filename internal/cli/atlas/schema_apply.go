@@ -1315,14 +1315,11 @@ func validateAtlasSchemaApplyOptions(
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
 		return err
 	}
-	// Classification rejects unsupported schemes and source conflicts, and the
-	// dev-database requirement is checked here, before the target database is
-	// contacted.
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
-	if err != nil {
-		return err
-	}
-	return set.EnsureDevDatabase(opts.devURL)
+	// Classification rejects unsupported schemes and source conflicts before
+	// the target database is contacted. The dev-database requirement is
+	// [ensureAtlasSchemaApplyDevURL]'s, after the flag values are parsed.
+	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	return err
 }
 
 // applyWithoutDevURLEnvVar restores planning a non-database desired state with
@@ -1347,24 +1344,34 @@ const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
 // The rule is scoped, not universal, and every boundary of the scope is
 // measured against the pinned community binary rather than reasoned about:
 //
-//	--to                              community binary        this binary
-//	sqlite://target.db                applies                 applies
-//	file://schema.hcl                 applies                 applies
-//	file://schema.sql                 --dev-url cannot be…    --dev-url cannot be…
+//	--to                              community binary and this binary
+//	sqlite://target.db                applies
+//	file://schema.hcl, file://hcldir  applies
+//	file://schema.sql, file://sqldir  --dev-url cannot be empty. See: …
+//	file://migrations                 --dev-url cannot be empty. See: …
 //
-// The middle row is the one a rule about FILES gets wrong: an HCL desired state
+// The second row is the one a rule about FILES gets wrong: an HCL desired state
 // is already a schema definition and needs nothing replayed, so refusing it
 // breaks `schema apply` for the most common Atlas source there is. A fixture
 // using only a SQL file cannot separate a rule about FILES from a rule about
-// SQL, which is why the table above carries both.
+// SQL, which is why the table above carries both. The refusal is
+// [atlasEmptyDevURLError]'s linked sentence, measured on 2026-09-26 on
+// PostgreSQL for all three refused shapes (stokaro/ptah#3680).
 //
 // `schema inspect` and `schema diff` refuse BOTH formats on both binaries, so
 // they are not this rule and are deliberately left alone
 // (internal/atlasschema/inspect_source.go).
 //
-// A migration directory keeps its own longer diagnostic from
-// [atlassource.Set.EnsureDevDatabase], which names why the replay needs a dev
-// database. Both exit 1; this one only speaks for the sources that had no rule.
+// The refusal comes after the flag values are parsed, as on the pinned binary:
+// with a bad --tx-mode or --lock-timeout it names the flag first. That binary
+// connects to --url before it asks for a dev database; this one asks first and
+// contacts nothing for a run it will refuse, so an unreachable --url with a SQL
+// --to is refused for the dev database here and for the connection there. Both
+// exit 1.
+//
+// [applyWithoutDevURLEnvVar] lifts the refusal for a schema file. A migration
+// directory still has to be replayed on a dev database, so under the variable
+// it keeps [atlassource.Set.EnsureDevDatabase]'s sentence, which says why.
 func ensureAtlasSchemaApplyDevURL(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
@@ -1389,10 +1396,10 @@ func ensureAtlasSchemaApplyDevURL(
 		// can improve on it.
 		return nil //nolint:nilerr // the caller already refused on this error
 	}
-	if allowed {
-		return nil
+	if !allowed {
+		return atlasEmptyDevURLError(set)
 	}
-	return errors.New("--dev-url cannot be empty")
+	return set.EnsureDevDatabase(opts.devURL)
 }
 
 // atlasApplyWithoutDevURL is the declaration of the variable, made once, on the

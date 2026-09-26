@@ -596,8 +596,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12813,
-      "sourceBytes": 93984
+      "visibleWords": 12858,
+      "sourceBytes": 94280
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -4290,8 +4290,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14452,
-      "sourceBytes": 100223
+      "visibleWords": 14483,
+      "sourceBytes": 100412
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",

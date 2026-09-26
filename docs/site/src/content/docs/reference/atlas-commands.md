@@ -1024,7 +1024,9 @@ evaluated `atlas.hcl` env.
 Non-database sources require `--dev-url` and are evaluated on the dev database:
 it is reset, the source is materialized on it (schema files executed, migration
 directories replayed), and the result is introspected. Inspecting a file
-without `--dev-url` fails with Atlas's `--dev-url cannot be empty` message.
+without `--dev-url` fails with Atlas's `--dev-url cannot be empty` message, and
+with Atlas's link to its dev-database page when the source is SQL or a
+migration directory.
 
 **Output formats**
 
@@ -1276,12 +1278,13 @@ combined with `--lock-name`.
 
 **`--dev-url` rehearsal.** `--dev-url` is required when `--to` is a SQL file,
 a directory of SQL files or a migration directory, and the apply is refused
-without one. A database, an HCL or YAML file or a directory of HCL files needs
-none, and `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file or directory
-without one. Before the
-apply, `--dev-url` rehearses the exact ordered plan on the dev database — reset,
-the target's current schema recreated, then the planned (or edited) statements
-executed under the same transaction mode. A failed rehearsal refuses the apply
+without one, with Atlas's `--dev-url cannot be empty` sentence and its link to
+Atlas's dev-database page. A database, an HCL or YAML file or a directory of
+HCL files needs none, and `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file
+or directory without one. Before the apply, `--dev-url` rehearses the exact
+ordered plan on the dev database — reset, the target's current schema
+recreated, then the planned (or edited) statements executed under the same
+transaction mode. A failed rehearsal refuses the apply
 with the target unchanged; the dev database must not be the target and must
 share its schema scope. The rehearsal runs under `--dry-run` too, so a dry run
 cannot report a plan the real apply would refuse.
