@@ -25,7 +25,8 @@ func overloadedRoutines(kind string) *schemamodel.Database {
 // (stokaro/ptah#3672). A target without routine overloading cannot hold both.
 // Applied as Ptah writes them, the second CREATE is Error 1304 on MySQL 8.4.11
 // and MariaDB 11.8.9, and on SQL Server 2022 the second CREATE OR ALTER
-// replaces the first without an error. Oracle is not measured for this case.
+// replaces the first without an error, as the second CREATE OR REPLACE does on
+// Oracle 23.26.3.0.0.
 // So the document is refused before a statement is planned, and the message
 // says what the target would do.
 func TestValidateSchema_ATargetWithoutOverloadsRefusesTwoArgumentLists(t *testing.T) {
@@ -47,7 +48,14 @@ func TestValidateSchema_ATargetWithoutOverloadsRefusesTwoArgumentLists(t *testin
 			name: "SQL Server procedures", dialect: platform.SQLServer, caps: capability.ForDialect(platform.SQLServer), kind: "procedure",
 			consequence: "Ptah writes CREATE OR ALTER, so the second replaces the first without an error",
 		},
-		{name: "Oracle functions", dialect: platform.Oracle, caps: capability.Oracle23(), kind: "", consequence: "the second takes the place of the first"},
+		{
+			name: "Oracle functions", dialect: platform.Oracle, caps: capability.Oracle23(), kind: "",
+			consequence: "Ptah writes CREATE OR REPLACE, so the second replaces the first without an error",
+		},
+		{
+			name: "Oracle procedures", dialect: platform.Oracle, caps: capability.Oracle23(), kind: "procedure",
+			consequence: "Ptah writes CREATE OR REPLACE, so the second replaces the first without an error",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

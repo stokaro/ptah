@@ -114,8 +114,11 @@ third cell that does not either lie to a function-based index or diff forever.
 
 A standalone routine has no overloads. A schema that declares two functions, or
 two procedures, of one name with different parameters is refused before any
-statement is planned. Ptah writes `CREATE OR REPLACE`, and Oracle keeps one
-standalone routine per name, so the second would take the place of the first.
+statement is planned. Ptah writes `CREATE OR REPLACE`, and on Oracle 23.26 the
+second statement replaces the first without an error: one routine is left,
+holding the second body, and a call with the first one's arguments fails with
+`PLS-00306`. A function and a procedure of one name are left to the server,
+which refuses the second with `ORA-00955` and keeps the first.
 
 The semicolon that closes a PL/SQL block belongs to the block rather than to the
 client, which is why Oracle's own tooling ends one with a `/` on the next line.

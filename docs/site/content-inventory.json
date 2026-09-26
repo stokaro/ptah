@@ -1056,8 +1056,8 @@
       "inboundLinks": [
         "/databases/support-matrix/"
       ],
-      "visibleWords": 1159,
-      "sourceBytes": 8024
+      "visibleWords": 1197,
+      "sourceBytes": 8241
     },
     {
       "path": "docs/site/src/content/docs/databases/overview.mdx",
@@ -1164,8 +1164,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 10306,
-      "sourceBytes": 69567
+      "visibleWords": 10364,
+      "sourceBytes": 69862
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",

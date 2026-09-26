@@ -1555,10 +1555,14 @@ func validateRoutineOverloads(dialect string, functions []schemamodel.Function) 
 //   - SQL Server 2022 (16.0.4295.3) takes the second CREATE OR ALTER without an
 //     error and keeps it in place of the first, so a call with the first one's
 //     arguments answers Msg 313.
-//   - Oracle is not measured for this case. It keeps one standalone routine per
-//     name, and the CREATE OR REPLACE Ptah writes replaced the first of two
-//     case-folded names without an error on 23.26.2.0.0, which is the same
-//     statement against the same object.
+//   - Oracle 23.26.3.0.0 takes the second CREATE OR REPLACE without an error
+//     and keeps it in place of the first: one FUNCTION or PROCEDURE object is
+//     left, holding the second body, and a call with the first one's arguments
+//     answers PLS-00306, "wrong number or types of arguments".
+//
+// A function and a procedure of one name are a different case, left to the
+// server: Oracle 23.26.3.0.0 answers the second CREATE OR REPLACE with
+// ORA-00955, "name is already used by an existing object", and keeps the first.
 func routineOverloadConsequence(dialect string) (string, bool) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB:
@@ -1568,8 +1572,8 @@ func routineOverloadConsequence(dialect string) (string, bool) {
 		return "Ptah writes CREATE OR ALTER, so the second replaces the first without an error, " +
 			"and a call with the first one's arguments fails", true
 	case platform.Oracle:
-		return "Ptah writes CREATE OR REPLACE, and Oracle keeps one standalone routine per name, " +
-			"so the second takes the place of the first", true
+		return "Ptah writes CREATE OR REPLACE, so the second replaces the first without an error, " +
+			"and a call with the first one's arguments fails", true
 	default:
 		return "", false
 	}
