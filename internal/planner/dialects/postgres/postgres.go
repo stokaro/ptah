@@ -2318,10 +2318,8 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 		// rather than removing an object nobody asked to remove.
 		drop := ast.NewDropFunction(target.Name).
 			SetKind(target.Kind).
-			SetComment(fmt.Sprintf(
-				"Drop function %s to recreate it: a return type change cannot be applied by CREATE OR REPLACE",
-				target.Name,
-			))
+			SetComment(fmt.Sprintf("Drop function %s to recreate it: its %s changed",
+				target.Name, refusedReplacementChanges(fnDiff)))
 		// An empty list is still a list: the routine that takes no
 		// arguments is dropped as `f()`, and only a change that recorded
 		// no identity at all leaves the statement naming the routine.
@@ -2362,12 +2360,25 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 // because a drop is not free: it fails on any routine a view, policy or trigger
 // uses, where a replacement keeps those objects in place.
 func replacementIsRefused(fnDiff difftypes.FunctionDiff) bool {
-	for _, key := range []string{"returns", "parameters"} {
-		if _, changed := fnDiff.Changes[key]; changed {
-			return true
+	return refusedReplacementChanges(fnDiff) != ""
+}
+
+// refusedReplacementChanges names the changes [replacementIsRefused] drops the
+// routine for, as the drop's comment says them, or answers empty for none. A
+// fixed reason would name a return type for a routine whose parameters
+// changed, and send a reader looking for a change nobody made
+// (stokaro/ptah#3673).
+func refusedReplacementChanges(fnDiff difftypes.FunctionDiff) string {
+	var changed []string
+	for _, change := range []struct{ key, words string }{
+		{key: "returns", words: "return type"},
+		{key: "parameters", words: "parameters"},
+	} {
+		if _, found := fnDiff.Changes[change.key]; found {
+			changed = append(changed, change.words)
 		}
 	}
-	return false
+	return strings.Join(changed, " and ")
 }
 
 // summarizeFunctionChanges produces a deterministic one-line summary of the

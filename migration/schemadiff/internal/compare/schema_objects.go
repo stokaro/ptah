@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
@@ -15,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/oracleroutine"
@@ -178,6 +180,18 @@ func FunctionsWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
+	functionsWithDialect(desired, database, diff, dialect, nil)
+}
+
+// functionsWithDialect is [FunctionsWithDialect] with the argument lists a
+// server spelled, nil when none did.
+func functionsWithDialect(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	arguments map[string]config.RoutineArguments,
+) {
 	// Build lookup maps for function comparison
 	generatedFunctionMap := make(map[string]schemamodel.Function)
 	for _, fn := range desired.Functions {
@@ -223,7 +237,7 @@ func FunctionsWithDialect(
 		// qualified name, and a match on one would otherwise mark the other as
 		// matched and silently keep it (stokaro/ptah#1722).
 		matchedDatabaseFunctions[routineKeyWithKind(databaseFunction.Kind, databaseFunction.QualifiedName())] = struct{}{}
-		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
+		functionComparison := functionDefinitions(generatedFunction, databaseFunction, dialect, arguments)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 		}
@@ -253,16 +267,20 @@ func FunctionsWithDialect(
 // database's default-schema and identifier rules. The names retained in the
 // diff remain the original desired/current spellings so downstream planners
 // can resolve the exact source objects they received.
+//
+// arguments is [config.CompareOptions.RoutineArguments], nil when no server
+// spelled the declared argument lists.
 func FunctionsWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
+	arguments map[string]config.RoutineArguments,
 ) {
 	semantics = semantics.Normalize("")
 	if semantics.DefaultSchema == "" {
-		FunctionsWithDialect(desired, database, diff, dialect)
+		functionsWithDialect(desired, database, diff, dialect, arguments)
 		return
 	}
 
@@ -282,7 +300,7 @@ func FunctionsWithSemantics(
 				declaredRoutineNamed(declaration, generatedNames[identity]))
 		}
 		for _, pair := range pairs {
-			functionComparison := FunctionDefinitionsWithDialect(pair.declared, pair.recorded, dialect)
+			functionComparison := functionDefinitions(pair.declared, pair.recorded, dialect, arguments)
 			if len(functionComparison.Changes) > 0 {
 				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 			}
@@ -339,15 +357,33 @@ func canonicalizePostgresArguments(parameters string) string {
 	if parameters == "" {
 		return parameters
 	}
-	arguments := splitTopLevelArguments(parameters)
+	arguments := routineargs.Split(parameters)
 	for i, argument := range arguments {
 		arguments[i] = canonicalizePostgresArgument(argument)
 	}
 	return strings.Join(arguments, ", ")
 }
 
-// canonicalizePostgresArgument canonicalizes one argument's type.
+// canonicalizePostgresArgument canonicalizes one argument's type, and leaves
+// its default as written apart from the keyword.
+//
+// The default is cut off first. Read as part of the type, `b text DEFAULT
+// lower('X')` would take `lower` for the type and fold the spaces out of its
+// literal, and `c int4 DEFAULT 1` would leave `int4` unmapped, the last word
+// being `1`. `=` and DEFAULT are one clause, which PostgreSQL prints as
+// DEFAULT.
 func canonicalizePostgresArgument(argument string) string {
+	declaration, expression, hasDefault := routineargs.CutDefault(argument)
+	canonical := canonicalizePostgresArgumentType(declaration)
+	if !hasDefault {
+		return canonical
+	}
+	return canonical + " DEFAULT " + expression
+}
+
+// canonicalizePostgresArgumentType canonicalizes the type of one argument
+// that declares no default.
+func canonicalizePostgresArgumentType(argument string) string {
 	trimmed := strings.TrimSpace(argument)
 	head, modifier := trimmed, ""
 	if i := strings.IndexByte(trimmed, '('); i >= 0 {
@@ -446,7 +482,7 @@ func foldArgumentMode(parameters string) string {
 	if parameters == "" {
 		return parameters
 	}
-	arguments := splitTopLevelArguments(parameters)
+	arguments := routineargs.Split(parameters)
 	for i, argument := range arguments {
 		trimmed := strings.TrimSpace(argument)
 		// Cut on the first space: a mode is one leading word, and an argument
@@ -461,28 +497,6 @@ func foldArgumentMode(parameters string) string {
 		arguments[i] = trimmed
 	}
 	return strings.Join(arguments, ", ")
-}
-
-// splitTopLevelArguments splits an argument list on the commas that separate
-// arguments, leaving the ones inside a type's own parentheses alone --
-// `numeric(10, 2)` is one argument, not two.
-func splitTopLevelArguments(parameters string) []string {
-	var arguments []string
-	depth, start := 0, 0
-	for i, r := range parameters {
-		switch r {
-		case '(', '[':
-			depth++
-		case ')', ']':
-			depth--
-		case ',':
-			if depth == 0 {
-				arguments = append(arguments, parameters[start:i])
-				start = i + 1
-			}
-		}
-	}
-	return append(arguments, parameters[start:])
 }
 
 // routineKeyWithKind prefixes a routine key with its kind, so a procedure and a
@@ -703,6 +717,20 @@ func FunctionDefinitionsWithDialect(
 	dbFunction catalog.Function,
 	dialect string,
 ) difftypes.FunctionDiff {
+	return functionDefinitions(genFunction, dbFunction, dialect, nil)
+}
+
+// functionDefinitions is [FunctionDefinitionsWithDialect] with the argument
+// lists a server spelled, nil when none did.
+func functionDefinitions(
+	genFunction schemamodel.Function,
+	dbFunction catalog.Function,
+	dialect string,
+	arguments map[string]config.RoutineArguments,
+) difftypes.FunctionDiff {
+	// The key is the declaration as the caller holds it, before the folding
+	// below, because that is the text the resolver was given.
+	spelled := arguments[exprkey.RoutineArguments(genFunction)]
 	functionDiff := difftypes.FunctionDiff{
 		FunctionName: genFunction.Name,
 		Changes:      make(map[string]string),
@@ -723,6 +751,14 @@ func FunctionDefinitionsWithDialect(
 	// The DB-side read path already returns canonical case by construction,
 	// so we only normalize the gen side.
 	genFunction.Canonicalize()
+
+	// The server's spelling of the declared arguments, where one answered,
+	// replaces the declaration, and after Canonicalize: the server prints NULL,
+	// ARRAY and DEFAULT upper case, as the catalog does, and the fold must not
+	// reach them (stokaro/ptah#3673).
+	if spelled.Resolved {
+		genFunction.Parameters = spelled.Arguments
+	}
 
 	// After Canonicalize, not before: it lowercases Returns and Parameters, and
 	// the synonym table this resolves is keyed on the lowercase spelling.

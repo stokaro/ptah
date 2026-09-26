@@ -81,13 +81,24 @@ its own read-back rarely match as text:
 | `DEFAULT '2020-01-01'::timestamp with time zone` | `'2020-01-01 00:00:00+00'::timestamp with time zone` |
 | `DEFAULT 'x'::text::character varying` | `('x'::text)::character varying` |
 | `CHECK (price >= 0)` on a numeric column | `(price >= (0)::numeric)` |
+| routine argument `b text DEFAULT 'X'` | `b text DEFAULT 'X'::text` |
+| routine argument `c numeric(10,2) = 1.5` | `c numeric DEFAULT 1.5` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
 column type and default, CHECK, policy clause, index expression and predicate,
-trigger WHEN condition, and domain the way its catalog does. It creates a temporary object inside a
-transaction that is rolled back, reads the stored form, and compares like with
-like. A column is asked only when its default is declared or its type is not
-written the way the catalog reports it.
+trigger WHEN condition, domain, and routine argument list the way its catalog
+does. It creates a temporary object inside a transaction that is rolled back,
+reads the stored form, and compares like with like. A column is asked only when
+its default is declared or its type is not written the way the catalog reports
+it. A routine is asked only when it takes arguments and the database holds a
+routine of that name. Its temporary copy has the declared arguments and return
+type, and a body the server does not check, because the arguments do not depend
+on the body.
+
+Ptah lowercases the words of an argument list and a return clause that are not
+quoted, as the server does. A string literal, a quoted name and a dollar-quoted
+string keep their case: an argument declared `DEFAULT 'X'` is created with
+`'X'`.
 
 The temporary table takes the name of the table the declaration is on, so an
 expression that names its own table, such as `CHECK (clients.n > 0)` or a policy

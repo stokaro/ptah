@@ -1565,10 +1565,13 @@ func (f Function) IsProcedure() bool {
 //     function everywhere that reads it, and filling it in would rewrite every
 //     declaration written before procedures existed into a form its author did
 //     not type.
-//   - Returns and Parameters: lowercased, because PostgreSQL stores types in
-//     canonical lowercase (pg_get_function_result, pg_get_function_arguments)
-//     and lowercases unquoted parameter names too. An annotation written as
-//     returns="VOID" would otherwise false-diff against pg_proc on every run.
+//   - Returns and Parameters: lowercased outside quotes, because PostgreSQL
+//     stores types in canonical lowercase (pg_get_function_result,
+//     pg_get_function_arguments) and lowercases unquoted parameter names too.
+//     An annotation written as returns="VOID" would otherwise false-diff
+//     against pg_proc on every run. A string literal, a quoted identifier and
+//     a dollar-quoted string keep their case, because the server keeps it: a
+//     default declared 'X' is not the default 'x'.
 //
 // The DB-side read path (internal/dbschema/postgres/reader.go) returns canonical case
 // by construction, so it does not need to call this. The motivating callers
@@ -1596,9 +1599,11 @@ func (f *Function) Canonicalize() {
 	// (`pg_get_function_result`, `pg_get_function_arguments`) and lowercases
 	// unquoted parameter names too. Mirror that on the Go side so an
 	// annotation written as `returns="VOID"` or `params="x TEXT"` doesn't
-	// false-diff on every run against pg_proc.
+	// false-diff on every run against pg_proc. Only the unquoted words: the
+	// renderer writes these fields into the CREATE, so a folded literal is a
+	// changed default (stokaro/ptah#3673).
 	f.Returns = canonicalReturns(f.Returns)
-	f.Parameters = strings.ToLower(f.Parameters)
+	f.Parameters = lowerOutsideQuotes(f.Parameters)
 }
 
 // canonicalReturns folds a return clause onto the spelling the catalog reports.
@@ -1610,7 +1615,7 @@ func (f *Function) Canonicalize() {
 // catalog row on every comparison, and the plan would replace a routine nobody
 // touched, forever.
 func canonicalReturns(returns string) string {
-	lowered := strings.ToLower(returns)
+	lowered := lowerOutsideQuotes(returns)
 	if rest, found := strings.CutPrefix(lowered, "setof "); found {
 		return "SETOF " + rest
 	}

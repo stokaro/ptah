@@ -32,6 +32,13 @@ func TestSignature_AgreesWithTheCatalog(t *testing.T) {
 		{name: "two arguments with modifiers", declared: "a bool, b numeric(10,2)", identity: "a boolean, b numeric"},
 		{name: "inout is kept", declared: "INOUT a int", identity: "INOUT a integer"},
 		{name: "a quoted type survives", declared: `a timestamptz, b "char"`, identity: `a timestamp with time zone, b "char"`},
+		{
+			// A comma inside a default's literal or array is not one between
+			// arguments.
+			name:     "defaults holding commas",
+			declared: `a varchar(50), b numeric(10,2) = 1.5, "Label" text DEFAULT 'A,b', d int[] DEFAULT ARRAY[1, 2], e text DEFAULT NULL`,
+			identity: `a character varying, b numeric, "Label" text, d integer[], e text`,
+		},
 	}
 
 	for _, test := range tests {
