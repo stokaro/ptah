@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewcolumns"
 )
 
@@ -645,7 +646,10 @@ func (p *parser) parseTriggerEvent(block *hclsyntax.Block) (triggerEventSpec, er
 		if err := p.rejectUnsupportedTriggerEventAttrs(nested); err != nil {
 			return triggerEventSpec{}, err
 		}
-		currentEvent := triggerEventFromAttrs(nested)
+		currentEvent, err := p.triggerEventFromAttrs(nested)
+		if err != nil {
+			return triggerEventSpec{}, err
+		}
 		if currentEvent == "" {
 			return triggerEventSpec{}, p.blockError(nested, "trigger timing block requires an event")
 		}
@@ -1329,12 +1333,13 @@ func (p *parser) rejectUnsupportedTriggerEventAttrs(block *hclsyntax.Block) erro
 	if err := p.rejectNestedBlocks(block, "trigger event"); err != nil {
 		return err
 	}
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"insert":   true,
-		"update":   true,
-		"delete":   true,
-		"truncate": true,
-	}, "trigger event")
+	// Every attribute the block accepts names an event, so one naming none is
+	// refused rather than read as unset.
+	allowed := make(map[string]bool)
+	for _, keyword := range triggerdef.Keywords() {
+		allowed[strings.ToLower(keyword)] = true
+	}
+	return p.rejectUnsupportedAttrs(block, allowed, "trigger event")
 }
 
 func (p *parser) rejectUnsupportedPolicyAttrs(block *hclsyntax.Block) error {
@@ -1407,21 +1412,27 @@ func triggerTimingFromBlock(value string) string {
 	}
 }
 
-func triggerEventFromAttrs(block *hclsyntax.Block) string {
-	for _, event := range []string{"insert", "update", "delete", "truncate"} {
-		if attr := block.Body.Attributes[event]; attr != nil && attrBool(attr) {
-			return strings.ToUpper(event)
+// triggerEventFromAttrs reads every event a timing block sets, joined by
+// " OR ", or "" when it sets none. Each attribute has to be a bool: a value
+// that is not one is refused, because reading it as false would drop the
+// event the author wrote.
+//
+// The attributes are the event keywords in lower case, read in the order
+// triggerdef keeps them, which is the order PostgreSQL reports a trigger's
+// events and the PostgreSQL reader builds its list in. So a block that sets
+// `update` before `insert` compares with the database as written.
+func (p *parser) triggerEventFromAttrs(block *hclsyntax.Block) (string, error) {
+	var events []string
+	for _, keyword := range triggerdef.Keywords() {
+		set, err := p.boolAttr(block, strings.ToLower(keyword), "trigger event", false)
+		if err != nil {
+			return "", err
+		}
+		if set {
+			events = append(events, keyword)
 		}
 	}
-	return ""
-}
-
-func attrBool(attr *hclsyntax.Attribute) bool {
-	value, diags := attr.Expr.Value(nil)
-	if diags.HasErrors() || value.Type() != cty.Bool {
-		return false
-	}
-	return value.True()
+	return strings.Join(events, " OR "), nil
 }
 
 func (p *parser) boolAttr(block *hclsyntax.Block, name, label string, fallback bool) (bool, error) {

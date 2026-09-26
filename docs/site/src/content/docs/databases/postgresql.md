@@ -306,9 +306,12 @@ trigger. MySQL and MariaDB take one event and none of these clauses. SQLite
 takes one event, which may be `UPDATE OF`. SQL Server takes an event list
 without `UPDATE OF`, and Oracle takes both. None of them takes `TRUNCATE`,
 transition tables, or a PostgreSQL `WHEN` condition; SQLite and Oracle keep
-a `WHEN` of their own grammar in the trigger body. `schema inspect` in HCL leaves out a trigger
-with an event list, a condition or transition tables, and says so, because
-the HCL trigger block has no attribute for them.
+a `WHEN` of their own grammar in the trigger body.
+
+`schema inspect` in HCL writes each event as an attribute of the timing block,
+so `INSERT OR UPDATE` is `insert = true` and `update = true`. It leaves out a
+trigger with `UPDATE OF` columns, a condition or transition tables, and says
+so, because the HCL trigger block has no attribute for them.
 
 ## Materialized view refresh
 
