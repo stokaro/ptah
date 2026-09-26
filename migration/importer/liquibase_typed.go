@@ -71,6 +71,9 @@ type liquibaseConverter struct {
 	dialect string
 	// caps is the capability preset the target is rendered against.
 	caps capability.Capabilities
+	// dbms is the Liquibase short name of the database the history ran on,
+	// empty when the caller named none.
+	dbms string
 	// consumed collects the source files a sqlFile change read, so the import
 	// accounts for them as converted rather than reporting them as left behind.
 	consumed []string

@@ -185,7 +185,7 @@ and is wrong, which is worse than an import that did not happen.
 | Construct | Why it is refused |
 | --- | --- |
 | `include`, `includeAll` | They compose other changelog files. Ptah imports one changelog at a time, so the changesets those files hold would be left out. Import the referenced files instead. |
-| `preConditions`, `context`, `contexts`, `labels`, `dbms` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. `dbms` is refused on a changeset and on the changes Liquibase selects by it: `sql`, `sqlFile`, `insert` and `createProcedure`. |
+| `preConditions`, `context`, `contexts`, `labels`, `dbms` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. `dbms`, on a changeset or on a change Liquibase selects by it, imports once `--liquibase-dbms` names the database (below). |
 | `runAlways`, `runOnChange` set to `true` | Liquibase can run such a changeset again on a later update, and a Ptah migration runs once. Import it by hand. `false`, the default, is accepted. |
 | `failOnError="false"`, `runOrder`, `runWith` other than `jdbc`, `runWithSpoolFile`, `objectQuotingStrategy` other than `LEGACY`, `endDelimiter` other than `;` | Each changes how Liquibase runs the changeset in a way a migration has no form for: it records a failed changeset as run, moves it in the order, runs it through a native client, quotes typed changes' names differently, or ends statements with a delimiter Ptah does not know. The message names the attribute and what it changes. |
 | A changeset attribute Ptah does not read | Liquibase may read it, so importing without it could change what runs. Remove it, or import the changeset by hand. |
@@ -214,12 +214,37 @@ Attributes that decide nothing a migration carries import as if absent:
 `created`, `logicalFilePath`, `onValidationFail`, `validCheckSum`, `comment`,
 and a value that spells out Liquibase's default.
 
-`--dialect` does not make `dbms` convert. Keeping only the changesets whose
-`dbms` names the target would need the name Liquibase gives the target, and for
-some targets that name depends on how Liquibase connected: YugabyteDB is
-`yugabytedb` with the Liquibase extension installed and `postgresql` without it,
-and Spanner is `cloudspanner` through its JDBC driver and `postgresql` through
-PGAdapter.
+### Keeping one database's history: `--liquibase-dbms`
+
+A changelog that separates its databases with `dbms` imports once the database
+is named. `--liquibase-dbms` takes Liquibase's own name for the database the
+history ran on -- `postgresql`, `mysql`, `mariadb`, `mssql`, `oracle`, `sqlite`,
+`cockroachdb` and so on -- and the import keeps what Liquibase ran there:
+
+```console
+ptah migrations import --from liquibase --source-dir ./legacy --migrations-dir ./migrations --liquibase-dbms postgresql
+```
+
+- A changeset whose `dbms` selects the database imports without the attribute.
+  One whose `dbms` does not is left out and named on stderr under `Skipped`.
+- A `sql`, `sqlFile`, `insert` or `createProcedure` change is kept or left out
+  by its own `dbms` in the same way, in the changes and in the rollback, and a
+  changeset whose every change is left out is left out too.
+- The match is Liquibase's: a comma-separated list, where `all` matches first,
+  then `none` matches nothing, then `!name` excludes a database, and a list
+  naming no database without `!` matches every one it does not exclude.
+  Liquibase lowercases a changeset's `dbms` and compares a change's as written,
+  and so does the import.
+- A name Liquibase does not know is refused, in the flag and in the changelog.
+  Ptah's dialect names are not Liquibase's: `postgres` is refused, `postgresql`
+  is accepted.
+
+`--dialect` cannot do this job. Liquibase's name for a database is not
+always a function of the server: YugabyteDB is `yugabytedb` with the Liquibase
+extension installed and `postgresql` without it, and Spanner is `cloudspanner`
+through its JDBC driver and `postgresql` through PGAdapter. So the name comes
+from the history, not from the dialect the typed changes are rendered for. The
+two flags are independent and can be passed together.
 
 A directory holding both a changelog and formatted-SQL files is refused as well:
 the two shapes order changesets by different rules, and a changelog may

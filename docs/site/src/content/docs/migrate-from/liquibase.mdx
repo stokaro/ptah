@@ -325,9 +325,14 @@ error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" is
 `contexts`, `labels`, `dbms` and `preConditions` are refused the same way, and
 so is `dbms` on a `sql` or `sqlFile` change. Split the changelog per
 environment or per database in Liquibase first, where the selector still means
-something, and convert each result separately. `--dialect` does not choose
-among `dbms` values: the name Liquibase gives some databases depends on how it
-connected, so Ptah cannot tell which changesets ran on yours.
+something, and convert each result separately.
+
+A changelog split by `dbms` alone has a shorter way through: name the database
+the history ran on, in Liquibase's own spelling, with `--liquibase-dbms`, and
+the import keeps what Liquibase ran there and names the rest on standard
+error. `--dialect` cannot stand in for it: the name Liquibase gives some
+databases depends on how it connected, so Ptah cannot tell which changesets
+ran on yours. [Import from another tool](../../versioned/import/) says more.
 
 `runAlways="true"` and `runOnChange="true"` are refused as well, because
 Liquibase can run such a changeset again on a later update and a Ptah migration

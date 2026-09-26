@@ -174,6 +174,9 @@ type Changeset struct {
 	noTransaction bool
 	skip          bool
 	err           error
+	// dbms holds each changeset-level dbms value as written, so it can be
+	// matched against a database name the caller states.
+	dbms []string
 }
 
 // Note records one attribute written where only attributes can stand. A name
@@ -200,6 +203,9 @@ func (c *Changeset) NoteKnown(key, value string) bool {
 		}
 	case effect == Selector:
 		c.AddSelector(key)
+		if strings.EqualFold(key, "dbms") {
+			c.dbms = append(c.dbms, value)
+		}
 	case effect == Repeat && !slices.Contains(c.repeats, key):
 		c.repeats = append(c.repeats, key)
 	case effect == Unsupported:
@@ -228,7 +234,39 @@ func (c Changeset) Clone() Changeset {
 	c.repeats = slices.Clone(c.repeats)
 	c.unsupported = slices.Clone(c.unsupported)
 	c.unknown = slices.Clone(c.unknown)
+	c.dbms = slices.Clone(c.dbms)
 	return c
+}
+
+// DBMS is the changeset's dbms as written, several joined by a comma and a
+// space, or empty when it has none.
+func (c Changeset) DBMS() string {
+	return strings.Join(c.dbms, ", ")
+}
+
+// ResolveDBMS matches the changeset's dbms against the short name of the
+// database the history ran on, and reports whether Liquibase runs the
+// changeset there. A changeset with no dbms runs everywhere. Once resolved,
+// dbms no longer refuses the changeset as a selector; the caller keeps or
+// leaves out the changeset by the answer.
+//
+// Liquibase lowercases a changeset's dbms before matching it, so this does too.
+// A name in the list that Liquibase does not know is an error, as it is to
+// Liquibase's validation.
+func (c *Changeset) ResolveDBMS(shortName string) (bool, error) {
+	runs := true
+	for _, definition := range c.dbms {
+		matches, err := MatchDBMS(strings.ToLower(definition), shortName)
+		if err != nil {
+			return false, err
+		}
+		runs = runs && matches
+	}
+	c.selectors = slices.DeleteFunc(c.selectors, func(name string) bool {
+		return strings.EqualFold(name, "dbms")
+	})
+	c.dbms = nil
+	return runs, nil
 }
 
 // Skipped reports that Liquibase never runs the changeset: its `ignore` is
@@ -282,6 +320,66 @@ func (c Changeset) Err(name, file string) error {
 	default:
 		return nil
 	}
+}
+
+// knownDBMS are the database short names Ptah knows Liquibase to accept: the
+// ones Liquibase ships (liquibase-standard and its snowflake module), the ones
+// its bigquery and redshift extensions add, and the ones the extensions for
+// Ptah's own targets add -- cloudspanner, clickhouse and yugabytedb. Liquibase
+// refuses a dbms naming a database it has no implementation for, so a name
+// outside this list is refused here too; a changelog written for another
+// extension is refused rather than guessed at.
+var knownDBMS = []string{
+	"asany", "bigquery", "clickhouse", "cloudspanner", "cockroachdb", "db2", "db2z", "derby", "edb",
+	"firebird", "h2", "hsqldb", "informix", "ingres", "mariadb", "mssql", "mysql", "oracle",
+	"postgresql", "redshift", "snowflake", "sqlite", "sybase", "yugabytedb",
+}
+
+// KnownDBMS reports whether name is a database short name Liquibase accepts in
+// a dbms attribute. Names match in lower case, as Liquibase's validation
+// matches them.
+func KnownDBMS(name string) bool {
+	return slices.Contains(knownDBMS, strings.ToLower(strings.TrimSpace(name)))
+}
+
+// KnownDBMSNames lists the names [KnownDBMS] accepts, in order.
+func KnownDBMSNames() []string {
+	return slices.Clone(knownDBMS)
+}
+
+// MatchDBMS reports whether a dbms definition selects the database whose
+// short name is shortName, by Liquibase's rule (DatabaseList.definitionMatches):
+// a comma-separated list; an empty one matches every database; `all` matches
+// and outranks the rest, then `none` matches nothing, then `!name` excludes
+// that database, and otherwise a list naming no database without `!` matches
+// every one it does not exclude, and a list naming some matches only those.
+//
+// Names compare exactly. Liquibase lowercases a changeset's dbms and leaves a
+// change's as written, so a caller passes each as Liquibase would compare it.
+// A name without `!` that Liquibase does not know is an error, as it is to
+// Liquibase's validation, which lowercases before it looks the name up.
+func MatchDBMS(definition, shortName string) (bool, error) {
+	var entries []string
+	for entry := range strings.SplitSeq(definition, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			entries = append(entries, entry)
+		}
+	}
+	for _, entry := range entries {
+		if entry != "all" && entry != "none" && !strings.HasPrefix(entry, "!") && !KnownDBMS(entry) {
+			return false, fmt.Errorf("dbms %q names %q, which is not a database Liquibase knows", definition, entry)
+		}
+	}
+	switch {
+	case len(entries) == 0, slices.Contains(entries, "all"):
+		return true, nil
+	case slices.Contains(entries, "none"), slices.Contains(entries, "!"+shortName):
+		return false, nil
+	}
+	supported := slices.DeleteFunc(slices.Clone(entries), func(entry string) bool {
+		return strings.HasPrefix(entry, "!")
+	})
+	return len(supported) == 0 || slices.Contains(supported, shortName), nil
 }
 
 var (

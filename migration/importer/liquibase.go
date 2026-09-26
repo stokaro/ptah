@@ -42,16 +42,26 @@ var liquibaseChangelogExts = map[string]bool{".xml": true, ".yaml": true, ".yml"
 //
 // dialect is the target a typed change is rendered for, and caps the preset it
 // is rendered against. Both are empty until [WithDialectCapabilities] sets
-// them; without a dialect a typed change is refused.
+// them; without a dialect a typed change is refused. dbms is the Liquibase
+// short name of the database the history ran on, empty until
+// [WithLiquibaseDBMS] sets it; without it a `dbms` attribute is refused.
 type liquibaseParser struct {
 	dialect string
 	caps    capability.Capabilities
+	dbms    string
 }
 
 // withDialect returns the parser set to render typed changes for dialect.
 func (p liquibaseParser) withDialect(dialect string, caps capability.Capabilities) Parser {
 	p.dialect = dialect
 	p.caps = caps
+	return p
+}
+
+// withDBMS returns the parser set to keep what Liquibase runs on the database
+// whose short name is shortName.
+func (p liquibaseParser) withDBMS(shortName string) Parser {
+	p.dbms = shortName
 	return p
 }
 
@@ -110,7 +120,7 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 					"would reorder or duplicate history -- import them separately",
 				strings.Join(changelogFiles, ", "), strings.Join(sqlFiles, ", "))
 		}
-		read, err := parseLiquibaseChangelogFiles(fsys, changelogFiles, p.dialect, p.caps)
+		read, err := parseLiquibaseChangelogFiles(fsys, changelogFiles, p)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +158,7 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %q: %w", name, err)
 		}
-		changesets, skipped, err := parseLiquibaseFormattedSQL(name, string(content))
+		changesets, skipped, err := parseLiquibaseFormattedSQL(name, string(content), p.dbms)
 		if err != nil {
 			return nil, err
 		}
@@ -184,8 +194,9 @@ func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
 // [liquibaserun.Attribute], the same recognizer the XML, YAML and JSON readers
 // use, so an attribute is read, converted or refused here as it is there. A
 // changeset Liquibase never runs is returned among the skipped rather than the
-// migrations.
-func parseLiquibaseFormattedSQL(fileName, content string) ([]SourceMigration, []SkippedChangeset, error) {
+// migrations. dbms is the database the history ran on, as [WithLiquibaseDBMS]
+// names it, or empty.
+func parseLiquibaseFormattedSQL(fileName, content, dbms string) ([]SourceMigration, []SkippedChangeset, error) {
 	var changesets []SourceMigration
 	var skipped []SkippedChangeset
 	seen := make(map[string]bool) // author:id within this file
@@ -195,15 +206,15 @@ func parseLiquibaseFormattedSQL(fileName, content string) ([]SourceMigration, []
 		if current == nil {
 			return nil
 		}
-		if current.run.Skipped() {
-			skipped = append(skipped, liquibaseIgnored(fileName, current.author+":"+current.id))
-			return nil
-		}
-		migration, err := current.migration(fileName)
-		if err != nil {
+		migration, left, err := current.finish(fileName, dbms)
+		switch {
+		case err != nil:
 			return err
+		case left != nil:
+			skipped = append(skipped, *left)
+		default:
+			changesets = append(changesets, migration)
 		}
-		changesets = append(changesets, migration)
 		return nil
 	}
 
@@ -274,6 +285,28 @@ func (cs *liquibaseFormattedChangeSet) addLine(line string) {
 	cs.up.WriteByte('\n')
 }
 
+// finish is the changeset as a migration, the report of it left out -- because
+// Liquibase never runs it, or does not run it on the database dbms names -- or
+// the refusal that stops it.
+func (cs *liquibaseFormattedChangeSet) finish(fileName, dbms string) (SourceMigration, *SkippedChangeset, error) {
+	id := cs.author + ":" + cs.id
+	if cs.run.Skipped() {
+		return SourceMigration{}, new(liquibaseIgnored(fileName, id)), nil
+	}
+	if dbms != "" {
+		definition := cs.run.DBMS()
+		runs, err := cs.run.ResolveDBMS(dbms)
+		if err != nil {
+			return SourceMigration{}, nil, fmt.Errorf("liquibase changeset %s in %q: %w", id, fileName, err)
+		}
+		if !runs {
+			return SourceMigration{}, new(liquibaseOtherDatabase(fileName, id, "", definition, dbms)), nil
+		}
+	}
+	migration, err := cs.migration(fileName)
+	return migration, nil, err
+}
+
 // migration is the changeset as a migration, or the refusal that stops it.
 func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigration, error) {
 	if err := cs.run.Err(cs.author+":"+cs.id, fileName); err != nil {
@@ -295,23 +328,24 @@ func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigrati
 }
 
 // liquibaseNothingToImport is the refusal for a source that yielded no
-// migration. When changesets were left out because Liquibase never runs them,
-// the refusal says so, since "no changesets" would contradict the changelog.
+// migration. When changesets were left out because Liquibase does not run them,
+// the refusal says which and why, since "no changesets" would contradict the
+// changelog.
 func liquibaseNothingToImport(message string, skipped []SkippedChangeset) error {
 	if len(skipped) == 0 {
 		return errors.New(message)
 	}
-	return fmt.Errorf("liquibase source holds no changeset Liquibase runs: every one sets ignore=\"true\" (%s)",
+	return fmt.Errorf("liquibase source holds no changeset Liquibase runs here: every one was left out (%s)",
 		liquibaseSkippedNames(skipped))
 }
 
-// liquibaseSkippedNames lists skipped changesets as file and author:id.
+// liquibaseSkippedNames lists skipped changesets as file, author:id and reason.
 func liquibaseSkippedNames(skipped []SkippedChangeset) string {
 	names := make([]string, 0, len(skipped))
 	for _, entry := range skipped {
-		names = append(names, entry.Path+" "+entry.Changeset)
+		names = append(names, entry.Path+" "+entry.Changeset+": "+entry.Reason)
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(names, "; ")
 }
 
 // parseLiquibaseChangesetID extracts the author and id from a `--changeset`

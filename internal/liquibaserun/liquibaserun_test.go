@@ -314,3 +314,114 @@ func TestScanFormattedSQL_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// MatchDBMS follows Liquibase's DatabaseList.definitionMatches: `all` wins,
+// then `none`, then an excluded name, and otherwise a list naming no database
+// without `!` matches every one it does not exclude.
+func TestMatchDBMS_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition string
+		shortName  string
+		matches    bool
+	}{
+		{name: "empty", definition: " ", shortName: "postgresql", matches: true},
+		{name: "the named database", definition: "postgresql", shortName: "postgresql", matches: true},
+		{name: "another database", definition: "mysql", shortName: "postgresql", matches: false},
+		{name: "a list naming it", definition: "mysql, postgresql", shortName: "postgresql", matches: true},
+		{name: "a list not naming it", definition: "mysql,mariadb", shortName: "postgresql", matches: false},
+		{name: "it excluded", definition: "!postgresql", shortName: "postgresql", matches: false},
+		{name: "another excluded", definition: "!mysql", shortName: "postgresql", matches: true},
+		{name: "another excluded beside it", definition: "!mysql,postgresql", shortName: "postgresql", matches: true},
+		{name: "another excluded beside a third", definition: "!mysql,mariadb", shortName: "postgresql", matches: false},
+		{name: "all", definition: "all", shortName: "postgresql", matches: true},
+		{name: "all outranks its exclusion", definition: "all,!postgresql", shortName: "postgresql", matches: true},
+		{name: "none", definition: "none", shortName: "postgresql", matches: false},
+		{name: "none outranks naming it", definition: "none,postgresql", shortName: "postgresql", matches: false},
+		{name: "names compare exactly", definition: "PostgreSQL", shortName: "postgresql", matches: false},
+		{name: "an unknown name excluded is not checked", definition: "!notadb", shortName: "postgresql", matches: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			matches, err := liquibaserun.MatchDBMS(test.definition, test.shortName)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(matches, qt.Equals, test.matches)
+		})
+	}
+}
+
+// A name Liquibase does not know is refused, as Liquibase's validation refuses
+// it. Ptah's own dialect names are not Liquibase's.
+func TestMatchDBMS_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition string
+		message    string
+	}{
+		{name: "a Ptah dialect name", definition: "postgres", message: `dbms "postgres" names "postgres", which is not a database Liquibase knows`},
+		{name: "one unknown name in a list", definition: "mysql,spanner", message: `dbms "mysql,spanner" names "spanner", which is not a database Liquibase knows`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			matches, err := liquibaserun.MatchDBMS(test.definition, "postgresql")
+
+			c.Assert(err, qt.ErrorMatches, test.message)
+			c.Assert(matches, qt.IsFalse)
+		})
+	}
+}
+
+// ResolveDBMS lowercases a changeset's dbms, as Liquibase does, answers whether
+// the changeset runs on the named database, and stops dbms from refusing the
+// changeset. Other selectors still refuse it.
+func TestChangeset_ResolveDBMS_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var matching liquibaserun.Changeset
+	matching.Note("dbms", "MySQL, PostgreSQL")
+	var other liquibaserun.Changeset
+	other.Note("dbms", "mysql")
+	other.Note("context", "prod")
+	var none liquibaserun.Changeset
+
+	c.Assert(matching.DBMS(), qt.Equals, "MySQL, PostgreSQL")
+	runs, err := matching.ResolveDBMS("postgresql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(runs, qt.IsTrue)
+	c.Assert(matching.Err("s:1", "c.xml"), qt.IsNil)
+
+	runs, err = other.ResolveDBMS("postgresql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(runs, qt.IsFalse)
+	c.Assert(other.Err("s:2", "c.xml"), qt.ErrorMatches, `liquibase changeset s:2 in "c.xml" is conditional on context; .*`)
+
+	runs, err = none.ResolveDBMS("postgresql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(runs, qt.IsTrue)
+}
+
+// KnownDBMS accepts Liquibase's names in any case and nothing else.
+func TestKnownDBMS_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		known bool
+	}{
+		{name: "postgresql", known: true},
+		{name: "MSSQL", known: true},
+		{name: "yugabytedb", known: true},
+		{name: "cloudspanner", known: true},
+		{name: "postgres", known: false},
+		{name: "sqlserver", known: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(liquibaserun.KnownDBMS(test.name), qt.Equals, test.known)
+		})
+	}
+}

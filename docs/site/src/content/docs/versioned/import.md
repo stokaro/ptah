@@ -175,11 +175,19 @@ decide at run time whether a changeset applies, and `runAlways` and
 `runOnChange` make Liquibase run it again. A migration directory cannot express
 either, so no flag converts them, `--dialect` included, and neither converts a
 changeset attribute a migration has no form for, such as `failOnError="false"`.
-`runInTransaction="false"` does convert, to a no-transaction migration, and a
-changeset with `ignore="true"` is left out and named on standard error, because
-Liquibase never runs it. The message names the changeset, the file and the
-construct.
+The message names the changeset, the file and the construct.
 [Migrate from Liquibase](../../migrate-from/liquibase/) works through both.
+
+Some Liquibase constructs do convert, each leaving the history as Liquibase ran
+it:
+
+- `runInTransaction="false"` becomes a no-transaction migration.
+- A changeset with `ignore="true"`, which Liquibase never runs, is left out and
+  named on standard error.
+- `dbms` converts once `--liquibase-dbms` names the database the history ran
+  on, in Liquibase's spelling (`postgresql`, `mysql`). The import keeps the
+  changesets and changes whose `dbms` selects it, and names the rest on
+  standard error.
 
 ## Next steps
 
