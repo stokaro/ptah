@@ -33,8 +33,9 @@ pointed at. Ptah writes it during the import, for the dialect you name with
 `--dialect`, and refuses the changeset by name when you name none.
 
 Converting the changes is necessary and not sufficient. `context`, `contexts`,
-`labels` and `preConditions` decide at run time whether a changeset applies,
-and a migration directory cannot express that, so a changeset carrying one is
+`labels`, `dbms` and `preConditions` decide at run time whether a changeset
+applies, and `runAlways` and `runOnChange` make Liquibase run it again. A
+migration directory cannot express either, so a changeset carrying one is
 refused as well. Importing it would turn a conditional history into an unconditional
 one, which is a worse outcome than a refusal.
 
@@ -321,9 +322,16 @@ Expected output on standard error:
 error: parse liquibase source: liquibase changeset alice_1 in "changelog.xml" is conditional on context; a migration directory has no equivalent, so importing it would turn a conditional history into an unconditional one -- split the changelog or import it by hand
 ```
 
-`contexts`, `labels` and `preConditions` are refused the same way. Split the
-changelog per environment in Liquibase first, where the selector still means
-something, and convert each result separately.
+`contexts`, `labels`, `dbms` and `preConditions` are refused the same way, and
+so is `dbms` on a `sql` or `sqlFile` change. Split the changelog per
+environment or per database in Liquibase first, where the selector still means
+something, and convert each result separately. `--dialect` does not choose
+among `dbms` values: the name Liquibase gives some databases depends on how it
+connected, so Ptah cannot tell which changesets ran on yours.
+
+`runAlways="true"` and `runOnChange="true"` are refused as well, because
+Liquibase can run such a changeset again on a later update and a Ptah migration
+runs once. The value `false` is the default and imports.
 
 ## Apply the result
 
@@ -393,12 +401,12 @@ Remove-Item -Recurse -Force ptah-from-liquibase
 
 ## Where this leaves you
 
-Contexts, labels and preconditions have no destination in a migration
+Contexts, labels, dbms and preconditions have no destination in a migration
 directory, which is why a changeset carrying one is refused rather than
 imported without it. Deciding what they meant is work that belongs in
 Liquibase: a context is usually the reason a changeset ran in one environment
-and not another, and once the changelog is split along that line each half
-converts.
+and not another, a dbms the reason it ran on one database and not another, and
+once the changelog is split along that line each half converts.
 
 If a database already has Liquibase's `DATABASECHANGELOG` table, do not run
 `ptah migrations up` against it. Record the history as already applied first:

@@ -1820,8 +1820,15 @@ in each file name. Version tokens are left-padded to the digit width of `N`, so
 an 11-changeset stream is named `01_...` through `11_...` and `atlas.sum` keeps
 the same order as Liquibase. A headerless or malformed member refuses the whole
 import before the destination is created. The resulting numeric Atlas directory
-and its `atlas.sum` validate and apply under both Ptah and Atlas CE. Liquibase
-XML, YAML, and JSON changelogs remain unsupported.
+and its `atlas.sum` validate and apply under both Ptah and Atlas CE.
+
+Liquibase XML, YAML and JSON changelogs are read through the same changeset
+parser as the native `ptah migrations import`, with the same refusals; Atlas CE
+reports `nothing to import` for them. A changeset that Liquibase runs on one
+database only, or runs again after its first run (`dbms`, `runAlways`,
+`runOnChange`), refuses the import by name, where Atlas CE copies it and applies
+it everywhere. The numbered-only conversion copies files without reading their
+changesets and does not see these attributes (stokaro/ptah#3713).
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

@@ -53,9 +53,12 @@ addForeignKeyConstraint, renameTable and renameColumn have no SQL until a
 database is chosen, so they import only with --dialect, and the migrations
 they become are written for that dialect alone. A changeset without an
 explicit rollback gets the rollback Liquibase would derive, where every change
-in it can be undone. Any other construct -- include, preConditions, contexts,
-labels, and the remaining change types -- is refused by name rather than
-dropped, so an import either carries the whole changelog or does not happen.
+in it can be undone. Any other construct -- include, preConditions, context,
+labels, dbms on a changeset or a change, runAlways or runOnChange set to true,
+and the remaining change types -- is refused by name rather than dropped, so
+an import either carries the whole changelog or does not happen. --dialect
+does not make dbms convert: the name Liquibase gives some databases depends on
+how it connected, so a changeset's dbms cannot be matched to a dialect.
 
 A source migration with no rollback file gets a placeholder down migration. A
 Flyway repeatable (R__) migration is imported as a one-time migration ordered

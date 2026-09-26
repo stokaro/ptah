@@ -591,6 +591,22 @@ which imported to `1_alice_1.sql` plus `atlas.sum` at exit 0. A changeset
 carrying a typed change or a selector is refused by name rather than
 half-converted.
 
+A changeset Liquibase runs on one database only, or runs again after its first
+run, is refused wherever the import parses changesets: `dbms` on the changeset
+or on a `sql`, `sqlFile`, `insert` or `createProcedure` change, and `runAlways`
+or `runOnChange` set to true. This is deliberately stricter than the pinned
+community binary.
+
+Measured 2026-09-26 with Atlas CE v1.3.0: a conventional formatted-SQL
+`changelog.sql` holding `--changeset s:1 dbms:mysql` and
+`CREATE TABLE only_on_mysql (id int);` imports at exit 0 as a copy of the file,
+and `migrate apply` of the result on SQLite creates `only_on_mysql`, a table the
+Liquibase history created on MySQL alone. `ptah-compat migrate import` exits 1
+and names the changeset and the attribute. A directory of numbered SQL names
+keeps the one-file conversion, which copies each file without reading its
+changesets, so there the attribute is still carried as a comment
+(stokaro/ptah#3713).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)
