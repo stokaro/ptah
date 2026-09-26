@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -23,7 +24,6 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/editor"
-	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/sqlitevirtual"
@@ -44,7 +44,7 @@ type atlasMigrateDiffOptions struct {
 	dirFormat   string
 	format      string
 	schemas     []string
-	lockTimeout string
+	lockTimeout time.Duration
 	dryRun      bool
 	qualifier   string
 	edit        bool
@@ -116,7 +116,7 @@ diff policy values.`,
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
-	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
+	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring Atlas migration directory locks; zero or less tries them once")
 	flags.StringVar(&opts.qualifier, "qualifier", "", "Qualify tables with a custom qualifier when working on a single schema")
 	flags.BoolVar(&opts.edit, "edit", false, "Edit the generated migration files")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the generated migration file to stdout instead of writing it")
@@ -298,13 +298,10 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.format)
-	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
+	if err := atlasreport.ValidateMigrateDiffTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	lockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
+	lockTimeout := atlasLockWait(opts.lockTimeout)
 
 	// The dev database is provisioned here, after every refusal this verb can
 	// answer from its flags and its directory. The release is deferred before

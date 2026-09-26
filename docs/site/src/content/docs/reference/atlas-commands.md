@@ -319,10 +319,11 @@ ptah-compat migrate apply --url "$DB" --dir file://migrations --to-version 20240
 **`--lock-name`** replaces the name of the session advisory lock that
 serializes migration runs (`ptah_migrate` by default). Runs serialize only
 against other runs naming the same lock. A lock another process holds makes the
-run wait, bounded by `--lock-timeout`; an elapsed timeout fails the run before
-any migration executes. An empty value is refused rather than silently falling
-back to the default. On a dialect with no advisory-lock semantics the run
-prints a stderr note naming the lock it did not acquire.
+run wait, bounded by `--lock-timeout` (a duration, `10s` by default; zero or a
+negative value does not wait, as on Atlas); an elapsed timeout fails the run
+before any migration executes. An empty `--lock-name` is refused rather than
+silently falling back to the default. On a dialect with no advisory-lock
+semantics the run prints a stderr note naming the lock it did not acquire.
 
 **`--skip-lock`** takes no lock at all, so a lock another process holds is
 ignored rather than waited on and concurrent runs can interleave. It cannot be
@@ -822,7 +823,9 @@ transactional file followed by a concurrent-index file. Unsplittable mixes are
 refused.
 
 **`--lock-timeout`** bounds waiting for both Ptah's local migration-directory
-lock and the exclusive dev-database lock:
+lock and the exclusive dev-database lock. It is a duration that defaults to
+`10s`, and zero or a negative value tries each lock once without waiting, as on
+Atlas:
 
 - PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server use session advisory
   locks;
@@ -1158,7 +1161,7 @@ the target database is contacted.
 | --- | --- |
 | `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
 | `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
-| `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
+| `--tx-mode` | `file` (the default) executes the generated plan in one transaction; `none` executes statements without transaction wrapping. Any other value is refused as Atlas refuses it, `unknown tx-mode "<value>"`; `--plan` also takes `all`. |
 | `--format` | Atlas-style templates over planned changes with `sql`, `.MarshalSQL`, and the shared helper set including `json`. `{{ json . }}` renders `{Driver, URL, Changes{Applied\|Pending}}`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
 | `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
@@ -1259,7 +1262,9 @@ re-planning. Both plan formats are accepted, detected by content: the Atlas
 **`--lock-timeout`** bounds waiting for the session advisory lock that
 serializes concurrent schema applies against one target. The lock is acquired
 before target inspection and planning, held through simulation, confirmation,
-and execution, and released on every exit path. Empty waits indefinitely, an
+and execution, and released on every exit path. It is a duration that defaults
+to `10s`; zero or a negative value tries the lock once without waiting, as on
+Atlas, and a value that is not a duration is refused by the flag parser. An
 elapsed timeout fails before the target is inspected. PostgreSQL, YugabyteDB,
 MySQL, MariaDB, and SQL Server take a real lock; every other dialect proceeds
 unlocked with a stderr note. The native `ptah schema apply` refuses a typed

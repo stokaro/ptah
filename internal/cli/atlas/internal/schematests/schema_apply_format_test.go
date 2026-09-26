@@ -597,6 +597,6 @@ func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "connect to --url")
 }

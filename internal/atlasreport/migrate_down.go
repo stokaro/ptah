@@ -69,13 +69,13 @@ func WriteMigrateDownFormat(w io.Writer, format string, opts MigrateDownResultOp
 	if err != nil {
 		return err
 	}
-	return renderAtlasGoTemplate(w, "atlas-migrate-down-format", format, result)
+	return renderAtlasGoTemplate(w, ptahTemplateWording("atlas-migrate-down-format"), format, result)
 }
 
 // ValidateMigrateDownTemplate parses the migrate down --format template so an
 // invalid template fails before any database work.
 func ValidateMigrateDownTemplate(format string) error {
-	return validateAtlasGoTemplate("atlas-migrate-down-format", format)
+	return validateAtlasGoTemplate(ptahTemplateWording("atlas-migrate-down-format"), format)
 }
 
 func buildAtlasMigrateDownResult(opts MigrateDownResultOptions) (atlasMigrateDownResult, error) {

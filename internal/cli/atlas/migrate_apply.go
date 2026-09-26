@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -42,7 +43,7 @@ type atlasMigrateApplyOptions struct {
 	baseline        string
 	toVersion       string
 	revisionsSchema string
-	lockTimeout     string
+	lockTimeout     time.Duration
 	lock            atlasLockOptions
 	format          string
 }
@@ -112,7 +113,7 @@ Native Ptah equivalent: ptah migrations up.`,
 	// register it, so strict CE mode omits it while the complete compatibility
 	// surface retains the documented extension.
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
-	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
+	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring the migration lock, such as 10s or 2m; zero or less tries it once")
 	if !policy.IsStrictCE() {
 		flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
 		registerAtlasLockNameFlag(flags, &opts.lock)
@@ -235,7 +236,10 @@ func runAtlasMigrateApplyTarget(
 	opts atlasMigrateApplyOptions,
 	runOpts atlasMigrateApplyRunOptions,
 ) (bool, error) {
-	opts, formatOutput := resolveAtlasMigrateApplyProjectOptions(cmd, project, opts)
+	opts, formatOutput, err := resolveAtlasMigrateApplyProjectOptions(cmd, project, opts)
+	if err != nil {
+		return formatOutput, err
+	}
 	loaded := project.root != nil
 	projectCfg := project.Config
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
@@ -257,10 +261,7 @@ func runAtlasMigrateApplyTarget(
 		return formatOutput, fmt.Errorf("migrations directory is required")
 	}
 
-	var (
-		localDir atlasargs.LocalDir
-		err      error
-	)
+	var localDir atlasargs.LocalDir
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
@@ -279,7 +280,7 @@ func runAtlasMigrateApplyTarget(
 	// [resolveAtlasMigrateApplyDirFormat] below maps the empty value to the
 	// Atlas format, the same as the empty --dir-format the other verbs accept.
 
-	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
+	txMode, err := parseAtlasTxMode(opts.txMode, atlasMigrateApplyTxModes)
 	if err != nil {
 		return formatOutput, err
 	}
@@ -287,10 +288,7 @@ func runAtlasMigrateApplyTarget(
 	if err != nil {
 		return formatOutput, err
 	}
-	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
-	if err != nil {
-		return formatOutput, err
-	}
+	migrationLockTimeout := atlasLockWait(opts.lockTimeout)
 
 	resolvedDirFormat, err := resolveAtlasMigrateApplyDirFormat(cmd, opts.dirFormat, localDir.Query)
 	if err != nil {
@@ -473,10 +471,10 @@ func resolveAtlasMigrateApplyProjectOptions(
 	cmd *cobra.Command,
 	project atlasProject,
 	opts atlasMigrateApplyOptions,
-) (atlasMigrateApplyOptions, bool) {
+) (atlasMigrateApplyOptions, bool, error) {
 	formatOutput := cmd.Flags().Changed("format")
 	if project.root == nil {
-		return opts, formatOutput
+		return opts, formatOutput, nil
 	}
 	projectCfg := project.Config
 	opts.url = dbcli.EffectiveString(
@@ -533,15 +531,19 @@ func resolveAtlasMigrateApplyProjectOptions(
 		opts.revisionsSchema,
 		projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
 	)
-	opts.lockTimeout = dbcli.EffectiveString(
-		cmd,
-		"lock-timeout",
-		opts.lockTimeout,
-		projectCfg.StringValue(projectconfig.StringMigrationLockTimeout),
-	)
+	if projectLockTimeout := projectCfg.StringValue(projectconfig.StringMigrationLockTimeout); projectLockTimeout.Present &&
+		!cmd.Flags().Changed("lock-timeout") {
+		timeout, set, err := atlasLockTimeoutFromProject(projectLockTimeout.Value)
+		if err != nil {
+			return opts, formatOutput, err
+		}
+		if set {
+			opts.lockTimeout = timeout
+		}
+	}
 	formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateApply)
 	opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
-	return opts, formatOutput || formatValue.Present
+	return opts, formatOutput || formatValue.Present, nil
 }
 
 func atlasMigrateApplyExactIdentityError(

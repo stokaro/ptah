@@ -422,7 +422,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			Format: "{{ if }}",
 		})
 
-		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+		c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 	})
 
 	t.Run("duplicate write targets", func(t *testing.T) {

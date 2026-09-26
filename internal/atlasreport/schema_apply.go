@@ -66,22 +66,22 @@ func NewSchemaApply(opts SchemaApplyOptions) SchemaApply {
 }
 
 func WriteSchemaApply(w io.Writer, format string, result SchemaApply) error {
-	return renderSchemaApplyTemplate(w, "atlas-schema-apply-format", format, result)
+	return renderSchemaApplyTemplate(w, format, result)
 }
 
 func ValidateSchemaApplyTemplate(format string) error {
-	_, err := newSchemaApplyTemplate("atlas-schema-apply-format", format)
+	_, err := newSchemaApplyTemplate(format)
 	return err
 }
 
-func renderSchemaApplyTemplate(w io.Writer, name, format string, data SchemaApply) error {
-	tmpl, err := newSchemaApplyTemplate(name, format)
+func renderSchemaApplyTemplate(w io.Writer, format string, data SchemaApply) error {
+	tmpl, err := newSchemaApplyTemplate(format)
 	if err != nil {
 		return err
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, data); err != nil {
-		return fmt.Errorf("execute --format template: %w", err)
+		return atlasSchemaVerbTemplateWording.executeError(err)
 	}
 	_, err = w.Write(out.Bytes())
 	return err
@@ -93,12 +93,13 @@ func renderSchemaApplyTemplate(w io.Writer, name, format string, data SchemaAppl
 // time. Every helper in the shared set was measured on the
 // pinned community binary v1.3.0's own `schema apply --format`, so registering
 // them cannot make this binary accept a template that one refuses.
-func newSchemaApplyTemplate(name, format string) (*template.Template, error) {
+func newSchemaApplyTemplate(format string) (*template.Template, error) {
 	funcs := atlasTemplateFuncs()
 	funcs["sql"] = schemaApplySQL
-	tmpl, err := template.New(name).Funcs(funcs).Parse(format)
+	wording := atlasSchemaVerbTemplateWording
+	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
 	if err != nil {
-		return nil, fmt.Errorf("parse --format template: %w", err)
+		return nil, wording.parseError(err)
 	}
 	return tmpl, nil
 }

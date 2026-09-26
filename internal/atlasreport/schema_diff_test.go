@@ -45,7 +45,7 @@ func TestSchemaDiffTemplateValidationRejectsUnknownHelpers(t *testing.T) {
 
 	err := atlasreport.ValidateSchemaDiffTemplate(`{{ json . }}`)
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*function "json" not defined.*`)
 }
 
 func TestSchemaDiffTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T) {
@@ -57,7 +57,7 @@ func TestSchemaDiffTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T)
 
 	err := atlasreport.WriteSchemaDiff(&out, `before {{ sql . "  " "extra" }}`, report)
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unexpected number of arguments: 2.*`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
 	c.Assert(out.String(), qt.Equals, "")
 }
 
