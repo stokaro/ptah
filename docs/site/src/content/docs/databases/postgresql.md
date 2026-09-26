@@ -340,7 +340,9 @@ it, because the condition reads both `OLD` and `NEW`. Ptah reads it from
 `pg_get_triggerdef`, which prints `WHEN ((new.total > 0))` for the trigger
 above, and compares it the way a CHECK is compared: with a connection the
 declared condition is created on a temporary copy of the table and read back,
-and without one it is folded.
+and without one it is folded. CockroachDB 25.4 has no `pg_get_triggerdef`, so
+there a trigger is read without its condition; see
+[Trigger conditions](../distributed/#trigger-conditions).
 
 A change to the events, the condition or the transition tables is planned as
 `CREATE OR REPLACE TRIGGER`. The Go annotation `//ptah:schema:trigger` and a

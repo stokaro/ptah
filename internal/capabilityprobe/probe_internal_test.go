@@ -152,6 +152,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
@@ -188,6 +189,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
 			capability.CompositeTypes,
 			capability.ContinuousAggregates,
@@ -372,23 +374,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 7,
 	}, {
-		name: "mysql owes thirty-two fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, the ten object-comment keys, the two TimescaleDB keys, the six catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes thirty-three fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, schema_comments, the ten object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 32,
+		want: registered - 33,
 	}, {
-		name: "mariadb owes thirty-two fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes thirty-three fewer: COMMENT ON SCHEMA and the ten object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 32,
+		want: registered - 33,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the three the probe cannot ask and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{

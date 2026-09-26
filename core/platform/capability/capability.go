@@ -324,6 +324,25 @@ const (
 	// CockroachDB have it (stokaro/ptah#1811).
 	CatalogDefaultPrivileges Capability = "catalog_default_privileges"
 
+	// CatalogTriggerDefinitions marks a catalog that has pg_get_triggerdef,
+	// the function that prints a trigger's CREATE TRIGGER statement. It is
+	// where the schema reader and the comparison probe read a trigger's WHEN
+	// condition, because pg_get_expr cannot print tgqual: the condition reads
+	// both OLD and NEW, and pg_get_expr answers `expression contains variables
+	// of more than one relation`.
+	//
+	// A missing function fails the whole statement, not the one column, so a
+	// reader that asks anyway reads no trigger and no schema at all. Without
+	// the key the reader reads each trigger without its condition, and the
+	// comparison does not compare one, since the read cannot report it.
+	//
+	// Measured 2026-09-26: CockroachDB v25.4.16 answers `unknown function:
+	// pg_get_triggerdef()` (SQLSTATE 42883); v26.2.7 and v26.3.1 have it, as
+	// do YugabyteDB 2024.2.10, 2025.2.5.2 and 2026.1.2. Every other trigger
+	// column the reader asks for -- tgattr, tgoldtable, tgnewtable -- answers
+	// on all six (stokaro/ptah#3707).
+	CatalogTriggerDefinitions Capability = "catalog_trigger_definitions"
+
 	// RoleManagement marks support for the role and object-privilege
 	// management Ptah models: named roles plus GRANT/REVOKE of privileges on
 	// schema objects.
@@ -1032,6 +1051,9 @@ var registry = map[Capability]spec{
 	CatalogDependencies: {
 		doc: "the catalog exposes pg_depend",
 	},
+	CatalogTriggerDefinitions: {
+		doc: "the catalog has pg_get_triggerdef, which prints a trigger's WHEN condition",
+	},
 	RoleManagement: {
 		doc: "named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse)",
 	},
@@ -1352,6 +1374,7 @@ func MySQL84() Capabilities {
 		CatalogVectorInfo:              false,
 		CatalogDependencies:            false,
 		CatalogDefaultPrivileges:       false,
+		CatalogTriggerDefinitions:      false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -1496,6 +1519,7 @@ func MariaDB1011() Capabilities {
 		CatalogVectorInfo:              false,
 		CatalogDependencies:            false,
 		CatalogDefaultPrivileges:       false,
+		CatalogTriggerDefinitions:      false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -1615,6 +1639,7 @@ func Postgres16() Capabilities {
 		CatalogVectorInfo:                  false,
 		CatalogDependencies:                true,
 		CatalogDefaultPrivileges:           true,
+		CatalogTriggerDefinitions:          true,
 		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -1828,6 +1853,8 @@ func ClickHouse24() Capabilities {
 		CatalogVectorInfo:        false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
+		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
+		CatalogTriggerDefinitions: false,
 		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
 		// GRANT, REVOKE and REVOKE GRANT OPTION FOR all work on both lines, and
 		// system.roles and system.grants read them back. Only the catalog's
@@ -1943,6 +1970,7 @@ func SQLite3() Capabilities {
 		CatalogVectorInfo:                  false,
 		CatalogDependencies:                false,
 		CatalogDefaultPrivileges:           false,
+		CatalogTriggerDefinitions:          false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -2099,6 +2127,8 @@ func SQLServer2022() Capabilities {
 		CatalogVectorInfo:        false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
+		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
+		CatalogTriggerDefinitions: false,
 		// RoleManagement is on for the same reason Sequences is: the three
 		// halves the key requires exist for this target. The renderer emits
 		// T-SQL CREATE ROLE, GRANT and REVOKE, internal/dbschema/mssql reads
@@ -2285,6 +2315,10 @@ func CockroachDB23() Capabilities {
 		With(MaterializedViewComments, false).
 		With(TriggerComments, false).
 		With(PolicyComments, false).
+		// Measured 2026-09-26: v25.4.16 answers `unknown function:
+		// pg_get_triggerdef()`. The 26.2 line is the first to have it; see
+		// CockroachDB26 (stokaro/ptah#3707).
+		With(CatalogTriggerDefinitions, false).
 		With(RowLevelTTL, true)
 }
 
@@ -2340,7 +2374,12 @@ func CockroachDB26() Capabilities {
 		// Stated here as well as on CockroachDB25 because this line derives
 		// from CockroachDB23, which is below the boundary and keeps the true.
 		// The measurement and the reason are on CockroachDB25.
-		With(TransactionalDDL, false)
+		With(TransactionalDDL, false).
+		// Measured 2026-09-26 on v26.2.7 and v26.3.1, where v25.4.16 has no
+		// such function. This line prints a WHEN condition without the
+		// parentheses PostgreSQL writes -- `WHEN (new).a > 0:::INT8` -- which
+		// the reader takes as it comes (stokaro/ptah#3707).
+		With(CatalogTriggerDefinitions, true)
 }
 
 // CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
@@ -2550,6 +2589,9 @@ func SpannerPostgres() Capabilities {
 		// Measured on the same endpoint: `relation "pg_default_acl" does not
 		// exist` (stokaro/ptah#1811).
 		With(CatalogDefaultPrivileges, false).
+		// pg_trigger itself is missing on the emulator, so the function has
+		// nothing to print; Triggers is false here for the same reason.
+		With(CatalogTriggerDefinitions, false).
 		// Measured 2026-08-19 on the emulator behind PGAdapter 0.55.2, with
 		// CREATE TABLE as the control: all three user-type kinds answer
 		// `Statement is not supported` (stokaro/ptah#1717).
@@ -2709,6 +2751,8 @@ func Oracle23() Capabilities {
 		CatalogVectorInfo:        true,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
+		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
+		CatalogTriggerDefinitions: false,
 		// CREATE ROLE, DROP ROLE, GRANT and REVOKE are all rendered
 		// (stokaro/ptah#1935) and read back from DBA_ROLES and ALL_TAB_PRIVS
 		// (stokaro/ptah#1944), so the key says what it says everywhere else:

@@ -182,6 +182,22 @@ A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
 `--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
+## Trigger conditions
+
+A trigger's `WHEN` condition is read through `pg_get_triggerdef`, which
+CockroachDB 25.4 does not have. On that line Ptah reads each trigger without
+its condition and does not compare one, so a declared condition is neither
+reported as missing nor planned again. CockroachDB 26.2 and 26.3 have the
+function and print the condition without the outer parentheses and with each
+constant annotated, `(new).a > 0:::INT8`; the comparison drops the annotation.
+Every YugabyteDB line prints the condition as PostgreSQL does.
+
+CockroachDB takes a condition on a row value written as `(NEW).a`, and refuses
+`NEW.a` with `no data source matches prefix: new`. It also refuses `UPDATE OF`
+column lists, statement-level triggers and so `TRUNCATE` triggers. YugabyteDB
+refuses `REFERENCING` transition tables. Measured on CockroachDB 25.4.16,
+26.2.7 and 26.3.1 and on YugabyteDB 2024.2, 2025.2 and 2026.1.
+
 ## YugabyteDB's own extensions
 
 Every YugabyteDB database starts with extensions the server installs into
