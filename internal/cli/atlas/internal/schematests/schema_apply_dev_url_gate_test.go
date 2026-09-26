@@ -340,7 +340,7 @@ func TestSchemaApplyMigrationDirWithoutDevURL_FailurePath(t *testing.T) {
 			name:    "a bad --tx-mode is named first",
 			optIn:   "0",
 			extra:   []string{"--tx-mode", "bogus"},
-			wantErr: `invalid tx-mode "bogus": expected file, all, or none`,
+			wantErr: `unknown tx-mode "bogus"`,
 		},
 		{
 			name:    "under the opt-in",

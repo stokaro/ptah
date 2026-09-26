@@ -60,35 +60,49 @@ func NewSchemaDiff(from, to *schemamodel.Database, statements []string) SchemaDi
 }
 
 func WriteSchemaDiff(w io.Writer, format string, result SchemaDiff) error {
-	return renderSchemaDiffTemplate(w, "atlas-schema-diff-format", format, result)
+	return renderSchemaDiffTemplate(w, atlasSchemaVerbTemplateWording, format, result)
 }
 
 func ValidateSchemaDiffTemplate(format string) error {
-	_, err := newSchemaDiffTemplate("atlas-schema-diff-format", format)
+	_, err := newSchemaDiffTemplate(atlasSchemaVerbTemplateWording, format)
 	return err
 }
 
-func renderSchemaDiffTemplate(w io.Writer, name, format string, data SchemaDiff) error {
-	tmpl, err := newSchemaDiffTemplate(name, format)
+// WriteMigrateDiff renders a `migrate diff --format` template over the
+// planned statements. It reads the same document as `schema diff` and refuses
+// a template in `migrate diff`'s own words; see [templateWording].
+func WriteMigrateDiff(w io.Writer, format string, result SchemaDiff) error {
+	return renderSchemaDiffTemplate(w, atlasMigrateVerbTemplateWording, format, result)
+}
+
+// ValidateMigrateDiffTemplate parses a `migrate diff --format` template so a
+// malformed one fails before the directory is replayed.
+func ValidateMigrateDiffTemplate(format string) error {
+	_, err := newSchemaDiffTemplate(atlasMigrateVerbTemplateWording, format)
+	return err
+}
+
+func renderSchemaDiffTemplate(w io.Writer, wording templateWording, format string, data SchemaDiff) error {
+	tmpl, err := newSchemaDiffTemplate(wording, format)
 	if err != nil {
 		return err
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, data); err != nil {
-		return fmt.Errorf("execute --format template: %w", err)
+		return wording.executeError(err)
 	}
 	_, err = w.Write(out.Bytes())
 	return err
 }
 
-func newSchemaDiffTemplate(name, format string) (*template.Template, error) {
+func newSchemaDiffTemplate(wording templateWording, format string) (*template.Template, error) {
 	funcs, err := schemaDiffTemplateFuncs()
 	if err != nil {
 		return nil, err
 	}
-	tmpl, err := template.New(name).Funcs(funcs).Parse(format)
+	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
 	if err != nil {
-		return nil, fmt.Errorf("parse --format template: %w", err)
+		return nil, wording.parseError(err)
 	}
 	return tmpl, nil
 }

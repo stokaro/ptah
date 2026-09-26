@@ -44,7 +44,7 @@ func TestSchemaApplyTemplateValidationRejectsUnknownHelpers(t *testing.T) {
 
 	err := atlasreport.ValidateSchemaApplyTemplate(`{{ no_such_helper . }}`)
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "no_such_helper" not defined.*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*function "no_such_helper" not defined.*`)
 }
 
 // schemaApplyJSONDocument is the shape `{{ json . }}` renders, as measured on
@@ -164,6 +164,6 @@ func TestSchemaApplyTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T
 
 	err := atlasreport.WriteSchemaApply(&out, `before {{ sql . "  " "extra" }}`, report)
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*unexpected number of arguments: 2.*`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
 	c.Assert(out.String(), qt.Equals, "")
 }

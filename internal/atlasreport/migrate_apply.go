@@ -103,7 +103,7 @@ func WriteMigrateApplyFormat(w io.Writer, format string, opts MigrateApplyResult
 	if err != nil {
 		return err
 	}
-	return renderAtlasGoTemplate(w, "atlas-migrate-apply-format", format, result)
+	return renderAtlasGoTemplate(w, atlasMigrateApplyTemplateWording, format, result)
 }
 
 func validateMigrateApplyResultOptions(opts MigrateApplyResultOptions) error {
@@ -366,25 +366,25 @@ func atlasMigrateApplyVersionKeyAt(versions []int64, keys []string, index int) s
 	return atlasMigrateApplyVersionString(versions[index])
 }
 
-func renderAtlasGoTemplate(w io.Writer, name, format string, data any) error {
-	tmpl, err := newAtlasGoTemplate(name, format)
+func renderAtlasGoTemplate(w io.Writer, wording templateWording, format string, data any) error {
+	tmpl, err := newAtlasGoTemplate(wording, format)
 	if err != nil {
 		return err
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, data); err != nil {
-		return fmt.Errorf("execute --format template: %w", err)
+		return wording.executeError(err)
 	}
 	_, err = w.Write(out.Bytes())
 	return err
 }
 
 func ValidateMigrateApplyTemplate(format string) error {
-	return validateAtlasGoTemplate("atlas-migrate-apply-format", format)
+	return validateAtlasGoTemplate(atlasMigrateApplyTemplateWording, format)
 }
 
-func validateAtlasGoTemplate(name, format string) error {
-	_, err := newAtlasGoTemplate(name, format)
+func validateAtlasGoTemplate(wording templateWording, format string) error {
+	_, err := newAtlasGoTemplate(wording, format)
 	return err
 }
 
@@ -408,10 +408,10 @@ func atlasTemplateFuncs() template.FuncMap {
 	}
 }
 
-func newAtlasGoTemplate(name, format string) (*template.Template, error) {
-	tmpl, err := template.New(name).Funcs(atlasTemplateFuncs()).Parse(format)
+func newAtlasGoTemplate(wording templateWording, format string) (*template.Template, error) {
+	tmpl, err := template.New(wording.name).Funcs(atlasTemplateFuncs()).Parse(format)
 	if err != nil {
-		return nil, fmt.Errorf("parse --format template: %w", err)
+		return nil, wording.parseError(err)
 	}
 	return tmpl, nil
 }

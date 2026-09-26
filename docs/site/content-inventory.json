@@ -329,8 +329,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14104,
-      "sourceBytes": 98677
+      "visibleWords": 14208,
+      "sourceBytes": 99254
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -596,8 +596,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12858,
-      "sourceBytes": 94280
+      "visibleWords": 12968,
+      "sourceBytes": 94874
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -4290,8 +4290,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14483,
-      "sourceBytes": 100412
+      "visibleWords": 14576,
+      "sourceBytes": 100890
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -4387,7 +4387,7 @@
         "/reference/overview/"
       ],
       "visibleWords": 8989,
-      "sourceBytes": 88817
+      "sourceBytes": 88832
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

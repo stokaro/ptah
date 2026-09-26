@@ -33,8 +33,18 @@ const (
 // canceled command still returns its dedicated session connection promptly.
 const DefaultReleaseTimeout = 10 * time.Second
 
+// NoWait is a timeout that does not wait at all: the lock is tried once, and a
+// lock another session holds is a [TimeoutError] at once. Every negative
+// timeout means the same; this is the one to spell.
+//
+// It is the Atlas-compatible surface's reading of `--lock-timeout 0` and of a
+// negative value: measured on the pinned Atlas community binary v1.3.0 on
+// PostgreSQL, `migrate apply --lock-timeout 0` and `--lock-timeout -1s` against
+// a held lock both fail at once, where `2s` fails after two seconds.
+const NoWait time.Duration = -1
+
 // TimeoutError reports that another session held the advisory lock longer
-// than the caller was configured to wait.
+// than the caller was configured to wait, or held it at all under [NoWait].
 type TimeoutError struct {
 	Dialect string
 	Name    string
@@ -42,6 +52,9 @@ type TimeoutError struct {
 }
 
 func (e *TimeoutError) Error() string {
+	if e.Timeout < 0 {
+		return fmt.Sprintf("advisory lock %q on %s is held by another session", e.Name, e.Dialect)
+	}
 	return fmt.Sprintf("timed out acquiring advisory lock %q on %s after %s", e.Name, e.Dialect, e.Timeout)
 }
 
@@ -156,8 +169,9 @@ func (l *Lock) Release(ctx context.Context) error {
 // callback failure while reporting a secondary cleanup warning. If the
 // callback succeeds but release fails, the release failure becomes the run
 // error: losing the session must never be reported as a successful operation.
-// A zero timeout waits indefinitely; context cancellation always interrupts
-// the acquisition and the callback.
+// A zero timeout waits indefinitely and a negative one does not wait (see
+// [NoWait]); context cancellation always interrupts the acquisition and the
+// callback.
 func WithLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -227,9 +241,9 @@ func acquireSessionLock(
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
-// dedicated connection from conn's pool. A zero timeout waits indefinitely;
-// context cancellation always interrupts the wait. Elapsed timeouts surface
-// as a [TimeoutError]. On dialects without advisory-lock semantics Acquire
+// dedicated connection from conn's pool. A zero timeout waits indefinitely and
+// a negative one does not wait (see [NoWait]); context cancellation always
+// interrupts the wait. Elapsed timeouts surface as a [TimeoutError]. On dialects without advisory-lock semantics Acquire
 // returns a no-op lock, so callers decide whether that is acceptable through
 // [Lock.Supported].
 func Acquire(
@@ -428,6 +442,9 @@ func acquirePostgresLock(
 		if acquired {
 			return nil
 		}
+		if timeout < 0 {
+			return &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
+		}
 
 		select {
 		case <-lockCtx.Done():
@@ -550,6 +567,9 @@ func mySQLLockTimeoutSeconds(dialect string, timeout time.Duration) float64 {
 	if timeout > 0 {
 		return math.Ceil(timeout.Seconds())
 	}
+	if timeout < 0 {
+		return 0
+	}
 	if platform.NormalizeDialect(dialect) == platform.MariaDB {
 		return mariaDBDefaultTimeoutSeconds
 	}
@@ -557,7 +577,10 @@ func mySQLLockTimeoutSeconds(dialect string, timeout time.Duration) float64 {
 }
 
 func sqlServerLockTimeoutMilliseconds(timeout time.Duration) int {
-	if timeout <= 0 {
+	if timeout < 0 {
+		return 0
+	}
+	if timeout == 0 {
 		return -1
 	}
 	milliseconds := math.Ceil(float64(timeout) / float64(time.Millisecond))

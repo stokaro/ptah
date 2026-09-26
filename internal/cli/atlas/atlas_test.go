@@ -1264,7 +1264,7 @@ func TestCompatCommand_SchemaInspectRejectsInvalidFormatBeforeConnect(t *testing
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "connect to --url")
 }
 
@@ -1300,7 +1300,7 @@ func TestCompatCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*split requires hcl or sql schema output`)
+	c.Assert(err, qt.ErrorMatches, `template: format:.*split requires hcl or sql schema output`)
 }
 
 func TestCompatCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
@@ -1691,7 +1691,7 @@ func TestCompatCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *test
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
@@ -1879,7 +1879,7 @@ func TestCompatCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T)
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
@@ -2561,7 +2561,7 @@ func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testi
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse log format: .*`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "load --from schema")
 }
 
@@ -2730,7 +2730,7 @@ func TestCompatCommand_SchemaApplyRejectsInvalidTxMode(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `invalid tx-mode "statement": expected file, all, or none`)
+	c.Assert(err, qt.ErrorMatches, `unknown tx-mode "statement"`)
 }
 
 func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
@@ -2853,7 +2853,7 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 
 		// --lock-timeout is implemented (see schema_apply_lock_test.go);
 		// malformed values fail before the target database is touched.
-		c.Assert(err, qt.ErrorMatches, `invalid --lock-timeout: time: invalid duration "soon"`)
+		c.Assert(err, qt.ErrorMatches, `invalid argument "soon" for "--lock-timeout" flag: time: invalid duration "soon"`)
 	})
 }
 
@@ -3271,7 +3271,7 @@ func TestCompatCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T)
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*`)
 	assertSQLiteTableMissing(c, dbPath, "invalid_format_applied")
 }
 
@@ -3859,6 +3859,10 @@ CREATE TABLE users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
+// TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout: the flag parser
+// refuses a value that is not a duration, in the pinned binary's words and
+// before the verb looks at its --to, as that binary does. Zero is accepted
+// there and here; it means "do not wait".
 func TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewCompatCommand("atlas")
@@ -3870,12 +3874,12 @@ func TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
 		"--dev-url", "sqlite://dev.db",
 		"--dir", "file://migrations",
 		"--to", "file://schema.sql",
-		"--lock-timeout", "0s",
+		"--lock-timeout", "soon",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `invalid migration lock timeout: must be greater than zero`)
+	c.Assert(err, qt.ErrorMatches, `invalid argument "soon" for "--lock-timeout" flag: time: invalid duration "soon"`)
 }
 
 func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
@@ -3926,7 +3930,7 @@ func TestCompatCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
+	c.Assert(err, qt.ErrorMatches, `parse format: .*function "json" not defined.*`)
 }
 
 func TestCompatCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testing.T) {

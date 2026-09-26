@@ -99,6 +99,9 @@ func acquireDirLock(ctx context.Context, migrationsDir string, timeout time.Dura
 		if !errors.Is(err, errDirLocked) {
 			return nil, err
 		}
+		if timeout < 0 {
+			return nil, fmt.Errorf("migration directory lock is held by another process: %s", lockPath)
+		}
 		if timeout > 0 && time.Since(startedAt) >= timeout {
 			return nil, fmt.Errorf("migration directory lock timeout after %s: %s", timeout, lockPath)
 		}
