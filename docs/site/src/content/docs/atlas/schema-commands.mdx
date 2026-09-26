@@ -149,7 +149,10 @@ Non-database sources require `--dev-url`, mirroring Atlas dev-database
 normalization: the dev database is reset destructively, the source is
 materialized on it (schema files executed, migration directories replayed),
 and the result is introspected. Inspecting a file without `--dev-url` fails
-with Atlas's `--dev-url cannot be empty` message.
+with Atlas's `--dev-url cannot be empty` message, and with Atlas's link to its
+dev-database page when the source is SQL or a migration directory. A
+`--dev-url` made of spaces is a value, and fails as Atlas fails it:
+`sql/sqlclient: missing driver`.
 
 One kind of object is not materialized: a role the dev database's **server**
 already has. The reset empties the dev database, and a role is not in it —
@@ -1160,7 +1163,9 @@ ptah-compat schema apply --env local --dry-run
 `--dev-url` must match the target database dialect. It is required when
 `--to` is SQL a dev database has to run first — a SQL file, a directory of SQL
 files, a migration directory, or an `env://` reference to one of those — and
-without one the apply is refused before the target is contacted. A database
+without one the apply is refused before the target is contacted, with Atlas's
+`--dev-url cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database`.
+A database
 `--to`, an HCL file or a directory of HCL files needs none, as on Atlas, and
 neither does a YAML schema file: each is already a schema definition.
 `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file or directory with no dev

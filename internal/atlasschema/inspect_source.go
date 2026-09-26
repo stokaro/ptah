@@ -101,16 +101,22 @@ type InspectSourceOptions struct {
 	// single-document HCL framing policy; see [InspectOptions].
 	CompatibilityHCLFraming bool
 	// DevURLDiagnostic lets the Atlas-compatible surface answer a --dev-url in
-	// this package's own words before the shared resolution reaches it, and is
-	// nil on every native path.
+	// its own words before the shared resolution reaches it, and is nil on
+	// every native path. It receives the value as written and the source that
+	// needs the dev database, and it answers an absent value too: a nil return
+	// lets the inspection go on, so a surface that sets it owns every verdict
+	// on the value. Without it, a blank value is refused with
+	// `--dev-url cannot be empty` and anything else goes on.
 	//
 	// It exists because the two surfaces owe different sentences for the same
 	// value: the community binary reports a driver problem, and native Ptah
-	// names the flag and quotes what the operator actually typed. Consulted here
-	// rather than at the caller because only this function knows the source
-	// turned out to need a dev database at all -- a database --url never reaches
-	// it, which is the scope the community binary was measured to use.
-	DevURLDiagnostic func(string) error
+	// names the flag and quotes what the operator actually typed. For an absent
+	// value the community binary's sentence depends on the source's format,
+	// which is why the source travels with the value. Consulted here rather
+	// than at the caller because only this function knows the source turned out
+	// to need a dev database at all -- a database --url never reaches it, which
+	// is the scope the community binary was measured to use.
+	DevURLDiagnostic func(devURL string, source atlassource.Set) error
 }
 
 // ValidateInspectOptions runs every check [InspectSource] performs before it
@@ -165,7 +171,10 @@ func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
 	if err := ValidateInspectOptions(opts); err != nil {
 		return err
 	}
-	if err := refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic); err != nil {
+	// The source is not classified yet on this path, so the surface is handed
+	// an empty set; every caller of this function is native and sets no
+	// surface diagnostic.
+	if err := refuseInspectDevURL(opts.DevURL, atlassource.Set{}, opts.DevURLDiagnostic); err != nil {
 		return err
 	}
 	return refuseInspectDevURLForm(opts.DevURL)
@@ -261,31 +270,34 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 
 // refuseInspectDevURL answers a dev database URL this inspection cannot use.
 //
-// The two verdicts are ordered as measured: an absent value first, then
-// whatever the calling surface wants to say about the remainder. Only the
-// caller can supply that last one, because the two surfaces owe different
-// sentences for the same value; see [InspectSourceOptions.DevURLDiagnostic].
+// A calling surface that supplies [InspectSourceOptions.DevURLDiagnostic] owns
+// every verdict on the value, because the two surfaces owe different sentences
+// for it. The Atlas-compatible surface answers a value made of spaces as a
+// value the client layer cannot open, and an empty one with the community
+// binary's sentence for the source's format. A surface that supplies none gets
+// `--dev-url cannot be empty` for a blank value.
 //
 // A `docker://` value is not refused here outright: it is provisioned instead,
 // by [devdocker.Resolve] further down, and the verdicts that remain for one are
 // read from the URL text by [refuseInspectDevURLForm] and by [devdocker.Parse]
 // itself, in the pinned binary's own words.
 //
-// The value arrives as the operator wrote it and is normalized here for these
-// two verdicts only. What must NOT be normalized is the value handed to the
-// provisioner: see [devdocker.Parse] for the leading space that is not
-// whitespace around a docker URL but a value with no scheme at all.
-func refuseInspectDevURL(devURL string, surfaceDiagnostic func(string) error) error {
-	trimmed := strings.TrimSpace(devURL)
-	if trimmed == "" {
-		// Atlas parity: `atlas schema inspect -u file://...` without a dev
-		// database fails with exactly this message.
+// The value is normalized here for the blank verdict only. What must NOT be
+// normalized is the value handed to the provisioner: see [devdocker.Parse] for
+// the leading space that is not whitespace around a docker URL but a value with
+// no scheme at all.
+func refuseInspectDevURL(
+	devURL string,
+	source atlassource.Set,
+	surfaceDiagnostic func(string, atlassource.Set) error,
+) error {
+	if surfaceDiagnostic != nil {
+		return surfaceDiagnostic(devURL, source)
+	}
+	if strings.TrimSpace(devURL) == "" {
 		return errors.New("--dev-url cannot be empty")
 	}
-	if surfaceDiagnostic == nil {
-		return nil
-	}
-	return surfaceDiagnostic(trimmed)
+	return nil
 }
 
 // inspectOnDev evaluates a local-file or migration-directory inspection
@@ -296,7 +308,7 @@ func inspectOnDev(
 	opts InspectSourceOptions,
 	inspectOpts InspectOptions,
 ) (InspectResult, error) {
-	if err := refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic); err != nil {
+	if err := refuseInspectDevURL(opts.DevURL, set, opts.DevURLDiagnostic); err != nil {
 		return InspectResult{}, err
 	}
 	devURL := strings.TrimSpace(opts.DevURL)

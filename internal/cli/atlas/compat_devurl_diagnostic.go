@@ -149,19 +149,40 @@ func atlasDevURLOpenDiagnostic(rawURL string) error {
 	return atlasDatabaseURLDiagnostic(rawURL)
 }
 
-// atlasDevURLDriverDiagnostic reports only the unknown-driver verdict, leaving
-// an empty value to the caller's own refusal.
+// atlasDevURLDriverDiagnostic reports the verdict the client layer gives a
+// `--dev-url` value, leaving an empty value to the caller's own refusal.
 //
 // It is the verb family whose empty `--dev-url` is not a driver question:
 // `migrate validate` accepts one and exits 0, and the three schema verbs each
 // answer it with a sentence about the dev database rather than about a driver.
 // Those refusals are measured separately and keep their own wording; this only
-// adds the row they all share.
+// adds the rows they all share.
+//
+// Only the empty string is left to the caller. A value made of spaces is a
+// value: measured on the pinned binary on 2026-09-26, `--dev-url " "` answers
+// `sql/sqlclient: missing driver` on all six verbs, `schema diff` between two
+// databases and `schema apply` to a database included, where neither opens a
+// dev database for an absent flag. Trimmed first, the value would let those
+// two verbs, and `migrate validate`, run as though no dev database had been
+// named (stokaro/ptah#3680).
 func atlasDevURLDriverDiagnostic(rawURL string) error {
-	if strings.TrimSpace(rawURL) == "" {
+	if rawURL == "" {
 		return nil
 	}
 	return atlasDevURLOpenDiagnostic(rawURL)
+}
+
+// atlasInspectDevURLDiagnostic is `schema inspect`'s whole verdict on a
+// --dev-url for a source that needs a dev database: the pinned binary's
+// sentence for the source's format when the value is empty, and the client
+// layer's verdict on anything else. Measured on 2026-09-26, a SQL file, a
+// directory of them and a migration directory print the linked sentence, and
+// an HCL file or directory prints the bare one (stokaro/ptah#3680).
+func atlasInspectDevURLDiagnostic(devURL string, source atlassource.Set) error {
+	if devURL == "" {
+		return atlasEmptyDevURLError(source)
+	}
+	return atlasDevURLDriverDiagnostic(devURL)
 }
 
 // atlasDevURLGiven reports whether the operator supplied a dev database URL at

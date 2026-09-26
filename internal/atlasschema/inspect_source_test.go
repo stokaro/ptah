@@ -48,7 +48,7 @@ func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 		URLs:   []string{"sqlite://" + dbPath},
 		DevURL: "notadriver://x",
 		Format: "hcl",
-		DevURLDiagnostic: func(string) error {
+		DevURLDiagnostic: func(string, atlassource.Set) error {
 			diagnosticCalled = true
 			return errors.New("unexpected compat diagnostic")
 		},

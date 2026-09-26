@@ -2186,14 +2186,29 @@ with a database without one is refused too, as it is there; native `ptah
 schema diff` compares the two, and `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL` reaches
 that here.
 
-Two more measured divergences are recorded without being closed. A `.sql`
-desired-state source moves the pinned binary's empty-value answer to `--dev-url
-cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database` (88 B) on
-all three schema verbs — the split is the source kind, not the verb — while
-`schema apply` and `schema inspect` print the 33-byte form for both kinds
-(stokaro/ptah#3680). And `schema inspect --url <database>
---dev-url notadriver://x` exits 0 on the pinned binary, which never opens the dev
-URL when the source is a database, where Ptah still validates the dialect match
+A `.sql` desired-state source moves the pinned binary's empty-value answer to
+`--dev-url cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database`
+(88 B) on all three schema verbs, and so does a directory of SQL files or a
+migration directory; the split is the source kind, not the verb. Ptah prints
+the same split on all three (stokaro/ptah#3680). `schema apply` asks for the dev
+database after it parses `--tx-mode` and `--lock-timeout`, as the pinned binary
+does, and before it contacts `--url`, where the pinned binary connects first: an
+unreachable `--url` with a SQL `--to` is refused for the dev database here and
+for the connection there, at exit 1 on both.
+
+A `--dev-url` made of spaces is a value, not an absent flag. The pinned binary
+opens it and answers `sql/sqlclient: missing driver. See: https://atlasgo.io/url`
+on all six verbs, including `schema diff` between two databases, `schema apply`
+to a database and `migrate validate`, which open no dev database when the flag
+is absent or empty. Ptah answers the same on those six. `schema inspect` of a
+database never opens the dev database on either binary, so a blank value there
+is not judged. A tab is answered `sql/sqlclient: parse open url: net/url: invalid
+control character in URL` by the pinned binary and `missing driver` here; both
+exit 1.
+
+One more measured divergence is recorded without being closed. `schema inspect
+--url <database> --dev-url notadriver://x` exits 0 on the pinned binary, which
+never opens the dev URL when the source is a database, where Ptah still validates the dialect match
 in the shared inspection path after connecting to the source. The compat-only
 `DevURLDiagnostic` hook is not involved. The unknown-driver row above is
 measured on the file source, which is the scope the pinned binary was measured
