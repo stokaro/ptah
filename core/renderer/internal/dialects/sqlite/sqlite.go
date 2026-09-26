@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/triggerdef"
 )
 
 const DialectName = "sqlite"
@@ -467,6 +468,22 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	}
 	if forEach != "ROW" {
 		return unsupportedFeaturef("FOR EACH %s triggers are not supported", forEach)
+	}
+	// A SQLite trigger fires on exactly one of INSERT, UPDATE [OF columns] and
+	// DELETE. A WHEN or a transition table declared for PostgreSQL is refused
+	// rather than dropped, so the trigger does not fire where it was told not
+	// to.
+	events := triggerdef.Events(node.Event)
+	switch {
+	case len(events) > 1:
+		return unsupportedFeaturef("trigger %q fires on several events (%s); a SQLite trigger fires on one",
+			node.Name, strings.TrimSpace(node.Event))
+	case triggerdef.Includes(events, "TRUNCATE"):
+		return unsupportedFeaturef("trigger %q fires on TRUNCATE, which SQLite does not have", node.Name)
+	case strings.TrimSpace(node.When) != "":
+		return unsupportedFeaturef("trigger %q has a PostgreSQL WHEN condition", node.Name)
+	case node.OldTable != "" || node.NewTable != "":
+		return unsupportedFeaturef("trigger %q declares transition tables, which SQLite does not have", node.Name)
 	}
 
 	if node.Replace {

@@ -1560,6 +1560,14 @@ type Trigger struct {
 	Body    string `json:"body"`    // Trigger body
 	Comment string `json:"comment"` // Trigger comment/description
 
+	// When is the condition of the trigger's WHEN clause, without its
+	// parentheses, as the server prints it back. Empty means none.
+	When string `json:"when,omitempty"`
+	// OldTable and NewTable name the transition tables of a REFERENCING
+	// clause. Empty means the trigger declares none.
+	OldTable string `json:"old_table,omitempty"`
+	NewTable string `json:"new_table,omitempty"`
+
 	// ExecuteFunction is the name of the function the trigger runs, as the
 	// catalog reports it.
 	//

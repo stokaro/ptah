@@ -235,6 +235,11 @@ func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.T
 		ForEach: node.ForEach,
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,
+		When:    strings.TrimSpace(node.When),
+		// A transition table is a relation name, folded the way the server
+		// folds it, because the catalog reports it folded.
+		OldTable: normalizeSQLIdentifier(sourcePlatform, node.OldTable),
+		NewTable: normalizeSQLIdentifier(sourcePlatform, node.NewTable),
 	}
 	trigger.Canonicalize()
 	if node.ExternalFunction && node.FunctionName != "" {

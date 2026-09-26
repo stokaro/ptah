@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/triggerdef"
 )
 
 // Database is the desired-state model of a whole schema: every declared object
@@ -1419,10 +1420,22 @@ type Trigger struct {
 	Name       string // Trigger name
 	Table      string // Target table
 	Timing     string // BEFORE, AFTER, or INSTEAD OF
-	Event      string // INSERT, UPDATE, DELETE, or TRUNCATE
-	ForEach    string // ROW or STATEMENT
-	Body       string // Trigger body
-	Comment    string // Optional comment for documentation
+	// Event is the statement or statements the trigger fires on: INSERT,
+	// UPDATE, DELETE or TRUNCATE, several joined by OR, and an UPDATE may name
+	// its columns, as in `INSERT OR UPDATE OF a, b`. [Trigger.Canonicalize]
+	// puts the members in the order PostgreSQL reports them.
+	Event   string
+	ForEach string // ROW or STATEMENT
+	Body    string // Trigger body
+	Comment string // Optional comment for documentation
+
+	// When is the condition of the trigger's WHEN clause, without its
+	// parentheses. Empty means the trigger fires unconditionally.
+	When string `json:",omitempty"`
+	// OldTable and NewTable name the transition tables of a REFERENCING
+	// clause. Empty means the trigger declares none.
+	OldTable string `json:",omitempty"`
+	NewTable string `json:",omitempty"`
 
 	// ExecuteFunction names an already-existing function the trigger executes
 	// instead of a body Ptah owns. It is set when a SQL schema file spells
@@ -1442,12 +1455,30 @@ type Trigger struct {
 // canonical uppercase by database catalogs.
 func (t *Trigger) Canonicalize() {
 	t.Timing = strings.ToUpper(strings.TrimSpace(t.Timing))
-	t.Event = strings.ToUpper(strings.TrimSpace(t.Event))
+	t.Event = CanonicalTriggerEvent(t.Event)
 	t.ForEach = strings.ToUpper(strings.TrimSpace(t.ForEach))
 	t.ExecuteFunction = strings.TrimSpace(t.ExecuteFunction)
+	t.When = strings.TrimSpace(t.When)
+	t.OldTable = strings.TrimSpace(t.OldTable)
+	t.NewTable = strings.TrimSpace(t.NewTable)
 	if t.ForEach == "" {
 		t.ForEach = "ROW"
 	}
+}
+
+// CanonicalTriggerEvent spells a trigger's event list one way: each event
+// keyword in upper case, the members in the order PostgreSQL reports them and
+// joined by " OR ", and an UPDATE's columns separated by ", " in the order
+// declared, which is the order the server keeps. PostgreSQL reports
+// `DELETE OR UPDATE OF b, a` for a trigger declared `UPDATE OF b, a OR
+// DELETE`, so the two spellings have to be one.
+//
+// A column is kept as written, quotes and case included, because whether
+// `Total` names the column total or Total depends on the engine that reads the
+// statement. A member naming no known event keeps its place after the ones
+// that do.
+func CanonicalTriggerEvent(event string) string {
+	return triggerdef.Canonical(event, nil)
 }
 
 // FunctionName returns the deterministic PostgreSQL trigger function name used

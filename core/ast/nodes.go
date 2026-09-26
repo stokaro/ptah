@@ -2424,7 +2424,9 @@ type CreateTriggerNode struct {
 	// swapped for one that fires at a different moment.
 	Timing string
 	// Event names the triggering statement or statements, such as INSERT or
-	// UPDATE.
+	// UPDATE. Several are joined by OR, and an UPDATE may name its columns:
+	// `INSERT OR UPDATE OF a, b`. A target that fires a trigger on one
+	// statement only refuses a list rather than keeping one of its members.
 	Event string
 	// ForEach is the trigger level: ROW or STATEMENT. Empty means ROW, the
 	// value [NewCreateTrigger] starts from. A target with row-level triggers
@@ -2453,6 +2455,15 @@ type CreateTriggerNode struct {
 	// refuses rather than emitting a plain CREATE that would fail against the
 	// trigger already there.
 	Replace bool
+	// When is the condition of a WHEN clause, without its parentheses. Empty
+	// means the trigger fires unconditionally. A target without the clause
+	// refuses a condition rather than firing the trigger on every row.
+	When string
+	// OldTable and NewTable name the transition tables of a REFERENCING
+	// clause, where the target has them. Empty means the trigger declares
+	// none. A target without transition tables refuses them.
+	OldTable string
+	NewTable string
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
 	Comment string
@@ -2487,6 +2498,21 @@ func (n *CreateTriggerNode) SetEvent(event string) *CreateTriggerNode {
 // for chaining.
 func (n *CreateTriggerNode) SetForEach(forEach string) *CreateTriggerNode {
 	n.ForEach = forEach
+	return n
+}
+
+// SetWhen sets the condition of the WHEN clause, without its parentheses, and
+// returns the node for chaining.
+func (n *CreateTriggerNode) SetWhen(condition string) *CreateTriggerNode {
+	n.When = condition
+	return n
+}
+
+// SetReferencing names the transition tables of the REFERENCING clause; either
+// may be empty. It returns the node for chaining.
+func (n *CreateTriggerNode) SetReferencing(oldTable, newTable string) *CreateTriggerNode {
+	n.OldTable = oldTable
+	n.NewTable = newTable
 	return n
 }
 

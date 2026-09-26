@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/triggerdef"
 )
 
 const DialectName = platform.SQLServer
@@ -1403,11 +1404,27 @@ func renderTriggerEvent(node *ast.CreateTriggerNode) (string, error) {
 		return "", unsupportedFeaturef(
 			"trigger %q: BEFORE triggers are not supported; SQL Server offers AFTER and INSTEAD OF", node.Name)
 	}
-	event := strings.ToUpper(strings.TrimSpace(node.Event))
-	if event == "" {
-		event = "INSERT"
+	events := triggerdef.Events(node.Event)
+	if len(events) == 0 {
+		events = []triggerdef.Event{{Keyword: "INSERT"}}
 	}
-	return timing + " " + event, nil
+	// SQL Server separates several events with commas where PostgreSQL writes
+	// OR, and has nothing for the rest of what a PostgreSQL trigger can say.
+	switch {
+	case triggerdef.Includes(events, "TRUNCATE"):
+		return "", unsupportedFeaturef("trigger %q fires on TRUNCATE, which has no trigger on SQL Server", node.Name)
+	case triggerdef.NamesColumns(events):
+		return "", unsupportedFeaturef("trigger %q fires on an UPDATE of named columns; SQL Server fires on every UPDATE", node.Name)
+	case strings.TrimSpace(node.When) != "":
+		return "", unsupportedFeaturef("trigger %q has a PostgreSQL WHEN condition", node.Name)
+	case node.OldTable != "" || node.NewTable != "":
+		return "", unsupportedFeaturef("trigger %q declares transition tables; SQL Server names them inserted and deleted", node.Name)
+	}
+	keywords := make([]string, len(events))
+	for i, event := range events {
+		keywords[i] = event.Keyword
+	}
+	return timing + " " + strings.Join(keywords, ", "), nil
 }
 
 // terminateStatement returns body with exactly one trailing semicolon. A body

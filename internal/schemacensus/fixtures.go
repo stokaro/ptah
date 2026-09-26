@@ -137,6 +137,7 @@ func Fixtures() []Fixture {
 		{Name: "domain-default-expr-only", Schema: domainDefaultExprOnlyFixture()},
 		{Name: "trigger-body-only", Schema: triggerBodyOnlyFixture()},
 		{Name: "trigger-foreach-statement", Schema: triggerForEachStatementFixture()},
+		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
 		{Name: "function-procedure", Schema: functionProcedureFixture()},
 		{Name: "partition-expression", Schema: partitionExpressionFixture()},
 		{Name: "sequence-scoped", Schema: sequenceScopedFixture()},
@@ -1085,7 +1086,22 @@ func triggerFixture() schemamodel.Database {
 	db.Triggers = []schemamodel.Trigger{{
 		StructName: "TR", Name: "t_touch", Table: "t", Timing: "BEFORE", Event: "UPDATE",
 		ForEach: "ROW", ExecuteFunction: "touch()", Body: "BEGIN RETURN NEW; END;",
+		When:    "NEW.id IS DISTINCT FROM OLD.id",
 		Comment: "touch", Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+func triggerTransitionTablesFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Functions = []schemamodel.Function{{
+		StructName: "F", Name: "audit", Returns: "trigger", Language: "plpgsql",
+		Body: "BEGIN RETURN NULL; END;", Dialects: []string{"postgres"},
+	}}
+	db.Triggers = []schemamodel.Trigger{{
+		StructName: "TR", Name: "t_audit", Table: "t", Timing: "AFTER", Event: "UPDATE",
+		ForEach: "STATEMENT", ExecuteFunction: "audit()", OldTable: "old_rows", NewTable: "new_rows",
+		Dialects: []string{"postgres"},
 	}}
 	return db
 }

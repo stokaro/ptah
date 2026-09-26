@@ -370,7 +370,7 @@ func compareReportingUndecidedAdditions(
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
 	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics)
-	compare.TriggersWithSemantics(desired, database, diff, identifierSemantics)
+	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPoliciesWithSemantics(

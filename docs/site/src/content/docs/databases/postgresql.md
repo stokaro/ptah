@@ -84,7 +84,7 @@ its own read-back rarely match as text:
 
 When a comparison has a connection, Ptah asks that server to spell each declared
 column type and default, CHECK, policy clause, index expression and predicate,
-and domain the way its catalog does. It creates a temporary object inside a
+trigger WHEN condition, and domain the way its catalog does. It creates a temporary object inside a
 transaction that is rolled back, reads the stored form, and compares like with
 like. A column is asked only when its default is declared or its type is not
 written the way the catalog reports it.
@@ -266,6 +266,49 @@ a procedure. The drop does not use `CASCADE`: when a
 view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.
+
+## Triggers
+
+A SQL schema file declares a trigger with the statement `pg_dump` writes, and
+every form PostgreSQL 18 accepts is read: the events `INSERT`, `UPDATE`,
+`UPDATE OF` a column list, `DELETE` and `TRUNCATE`, joined by `OR`; `FOR EACH
+ROW` or `FOR EACH STATEMENT`, with `EACH` optional; a `WHEN` condition; and
+`REFERENCING OLD TABLE` and `NEW TABLE` for transition tables.
+
+```sql
+CREATE TRIGGER orders_touch BEFORE UPDATE OF total, status OR INSERT ON orders
+  FOR EACH ROW WHEN (NEW.total > 0) EXECUTE FUNCTION touch_order();
+CREATE TRIGGER orders_audit AFTER UPDATE ON orders
+  REFERENCING OLD TABLE AS before_rows NEW TABLE AS after_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_orders();
+```
+
+The server keeps the events as flags and reports them in one order, `INSERT`,
+`DELETE`, `UPDATE`, `TRUNCATE`, so the first trigger reads back as `INSERT OR
+UPDATE OF total, status`. Ptah compares event lists in that order, so the order
+they are declared in does not matter. The columns of `UPDATE OF` keep their
+declared order on the server, and a different order is a different
+declaration. An unquoted column name is compared the way the server folds it,
+so `UPDATE OF Total` matches the column `total`.
+
+The server does not keep the `WHEN` text either, and `pg_get_expr` cannot print
+it, because the condition reads both `OLD` and `NEW`. Ptah reads it from
+`pg_get_triggerdef`, which prints `WHEN ((new.total > 0))` for the trigger
+above, and compares it the way a CHECK is compared: with a connection the
+declared condition is created on a temporary copy of the table and read back,
+and without one it is folded.
+
+A change to the events, the condition or the transition tables is planned as
+`CREATE OR REPLACE TRIGGER`. The Go annotation `//ptah:schema:trigger` and a
+YAML trigger take the same clauses as `when`, `old_table` and `new_table`.
+Other targets refuse what they cannot create rather than render a different
+trigger. MySQL and MariaDB take one event and none of these clauses. SQLite
+takes one event, which may be `UPDATE OF`. SQL Server takes an event list
+without `UPDATE OF`, and Oracle takes both. None of them takes `TRUNCATE`,
+transition tables, or a PostgreSQL `WHEN` condition; SQLite and Oracle keep
+a `WHEN` of their own grammar in the trigger body. `schema inspect` in HCL leaves out a trigger
+with an event list, a condition or transition tables, and says so, because
+the HCL trigger block has no attribute for them.
 
 ## Materialized view refresh
 

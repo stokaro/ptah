@@ -606,6 +606,10 @@ func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigge
 			ForEach: dbTrigger.ForEach,
 			Body:    dbTrigger.Body,
 			Comment: dbTrigger.Comment,
+
+			When:     dbTrigger.When,
+			OldTable: dbTrigger.OldTable,
+			NewTable: dbTrigger.NewTable,
 		}
 		trigger.Canonicalize()
 		// A trigger running a function Ptah did NOT generate for it keeps that

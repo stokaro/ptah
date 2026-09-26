@@ -381,6 +381,18 @@ func (b Builder) Policy(qualifiedTable, policy string) ID {
 	}
 }
 
+// Trigger builds the identity of a trigger. Like a policy's, a trigger's name
+// is scoped to its table, so the table is a component of the identity.
+func (b Builder) Trigger(qualifiedTable, trigger string) ID {
+	table := b.Table(qualifiedTable)
+	return ID{
+		Kind:   KindTrigger,
+		Schema: table.Schema,
+		Parent: table.Name,
+		Name:   b.namePart(trigger, b.semantics.TableIdentityKey),
+	}
+}
+
 // PolicyParts builds a policy identity from components the caller already has.
 //
 // A catalog reports the three separately and reports each BARE -- a table named

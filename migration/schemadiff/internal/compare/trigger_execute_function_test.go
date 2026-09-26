@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
@@ -36,6 +38,7 @@ func TestTriggerDefinitions_AQualifiedFunctionMatchesItsBareName(t *testing.T) {
 			diff := compare.TriggerDefinitions(
 				schemamodel.Trigger{Name: "t", Table: "app.t", ExecuteFunction: test.declared},
 				catalog.Trigger{Name: "t", Table: "app.t", ExecuteFunction: test.observed},
+				identifier.ForDialect(platform.Postgres),
 			)
 
 			c.Assert(diff.Changes["function"], qt.Equals, "")
@@ -65,6 +68,7 @@ func TestTriggerDefinitions_TwoSchemasAreTwoFunctions(t *testing.T) {
 			diff := compare.TriggerDefinitions(
 				schemamodel.Trigger{Name: "t", Table: "app.t", ExecuteFunction: test.declared},
 				catalog.Trigger{Name: "t", Table: "app.t", ExecuteFunction: test.observed},
+				identifier.ForDialect(platform.Postgres),
 			)
 
 			c.Assert(diff.Changes["function"], qt.Not(qt.Equals), "")

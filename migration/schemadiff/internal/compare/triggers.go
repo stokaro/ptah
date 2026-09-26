@@ -6,9 +6,12 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/exprkey"
 	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/triggerdef"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -41,6 +44,19 @@ func TriggersWithSemantics(
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+) {
+	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil)
+}
+
+// TriggersWithSemanticsAndConditions is [TriggersWithSemantics] with each
+// declared WHEN condition as the server prints it, where a server was asked;
+// see [config.CompareOptions.TriggerConditions].
+func TriggersWithSemanticsAndConditions(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+	conditions map[string]config.TriggerCondition,
 ) {
 	semantics = semantics.Normalize("")
 
@@ -77,7 +93,10 @@ func TriggersWithSemantics(
 			})
 			continue
 		}
-		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index])
+		if resolved := conditions[exprkey.Trigger(semantics, declared.Table, declared.Name)]; resolved.Resolved {
+			canonical.When = resolved.Condition
+		}
+		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index], semantics)
 		if len(triggerDiff.Changes) > 0 {
 			triggerDiff.Desired = declared
 			diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
@@ -182,7 +201,11 @@ func sortTriggerRefs(refs []difftypes.TriggerRef) {
 }
 
 // TriggerDefinitions performs detailed comparison between generated and database trigger definitions.
-func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigger) difftypes.TriggerDiff {
+func TriggerDefinitions(
+	genTrigger schemamodel.Trigger,
+	dbTrigger catalog.Trigger,
+	semantics identifier.Semantics,
+) difftypes.TriggerDiff {
 	genTrigger.Canonicalize()
 
 	triggerDiff := difftypes.TriggerDiff{
@@ -194,7 +217,7 @@ func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigge
 	if genTrigger.Timing != strings.ToUpper(dbTrigger.Timing) {
 		triggerDiff.Changes["timing"] = fmt.Sprintf("%s -> %s", dbTrigger.Timing, genTrigger.Timing)
 	}
-	if genTrigger.Event != strings.ToUpper(dbTrigger.Event) {
+	if !sameTriggerEvent(semantics, genTrigger.Event, dbTrigger.Event) {
 		triggerDiff.Changes["event"] = fmt.Sprintf("%s -> %s", dbTrigger.Event, genTrigger.Event)
 	}
 	dbForEach := strings.ToUpper(strings.TrimSpace(dbTrigger.ForEach))
@@ -203,6 +226,17 @@ func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigge
 	}
 	if genTrigger.ForEach != dbForEach {
 		triggerDiff.Changes["for"] = fmt.Sprintf("%s -> %s", dbForEach, genTrigger.ForEach)
+	}
+	if !sameTriggerCondition(genTrigger.When, dbTrigger.When) {
+		triggerDiff.Changes["when"] = fmt.Sprintf("%s -> %s", describeCondition(dbTrigger.When), describeCondition(genTrigger.When))
+	}
+	// A transition table's name is compared exactly: the renderer quotes it,
+	// so the server keeps the case it was declared in, and `OldRows` and
+	// `oldrows` are two names the trigger function would have to spell apart.
+	if genTrigger.OldTable != strings.TrimSpace(dbTrigger.OldTable) ||
+		genTrigger.NewTable != strings.TrimSpace(dbTrigger.NewTable) {
+		triggerDiff.Changes["referencing"] = fmt.Sprintf("old=%s new=%s -> old=%s new=%s",
+			dbTrigger.OldTable, dbTrigger.NewTable, genTrigger.OldTable, genTrigger.NewTable)
 	}
 
 	// A trigger either carries a body Ptah owns or names a function somebody
@@ -233,6 +267,46 @@ func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigge
 	}
 
 	return triggerDiff
+}
+
+// sameTriggerEvent reports whether two event lists name the same events. The
+// members are compared in PostgreSQL's order, and each UPDATE column is folded
+// before its identity key is taken: an unquoted name to lower case and a quoted
+// one to what is inside the quotes. PostgreSQL reports a column the way
+// quote_ident prints it, `b` or `"Total"`, and a declaration may write `B` for
+// the first.
+func sameTriggerEvent(semantics identifier.Semantics, desired, database string) bool {
+	column := func(name string) string {
+		return semantics.ColumnIdentityKey(foldTriggerColumn(name))
+	}
+	return triggerdef.Canonical(desired, column) == triggerdef.Canonical(database, column)
+}
+
+func foldTriggerColumn(name string) string {
+	if unquoted, quoted := strings.CutPrefix(name, `"`); quoted {
+		return strings.ReplaceAll(strings.TrimSuffix(unquoted, `"`), `""`, `"`)
+	}
+	return strings.ToLower(name)
+}
+
+// sameTriggerCondition reports whether two WHEN conditions are the same.
+//
+// The declared side arrives here in the server's own spelling where a server
+// was asked, and the two are then compared as text after the folding a CHECK
+// gets. Without a server the folding is all there is: it drops case, spaces
+// and one pair of outer parentheses, which makes a single comparison match its
+// read-back and leaves a compound condition, which the server parenthesizes
+// operand by operand, reported as changed.
+func sameTriggerCondition(declared, observed string) bool {
+	return normalizeCheckExpression(declared) == normalizeCheckExpression(observed)
+}
+
+// describeCondition names an absent condition in a change description.
+func describeCondition(condition string) string {
+	if strings.TrimSpace(condition) == "" {
+		return "(none)"
+	}
+	return strings.TrimSpace(condition)
 }
 
 func normalizeTriggerBody(body string) string {

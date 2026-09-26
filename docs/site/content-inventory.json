@@ -1164,8 +1164,8 @@
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 9480,
-      "sourceBytes": 64519
+      "visibleWords": 9861,
+      "sourceBytes": 66997
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4627,8 +4627,8 @@
         "/schema/validate-and-format/",
         "/start/install-options/"
       ],
-      "visibleWords": 5551,
-      "sourceBytes": 42861
+      "visibleWords": 5599,
+      "sourceBytes": 43192
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",

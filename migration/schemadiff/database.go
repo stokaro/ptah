@@ -99,6 +99,10 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
+	triggers, err := resolveTriggerConditions(ctx, conn, desired, database, semantics)
+	if err != nil {
+		return nil, nil, err
+	}
 	// Every resolver's answer reaches the comparison the same way: a copy of
 	// the options carrying the maps that have something in them. The copy is
 	// what keeps the caller's options untouched, which matters because a
@@ -110,6 +114,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		policies:   policies,
 		indexes:    indexes,
 		columns:    columns,
+		triggers:   triggers,
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -126,13 +131,15 @@ type resolvedExpressions struct {
 	policies   map[string]config.PolicyExpression
 	indexes    map[string]config.IndexExpression
 	columns    map[string]config.ColumnSpelling
+	triggers   map[string]config.TriggerCondition
 }
 
 // empty reports that no server answered for anything, which is every offline
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
 	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
-		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.columns) == 0
+		len(r.policies) == 0 && len(r.indexes) == 0 && len(r.columns) == 0 &&
+		len(r.triggers) == 0
 }
 
 // withResolvedExpressions returns the options the comparison should run under.
@@ -169,7 +176,57 @@ func withResolvedExpressions(
 	if len(resolved.columns) > 0 {
 		merged.ColumnSpellings = resolved.columns
 	}
+	if len(resolved.triggers) > 0 {
+		merged.TriggerConditions = resolved.triggers
+	}
 	return merged
+}
+
+// resolveTriggerConditions asks the server to print the WHEN condition of
+// every declared trigger whose table the database holds.
+//
+// Only those: a trigger on a table the plan creates is created from its
+// declaration unchanged, and its condition has no live table to parse against.
+func resolveTriggerConditions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) (map[string]config.TriggerCondition, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	columns := liveTableColumns(database, semantics)
+	var probes []dbexprprobe.TriggerConditionProbe
+	for _, trigger := range desired.Triggers {
+		if strings.TrimSpace(trigger.When) == "" {
+			continue
+		}
+		live, known := columns[exprkey.Table(semantics, trigger.Table)]
+		if !known {
+			continue
+		}
+		canonical := trigger
+		canonical.Canonicalize()
+		probes = append(probes, dbexprprobe.TriggerConditionProbe{
+			Key:     exprkey.Trigger(semantics, trigger.Table, trigger.Name),
+			Table:   live.name,
+			Columns: live.columns,
+			Timing:  canonical.Timing,
+			Event:   canonical.Event,
+			ForEach: canonical.ForEach,
+			When:    canonical.When,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	conditions, err := dbexprprobe.ResolveTriggerConditions(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return conditions, nil
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of

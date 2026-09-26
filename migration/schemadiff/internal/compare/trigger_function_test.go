@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -71,7 +73,9 @@ func TestTriggerDefinitions_AnExternalFunctionIsComparedByName(t *testing.T) {
 
 			diff := compare.TriggerDefinitions(
 				declaredTrigger(test.declared, ""),
-				catalogTrigger(test.current, auditBody))
+				catalogTrigger(test.current, auditBody),
+				identifier.ForDialect(platform.Postgres),
+			)
 
 			assertChange(c, diff, test.changeKey)
 		})
@@ -100,7 +104,9 @@ func TestTriggerDefinitions_ATriggerPtahOwnsIsStillComparedByBody(t *testing.T) 
 
 			diff := compare.TriggerDefinitions(
 				declaredTrigger("", test.declared),
-				catalogTrigger("ptah_trigger_a_trg_a", auditBody))
+				catalogTrigger("ptah_trigger_a_trg_a", auditBody),
+				identifier.ForDialect(platform.Postgres),
+			)
 
 			assertChange(c, diff, test.changeKey)
 		})
@@ -133,7 +139,9 @@ func TestTriggerDefinitions_ADeclarationCarryingOnlyABodyComparesByBody(t *testi
 
 			diff := compare.TriggerDefinitions(
 				declaredTrigger("", test.declared),
-				catalogTrigger("audit_fn", auditBody))
+				catalogTrigger("audit_fn", auditBody),
+				identifier.ForDialect(platform.Postgres),
+			)
 
 			assertChange(c, diff, test.changeKey)
 		})

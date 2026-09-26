@@ -318,6 +318,9 @@ type triggerSpec struct {
 	Timing     stringScalar `yaml:"timing"`
 	Event      stringScalar `yaml:"event"`
 	ForEach    stringScalar `yaml:"for"`
+	When       stringScalar `yaml:"when"`
+	OldTable   stringScalar `yaml:"old_table"`
+	NewTable   stringScalar `yaml:"new_table"`
 	Body       stringScalar `yaml:"body"`
 	Comment    stringScalar `yaml:"comment"`
 }
@@ -904,6 +907,9 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 			Timing:     string(spec.Timing),
 			Event:      string(spec.Event),
 			ForEach:    string(spec.ForEach),
+			When:       string(spec.When),
+			OldTable:   string(spec.OldTable),
+			NewTable:   string(spec.NewTable),
 			Body:       string(spec.Body),
 			Comment:    string(spec.Comment),
 		}
