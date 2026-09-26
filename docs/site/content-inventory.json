@@ -3920,8 +3920,8 @@
         "/operate/deliver/",
         "/operate/overview/"
       ],
-      "visibleWords": 568,
-      "sourceBytes": 4399
+      "visibleWords": 519,
+      "sourceBytes": 4083
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",

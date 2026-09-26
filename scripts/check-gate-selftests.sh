@@ -307,6 +307,14 @@ run_node_gate_case check-pages-root.mjs \
 	"a documented root URL dropped from the declaration the assembly reads" \
 	"perl -0pi -e 's/  \\{\\n    name: .install\\.ps1.,\\n.*?\\n  \\},\\n//s' docs/site/scripts/publish-root-assets.mjs"
 
+# A redirect page at the root keeps an address readers already hold answering
+# when another site publishes its content. A publisher that stops writing one
+# leaves no source file missing and no documentation link broken, so the
+# assembly is the only place the 404 shows.
+run_node_gate_case check-pages-root.mjs \
+	"the root-asset publisher no longer writing its redirect pages" \
+	"perl -0pi -e 's/for \\(const redirect of ROOT_REDIRECTS\\) \\{/for (const redirect of []) {/' docs/site/scripts/publish-root-assets.mjs"
+
 run_node_selftest_case check-pages-root.mjs \
 	"the produced-file rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!assembled\\.has\\(name\\)\\) \\{/if (false) {/' docs/site/scripts/check-pages-root.mjs"

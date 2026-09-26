@@ -83,11 +83,7 @@
     "check:glossary-coverage": "node scripts/check-glossary-coverage.mjs",
     "check:glossary-coverage:selftest": "node scripts/check-glossary-coverage.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest",
-    "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest",
-    "check:compatibility": "node scripts/check-compatibility.mjs",
-    "check:compatibility:selftest": "node scripts/check-compatibility.mjs --selftest",
-    "check:publish-compatibility:selftest": "node scripts/publish-compatibility.mjs --selftest",
-    "check:refresh-compatibility:selftest": "node scripts/refresh-compatibility.mjs --selftest"
+    "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.4",
