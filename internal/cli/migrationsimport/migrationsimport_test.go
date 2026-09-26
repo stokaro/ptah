@@ -288,3 +288,64 @@ func TestImportCommand_ServerVersionRendersForTheNamedLine(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(up), qt.Contains, `CREATE TABLE "widgets" (`)
 }
+
+// writeLiquibaseDBMSSource lays out a Liquibase changelog holding one changeset
+// for MySQL and one for PostgreSQL.
+func writeLiquibaseDBMSSource(t *testing.T) string {
+	c := qt.New(t)
+	dir := t.TempDir()
+	changelog := `<databaseChangeLog>` +
+		`<changeSet id="1" author="simon" dbms="mysql"><sql>CREATE TABLE only_mysql (id int);</sql></changeSet>` +
+		`<changeSet id="2" author="simon" dbms="postgresql"><sql>CREATE TABLE only_postgresql (id int);</sql></changeSet>` +
+		`</databaseChangeLog>`
+	c.Assert(os.WriteFile(filepath.Join(dir, "changelog.xml"), []byte(changelog), 0o600), qt.IsNil)
+	return dir
+}
+
+// --liquibase-dbms reaches a detected parser: the changeset for the named
+// database imports without its dbms, and the other is left out and named.
+func TestImportCommand_LiquibaseDBMSKeepsTheNamedDatabase(t *testing.T) {
+	c := qt.New(t)
+	src := writeLiquibaseDBMSSource(t)
+	out := t.TempDir()
+
+	output, err := execute("--source-dir", src, "--migrations-dir", out, "--liquibase-dbms", "PostgreSQL")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(output, qt.Contains, "Skipped 1 changeset(s):\n"+
+		"  changelog.xml simon:1: dbms=\"mysql\" does not select postgresql\n")
+	up, err := os.ReadFile(filepath.Join(out, "0000000001_simon_2.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(up), qt.Contains, "CREATE TABLE only_postgresql (id int);")
+}
+
+// A name Liquibase does not know, a Ptah dialect name among them, is refused
+// before anything is written.
+func TestImportCommand_LiquibaseDBMSUnknownNameIsRefused(t *testing.T) {
+	c := qt.New(t)
+	src := writeLiquibaseDBMSSource(t)
+	out := t.TempDir()
+
+	_, err := execute("--source-dir", src, "--migrations-dir", out, "--liquibase-dbms", "postgres")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*--liquibase-dbms: "postgres" is not a database name Liquibase knows.*`)
+	entries, readErr := os.ReadDir(out)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(entries, qt.HasLen, 0)
+}
+
+// The name means nothing to a source tool whose migrations have no dbms, so it
+// is refused there rather than ignored.
+func TestImportCommand_LiquibaseDBMSForASQLSourceIsRefused(t *testing.T) {
+	c := qt.New(t)
+	src := writeGolangMigrateSource(t)
+	out := t.TempDir()
+
+	_, err := execute("--source-dir", src, "--migrations-dir", out, "--liquibase-dbms", "postgresql")
+
+	c.Assert(err, qt.ErrorMatches,
+		`(?s).*--liquibase-dbms: a Liquibase database name applies only to a Liquibase source, not to golang-migrate.*`)
+	entries, readErr := os.ReadDir(out)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(entries, qt.HasLen, 0)
+}

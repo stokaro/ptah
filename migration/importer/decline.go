@@ -37,8 +37,10 @@ type DeclinedFile struct {
 	CarriesSQL bool
 }
 
-// SkippedChangeset is a changeset a parser left out on purpose, because the
-// source tool never runs it: a Liquibase changeset whose `ignore` is true.
+// SkippedChangeset is a changeset, or a change inside one, that a parser left
+// out on purpose because the source tool does not run it: a Liquibase changeset
+// whose `ignore` is true, or, with [WithLiquibaseDBMS], a changeset or change
+// whose `dbms` does not select the named database.
 //
 // Leaving it out is what the source tool does with it, so the import stays a
 // faithful copy and ptah.sum is written. A caller still owes the user the list,
@@ -50,6 +52,10 @@ type SkippedChangeset struct {
 	// Changeset identifies the changeset as the source tool does, such as
 	// Liquibase's author:id.
 	Changeset string
+	// Change names one change left out of a changeset that was imported, as
+	// the changelog spells it, such as <sql>. It is empty when the whole
+	// changeset was left out.
+	Change string
 	// Reason says why the changeset was left out.
 	Reason string
 }

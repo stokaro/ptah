@@ -2001,8 +2001,8 @@
         "/versioned/rollback/"
       ],
       "inboundLinks": [],
-      "visibleWords": 4640,
-      "sourceBytes": 35291
+      "visibleWords": 4660,
+      "sourceBytes": 35419
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -3411,8 +3411,8 @@
         "/migrate-from/overview/",
         "/versioned/import/"
       ],
-      "visibleWords": 834,
-      "sourceBytes": 12327
+      "visibleWords": 879,
+      "sourceBytes": 12615
     },
     {
       "path": "docs/site/src/content/docs/migrate-from/overview.mdx",
@@ -4386,8 +4386,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8989,
-      "sourceBytes": 88832
+      "visibleWords": 8996,
+      "sourceBytes": 88902
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -6809,8 +6809,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 828,
-      "sourceBytes": 7371
+      "visibleWords": 877,
+      "sourceBytes": 7689
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",

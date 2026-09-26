@@ -111,7 +111,8 @@ func TestLiquibaseChangesetAttributes_FailurePath(t *testing.T) {
 			name:    "every changeset ignored",
 			file:    "changelog.xml",
 			content: `<databaseChangeLog><changeSet id="1" author="s" ignore="true"><sql>SELECT 1;</sql></changeSet></databaseChangeLog>`,
-			message: `liquibase source holds no changeset Liquibase runs: every one sets ignore="true" \(changelog.xml s:1\)`,
+			message: `liquibase source holds no changeset Liquibase runs here: every one was left out ` +
+				`\(changelog.xml s:1: ignore="true": Liquibase never runs this changeset\)`,
 		},
 	}
 	for _, test := range tests {

@@ -98,6 +98,43 @@ func ExampleWithDialect() {
 	// DROP TABLE "users";
 }
 
+// ExampleWithLiquibaseDBMS imports the history a changelog applied to one
+// database. The changelog carries a changeset for MySQL and one for
+// PostgreSQL; named "postgresql", the parser keeps the second, without its dbms,
+// and reports the first as left out, since Liquibase does not run it there.
+func ExampleWithLiquibaseDBMS() {
+	source := fstest.MapFS{"changelog.xml": {Data: []byte(`<databaseChangeLog>
+  <changeSet id="1" author="alice" dbms="mysql">
+    <sql>CREATE TABLE users (id BIGINT PRIMARY KEY) ENGINE=InnoDB;</sql>
+  </changeSet>
+  <changeSet id="2" author="alice" dbms="postgresql">
+    <sql>CREATE TABLE users (id BIGINT PRIMARY KEY);</sql>
+  </changeSet>
+</databaseChangeLog>`)}}
+
+	parser := must.Must(importer.ParserByName("liquibase"))
+	parser, err := importer.WithLiquibaseDBMS(parser, "postgresql")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	parsed, err := parser.Parse(source)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, migration := range parsed.Migrations {
+		fmt.Println(migration.Name, migration.UpSQL)
+	}
+	for _, skipped := range parsed.Skipped {
+		fmt.Println(skipped.Path, skipped.Changeset, skipped.Reason)
+	}
+
+	// Output:
+	// alice_2 CREATE TABLE users (id BIGINT PRIMARY KEY);
+	// changelog.xml alice:1 dbms="mysql" does not select postgresql
+}
+
 // ExampleDetectParser identifies the source tool from the directory alone,
 // which is what Import does when handed a nil parser. The directory below is
 // Goose's shape: a single .sql file whose sections are separated by

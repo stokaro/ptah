@@ -14,7 +14,6 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"ptah.run/core/platform/capability"
 	"ptah.run/internal/liquibaserun"
 )
 
@@ -60,7 +59,9 @@ import (
 // some targets that name depends on how Liquibase reached the server rather
 // than on the server: YugabyteDB is `yugabytedb` with the Liquibase extension
 // installed and `postgresql` without it, and Spanner is `cloudspanner` through
-// its JDBC driver and `postgresql` through PGAdapter.
+// its JDBC driver and `postgresql` through PGAdapter. [WithLiquibaseDBMS] takes
+// that name from the caller instead, and with it `dbms` keeps or leaves out
+// each changeset and change by Liquibase's rule, [liquibaserun.MatchDBMS].
 //
 // Refusing by name rather than dropping is the rule this repository already
 // applies to unconvertible constructs: a migration directory that is not the
@@ -97,45 +98,83 @@ type liquibaseChangeSet struct {
 // converter refuses it as one it does not read.
 var liquibaseDbmsTargeted = []string{"sql", "sqlFile", "insert", "createProcedure"}
 
+// liquibaseChangeDBMS is one change with its `dbms` taken off, and what the
+// `dbms` said.
+type liquibaseChangeDBMS struct {
+	change liquibaseChange
+	// key and definition are the `dbms` attribute as written, when it selects
+	// anything.
+	key, definition string
+	// runs reports that Liquibase runs the change on the database the caller
+	// named. Without a name it is true, and a definition refuses the changeset.
+	runs bool
+}
+
 // withoutRunCondition takes the `dbms` attribute off a change Liquibase targets
-// by it, and returns the selector it names, if any, for [liquibaserun.Changeset].
-//
-// The converter then never sees the attribute. An empty one runs everywhere,
-// which is what the converted change does, and a non-empty one refuses the
-// changeset before any converter runs.
-func (ch liquibaseChange) withoutRunCondition() (liquibaseChange, []string) {
+// by it. The converter then never sees the attribute. An empty one runs
+// everywhere, which is what the converted change does. A non-empty one refuses
+// the changeset when the caller named no database; when it named one, the
+// change is kept or left out by Liquibase's rule, [liquibaserun.MatchDBMS],
+// with the value compared as written, as Liquibase compares a change's dbms.
+func (ch liquibaseChange) withoutRunCondition(shortName string) (liquibaseChangeDBMS, error) {
+	result := liquibaseChangeDBMS{change: ch, runs: true}
 	if !slices.Contains(liquibaseDbmsTargeted, ch.name) {
-		return ch, nil
+		return result, nil
 	}
-	stripped := ch
-	stripped.attrs = make(map[string]string, len(ch.attrs))
-	var selectors []string
+	result.change.attrs = make(map[string]string, len(ch.attrs))
 	for _, key := range slices.Sorted(maps.Keys(ch.attrs)) {
 		value := ch.attrs[key]
 		if strings.EqualFold(key, "dbms") {
 			if effect, _ := liquibaserun.Attribute(key, value); effect == liquibaserun.Selector || effect == liquibaserun.NoEffect {
 				if effect == liquibaserun.Selector {
-					selectors = append(selectors, ch.display+" "+key)
+					result.key, result.definition = key, value
 				}
 				continue
 			}
 		}
-		stripped.attrs[key] = value
+		result.change.attrs[key] = value
 	}
-	return stripped, selectors
+	if result.definition != "" && shortName != "" {
+		runs, err := liquibaserun.MatchDBMS(result.definition, shortName)
+		if err != nil {
+			return liquibaseChangeDBMS{}, fmt.Errorf("%s %w", ch.display, err)
+		}
+		result.runs = runs
+	}
+	return result, nil
 }
 
-// liquibaseWithoutRunConditions applies [liquibaseChange.withoutRunCondition]
-// to each change.
-func liquibaseWithoutRunConditions(changes []liquibaseChange) ([]liquibaseChange, []string) {
-	stripped := make([]liquibaseChange, 0, len(changes))
-	var selectors []string
+// liquibaseChangesDBMS is a list of changes sorted by their own `dbms`.
+type liquibaseChangesDBMS struct {
+	// kept are the changes that run, without their `dbms`.
+	kept []liquibaseChange
+	// selectors name the changes whose `dbms` refuses the changeset, when the
+	// caller named no database.
+	selectors []string
+	// dropped are the changes Liquibase does not run on the named database.
+	dropped []liquibaseChangeDBMS
+}
+
+// liquibaseChangesByDBMS applies [liquibaseChange.withoutRunCondition] to each
+// change.
+func liquibaseChangesByDBMS(changes []liquibaseChange, shortName string) (liquibaseChangesDBMS, error) {
+	var sorted liquibaseChangesDBMS
 	for _, change := range changes {
-		change, named := change.withoutRunCondition()
-		stripped = append(stripped, change)
-		selectors = append(selectors, named...)
+		result, err := change.withoutRunCondition(shortName)
+		if err != nil {
+			return liquibaseChangesDBMS{}, err
+		}
+		switch {
+		case !result.runs:
+			sorted.dropped = append(sorted.dropped, result)
+		case result.definition != "" && shortName == "":
+			sorted.selectors = append(sorted.selectors, change.display+" "+result.key)
+			sorted.kept = append(sorted.kept, result.change)
+		default:
+			sorted.kept = append(sorted.kept, result.change)
+		}
 	}
-	return stripped, selectors
+	return sorted, nil
 }
 
 // liquibaseChangelogRead is what the XML, YAML and JSON changelogs of a source
@@ -154,12 +193,7 @@ type liquibaseChangelogRead struct {
 // Name order is the same rule the formatted-SQL reader applies for the same
 // reason: absent a master changelog naming an order, the file name is the only
 // stable one, and inventing a different one would reorder history.
-func parseLiquibaseChangelogFiles(
-	fsys fs.FS,
-	names []string,
-	dialect string,
-	caps capability.Capabilities,
-) (liquibaseChangelogRead, error) {
+func parseLiquibaseChangelogFiles(fsys fs.FS, names []string, parser liquibaseParser) (liquibaseChangelogRead, error) {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 
@@ -173,17 +207,16 @@ func parseLiquibaseChangelogFiles(
 		if err != nil {
 			return liquibaseChangelogRead{}, err
 		}
-		converter := &liquibaseConverter{fsys: fsys, file: name, dialect: dialect, caps: caps}
+		converter := &liquibaseConverter{fsys: fsys, file: name, dialect: parser.dialect, caps: parser.caps, dbms: parser.dbms}
 		for _, changeset := range changesets {
-			if changeset.run.Skipped() {
-				read.skipped = append(read.skipped, liquibaseIgnored(name, changeset.author+":"+changeset.id))
-				continue
-			}
-			migration, err := liquibaseMigrationFrom(converter, changeset)
+			conversion, err := liquibaseMigrationFrom(converter, changeset)
 			if err != nil {
 				return liquibaseChangelogRead{}, err
 			}
-			read.migrations = append(read.migrations, migration)
+			read.skipped = append(read.skipped, conversion.skipped...)
+			if conversion.imported {
+				read.migrations = append(read.migrations, conversion.migration)
+			}
 		}
 		read.consumed = append(read.consumed, converter.consumed...)
 	}
@@ -199,6 +232,27 @@ func liquibaseIgnored(file, changeset string) SkippedChangeset {
 		Changeset: changeset,
 		Reason:    `ignore="true": Liquibase never runs this changeset`,
 	}
+}
+
+// liquibaseOtherDatabase reports a changeset, or a change inside one, left out
+// because its `dbms` does not select the database the caller named. Liquibase
+// does not run it on that database, so the history there does not hold it.
+func liquibaseOtherDatabase(file, changeset, change, definition, shortName string) SkippedChangeset {
+	return SkippedChangeset{
+		Path:      file,
+		Changeset: changeset,
+		Change:    change,
+		Reason:    fmt.Sprintf("dbms=%q does not select %s", definition, shortName),
+	}
+}
+
+// liquibaseConversion is what one changeset became.
+type liquibaseConversion struct {
+	migration SourceMigration
+	// imported is false when the whole changeset was left out.
+	imported bool
+	// skipped names what was left out: the changeset, or changes inside it.
+	skipped []SkippedChangeset
 }
 
 // parseLiquibaseChangelog dispatches on the file extension.
@@ -221,21 +275,71 @@ func parseLiquibaseChangelog(name string, content []byte) ([]liquibaseChangeSet,
 // Every change is tried before anything is refused, so one message names every
 // construct that stopped the changeset: a second import must not fail for a
 // construct the first message withheld.
-func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseChangeSet) (SourceMigration, error) {
+func liquibaseMigrationFrom(converter *liquibaseConverter, changeset liquibaseChangeSet) (liquibaseConversion, error) {
 	name := liquibaseChangesetName(changeset.author, changeset.id)
-	// A rollback change selected by dbms is refused like an up change: Liquibase
+	id := changeset.author + ":" + changeset.id
+	if changeset.run.Skipped() {
+		return liquibaseConversion{skipped: []SkippedChangeset{liquibaseIgnored(converter.file, id)}}, nil
+	}
+	if converter.dbms != "" {
+		definition := changeset.run.DBMS()
+		runs, err := changeset.run.ResolveDBMS(converter.dbms)
+		if err != nil {
+			return liquibaseConversion{}, fmt.Errorf("liquibase changeset %s in %q: %w", name, converter.file, err)
+		}
+		if !runs {
+			return liquibaseConversion{skipped: []SkippedChangeset{
+				liquibaseOtherDatabase(converter.file, id, "", definition, converter.dbms),
+			}}, nil
+		}
+	}
+	// A rollback change is sorted by its dbms like an up change: Liquibase
 	// skips it on another database when it rolls back.
-	changes, changeSelectors := liquibaseWithoutRunConditions(changeset.changes)
-	rollback, rollbackSelectors := liquibaseWithoutRunConditions(changeset.rollback)
-	for _, selector := range slices.Concat(changeSelectors, rollbackSelectors) {
+	up, err := liquibaseChangesByDBMS(changeset.changes, converter.dbms)
+	if err != nil {
+		return liquibaseConversion{}, fmt.Errorf("liquibase changeset %s in %q: %w", name, converter.file, err)
+	}
+	rollback, err := liquibaseChangesByDBMS(changeset.rollback, converter.dbms)
+	if err != nil {
+		return liquibaseConversion{}, fmt.Errorf("liquibase changeset %s in %q: %w", name, converter.file, err)
+	}
+	for _, selector := range slices.Concat(up.selectors, rollback.selectors) {
 		changeset.run.AddSelector(selector)
 	}
 	if err := changeset.run.Err(name, converter.file); err != nil {
-		return SourceMigration{}, err
+		return liquibaseConversion{}, err
 	}
 	if changeset.rollbackRefusal != "" {
-		return SourceMigration{}, fmt.Errorf("liquibase changeset %s in %q: %s", name, converter.file, changeset.rollbackRefusal)
+		return liquibaseConversion{}, fmt.Errorf("liquibase changeset %s in %q: %s", name, converter.file, changeset.rollbackRefusal)
 	}
+	// Every change targets another database, so Liquibase runs no SQL for the
+	// changeset on this one.
+	if len(changeset.changes) > 0 && len(up.kept) == 0 {
+		return liquibaseConversion{skipped: []SkippedChangeset{{
+			Path: converter.file, Changeset: id,
+			Reason: fmt.Sprintf("every change in it has a dbms that does not select %s", converter.dbms),
+		}}}, nil
+	}
+	var skipped []SkippedChangeset
+	for _, dropped := range slices.Concat(up.dropped, rollback.dropped) {
+		skipped = append(skipped, liquibaseOtherDatabase(
+			converter.file, id, dropped.change.display, dropped.definition, converter.dbms))
+	}
+	migration, err := liquibaseConvertChangeset(converter, changeset, up.kept, rollback.kept)
+	if err != nil {
+		return liquibaseConversion{}, err
+	}
+	return liquibaseConversion{migration: migration, imported: true, skipped: skipped}, nil
+}
+
+// liquibaseConvertChangeset converts a changeset's changes and rollback into a
+// migration, once nothing about the changeset refuses it.
+func liquibaseConvertChangeset(
+	converter *liquibaseConverter,
+	changeset liquibaseChangeSet,
+	changes, rollback []liquibaseChange,
+) (SourceMigration, error) {
+	name := liquibaseChangesetName(changeset.author, changeset.id)
 	// Liquibase runs a rollback in the changeset's own transaction mode.
 	noTransaction := changeset.run.NoTransaction()
 
