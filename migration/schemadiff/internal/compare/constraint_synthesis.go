@@ -13,11 +13,10 @@ import (
 // schemamodel.Constraint of type CHECK so the standard Constraints() diff path
 // can compare it against the introspected CHECK from pg_constraint.
 //
-// The constraint name follows the user-provided `check_name=` value when set,
-// otherwise it falls back to the PostgreSQL convention
-// "<table>_<column>_check" — which is what PostgreSQL itself uses for
-// unnamed inline column-level CHECKs, so the name lines up with whatever the
-// reader sees on the DB side.
+// The constraint name is the one [schemaprep.ColumnCheckNames] answers for the
+// target: the user-provided `check_name=` value when set, otherwise the name
+// the server gives the unnamed CHECK the renderer writes, so the name lines up
+// with whatever the reader sees on the DB side.
 //
 // Columns that do not yet exist in the database are deliberately skipped:
 // those CHECKs ship inline as part of CREATE TABLE / ALTER TABLE ADD COLUMN,
@@ -31,6 +30,7 @@ import (
 func synthesizeFieldLevelCheckConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
 ) []schemamodel.Constraint {
 	if desired == nil || database == nil {
@@ -38,8 +38,10 @@ func synthesizeFieldLevelCheckConstraints(
 	}
 
 	structToTable := make(map[string]schemamodel.Table, len(desired.Tables))
+	checkNames := make(map[string]map[string]string, len(desired.Tables))
 	for _, t := range desired.Tables {
 		structToTable[t.StructName] = t
+		checkNames[t.StructName] = schemaprep.ColumnCheckNames(t, desired.Fields, desired.Constraints, dialect)
 	}
 
 	dbColumns := make(map[tableMemberKey]struct{}, 16)
@@ -64,8 +66,8 @@ func synthesizeFieldLevelCheckConstraints(
 		if _, exists := dbColumns[newTableMemberKey(tableName, f.Name, semantics)]; !exists {
 			continue
 		}
-		name := f.CheckName
-		if name == "" {
+		name, named := checkNames[f.StructName][f.Name]
+		if !named {
 			name = tableLeafName + "_" + f.Name + "_check"
 		}
 		synthesized = append(synthesized, schemamodel.Constraint{
@@ -98,6 +100,7 @@ func synthesizeFieldLevelCheckConstraints(
 func synthesizeTableLevelCheckConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
 ) []schemamodel.Constraint {
 	if desired == nil || database == nil {
@@ -114,7 +117,7 @@ func synthesizeTableLevelCheckConstraints(
 		if _, exists := dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)]; !exists {
 			continue
 		}
-		synthesized = append(synthesized, schemaprep.TableCheckConstraints(table, desired.Constraints)...)
+		synthesized = append(synthesized, schemaprep.TableCheckConstraints(table, desired.Fields, desired.Constraints, dialect)...)
 	}
 	return synthesized
 }

@@ -15,13 +15,13 @@ import (
 // The server stores a rewrite of each declaration below rather than the text
 // it was given: a CHECK and a policy clause come back from their parse tree
 // with parentheses and casts, an index predicate the same, a column default
-// with its casts spelled out, and an unnamed CHECK, UNIQUE or foreign key under
-// the name the server chose. A schema file identical to the migration that
-// built the database compares unequal to it unless the comparison asks the
-// server and names each unnamed constraint as the server does; without that,
-// `migrate diff` and `schema apply` drop and recreate every one of them, or add
-// a second foreign key beside the first (stokaro/ptah#3643,
-// stokaro/ptah#3729).
+// with its casts spelled out, and an unnamed CHECK, UNIQUE, EXCLUDE or foreign
+// key under the name the server chose. A schema file identical to the
+// migration that built the database compares unequal to it unless the
+// comparison asks the server and names each unnamed constraint as the server
+// does; without that, `migrate diff` and `schema apply` drop and recreate every
+// one of them, or add a second foreign key beside the first
+// (stokaro/ptah#3643, stokaro/ptah#3729, stokaro/ptah#3749).
 var serverRewrittenDeclarations = []struct {
 	name string
 	sql  string
@@ -100,6 +100,15 @@ CREATE TABLE e (a int CHECK (a IS NULL OR b IS NOT NULL), b int);
 CREATE TABLE h2 (a int CHECK (a > 0) CHECK (a < 10));`,
 	},
 	{
+		// PostgreSQL 18.6 names these ex_r_excl, ex_r_excl1, ex3_lower_excl
+		// and ex5_int4range_excl (stokaro/ptah#3749).
+		name: "unnamed EXCLUDE constraints",
+		sql: `CREATE TABLE ex (r int, EXCLUDE USING btree (r WITH =));
+ALTER TABLE ex ADD EXCLUDE USING btree (r WITH =);
+CREATE TABLE ex3 (t text, EXCLUDE USING btree (lower(t) WITH =));
+CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&));`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -127,6 +136,12 @@ var serverRewrittenControls = []struct {
 		migration:  `CREATE TABLE c (lo int, hi int, CHECK (lo < hi));`,
 		schema:     `CREATE TABLE c (lo int, hi int, CHECK (lo <= hi));`,
 		wantInPlan: "lo <= hi",
+	},
+	{
+		name:       "an unnamed EXCLUDE's operator changes",
+		migration:  `CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&));`,
+		schema:     `CREATE TABLE ex5 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH -|-));`,
+		wantInPlan: "-|-",
 	},
 	{
 		name: "a policy names another setting",

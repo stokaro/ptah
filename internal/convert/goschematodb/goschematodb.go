@@ -48,7 +48,7 @@ func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect),
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect),
-		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct),
+		Constraints: toDBConstraints(db.Tables, db.Fields, db.Constraints, tableByStruct, dialect),
 		Extensions:  toDBExtensions(db.Extensions),
 		Functions:   toDBFunctions(db.Functions),
 		Sequences:   toDBSequences(db.Sequences),
@@ -308,6 +308,7 @@ func toDBConstraints(
 	fields []schemamodel.Field,
 	constraints []schemamodel.Constraint,
 	tables map[string]schemamodel.Table,
+	dialect string,
 ) []catalog.Constraint {
 	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
@@ -388,10 +389,25 @@ func toDBConstraints(
 		appendConstraint(dbConstraint)
 	}
 	for _, table := range tablesList {
+		// The names the comparison's other side gives these CHECKs, so a
+		// document compared with itself pairs every one of them.
+		checkNames := schemaprep.ColumnCheckNames(table, fields, constraints, dialect)
 		for _, field := range fieldsByStruct[table.StructName] {
-			for _, constraint := range toDBFieldConstraints(table, field) {
+			for _, constraint := range toDBFieldConstraints(table, field, checkNames[field.Name]) {
 				appendConstraint(constraint)
 			}
+		}
+		// A table's `checks` list renders as named CHECKs, and the comparison's
+		// other side holds them. Left out here, a document compared with itself
+		// planned every entry as an addition.
+		for _, check := range schemaprep.TableCheckConstraints(table, fields, constraints, dialect) {
+			appendConstraint(catalog.Constraint{
+				Name:        check.Name,
+				TableName:   table.Name,
+				Schema:      table.Schema,
+				Type:        "CHECK",
+				CheckClause: new(check.CheckExpression),
+			})
 		}
 	}
 	return out
@@ -418,15 +434,14 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 	}, "\x00")
 }
 
-func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field) []catalog.Constraint {
+// toDBFieldConstraints converts the CHECK and the foreign key a column declares.
+// checkName is the name the column's CHECK takes; see
+// [schemaprep.ColumnCheckNames].
+func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, checkName string) []catalog.Constraint {
 	var out []catalog.Constraint
 	if field.Check != "" {
-		name := field.CheckName
-		if name == "" {
-			name = table.Name + "_" + field.Name + "_check"
-		}
 		out = append(out, catalog.Constraint{
-			Name:        name,
+			Name:        checkName,
 			TableName:   table.Name,
 			Schema:      table.Schema,
 			Type:        "CHECK",
