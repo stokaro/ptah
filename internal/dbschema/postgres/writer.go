@@ -453,8 +453,12 @@ type postgresSchemaMetadata struct {
 type postgresDatabaseCleanupPlan struct {
 	capabilities postgresCleanupCapabilities
 	rootMetadata postgresSchemaMetadata
-	schemas      []string
-	objects      []postgresCleanupObject
+	// publicMetadata is what the cleanup records of "public" when it is not
+	// the root schema: the owner, grants and comment the cleanup restores if it
+	// drops the schema. See [PostgreSQLWriter.executeDatabaseRealmCleanup].
+	publicMetadata postgresSchemaMetadata
+	schemas        []string
+	objects        []postgresCleanupObject
 	// keptExtensions are the extensions the cleanup leaves installed: the
 	// server's own and the ones the caller asked to keep.
 	keptExtensions []string
@@ -1867,6 +1871,13 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
+	var publicMetadata postgresSchemaMetadata
+	if w.schema != "public" {
+		publicMetadata, err = capturePostgresSchemaMetadata(ctx, tx, "public")
+		if err != nil {
+			return postgresDatabaseCleanupPlan{}, err
+		}
+	}
 	schemas, err := collectCleanupSchemas(ctx, tx, w.caps)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
@@ -1892,6 +1903,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	return postgresDatabaseCleanupPlan{
 		capabilities:   capabilities,
 		rootMetadata:   rootMetadata,
+		publicMetadata: publicMetadata,
 		schemas:        schemas,
 		objects:        objects,
 		keptExtensions: keptExtensions,
@@ -1928,7 +1940,7 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 		return nil, err
 	}
 	if !slices.Contains(inPlace, w.schema) {
-		if err := restorePostgresRootSchema(ctx, tx, w.schema, plan.rootMetadata); err != nil {
+		if err := restorePostgresSchema(ctx, tx, w.schema, plan.rootMetadata); err != nil {
 			return nil, err
 		}
 	}
@@ -1948,8 +1960,14 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	// Only a "public" this cleanup dropped comes back: one that did not exist
 	// was never the caller's, the root is restored above with its owner and
 	// grants, and one emptied in place was never dropped.
+	//
+	// It comes back with the owner, grants and comment the plan recorded, as the
+	// root does. Recreated bare, it was owned by the connecting role and held no
+	// grant, so PUBLIC lost USAGE on it: every role created afterwards found no
+	// usable schema in its default search path, and a connection as that role
+	// failed with `database URL selects schema ""` (stokaro/ptah#3657).
 	if w.schema != "public" && slices.Contains(droppableSchemas, "public") {
-		if err := restorePostgresPublicSchema(ctx, tx); err != nil {
+		if err := restorePostgresSchema(ctx, tx, "public", plan.publicMetadata); err != nil {
 			return nil, err
 		}
 		preservedSchemas = appendUniqueString(preservedSchemas, "public")
@@ -2076,7 +2094,7 @@ func capturePostgresSchemaMetadata(
 	}
 	if err != nil {
 		return postgresSchemaMetadata{}, fmt.Errorf(
-			"failed to capture root schema %q metadata: %w",
+			"failed to capture schema %q metadata: %w",
 			schema,
 			err,
 		)
@@ -2101,7 +2119,7 @@ func capturePostgresSchemaMetadata(
 	`, schema)
 	if err != nil {
 		return postgresSchemaMetadata{}, fmt.Errorf(
-			"failed to capture root schema %q privileges: %w",
+			"failed to capture schema %q privileges: %w",
 			schema,
 			err,
 		)
@@ -2149,7 +2167,7 @@ func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) 
 	return nil
 }
 
-func restorePostgresRootSchema(
+func restorePostgresSchema(
 	ctx context.Context,
 	tx *sql.Tx,
 	schema string,
@@ -2161,7 +2179,7 @@ func restorePostgresRootSchema(
 		statement += " AUTHORIZATION " + quoteIdent(metadata.owner)
 	}
 	if _, err := tx.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("failed to recreate root schema %q: %w", schema, err)
+		return fmt.Errorf("failed to recreate schema %q: %w", schema, err)
 	}
 	if !metadata.exists {
 		return nil
@@ -2172,7 +2190,7 @@ func restorePostgresRootSchema(
 		}
 	}
 	if _, err := tx.ExecContext(ctx, metadata.commentStatement); err != nil {
-		return fmt.Errorf("failed to restore root schema %q comment: %w", schema, err)
+		return fmt.Errorf("failed to restore schema %q comment: %w", schema, err)
 	}
 	return nil
 }
@@ -2193,7 +2211,7 @@ func restorePostgresSchemaPrivileges(
 			" FROM " + quotePostgresRole(grantee)
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf(
-				"failed to reset root schema %q privileges for %q: %w",
+				"failed to reset schema %q privileges for %q: %w",
 				schema,
 				grantee,
 				err,
@@ -2209,7 +2227,7 @@ func restorePostgresSchemaPrivileges(
 		}
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf(
-				"failed to restore root schema %q privilege for %q: %w",
+				"failed to restore schema %q privilege for %q: %w",
 				schema,
 				privilege.grantee,
 				err,
@@ -2474,19 +2492,4 @@ func (w *PostgreSQLWriter) SetDryRun(dryRun bool) {
 // IsDryRun returns whether dry run mode is enabled
 func (w *PostgreSQLWriter) IsDryRun() bool {
 	return w.dryRun
-}
-
-// restorePostgresPublicSchema recreates "public" after a realm cleanup dropped
-// it.
-//
-// The recreation is deliberately plain. The root schema is restored with its
-// recorded owner and grants because the caller keeps working inside it; a
-// non-root "public" is being restored only so that DDL naming it resolves, and
-// inventing privileges for it would be asserting something the cleanup never
-// measured.
-func restorePostgresPublicSchema(ctx context.Context, tx *sql.Tx) error {
-	if _, err := tx.ExecContext(ctx, `CREATE SCHEMA "public"`); err != nil {
-		return fmt.Errorf("failed to recreate the public schema after realm cleanup: %w", err)
-	}
-	return nil
 }

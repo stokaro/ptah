@@ -356,6 +356,10 @@ func TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions(t *testing.T) {
 	})
 }
 
+// A cleanup whose root is another schema drops "public" with the rest of the
+// realm and brings it back with the owner, grants and comment it had. Brought
+// back bare, it was owned by the connecting role and PUBLIC lost USAGE on it
+// (stokaro/ptah#3657).
 func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 	c := qt.New(t)
 	var execQueries []string
@@ -377,11 +381,17 @@ func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 		`DROP SCHEMA IF EXISTS "public" RESTRICT`,
 		`CREATE SCHEMA "shadow"`,
-		`CREATE SCHEMA "public"`,
+		`CREATE SCHEMA "public" AUTHORIZATION "pg_database_owner"`,
+		`REVOKE ALL PRIVILEGES ON SCHEMA "public" FROM PUBLIC`,
+		`REVOKE ALL PRIVILEGES ON SCHEMA "public" FROM "pg_database_owner"`,
+		`GRANT USAGE ON SCHEMA "public" TO PUBLIC`,
+		`GRANT CREATE ON SCHEMA "public" TO "pg_database_owner"`,
+		`GRANT USAGE ON SCHEMA "public" TO "pg_database_owner"`,
+		`COMMENT ON SCHEMA public IS 'standard public schema'`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 10)
-	c.Assert(db.ExecCount(), qt.Equals, 5)
+	c.Assert(db.QueryCount(), qt.Equals, 12)
+	c.Assert(db.ExecCount(), qt.Equals, 11)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -832,12 +842,16 @@ type postgresRealmQuery struct {
 	databaseArtifactErr error
 	metadata            [][]driver.Value
 	privileges          [][]driver.Value
-	initialSchemas      [][]driver.Value
-	finalSchemas        [][]driver.Value
-	publicObjects       [][]driver.Value
-	residualExtension   [][]driver.Value
-	residualObjects     [][]driver.Value
-	schemaQueryCount    int
+	// schemaMetadata and schemaPrivileges answer for the schema the query
+	// names, where metadata and privileges answer for every schema.
+	schemaMetadata    map[string][][]driver.Value
+	schemaPrivileges  map[string][][]driver.Value
+	initialSchemas    [][]driver.Value
+	finalSchemas      [][]driver.Value
+	publicObjects     [][]driver.Value
+	residualExtension [][]driver.Value
+	residualObjects   [][]driver.Value
+	schemaQueryCount  int
 }
 
 func newPostgresRealmMetadataQuery() *postgresRealmQuery {
@@ -883,10 +897,23 @@ func newPostgresRealmMetadataQuery() *postgresRealmQuery {
 	}
 }
 
+// newPostgresRealmAbsentRootQuery answers for a database whose root schema,
+// "shadow", does not exist, and whose "public" is the one PostgreSQL 15 and
+// newer creates: owned by pg_database_owner, with USAGE for PUBLIC.
 func newPostgresRealmAbsentRootQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
-		version:        "PostgreSQL 18.0",
-		database:       "ptah_test",
+		version:  "PostgreSQL 18.0",
+		database: "ptah_test",
+		schemaMetadata: map[string][][]driver.Value{
+			"public": {{"pg_database_owner", false, `COMMENT ON SCHEMA public IS 'standard public schema'`}},
+		},
+		schemaPrivileges: map[string][][]driver.Value{
+			"public": {
+				{"PUBLIC", "USAGE", false},
+				{"pg_database_owner", "CREATE", false},
+				{"pg_database_owner", "USAGE", false},
+			},
+		},
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
 		finalSchemas:   [][]driver.Value{{"public"}, {"shadow"}},
 	}
@@ -950,8 +977,12 @@ func newPostgresRealmUnsupportedPrivilegeQuery() *postgresRealmQuery {
 
 func (q *postgresRealmQuery) query(
 	query string,
-	_ []driver.NamedValue,
+	args []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
+	var schema string
+	if len(args) > 0 {
+		schema, _ = args[0].Value.(string)
+	}
 	switch {
 	case strings.Contains(query, "database_scoped_artifacts"):
 		return dbtest.QueryResult{
@@ -963,9 +994,13 @@ func (q *postgresRealmQuery) query(
 	case strings.Contains(query, "SELECT version()"):
 		return postgresVersionResult(q.version), nil
 	case strings.Contains(query, "obj_description"):
+		rows, named := q.schemaMetadata[schema]
+		if !named {
+			rows = q.metadata
+		}
 		return dbtest.QueryResult{
 			Columns: []string{"owner", "acl_is_default", "comment_statement"},
-			Rows:    q.metadata,
+			Rows:    rows,
 		}, nil
 	case strings.Contains(query, "cleanup_objects"):
 		return dbtest.QueryResult{
@@ -973,9 +1008,13 @@ func (q *postgresRealmQuery) query(
 			Rows:    q.publicObjects,
 		}, nil
 	case strings.Contains(query, "aclexplode"):
+		rows, named := q.schemaPrivileges[schema]
+		if !named {
+			rows = q.privileges
+		}
 		return dbtest.QueryResult{
 			Columns: []string{"grantee", "privilege_type", "is_grantable"},
-			Rows:    q.privileges,
+			Rows:    rows,
 		}, nil
 	case strings.Contains(query, "SELECT e.extname FROM pg_extension"):
 		return dbtest.QueryResult{
