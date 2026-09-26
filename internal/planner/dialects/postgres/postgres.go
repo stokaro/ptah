@@ -3032,11 +3032,15 @@ func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.Sche
 
 func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerRef := range diff.TriggersRemoved {
+		drop := ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists().SetCascade()
+		if triggerRef.ExecuteFunction != "" {
+			// The function is declared on its own; dropping it here would take
+			// it from every other trigger that runs it (stokaro/ptah#3722).
+			result = append(result, drop.SetExternalFunction())
+			continue
+		}
 		functionName := schemamodel.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
-		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).
-			SetIfExists().
-			SetCascade().
-			SetFunctionName(functionName))
+		result = append(result, drop.SetFunctionName(functionName))
 	}
 	return result
 }

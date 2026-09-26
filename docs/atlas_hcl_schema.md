@@ -144,7 +144,8 @@ current schema IR:
   differ in ownership: `as` gives the trigger a body, and Ptah generates a
   private function per trigger and drops it with the trigger; `execute {
   function = function.f }` binds the trigger to a function the schema declares
-  separately, which several triggers may share. Declaring both is refused. The
+  separately, which several triggers may share and which dropping the trigger
+  leaves in place. Declaring both is refused. The
   timing block sets each event the trigger fires on, `insert`, `update`,
   `delete` or `truncate`, to `true`, and every event it sets is read: a `before`
   block setting `insert` and `update` is `BEFORE INSERT OR UPDATE`. An event

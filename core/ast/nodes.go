@@ -2557,9 +2557,15 @@ type DropTriggerNode struct {
 	Name         string
 	Table        string
 	FunctionName string
-	IfExists     bool
-	Cascade      bool
-	Comment      string
+	// ExternalFunction reports that the trigger runs a function declared
+	// separately rather than one generated for it. PostgreSQL renderers drop a
+	// trigger's generated function with the trigger; when this is set they drop
+	// no function, because a function the schema declares on its own may run
+	// other triggers and is removed, if at all, as a function of its own.
+	ExternalFunction bool
+	IfExists         bool
+	Cascade          bool
+	Comment          string
 }
 
 // NewDropTrigger starts a DROP TRIGGER on a named table. The table travels with
@@ -2581,6 +2587,14 @@ func (n *DropTriggerNode) SetCascade() *DropTriggerNode {
 
 func (n *DropTriggerNode) SetFunctionName(functionName string) *DropTriggerNode {
 	n.FunctionName = functionName
+	return n
+}
+
+// SetExternalFunction marks the trigger as running a function declared
+// separately, so the drop leaves that function in place. See
+// [DropTriggerNode.ExternalFunction].
+func (n *DropTriggerNode) SetExternalFunction() *DropTriggerNode {
+	n.ExternalFunction = true
 	return n
 }
 

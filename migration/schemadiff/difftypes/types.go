@@ -2563,9 +2563,8 @@ type TriggerRef struct {
 	// Desired is the trigger this entry asks the database to hold.
 	//
 	// It is populated for an ADDITION, where the planner renders CREATE
-	// TRIGGER from it (stokaro/ptah#2315), and empty for a REMOVAL, which needs
-	// nothing but the two names above: the DROP is written from them, and so is
-	// the PostgreSQL trigger function the drop takes with it.
+	// TRIGGER from it (stokaro/ptah#2315), and empty for a REMOVAL, which is
+	// written from the two names above and [TriggerRef.ExecuteFunction].
 	//
 	// It is the declaration as written, not the copy the comparison folds. That
 	// fold -- uppercasing the timing, the event and the FOR EACH clause, and
@@ -2578,6 +2577,20 @@ type TriggerRef struct {
 	//
 	// It stays off the wire. The names are the reference; this is the operand.
 	Desired schemamodel.Trigger `json:"-"`
+
+	// ExecuteFunction is, for a REMOVAL, the function the trigger runs when that
+	// function is declared on its own, and empty when it runs the function Ptah
+	// generated for it. It means what schemamodel.Trigger.ExecuteFunction
+	// means, and schemamodel.Trigger.RunsDeclaredFunction decides it for a
+	// trigger read from a database.
+	//
+	// A PostgreSQL DROP takes the generated function with the trigger and must
+	// leave a declared one alone: it may run other triggers, and the schema
+	// removes it, if at all, as a function of its own. The two names cannot say
+	// which case this is, so the removal carries it (stokaro/ptah#3722).
+	//
+	// It stays off the wire, like Desired.
+	ExecuteFunction string `json:"-"`
 }
 
 // TriggerDiff represents changes to a trigger definition.

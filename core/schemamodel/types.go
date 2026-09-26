@@ -1481,6 +1481,19 @@ func CanonicalTriggerEvent(event string) string {
 	return triggerdef.Canonical(event, nil)
 }
 
+// RunsDeclaredFunction reports whether executed, the function a database says
+// this trigger runs, is a function declared on its own rather than the one Ptah
+// generates for the trigger. An empty executed says nothing and reports false.
+//
+// It is the one answer to "is this function the trigger's own". Reading a
+// database into a declaration keeps a declared function by name and folds a
+// generated one back into a body; removing a trigger leaves a declared function
+// in place and drops a generated one with it. The two must agree, or a
+// function described as shared is dropped with the first trigger that goes.
+func (t Trigger) RunsDeclaredFunction(executed string) bool {
+	return executed != "" && executed != t.FunctionName()
+}
+
 // FunctionName returns the deterministic PostgreSQL trigger function name used
 // for this trigger. PostgreSQL stores executable trigger code in a function, so
 // Ptah manages that linked function as part of the trigger definition.

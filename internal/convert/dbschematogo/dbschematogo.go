@@ -630,7 +630,7 @@ func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigge
 		// described. The native SQL description uses the reference and the HCL
 		// one keeps falling back to the body, which is the surface's existing
 		// limit rather than a new one.
-		if dbTrigger.ExecuteFunction != "" && dbTrigger.ExecuteFunction != trigger.FunctionName() {
+		if trigger.RunsDeclaredFunction(dbTrigger.ExecuteFunction) {
 			trigger.ExecuteFunction = dbTrigger.ExecuteFunction
 		}
 		database.Triggers = append(database.Triggers, trigger)
