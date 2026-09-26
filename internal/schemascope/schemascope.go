@@ -338,8 +338,9 @@ func grantAllowed(
 //
 // A default privilege belongs to its own schema and to nothing else. It rides on
 // no table -- it describes objects that do not exist yet -- so there is no
-// second reason to keep one, and the empty schema is the connected one, which is
-// what the shared effectiveSchema resolves.
+// second reason to keep one. A blank schema, which no Ptah reader writes for
+// this family, is taken as the connected one, as the shared effectiveSchema
+// resolves it.
 func defaultPrivilegeAllowed(allowed map[string]struct{}, schema, defaultSchema string) bool {
 	return schemaAllowed(allowed, effectiveSchema(schema, defaultSchema))
 }
