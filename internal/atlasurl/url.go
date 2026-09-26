@@ -190,8 +190,10 @@ func DialectFromURL(rawURL string) (string, error) {
 	return "", fmt.Errorf("unsupported --dev-url dialect %q", rawURL)
 }
 
-// ValidateDialectMatch verifies that rawURL resolves to the same dialect as the
-// already-open target database.
+// ValidateDialectMatch verifies that rawURL can name a server of the dialect
+// the already-open target database has. The comparison is
+// [SchemeDialectMatches]'s, because the dialect of rawURL is read from its
+// scheme, before anything is connected.
 func ValidateDialectMatch(rawURL, targetDialect string) error {
 	dialect, err := DialectFromURL(rawURL)
 	if err != nil {
@@ -204,10 +206,43 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 	if normalizedTarget == "" {
 		normalizedTarget = targetDialect
 	}
-	if dialect != normalizedTarget {
+	if !SchemeDialectMatches(dialect, normalizedTarget) {
 		return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", dialect, normalizedTarget)
 	}
 	return nil
+}
+
+// SchemeDialectMatches reports whether a dialect read from a URL scheme can
+// name a server of the other dialect: the two are the same, or both are in the
+// MySQL family.
+//
+// A MySQL-family scheme selects a driver, not a server. `mysql://`,
+// `mariadb://` and `maria://` open the same MySQL driver, and whether the
+// server behind them is MySQL or MariaDB only the server says, in its version
+// banner. The pinned community binary v1.3.0 reads them that way: its `schema
+// inspect` output was byte-identical through all three schemes against MariaDB
+// 11.8.9 and against MySQL 8.4.11, and it accepts any pair of them for a
+// target and its dev database (stokaro/ptah#3756). Held to the spelling, a
+// comparison refuses a dev URL naming the target's own server.
+//
+// Which server each URL reaches is compared once both are connected. A check
+// made before connecting can compare only what the schemes can say.
+func SchemeDialectMatches(schemeDialect, other string) bool {
+	return identityDialect(schemeDialect) == identityDialect(other)
+}
+
+// identityDialect is the dialect a URL is compared under: the MySQL family
+// is one, since its schemes cannot tell MySQL from MariaDB, and every other
+// dialect is itself.
+func identityDialect(dialect string) string {
+	switch normalized := platform.NormalizeDialect(dialect); normalized {
+	case platform.MySQL, platform.MariaDB:
+		return platform.MySQL
+	case "":
+		return dialect
+	default:
+		return normalized
+	}
 }
 
 // SameDatabaseEndpoint reports whether two directly connectable URLs prove
@@ -227,7 +262,7 @@ func SameDatabaseEndpoint(left, right string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if leftURL.dialect != rightURL.dialect {
+	if identityDialect(leftURL.dialect) != identityDialect(rightURL.dialect) {
 		return false, nil
 	}
 	if leftURL.dialect == platform.SQLite {
@@ -261,7 +296,7 @@ func MayAddressSameDatabase(left, right string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if leftURL.dialect != rightURL.dialect {
+	if identityDialect(leftURL.dialect) != identityDialect(rightURL.dialect) {
 		return false, nil
 	}
 	if leftURL.dialect == platform.SQLite {
@@ -351,7 +386,7 @@ func networkDatabaseIdentity(parsed *url.URL, dialect string) (databaseIdentity,
 		database = options.Auth.Database
 	}
 	return databaseIdentity{
-		dialect:  dialect,
+		dialect:  identityDialect(dialect),
 		endpoint: endpoint,
 		database: database,
 	}, nil
@@ -459,7 +494,7 @@ func mysqlDatabaseIdentity(u MySQLURL) databaseIdentity {
 	if host, port, ok := u.HostPort(); ok {
 		endpoint = networkEndpoint(host, port, u.Dialect())
 	}
-	return databaseIdentity{dialect: u.Dialect(), endpoint: endpoint, database: u.Database()}
+	return databaseIdentity{dialect: identityDialect(u.Dialect()), endpoint: endpoint, database: u.Database()}
 }
 
 func sqliteIdentity(parsed *url.URL) (string, error) {

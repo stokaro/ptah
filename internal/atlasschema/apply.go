@@ -686,6 +686,7 @@ func loadDesiredApplySchema(
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
 		Dialect:                   conn.Info().Dialect,
 		DialectFlag:               "--url",
+		DialectFromServer:         true,
 		DevURL:                    opts.DevURL,
 		DevServerDisposable:       opts.DevServerDisposable,
 		SchemaScope:               schemaScope,

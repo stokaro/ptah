@@ -488,7 +488,7 @@ func ensureTestDevDialect(set atlassource.Set, dbURL, sourceFlag string) (string
 	if err != nil {
 		return "", err
 	}
-	if implied == "" || devDialect == "" || implied == devDialect {
+	if implied == "" || devDialect == "" || atlasurl.SchemeDialectMatches(implied, devDialect) {
 		return devDialect, nil
 	}
 	return "", fmt.Errorf("--%s dialect %q does not match %s database dialect %q",

@@ -516,6 +516,7 @@ func resolveDesiredState(
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
 		Dialect:                   conn.Info().Dialect,
 		DialectFlag:               "--dev-url",
+		DialectFromServer:         true,
 		DevURL:                    devURL,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,

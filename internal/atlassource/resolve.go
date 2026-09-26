@@ -45,6 +45,13 @@ type ResolveOptions struct {
 	// apply; "--dev-url", "--from", or "--to" for schema diff). It is used in
 	// dialect-mismatch errors.
 	DialectFlag string
+	// DialectFromServer says Dialect was read from a connected server rather
+	// than from a URL scheme. A database source is then held to it once the
+	// source is connected, because only then are two servers being compared:
+	// a MySQL-family scheme cannot tell MySQL from MariaDB, and a server can.
+	// With a Dialect read from a scheme, the source is compared by its scheme
+	// alone.
+	DialectFromServer bool
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
@@ -315,6 +322,9 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		return fmt.Errorf("connect to %s database: %w", s.Flag, err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if err := s.ensureServerDialect(conn, opts); err != nil {
+		return err
+	}
 
 	// Which schemas this read covers is [schemascope.ReadNames]'s decision, not
 	// this function's. Deriving it here is what made a database URL describe the
@@ -344,18 +354,39 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 	}, conn)
 }
 
-// ensureDialect rejects database sources whose URL scheme resolves to a
-// different dialect than the pinned one, before any connection is opened.
+// ensureDialect rejects database sources whose URL scheme cannot name a
+// server of the pinned dialect, before any connection is opened. The
+// comparison is atlasurl.SchemeDialectMatches's: a MySQL-family scheme does
+// not say whether the server is MySQL or MariaDB.
 func (s Set) ensureDialect(opts ResolveOptions) error {
 	implied := s.ImpliedDialect()
 	pinned := platform.NormalizeDialect(opts.Dialect)
 	if pinned == "" {
 		pinned = opts.Dialect
 	}
-	if implied == "" || pinned == "" || implied == pinned {
+	if implied == "" || pinned == "" || atlasurl.SchemeDialectMatches(implied, pinned) {
 		return nil
 	}
 	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, implied, opts.DialectFlag, pinned)
+}
+
+// ensureServerDialect holds a connected database source to a dialect read from
+// a server, which is when two servers are compared. The pinned community
+// binary v1.3.0 refuses a MySQL dev database for a MariaDB `--to` database and
+// the reverse on `migrate diff`, whatever the spelling: measured, its plan for
+// the pair changes the schema's collation, which a plan scoped to one schema
+// may not do. Accepting the pair because both schemes are in one family would
+// be looser than it (stokaro/ptah#3756).
+func (s Set) ensureServerDialect(conn *dbschema.DatabaseConnection, opts ResolveOptions) error {
+	if !opts.DialectFromServer {
+		return nil
+	}
+	server := platform.NormalizeDialect(conn.Info().Dialect)
+	pinned := platform.NormalizeDialect(opts.Dialect)
+	if server == "" || pinned == "" || server == pinned {
+		return nil
+	}
+	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, server, opts.DialectFlag, pinned)
 }
 
 func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
@@ -472,7 +503,7 @@ func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
 		return err
 	}
 	pinned := platform.NormalizeDialect(opts.Dialect)
-	if devDialect == "" || pinned == "" || devDialect == pinned {
+	if devDialect == "" || pinned == "" || atlasurl.SchemeDialectMatches(devDialect, pinned) {
 		return nil
 	}
 	return fmt.Errorf("--dev-url dialect %q does not match %s dialect %q", devDialect, opts.DialectFlag, pinned)
