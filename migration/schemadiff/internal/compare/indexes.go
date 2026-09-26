@@ -356,17 +356,17 @@ func mysqlForeignKeyBackingIndexes(
 // index this name when it built one for the key.
 //
 // A key with a name gets an index under the key's name, on both engines. A key
-// written without one is named `<table>_ibfk_<n>` by MySQL, and its index is
-// named after the key's first column instead, `_2` and on when that is taken:
-// measured on MySQL 8.4.11, `FOREIGN KEY (p_id) REFERENCES p(id)` holds
-// `c_ibfk_1` over an index called `p_id`. Without the second shape the index
+// written without one is named `<table>_ibfk_<n>`, or `<n>` on MariaDB 12.1
+// and later, and its index is named after the key's first column instead, `_2`
+// and on when that is taken: measured on MySQL 8.4.11, 26.7.0 and MariaDB
+// 11.8.9 and 12.3.3, `FOREIGN KEY (p_id) REFERENCES p(id)` holds `c_ibfk_1`,
+// or `1`, over an index called `p_id`. Without the second shape the index
 // reads as one nobody declared, and a schema file compared with the database
 // it built plans `DROP INDEX p_id`, which the server refuses while the key
-// needs it (stokaro/ptah#3725). The constraint's name is what keeps a
-// column-named index of the author's out: a key whose name the engine could
-// not have chosen was written with one, and its index carries that name.
-//
-// MariaDB was not measured, so it keeps the first shape alone.
+// needs it (stokaro/ptah#3725, stokaro/ptah#3743). The constraint's name is
+// what keeps a column-named index of the author's out: a key whose name the
+// engine could not have chosen was written with one, and its index carries
+// that name.
 func mysqlEngineCouldNameIndex(
 	index catalog.Index,
 	constraint catalog.Constraint,
@@ -377,7 +377,7 @@ func mysqlEngineCouldNameIndex(
 	if identifiersEqual(semantics, index.Name, constraint.Name) {
 		return true
 	}
-	if dialect != platform.MySQL || !mysqlname.IsForeignKeyName(constraint.TableName, constraint.Name) {
+	if !mysqlname.IsServerForeignKeyName(dialect, constraint.TableName, constraint.Name) {
 		return false
 	}
 	return mysqlname.IsUnnamedKeyIndexName(firstColumn, index.Name, func(a, b string) bool {

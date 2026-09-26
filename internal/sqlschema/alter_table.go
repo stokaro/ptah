@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlname"
 )
 
 // alterTarget is the table an ALTER TABLE names, found in this file or in an
@@ -29,6 +30,54 @@ type alterTarget struct {
 	// [identifierPart]. A name already in the model was read that way once and
 	// is compared as it is.
 	sourcePlatform string
+	// statement is what the operations of the statement share. It is set by
+	// [appendAlterTable] and never nil there.
+	statement *alterStatement
+}
+
+// alterStatement is what the operations of one ALTER TABLE share.
+//
+// A server decides some names once per statement rather than once per
+// operation. The first unnamed foreign key takes its number from the keys the
+// table held before the statement ran; see [mysqlname.NextForeignKeyNumber].
+// The operations change the model one at a time, so by the second operation
+// the model no longer says what the table held: a key the statement dropped is
+// gone from it, and a key the statement named is in it, and the server counts
+// the first and not the second.
+type alterStatement struct {
+	// nextForeignKey is the number the next unnamed foreign key of the
+	// statement takes, on an engine [mysqlname.NamesForeignKeys] speaks for.
+	nextForeignKey int
+}
+
+// newAlterStatement reads what the statement's operations share from the
+// table before the first of them runs.
+func newAlterStatement(target alterTarget) *alterStatement {
+	statement := &alterStatement{nextForeignKey: 1}
+	if target.table == nil {
+		return statement
+	}
+	statement.nextForeignKey = mysqlname.NextForeignKeyNumber(target.table.Name, target.foreignKeyNames())
+	return statement
+}
+
+// foreignKeyNames is every foreign key name the table holds: its table-level
+// keys and the keys its columns declare.
+func (t alterTarget) foreignKeyNames() []string {
+	var names []string
+	for _, database := range t.databases {
+		for _, constraint := range database.Constraints {
+			if isForeignKey(constraint) && constraint.Table == t.qualified {
+				names = append(names, constraint.Name)
+			}
+		}
+		for _, field := range database.Fields {
+			if field.Foreign != "" && field.StructName == t.structName {
+				names = append(names, field.ForeignKeyName)
+			}
+		}
+	}
+	return names
 }
 
 // findAlterTarget looks the table up in database, then in base.

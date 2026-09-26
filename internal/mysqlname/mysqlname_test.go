@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/mysqlname"
 )
 
@@ -105,6 +106,7 @@ func TestIsUnnamedKeyIndexName_HappyPath(t *testing.T) {
 		{name: "a later number", column: "a", index: "a_10"},
 		{name: "another case", column: "ParentId", index: "parentid"},
 		{name: "a long column cut to 61 bytes before its number", column: long, index: long[:61] + "_2"},
+		{name: "a long column MariaDB does not cut", column: long[:62], index: long[:62] + "_2"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,6 +140,138 @@ func TestIsUnnamedKeyIndexName_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(mysqlname.IsUnnamedKeyIndexName(test.column, test.index, sameIgnoringCase), qt.IsFalse)
+		})
+	}
+}
+
+// TestNamesForeignKeys_HappyPath covers the dialects the rules were measured
+// on: MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 name an unnamed key
+// `<table>_ibfk_<n>` and its index after the key's first column alike.
+func TestNamesForeignKeys_HappyPath(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB, "MariaDB"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.NamesForeignKeys(dialect), qt.IsTrue)
+		})
+	}
+}
+
+// TestNamesForeignKeys_FailurePath keeps the rules off the engines that name
+// an unnamed key another way or keep no name.
+func TestNamesForeignKeys_FailurePath(t *testing.T) {
+	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.SQLServer, ""} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.NamesForeignKeys(dialect), qt.IsFalse)
+		})
+	}
+}
+
+// TestClauseIndexNamesKey pins the one rule the engines disagree on. Measured,
+// `FOREIGN KEY idx_c_p (p_id) REFERENCES p(id)` names the key `idx_c_p` on
+// MariaDB 11.8.9 and `c_ibfk_1` on MySQL 8.4.11 and 26.7.0.
+func TestClauseIndexNamesKey(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: platform.MariaDB, want: true},
+		{dialect: platform.MySQL, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.ClauseIndexNamesKey(test.dialect), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestNextForeignKeyNumber covers the number ALTER TABLE starts from. Each row
+// is what a table held before a statement added an unnamed key, measured on
+// MySQL 8.4.11, 26.7.0 and MariaDB 11.8.9.
+func TestNextForeignKeyNumber(t *testing.T) {
+	tests := []struct {
+		name  string
+		table string
+		held  []string
+		want  int
+	}{
+		{name: "a table with no keys", table: "c", want: 1},
+		{name: "one more than the highest number", table: "a4", held: []string{"a4_ibfk_1", "a4_ibfk_5"}, want: 6},
+		{name: "a key the statement drops still counts", table: "c", held: []string{"c_ibfk_3"}, want: 4},
+		{name: "a name of the author's", table: "a9", held: []string{"fk_a9"}, want: 1},
+		{name: "the table in another case", table: "MixedAlt", held: []string{"mixedalt_ibfk_3"}, want: 1},
+		{name: "names the rule does not count", table: "c", held: []string{"c_ibfk_07", "c_ibfk_x", ""}, want: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.NextForeignKeyNumber(test.table, test.held), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestIsNumberedForeignKeyName_HappyPath covers the names MariaDB 12.1.2,
+// 12.2.2 and 12.3.3 gave the keys a statement left unnamed.
+func TestIsNumberedForeignKeyName_HappyPath(t *testing.T) {
+	for _, name := range []string{"1", "4", "12"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.IsNumberedForeignKeyName(platform.MariaDB, name), qt.IsTrue)
+		})
+	}
+}
+
+// TestIsNumberedForeignKeyName_FailurePath covers names the server never
+// writes for an unnamed key, and MySQL, which never writes the number alone.
+func TestIsNumberedForeignKeyName_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		key     string
+	}{
+		{name: "a leading zero", dialect: platform.MariaDB, key: "03"},
+		{name: "zero", dialect: platform.MariaDB, key: "0"},
+		{name: "the older scheme", dialect: platform.MariaDB, key: "c_ibfk_1"},
+		{name: "a name of the author's", dialect: platform.MariaDB, key: "fk_c"},
+		{name: "MySQL", dialect: platform.MySQL, key: "1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.IsNumberedForeignKeyName(test.dialect, test.key), qt.IsFalse)
+		})
+	}
+}
+
+// TestIsServerForeignKeyName covers the names the comparison reads as the
+// server's own for an unnamed key of `c`: either scheme on MariaDB, the older
+// one on MySQL, and neither on an engine the package does not speak for.
+func TestIsServerForeignKeyName(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		key     string
+		want    bool
+	}{
+		{name: "MySQL, the table's scheme", dialect: platform.MySQL, key: "c_ibfk_1", want: true},
+		{name: "MySQL, a number", dialect: platform.MySQL, key: "1", want: false},
+		{name: "MariaDB, the table's scheme", dialect: platform.MariaDB, key: "c_ibfk_1", want: true},
+		{name: "MariaDB, a number", dialect: platform.MariaDB, key: "1", want: true},
+		{name: "MariaDB, a name of the author's", dialect: platform.MariaDB, key: "fk_c", want: false},
+		{name: "SQLite", dialect: platform.SQLite, key: "c_ibfk_1", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(mysqlname.IsServerForeignKeyName(test.dialect, "c", test.key), qt.Equals, test.want)
 		})
 	}
 }

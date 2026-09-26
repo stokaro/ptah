@@ -196,6 +196,7 @@ func pairedConstraints(
 		dialect,
 		semantics,
 	)
+	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
 
 	return genConstraints, dbConstraints
 }

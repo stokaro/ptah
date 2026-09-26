@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/tableref"
 )
@@ -4097,11 +4098,22 @@ func (p *Parser) readForeignKeyIndexName() error {
 // Reading it into an index would model an object neither server has, and every
 // later comparison would report a difference no apply settles. It is accepted
 // and ignored, which is what the engine does with it.
+//
+// Without a symbol, the engine decides what the name is; see
+// [mysqlname.ClauseIndexNamesKey]. On MariaDB it is the key's own name, so it
+// becomes the symbol and declares no index of its own: the key's index takes
+// the key's name, as it does for any named key. Read as an index beside an
+// unnamed key, the key takes a derived name instead, and a schema file plans to
+// rename it against the database the file built (stokaro/ptah#3743).
 func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.IndexNode {
 	if constraint.Type != ast.ForeignKeyConstraint || p.foreignKeyIndexName == "" {
 		return nil
 	}
 	if constraint.Name != "" {
+		return nil
+	}
+	if mysqlname.ClauseIndexNamesKey(p.dialect) {
+		constraint.Name = p.foreignKeyIndexName
 		return nil
 	}
 	return &ast.IndexNode{
@@ -5561,14 +5573,11 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 			break
 		}
 
-		operation, err := p.parseAlterOperation()
+		operations, err := p.parseAlterOperation()
 		if err != nil {
 			return nil, err
 		}
-
-		if operation != nil {
-			alterNode.Operations = append(alterNode.Operations, operation)
-		}
+		alterNode.Operations = append(alterNode.Operations, operations...)
 
 		p.skipWhitespace()
 
@@ -5816,8 +5825,11 @@ func (p *Parser) rejectSQLServerTableQualifiedIndex(name string) error {
 		"unsupported SQL Server DROP INDEX %q without ON: a qualified name there is table.index, not schema.index", name)
 }
 
-// parseAlterOperation parses individual ALTER TABLE operations.
-func (p *Parser) parseAlterOperation() (ast.AlterOperation, error) {
+// parseAlterOperation parses one comma-separated clause of an ALTER TABLE.
+//
+// A clause is one operation, except the one [Parser.parseAddOperation]
+// describes, so the answer is a list.
+func (p *Parser) parseAlterOperation() ([]ast.AlterOperation, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
@@ -5829,13 +5841,13 @@ func (p *Parser) parseAlterOperation() (ast.AlterOperation, error) {
 	case "ADD":
 		return p.parseAddOperation()
 	case "DROP":
-		return p.parseDropOperation()
+		return oneOperation(p.parseDropOperation())
 	case "ALTER":
-		return p.parseAlterColumnOperation()
+		return oneOperation(p.parseAlterColumnOperation())
 	case "MODIFY":
-		return p.parseModifyOperation()
+		return oneOperation(p.parseModifyOperation())
 	case "RENAME":
-		return p.parseRenameOperation()
+		return oneOperation(p.parseRenameOperation())
 	default:
 		return nil, fmt.Errorf("unsupported ALTER operation: %s at position %d", operation, p.current.Start)
 	}
@@ -5917,7 +5929,15 @@ func (p *Parser) parseRenameColumnAfterKeyword() (*ast.RenameColumnOperation, er
 }
 
 // parseAddOperation parses ADD COLUMN and ADD CONSTRAINT operations.
-func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
+//
+// One clause can declare two objects. On MySQL, `ADD FOREIGN KEY idx (a)
+// REFERENCES p(id)` adds an unnamed key and names the index the server builds
+// for it `idx`, which is the catalog `ADD INDEX idx (a), ADD FOREIGN KEY (a)
+// REFERENCES p(id)` builds; see [Parser.foreignKeyBackingIndex]. So the clause
+// becomes both operations, the index first, as a CREATE TABLE records the two.
+// Answered with the index alone, the key is lost, and a schema file plans to
+// drop it from the database the file built (stokaro/ptah#3743).
+func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 	if err := p.expect(lexer.TokenIdentifier, "ADD"); err != nil {
 		return nil, err
 	}
@@ -5932,10 +5952,14 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		// The gate admits an index for the MySQL family, so one arrives here
 		// rather than being refused as it was while the gate held only the
 		// constraint keywords (stokaro/ptah#2713, widened by #2778).
+		var operations []ast.AlterOperation
 		if index != nil {
-			return &ast.AddIndexOperation{Index: index}, nil
+			operations = append(operations, &ast.AddIndexOperation{Index: index})
 		}
-		return &ast.AddConstraintOperation{Constraint: constraint}, nil
+		if constraint != nil {
+			operations = append(operations, &ast.AddConstraintOperation{Constraint: constraint})
+		}
+		return operations, nil
 	}
 
 	// ClickHouse's data-skipping index. Without this the statement falls
@@ -5944,7 +5968,7 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 	// the one this repository's own ClickHouse renderer writes
 	// (stokaro/ptah#1574).
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "INDEX" {
-		return p.parseAddSkippingIndex()
+		return oneOperation(p.parseAddSkippingIndex())
 	}
 
 	// Optional COLUMN keyword, and after it the PostgreSQL IF NOT EXISTS.
@@ -5967,7 +5991,16 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		return nil, err
 	}
 
-	return &ast.AddColumnOperation{Column: column, IfNotExists: ifNotExists}, nil
+	return []ast.AlterOperation{&ast.AddColumnOperation{Column: column, IfNotExists: ifNotExists}}, nil
+}
+
+// oneOperation is the list [Parser.parseAlterOperation] answers for a clause
+// that declares one operation.
+func oneOperation(operation ast.AlterOperation, err error) ([]ast.AlterOperation, error) {
+	if err != nil {
+		return nil, err
+	}
+	return []ast.AlterOperation{operation}, nil
 }
 
 // parseInlineSkippingIndex reads a ClickHouse data-skipping index declared

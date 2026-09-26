@@ -909,7 +909,7 @@ func appendCreateTable(
 	if err := nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform); err != nil {
 		return err
 	}
-	return nameCreatedMySQLForeignKeys(database, base, tableSchema, constraintsStart, sourcePlatform)
+	return nameCreatedMySQLForeignKeys(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform)
 }
 
 // declaredOrder appends this table's indexes and constraints to the model and
@@ -1002,10 +1002,12 @@ func unorderedElements(
 // object base declares is made to base, in place. See [alterTarget].
 func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode, sourcePlatform string) error {
 	target, declared := findAlterTarget(database, base, node.Name, sourcePlatform)
+	statement := newAlterStatement(target)
 	for _, op := range node.Operations {
 		if !declared {
 			return undeclaredTableError(node.Name, describeAlterOperation(op))
 		}
+		target.statement = statement
 		if err := applyAlterOperation(database, base, target, op, sourcePlatform); err != nil {
 			return err
 		}
@@ -1021,18 +1023,26 @@ func applyAlterOperation(
 ) error {
 	switch typed := op.(type) {
 	case *ast.AddColumnOperation:
-		return applyAlterTableAddColumn(database, base, target, typed)
+		added := len(database.Fields)
+		if err := applyAlterTableAddColumn(database, base, target, typed); err != nil {
+			return err
+		}
+		return nameAddedColumnForeignKeys(database.Fields[added:], target)
 	case *ast.AddConstraintOperation:
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
 		// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
 		// statement carries the whole index (stokaro/ptah#2778).
-		if typed.Index != nil {
-			index := ToIndex(typed.Index, sourcePlatform)
-			index.StructName = target.structName
-			index.TableName = target.qualified
-			database.Indexes = append(database.Indexes, index)
+		if typed.Index == nil {
+			return nil
 		}
+		index := ToIndex(typed.Index, sourcePlatform)
+		index.StructName = target.structName
+		index.TableName = target.qualified
+		if err := nameAddedIndex(&index, target); err != nil {
+			return err
+		}
+		database.Indexes = append(database.Indexes, index)
 		return nil
 	case *ast.AddSkippingIndexOperation:
 		// ClickHouse's data-skipping index arrives as an ALTER because that
@@ -1157,6 +1167,9 @@ func applyAlterTableAddColumn(
 		}
 		// The spelling reached the column, so it is the definitions that have
 		// to agree, not the case they were written in.
+		if err := refuseRestatedColumnForeignKey(field, target, operation.Column.Name); err != nil {
+			return err
+		}
 		restated := field
 		restated.Name = existing.Name
 		adoptDerivedConstraintNames(&restated, existing, target)
