@@ -30,7 +30,9 @@ func buildTablePrimaryKeyColumnSets(
 }
 
 // isFieldLevelConstraint determines if a database constraint represents a field-level constraint
-// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE).
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY).
+// A column's UNIQUE is decided with every other key of its table in view; see
+// [columnOwnedUniques].
 //
 // A foreign key is never one of them, although a column can declare it. By the
 // time the comparison runs, every foreign key the desired side declares has a
@@ -89,12 +91,6 @@ func isFieldLevelConstraint(
 			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized {
 				return true
 			}
-		}
-	case "UNIQUE":
-		// Check if there's a field with unique=true for this column
-		key := newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
-		if field, exists := fieldMap[key]; exists && field.Unique {
-			return true
 		}
 	case "CHECK":
 		// PostgreSQL exposes NOT NULL declarations as synthetic CHECK rows in
@@ -157,17 +153,6 @@ func getConstraintColumn(constraint catalog.Constraint) string {
 		}
 	}
 
-	// For UNIQUE constraints: table_column_key (PostgreSQL) or column name (MySQL/MariaDB)
-	if constraint.Type == "UNIQUE" {
-		if strings.HasSuffix(constraint.Name, "_key") {
-			// PostgreSQL pattern
-			return extractPostgreSQLUniqueColumn(constraint)
-		}
-
-		// MySQL/MariaDB often use the column name as the constraint name for single-column unique constraints
-		return constraint.Name
-	}
-
 	// For other constraints, return empty string (will not match any field)
 	return ""
 }
@@ -198,25 +183,4 @@ func extractPostgreSQLNotNullColumn(constraint catalog.Constraint) string {
 	}
 
 	return ""
-}
-
-// extractPostgreSQLUniqueColumn extracts column name from PostgreSQL UNIQUE constraint
-func extractPostgreSQLUniqueColumn(constraint catalog.Constraint) string {
-	parts := strings.Split(constraint.Name, "_")
-	if len(parts) < 3 {
-		return ""
-	}
-
-	// Remove table prefix and _key suffix
-	tablePrefix := constraint.TableName + "_"
-	if !strings.HasPrefix(constraint.Name, tablePrefix) {
-		return ""
-	}
-
-	remaining := constraint.Name[len(tablePrefix):]
-	if !strings.HasSuffix(remaining, "_key") {
-		return ""
-	}
-
-	return remaining[:len(remaining)-4] // remove "_key"
 }

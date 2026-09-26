@@ -221,16 +221,23 @@ keys a new database built from the file has. For a migration that names the
 key `c_p_fk` and a schema file that writes `p_id bigint REFERENCES p(id)` on
 `c`, the plan drops `c_p_fk` and adds `c_p_id_fkey`, as Atlas CE does.
 
-A column-level `UNIQUE` is compared by its columns, not by its name. A plan
-that adds one to an existing column writes `ADD CONSTRAINT` under the same
-`<table>_<column>_key` name, without a number, because the plan cannot see
-which names the target already holds. MySQL and MariaDB name an unnamed
-foreign key `<table>_ibfk_<n>`, which the [MySQL page](../mysql/) describes.
-The other engines keep Ptah's own name for an unnamed foreign key,
-`fk_<table>_<column>`. MySQL and MariaDB name an unnamed `CHECK` by rules of
-their own, which the MySQL page describes too. A `CHECK` left unnamed in a file
-read for another engine stays unnamed. Two of them on one table are compared by
-their conditions, so a plan never merges one into the other.
+A column-level `UNIQUE` is compared by its columns, not by its name. It
+accounts for one key over the column alone, the one named `<table>_<column>_key`
+where there are several. Every other key of the table, a second key over the
+column or a key over more columns that the column leads, is compared by its
+name, so `a int UNIQUE, UNIQUE (a, b)` matches the two keys it builds, and a
+key the file no longer declares is dropped.
+
+A plan that adds a column-level `UNIQUE` to an existing column writes
+`ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
+because the plan cannot see which names the target already holds. MySQL and
+MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
+[MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
+an unnamed foreign key, `fk_<table>_<column>`. MySQL and MariaDB name an
+unnamed `CHECK` by rules of their own, which the MySQL page describes too. A
+`CHECK` left unnamed in a file read for another engine stays unnamed. Two of
+them on one table are compared by their conditions, so a plan never merges one
+into the other.
 
 A column `check` declared in YAML or a Go annotation without `check_name` is
 written without a name, so PostgreSQL names it by the rule
