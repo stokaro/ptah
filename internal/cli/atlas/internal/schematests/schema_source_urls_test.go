@@ -163,6 +163,7 @@ CREATE TABLE audit_logs (
 		"schema", "diff",
 		"--from", "sqlite://" + sourcePath,
 		"--to", "file://" + to,
+		"--dev-url", atlastest.FreshDevURL(c),
 	})
 
 	err := cmd.Execute()

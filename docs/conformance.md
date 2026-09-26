@@ -2122,8 +2122,8 @@ on standard error with standard output empty:
 Byte counts include the `Error: ` prefix and the trailing line feed. Before this
 change five verbs answered the last column `unsupported --dev-url dialect
 "notadriver://x"` (54 B) and `migrate validate` wrapped a connector failure into
-130 B. **Fourteen of the eighteen cells are now byte-identical, up from five**;
-the four still open are named below.
+130 B. **Sixteen of the eighteen cells are byte-identical**; the two still open
+are named below.
 
 Two facts are in that table, and matching one does not match the other:
 
@@ -2160,25 +2160,26 @@ enumerated the twelve requires every verb registering the flag to be either
 pinned by a row or named here, so a thirteenth cannot appear carrying the old
 wording.
 
-**Four cells stay open, each measured.**
+**Two cells stay open, each measured.** `schema apply` with the HCL desired
+state and no dev database plans on both binaries, and each prints its own plan,
+so the absent and empty cells match in exit status and stream but not in bytes.
+A SQL desired state is refused on both, and `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL`
+plans it here.
 
-- `schema diff` with no usable dev database answers `--dev-url is required for
-  local schema file diffing` (59 B) where the pinned binary answers `--dev-url
-  cannot be empty` (33 B). Both exit 1 on the same inputs; Ptah's names the
-  sources that need the dev database, and the refusal is shared with native
-  `ptah schema diff`, so matching it is a separate change.
-- `schema apply` with a local-file desired state and no dev database exits 1 here
-  and 0 there: the pinned binary plans and applies without one on both SQLite and
-  PostgreSQL. The gate is deliberate — it is the verb that modifies the target —
-  and the fuller behavior is already reachable through
-  `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL`, so the default is left where its own
-  measurement put it rather than widened here.
+`schema diff` refuses a side that needs a dev database in the pinned binary's
+words, before any database is contacted: the 33-byte form above for an HCL
+file or directory, and the 88-byte form below for SQL and a migration directory,
+chosen by the first side that needs one (stokaro/ptah#3676). A file compared
+with a database without one is refused too, as it is there; native `ptah
+schema diff` compares the two, and `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL` reaches
+that here.
 
 Two more measured divergences are recorded without being closed. A `.sql`
 desired-state source moves the pinned binary's empty-value answer to `--dev-url
 cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database` (88 B) on
-all three schema verbs — the split is the source kind, not the verb — while Ptah
-prints the 33-byte form for both kinds. And `schema inspect --url <database>
+all three schema verbs — the split is the source kind, not the verb — while
+`schema apply` and `schema inspect` print the 33-byte form for both kinds
+(stokaro/ptah#3680). And `schema inspect --url <database>
 --dev-url notadriver://x` exits 0 on the pinned binary, which never opens the dev
 URL when the source is a database, where Ptah still validates the dialect match
 in the shared inspection path after connecting to the source. The compat-only

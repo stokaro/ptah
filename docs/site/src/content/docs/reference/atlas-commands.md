@@ -1274,10 +1274,11 @@ stderr note names the lock that was not acquired.
 rather than waited on, so concurrent applies can interleave. It cannot be
 combined with `--lock-name`.
 
-**`--dev-url` rehearsal.** `--dev-url` is required whenever `--to` is not
-already a live database, failing with Atlas's `--dev-url cannot be empty`
-message otherwise; a database `--to` needs none, and
-`PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning without one. Before the
+**`--dev-url` rehearsal.** `--dev-url` is required when `--to` is a SQL file,
+a directory of SQL files or a migration directory, and the apply is refused
+without one. A database, an HCL or YAML file or a directory of HCL files needs
+none, and `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file or directory
+without one. Before the
 apply, `--dev-url` rehearses the exact ordered plan on the dev database — reset,
 the target's current schema recreated, then the planned (or edited) statements
 executed under the same transaction mode. A failed rehearsal refuses the apply
@@ -1670,8 +1671,15 @@ Diffs two desired-state sources and prints migration SQL.
   env.
 
 Unsupported schemes such as `atlas://` fail during validation. The SQL dialect
-is pinned by `--dev-url` first, then by `--from` and `--to` database URLs; local
-schema files alone still require `--dev-url`.
+is pinned by `--dev-url` first, then by `--from` and `--to` database URLs.
+
+**Dev database.** A side that is a schema file, a schema directory or a
+migration directory needs `--dev-url`, and without one the diff exits 1 with
+Atlas's `--dev-url cannot be empty` before any database is contacted; Atlas
+appends a link to its dev-database page when the first such side is SQL or a
+migration directory, and so does Ptah. Two database URLs need none.
+`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1` compares a schema file with a database
+without one, as the native twin does.
 
 **Flags**
 

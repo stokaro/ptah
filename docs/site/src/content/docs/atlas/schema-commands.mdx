@@ -1157,14 +1157,15 @@ env "local" {
 ptah-compat schema apply --env local --dry-run
 ```
 
-`--dev-url` must match the target database dialect, and it is required
-whenever `--to` is not already a live database — a schema file, a schema
-directory, a migration directory, or an `env://` reference to one of those. A
-missing dev database fails with Atlas's `--dev-url cannot be empty` message,
-the same rule `schema inspect` and `schema diff` already apply. A database
-`--to` needs none. `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning a
-file desired state with no dev database, which Atlas refuses; native `ptah
-schema apply` never had the requirement.
+`--dev-url` must match the target database dialect. It is required when
+`--to` is SQL a dev database has to run first — a SQL file, a directory of SQL
+files, a migration directory, or an `env://` reference to one of those — and
+without one the apply is refused before the target is contacted. A database
+`--to`, an HCL file or a directory of HCL files needs none, as on Atlas, and
+neither does a YAML schema file: each is already a schema definition.
+`PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` plans a SQL file or directory with no dev
+database, which Atlas refuses; native `ptah schema apply` has no such
+requirement.
 
 Before the apply touches the target, the generated plan is rehearsed
 on the dev database: Ptah resets the dev database, recreates the target's
@@ -1660,10 +1661,19 @@ required `--dev-url` dev database, or one `env://<attribute>` reference (`src`,
 `atlas.hcl` env.
 
 All URLs of one flag must be one source kind. The SQL dialect is pinned by
-`--dev-url` first, then by `--from` and `--to` database URLs; local schema
-files alone still require `--dev-url` for dialect selection. With `--env`,
+`--dev-url` first, then by `--from` and `--to` database URLs. With `--env`,
 Ptah can read `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
 `format.schema.diff`, and supported `diff` policy from `atlas.hcl`.
+
+A side that is a schema file, a schema directory or a migration directory needs
+`--dev-url`, as on Atlas, and without one the diff is refused before any
+database is contacted; two database URLs need none. The message is Atlas's
+`--dev-url cannot be empty`, with Atlas's link to its dev-database page when the
+first side that needs one is SQL or a migration directory. Set
+`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1` to compare a schema file with a database
+without a dev database, as native `ptah schema diff` does; see
+[Extension environment
+variables](../../reference/extension-variables/#ptah_atlas_diff_without_dev_url).
 
 Ptah does not execute Atlas's dev-database simulation. The dev URL selects the
 dialect and hosts migration-directory replays.
@@ -1708,8 +1718,7 @@ ptah-compat schema diff \
 
 Unsupported schemes — `atlas://` registry URLs, `docker://` as a desired
 state, and anything Ptah cannot connect to directly — fail during validation,
-before any database is contacted. A migration-directory source without
-`--dev-url` fails the same way. Non-Atlas-CE flags such as `--tx-mode` are
+before any database is contacted. Non-Atlas-CE flags such as `--tx-mode` are
 rejected as unknown.
 
 `--exclude` and disabled `schema.mode` values filter both local `--from` and

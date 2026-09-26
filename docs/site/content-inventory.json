@@ -580,6 +580,7 @@
         "/direct/inspect/",
         "/reference/atlas-commands/",
         "/reference/configuration/",
+        "/reference/extension-variables/",
         "/reference/lint-rules/",
         "/schema/document/"
       ],
@@ -595,8 +596,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12716,
-      "sourceBytes": 93460
+      "visibleWords": 12813,
+      "sourceBytes": 93984
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -1159,11 +1160,12 @@
         "/databases/overview/",
         "/databases/support-matrix/",
         "/direct/inspect/",
+        "/reference/extension-variables/",
         "/schema/sql/",
         "/start/quick-start-postgresql/"
       ],
-      "visibleWords": 9457,
-      "sourceBytes": 64381
+      "visibleWords": 9480,
+      "sourceBytes": 64519
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -4288,8 +4290,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14356,
-      "sourceBytes": 99737
+      "visibleWords": 14452,
+      "sourceBytes": 100223
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -4527,16 +4529,18 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/strict-ce-mode/",
+        "/databases/postgresql/",
         "/databases/sqlite/",
         "/reference/atlas-commands/",
         "/reference/configuration/"
       ],
       "inboundLinks": [
+        "/atlas/schema-commands/",
         "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 2692,
-      "sourceBytes": 17565
+      "visibleWords": 2836,
+      "sourceBytes": 18447
     },
     {
       "path": "docs/site/src/content/docs/reference/glossary.mdx",

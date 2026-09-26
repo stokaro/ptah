@@ -154,6 +154,7 @@ func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 		"schema", "diff",
 		"--from", dbURL,
 		"--to", "file://" + schemaPath,
+		"--dev-url", createDisposableDatabase(c, dbURL, "ptah_scope_diff_dev_"+uniqueScopeSuffix()),
 		"--schema", appSchema,
 	})
 
@@ -196,6 +197,7 @@ table "users" {
 	out := runCompatSchemaDiff(c,
 		"--from", dbURL,
 		"--to", "file://"+schemaPath,
+		"--dev-url", createDisposableDatabase(c, dbURL, "ptah_scope_ext_dev_"+uniqueScopeSuffix()),
 		"--schema", appSchema,
 		"--include", appSchema+".users",
 	)
