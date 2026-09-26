@@ -1668,6 +1668,18 @@ The pinned binary answered `Schemas are synced, no changes to be made.` against
 those databases throughout: the disagreement was Ptah's with itself, between the
 database it had built and the model it built that database from.
 
+The NOT NULL flag on the rowid alias itself is not compared. SQLite stores no
+NULL in the alias with or without the flag, because an explicit NULL gets the
+next rowid either way, so `id INTEGER PRIMARY KEY` and
+`id integer NOT NULL PRIMARY KEY` are one table. The comparison takes the
+catalog's flag for the alias instead of planning a rebuild between the two
+spellings ([`stokaro/ptah#3685`](https://github.com/stokaro/ptah/issues/3685)).
+The pinned binary plans that rebuild, as the first table in this section
+records, and Ptah deliberately does not: the rebuild drops and copies the table
+and changes nothing SQLite does. A key column that is not the alias, such as
+`id TEXT PRIMARY KEY`, keeps a flag that means what it says, and changing it
+still rebuilds the table.
+
 ### The uniqueness half
 
 The same fold applied to uniqueness, and there it invented a constraint rather
