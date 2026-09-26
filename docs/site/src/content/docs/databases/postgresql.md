@@ -576,23 +576,25 @@ global default. In Go the same declaration is the `revoked` attribute of
 
 Reading a live database describes the default privileges of each schema the
 read covers, the connection's default schema included, and renders each one
-with its `IN SCHEMA` clause. A global default, set without `IN SCHEMA`, is left
-out of the description, because no schema source can declare one. A
-description applied to another database therefore does not carry it, and
-`ptah db read` and `schema inspect` name each one on stderr, by object class
-and grantor, whichever schemas the read covers:
+with its `IN SCHEMA` clause. The description leaves out the forms no schema
+source can declare: a global default, set without `IN SCHEMA`, and a
+CockroachDB default set `FOR ALL ROLES`, which names no role. A description
+applied to another database therefore does not carry them, and `ptah db read`
+and `schema inspect` name each one on stderr, by object class, schema and
+grantor. A global default is named whichever schemas the read covers, and a
+`FOR ALL ROLES` default in a schema when the read covers that schema:
 
 ```text
-note: 2 global default privileges, set by ALTER DEFAULT PRIVILEGES without IN
-SCHEMA, are not described, because no schema source can declare one; a
-description applied to another database does not carry them: FUNCTIONS for
-app_owner, TABLES for app_owner.
+note: 2 default privileges are not described, because no schema source can
+declare one set without IN SCHEMA or FOR ALL ROLES; a description applied to
+another database does not carry them: FUNCTIONS in every schema for app_owner,
+TABLES in public for all roles.
 ```
 
 Run a statement such as
 `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
-on the other database yourself. On CockroachDB a default set `FOR ALL ROLES`
-is named as `for all roles`.
+on the other database yourself. `ptah db drop-all` revokes a CockroachDB
+`FOR ALL ROLES` default in the schemas it cleans, spelled `FOR ALL ROLES`.
 
 A privilege can be limited to columns of a table: `GRANT UPDATE (state,
 decided_at) ON proposals TO app`. Each column is compared on its own against

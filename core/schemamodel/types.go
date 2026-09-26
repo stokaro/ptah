@@ -1922,7 +1922,7 @@ func (g Grant) ByColumn() []Grant {
 // schema of the database, which internal/devclean refuses during replay, so
 // this type has no spelling for it. The reader that fills it leaves those rows
 // out of the description and lists them in
-// catalog.Database.GlobalDefaultPrivileges, which the read surfaces report.
+// catalog.Database.UndescribedDefaultPrivileges, which the read surfaces report.
 //
 // Example:
 //

@@ -274,10 +274,11 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// these out of the description, and the note reporting that must not
 			// lose one to a selector. The grantor is what a selector reaches, and
 			// no other row uses this name.
-			field: "GlobalDefaultPrivileges", present: "global_defaults_owner", absent: "nosuch_global_owner",
+			field: "UndescribedDefaultPrivileges", present: "global_defaults_owner", absent: "nosuch_global_owner",
 			seed: func(s *catalog.Database) {
-				s.GlobalDefaultPrivileges = append(s.GlobalDefaultPrivileges,
-					catalog.GlobalDefaultPrivilege{Grantor: "global_defaults_owner", ObjectType: "FUNCTIONS"})
+				s.UndescribedDefaultPrivileges = append(s.UndescribedDefaultPrivileges,
+					catalog.UndescribedDefaultPrivilege{Grantor: "global_defaults_owner", ObjectType: "FUNCTIONS"},
+					catalog.UndescribedDefaultPrivilege{Schema: "public", ObjectType: "TABLES"})
 			},
 		},
 	}
@@ -536,4 +537,26 @@ func TestExcludeGenerated_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.
 	c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
 	c.Assert(got.Sequences, qt.HasLen, 0)
 	c.Assert(got.Functions, qt.HasLen, 0)
+}
+
+// TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole keeps a FOR ALL ROLES
+// default from answering a selector. The read records it with an empty grantor,
+// and a wildcard matches the empty name, so asking the patterns about it would
+// report `*` as having named something in a description that holds no role at
+// all.
+func TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole(t *testing.T) {
+	for _, selector := range []string{"*", "*[type=role]"} {
+		t.Run(selector, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, report, err := atlasfilter.ExcludeDatabaseReport(&catalog.Database{
+				UndescribedDefaultPrivileges: []catalog.UndescribedDefaultPrivilege{
+					{Schema: "public", ObjectType: "TABLES"},
+				},
+			}, []string{selector}, "public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(report.Unmatched, qt.DeepEquals, []string{selector})
+		})
+	}
 }

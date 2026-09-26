@@ -125,9 +125,10 @@ func TestReadDefaultPrivileges_ReadsEveryInspectedSchemaHappyPath(t *testing.T) 
 //
 // Each one costs something different. An outer join to pg_namespace admits the
 // global entries, which pg_default_acl records with defaclnamespace 0 and
-// which replay refuses because they carry no IN SCHEMA. Dropping the object-type
-// filter admits defaclobjtype 'n', for which the CASE yields NULL and no
-// statement exists. An unescaped underscore in the reserved-name exclusion reads
+// which replay refuses because they carry no IN SCHEMA. Without the complement
+// of undescribedDefaultACL, CockroachDB's FOR ALL ROLES is described under the
+// grantor `unknown (OID=0)`, a role nobody has. Dropping the object-type filter
+// admits defaclobjtype 'n', SCHEMAS, which no declaration can name. An unescaped underscore in the reserved-name exclusion reads
 // as a single-character wildcard and takes pgbouncer, pgadmin and pgpool with
 // it. And an unordered read makes two descriptions of one server differ by row
 // order alone.
@@ -146,6 +147,7 @@ func TestReadDefaultPrivileges_StatementKeepsTheRestrictionsNoRowCanShow(t *test
 	c.Assert(query, qt.Contains, "JOIN pg_namespace n ON n.oid = d.defaclnamespace")
 	c.Assert(query, qt.Not(qt.Contains), "LEFT JOIN pg_namespace")
 	c.Assert(query, qt.Contains, "CROSS JOIN LATERAL aclexplode(d.defaclacl) acl")
+	c.Assert(query, qt.Contains, "AND NOT (d.defaclnamespace = 0 OR d.defaclrole = 0)")
 	c.Assert(query, qt.Contains, "d.defaclobjtype IN ('r', 'S', 'f', 'T')")
 	c.Assert(query, qt.Contains, `grantee NOT LIKE 'pg\_%' ESCAPE '\'`)
 	c.Assert(query, qt.Not(qt.Contains), `NOT LIKE 'pg_%'`)
