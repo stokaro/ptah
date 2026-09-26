@@ -123,6 +123,10 @@ exercise a real server dialect — see
   ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
   supported user schemas in the selected database. SQLite cleanup owns `main`
   on one pinned session.
+- **PostgreSQL cleanup gives back the schemas it drops.** The schema the dev
+  URL selects comes back after the cleanup, and so does `public` when the URL
+  selects another schema. Each keeps the owner, grants and comment it had.
+  A role created on the server afterwards can use `public` as it could before.
 - **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
   credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
   `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires global `TRIGGER`

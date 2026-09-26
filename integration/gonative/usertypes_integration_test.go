@@ -26,13 +26,9 @@ func TestPostgreSQLUserTypesRoundTripIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	db, err := sql.Open("pgx", dsn)
+	db, err := sql.Open("pgx", scratchPostgresDatabase(c, dsn))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
-
-	_, err = db.Exec("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public")
-	c.Assert(err, qt.IsNil)
-	defer func() { _, _ = db.Exec("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public") }()
 
 	dir := t.TempDir()
 	model := `package models
