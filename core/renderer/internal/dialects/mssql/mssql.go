@@ -257,6 +257,10 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return fmt.Errorf("render modified column %s: %w", op.Column.Name, err)
 			}
 			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
+		case *ast.AlterColumnOperation:
+			if err := r.writeAlterColumn(node.Name, op); err != nil {
+				return err
+			}
 		case *ast.RenameColumnOperation:
 			// No capability gate: sp_rename IS the SQL Server rename, and it
 			// is what capability.RenameColumnClause being false on every SQL
@@ -1154,12 +1158,25 @@ func renderColumnForAlter(column *ast.ColumnNode) (string, error) {
 }
 
 func appendDefault(parts *[]string, column *ast.ColumnNode) {
+	if value, ok := defaultSQL(column.Default); ok {
+		*parts = append(*parts, "DEFAULT", value)
+	}
+}
+
+// defaultSQL spells a default the way DEFAULT takes it, or reports false for
+// none. CREATE TABLE and ADD DEFAULT ... FOR both write it through here, so a
+// default set by a migration reads back the way one created with the table
+// does.
+func defaultSQL(value *ast.DefaultValue) (string, bool) {
 	switch {
-	case column.Default == nil:
-	case column.Default.HasLiteral():
-		*parts = append(*parts, "DEFAULT", renderDefaultLiteral(column.Default.Value))
-	case column.Default.Expression != "":
-		*parts = append(*parts, "DEFAULT", column.Default.Expression)
+	case value == nil:
+		return "", false
+	case value.HasLiteral():
+		return renderDefaultLiteral(value.Value), true
+	case value.Expression != "":
+		return value.Expression, true
+	default:
+		return "", false
 	}
 }
 

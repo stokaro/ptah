@@ -297,6 +297,32 @@ on every run. If a filtered index keeps reporting drift after it was applied,
 read the stored spelling with `ptah db read` and use it in the annotation; the
 rendered SQL always preserves your annotation text verbatim.
 
+## Column defaults
+
+SQL Server keeps a column default as a constraint of its own, so `ALTER
+COLUMN` cannot set or drop it. Ptah creates a default without a name, in
+`CREATE TABLE` and in a migration alike, so the server names it, and the name
+differs from one database to the next. A migration therefore does not write the
+name down: it reads it from `sys.default_constraints` when it runs. This
+statement replaces the default of `users.status`:
+
+```sql
+EXEC sp_executesql N'DECLARE @drop nvarchar(max) = (SELECT N''ALTER TABLE [dbo].[users] DROP CONSTRAINT '' + QUOTENAME(dc.name) FROM sys.default_constraints AS dc WHERE dc.parent_object_id = OBJECT_ID(N''[dbo].[users]'') AND dc.parent_column_id = COLUMNPROPERTY(dc.parent_object_id, N''status'', ''ColumnId'')); EXEC (@drop); ALTER TABLE [dbo].[users] ADD DEFAULT ''active'' FOR [status];';
+```
+
+It drops the current default, if the column has one, and adds the declared
+default. It is one statement because the constraint name is held in a variable,
+and a variable does not outlive its batch. A removed default is the same
+statement without the `ADD DEFAULT`. The safety report treats the drop as a
+default change rather than as the removal of a constraint that protects data:
+a removed default is a warning, and a replaced one is safe.
+
+SQL Server refuses to change the data type of a column that has a default, so
+a plan that changes the type drops the default first and sets it again after
+the `ALTER COLUMN`. It does this for a longer length of the same type too,
+which the server would accept with the default in place. A nullability change
+leaves the default where it is.
+
 ## Limitations
 
 - No PostgreSQL-style extensions and no materialized views.
@@ -306,9 +332,9 @@ rendered SQL always preserves your annotation text verbatim.
   predicate inside the function body. A declaration outside that shape is named
   in the output as not created, rather than rendered into something the engine
   would refuse or accept with a different meaning.
-- Column drift planning emits direct `ALTER COLUMN` only for type and
-  nullability changes; default, generated-expression, unique, and `CHECK`
-  changes need a manual migration.
+- Column drift planning handles type, nullability, and default changes (see
+  [Column defaults](#column-defaults)); generated-expression, unique, and
+  `CHECK` changes need a manual migration.
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
 - A synonym's target is recorded and resolved by the server, not validated by

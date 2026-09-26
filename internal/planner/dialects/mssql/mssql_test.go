@@ -18,7 +18,7 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "status",
 				Changes: map[string]string{
-					"default": "'inactive' -> 'active'",
+					"unique": "false -> true",
 				},
 			}},
 		}},
@@ -26,7 +26,7 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 
 	_, err := plan.GenerateMigrationAST(diff)
 
-	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
+	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports type, nullability and default changes on users\.status; unsupported changes: unique.*`)
 }
 
 func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {

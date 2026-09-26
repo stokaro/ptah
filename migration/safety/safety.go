@@ -617,6 +617,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return Safe, "ADD COLUMN is additive"
 	case *ast.ModifyColumnOperation:
 		return classifyModifyColumn(o)
+	case *ast.AlterColumnOperation:
+		return classifyAlterColumn(o)
 	case *ast.AlterGeneratedColumnExpressionOperation:
 		return Warning, "SET EXPRESSION rewrites generated column values"
 	case *ast.AddSkippingIndexOperation:
@@ -664,9 +666,23 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 // that leaves the column out writes, and on a NOT NULL column makes it fail.
 func classifyDefaultChange(column *ast.ColumnNode) (Severity, string) {
 	if column.Default == nil {
-		return Warning, "DROP DEFAULT can break writers that leave the column out"
+		return Warning, dropDefaultReason
 	}
 	return Safe, "SET DEFAULT changes only rows inserted later"
+}
+
+// dropDefaultReason is why dropping a column's default is a warning, in the
+// words the AST and the SQL-text classifiers both report.
+const dropDefaultReason = "DROP DEFAULT can break writers that leave the column out"
+
+// classifyAlterColumn judges an ALTER COLUMN action. Dropping the default is
+// judged as it is in a restatement; the other actions are left to the words
+// of the statement they render, which name them.
+func classifyAlterColumn(op *ast.AlterColumnOperation) (Severity, string) {
+	if op.Action == ast.AlterColumnDropDefault {
+		return Warning, dropDefaultReason
+	}
+	return Safe, "does not remove data or tighten constraints"
 }
 
 func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
@@ -687,7 +703,7 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // leaves nullability alone, so a NOT NULL it restates is the column's
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
-	words := rawWords(sql)
+	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
 	switch {
 	case hasWordPrefix(words, "DROP", "TABLE"):
 		assessment.Severity = Destructive
@@ -740,8 +756,46 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordPrefix(words, "CREATE", "UNIQUE", "INDEX"):
 		assessment.Severity = Warning
 		assessment.Reason = "CREATE UNIQUE INDEX can fail on existing duplicate values"
+	case dropsDefault:
+		assessment.Severity = Warning
+		assessment.Reason = dropDefaultReason
 	}
 	return assessment
+}
+
+// defaultConstraintDrop is the DROP CONSTRAINT with which a SQL Server
+// migration drops a column's default, in the words [rawWords] reads it as. The
+// constraint's name is the server's own, so the statement reads it from
+// sys.default_constraints when it runs; the renderer writes it inside the
+// literal sp_executesql runs, which is where the quotes come from.
+//
+// The SQL Server renderer writes this spelling and this list recognizes it. A
+// rendering that stops matching reads as DROP CONSTRAINT again, which is the
+// louder verdict, and the SQL Server tests of AssessRendered fail on it.
+var defaultConstraintDrop = []string{"DROP", "CONSTRAINT", "''", "+", "QUOTENAME", "DC.NAME", "FROM", "SYS.DEFAULT_CONSTRAINTS"}
+
+// withoutDefaultConstraintDrop removes the DROP CONSTRAINT of every
+// [defaultConstraintDrop] from words, and reports whether the statement drops
+// a default without adding another.
+//
+// Read as words, that DROP CONSTRAINT says the statement removes a data
+// protection. A default constrains no row: dropping one changes what an INSERT
+// that leaves the column out writes, which is how dropping a default reads
+// everywhere else. Any other DROP CONSTRAINT in the statement stays, and is
+// read as it was. A statement that drops the default and adds one replaces it,
+// and is judged as a replaced default is elsewhere.
+func withoutDefaultConstraintDrop(words []string) (kept []string, dropsDefault bool) {
+	found := false
+	kept = make([]string, 0, len(words))
+	for i := 0; i < len(words); i++ {
+		if hasWordPrefix(words[i:], defaultConstraintDrop...) {
+			found = true
+			i++
+			continue
+		}
+		kept = append(kept, words[i])
+	}
+	return kept, found && !hasWordSequence(kept, "ADD", "DEFAULT")
 }
 
 func raiseAssessment(target *StatementAssessment, source StatementAssessment) {
