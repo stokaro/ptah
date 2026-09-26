@@ -426,10 +426,10 @@ func (v compositeDefinitionValidator) extensions() error {
 func (v compositeDefinitionValidator) functions() error {
 	return validateNamedDefinitions(
 		v.database.Functions,
-		func(function Function) string { return function.Name },
+		routineIdentityOf,
 		canonicalFunctionDefinition,
-		func(function Function, _ string) error {
-			return fmt.Errorf("conflicting function %q definitions", function.Name)
+		func(function Function, identity routineIdentity) error {
+			return fmt.Errorf("conflicting %s %q definitions", identity.kind(), identity.signature())
 		},
 	)
 }
@@ -568,13 +568,13 @@ func (v compositeDefinitionValidator) managedData() error {
 	)
 }
 
-func validateNamedDefinitions[T any](
+func validateNamedDefinitions[T any, K comparable](
 	definitions []T,
-	identity func(T) string,
+	identity func(T) K,
 	canonicalize func(T) T,
-	conflict func(T, string) error,
+	conflict func(T, K) error,
 ) error {
-	seen := make(map[string]T, len(definitions))
+	seen := make(map[K]T, len(definitions))
 	for _, definition := range definitions {
 		key := identity(definition)
 		canonical := canonicalize(definition)

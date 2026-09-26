@@ -21,7 +21,8 @@
 //      as a string delimiter. Measured: one dash inside one message closed the
 //      string it sat in and the whole file failed to parse.
 //   2. Running the producers the workflow runs, against an empty fixture root,
-//      produces every root file, byte-identical to its source.
+//      produces every root file, byte-identical to its source, and every
+//      declared redirect page, sending the reader to its target.
 //   3. The workflow still invokes both producers, against `_site`, on a push,
 //      before the artifact is uploaded. Rule 2 passes on a tree whose workflow
 //      no longer calls either of them.
@@ -56,7 +57,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GENERATED_ROOT_FILES, ROOT_ASSETS, sourcePath } from './publish-root-assets.mjs';
+import {
+  GENERATED_ROOT_FILES,
+  ROOT_ASSETS,
+  ROOT_REDIRECTS,
+  redirectFile,
+  redirectTarget,
+  renderRedirect,
+  sourcePath,
+} from './publish-root-assets.mjs';
 import { indexProblems } from './gen-versions.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -69,7 +78,6 @@ const workflowPath = join(repoRoot, '.github', 'workflows', 'docs.yml');
 export const ROOT_PRODUCERS = [
   'docs/site/scripts/gen-versions.mjs',
   'docs/site/scripts/publish-root-assets.mjs',
-  'docs/site/scripts/publish-compatibility.mjs',
 ];
 const UPLOAD_STEP = 'actions/upload-pages-artifact';
 const PUSH_CONDITION = "github.event_name == 'push'";
@@ -98,7 +106,17 @@ export function workflowSteps(workflow) {
 // analyze takes prepared inputs rather than reading the tree, so the self-test
 // can hand it a tree that does not exist and require each rule to fire.
 export function analyze(input) {
-  const { assets, generated, sources, assembled, workflow, documented, scanned, advertised = new Map() } = input;
+  const {
+    assets,
+    generated,
+    redirects = [],
+    sources,
+    assembled,
+    workflow,
+    documented,
+    scanned,
+    advertised = new Map(),
+  } = input;
   const problems = [];
 
   const expected = [...generated, ...assets.map((asset) => asset.name)];
@@ -140,6 +158,18 @@ export function analyze(input) {
     if (produced === undefined || !source || !source.exists) continue;
     if (produced !== source.text) {
       problems.push(`the assembled ${asset.name} is not the bytes of ${asset.source}`);
+    }
+  }
+  for (const redirect of redirects) {
+    const file = redirectFile(redirect);
+    const produced = assembled.get(file);
+    if (produced === undefined) {
+      problems.push(`assembling the Pages root produced no ${file}; ${PAGES_PREFIX}${redirect.path} would answer 404`);
+      continue;
+    }
+    const target = redirectTarget(produced);
+    if (target !== redirect.target) {
+      problems.push(`the assembled ${file} sends the reader to ${target ?? 'nowhere'}, not ${redirect.target}`);
     }
   }
 
@@ -204,10 +234,14 @@ export function analyze(input) {
 // converges on the tree within a minute of every push to master, so on the
 // schedule this runs on a difference is not a deploy in flight; it is the root
 // serving something other than what the repository says it serves.
+//
+// A redirect page is requested at the address a reader has, and it has to send
+// the reader to its target: a 200 carrying some other page is still the reader
+// arriving nowhere.
 export function analyzeLive(input) {
-  const { assets, generated, fetched, sources } = input;
+  const { assets, generated, redirects = [], fetched, sources } = input;
   const problems = [];
-  const names = [...generated, ...assets.map((asset) => asset.name)];
+  const names = [...generated, ...assets.map((asset) => asset.name), ...redirects.map((redirect) => redirect.path)];
   const reachable = names.filter((name) => {
     const answer = fetched.get(name);
     return answer && !answer.error && answer.status === 200;
@@ -244,6 +278,17 @@ export function analyzeLive(input) {
     if (answer.text !== source) {
       problems.push(
         `${asset.url} is not the bytes of ${asset.source}; the deployed root is serving something else`,
+      );
+    }
+  }
+
+  for (const redirect of redirects) {
+    const answer = fetched.get(redirect.path);
+    if (!answer || answer.error || answer.status !== 200 || answer.text.length === 0) continue;
+    const target = redirectTarget(answer.text);
+    if (target !== redirect.target) {
+      problems.push(
+        `${PAGES_PREFIX}${redirect.path} sends the reader to ${target ?? 'nowhere'}, not ${redirect.target}`,
       );
     }
   }
@@ -347,7 +392,11 @@ function assembleFixture() {
       execFileSync('node', [join(repoRoot, producer), root], { stdio: ['ignore', 'pipe', 'pipe'] });
     }
     const produced = new Map();
-    for (const name of [...GENERATED_ROOT_FILES, ...ROOT_ASSETS.map((asset) => asset.name)]) {
+    for (const name of [
+      ...GENERATED_ROOT_FILES,
+      ...ROOT_ASSETS.map((asset) => asset.name),
+      ...ROOT_REDIRECTS.map(redirectFile),
+    ]) {
       const path = join(root, name);
       if (existsSync(path)) {
         produced.set(name, readFileSync(path, 'utf8'));
@@ -363,7 +412,11 @@ function assembleFixture() {
 // workflow has just built rather than one this gate built for itself.
 function checkAssembledSite(siteDir) {
   const problems = [];
-  for (const name of [...GENERATED_ROOT_FILES, ...ROOT_ASSETS.map((asset) => asset.name)]) {
+  for (const name of [
+    ...GENERATED_ROOT_FILES,
+    ...ROOT_ASSETS.map((asset) => asset.name),
+    ...ROOT_REDIRECTS.map(redirectFile),
+  ]) {
     const path = join(siteDir, name);
     if (!existsSync(path)) {
       problems.push(`${siteDir} has no ${name}; the deploy would publish a root without it`);
@@ -371,6 +424,16 @@ function checkAssembledSite(siteDir) {
     }
     if (statSync(path).size === 0) {
       problems.push(`${siteDir}/${name} is empty`);
+    }
+  }
+  for (const redirect of ROOT_REDIRECTS) {
+    const published = join(siteDir, redirectFile(redirect));
+    if (!existsSync(published)) continue;
+    const target = redirectTarget(readFileSync(published, 'utf8'));
+    if (target !== redirect.target) {
+      problems.push(
+        `${siteDir}/${redirectFile(redirect)} sends the reader to ${target ?? 'nowhere'}, not ${redirect.target}`,
+      );
     }
   }
   for (const asset of ROOT_ASSETS) {
@@ -443,7 +506,10 @@ function selftest() {
       published: `irm ${InstallURL('install.ps1')} | iex`,
     },
   ];
-  const generated = ['versions.json', 'index.html', 'compatibility/operator/index.html'];
+  const generated = ['versions.json', 'index.html'];
+  const redirects = [
+    { path: 'moved/page/', target: 'https://elsewhere.example/page/', title: 'Moved page' },
+  ];
 
   const workflow = [
     'jobs:',
@@ -458,9 +524,6 @@ function selftest() {
     '      - name: Publish the install scripts at the site root',
     "        if: github.event_name == 'push'",
     '        run: node docs/site/scripts/publish-root-assets.mjs "$GITHUB_WORKSPACE/_site"',
-    '      - name: Publish the operator compatibility matrix',
-    "        if: github.event_name == 'push'",
-    '        run: node docs/site/scripts/publish-compatibility.mjs "$GITHUB_WORKSPACE/_site"',
     '      - name: Upload Pages artifact',
     "        if: github.event_name == 'push'",
     '        uses: actions/upload-pages-artifact@v5',
@@ -469,6 +532,7 @@ function selftest() {
   const healthy = () => ({
     assets,
     generated,
+    redirects,
     sources: new Map([
       ['install.sh', { exists: true, tracked: true, text: '#!/bin/sh\n' }],
       ['install.ps1', { exists: true, tracked: true, text: "Write-Output 'ptah'\n" }],
@@ -476,7 +540,7 @@ function selftest() {
     assembled: new Map([
       ['versions.json', '{}\n'],
       ['index.html', '<!doctype html>\n'],
-      ['compatibility/operator/index.html', '<!doctype html>\n'],
+      ['moved/page/index.html', renderRedirect(redirects[0])],
       ['install.sh', '#!/bin/sh\n'],
       ['install.ps1', "Write-Output 'ptah'\n"],
     ]),
@@ -540,6 +604,32 @@ function selftest() {
   assert(
     analyze(differentBytes).some((problem) => problem.includes('is not the bytes of')),
     'a stale copy must be reported',
+  );
+
+  // A redirect page nothing writes is the old address answering 404.
+  const missingRedirect = healthy();
+  missingRedirect.assembled.delete('moved/page/index.html');
+  assert(
+    analyze(missingRedirect).some((problem) => problem.includes('produced no moved/page/index.html')),
+    'a redirect page the assembly does not write must be reported',
+  );
+
+  // A redirect page that answers and sends the reader nowhere, or somewhere
+  // else, is the same reader arriving at no content.
+  const noRefresh = healthy();
+  noRefresh.assembled.set('moved/page/index.html', '<!doctype html>\n');
+  assert(
+    analyze(noRefresh).some((problem) => problem.includes('sends the reader to nowhere')),
+    'a redirect page with no refresh must be reported',
+  );
+  const wrongTarget = healthy();
+  wrongTarget.assembled.set(
+    'moved/page/index.html',
+    renderRedirect({ ...redirects[0], target: 'https://elsewhere.example/other/' }),
+  );
+  assert(
+    analyze(wrongTarget).some((problem) => problem.includes(`not ${redirects[0].target}`)),
+    'a redirect page sending the reader to another target must be reported',
   );
 
   // Rule 3. Deleting the publish step is the failure the whole gate exists for:
@@ -654,10 +744,11 @@ function selftest() {
   const liveHealthy = () => ({
     assets,
     generated,
+    redirects,
     fetched: new Map([
       ['versions.json', { status: 200, text: '{}\n' }],
       ['index.html', { status: 200, text: '<!doctype html>\n' }],
-      ['compatibility/operator/index.html', { status: 200, text: '<!doctype html>\n' }],
+      ['moved/page/', { status: 200, text: renderRedirect(redirects[0]) }],
       ['install.sh', { status: 200, text: '#!/bin/sh\n' }],
       ['install.ps1', { status: 200, text: "Write-Output 'ptah'\n" }],
     ]),
@@ -686,14 +777,14 @@ function selftest() {
   );
 
   const siteGone = liveHealthy();
-  for (const name of [...generated, ...assets.map((asset) => asset.name)]) {
+  for (const name of [...generated, ...assets.map((asset) => asset.name), ...redirects.map((redirect) => redirect.path)]) {
     siteGone.fetched.set(name, { status: 404, text: '' });
   }
   const siteGoneProblems = analyzeLive(siteGone);
   // Counted from the fixture rather than written out: a root file added to the
   // declaration has to appear here too, and a literal would have gone stale
   // quietly the first time one did.
-  const rootFileCount = generated.length + assets.length;
+  const rootFileCount = generated.length + assets.length + redirects.length;
   assert(
     siteGoneProblems.length === rootFileCount,
     `every root file must be reported: ${JSON.stringify(siteGoneProblems)}`,
@@ -729,6 +820,15 @@ function selftest() {
   assert(
     analyzeLive(notRequested).some((problem) => problem.includes('was not requested')),
     'a file nothing asked for must not read as a pass',
+  );
+
+  // The published redirect address answering 200 with a page that sends
+  // nobody anywhere: the content a deploy from an older tag would put back.
+  const liveNoRefresh = liveHealthy();
+  liveNoRefresh.fetched.set('moved/page/', { status: 200, text: '<!doctype html>\n<table></table>\n' });
+  assert(
+    analyzeLive(liveNoRefresh).some((problem) => problem.includes('moved/page/ sends the reader to nowhere')),
+    'a published redirect address that does not redirect must be reported',
   );
 
   // The advertised address. It belongs to another deploy, so only the answer
@@ -834,7 +934,11 @@ async function main() {
   }
 
   if (argument === '--live') {
-    const names = [...GENERATED_ROOT_FILES, ...ROOT_ASSETS.map((asset) => asset.name)];
+    const names = [
+      ...GENERATED_ROOT_FILES,
+      ...ROOT_ASSETS.map((asset) => asset.name),
+      ...ROOT_REDIRECTS.map((redirect) => redirect.path),
+    ];
     const sources = new Map();
     for (const asset of ROOT_ASSETS) {
       const path = sourcePath(asset);
@@ -844,6 +948,7 @@ async function main() {
       ...analyzeLive({
         assets: ROOT_ASSETS,
         generated: GENERATED_ROOT_FILES,
+        redirects: ROOT_REDIRECTS,
         fetched: await fetchRoot(names),
         sources,
       }),
@@ -913,6 +1018,7 @@ async function main() {
   const problems = analyze({
     assets: ROOT_ASSETS,
     generated: GENERATED_ROOT_FILES,
+    redirects: ROOT_REDIRECTS,
     sources,
     assembled: assembleFixture(),
     workflow: readFileSync(workflowPath, 'utf8'),
@@ -928,7 +1034,11 @@ async function main() {
     return;
   }
 
-  const names = [...GENERATED_ROOT_FILES, ...ROOT_ASSETS.map((asset) => asset.name)];
+  const names = [
+    ...GENERATED_ROOT_FILES,
+    ...ROOT_ASSETS.map((asset) => asset.name),
+    ...ROOT_REDIRECTS.map(redirectFile),
+  ];
   console.log(`check-pages-root.mjs: OK (${names.join(', ')} across ${files.length} documentation files)`);
 }
 

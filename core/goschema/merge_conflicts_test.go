@@ -93,7 +93,29 @@ func TestMerge_RejectsEveryConflictingNamedObject(t *testing.T) {
 			name:    "function",
 			first:   &schemamodel.Database{Functions: []schemamodel.Function{{Name: "active_user", Returns: "BOOLEAN", Body: "SELECT true"}}},
 			second:  &schemamodel.Database{Functions: []schemamodel.Function{{Name: "active_user", Returns: "boolean", Body: "SELECT false"}}},
-			wantErr: `conflicting function "active_user" definitions`,
+			wantErr: `conflicting function "active_user\(\)" definitions`,
+		},
+		{
+			// The same overload twice, spelled differently: the argument types
+			// name the routine, and the parameter's name and alias do not.
+			name: "function overload",
+			first: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "app.f", Parameters: "a int", Returns: "int", Body: "SELECT 1"},
+			}},
+			second: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "app.f", Parameters: "b integer", Returns: "int", Body: "SELECT 2"},
+			}},
+			wantErr: `conflicting function "app.f\(integer\)" definitions`,
+		},
+		{
+			name: "procedure",
+			first: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "app.p", Kind: "procedure", Parameters: "a int", Body: "SELECT 1"},
+			}},
+			second: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "app.p", Kind: "procedure", Parameters: "a int", Body: "SELECT 2"},
+			}},
+			wantErr: `conflicting procedure "app.p\(integer\)" definitions`,
 		},
 		{
 			name:    "sequence",

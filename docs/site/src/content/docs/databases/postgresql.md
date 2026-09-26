@@ -290,7 +290,11 @@ The drop names the function's argument list, so an overloaded name
 loses only the overload that changed. A function that takes no arguments is
 named with an empty list, `f()`, which is what selects it among the overloads
 of its name; the same holds for a function the schema stops declaring, and for
-a procedure. The drop does not use `CASCADE`: when a
+a procedure. A schema may declare several overloads of one name, as `pg_dump`
+writes them. Each is a routine of its own, told apart by its kind and its input
+argument types, as PostgreSQL tells them apart: `f(a int)` and
+`f(a int, b text)` are two functions, and `f(b integer)` is `f(a int)` declared
+again. The drop does not use `CASCADE`: when a
 view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.

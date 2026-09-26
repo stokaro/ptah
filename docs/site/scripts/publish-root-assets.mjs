@@ -6,7 +6,8 @@
 // number of files that address the site as a whole. gen-versions.mjs writes two
 // of them, versions.json and index.html. This script writes the rest: the
 // install scripts the documentation tells a reader to pipe into a shell, which
-// have to answer at a stable address that carries no version in it.
+// have to answer at a stable address that carries no version in it, and a
+// redirect page for each root address whose content another site publishes.
 //
 // The deploy assembles `_site/` from scratch on every run and uploads it whole,
 // so there is no incremental Pages state to inherit a file from. A root file
@@ -21,7 +22,7 @@
 // without deploying on merge. Astro also copies public/ into each version's
 // dist/, so the same bytes appear at /<version>/install.sh; that copy is
 // harmless and is not the published address.
-import { InstallURL, RootURL } from '../src/lib/docs-origin.mjs';
+import { InstallURL, OperatorOrigin, RootURL } from '../src/lib/docs-origin.mjs';
 
 import {
   copyFileSync,
@@ -114,16 +115,86 @@ export const ROOT_ASSETS = [
   },
 ];
 
-// GENERATED_ROOT_FILES names what the other producers write into the same
-// directory: gen-versions.mjs writes the version index and the apex stub, and
-// publish-compatibility.mjs writes the operator matrix. This script does not
-// write any of them, and says so here because the two lists together are the
-// whole Pages root: check-pages-root.mjs compares that union against what an
-// assembly actually produces.
+// ROOT_REDIRECTS are root addresses whose content another site publishes. Each
+// one gets a small page at its own address that sends the reader on, so a link
+// already in the wild keeps answering. `path` is the address relative to the
+// site root, with a trailing slash; the page is written to its index.html.
+//
+// A redirect is declared rather than documented: no page of this site names
+// these addresses, and check-pages-root.mjs requires only that the assembly
+// writes each page and that the page sends the reader to its target.
+export const ROOT_REDIRECTS = [
+  {
+    // The operator's compatibility with Ptah is the operator's claim, and the
+    // operator publishes it on its own site (stokaro/ptah#3708). The target is
+    // the page in the operator's edge documentation, the version that tracks
+    // its current claim.
+    path: 'compatibility/operator/',
+    target: `${OperatorOrigin}/edge/support/ptah/`,
+    title: 'Ptah Operator compatibility',
+  },
+];
+
+// redirectFile is the file, relative to the site root, that serves one
+// redirect's address.
+export function redirectFile(redirect) {
+  return `${redirect.path}index.html`;
+}
+
+// renderRedirect is the page written at one redirect's address. The refresh
+// and the script send a browser on, the canonical link names the address that
+// holds the content, and the plain link is there for a reader whose browser
+// follows neither.
+//
+// The target is refused rather than escaped when it carries a character HTML
+// or a script literal would need to quote: it is a declared constant, and one
+// that needs quoting is a typo.
+export function renderRedirect(redirect) {
+  const { target, title } = redirect;
+  let url;
+  try {
+    url = new URL(target);
+  } catch {
+    throw new Error(`redirect target for ${redirect.path} is not a URL: ${target}`);
+  }
+  if (url.protocol !== 'https:' || /["'<>&\\\s]/.test(target)) {
+    throw new Error(`redirect target for ${redirect.path} must be a plain https URL: ${target}`);
+  }
+  if (!title || /["<>&]/.test(title)) {
+    throw new Error(`redirect title for ${redirect.path} must be plain text: ${title}`);
+  }
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0; url=${target}" />
+    <link rel="canonical" href="${target}" />
+    <title>${title}</title>
+    <script>location.replace(${JSON.stringify(target)});</script>
+  </head>
+  <body>
+    <p>${title} is published at <a href="${target}">${target}</a>.</p>
+  </body>
+</html>
+`;
+}
+
+// redirectTarget reads the address a redirect page sends a browser to, or
+// null when the page carries no refresh. check-pages-root.mjs holds every
+// assembled and every published redirect page to it.
+export function redirectTarget(html) {
+  const match = /<meta http-equiv="refresh" content="0; url=([^"]+)" \/>/.exec(html);
+  return match ? match[1] : null;
+}
+
+// GENERATED_ROOT_FILES names what the other producer writes into the same
+// directory: gen-versions.mjs writes the version index and the apex stub. This
+// script does not write either, and says so here because this list, the assets
+// and the redirects together are the whole Pages root: check-pages-root.mjs
+// compares that union against what an assembly actually produces.
 export const GENERATED_ROOT_FILES = [
   'versions.json',
   'index.html',
-  'compatibility/operator/index.html',
 ];
 
 // advertisedAddress is where a reader is told to find one root asset. It is
@@ -138,7 +209,8 @@ export function sourcePath(asset, repoRoot = defaultRepoRoot) {
   return join(repoRoot, asset.source);
 }
 
-// publish copies every root asset into siteDir and returns what it wrote.
+// publish copies every root asset into siteDir, writes every redirect page, and
+// returns what it wrote.
 //
 // A missing or empty source throws rather than being skipped. The deploy step
 // that calls this is the last chance to notice: past it, the artifact uploads
@@ -162,6 +234,12 @@ export function publish(siteDir, repoRoot = defaultRepoRoot) {
     copyFileSync(from, to);
     written.push(asset.name);
   }
+  for (const redirect of ROOT_REDIRECTS) {
+    const to = join(siteDir, redirectFile(redirect));
+    mkdirSync(dirname(to), { recursive: true });
+    writeFileSync(to, renderRedirect(redirect));
+    written.push(redirectFile(redirect));
+  }
   return written;
 }
 
@@ -183,13 +261,49 @@ function selftest() {
 
     const site = join(tmp, 'site');
     const written = publish(site, fakeRepo);
-    assert(written.length === ROOT_ASSETS.length, `publish wrote ${written.length} of ${ROOT_ASSETS.length}`);
+    const expected = ROOT_ASSETS.length + ROOT_REDIRECTS.length;
+    assert(written.length === expected, `publish wrote ${written.length} of ${expected}`);
     for (const asset of ROOT_ASSETS) {
       assert(existsSync(join(site, asset.name)), `${asset.name} is not in the site root`);
       assert(
         readFileSync(join(site, asset.name), 'utf8') === `# ${asset.name}\n`,
         `${asset.name} was copied with different bytes`,
       );
+    }
+
+    // Every redirect page is written at its own address, and its refresh, its
+    // canonical link and its plain link all name its target.
+    assert(ROOT_REDIRECTS.length > 0, 'the declaration holds no redirect, so nothing below is checked');
+    for (const redirect of ROOT_REDIRECTS) {
+      assert(
+        !redirect.path.startsWith('/') && redirect.path.endsWith('/'),
+        `${redirect.path} is not a root-relative address with a trailing slash`,
+      );
+      const file = join(site, redirectFile(redirect));
+      assert(existsSync(file), `${redirectFile(redirect)} is not in the site root`);
+      const html = readFileSync(file, 'utf8');
+      assert(redirectTarget(html) === redirect.target, `${redirectFile(redirect)} refreshes to ${redirectTarget(html)}`);
+      assert(html.includes(`<link rel="canonical" href="${redirect.target}" />`), `${redirect.path} has no canonical link`);
+      assert(html.includes(`<a href="${redirect.target}">`), `${redirect.path} has no plain link`);
+    }
+
+    // Pinned by name, because check-pages-root.mjs reads this same declaration:
+    // an entry deleted here is one it stops expecting, and the published
+    // address would answer 404 with every gate green.
+    const operator = ROOT_REDIRECTS.find((redirect) => redirect.path === 'compatibility/operator/');
+    assert(operator?.target === `${OperatorOrigin}/edge/support/ptah/`, 'compatibility/operator/ does not send the reader to the operator');
+
+    // A page without a refresh has no target, and a target that would need
+    // quoting is refused rather than written.
+    assert(redirectTarget('<!doctype html>\n<p>nothing</p>\n') === null, 'a page with no refresh has no target');
+    for (const target of ['http://example.com/', 'https://example.com/"><script>', 'not a url']) {
+      let refused = false;
+      try {
+        renderRedirect({ path: 'x/', target, title: 'X' });
+      } catch {
+        refused = true;
+      }
+      assert(refused, `the redirect target ${target} must be refused`);
     }
 
     // Every asset carries a name, a source under docs/site/public, a URL on the
