@@ -487,26 +487,47 @@ CREATE TABLE "pets" (
   `CONSTRAINT uq UNIQUE (a)`. PostgreSQL takes a name before every column
   constraint, so `--dialect postgres` reads a named `UNIQUE`, `PRIMARY KEY`,
   `CHECK`, `REFERENCES` and `NOT NULL` on a column.
-- A column-level `REFERENCES` clause is refused under `--dialect mysql`. MySQL
-  accepts the syntax and builds nothing from it, so reading it as a foreign key
-  would make rendering add a constraint the source schema never had:
+- A column-level `REFERENCES` clause is refused under `--dialect mysql`. What
+  MySQL builds from it depends on the server version: MySQL 8.4 accepts the
+  syntax and builds nothing, while MySQL 9.7 and 26.7 build a foreign key and
+  its index. Ptah reads a SQL file with its dialect alone: neither
+  `--server-version` nor the version of the database it connects to reaches
+  the reader, so either reading would be wrong on one of those lines:
 
   ```sql
   CREATE TABLE child (a INT REFERENCES parents (id));
   ```
 
   ```text
-  a column-level REFERENCES clause at position 26: MySQL accepts the clause and
-  creates neither a foreign key nor an index: SHOW CREATE TABLE reports the
-  column alone, and information_schema.referential_constraints stays empty, so
-  Ptah refuses it rather than reading a foreign key the source schema does not
-  have; write a table-level FOREIGN KEY clause to declare an enforced
-  relationship
+  a column-level REFERENCES clause at position 26: MySQL 8.4 builds nothing from
+  the clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and
+  the SQL file is read without the server version, so Ptah refuses the clause
+  rather than guess which schema it declares; write a table-level FOREIGN KEY
+  clause, which every MySQL line builds
   ```
 
   Write the relationship as a table-level `FOREIGN KEY (a) REFERENCES parents
   (id)` instead. MariaDB enforces the column-level spelling and builds a backing
   index for it, so `--dialect mariadb` reads it unchanged.
+
+- A `REFERENCES` clause in the column definition of `ALTER TABLE ... MODIFY` is
+  refused under `--dialect mysql` and `--dialect mariadb`, with `CONSTRAINT` in
+  front or without it. MySQL 8.4, 9.7 and 26.7 and MariaDB 10.11, 11.8 and
+  12.3 each answer `ERROR 1064` to it, while `ADD COLUMN` takes the same
+  clause. MariaDB takes no `CONSTRAINT` at all in a `MODIFY` column definition,
+  so Ptah refuses a `CONSTRAINT ... CHECK` there too:
+
+  ```sql
+  ALTER TABLE c MODIFY a INT REFERENCES p (id);
+  ```
+
+  ```text
+  REFERENCES at position 27 in ALTER TABLE ... MODIFY: mariadb takes no
+  REFERENCES clause in a MODIFY column definition, and answers ERROR 1064
+  (42000) to one; add the key with ALTER TABLE ... ADD FOREIGN KEY
+  ```
+
+  Add the key with `ALTER TABLE c ADD FOREIGN KEY (a) REFERENCES p (id)`.
 
 - `ALTER TABLE ... ADD KEY` adds a secondary index on MySQL and MariaDB, in
   every spelling the engines take: `ADD KEY`, `ADD INDEX`, `ADD SPATIAL KEY` and

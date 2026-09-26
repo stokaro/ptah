@@ -12,50 +12,73 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// A column-level REFERENCES clause means different things on the two engines
-// of the MySQL family, and reading it as one thing made Ptah invent a
-// constraint. Measured 2026-09-03 against `CREATE TABLE parents (id INT
-// PRIMARY KEY)`:
+// A column-level REFERENCES clause means different things on the engines of
+// the MySQL family, and on MySQL it depends on the line. Measured against
+// `CREATE TABLE parents (id INT PRIMARY KEY)`:
 //
-//	MySQL 8.4.11    a INT REFERENCES parents(id)               accepted; SHOW CREATE TABLE
-//	                                                           reports the column alone, no
-//	                                                           key, no constraint
-//	MySQL 8.4.11    a INT CONSTRAINT f REFERENCES parents(id)  error 1064 (42000)
-//	MariaDB 11.8.9  a INT REFERENCES parents(id)               enforced: KEY `a`,
-//	                                                           CONSTRAINT `child_ibfk_1`
-//	MariaDB 11.8.9  a INT CONSTRAINT f REFERENCES parents(id)  enforced: KEY `f`,
-//	                                                           CONSTRAINT `f`
+//	MySQL 8.4.11          a INT REFERENCES parents(id)               accepted; no key, no
+//	                                                                 constraint
+//	MySQL 9.7.2, 26.7.0   a INT REFERENCES parents(id)               enforced: KEY `a`,
+//	                                                                 CONSTRAINT `child_ibfk_1`
+//	MySQL, every line     a INT CONSTRAINT f REFERENCES parents(id)  error 1064 (42000)
+//	MariaDB 11.8.9        a INT REFERENCES parents(id)               enforced: KEY `a`,
+//	                                                                 CONSTRAINT `child_ibfk_1`
+//	MariaDB 11.8.9        a INT CONSTRAINT f REFERENCES parents(id)  enforced: KEY `f`,
+//	                                                                 CONSTRAINT `f`
 //
-// So the clause is refused for MySQL and read for MariaDB. See
-// stokaro/ptah#2791. The named spelling MySQL answers with error 1064 is
-// refused with the other named column constraints the engine refuses, in
+// The reader does not know the MySQL line, so the clause is refused for MySQL
+// and read for MariaDB. See stokaro/ptah#2791 and stokaro/ptah#3760. The named
+// spelling MySQL answers with error 1064 is refused with the other named
+// column constraints the engine refuses, in
 // named_column_constraint_dialect_test.go.
 
 const columnReferencesParents = "CREATE TABLE parents (id INT PRIMARY KEY);\n"
 
 // TestParseColumnReferences_MySQLFailurePath refuses the bare clause, which
-// MySQL 8.4.11 accepts and builds nothing from.
+// MySQL 8.4.11 builds nothing from and MySQL 9.7.2 and 26.7.0 build a foreign
+// key from, in CREATE TABLE and in ADD COLUMN alike. The message says what each
+// line does, because the reader cannot tell which one the file is for.
 func TestParseColumnReferences_MySQLFailurePath(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name: "CREATE TABLE",
+			sql:  "CREATE TABLE child (a INT REFERENCES parents(id));",
+			wantErr: "a column-level REFERENCES clause at position 69: MySQL 8.4 builds nothing from the " +
+				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL file " +
+				"is read without the server version, so Ptah refuses the clause rather than guess which " +
+				"schema it declares; write a table-level FOREIGN KEY clause, which every MySQL line builds",
+		},
+		{
+			name: "ADD COLUMN",
+			sql:  "CREATE TABLE child (id INT);\nALTER TABLE child ADD COLUMN a INT REFERENCES parents(id);",
+			wantErr: "a column-level REFERENCES clause at position 107: MySQL 8.4 builds nothing from the " +
+				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL file " +
+				"is read without the server version, so Ptah refuses the clause rather than guess which " +
+				"schema it declares; write a table-level FOREIGN KEY clause, which every MySQL line builds",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	result, err := parser.NewParser(
-		columnReferencesParents+"CREATE TABLE child (a INT REFERENCES parents(id));",
-		parser.WithDialect(platform.MySQL),
-	).Parse()
+			result, err := parser.NewParser(
+				columnReferencesParents+test.sql,
+				parser.WithDialect(platform.MySQL),
+			).Parse()
 
-	c.Assert(result, qt.IsNil)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
-		"a column-level REFERENCES clause at position 69: MySQL accepts the clause and "+
-			"creates neither a foreign key nor an index: SHOW CREATE TABLE reports the "+
-			"column alone, and information_schema.referential_constraints stays empty, so "+
-			"Ptah refuses it rather than reading a foreign key the source schema does not "+
-			"have; write a table-level FOREIGN KEY clause to declare an enforced relationship",
-	))
-	var capabilityErr *ptaherr.CapabilityError
-	c.Assert(err, qt.ErrorAs, &capabilityErr)
-	c.Assert(capabilityErr.Dialect, qt.Equals, platform.MySQL)
-	c.Assert(capabilityErr.Feature, qt.Equals, "enforced column-level REFERENCES")
+			c.Assert(result, qt.IsNil)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			var capabilityErr *ptaherr.CapabilityError
+			c.Assert(err, qt.ErrorAs, &capabilityErr)
+			c.Assert(capabilityErr.Dialect, qt.Equals, platform.MySQL)
+			c.Assert(capabilityErr.Feature, qt.Equals, "column-level REFERENCES without a server version")
+		})
+	}
 }
 
 // MariaDB is the control that keeps the refusal scoped to the engine that

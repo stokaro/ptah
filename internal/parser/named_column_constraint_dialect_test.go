@@ -119,9 +119,9 @@ func TestParseNamedColumnConstraint_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a NOT NULL MODIFY states on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT);\nALTER TABLE c MODIFY a INT CONSTRAINT nn NOT NULL;",
-			wantErr: "CONSTRAINT nn at position 96 is followed by NOT: on a column, mysql accepts " +
-				"CONSTRAINT with a name only before CHECK, and answers ERROR 1064 (42000) to this; " +
-				"drop CONSTRAINT nn",
+			wantErr: "CONSTRAINT nn at position 96 is followed by NOT: in a MODIFY column definition, " +
+				"mysql accepts CONSTRAINT with a name only before CHECK, and answers ERROR 1064 (42000) " +
+				"to this; drop CONSTRAINT nn",
 		},
 		{
 			name:    "a unique key on MariaDB",

@@ -50,6 +50,13 @@ type Parser struct {
 
 	dialect      string
 	capabilities capability.Capabilities
+
+	// modifyColumn is set while the column definition of an ALTER TABLE ...
+	// MODIFY is read. The MySQL family takes a narrower column grammar there
+	// than in CREATE TABLE and ADD COLUMN, and the two rules that know it,
+	// refuseModifyReferences and refuseMySQLColumnConstraint, read it here
+	// because the column parser is shared by all three statements.
+	modifyColumn bool
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -2451,27 +2458,35 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 	return nil
 }
 
-// refuseColumnReferences reports MySQL having no enforced column-level
-// REFERENCES, and answers nil for every other dialect.
+// refuseColumnReferences refuses a column-level REFERENCES clause under the
+// mysql dialect, and answers nil for every other dialect.
 //
-// Measured 2026-09-03 on MySQL 8.4.11, `CREATE TABLE child (a INT REFERENCES
-// parents(id))` is accepted and builds nothing: SHOW CREATE TABLE reports the
-// column alone, and information_schema.referential_constraints stays empty.
-// Reading the clause as a foreign key is not a smaller version of what the
-// engine does, it is a different schema: rendering the parsed model back emits
-// an ALTER TABLE ... ADD CONSTRAINT for a relationship the source never had,
-// which turns inspect-and-re-render into a schema change (stokaro/ptah#2791).
+// What MySQL builds from the clause depends on the server version, and the
+// reader does not know the version: internal/sqlschema reads a SQL schema file
+// with its dialect alone, and neither --server-version nor the version of a
+// connected database reaches it. Measured after `CREATE TABLE p (id int
+// PRIMARY KEY)`:
+//
+//	                                         MySQL 8.4.11     MySQL 9.7.2, 26.7.0
+//	CREATE TABLE c (a int REFERENCES p(id))  nothing built    foreign key c_ibfk_1, index a
+//	ALTER TABLE c ADD COLUMN a int           nothing built    foreign key c_ibfk_1, index a
+//	  REFERENCES p(id)
+//
+// Read as a foreign key, the clause adds a relationship an 8.4 source never
+// had, and rendering the model back emits an ALTER TABLE ... ADD CONSTRAINT
+// for it (stokaro/ptah#2791). Read as nothing, it drops a key 9.7 and 26.7
+// build. Either reading is wrong on one of the lines Ptah certifies, so the
+// clause is refused, and the message says what each line does (stokaro/ptah#3760).
+// A table-level FOREIGN KEY builds the same key on every line.
 //
 // The named spelling, `a INT CONSTRAINT f REFERENCES parents(id)`, does not
-// reach this refusal: MySQL answers ERROR 1064 to it, and
+// reach this refusal: every line answers ERROR 1064 to it, and
 // refuseMySQLColumnConstraint refuses it with every other column kind MySQL
 // takes no name before.
 //
-// MariaDB is deliberately not gated. Measured 2026-09-03 on MariaDB 11.8.9,
-// both spellings are enforced there and both build a backing index -- the bare
-// form as `KEY a` under the server-generated symbol `child_ibfk_1`, the named
-// form as `KEY f` under the symbol the author wrote -- so on that engine the
-// clause means what Ptah already reads it to mean.
+// MariaDB is deliberately not gated. Measured on MariaDB 10.11.19, 11.8.9 and
+// 12.3.3, both spellings are enforced there and both build a backing index,
+// so on that engine the clause means what Ptah reads it to mean.
 //
 // A parse with no dialect is not gated either, for the reason
 // parseFunctionalKeyPart states in reverse: this syntax is not one engine's
@@ -2487,17 +2502,41 @@ func (p *Parser) refuseColumnReferences() error {
 	}
 	return &ptaherr.CapabilityError{
 		Dialect: platform.MySQL,
-		Feature: "enforced column-level REFERENCES",
+		Feature: "column-level REFERENCES without a server version",
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf(
-			"a column-level REFERENCES clause at position %d: MySQL accepts the clause and "+
-				"creates neither a foreign key nor an index: SHOW CREATE TABLE reports the "+
-				"column alone, and information_schema.referential_constraints stays empty, so "+
-				"Ptah refuses it rather than reading a foreign key the source schema does not "+
-				"have; write a table-level FOREIGN KEY clause to declare an enforced relationship",
+			"a column-level REFERENCES clause at position %d: MySQL 8.4 builds nothing from the "+
+				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL "+
+				"file is read without the server version, so Ptah refuses the clause rather than "+
+				"guess which schema it declares; write a table-level FOREIGN KEY clause, which "+
+				"every MySQL line builds",
 			p.current.Start,
 		),
 	}
+}
+
+// refuseModifyReferences refuses a REFERENCES clause in the column definition
+// of an ALTER TABLE ... MODIFY on the MySQL family, and answers nil everywhere
+// else.
+//
+// Measured on MySQL 8.4.11, 9.7.2 and 26.7.0 and on MariaDB 10.11.19, 11.8.9
+// and 12.3.3, after `CREATE TABLE c (id int, a int)`: `ALTER TABLE c MODIFY a
+// int REFERENCES p(id)` answers ERROR 1064 on every line, and so does MODIFY
+// COLUMN, while ADD COLUMN takes the same clause. Read, the clause gives the
+// column a foreign key: against a MariaDB database, `ptah schema apply` planned
+// ADD CONSTRAINT fk_c_a for a file the server refuses to run (stokaro/ptah#3759).
+//
+// The spellings with CONSTRAINT in front are refuseMySQLColumnConstraint's,
+// which knows what each engine takes CONSTRAINT before in a MODIFY.
+func (p *Parser) refuseModifyReferences() error {
+	if _, family := mysqlColumnConstraintKinds[p.dialect]; !family || !p.modifyColumn {
+		return nil
+	}
+	return fmt.Errorf(
+		"REFERENCES at position %d in ALTER TABLE ... MODIFY: %s takes no REFERENCES clause in a "+
+			"MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key with "+
+			"ALTER TABLE ... ADD FOREIGN KEY",
+		p.current.Start, p.dialect)
 }
 
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
@@ -2901,6 +2940,9 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "CONSTRAINT":
 		return p.handleColumnConstraint(table, column)
 	case "REFERENCES":
+		if err := p.refuseModifyReferences(); err != nil {
+			return err
+		}
 		if err := p.refuseColumnReferences(); err != nil {
 			return err
 		}
@@ -2929,8 +2971,9 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // A CONSTRAINT written without a name is handleSymbolLessColumnConstraint's.
 //
 // On the MySQL family, refuseMySQLColumnConstraint answers first: MySQL takes
-// a name only before CHECK, MariaDB only before REFERENCES, and each answers
-// ERROR 1064 to every other kind. The branches below read what it lets pass.
+// a name only before CHECK, MariaDB only before REFERENCES and, in a MODIFY,
+// before nothing, and each answers ERROR 1064 to every other kind. The
+// branches below read what it lets pass.
 //
 // PostgreSQL takes a name before every column constraint -- measured on
 // PostgreSQL 17.11, in front of NOT NULL, UNIQUE, PRIMARY KEY, CHECK, DEFAULT
@@ -6354,7 +6397,9 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 		p.advance()
 		p.skipWhitespace()
 	}
+	p.modifyColumn = true
 	column, err := p.parseColumnDefinition(nil)
+	p.modifyColumn = false
 	if err != nil {
 		return nil, err
 	}
