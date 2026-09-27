@@ -1929,6 +1929,25 @@ type TableDiff struct {
 	// beside RowTTLChange because the two are different clauses on different
 	// engines and no table carries both (stokaro/ptah#2236).
 	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
+
+	// ColumnKeyNames holds the name each column that gains its own UNIQUE
+	// takes on the target, keyed by column name: a column added with UNIQUE,
+	// and a column whose uniqueness changes to UNIQUE.
+	//
+	// The server names the key itself, and the name depends on what else the
+	// schema holds: PostgreSQL numbers `<table>_<column>_key` where another
+	// relation or constraint of the schema holds it, and MySQL and MariaDB
+	// number the column's name where another index of the table does. The
+	// comparison derives the name from the names the desired state holds,
+	// which is the name it reads back as the column's key, and a planner that
+	// writes the name takes it from here. Measured on PostgreSQL 18.6, `ALTER
+	// TABLE c ADD CONSTRAINT c_x_key UNIQUE (x)` beside a unique index c_x_key
+	// is refused, and Atlas CE v1.3.0 writes c_x_key1.
+	//
+	// It is nil where no column gains a key, on an engine whose naming Ptah has
+	// not measured, and in a diff built by hand; a planner then writes the name
+	// the server tries first. It rides off the wire, like Desired.
+	ColumnKeyNames map[string]string `json:"-"`
 }
 
 // RowDeletionPolicyChange is one table's row deletion policy transition.

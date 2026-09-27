@@ -11,10 +11,10 @@
 // the holder first. So a planner drops each key this package finds ahead of the
 // column changes, and skips it where the plan's removals land.
 //
-// The name is the one [columnkey.Name] gives with no other key taken, the
-// first the server tries. Where a declared key holds it, the column's key takes
-// a later name, and a removed key that holds that one is dropped with the other
-// removals; the plan then takes a second comparison to settle the name.
+// The name is the one the comparison derived from the names the desired state
+// holds, which the diff carries; see [difftypes.TableDiff.ColumnKeyNames]. A
+// diff built by hand carries none, and the name [columnkey.Name] gives with no
+// other key taken, the first the server tries, stands in for it.
 package keyrelease
 
 import (
@@ -88,7 +88,10 @@ func keyNames(diff *difftypes.SchemaDiff, dialect string) func(table, name strin
 	for _, table := range diff.TablesModified {
 		key := semantics.QualifiedTableIdentityKey(table.TableName)
 		for _, column := range gainingColumns(table) {
-			name, _ := columnkey.Name(dialect, bareTableName(table.TableName), column, nil)
+			name := table.ColumnKeyNames[column]
+			if name == "" {
+				name, _ = columnkey.Name(dialect, bareTableName(table.TableName), column, nil)
+			}
 			names[key] = append(names[key], name)
 		}
 	}

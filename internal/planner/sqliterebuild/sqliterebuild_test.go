@@ -127,6 +127,10 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// modification, including the ones ALTER TABLE expresses in place, so a
 		// rebuild forced by it would rebuild for nothing (stokaro/ptah#2315).
 		"Desired": false,
+		// The name a column that gains its own UNIQUE takes, which goes with
+		// the change ColumnsAdded or ColumnsModified already carries rather than
+		// being a change of its own (stokaro/ptah#3859).
+		"ColumnKeyNames": false,
 	}
 
 	// One non-zero value per field kind, so the census exercises the predicate
@@ -142,6 +146,11 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		},
 		reflect.Pointer: func(fieldType reflect.Type) reflect.Value {
 			return reflect.New(fieldType.Elem())
+		},
+		reflect.Map: func(fieldType reflect.Type) reflect.Value {
+			value := reflect.MakeMap(fieldType)
+			value.SetMapIndex(reflect.ValueOf("email"), reflect.ValueOf("users_email_key"))
+			return value
 		},
 		// The one struct field TableDiff has is the table declaration, made
 		// non-zero by naming its table. A different struct field added later
