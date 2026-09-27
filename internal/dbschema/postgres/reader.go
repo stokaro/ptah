@@ -3618,26 +3618,7 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 // defaultPrivilegeGrantees is the placeholder list binding the names
 // [Reader.readDefaultPrivilegeGrantees] found, and empty when it found none.
 func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
-	clauses := []string{
-		// Holds a privilege on a relation in scope -- table, view,
-		// materialized view or sequence (pg_class.relacl). An owner appears
-		// here as soon as the relation carries any explicit privilege, which
-		// is also exactly when readTableGrantsForSchema reports the owner's
-		// own grants.
-		`SELECT acl.grantee AS roleoid FROM pg_class c
-			JOIN scope s ON s.oid = c.relnamespace
-			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
-		// Granted a privilege on a relation in scope (pg_class.relacl).
-		`SELECT acl.grantor FROM pg_class c
-			JOIN scope s ON s.oid = c.relnamespace
-			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
-		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
-		`SELECT acl.grantee FROM scope s
-			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
-		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
-		`SELECT acl.grantor FROM scope s
-			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
-	}
+	clauses := r.grantRolesInScopeClauses()
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Named by a row-level security policy on a table in scope
 		// (pg_policy.polroles), read in the same shape readRLSPolicies uses.
@@ -3666,6 +3647,35 @@ func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
 			WHERE g.rolname IN (`+defaultPrivilegeGrantees+`)`)
 	}
 	return clauses
+}
+
+// grantRolesInScopeClauses are the branches of the role scoping that read
+// object privileges. CockroachDB takes them from information_schema, for the
+// reason [Reader.readCockroachGrants] gives.
+func (r *Reader) grantRolesInScopeClauses() []string {
+	if r.dialect == platform.CockroachDB {
+		return cockroachRolesInScopeClauses()
+	}
+	return []string{
+		// Holds a privilege on a relation in scope -- table, view,
+		// materialized view or sequence (pg_class.relacl). An owner appears
+		// here as soon as the relation carries any explicit privilege, which
+		// is also exactly when readTableGrantsForSchema reports the owner's
+		// own grants.
+		`SELECT acl.grantee AS roleoid FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Granted a privilege on a relation in scope (pg_class.relacl).
+		`SELECT acl.grantor FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantee FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantor FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+	}
 }
 
 // readDefaultPrivilegeGrantees reads the roles a default privilege in schemas
@@ -4159,6 +4169,9 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 }
 
 func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]bool) ([]catalog.Grant, error) {
+	if r.dialect == platform.CockroachDB {
+		return r.readCockroachGrants(ctx, standaloneSequences)
+	}
 	var grants []catalog.Grant
 	for _, schemaName := range r.schemasToRead() {
 		tableGrants, err := r.readTableGrantsForSchema(ctx, schemaName)

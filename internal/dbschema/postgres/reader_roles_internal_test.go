@@ -74,12 +74,23 @@ type clusterRole struct {
 // stripped before matching, so a branch documented by name but not actually
 // read cannot satisfy the guard.
 const (
-	readsRelationACL      = "aclexplode(c.relacl)"
-	readsSchemaACL        = "aclexplode(s.nspacl)"
-	readsGrantee          = "acl.grantee"
-	readsGrantor          = "acl.grantor"
-	readsPolicyRoles      = "unnest(pol.polroles)"
-	readsPostgresExcluded = "!= 'postgres'"
+	readsRelationACL = "aclexplode(c.relacl)"
+	readsSchemaACL   = "aclexplode(s.nspacl)"
+
+	// CockroachDB takes the same two reasons from information_schema, on every
+	// line, because v25.4 and v26.2 leave the ACL columns NULL
+	// (stokaro/ptah#3815). A branch there counts only when it also leaves out
+	// the built-in roles and the object's owner, which hold privileges nobody
+	// granted.
+	readsCockroachRelationGrants = "information_schema.role_table_grants"
+	readsCockroachSchemaGrants   = "information_schema.schema_privileges"
+	readsCockroachBuiltins       = "NOT IN ('admin', 'root')"
+	readsCockroachRelationOwner  = "<> pg_get_userbyid(c.relowner)"
+	readsCockroachSchemaOwner    = "<> pg_get_userbyid(n.nspowner)"
+	readsGrantee                 = "acl.grantee"
+	readsGrantor                 = "acl.grantor"
+	readsPolicyRoles             = "unnest(pol.polroles)"
+	readsPostgresExcluded        = "!= 'postgres'"
 
 	// The two ends of a default privilege. They are separate reasons because
 	// the catalog stores them in separate places: the role whose new objects
@@ -187,7 +198,14 @@ const (
 
 // Reasons spelled as the branch that must carry them.
 var (
-	byRelationGrant   = []string{readsRelationACL, readsGrantee}
+	byRelationGrant = []string{readsRelationACL, readsGrantee}
+
+	byCockroachRelationGrant = []string{
+		readsCockroachRelationGrants, readsCockroachBuiltins, readsCockroachRelationOwner,
+	}
+	byCockroachSchemaGrant = []string{
+		readsCockroachSchemaGrants, readsCockroachBuiltins, readsCockroachSchemaOwner,
+	}
 	byRelationGrantor = []string{readsRelationACL, readsGrantor}
 	bySchemaGrant     = []string{readsSchemaACL, readsGrantee}
 	bySchemaGrantor   = []string{readsSchemaACL, readsGrantor}
@@ -597,8 +615,8 @@ func TestReadRolesLeavesPasswordStateUnknownWithoutProtectedCatalogAccess(t *tes
 func TestReadRolesCockroachLeavesPasswordStateUnknownWithoutProtectedCatalogRead(t *testing.T) {
 	c := qt.New(t)
 	cluster := []clusterRole{
-		{name: "password_absent", schema: "public", reads: byRelationGrant},
-		{name: "password_present", schema: "public", reads: byRelationGrant, hasPassword: true},
+		{name: "password_absent", schema: "public", reads: byCockroachRelationGrant},
+		{name: "password_present", schema: "public", reads: byCockroachRelationGrant, hasPassword: true},
 	}
 	var sent []string
 	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -628,6 +646,31 @@ func TestReadRolesCockroachLeavesPasswordStateUnknownWithoutProtectedCatalogRead
 	c.Assert(query, qt.Not(qt.Contains), "FROM pg_catalog.pg_authid")
 	c.Assert(query, qt.Not(qt.Contains), "JOIN pg_catalog.pg_authid")
 	c.Assert(query, qt.Not(qt.Contains), ".rolpassword")
+}
+
+// TestReadRolesCockroachScopesByInformationSchema is the role half of
+// stokaro/ptah#3815. CockroachDB v25.4 and v26.2 leave pg_class.relacl and
+// pg_namespace.nspacl NULL, so a role that holds a grant there was left out of
+// the description that names it. The reasons come from information_schema on
+// every CockroachDB line instead, and the ACL branches are not sent at all: a
+// role only an ACL branch would find is not reported.
+func TestReadRolesCockroachScopesByInformationSchema(t *testing.T) {
+	c := qt.New(t)
+	cluster := []clusterRole{
+		{name: "acl_only", schema: "public", reads: byRelationGrant},
+		{name: "relation_grantee", schema: "public", reads: byCockroachRelationGrant},
+		{name: "schema_grantee", schema: "public", reads: byCockroachSchemaGrant},
+		{name: "someone_elses", schema: "", reads: nil},
+	}
+	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		return answerRoles(query, args, cluster)
+	})
+	reader := NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", platform.CockroachDB, capability.CockroachDB26())
+
+	roles, err := reader.readRoles(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(roleNames(roles), qt.DeepEquals, []string{"relation_grantee", "schema_grantee"})
 }
 
 func TestReadRolesClassifiesPasswordWithProtectedCatalogAccess(t *testing.T) {
