@@ -309,10 +309,12 @@ func TestLookupDriverDSN_RendersTheNetworkFormTheDriverParses(t *testing.T) {
 			want:   "user:pass@tcp(host:3306)/",
 		},
 		{
-			name:   "a host with no port keeps the driver's default",
+			// The driver dials its default port, 3306, for an address that
+			// names none, as it does for the URL consumers.
+			name:   "a host with no port is left to the driver's default",
 			engine: dbtarget.MySQL,
 			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://root@localhost/db") },
-			want:   "root@tcp(localhost:3306)/db",
+			want:   "root:@tcp(localhost)/db",
 		},
 		{
 			// The socket is the path and the database a parameter, so the

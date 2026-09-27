@@ -16,7 +16,6 @@ package dbtarget
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -486,60 +485,23 @@ func postgresWireURL(address string) string {
 // Removing the scheme is not enough. A conventional mysql://root:pass@host/db
 // becomes root:pass@host/db, which that driver does not accept, so an address
 // Ptah itself resolves failed to open unless the operator happened to have
-// written the driver's own network form already. An address that carries one
-// is returned as it stands, because it is already what the driver wants and
-// re-rendering it would only be a chance to lose a parameter.
+// written the driver's own network form already.
+//
+// The address is read by atlasurl.ParseMySQLURL, the parser Ptah connects
+// with, so the raw-driver tests open the database the URL consumers open: the
+// credentials are decoded as every URL consumer decodes them, an address
+// already in the driver's own form is handed on as written, and a server URL
+// naming no database keeps the separator the driver's grammar requires.
 func mysqlNetworkDSN(address string) string {
-	scheme, rest, found := strings.Cut(address, "://")
-	if !found {
-		return address
-	}
-	if strings.Contains(rest, "@tcp(") || strings.Contains(rest, "@unix(") {
-		// Already the driver's own form. It is returned verbatim rather than
-		// re-rendered, because a DSN carries parameters no URL parser models
-		// and round-tripping it is only a chance to lose one.
+	parsed, err := atlasurl.ParseMySQLURL(address)
+	if err != nil {
+		_, rest, found := strings.Cut(address, "://")
+		if !found {
+			return address
+		}
 		return rest
 	}
-
-	// Parsed rather than spliced. A URL carries credentials percent-escaped,
-	// and every consumer that connects through one decodes them; splicing the
-	// string hands the driver the literal escapes, so the raw-driver tests
-	// would authenticate with a different password from the URL consumers
-	// reading the same variable.
-	parsed, err := url.Parse(scheme + "://" + rest)
-	if err != nil || parsed.Host == "" {
-		return rest
-	}
-	host := parsed.Host
-	if parsed.Port() == "" {
-		// The driver's own default, which a URL omitting the port means.
-		host += ":3306"
-	}
-
-	// The database separator survives an empty name. go-sql-driver's grammar
-	// requires it, so a server URL naming no database still ends in a slash;
-	// dropping it left an otherwise valid address the driver refuses to parse.
-	path := parsed.Path
-	if path == "" {
-		path = "/"
-	}
-
-	rendered := credentialsOf(parsed.User) + "@tcp(" + host + ")" + path
-	if parsed.RawQuery != "" {
-		rendered += "?" + parsed.RawQuery
-	}
-	return rendered
-}
-
-// credentialsOf renders a URL's userinfo in the driver's grammar, decoded.
-func credentialsOf(user *url.Userinfo) string {
-	if user == nil {
-		return ""
-	}
-	if password, set := user.Password(); set {
-		return user.Username() + ":" + password
-	}
-	return user.Username()
+	return parsed.DSN()
 }
 
 // Engines returns every engine this package knows, in declaration order, so a

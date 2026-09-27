@@ -230,7 +230,22 @@ run a realm-scoped URL.
 `--schema` / `-s` narrows inspection when the underlying database reader supports
 schema scoping, and outranks the URL's scope: naming a schema that does not
 exist renders an empty document rather than falling back to the connection's
-own schema. `--format`
+own schema.
+
+A MySQL or MariaDB URL that names no database is the whole server, as the
+community binary reads it
+([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)):
+
+- The run describes every user database, each table under its database.
+- `--schema` names databases, and an exclude pattern is realm-relative, as on a
+  PostgreSQL-family URL with no `search_path`.
+- A foreign key to a table of its own database names the table alone in the
+  JSON format, as the community binary does. One to another database keeps
+  the database, which the community binary drops.
+- The other verbs refuse the URL before connecting.
+
+A URL that names a database reads that database whatever `--schema` says, as
+the community binary does. `--format`
 accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
 `base64url`, `mermaid`, `split`, and `write`. Split-write exports are
 supported for HCL and SQL output with the documented Atlas split strategies:

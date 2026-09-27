@@ -251,6 +251,49 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 	c.Assert(queries[0], qt.Contains, "d.deptype = 'e'")
 }
 
+// TestRealmSchemas_MySQLFamilyListsTheUserDatabases lists a whole server's
+// databases in byte order, and asks for the user databases alone: the server's
+// own are left out by name, as the pinned community binary v1.3.0 leaves them
+// out (stokaro/ptah#3789).
+func TestRealmSchemas_MySQLFamilyListsTheUserDatabases(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			var queries []string
+			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				queries = append(queries, query)
+				return dbtest.QueryResult{
+					Columns: []string{"SCHEMA_NAME"},
+					Rows:    [][]driver.Value{{"r2"}, {"R1"}, {"r1"}},
+				}, nil
+			})
+
+			got, err := schemaselection.RealmSchemas(t.Context(), dialect, capability.ForDialect(dialect), db.SQL)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{"R1", "r1", "r2"})
+			c.Assert(queries, qt.HasLen, 1)
+			c.Assert(queries[0], qt.Contains, "FROM information_schema.SCHEMATA")
+			c.Assert(queries[0], qt.Contains, "'performance_schema'")
+			c.Assert(queries[0], qt.Contains, "'sys'")
+		})
+	}
+}
+
+// TestRealmSchemas_FailurePath has no probe for a dialect whose realm nobody
+// measured, and says so rather than answering no schemas.
+func TestRealmSchemas_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, nil
+	})
+
+	got, err := schemaselection.RealmSchemas(t.Context(), "sqlserver", capability.ForDialect("sqlserver"), db.SQL)
+
+	c.Assert(err, qt.ErrorMatches, `no realm-scope schema probe for dialect "sqlserver"`)
+	c.Assert(got, qt.IsNil)
+}
+
 // errString renders an error for comparison, so the table can carry the wanted
 // message as one field instead of a nil check plus a match in every row.
 func errString(err error) string {
