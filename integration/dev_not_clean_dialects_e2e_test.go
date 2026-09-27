@@ -43,6 +43,8 @@ type devDialectDatabase struct {
 	keepRows     string
 	uncountedDDL []string
 	droppedDDL   []string
+	// viewCount counts the view "v" droppedDDL creates.
+	viewCount string
 }
 
 // exec runs statements on the scratch database.
@@ -112,6 +114,7 @@ func cockroachDevDatabase(c *qt.C) devDialectDatabase {
 		keepDDL:    []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:   "SELECT count(*) FROM keep_me",
 		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		viewCount:  "SELECT count(*) FROM information_schema.views WHERE table_name = 'v'",
 	}
 }
 
@@ -141,6 +144,7 @@ func yugabyteDevDatabase(c *qt.C) devDialectDatabase {
 		keepDDL:    []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:   "SELECT count(*) FROM keep_me",
 		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		viewCount:  "SELECT count(*) FROM information_schema.views WHERE table_name = 'v'",
 	}
 }
 
@@ -161,6 +165,7 @@ func spannerDevDatabase(c *qt.C) devDialectDatabase {
 		keepDDL:    []string{"CREATE TABLE keep_me (id bigint PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:   "SELECT count(*) FROM keep_me",
 		droppedDDL: []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
+		viewCount:  "SELECT count(*) FROM information_schema.views WHERE table_name = 'v'",
 	}
 }
 
@@ -171,11 +176,12 @@ func sqlServerDevDatabase(c *qt.C) devDialectDatabase {
 		"ALTER DATABASE %[1]s SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE %[1]s",
 		replaceSQLServerDatabase)
 	return devDialectDatabase{
-		url:          devURL,
-		conn:         connectDevDialect(c, devURL),
-		keepDDL:      []string{"CREATE TABLE dbo.keep_me (id int PRIMARY KEY)", "INSERT INTO dbo.keep_me VALUES (1)"},
-		keepRows:     "SELECT count(*) FROM dbo.keep_me",
-		uncountedDDL: []string{"CREATE VIEW dbo.v AS SELECT 1 AS id", "CREATE SEQUENCE dbo.s"},
+		url:        devURL,
+		conn:       connectDevDialect(c, devURL),
+		keepDDL:    []string{"CREATE TABLE dbo.keep_me (id int PRIMARY KEY)", "INSERT INTO dbo.keep_me VALUES (1)"},
+		keepRows:   "SELECT count(*) FROM dbo.keep_me",
+		droppedDDL: []string{"CREATE VIEW dbo.v AS SELECT 1 AS id", "CREATE SEQUENCE dbo.s"},
+		viewCount:  "SELECT count(*) FROM sys.views WHERE name = 'v'",
 	}
 }
 
@@ -193,11 +199,12 @@ func clickHouseDevDatabase(c *qt.C) devDialectDatabase {
 		},
 		keepRows: "SELECT toInt64(count()) FROM keep_me",
 		// A materialized view with no TO clause keeps its rows in an
-		// `.inner` table of its own.
-		uncountedDDL: []string{
+		// `.inner` table of its own, which goes with the view.
+		droppedDDL: []string{
 			"CREATE VIEW v AS SELECT 1 AS id",
 			"CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id AS SELECT 1 AS id",
 		},
+		viewCount: "SELECT toInt64(count()) FROM system.tables WHERE database = currentDatabase() AND name = 'v'",
 	}
 }
 
@@ -210,6 +217,9 @@ func oracleDevDatabase(c *qt.C) devDialectDatabase {
 	account := strings.ToUpper(devDialectScratchName())
 	createOracleUser(c.Context(), c, admin, account)
 	c.Cleanup(func() { dropOracleUser(context.Background(), c, admin, account) })
+	// The objects the reset drops besides tables and views, so a test can
+	// leave one of each.
+	execOracle(c.Context(), c, admin, "GRANT CREATE SEQUENCE, CREATE SYNONYM, CREATE TYPE TO "+account)
 	devURL := oracleURLAs(c, adminURL, account)
 	return devDialectDatabase{
 		url:      devURL,
@@ -220,10 +230,11 @@ func oracleDevDatabase(c *qt.C) devDialectDatabase {
 		// list it in USER_OBJECTS, so this row holds without the probe's
 		// BIN$ filter, which mirrors the reset's own object list.
 		uncountedDDL: []string{
-			"CREATE VIEW v AS SELECT 1 AS id FROM dual",
 			"CREATE TABLE gone (id NUMBER)",
 			"DROP TABLE gone",
 		},
+		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id FROM dual"},
+		viewCount:  "SELECT count(*) FROM user_views WHERE view_name = 'V'",
 	}
 }
 
@@ -278,10 +289,9 @@ func TestDevDatabaseClaimRefusesATableOnEveryEngineLive(t *testing.T) {
 }
 
 // TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive is the
-// control: a scratch database holding nothing but objects the check does not
-// count is claimed. On the PostgreSQL family that is nothing at all, since the
-// reset lists every object it drops; on the other engines it is a view and
-// what else each keeps beside it.
+// control: a scratch database holding nothing but what the check does not
+// count is claimed. Every writer lists what its reset drops, so on most
+// engines that is nothing at all; on Oracle it is a table in the recycle bin.
 func TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive(t *testing.T) {
 	for _, engine := range devDialectEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -296,22 +306,24 @@ func TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive(t *testing.T
 	}
 }
 
-// devDialectDroppingEngines are the engines whose reset says what else it
-// drops, with the object each refusal names: the first of a view "v" and a
-// sequence "s" by name, which is the sequence where there is one.
+// devDialectDroppingEngines are the engines checked here with the object each
+// refusal names when the database holds a view "v" beside another object the
+// reset drops: the first of them in the order the engine's reset lists them.
 var devDialectDroppingEngines = []devDialectEngine{
 	{name: "CockroachDB", server: cockroachDevDatabase, reason: `found sequence "s" in schema "public"`},
 	{name: "CockroachDB pinned to public", server: cockroachPinnedDevDatabase, reason: `found sequence "s" in connected schema`},
 	{name: "YugabyteDB", server: yugabyteDevDatabase, reason: `found sequence "s" in schema "public"`},
 	{name: "Spanner", server: spannerDevDatabase, reason: `found view "v" in schema "public"`},
+	{name: "SQL Server", server: sqlServerDevDatabase, reason: `found sequence "s" in schema "dbo"`},
+	{name: "ClickHouse", server: clickHouseDevDatabase, reason: `found materialized view "mv" in schema "ptah_dc_\d+"`},
+	{name: "Oracle", server: oracleDevDatabase, reason: `found view "V" in schema "PTAH_DC_\d+"`},
 }
 
-// TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnThePostgresFamilyLive
-// claims a dev database holding a view, and a sequence where the engine has
-// one, on the PostgreSQL family besides PostgreSQL itself. The reset would
-// drop both, so the claim refuses the database and names one; both are still
-// there (stokaro/ptah#3808).
-func TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnThePostgresFamilyLive(t *testing.T) {
+// TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnEveryEngineLive claims a
+// dev database holding a view and another object the reset drops, on each
+// engine. The claim refuses the database and names one of them, and the view
+// is still there (stokaro/ptah#3808, stokaro/ptah#3851).
+func TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnEveryEngineLive(t *testing.T) {
 	for _, engine := range devDialectDroppingEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -323,8 +335,7 @@ func TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnThePostgresFamilyLive(t *
 			c.Assert(err, qt.ErrorMatches, `connected database is not clean: `+engine.reason+
 				`; Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`)
 			var views int
-			c.Assert(dev.conn.QueryRowContext(c.Context(),
-				"SELECT count(*) FROM information_schema.views WHERE table_name = 'v'").Scan(&views), qt.IsNil)
+			c.Assert(dev.conn.QueryRowContext(c.Context(), dev.viewCount).Scan(&views), qt.IsNil)
 			c.Assert(views, qt.Equals, 1)
 		})
 	}

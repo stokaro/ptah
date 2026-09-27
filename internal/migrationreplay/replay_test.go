@@ -80,10 +80,11 @@ func TestReplay_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
 	c.Assert(rows, qt.Equals, 1)
 }
 
-// TestReplay_ResetsWhatACleanDevDatabaseHolds replays on a dev database holding
-// only a view, which the pinned binary counts as clean. The replay resets it
-// first and last, so neither the view nor the replayed table is left.
-func TestReplay_ResetsWhatACleanDevDatabaseHolds(t *testing.T) {
+// TestReplay_RefusesADevDatabaseThatHoldsAView replays on a dev database
+// holding only a view. The pinned binary counts tables alone and drops the
+// view; the reset drops it too, so the replay refuses first and the view is
+// still there afterwards (stokaro/ptah#3851).
+func TestReplay_RefusesADevDatabaseThatHoldsAView(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
@@ -94,6 +95,28 @@ func TestReplay_ResetsWhatACleanDevDatabaseHolds(t *testing.T) {
 	defer dbschema.CloseAndWarn(conn)
 	_, err = conn.ExecContext(t.Context(), "CREATE VIEW stale_replay_view AS SELECT 1 AS id")
 	c.Assert(err, qt.IsNil)
+
+	err = migrationreplay.Replay(t.Context(), migrationreplay.Options{
+		Dir:       migrationsDir,
+		DirFormat: migrationfile.DirFormatAtlas,
+		DevURL:    "sqlite://" + devDBPath,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found view "stale_replay_view"; .*`)
+	assertSQLiteRealmObjectCount(c, conn, 1)
+}
+
+// TestReplay_LeavesACleanDevDatabaseEmpty replays on an empty dev database and
+// resets it after the last migration, so the replayed table is not left.
+func TestReplay_LeavesACleanDevDatabaseEmpty(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_create_replay_runs.sql"),
+		[]byte("CREATE TABLE replay_runs (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
 
 	err = migrationreplay.Replay(t.Context(), migrationreplay.Options{
 		Dir:       migrationsDir,

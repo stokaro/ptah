@@ -99,10 +99,6 @@ func TestSchemaApplyDevSimulationRunsPlanOnDevDatabase(t *testing.T) {
 	devPath := filepath.Join(dir, "sim-dev.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	seedSQLiteSchema(c, dbPath, `CREATE TABLE sim_users (id INTEGER PRIMARY KEY);`)
-	// Pre-litter the dev database: the simulation must reset it first. The
-	// litter is a view, which a clean dev database may hold; a table refuses
-	// the run, see dev_not_clean_test.go.
-	seedSQLiteSchema(c, devPath, `CREATE VIEW sim_stale AS SELECT 1 AS id;`)
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE sim_users (id INTEGER PRIMARY KEY);
 CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
@@ -122,15 +118,15 @@ CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
 
 	err := cmd.Execute()
 
-	// The dev database is borrowed and handed back: the pre-existing litter is
-	// gone, and so is everything the rehearsal created. The target gets the
-	// plan afterwards, which is what proves the rehearsal was not skipped —
-	// planning it required no dev database, but reaching the apply did.
+	// The dev database is borrowed and handed back: everything the rehearsal
+	// created is gone. The target gets the plan afterwards, which is what
+	// proves the rehearsal was not skipped — planning it required no dev
+	// database, but reaching the apply did. A dev database holding anything
+	// the reset drops refuses the run, see dev_not_clean_test.go.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
 	c.Assert(atlastest.SqliteTableCount(c, devPath, "sim_users"), qt.Equals, 0)
 	c.Assert(atlastest.SqliteTableCount(c, devPath, "sim_orders"), qt.Equals, 0)
-	c.Assert(atlastest.SqliteObjectCount(c, devPath, "sim_stale"), qt.Equals, 0)
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "sim_orders"), qt.Equals, 1)
 }
 
@@ -196,17 +192,19 @@ CREATE TABLE sim_same_orders (id INTEGER PRIMARY KEY);
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "sim_same_orders"), qt.Equals, 0)
 }
 
-// TestSchemaApplyDevURLMustDifferFromAnEmptyTarget is the target that holds no
-// table, which the snapshot takes as clean. The rehearsal resets the dev
-// database destructively, so pointing --dev-url at the target still refuses
-// before anything is dropped or applied. The pinned binary applies here; Ptah
-// is stricter, deliberately.
+// TestSchemaApplyDevURLMustDifferFromAnEmptyTarget is the target that holds
+// nothing the reset drops, only SQLite's own sqlite_sequence, which the
+// snapshot takes as clean. The rehearsal resets the dev database
+// destructively, so pointing --dev-url at the target still refuses before
+// anything is dropped or applied. The pinned binary applies here; Ptah is
+// stricter, deliberately.
 func TestSchemaApplyDevURLMustDifferFromAnEmptyTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sim-same.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
-	seedSQLiteSchema(c, dbPath, `CREATE VIEW sim_same_view AS SELECT 1 AS id;`)
+	seedSQLiteSchema(c, dbPath, "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT);\n"+
+		"INSERT INTO t DEFAULT VALUES;\nDROP TABLE t;")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE sim_same_orders (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
 	out, err := atlastest.RunCompatOutput(
@@ -219,6 +217,6 @@ func TestSchemaApplyDevURLMustDifferFromAnEmptyTarget(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`,
 		qt.Commentf("%s", out))
-	c.Assert(atlastest.SqliteObjectCount(c, dbPath, "sim_same_view"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteObjectCount(c, dbPath, "sqlite_sequence"), qt.Equals, 1)
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "sim_same_orders"), qt.Equals, 0)
 }

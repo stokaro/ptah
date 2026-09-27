@@ -229,19 +229,21 @@ func TestCompatRefusesADevURLNamingTheTargetInAnotherSpellingE2E(t *testing.T) {
 }
 
 // TestCompatRefusesADevURLNamingAnEmptyTargetInAnotherSpellingE2E is the same
-// argv with a target that holds a view and no table, which the snapshot takes
-// as clean. The dev database is reset before the plan is rehearsed, so the
-// identity check refuses the run before anything is dropped, and the view
-// survives. Compared as two dialects, the URLs are distinct and the reset runs
-// (stokaro/ptah#3769).
+// argv with an empty target, which the snapshot takes as clean. The dev
+// database is reset before the plan is rehearsed, so the identity check
+// refuses the run before anything is rehearsed or applied. Compared as two
+// dialects, the URLs are distinct and the reset runs (stokaro/ptah#3769).
+//
+// A view would have been dropped by that reset, so it is refused as not clean
+// first (stokaro/ptah#3851), and a MySQL-family reset keeps nothing the check
+// does not count. The target is read back for what the plan would have
+// created there instead.
 func TestCompatRefusesADevURLNamingAnEmptyTargetInAnotherSpellingE2E(t *testing.T) {
 	for _, pair := range mysqlFamilySpellingPairs {
 		t.Run(pair.name, func(t *testing.T) {
 			c := qt.New(t)
 			server := newMySQLFamilyServer(c, pair.engine)
 			target := server.database(c, "family_guard")
-			_, err := server.admin.ExecContext(c.Context(), "CREATE VIEW `"+target+"`.keep_v AS SELECT 1 AS id")
-			c.Assert(err, qt.IsNil)
 
 			out, err := runCompatVerb("schema", "apply",
 				"--url", server.url(pair.targetScheme, target),
@@ -250,7 +252,7 @@ func TestCompatRefusesADevURLNamingAnEmptyTargetInAnotherSpellingE2E(t *testing.
 				"--auto-approve")
 
 			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
-			c.Assert(server.tables(c, target), qt.Equals, "keep_v")
+			c.Assert(server.tables(c, target), qt.Equals, "")
 		})
 	}
 }

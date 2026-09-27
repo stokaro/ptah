@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -193,6 +194,33 @@ type cleanupObject struct {
 // DropAllTables drops all user tables and views from the configured SQLite schema.
 func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	return w.dropAllTables(ctx, false)
+}
+
+// ResetObjects lists what a reset of the schema drops, through the query the
+// resets run: its tables, virtual tables and views, in the order the reset
+// drops them, views first. A trigger or an index is left out, since it goes
+// with its table, which is listed. The listing includes the revision table, as
+// the realm reset a replay runs does. The objects carry no schema: SQLite has
+// one. The scope is PostgreSQL's and is not read.
+func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
+	var queryer cleanupQueryer
+	switch {
+	case w.conn != nil:
+		queryer = w.conn
+	case w.db != nil:
+		queryer = w.db
+	default:
+		return nil, fmt.Errorf("no database connection")
+	}
+	listed, err := w.listCleanupObjects(ctx, queryer, true)
+	if err != nil {
+		return nil, err
+	}
+	objects := make([]dbreset.Object, 0, len(listed))
+	for _, object := range listed {
+		objects = append(objects, dbreset.Object{Kind: object.Type, Name: object.Name})
+	}
+	return objects, nil
 }
 
 // DropDatabaseRealm removes every user object from a pinned SQLite main
@@ -456,9 +484,15 @@ func (w *Writer) cleanupSchema() string {
 	return w.schema
 }
 
+// cleanupQueryer is the part of a transaction or connection the cleanup
+// listing reads through.
+type cleanupQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 func (w *Writer) listCleanupObjects(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupQueryer,
 	includeRevisionTable bool,
 ) ([]cleanupObject, error) {
 	const query = `

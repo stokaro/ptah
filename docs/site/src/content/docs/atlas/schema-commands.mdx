@@ -1205,9 +1205,10 @@ source is not a database: `sql/migrate: connected database is not clean: found
 table "t" in connected schema`, preceded by `sql/migrate: taking database
 snapshot:` for SQL and migration directories.
 
-On PostgreSQL a view, function, sequence, type or collation is refused the same
-way, `found view "v" in connected schema`, where the pinned binary accepts it;
-see [Compatibility differences](../retained-divergences/#a-dev-database-holding-an-object-the-reset-drops).
+A view, a function, a sequence or anything else the reset drops is refused the
+same way, `found view "v" in connected schema` on PostgreSQL and `found view "v"
+in schema "dev"` on MySQL, where the pinned binary accepts it; see
+[Compatibility differences](../retained-divergences/#a-dev-database-holding-an-object-the-reset-drops).
 
 The dev database must not be the target itself or a database-URL `--to`
 desired state (it is reset destructively), must be directly connectable (no

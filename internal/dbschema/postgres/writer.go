@@ -12,9 +12,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
@@ -1601,15 +1604,6 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, 
 	return w.dropDatabaseRealm(ctx, extensions, schemas)
 }
 
-// ResetObject is something a reset of a dev database drops: an object of one
-// of the reset's schemas, or a large object, which belongs to no schema and
-// has its oid as its name.
-type ResetObject struct {
-	Kind   string
-	Schema string
-	Name   string
-}
-
 // ResetObjects lists what a reset of schemas drops, keeping keptExtensions and
 // everything they own: tables, views, sequences, routines, types, collations
 // and foreign tables, and the default privileges it revokes, sorted by schema,
@@ -1624,8 +1618,8 @@ type ResetObject struct {
 // that refuses a database holding one of them refuses exactly what the reset
 // would remove. An object the reset does not list, such as a text search
 // configuration, is not dropped: the realm cleanup then fails to drop its
-// schema and says so.
-func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, schemas, keptExtensions []string) ([]ResetObject, error) {
+// schema, and its error names the object, in the server's words.
+func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope) ([]dbreset.Object, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
@@ -1633,18 +1627,18 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, schemas, keptExtens
 	if err != nil {
 		return nil, err
 	}
-	collected, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope(schemas, keptExtensions), capabilities)
+	collected, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope(scope.Schemas, scope.KeptExtensions), capabilities)
 	if err != nil {
 		return nil, err
 	}
-	objects := make([]ResetObject, 0, len(collected))
+	objects := make([]dbreset.Object, 0, len(collected))
 	for _, object := range collected {
 		if object.Kind == "constraint" || object.Kind == "index" {
 			continue
 		}
-		objects = append(objects, ResetObject{Kind: object.Kind, Schema: object.Schema, Name: object.Name})
+		objects = append(objects, dbreset.Object{Kind: object.Kind, Schema: object.Schema, Name: object.Name})
 	}
-	slices.SortFunc(objects, func(a, b ResetObject) int {
+	slices.SortFunc(objects, func(a, b dbreset.Object) int {
 		return cmp.Or(cmp.Compare(a.Schema, b.Schema), cmp.Compare(a.Name, b.Name), cmp.Compare(a.Kind, b.Kind))
 	})
 	// The large objects go in the realm cleanup's transaction. A server that
@@ -1662,7 +1656,7 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, schemas, keptExtens
 	case err != nil:
 		return nil, fmt.Errorf("failed to list PostgreSQL large objects: %w", err)
 	}
-	return append(objects, ResetObject{Kind: "large object", Name: strconv.FormatUint(uint64(oid), 10)}), nil
+	return append(objects, dbreset.Object{Kind: "large object", Name: strconv.FormatUint(uint64(oid), 10)}), nil
 }
 
 // UserSchemas returns the database's user schemas, sorted: every schema but
@@ -2348,13 +2342,30 @@ func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) 
 		statement := "DROP SCHEMA IF EXISTS " + quoteIdent(schema) + " RESTRICT"
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf(
-				"failed to drop user schema %q from PostgreSQL database realm: %w",
+				"failed to drop user schema %q from PostgreSQL database realm%s: %w",
 				schema,
+				schemaDependents(err),
 				err,
 			)
 		}
 	}
 	return nil
+}
+
+// schemaDependents names what kept a schema from being dropped, in the
+// server's words, or returns nothing when the server gave none.
+//
+// A schema is dropped with RESTRICT once the objects the cleanup lists are
+// gone, so what remains is an object it does not list, such as a text search
+// configuration. The server's error says only that "other objects depend on
+// it"; the detail it sends beside the error names them, `text search
+// configuration keep_ts depends on schema public`.
+func schemaDependents(err error) string {
+	var serverErr *pgconn.PgError
+	if !errors.As(err, &serverErr) || serverErr.Detail == "" {
+		return ""
+	}
+	return " (" + strings.ReplaceAll(serverErr.Detail, "\n", "; ") + ")"
 }
 
 func restorePostgresSchema(
