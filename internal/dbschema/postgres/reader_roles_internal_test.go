@@ -1292,7 +1292,7 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
 	schema := &catalog.Database{}
 
-	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+	c.Assert(reader.readRolesInto(t.Context(), schema, defaultACLReadable), qt.IsNil)
 
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{
 		"default_privilege_grantee", "default_privilege_role", "policy_named",
@@ -1348,7 +1348,7 @@ func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &catalog.Database{}
 
-			err := reader.readRolesInto(t.Context(), schema)
+			err := reader.readRolesInto(t.Context(), schema, defaultACLReadable)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantMessage)
@@ -1380,7 +1380,7 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
 	schema := &catalog.Database{}
 
-	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+	c.Assert(reader.readRolesInto(t.Context(), schema, defaultACLReadable), qt.IsNil)
 
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, manageableClusterRoleNames())
 	c.Assert(schema.RolesOutOfScope, qt.HasLen, 0,
@@ -1428,7 +1428,7 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &catalog.Database{}
 
-			c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+			c.Assert(reader.readRolesInto(t.Context(), schema, defaultACLReadable), qt.IsNil)
 
 			union := append(roleNames(schema.Roles), roleNames(schema.RolesOutOfScope)...)
 			slices.Sort(union)

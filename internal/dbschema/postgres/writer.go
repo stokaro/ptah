@@ -313,8 +313,12 @@ type postgresCleanupCapabilities struct {
 	inspectDatabaseArtifacts         bool
 	cleanupLargeObjects              bool
 	preservePublicSchema             bool
-	protectedDatabases               []string
-	systemExtensions                 []string
+	// showDefaultPrivileges reads the default privileges to revoke through
+	// SHOW DEFAULT PRIVILEGES rather than pg_default_acl, which is what
+	// CockroachDB needs; see [pgdefaultacl.ReadRevokesFromShow].
+	showDefaultPrivileges bool
+	protectedDatabases    []string
+	systemExtensions      []string
 }
 
 // cleanupConn is the part of a database handle the schema cleanup uses.
@@ -358,8 +362,9 @@ func inspectCleanupCapabilities(
 	switch {
 	case strings.Contains(version, "cockroachdb"):
 		return postgresCleanupCapabilities{
-			preservePublicSchema: true,
-			protectedDatabases:   protectedCockroachDatabases,
+			preservePublicSchema:  true,
+			showDefaultPrivileges: true,
+			protectedDatabases:    protectedCockroachDatabases,
 		}, nil
 	case strings.Contains(version, "yugabytedb"),
 		strings.Contains(version, "yugabyte"),
@@ -400,6 +405,22 @@ func cleanupSystemExtensions(dialect string) []string {
 // The two fields move together and in opposite directions, which is the whole
 // content of this function: the savepoint goes because there is no transaction
 // to roll back inside, and the retry stays because nothing about it needed one.
+// defaultPrivilegeRevokeReader reads the default privileges a cleanup revokes.
+type defaultPrivilegeRevokeReader func(
+	ctx context.Context,
+	q pgdefaultacl.Querier,
+	schemas []string,
+) ([]pgdefaultacl.Revoke, error)
+
+// defaultPrivilegeRevokes picks the read of the default privileges to revoke:
+// SHOW DEFAULT PRIVILEGES on CockroachDB, and pg_default_acl elsewhere.
+func (c postgresCleanupCapabilities) defaultPrivilegeRevokes() defaultPrivilegeRevokeReader {
+	if c.showDefaultPrivileges {
+		return pgdefaultacl.ReadRevokesFromShow
+	}
+	return pgdefaultacl.ReadRevokes
+}
+
 func (c postgresCleanupCapabilities) withoutTransaction() postgresCleanupCapabilities {
 	c.retryFailedDDL = false
 	c.retryFailedDDLWithoutTransaction = true
@@ -571,6 +592,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	ctx context.Context,
 	tx cleanupConn,
 	scope postgresCleanupScope,
+	capabilities postgresCleanupCapabilities,
 ) ([]postgresCleanupObject, error) {
 	if len(scope.schemas) == 0 {
 		return nil, nil
@@ -764,7 +786,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 		return nil, fmt.Errorf("failed to iterate schema objects: %w", err)
 	}
 	// The revokes run after every drop.
-	revokes, err := w.collectDefaultPrivilegeRevokes(ctx, tx, scope.schemas)
+	revokes, err := w.collectDefaultPrivilegeRevokes(ctx, tx, scope.schemas, capabilities.defaultPrivilegeRevokes())
 	if err != nil {
 		return nil, err
 	}
@@ -959,6 +981,11 @@ const defaultPrivilegeKind = "default privilege"
 // is exploded in Go: aclexplode answers no rows on CockroachDB v25.4, so a
 // branch built on it revokes nothing there (stokaro/ptah#3802).
 //
+// On CockroachDB they come from [pgdefaultacl.ReadRevokesFromShow] instead.
+// v26.2.7 refuses every read of pg_default_acl once a default names a role that
+// needs quoting, so a cleanup that read the relation stopped before dropping
+// anything; SHOW DEFAULT PRIVILEGES answers on every line (stokaro/ptah#3816).
+//
 // A server without the relation is not asked, for the reason the cleanup
 // query's optional branches give: a missing relation is a parse failure, and a
 // server without it has no default privilege to revoke (stokaro/ptah#1811).
@@ -966,11 +993,12 @@ func (w *PostgreSQLWriter) collectDefaultPrivilegeRevokes(
 	ctx context.Context,
 	tx cleanupConn,
 	schemas []string,
+	read defaultPrivilegeRevokeReader,
 ) ([]postgresCleanupObject, error) {
 	if !w.caps.Has(capability.CatalogDefaultPrivileges) {
 		return nil, nil
 	}
-	revokes, err := pgdefaultacl.ReadRevokes(ctx, tx, schemas)
+	revokes, err := read(ctx, tx, schemas)
 	if err != nil {
 		return nil, err
 	}
@@ -1824,6 +1852,7 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string)
 		ctx,
 		sqlTx,
 		postgresSchemaCleanupScope([]string{w.schema}, keep),
+		capabilities,
 	)
 	if err != nil {
 		return err
@@ -1874,7 +1903,7 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	if err := w.rejectSchemaScopedExtensions(ctx, w.db, keep); err != nil {
 		return err
 	}
-	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}, keep))
+	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}, keep), capabilities)
 	if err != nil {
 		return err
 	}
@@ -1967,6 +1996,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		ctx,
 		tx,
 		postgresDatabaseCleanupScope(schemas, keptExtensions),
+		capabilities,
 	)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err

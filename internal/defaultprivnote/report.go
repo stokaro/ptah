@@ -7,7 +7,8 @@
 // reader, HCL, YAML and the Go annotation all require a schema and a grantor, so
 // the PostgreSQL-family reader does not describe either kind and records it in
 // [catalog.Database.UndescribedDefaultPrivileges] instead. This package turns
-// that list into the note the read surfaces print.
+// that list into the note the read surfaces print, and also says so when the
+// server refused to show pg_default_acl at all.
 package defaultprivnote
 
 import (
@@ -17,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 )
 
 // ReportUndescribed writes a note naming the default privileges the description
@@ -41,7 +43,11 @@ import (
 // stream"; the note is then dropped. Write errors are dropped too: a diagnostic
 // that fails to print must not fail a read that succeeded.
 func ReportUndescribed(w io.Writer, schema *catalog.Database) {
-	if w == nil || schema == nil || len(schema.UndescribedDefaultPrivileges) == 0 {
+	if w == nil || schema == nil {
+		return
+	}
+	reportRefused(w, schema)
+	if len(schema.UndescribedDefaultPrivileges) == 0 {
 		return
 	}
 	named := make([]string, 0, len(schema.UndescribedDefaultPrivileges))
@@ -59,6 +65,26 @@ func ReportUndescribed(w io.Writer, schema *catalog.Database) {
 			" without IN SCHEMA or FOR ALL ROLES; a description applied to another"+
 			" database does not carry %s: %s.\n",
 		subject, verb, object, strings.Join(named, ", "))
+}
+
+// reportRefused writes the note for a read that could not look at the default
+// privileges at all, which the reader records as [coverage.DefaultPrivilege]
+// not described.
+//
+// The one refusal the reader records is CockroachDB v26.2's: every read of
+// pg_default_acl fails once a default privilege names a role whose name needs
+// quoting (stokaro/ptah#3816). The note says so, and says what follows, because
+// the description is otherwise indistinguishable from one of a database that
+// has no default privileges.
+func reportRefused(w io.Writer, schema *catalog.Database) {
+	if _, refused := schema.NotDescribed.Limit(coverage.DefaultPrivilege); !refused {
+		return
+	}
+	_, _ = fmt.Fprint(w,
+		"note: default privileges are not described, because the server refused to read pg_default_acl,"+
+			" as CockroachDB v26.2 does once a default privilege names a role whose name needs quoting;"+
+			" a comparison leaves them alone, and a description applied to another database does not"+
+			" carry them.\n")
 }
 
 // describe names one default privilege the way the note lists it: the object

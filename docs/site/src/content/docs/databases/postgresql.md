@@ -631,6 +631,14 @@ Run a statement such as
 on the other database yourself. `ptah db drop-all` revokes a CockroachDB
 `FOR ALL ROLES` default in the schemas it cleans, spelled `FOR ALL ROLES`.
 
+CockroachDB v26.2 refuses every read of `pg_default_acl` once a default
+privilege names a role whose name needs quoting, such as one with a dash. On
+such a database `ptah db read` and `schema inspect` describe no default
+privilege and say so in a note on stderr, and a comparison neither plans a
+declared default nor revokes one it could not read. `ptah db drop-all` asks
+CockroachDB's `SHOW DEFAULT PRIVILEGES` for the defaults it revokes, so it
+cleans such a schema too.
+
 A privilege can be limited to columns of a table: `GRANT UPDATE (state,
 decided_at) ON proposals TO app`. Each column is compared on its own against
 `pg_attribute.attacl`, and a column privilege and the table privilege of the

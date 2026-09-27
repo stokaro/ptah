@@ -3616,9 +3616,11 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 // always a fact about the inspected scope rather than about the server.
 //
 // The `scope` CTE the branches join against is defined by readRoles.
-// defaultPrivilegeGrantees is the placeholder list binding the names
-// [Reader.readDefaultPrivilegeGrantees] found, and empty when it found none.
-func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
+// defaultACL says whether the read may ask pg_default_acl; see
+// [Reader.readRoleManagedObjects]. defaultPrivilegeGrantees is the placeholder
+// list binding the names [Reader.readDefaultPrivilegeGrantees] found, and empty
+// when it found none.
+func (r *Reader) rolesInScopeClauses(defaultACL defaultACLAccess, defaultPrivilegeGrantees string) []string {
 	clauses := r.grantRolesInScopeClauses()
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Named by a row-level security policy on a table in scope
@@ -3628,7 +3630,7 @@ func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole`)
 	}
-	if r.caps.Has(capability.CatalogDefaultPrivileges) {
+	if defaultACL == defaultACLReadable {
 		// The role a default privilege in scope applies to
 		// (pg_default_acl.defaclrole). Ptah renders the grantor -- it is FOR
 		// ROLE, and it is half the identity -- so without this branch a
@@ -3777,7 +3779,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.queryRoles(ctx, rolesUsedByScope, catalogAccess)
+	return r.queryRoles(ctx, rolesUsedByScope, catalogAccess, r.defaultACLByCapability())
 }
 
 // readRolesInto performs both role reads and decides which of them the
@@ -3797,7 +3799,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 //
 // The union is re-sorted by name rather than concatenated, so the fuller
 // description is ordered exactly as the single unscoped query ordered it.
-func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, defaultACL defaultACLAccess) error {
 	// Resolved FIRST, before either query, so a malformed value is refused on
 	// every role read and not only on the runs that would have widened the
 	// description. A server whose scoped and unscoped reads happen to agree
@@ -3816,7 +3818,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 		return fmt.Errorf("failed to determine role password visibility: %w", err)
 	}
 
-	described, err := r.queryRoles(ctx, rolesUsedByScope, catalogAccess)
+	described, err := r.queryRoles(ctx, rolesUsedByScope, catalogAccess, defaultACL)
 	if err != nil {
 		return fmt.Errorf("failed to read roles: %w", err)
 	}
@@ -3825,7 +3827,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 	// comparator that is not told so plans CREATE ROLE for them. Read the
 	// complement so "not described" and "not present" stay different answers.
 	// See stokaro/ptah#1267 and stokaro/ptah#1276.
-	outOfScope, err := r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess)
+	outOfScope, err := r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess, defaultACL)
 	if err != nil {
 		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
 	}
@@ -3885,7 +3887,7 @@ func (r *Reader) readRolesOutOfScope(ctx context.Context) ([]catalog.Role, error
 	if err != nil {
 		return nil, err
 	}
-	return r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess)
+	return r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess, r.defaultACLByCapability())
 }
 
 // Membership predicates for the role query, applied against the `used` set the
@@ -3940,6 +3942,7 @@ func (r *Reader) queryRoles(
 	ctx context.Context,
 	membership string,
 	catalogAccess roleAuthCatalogAccess,
+	defaultACL defaultACLAccess,
 ) ([]catalog.Role, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
@@ -3949,7 +3952,7 @@ func (r *Reader) queryRoles(
 		args = append(args, schemaName)
 	}
 	granteePlaceholders := ""
-	if r.caps.Has(capability.CatalogDefaultPrivileges) {
+	if defaultACL == defaultACLReadable {
 		grantees, err := r.readDefaultPrivilegeGrantees(ctx, schemas)
 		if err != nil {
 			return nil, err
@@ -3973,7 +3976,7 @@ func (r *Reader) queryRoles(
 			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
 		),
 		used AS (
-			` + strings.Join(r.rolesInScopeClauses(granteePlaceholders), `
+			` + strings.Join(r.rolesInScopeClauses(defaultACL, granteePlaceholders), `
 			UNION
 			`) + `
 		)
@@ -4637,6 +4640,27 @@ func (r *Reader) readAllViews(ctx context.Context) ([]catalog.View, error) {
 	return views, nil
 }
 
+// defaultACLAccess says whether a read may ask pg_default_acl.
+type defaultACLAccess int
+
+const (
+	// defaultACLUnread leaves the relation alone: the server has none, or it
+	// refused to produce it.
+	defaultACLUnread defaultACLAccess = iota
+	// defaultACLReadable reads it.
+	defaultACLReadable
+)
+
+// defaultACLByCapability is what the preset alone says: readable where the
+// catalog has pg_default_acl. [Reader.readRoleManagedObjects] then asks the
+// server whether it produces the relation.
+func (r *Reader) defaultACLByCapability() defaultACLAccess {
+	if r.caps.Has(capability.CatalogDefaultPrivileges) {
+		return defaultACLReadable
+	}
+	return defaultACLUnread
+}
+
 // readRoleManagedObjects reads what a server's role model carries: the roles
 // themselves, the grants on objects, the memberships between roles, who owns
 // each object, and the defaults a role's new objects get.
@@ -4651,12 +4675,34 @@ func (r *Reader) readAllViews(ctx context.Context) ([]catalog.View, error) {
 // this server has pg_default_acl. A missing relation is a parse failure, so a
 // server that manages roles without that catalog would lose the whole
 // description rather than this one family.
+//
+// A server that has the relation can still refuse to produce it. CockroachDB
+// v26.2.7 refuses every read of pg_default_acl once a default privilege names a
+// role that needs quoting, and failing the read over that would stop `ptah db
+// read`, `schema compare` and everything else at the role read
+// (stokaro/ptah#3816). So the relation is read once before anything asks for
+// it, and a refusal is recorded as [coverage.DefaultPrivilege] not inspected:
+// the description carries no default privilege, the role scoping leaves out
+// the reasons it would have read there, and the comparator withholds what it
+// cannot confirm instead of reading the silence as absence.
 func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Database) error {
 	if !r.caps.Has(capability.RoleManagement) {
 		return nil
 	}
 
-	if err := r.readRolesInto(ctx, schema); err != nil {
+	defaultACL := r.defaultACLByCapability()
+	if defaultACL == defaultACLReadable {
+		readable, err := pgdefaultacl.Readable(ctx, r.db)
+		if err != nil {
+			return fmt.Errorf("failed to read default privileges: %w", err)
+		}
+		if !readable {
+			defaultACL = defaultACLUnread
+			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.DefaultPrivilege))
+		}
+	}
+
+	if err := r.readRolesInto(ctx, schema, defaultACL); err != nil {
 		return err
 	}
 
@@ -4678,7 +4724,7 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 	}
 	schema.ObjectOwners = owners
 
-	if !r.caps.Has(capability.CatalogDefaultPrivileges) {
+	if defaultACL != defaultACLReadable {
 		return nil
 	}
 	defaultPrivileges, err := r.readDefaultPrivileges(ctx)

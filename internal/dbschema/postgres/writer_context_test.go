@@ -176,7 +176,7 @@ func TestWriterDropAllTables_CockroachUsesCatalogOrderWithoutSavepoints(t *testi
 		`DROP TABLE IF EXISTS "public"."users" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 4)
+	c.Assert(db.QueryCount(), qt.Equals, 5)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -459,7 +459,7 @@ func TestWriterDropDatabaseRealm_CockroachPreservesPublicSchemaContainer(t *test
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 9)
+	c.Assert(db.QueryCount(), qt.Equals, 11)
 	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -858,6 +858,69 @@ func TestWriterDropAllTables_UnrevokedDefaultPrivilegeFailurePath(t *testing.T) 
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
 
+// TestWriterDropAllTables_CockroachRevokesWhatShowNamesHappyPath revokes on
+// CockroachDB the defaults SHOW DEFAULT PRIVILEGES names, one statement per
+// grantor, class and grantee however many privileges each holds.
+//
+// CockroachDB v26.2.7 refuses every read of pg_default_acl once a default
+// names a role that needs quoting, so a cleanup reading the relation there
+// revokes nothing and stops (stokaro/ptah#3816); SHOW answers on every line.
+// The rows are what v26.2.7 printed: the FOR ALL ROLES row has no role, PUBLIC
+// is `public`, functions are `routines`, and DROP is a privilege PostgreSQL
+// does not have, which the relation would not have shown at all.
+func TestWriterDropAllTables_CockroachRevokesWhatShowNamesHappyPath(t *testing.T) {
+	c := qt.New(t)
+	var queries, execQueries []string
+	db := dbtest.OpenWithExec(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		queries = append(queries, query)
+		return cockroachShowDefaultPrivilegesQuery(query, args)
+	}, func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		execQueries = append(execQueries, query)
+		return driver.RowsAffected(0), nil
+	})
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(queries[3:], qt.DeepEquals, []string{
+		"SELECT rolname FROM pg_roles ORDER BY rolname",
+		`SHOW DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA "public"`,
+		`SHOW DEFAULT PRIVILEGES FOR ROLE "d-dash", "d_owner" IN SCHEMA "public"`,
+	})
+	c.Assert(execQueries, qt.DeepEquals, []string{
+		`ALTER DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA "public" REVOKE ALL PRIVILEGES ON SEQUENCES FROM "d_reader"`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TYPES FROM "d-dash"`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON FUNCTIONS FROM PUBLIC`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM "d_reader"`,
+	})
+	c.Assert(db.CommitCount(), qt.Equals, 1)
+}
+
+// cockroachShowDefaultPrivilegesQuery plays CockroachDB v26.2.7 for a cleanup
+// whose schema holds only default privileges, answering SHOW DEFAULT
+// PRIVILEGES as that server did.
+func cockroachShowDefaultPrivilegesQuery(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	switch {
+	case strings.Contains(query, postgresRoleNamesMarker):
+		return postgresRoleNamesResult([][]driver.Value{{"d-dash"}, {"d_owner"}}), nil
+	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker+" FOR ALL ROLES"):
+		return postgresShowDefaultPrivilegesResult([][]driver.Value{
+			{nil, true, "sequences", "d_reader", "USAGE", false},
+		}), nil
+	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker):
+		return postgresShowDefaultPrivilegesResult([][]driver.Value{
+			{"d_owner", false, "routines", "public", "EXECUTE", false},
+			{"d_owner", false, "tables", "d_reader", "DROP", false},
+			{"d_owner", false, "tables", "d_reader", "INSERT", false},
+			{"d_owner", false, "tables", "d_reader", "SELECT", false},
+			{"d_owner", false, "types", "d-dash", "USAGE", true},
+		}), nil
+	default:
+		return postgresCleanupCatalogQuery(query, "CockroachDB CCL v26.2.7", nil)
+	}
+}
+
 // postgresDefaultACLCleanupQuery answers a cleanup whose schema holds nothing
 // but the default privileges acls names, one pg_default_acl row each.
 func postgresDefaultACLCleanupQuery(acls [][]driver.Value) dbtest.QueryHandler {
@@ -1117,6 +1180,10 @@ func (q *postgresRealmQuery) query(
 		}, nil
 	case strings.Contains(query, postgresDefaultACLMarker):
 		return postgresDefaultACLResult(q.defaultACLs), nil
+	case strings.Contains(query, postgresRoleNamesMarker):
+		return postgresRoleNamesResult(nil), nil
+	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker):
+		return postgresShowDefaultPrivilegesResult(nil), nil
 	case strings.Contains(query, "aclexplode"):
 		rows, named := q.schemaPrivileges[schema]
 		if !named {
@@ -1222,6 +1289,10 @@ func postgresCleanupCatalogQuery(
 		return noPostgresCrossSchemaPartitionEdges(), nil
 	case strings.Contains(query, postgresDefaultACLMarker):
 		return postgresDefaultACLResult(nil), nil
+	case strings.Contains(query, postgresRoleNamesMarker):
+		return postgresRoleNamesResult(nil), nil
+	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker):
+		return postgresShowDefaultPrivilegesResult(nil), nil
 	default:
 		return dbtest.QueryResult{
 			Columns: []string{"object_kind", "object_schema", "object_name", "object_qualifier", "drop_statement"},
@@ -1233,6 +1304,28 @@ func postgresCleanupCatalogQuery(
 // postgresDefaultACLMarker is what the cleanup's default privilege query
 // selects and no other statement the writer sends does: the ACL, whole.
 const postgresDefaultACLMarker = "array_to_json(d.defaclacl)"
+
+// postgresRoleNamesMarker is the role list the CockroachDB cleanup reads to
+// ask SHOW DEFAULT PRIVILEGES about every role.
+const postgresRoleNamesMarker = "SELECT rolname FROM pg_roles ORDER BY rolname"
+
+// postgresRoleNamesResult answers the role list, one role per row.
+func postgresRoleNamesResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{Columns: []string{"rolname"}, Rows: rows}
+}
+
+// postgresShowDefaultPrivilegesMarker is what every statement the CockroachDB
+// cleanup reads its default privileges with starts with.
+const postgresShowDefaultPrivilegesMarker = "SHOW DEFAULT PRIVILEGES"
+
+// postgresShowDefaultPrivilegesResult answers SHOW DEFAULT PRIVILEGES in the
+// columns CockroachDB gives it, one row per privilege.
+func postgresShowDefaultPrivilegesResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{"role", "for_all_roles", "object_type", "grantee", "privilege_type", "is_grantable"},
+		Rows:    rows,
+	}
+}
 
 // postgresDefaultACLResult answers the cleanup's default privilege query, one
 // row per pg_default_acl row: schema, grantor, class code, class keyword and
