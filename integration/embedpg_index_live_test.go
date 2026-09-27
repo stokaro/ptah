@@ -306,7 +306,7 @@ func indexNames(c *qt.C, ctx context.Context, db *sql.DB, table string) []string
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	names := []string{}
+	names := make([]string, 0)
 	for rows.Next() {
 		var name string
 		c.Assert(rows.Scan(&name), qt.IsNil)

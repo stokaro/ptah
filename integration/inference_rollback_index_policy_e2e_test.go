@@ -131,6 +131,7 @@ func newRollbackIndexFixture(
 	// The test controls index readiness independently from freshness. Record
 	// the successful freshness measurement and a live maintenance window while
 	// deliberately leaving the destination index absent.
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET verified_at = clock_timestamp(),
 			maintained_until = clock_timestamp() + interval '1 hour'
@@ -144,6 +145,7 @@ func newRollbackIndexFixture(
 	const current = "current-generation"
 	registerBareGenerationInColumn(
 		c, ctx, db, currentPath, current, currentDocument.column)
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = db.ExecContext(ctx, `INSERT INTO `+embedstore.PointerTable+` (
 		target_schema, target_table, active_generation, previous_generation,
 		cut_over_at, cut_over_by)

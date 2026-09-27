@@ -25,7 +25,7 @@ const futureManagedDataLayerMediaType = "application/vnd.stokaro.ptah.managed-da
 // unreachableDatabaseURL is a database nothing answers on. It is the instrument
 // rather than the subject: a run that reports this address has opened a
 // connection, and a run that reports the artifact has not.
-const unreachableDatabaseURL = "postgres://ptah:ptah@127.0.0.1:1/ptah?sslmode=disable&connect_timeout=1"
+const unreachableDatabaseURL = "postgres://ptah:ptah@127.0.0.1:1/ptah?sslmode=disable&connect_timeout=1" // #nosec G101 -- made-up credentials for a port nothing listens on
 
 // TestSchemaArtifactFromANewerPtahRefusesBeforeTheDatabaseE2E is the row
 // stokaro/ptah-operator#41 carries: an executor meets an artifact built by a

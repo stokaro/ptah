@@ -64,7 +64,7 @@ func runReferenceHelper(arguments []string) int {
 		if len(arguments) != 2 {
 			return 2
 		}
-		// #nosec G304 -- referenceCapture is fixed under the caller-controlled temporary working directory.
+		// #nosec G304 G703 -- referenceCapture is fixed under the caller-controlled temporary working directory.
 		if err := os.WriteFile(referenceCapture, []byte(arguments[1]), 0o600); err != nil {
 			return 2
 		}
@@ -730,8 +730,7 @@ func runInspect(c *qt.C, binary, configPath string) commandResult {
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	err := command.Run()
-	var exitError *exec.ExitError
-	if errors.As(err, &exitError) {
+	if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 		return commandResult{code: exitError.ExitCode(), stdout: stdout.String(), stderr: stderr.String()}
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s schema inspect: %s", binary, stderr.String()))
@@ -753,8 +752,7 @@ func runProjectCommand(c *qt.C, binary, configPath string, arguments ...string) 
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	err := command.Run()
-	var exitError *exec.ExitError
-	if errors.As(err, &exitError) {
+	if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 		return commandResult{code: exitError.ExitCode(), stdout: stdout.String(), stderr: stderr.String()}
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s %s: %s", binary, strings.Join(arguments, " "), stderr.String()))
@@ -806,7 +804,7 @@ func requireAtlasReference(t *testing.T) string {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run project-data conformance",
 			referenceEnv, referenceVersion)
 	}
-	// #nosec G204 -- the operator supplies the pinned reference path.
+	// #nosec G204 G702 -- the operator supplies the pinned reference path.
 	output, err := exec.Command(reference, "version").Output()
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)

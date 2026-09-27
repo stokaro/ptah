@@ -42,7 +42,7 @@ func TestPostgresLiveRoleReadBySchemaOwnerWithoutProtectedCatalogAccess(t *testi
 	ownerName := fmt.Sprintf("ptah_lpr_owner_%d", suffix)
 	roleName := fmt.Sprintf("ptah_lpr_role_%d", suffix)
 	schemaName := fmt.Sprintf("ptah_lpr_schema_%d", suffix)
-	const password = "PtahLeastPrivilege_42"
+	const password = "PtahLeastPrivilege_42" // #nosec G101 -- the password of a role this test creates and drops
 	const roleComment = "least-privilege role comment"
 
 	c.Cleanup(func() {

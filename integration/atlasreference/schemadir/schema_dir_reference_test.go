@@ -7,12 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"ptah.run/internal/atlasreference"
-	"ptah.run/internal/clirun"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 )
 
 // referenceEnv names the environment variable holding the path to the pinned
@@ -200,8 +201,7 @@ func runForExitCode(c *qt.C, binary string, args ...string) int {
 	c.Helper()
 
 	out, err := exec.Command(binary, args...).CombinedOutput()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return exitErr.ExitCode()
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s %s\n%s", binary, strings.Join(args, " "), out))

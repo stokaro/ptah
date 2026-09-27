@@ -111,7 +111,7 @@ func phaseOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 
 // phaseFixture builds a database of its own with an index-declaring
 // specification, so every phase of the walk has a verb that reaches it.
-func phaseFixture(c *qt.C, ctx context.Context, dbURL string) (string, string) {
+func phaseFixture(c *qt.C, ctx context.Context, dbURL string) (databaseURL, specPath string) {
 	c.Helper()
 	admin, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)

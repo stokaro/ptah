@@ -257,7 +257,7 @@ func interruptQueryStrings(c *qt.C, ctx context.Context, db *sql.DB, query strin
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	values := []string{}
+	values := make([]string, 0)
 	for rows.Next() {
 		var value string
 		c.Assert(rows.Scan(&value), qt.IsNil)
@@ -296,6 +296,7 @@ func runTargetInterruptedDuringSleep(
 	c.Helper()
 
 	var stdout, stderr bytes.Buffer
+	// #nosec G204 -- the program is the binary clirun.Build compiled from this module, and args come from the test.
 	cmd := exec.CommandContext(ctx, clirun.Build(c, target), args...)
 	cmd.Dir = f.workDir
 	cmd.Stdout = &stdout

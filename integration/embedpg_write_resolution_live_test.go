@@ -270,7 +270,7 @@ func commitReturningError(
 // storedVector reads one row's vector and the generation it is tagged with.
 func storedVector(
 	c *qt.C, ctx context.Context, db *sql.DB, table, column string,
-) (string, string) {
+) (vectorText, generationText string) {
 	c.Helper()
 	var vector, generation sql.NullString
 	// #nosec G201 -- a column name this test chose.

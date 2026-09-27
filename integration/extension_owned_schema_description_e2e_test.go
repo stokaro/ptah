@@ -151,7 +151,7 @@ func extensionOwnedSchemas(
 // of the extension's information catalog, and a check that looked only at
 // tables would have called that read clean.
 func postgresRelationSchemas(read *catalog.Database) []string {
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, table := range read.Tables {
 		seen[table.Schema] = true
 	}

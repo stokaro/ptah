@@ -433,6 +433,6 @@ func withImmutableMode(c *qt.C, specPath string) string {
 	rewritten := strings.Replace(string(body), "  mode: outbox", "  mode: immutable", 1)
 	c.Assert(rewritten, qt.Not(qt.Equals), string(body))
 	path := filepath.Join(c.TempDir(), "immutable-spec.yaml")
-	c.Assert(os.WriteFile(path, []byte(rewritten), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(rewritten), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	return path
 }

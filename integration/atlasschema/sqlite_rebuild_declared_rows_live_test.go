@@ -361,7 +361,7 @@ func rebuildRowsCountries(c *qt.C, ctx context.Context, conn *dbschema.DatabaseC
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	codes := []string{}
+	codes := make([]string, 0)
 	for rows.Next() {
 		code := ""
 		c.Assert(rows.Scan(&code), qt.IsNil)

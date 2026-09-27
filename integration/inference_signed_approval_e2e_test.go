@@ -205,7 +205,7 @@ func planText(c *qt.C, planPath string) string {
 // planFieldFrom reads one `name: value` line out of a rendered cutover plan.
 func planFieldFrom(c *qt.C, plan, name string) string {
 	c.Helper()
-	for _, line := range strings.Split(plan, "\n") {
+	for line := range strings.SplitSeq(plan, "\n") {
 		value, found := strings.CutPrefix(line, name+": ")
 		for range onlyWhenFound(found) {
 			return strings.TrimSpace(value)
@@ -322,6 +322,6 @@ func writeUnapprovedCLISpec(c *qt.C, endpoint string) string {
 	c.Assert(document, qt.Not(qt.Equals), string(source))
 
 	path := filepath.Join(c.TempDir(), "unapproved-spec.yaml")
-	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	return path
 }

@@ -205,6 +205,7 @@ func dropRmGuardSchema(c *qt.C, ctx context.Context, db *sql.DB, schema string) 
 // reading.
 func rmGuardAppliedVersions(c *qt.C, ctx context.Context, db *sql.DB, schema, table string) []int64 {
 	c.Helper()
+	// #nosec G202 -- schema and table name this test's own objects, quoted by quoteE2EIdent.
 	rows, err := db.QueryContext(ctx,
 		"SELECT version FROM "+quoteE2EIdent(schema)+"."+quoteE2EIdent(table)+
 			" WHERE state = 'applied' ORDER BY version")

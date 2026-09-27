@@ -365,9 +365,9 @@ func oracleConvergenceNodes(declared *schemamodel.Database) []ast.Node {
 // single statement too, so both have to go.
 func splitOracleStatements(rendered string) []string {
 	var statements []string
-	for _, chunk := range strings.Split(rendered, ";\n") {
+	for chunk := range strings.SplitSeq(rendered, ";\n") {
 		var kept []string
-		for _, line := range strings.Split(strings.TrimSpace(chunk), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(chunk), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "--") {
 				continue
 			}
