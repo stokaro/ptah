@@ -69,7 +69,7 @@ func TestGrantOptionGhost_LiveConverges(t *testing.T) {
 			declared := &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
 				Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INT", Primary: true}},
-				Roles:  []schemamodel.Role{{StructName: "Reader", Name: role}},
+				Roles:  []schemamodel.Role{{StructName: "Reader", Name: role, Inherit: true}},
 			}
 
 			live, err := conn.Reader().ReadSchemaContext(c.Context())

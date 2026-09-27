@@ -59,7 +59,7 @@ func TestGrantOptionConflict_LiveRefusesBeforeGranting(t *testing.T) {
 			desired := &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
 				Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "INT", Primary: true}},
-				Roles:  []schemamodel.Role{{StructName: "Reader", Name: role}},
+				Roles:  []schemamodel.Role{{StructName: "Reader", Name: role, Inherit: true}},
 				Grants: []schemamodel.Grant{
 					{StructName: "Reader", Role: role, Privileges: []string{"SELECT"}, OnTable: "orders"},
 					{StructName: "Reader", Role: role, Privileges: []string{"INSERT"}, OnTable: "orders", WithOption: true},
