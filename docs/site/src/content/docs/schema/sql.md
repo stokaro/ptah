@@ -170,6 +170,37 @@ deferrable key yet
 the clauses PostgreSQL takes for the index behind a key, `WITH (...)` and
 `USING INDEX TABLESPACE`. A `CHECK` cannot be deferrable.
 
+## Clauses after a constraint or a key
+
+A table element may end in clauses that build what the element builds without
+them. The reader takes these and changes nothing:
+
+- `ENFORCED` after a `CHECK`, and after a foreign key on PostgreSQL. MySQL
+  takes it after a `CHECK` only, and MariaDB not at all.
+- `NOT VALID` after a `CHECK` or a foreign key in a PostgreSQL `CREATE TABLE`,
+  where the server records the constraint as validated.
+- `MATCH SIMPLE` after `REFERENCES` and its columns, before `ON DELETE` and
+  `ON UPDATE`.
+- On MySQL and MariaDB, the index options `VISIBLE`, MariaDB's `NOT IGNORED`,
+  and `USING BTREE` or `USING HASH` after a key's parts. A method written
+  there is the one `KEY k USING HASH (a)` asks for, and the later clause wins.
+
+Clauses that declare something the model has no field for are refused by name
+([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)):
+`NOT ENFORCED`, `MATCH FULL` and `MATCH PARTIAL`, `NOT VALID` in
+`ALTER TABLE ... ADD`, and the index options `COMMENT`, `INVISIBLE`,
+`IGNORED`, `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
+`USING HASH` after a primary key is refused too. So is a clause a dialect's
+server refuses, such as `ENFORCED` after a `UNIQUE`:
+
+```sql
+CREATE TABLE t (a int, KEY k (a) COMMENT 'lookup');
+```
+
+```text
+COMMENT at position 33: an index comment is not kept on MySQL and MariaDB: Ptah writes none and reads none back (stokaro/ptah#3853); declare the key without it
+```
+
 ## Change a table after creating it
 
 A schema file is read as the script it is. An `ALTER TABLE` after the
@@ -443,11 +474,11 @@ CREATE TABLE "pets" (
   first word rather than read as another column:
 
   ```sql
-  CREATE TABLE t (a integer, CHECK (a > 0) NOT ENFORCED);
+  CREATE TABLE t (a integer, CHECK (a > 0) NO INHERIT);
   ```
 
   ```text
-  unexpected NOT after a table element at position 41: expected ',' or ')'
+  unexpected NO after a table element at position 41: expected ',' or ')'
   ```
 - A constraint name on `DEFAULT` is refused. Ptah keeps a name on `NOT NULL`,
   `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY` where the dialect's grammar

@@ -41,6 +41,10 @@ type Parser struct {
 	// indexAccessMethod is the USING clause the element being read asked for,
 	// and it lives here for the same reason.
 	indexAccessMethod string
+	// addingConstraint is set while ALTER TABLE ... ADD reads a constraint,
+	// where `NOT VALID` leaves the rows already in the table unchecked; in a
+	// CREATE TABLE there are none, and the clause changes nothing.
+	addingConstraint bool
 	// columnChecks are the CHECKs the table body being read wrote on its
 	// columns, the ones read at table level included. MySQL's rule for them
 	// needs every column of the table, so they are checked once the body is
@@ -2915,6 +2919,8 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 	// The constraint a deferral clause belongs to: PostgreSQL attaches one to
 	// the constraint written just before it.
 	last := columnClause{}
+	// Whether that constraint was a CHECK, which ENFORCED may follow.
+	lastCheck := false
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
@@ -2928,6 +2934,12 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 		}
 
 		keyword := strings.ToUpper(p.current.Value)
+		if p.isColumnAttribute(keyword) {
+			if err := p.parseColumnAttribute(columnClauseKind(last, lastCheck)); err != nil {
+				return err
+			}
+			continue
+		}
 		if keyword == "DEFERRABLE" || keyword == "INITIALLY" || (keyword == "NOT" && p.nextIsDeferrable()) {
 			if err := p.parseColumnDeferral(column, last); err != nil {
 				return err
@@ -2940,11 +2952,13 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 			}
 		}
 		before := snapshotColumnClauses(table, column)
+		checks := p.markColumnChecks(column)
 		err = p.parseColumnConstraintOrAttribute(table, column, keyword)
 		if err != nil {
 			return err
 		}
 		last = before.clauseRead(table, column)
+		lastCheck = p.markColumnChecks(column) != checks
 	}
 
 	return nil
@@ -3830,6 +3844,9 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 		fkRef.Columns = columnNames
 	}
 
+	if err := p.readMatchType(); err != nil {
+		return nil, err
+	}
 	if err := p.parseReferentialActions(fkRef); err != nil {
 		return nil, err
 	}
@@ -4950,6 +4967,15 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	if err != nil {
 		return nil, nil, err
 	}
+	// Before the unique-index decision below, which reads the access method a
+	// USING clause after the parts asks for.
+	optionKind := tableElementKind(constraint)
+	if isIndex {
+		optionKind = indexElement
+	}
+	if err := p.readKeyOptions(optionKind, indexMethod); err != nil {
+		return nil, nil, err
+	}
 
 	// Only a real constraint is asked. ast.PrimaryKeyConstraint is the zero
 	// value of ConstraintType, and the KEY/INDEX branch never sets a type, so
@@ -4973,6 +4999,9 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	}
 	parserName, err := p.indexParserName(indexMethod)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := p.readKeyOptions(kind, indexMethod); err != nil {
 		return nil, nil, err
 	}
 
@@ -5986,7 +6015,9 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 	p.skipWhitespace()
 
 	if p.isAlterAddConstraintStart() {
+		p.addingConstraint = true
 		constraint, index, err := p.parseTableConstraint()
+		p.addingConstraint = false
 		if err != nil {
 			return nil, err
 		}

@@ -315,16 +315,16 @@ func TestParse_UnreadClauseAfterATableElement_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "NOT VALID after a CHECK",
+			name:    "NOT NULL after a CHECK",
 			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, CHECK (a > 0) NOT VALID);",
+			sql:     "CREATE TABLE c (a int, CHECK (a > 0) NOT NULL);",
 			wantErr: `unexpected NOT after a table element at position 37: expected ',' or '\)'`,
 		},
 		{
-			name:    "MATCH FULL after a foreign key",
+			name:    "MATCH after a foreign key's actions",
 			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) MATCH FULL);",
-			wantErr: `unexpected MATCH after a table element at position 57: expected ',' or '\)'`,
+			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) ON DELETE CASCADE MATCH SIMPLE);",
+			wantErr: `unexpected MATCH after a table element at position 75: expected ',' or '\)'`,
 		},
 		{
 			name:    "NO INHERIT after a CHECK",
@@ -339,16 +339,16 @@ func TestParse_UnreadClauseAfterATableElement_FailurePath(t *testing.T) {
 			wantErr: `unexpected USING after a table element at position 33: expected ',' or '\)'`,
 		},
 		{
-			name:    "NOT ENFORCED after a MySQL CHECK",
-			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, CONSTRAINT ck CHECK (a > 0) NOT ENFORCED);",
-			wantErr: `unexpected NOT after a table element at position 51: expected ',' or '\)'`,
+			name:    "a MariaDB index option for another engine",
+			dialect: platform.MariaDB,
+			sql:     "CREATE TABLE c (a int, KEY k (a) CLUSTERING = YES);",
+			wantErr: `unexpected CLUSTERING after a table element at position 33: expected ',' or '\)'`,
 		},
 		{
-			name:    "an index option after a MySQL key",
-			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, KEY k (a) INVISIBLE);",
-			wantErr: `unexpected INVISIBLE after a table element at position 33: expected ',' or '\)'`,
+			name:    "an index option on PostgreSQL",
+			dialect: platform.Postgres,
+			sql:     "CREATE TABLE c (a int, UNIQUE (a) VISIBLE);",
+			wantErr: `unexpected VISIBLE after a table element at position 34: expected ',' or '\)'`,
 		},
 	}
 	for _, test := range tests {
