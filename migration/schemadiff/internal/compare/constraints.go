@@ -10,6 +10,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -441,7 +442,7 @@ func declaredAndCheckConstraints(
 func declaredConstraint(
 	constraint schemamodel.Constraint, tables []schemamodel.Table, semantics identifier.Semantics,
 ) (schemamodel.Constraint, tableMemberKey) {
-	constraint.Table = generatedConstraintTableName(constraint, tables)
+	constraint.Table = constraintowner.TableName(constraint, tables)
 	return constraint, newDeclaredConstraintKey(constraint, semantics)
 }
 

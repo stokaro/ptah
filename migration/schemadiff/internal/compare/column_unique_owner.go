@@ -6,11 +6,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
-	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
 )
 
@@ -52,7 +50,7 @@ type columnKeys struct {
 // Which key a column accounts for is the one named as the server names a
 // column's own UNIQUE, on an engine whose rule is measured; see
 // [columnkey.Name]. The name the server tries first gives way to a name the
-// desired state holds; see [desiredKeyNames]. A key over the column alone under
+// desired state holds; see [columnkey.Taken]. A key over the column alone under
 // another name is not the column's: it is planned for removal, and the
 // column's key is added under the server's name, as Atlas CE v1.3.0 plans it
 // (stokaro/ptah#3723). On the other engines it is the key named after the
@@ -118,51 +116,16 @@ func readColumnKeys(
 
 // ownKeyName answers the name the server of dialect gives the own UNIQUE of
 // column on table, and false on an engine whose naming [columnkey.Named] does
-// not measure. The name gives way to the names the desired state holds; see
-// [desiredKeyNames].
+// not measure. The name gives way to the names the desired state holds, by
+// [columnkey.Taken], the rule the SQL reader follows too.
 //
 // The comparison pairs the column's key with the database key of this name,
 // and a planner adds the key under it; see
 // [difftypes.TableDiff.ColumnKeyNames]. One function answers both, so a plan
 // adds the key the next comparison reads as the column's.
 func ownKeyName(desired *schemamodel.Database, table schemamodel.Table, column, dialect string) (string, bool) {
-	return columnkey.Name(dialect, table.Name, column, desiredKeyNames(desired, table, dialect))
-}
-
-// desiredKeyNames reports whether a name the desired state holds keeps the
-// own UNIQUE of a column of table from the name the server tries first; see
-// [columnkey.Name].
-//
-// On MySQL and MariaDB that is an index name of the table: an index, a UNIQUE
-// constraint, or the primary key's reserved PRIMARY. On PostgreSQL it is a
-// relation or a constraint anywhere in the table's schema, as the SQL reader
-// reads them when it names a constraint the same way. A column's own UNIQUE
-// holds a name in both, and none is counted here: the column whose name is
-// asked for would count its own, and another column's is `<column>` or
-// `<table>_<column>_key` of a different column.
-func desiredKeyNames(desired *schemamodel.Database, table schemamodel.Table, dialect string) func(string) bool {
-	if platform.NormalizeDialect(dialect) == platform.Postgres {
-		databases := []*schemamodel.Database{desired}
-		constraints := pgname.ConstraintNames(databases, table.Schema)
-		relations := pgname.RelationNames(databases, table.Schema)
-		return func(name string) bool { return constraints.Taken(name) || relations.Taken(name) }
-	}
-	names := []string{"PRIMARY"}
-	owners := schemamodel.ResolveIndexTableNames(desired.Indexes, desired.Tables)
-	for position, index := range desired.Indexes {
-		if owners[position] == table.QualifiedName() {
-			names = append(names, index.Name)
-		}
-	}
-	for _, constraint := range desired.Constraints {
-		if strings.EqualFold(constraint.Type, "UNIQUE") &&
-			generatedConstraintTableName(constraint, desired.Tables) == table.QualifiedName() {
-			names = append(names, constraint.Name)
-		}
-	}
-	return func(name string) bool {
-		return slices.ContainsFunc(names, func(held string) bool { return columnkey.Same(dialect, held, name) })
-	}
+	taken := columnkey.Taken(dialect, []*schemamodel.Database{desired}, table)
+	return columnkey.Name(dialect, table.Name, column, taken)
 }
 
 // uniqueColumn is a column the desired state declares UNIQUE, with its table.

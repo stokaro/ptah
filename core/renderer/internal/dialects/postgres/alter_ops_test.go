@@ -192,3 +192,20 @@ func TestVisitCreateSchema_PostgresStillCommentsTheSchema(t *testing.T) {
 	c.Assert(out, qt.Contains, `COMMENT ON SCHEMA "app" IS 'the schema';`)
 	c.Assert(out, qt.Not(qt.Contains), "skipped")
 }
+
+// PostgreSQL's ALTER TABLE has no RENAME INDEX; the engine renames an index
+// with ALTER INDEX. The operation is refused rather than written as SQL the
+// server rejects.
+func TestPostgres_AlterTable_RenameIndexIsRefused(t *testing.T) {
+	c := qt.New(t)
+	r := postgres.New()
+	r.Reset()
+	alter := &ast.AlterTableNode{
+		Name:       "users",
+		Operations: []ast.AlterOperation{&ast.RenameIndexOperation{From: "email", To: "users_email_uq"}},
+	}
+
+	err := alter.Accept(r)
+
+	c.Assert(err, qt.ErrorMatches, `unknown alter operation type: \*ast.RenameIndexOperation`)
+}

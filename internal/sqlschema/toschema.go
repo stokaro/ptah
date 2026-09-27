@@ -1133,7 +1133,9 @@ func applyAlterOperation(
 	case *ast.DropConstraintOperation:
 		return applyDropConstraint(target, typed)
 	case *ast.RenameConstraintOperation:
-		return applyRenameConstraint(target, typed)
+		return applyRenameConstraint(database, target, typed)
+	case *ast.RenameIndexOperation:
+		return applyRenameIndex(database, target, typed)
 	case *ast.RenameTableOperation:
 		return fmt.Errorf(
 			"%w: ALTER TABLE %s RENAME TO %s: every other declaration names the table by its old name; "+

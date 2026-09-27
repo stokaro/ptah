@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlcheck"
 	"ptah.run/internal/mysqlname"
 )
@@ -460,9 +461,13 @@ func expressionMentions(target alterTarget, expression, column string) bool {
 //
 // A name is looked for wherever the model keeps one: a table constraint or
 // index, the primary key, and the foreign key and CHECK a column carries. A
-// name no declaration gave -- the one a server generates for an unnamed
-// constraint -- is not in the model, so dropping it is refused rather than
-// guessed at, unless the statement says IF EXISTS.
+// column's own UNIQUE is found by the name the server gives it, as the
+// comparison finds it; see [alterTarget.columnWithKey]. `DROP INDEX b` on
+// MySQL and MariaDB and `DROP CONSTRAINT c_b_key` on PostgreSQL drop the key
+// of `b int UNIQUE`, and the column is no longer UNIQUE. Any other name no
+// declaration gave -- the one a server generates for an unnamed constraint --
+// is not in the model, so dropping it is refused rather than guessed at,
+// unless the statement says IF EXISTS.
 func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperation) error {
 	if operation.PrimaryKey {
 		if len(target.table.PrimaryKey) == 0 && !target.hasPrimaryField() {
@@ -486,6 +491,14 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		}
 		return nil
 	}
+	// DROP FOREIGN KEY and DROP CHECK name no unique key; the servers answer
+	// that the key does not exist.
+	if !operation.ForeignKey && !operation.Check {
+		if field := target.columnWithKey(name); field != nil {
+			field.Unique = false
+			return nil
+		}
+	}
 	if operation.IfExists {
 		return nil
 	}
@@ -494,16 +507,154 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		target.written, operation.ConstraintName)
 }
 
-// applyRenameConstraint renames a constraint the schema declares by name.
-func applyRenameConstraint(target alterTarget, operation *ast.RenameConstraintOperation) error {
+// applyRenameConstraint renames a constraint the schema declares by name, or a
+// column's own UNIQUE by the name the server gives it; see
+// [alterTarget.nameColumnKey].
+func applyRenameConstraint(database *schemamodel.Database, target alterTarget, operation *ast.RenameConstraintOperation) error {
 	from, to := normalizeSQLIdentifier(target.sourcePlatform, operation.From),
 		normalizeSQLIdentifier(target.sourcePlatform, operation.To)
 	if target.renameNamedConstraint(from, to) {
 		return nil
 	}
+	if field := target.columnWithKey(from); field != nil {
+		return target.nameColumnKey(database, field, operation.To, "RENAME CONSTRAINT "+operation.From)
+	}
 	return fmt.Errorf(
 		"ALTER TABLE %s RENAME CONSTRAINT %s names a constraint this schema does not declare by that name",
 		target.written, operation.From)
+}
+
+// applyRenameIndex renames an index of the table, as MySQL and MariaDB read
+// `RENAME {INDEX | KEY} old TO new`: an index the table declares, a UNIQUE
+// constraint, which is an index there, or a column's own UNIQUE by the name
+// the server gives it; see [alterTarget.nameColumnKey].
+//
+// A name the table's indexes already hold is refused, as the servers refuse it
+// with `ERROR 1061 (42000): Duplicate key name`, and so is a name the table
+// has no index under.
+func applyRenameIndex(database *schemamodel.Database, target alterTarget, operation *ast.RenameIndexOperation) error {
+	from, to := normalizeSQLIdentifier(target.sourcePlatform, operation.From),
+		normalizeSQLIdentifier(target.sourcePlatform, operation.To)
+	clause := "RENAME INDEX " + operation.From
+	field := target.columnWithKey(from)
+	if !target.renamesIndex(from) && field == nil {
+		return fmt.Errorf("ALTER TABLE %s %s names an index this schema does not declare by that name",
+			target.written, clause)
+	}
+	if target.keyNameHeld(to, field) {
+		return fmt.Errorf("ALTER TABLE %s %s TO %s: the table already holds a key named %s",
+			target.written, clause, operation.To, to)
+	}
+	if field != nil {
+		return target.nameColumnKey(database, field, operation.To, clause)
+	}
+	target.renameIndex(from, to)
+	return nil
+}
+
+// columnWithKey answers the column of the table whose own UNIQUE the server
+// names name, or nil.
+//
+// The model keeps no name for a column's own key, so the name is derived the
+// way the comparison derives it, from the names the schema read so far holds;
+// see [columnkey.Name] and [columnkey.Taken]. So `b int UNIQUE` is found under
+// `b` on MySQL and MariaDB, or `b_2` where another key of the table holds `b`,
+// and under `c_b_key` on PostgreSQL. A dialect whose naming is not measured
+// answers nil.
+func (t alterTarget) columnWithKey(name string) *schemamodel.Field {
+	if t.table == nil || !columnkey.Named(t.sourcePlatform) {
+		return nil
+	}
+	taken := columnkey.Taken(t.sourcePlatform, t.databases, *t.table)
+	for _, database := range t.databases {
+		for i := range database.Fields {
+			field := &database.Fields[i]
+			if field.StructName != t.structName || !field.Unique || strings.TrimSpace(field.UniqueExpr) != "" {
+				continue
+			}
+			own, _ := columnkey.Name(t.sourcePlatform, t.table.Name, field.Name, taken)
+			if columnkey.Same(t.sourcePlatform, own, name) {
+				return field
+			}
+		}
+	}
+	return nil
+}
+
+// keyNameHeld reports whether name is a name the column's own key cannot
+// take: one [columnkey.Taken] counts, or the own key of a column other than
+// except.
+func (t alterTarget) keyNameHeld(name string, except *schemamodel.Field) bool {
+	if t.table == nil {
+		return false
+	}
+	if columnkey.Taken(t.sourcePlatform, t.databases, *t.table)(name) {
+		return true
+	}
+	held := t.columnWithKey(name)
+	return held != nil && held != except
+}
+
+// nameColumnKey gives a column's own UNIQUE the name to, written as the
+// statement wrote it. The model keeps no name on the column, so the key
+// becomes a UNIQUE constraint of that name over the column, which is what the
+// server holds once the key is renamed, and the column is no longer UNIQUE
+// itself. A name another key holds is refused, as the servers refuse it.
+func (t alterTarget) nameColumnKey(database *schemamodel.Database, field *schemamodel.Field, to, clause string) error {
+	name := normalizeSQLIdentifier(t.sourcePlatform, to)
+	if t.keyNameHeld(name, field) {
+		return fmt.Errorf("ALTER TABLE %s %s TO %s: the table already holds a key named %s",
+			t.written, clause, to, name)
+	}
+	field.Unique = false
+	database.Constraints = append(database.Constraints, schemamodel.Constraint{
+		StructName: t.structName,
+		Name:       name,
+		Type:       "UNIQUE",
+		Table:      normalizeSQLTableReference("", t.qualified),
+		Columns:    []string{field.Name},
+	})
+	return nil
+}
+
+// renamesIndex reports whether the table declares an index, or a UNIQUE
+// constraint, named name.
+func (t alterTarget) renamesIndex(name string) bool {
+	for _, database := range t.databases {
+		if slices.ContainsFunc(database.Indexes, func(index schemamodel.Index) bool {
+			return t.ownsIndex(index) && index.Name == name
+		}) || slices.ContainsFunc(database.Constraints, func(constraint schemamodel.Constraint) bool {
+			return t.ownsUniqueConstraint(constraint, name)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+// renameIndex renames the index, or the UNIQUE constraint, of the table named
+// from.
+func (t alterTarget) renameIndex(from, to string) {
+	for _, database := range t.databases {
+		for i := range database.Indexes {
+			if t.ownsIndex(database.Indexes[i]) && database.Indexes[i].Name == from {
+				database.Indexes[i].Name = to
+				return
+			}
+		}
+		for i := range database.Constraints {
+			if t.ownsUniqueConstraint(database.Constraints[i], from) {
+				database.Constraints[i].Name = to
+				return
+			}
+		}
+	}
+}
+
+// ownsUniqueConstraint reports whether constraint is a UNIQUE of the table
+// named name.
+func (t alterTarget) ownsUniqueConstraint(constraint schemamodel.Constraint, name string) bool {
+	return constraint.StructName == t.structName && strings.EqualFold(constraint.Type, "UNIQUE") && constraint.Name == name
 }
 
 func (t alterTarget) hasPrimaryField() bool {

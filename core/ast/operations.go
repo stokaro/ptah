@@ -594,6 +594,27 @@ func (op *RenameConstraintOperation) Accept(visitor Visitor) error {
 
 func (op *RenameConstraintOperation) alterOperation() {}
 
+// RenameIndexOperation renames an index of the table in place, as MySQL and
+// MariaDB spell it: `ALTER TABLE t RENAME INDEX a TO b`, or `RENAME KEY`.
+//
+// On those engines a UNIQUE constraint is an index, so the operation renames
+// one too. The MySQL-family renderers write it; the other renderers refuse it,
+// because their engines rename an index with a statement of its own or not at
+// all.
+type RenameIndexOperation struct {
+	// From is the name the index has.
+	From string
+	// To is the name it takes.
+	To string
+}
+
+// Accept hands the visitor this operation. The rendering is the ALTER TABLE
+// renderer's, which reads the operation out of the statement that carries it.
+func (op *RenameIndexOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *RenameIndexOperation) alterOperation() {}
+
 // Accept implements the Node interface for SetCommentOperation.
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;

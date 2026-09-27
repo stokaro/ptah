@@ -36,6 +36,19 @@ func TestMySQL_AlterTable_RenameColumn(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE `users` RENAME COLUMN `email_old` TO `email`;")
 }
 
+// RENAME INDEX is the MySQL family's own clause; it renames a UNIQUE key too.
+func TestMySQL_AlterTable_RenameIndex(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{
+			&ast.RenameIndexOperation{From: "email", To: "users_email_uq"},
+		},
+	}
+	out := renderMySQL(t, alter)
+	c.Assert(out, qt.Contains, "ALTER TABLE `users` RENAME INDEX `email` TO `users_email_uq`;")
+}
+
 func TestMySQL_AlterTable_RenameTable(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{

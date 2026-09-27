@@ -5931,6 +5931,10 @@ func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
 	if p.current.MatchIdentifierValue("CONSTRAINT") {
 		return p.parseRenameConstraintOperation()
 	}
+	if isMySQLFamilyDialect(p.dialect) &&
+		(p.current.MatchIdentifierValue("INDEX") || p.current.MatchIdentifierValue("KEY")) {
+		return p.parseRenameIndexOperation()
+	}
 	if !p.current.MatchIdentifierValue("TO") {
 		// PostgreSQL's COLUMN keyword is optional: RENAME a TO b renames a
 		// column.
@@ -5964,6 +5968,29 @@ func (p *Parser) parseRenameConstraintOperation() (*ast.RenameConstraintOperatio
 		return nil, fmt.Errorf("expected new constraint name: %w", err)
 	}
 	return &ast.RenameConstraintOperation{From: from, To: to}, nil
+}
+
+// parseRenameIndexOperation parses the MySQL family's RENAME {INDEX | KEY} old
+// TO new. The other engines have no such clause in ALTER TABLE, and there the
+// words are read as RENAME [COLUMN] and refused at TO.
+func (p *Parser) parseRenameIndexOperation() (*ast.RenameIndexOperation, error) {
+	keyword := p.current.Value
+	p.advance()
+	p.skipWhitespace()
+	from, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected index name after RENAME %s: %w", strings.ToUpper(keyword), err)
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
+		return nil, fmt.Errorf("expected TO after the index name: %w", err)
+	}
+	p.skipWhitespace()
+	to, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected new index name: %w", err)
+	}
+	return &ast.RenameIndexOperation{From: from, To: to}, nil
 }
 
 func (p *Parser) parseRenameColumnOperation() (*ast.RenameColumnOperation, error) {
