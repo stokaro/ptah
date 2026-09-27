@@ -945,6 +945,15 @@ const (
 	tableConstraintsWithForeignKeys
 )
 
+// addTableConstraints adds to createTable the constraints of table the
+// statement builds, and returns the ones it would lose, for the caller to add
+// after it; see [schemaprep.FoldedIndexConstraints].
+//
+// A document can declare the same UNIQUE or EXCLUDE twice, in a CREATE TABLE
+// and an ALTER TABLE after it, and the server keeps both. Written into one
+// CREATE TABLE, the pair is one constraint: a schema file materialized on a dev
+// database loses the second, and compared with the database the file built, it
+// plans the second again.
 func addTableConstraints(
 	createTable *ast.CreateTableNode,
 	table schemamodel.Table,
@@ -952,7 +961,7 @@ func addTableConstraints(
 	constraints []schemamodel.Constraint,
 	mode tableConstraintMode,
 	targetPlatform string,
-) {
+) []schemamodel.Constraint {
 	// The table conversion rendered every `checks` entry blind, because it never
 	// sees this list. Here it is visible, so the synthesized checks are derived
 	// again from the same function the comparator calls -- one namer with one
@@ -960,8 +969,17 @@ func addTableConstraints(
 	// constraints and a compared name decided with them.
 	replaceSynthesizedTableChecks(createTable, table, fields, constraints, targetPlatform)
 
-	for _, constraint := range constraints {
+	folded := make(map[int]bool)
+	for _, fold := range schemaprep.FoldedIndexConstraints(table, fields, constraints, targetPlatform) {
+		folded[fold.Folded] = true
+	}
+	var after []schemamodel.Constraint
+	for position, constraint := range constraints {
 		if !schemaprep.ConstraintBelongsToTable(constraint, table) {
+			continue
+		}
+		if folded[position] {
+			after = append(after, constraint)
 			continue
 		}
 		if schemaprep.IsForeignKeyConstraint(constraint) && mode != tableConstraintsWithForeignKeys {
@@ -974,6 +992,7 @@ func addTableConstraints(
 			createTable.AddConstraint(node)
 		}
 	}
+	return after
 }
 
 // replaceSynthesizedTableChecks re-derives the table's `checks` entries now that
@@ -2196,9 +2215,17 @@ func appendTableStatements(
 		if sqliteTarget {
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
-		addTableConstraints(tableNode, table, allFields, database.Constraints, mode, targetPlatform)
+		after := addTableConstraints(tableNode, table, allFields, database.Constraints, mode, targetPlatform)
 		if err := visit(tableNode); err != nil {
 			return nil, err
+		}
+		for _, constraint := range after {
+			if err := visit(&ast.AlterTableNode{
+				Name:       table.QualifiedName(),
+				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: FromConstraint(constraint)}},
+			}); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return created, nil
