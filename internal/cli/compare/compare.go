@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -28,6 +30,7 @@ import (
 	"ptah.run/internal/genexprprobe"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -84,7 +87,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.devURL, devURLFlag, "", "Dev database URL, used to ask the target engine how it spells a declared generated-column expression. Only Oracle needs one; every other engine stores the expression it was given")
-	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
+	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty or a declared object could not be decided")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterProjectEnvFlag(flags)
@@ -192,7 +195,9 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	compareOpts = dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, compareOpts)
-	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, compareOpts)
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
+		cmd.Context(), conn, result, dbSchema, compareOpts,
+	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
@@ -206,10 +211,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(out, cmd.ErrOrStderr(), diff, output, info.Dialect)
+	writeComparison(out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
 
 	if opts.exitOnDiff {
-		return nonEmptyDiffExitCode(diff)
+		return nonEmptyDiffExitCode(diff, undecided)
 	}
 	return nil
 }
@@ -223,13 +228,42 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 // made "ptah schema compare" print an empty diff for row-level security
 // changes it had detected (stokaro/ptah#1284): a category no planner path
 // reads renders as nothing, and nothing is indistinguishable from agreement.
-func writeComparison(out, errOut io.Writer, diff *difftypes.SchemaDiff, sql, dialect string) {
+//
+// The declared objects the comparison withheld as undecided are reported too,
+// on both streams: named on standard output beside the differences, and
+// explained on standard error in the warning `ptah-compat schema diff` prints.
+// No statement is planned for one, so a report of the differences alone says
+// "No schema differences detected." about a database the comparison could not
+// check (stokaro/ptah#3834).
+func writeComparison(
+	out, errOut io.Writer,
+	diff *difftypes.SchemaDiff,
+	undecided []coverage.Object,
+	sql, dialect string,
+) {
+	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
 	categories := diffreport.Categories(diff)
+	if len(categories) == 0 && len(undecided) > 0 {
+		fmt.Fprintf(out, "No differences planned, but %d declared %s could not be decided:\n",
+			len(undecided), pluralize("object", "objects", len(undecided)))
+		writeUndecided(out, undecided)
+		return
+	}
 	if len(categories) == 0 {
 		fmt.Fprintln(out, "No schema differences detected.")
 		return
 	}
+	writeDifferences(out, errOut, categories, sql, dialect)
+	if len(undecided) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintf(out, "Undecided (%d):\n", len(undecided))
+		writeUndecided(out, undecided)
+	}
+}
 
+// writeDifferences lists the change categories and then the planner's SQL for
+// them, warning when the dialect's planner produced none.
+func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, sql, dialect string) {
 	fmt.Fprintf(out, "Differences detected (%d %s):\n", len(categories), pluralize("category", "categories", len(categories)))
 	for _, category := range categories {
 		fmt.Fprintf(out, "  %s (%d): %s\n", category.Name, category.Count(), strings.Join(category.Objects, ", "))
@@ -251,6 +285,19 @@ func writeComparison(out, errOut io.Writer, diff *difftypes.SchemaDiff, sql, dia
 	fmt.Fprint(out, sql)
 }
 
+// writeUndecided names each undecided object by kind and name, sorted so the
+// report is the same on every run: the comparators emit them in map order.
+func writeUndecided(out io.Writer, undecided []coverage.Object) {
+	names := make([]string, 0, len(undecided))
+	for _, object := range undecided {
+		names = append(names, fmt.Sprintf("%s %q", object.Kind, object.Name))
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		fmt.Fprintf(out, "  %s\n", name)
+	}
+}
+
 func pluralize(singular, plural string, count int) string {
 	if count == 1 {
 		return singular
@@ -258,9 +305,22 @@ func pluralize(singular, plural string, count int) string {
 	return plural
 }
 
-func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff) error {
+// nonEmptyDiffExitCode is the answer --exit-code gives: 1 when the database
+// differs from the desired schema, and 1 when the comparison could not rule
+// that out.
+//
+// An undecided object is one the read did not look at, so the comparison
+// cannot say it exists. Exiting 0 would tell a pipeline the database matches
+// when nothing checked that it does. It is the same expected negative result a
+// difference is -- the check ran and the database is not proven to match -- not
+// a command failure, so it takes 1 rather than 2.
+func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided []coverage.Object) error {
 	if diff.HasChanges() {
 		return exitcode.New(1, errors.New("schema diff is non-empty"))
+	}
+	if len(undecided) > 0 {
+		return exitcode.New(1, fmt.Errorf("%d declared %s could not be decided",
+			len(undecided), pluralize("object", "objects", len(undecided))))
 	}
 	return nil
 }

@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/planartifact"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -206,10 +207,13 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
 	compareOpts := dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, nil)
-	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, compareOpts)
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
+		cmd.Context(), conn, result, dbSchema, compareOpts,
+	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
+	undecidednote.Report(cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
 
 	// 4. Display differences summary
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{

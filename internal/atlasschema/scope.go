@@ -161,57 +161,6 @@ func refuseUnmatchedExclude(selectors []string) error {
 		atlasfilter.AllowUnmatchedExcludeEnvVar)
 }
 
-// ReportUndecidedAdditions names every object the comparison declined to plan a
-// creation for because the CURRENT side's coverage record says it does not
-// describe that kind (`// ptah:not-described <kind>` in a document) and the
-// creation Ptah would emit cannot safely converge from an unknown current
-// state. That includes an unguarded creation, and a guarded PostgreSQL extension
-// whose existing installation may be in another schema.
-//
-// Withholding one is defensible; withholding it in silence is not. Only a
-// currentDescription and desiredDescription name the two command-specific
-// inputs in prose, so schema diff can say `--from` and migrate diff can name
-// the replayed migration directory without producing a misleading diagnostic.
-func ReportUndecidedAdditions(
-	diagnostics io.Writer,
-	undecided []coverage.Object,
-	currentDescription,
-	desiredDescription string,
-) {
-	if diagnostics == nil {
-		return
-	}
-	for _, object := range undecided {
-		fmt.Fprintf(diagnostics,
-			"Warning: %s %q is declared by %s but no change was planned for it:"+
-				" %s, so this comparison cannot tell it apart from one that already exists,"+
-				" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n",
-			object.Kind, object.Name, desiredDescription,
-			undecidedCause(object, currentDescription))
-	}
-}
-
-// undecidedCause says why the current side could not decide the object, in the
-// most specific words the coverage record supports.
-//
-// A record that carries a reason gets the sentence that reason is for: a
-// refused catalog, a selection, a target that has no such objects and a
-// compatibility policy are four different problems with four different answers,
-// and a user who is told only that something was held back cannot tell which of
-// them they are looking at (stokaro/ptah#1346).
-//
-// A record that carries no reason -- what a hand-authored `ptah:not-described`
-// line is -- gets the directive quoted back instead, because that line is all
-// the description said and it is what the user will search the document for.
-func undecidedCause(object coverage.Object, currentDescription string) string {
-	if clause := object.Explain(); clause != "" {
-		return fmt.Sprintf("%s does not describe %s objects because %s",
-			currentDescription, object.Kind, clause)
-	}
-	return fmt.Sprintf("%s records `%s %s`",
-		currentDescription, coverage.DirectiveMarker, object.Kind)
-}
-
 // dialectDefaultSchema is the schema that owns unqualified objects when no
 // database-backed side pins one: "public" for PostgreSQL-family dialects and
 // "main" for SQLite. MySQL-family schemas are databases, so only a

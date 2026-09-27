@@ -1,4 +1,4 @@
-package atlasschema_test
+package undecidednote_test
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
-	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/undecidednote"
 )
 
 // The warning is the only place a withheld addition surfaces at all: no
@@ -72,7 +72,7 @@ func TestUndecidedWarningExplainsWhyTheCurrentSideCouldNotDecide(t *testing.T) {
 			c := qt.New(t)
 			var diagnostics strings.Builder
 
-			atlasschema.ReportUndecidedAdditions(
+			undecidednote.Report(
 				&diagnostics, []coverage.Object{test.object}, "--from", "--to")
 
 			c.Assert(diagnostics.String(), qt.Contains, test.want)
@@ -114,7 +114,7 @@ func TestUndecidedWarningsAreDistinctPerReason(t *testing.T) {
 	warnings := make(map[string]struct{}, len(limits))
 	for _, limit := range limits {
 		var diagnostics strings.Builder
-		atlasschema.ReportUndecidedAdditions(
+		undecidednote.Report(
 			&diagnostics, []coverage.Object{withheldExtension(limit)}, "--from", "--to")
 		warnings[diagnostics.String()] = struct{}{}
 	}

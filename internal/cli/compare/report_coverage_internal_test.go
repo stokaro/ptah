@@ -73,12 +73,12 @@ func TestWriteComparisonReportsEveryDiffCategory(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
 
-			writeComparison(stdout, stderr, diff, "", "postgres")
+			writeComparison(stdout, stderr, diff, nil, "", "postgres")
 
 			c.Assert(stdout.String(), qt.Contains, diffCategoryJSONName(field)+" (1):")
 			c.Assert(stdout.String(), qt.Contains, "Reconciling SQL: none.")
 			c.Assert(stderr.String(), qt.Contains, diffCategoryJSONName(field))
-			c.Assert(exitcode.Code(nonEmptyDiffExitCode(diff), 0), qt.Equals, 1)
+			c.Assert(exitcode.Code(nonEmptyDiffExitCode(diff, nil), 0), qt.Equals, 1)
 		})
 	}
 }
@@ -134,7 +134,7 @@ func TestWriteComparisonReportsNoDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, "", "postgres")
+	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, nil, "", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "")
@@ -152,7 +152,7 @@ func TestWriteComparisonPrintsCategoriesAndSQL(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, diff, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
+	writeComparison(stdout, stderr, diff, nil, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
   rls_enabled_tables_added (1): other.secured
