@@ -436,7 +436,7 @@ func revIntDropAll(conn *dbschema.DatabaseConnection) {
 		"DROP TRIGGER IF EXISTS " + revIntTrigger + " ON " + revIntTable + " CASCADE",
 		"DROP TABLE IF EXISTS " + revIntTable + " CASCADE",
 		"DROP TABLE IF EXISTS " + revIntAltTable + " CASCADE",
-		"DROP FUNCTION IF EXISTS ptah_trigger_" + revIntTable + "_" + revIntTrigger + "() CASCADE",
+		"DROP FUNCTION IF EXISTS " + (schemamodel.Trigger{Table: revIntTable, Name: revIntTrigger}).FunctionName() + "() CASCADE",
 	}
 	for _, statement := range statements {
 		_, _ = conn.Exec(statement)

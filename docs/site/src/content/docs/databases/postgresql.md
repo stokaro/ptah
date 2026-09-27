@@ -403,6 +403,16 @@ appears before the plan runs, the statement fails with SQLSTATE 42723 instead
 of overwriting it. The function Ptah writes for a trigger with a body follows
 the trigger: a new trigger creates it, and a changed trigger replaces it.
 
+That function's name is `ptah_trigger_<table>_<name>`: the table and the
+trigger name are each folded to lower case, every run of characters outside
+`[a-z0-9_]` collapsed to one `_`, and every `_` that remains doubled before the
+two parts join on a single `_`. The doubling keeps the join unambiguous -- a
+table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
+`ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name. A
+table or trigger name that contains an underscore therefore renders under a
+different generated name; a database already holding that trigger's function
+under the old name keeps it, unreferenced, until someone drops it by hand.
+
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner
 property, or setting. Views, policies, and triggers that call the function stay
