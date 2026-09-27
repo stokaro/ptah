@@ -95,6 +95,13 @@ SQL:
   compared beside it. Both engines build `a INT UNIQUE` and
   `CONSTRAINT uq_a UNIQUE (a)` as two keys, so a database with `uq_a` alone
   is planned the key `a`, as Atlas CE plans it.
+- A plan that changes a column writes `MODIFY COLUMN` with the whole new
+  definition, and writes `UNIQUE` in it only when the change gives the column
+  its `UNIQUE`. Both engines read the clause as a request for a new key, so
+  `MODIFY COLUMN x BIGINT UNIQUE` on a column that already has its key builds
+  a second one, `x_2`. A column that keeps its `UNIQUE` while its type,
+  nullability or default changes is written without the clause and keeps its
+  one key, as Atlas CE writes it.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so

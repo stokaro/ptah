@@ -448,6 +448,15 @@ func (p *Planner) modifyExistingColumns(
 		if suppressColumnPrimary {
 			field.Primary = false
 		}
+		// MODIFY restates the column, and on MySQL and MariaDB a UNIQUE in it
+		// asks for a unique key whatever keys the column already has: a column
+		// that keeps its UNIQUE while its type changes gains a second key,
+		// `x_2`, and the next comparison plans it away. So the statement says
+		// UNIQUE only when this change gives the column its UNIQUE. Atlas CE
+		// v1.3.0 restates the column without it (stokaro/ptah#3857).
+		if _, uniqueChanged := colDiff.Changes["unique"]; !uniqueChanged {
+			field.Unique = false
+		}
 		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
 		// Add a comment showing what changes are being made, before the
