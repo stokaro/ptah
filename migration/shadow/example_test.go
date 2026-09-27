@@ -22,8 +22,9 @@ import (
 // SQLite database, the catalog that results is compared with the desired
 // schema, and the candidate is rolled back and reapplied. Every database here
 // is a file in a temporary directory, which is the pattern to copy: the shadow
-// database is dropped clean, so it must never point at anything shared, and
-// the target and shadow must be two different databases by construction.
+// database is dropped clean, so it must never point at anything shared -- one
+// that holds a table is refused, and it is empty again afterwards -- and the
+// target and shadow must be two different databases by construction.
 func ExampleVerifyMigration() {
 	ctx := context.Background()
 	dir := must.Must(os.MkdirTemp("", "shadow-example"))

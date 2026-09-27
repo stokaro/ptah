@@ -461,8 +461,9 @@ the variable.
 `VerifyBaseline` measures a replayed history against the target,
 `VerifyRollback` rehearses a rollback plan, and `PlanDynamicRollback` derives
 rollback statements from the schema a version defines rather than from a down
-body. Every entry point drops the shadow database clean and refuses a URL that
-resolves to the target's live realm.
+body. Every entry point refuses a shadow database that holds a table or
+resolves to the target's live realm, drops it clean before the replay, and
+empties it again before returning.
 
 `migration/generator.GenerateCheckpointFromShadow` and
 `migration/shadow.VerifyBaseline` apply the same SQLite-only validation before

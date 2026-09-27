@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"time"
@@ -20,9 +21,10 @@ import (
 // BaselineVerifyOptions configures shadow verification before metadata
 // baselining.
 type BaselineVerifyOptions struct {
-	// ShadowDatabaseURL is an ephemeral database the verification drops clean
-	// and replays the history into. Its contents are discarded, and its live
-	// realm must be distinct from TargetConn's.
+	// ShadowDatabaseURL is an ephemeral database the verification replays the
+	// history into. It must hold no table when the verification starts, it is
+	// empty again when the verification returns, and its live realm must be
+	// distinct from TargetConn's.
 	ShadowDatabaseURL string
 	// TargetConn is the already-open database whose metadata would be
 	// baselined. It is introspected and compared against, never written, and
@@ -67,7 +69,11 @@ type BaselineVerifyOptions struct {
 // mismatch list for schema drift. For SQLite, malformed
 // PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused before target
 // validation, shadow connection, or replay.
-func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
+//
+// A shadow database that holds a table is refused at the claim stage, before
+// anything resets it, and the shadow database is emptied again on every
+// return. A failure to empty it is joined to the result.
+func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr error) {
 	dialect := opts.Dialect
 	if opts.TargetConn != nil {
 		dialect = opts.TargetConn.Info().Dialect
@@ -110,6 +116,13 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 	if err != nil {
 		return err
 	}
+	lease, err := shadowdb.Claim(ctx, shadowConn)
+	if err != nil {
+		return baselineErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, lease.Release(ctx))
+	}()
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return baselineError("drop-all", "drop_all_error", "drop all objects", err)
 	}
@@ -132,6 +145,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 	}
 
 	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...))
+	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return baselineErrorWithDisplayMessage("replay", "replay_error", description, err)

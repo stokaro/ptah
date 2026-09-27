@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -183,9 +184,10 @@ func validateConnection(
 
 // MigrationVerifyOptions configures [VerifyMigration].
 type MigrationVerifyOptions struct {
-	// ShadowDatabaseURL is an ephemeral database the verification drops clean
-	// and replays into. Its contents are discarded, and its live realm must
-	// be distinct from TargetConnection's. When empty, an ephemeral SQLite
+	// ShadowDatabaseURL is an ephemeral database the verification replays
+	// into. It must hold no table when the verification starts, it is empty
+	// again when the verification returns, and its live realm must be
+	// distinct from TargetConnection's. When empty, an ephemeral SQLite
 	// database is provisioned for the call and removed when verification
 	// finishes; a non-SQLite Dialect is then refused rather than silently
 	// verified against the wrong engine.
@@ -243,16 +245,20 @@ type Candidate struct {
 // VerifyMigration measures a planned migration against a live disposable
 // database before its files are written.
 //
-// The shadow database is dropped clean, the prior history is replayed into it,
-// and the candidates are applied on top. The result is re-introspected and
+// The shadow database is refused if it holds a table, since the verification
+// resets it and would lose that table. Otherwise it is dropped clean, the prior
+// history is replayed into it, and the candidates are applied on top. The result is re-introspected and
 // compared with the desired schema, so what is checked is what a server did
 // rather than what the SQL was expected to mean. The candidates are then rolled
 // back to the prior version and reapplied, because a down body that does not
 // run is only discovered by running it.
 //
+// The shadow database is emptied again on every return, so the next
+// verification can claim it. A failure to empty it is joined to the result.
+//
 // Failures are [VerificationError] values naming the stage that stopped and
-// every mismatch found.
-func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) error {
+// every mismatch found; a refused shadow database stops at the claim stage.
+func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultErr error) {
 	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {
 		return newVerificationError("connect", "connect_error", "connect to shadow database", err)
@@ -293,6 +299,13 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) error {
 		)
 	}
 
+	lease, err := shadowdb.Claim(ctx, conn)
+	if err != nil {
+		return newVerificationErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, lease.Release(ctx))
+	}()
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return newVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
@@ -310,6 +323,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) error {
 	}
 
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
+	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return newVerificationError("replay", "replay_error", description, err)
