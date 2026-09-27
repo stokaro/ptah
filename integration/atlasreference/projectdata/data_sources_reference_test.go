@@ -52,7 +52,7 @@ func TestMain(m *testing.M) {
 			os.Exit(runReferenceHelper(os.Args[i+1:]))
 		}
 	}
-	os.Exit(m.Run())
+	clirun.Main(m)
 }
 
 func runReferenceHelper(arguments []string) int {
