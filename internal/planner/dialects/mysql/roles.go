@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/modelast"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -14,9 +15,9 @@ import (
 // object that has to exist and a role that has to exist. The removals mirror
 // that: revoke, then drop the role, after the tables its grants named are gone.
 //
-// The capability is the switch, not the dialect name. MySQL and MariaDB leave
-// RoleManagement off and keep the named skip reportUnsupportedRoutinesAndRoles
-// writes; SQL Server turns it on (stokaro/ptah#1698).
+// The capability is the switch, not the dialect name. A target that leaves
+// RoleManagement off keeps the named skip reportUnsupportedRoutinesAndRoles
+// writes; MySQL, MariaDB and SQL Server turn it on (stokaro/ptah#1698).
 func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
@@ -63,10 +64,8 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	for _, grant := range diff.GrantOptionsRevoked {
-		result = append(result, ast.NewRevokePrivilege(
-			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetGrantOptionFor(true))
+	for _, revoke := range p.grantOptionRevocations(diff.GrantOptionsRevoked) {
+		result = append(result, revoke)
 	}
 	for _, grant := range diff.GrantsRemoved {
 		result = append(result, ast.NewRevokePrivilege(
@@ -78,4 +77,66 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 			SetComment("WARNING: Ensure no other objects depend on this role"))
 	}
 	return result
+}
+
+// grantOptionRevocations turns the grant options a diff revokes into the
+// statements that revoke them.
+//
+// On MySQL and MariaDB a grant option belongs to the grantee at one object, not
+// to one privilege, and the statement that revokes it names no privilege. So
+// every privilege that loses the option on one object becomes one node, which
+// carries all of them. Two statements for the same object would fail the plan
+// on MySQL: measured on 8.4.11 and 26.7.0, the second `REVOKE GRANT OPTION ON
+// db.t FROM r` answers error 1147, there is no such grant defined. MariaDB
+// 11.8.9 and 12.3.3 accept it.
+//
+// SQL Server and Oracle share this planner and keep one node per privilege.
+func (p *Planner) grantOptionRevocations(refs []difftypes.GrantRef) []*ast.RevokePrivilegeNode {
+	perObject := p.grantOptionCoversTheObject()
+	nodes := make([]*ast.RevokePrivilegeNode, 0, len(refs))
+	byObject := make(map[grantObject]*ast.RevokePrivilegeNode, len(refs))
+	for _, grant := range refs {
+		object := grantObject{
+			role:       grant.Role,
+			objectType: grant.ObjectType,
+			objectName: grant.ObjectName,
+			arguments:  grant.Arguments,
+			column:     grant.Column,
+		}
+		if node, seen := byObject[object]; seen && perObject {
+			node.Privileges = append(node.Privileges, grant.Privilege)
+			continue
+		}
+		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetGrantOptionFor(true)
+		byObject[object] = node
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+// grantObject is the grantee and object a grant option belongs to on MySQL and
+// MariaDB.
+type grantObject struct {
+	role       string
+	objectType string
+	objectName string
+	arguments  string
+	column     string
+}
+
+// grantOptionCoversTheObject reports whether the target keeps one grant option
+// per grantee and object rather than one per privilege.
+//
+// It is a question about the engines, not about Ptah. Measured on MySQL 8.4.11
+// and 26.7.0 and MariaDB 11.8.9 and 12.3.3: after `GRANT SELECT, INSERT ON t TO
+// r WITH GRANT OPTION`, one `REVOKE GRANT OPTION ON t FROM r` leaves both
+// privileges in place and neither grantable.
+func (p *Planner) grantOptionCoversTheObject() bool {
+	switch p.targetDialect() {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }

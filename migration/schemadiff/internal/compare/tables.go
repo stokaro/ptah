@@ -143,10 +143,7 @@ func TablesAndColumnsWithServerSpellings(
 	for _, table := range database.Tables {
 		dbTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
-	objectOwnedUniqueColumns := collectGeneratedObjectOwnedUniqueColumns(
-		desired,
-		semantics,
-	)
+	uniqueness := readColumnUniqueness(desired, database, dialect, semantics)
 
 	// Find added and removed tables.
 	//
@@ -231,7 +228,7 @@ func TablesAndColumnsWithServerSpellings(
 				desired,
 				dialect,
 				semantics,
-				objectOwnedUniqueColumns,
+				uniqueness,
 				spellings,
 			)
 			// The TTL policy is compared here rather than inside

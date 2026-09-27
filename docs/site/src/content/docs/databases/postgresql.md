@@ -194,6 +194,33 @@ declaration is spelled by the server first, as
 [How a declaration is compared with what the server stored](#how-a-declaration-is-compared-with-what-the-server-stored)
 describes; without one the texts are compared as written.
 
+One `CREATE TABLE` builds a single constraint for index constraints that
+share a key. For a primary key or a `UNIQUE` the key is the columns, the
+`INCLUDE` columns and `NULLS NOT DISTINCT`. For an `EXCLUDE` it is the access
+method, the elements and the `WHERE` clause. The primary key is kept first,
+then the first of the others, and a name the dropped constraint carries goes to
+the kept one when that one has none. A SQL schema file is read the same way.
+Measured on PostgreSQL 18.6:
+
+| Declared in one `CREATE TABLE` on `t` | Built |
+| --- | --- |
+| `id int PRIMARY KEY, CONSTRAINT u UNIQUE (id)` | the primary key, named `u` |
+| `UNIQUE (a), CONSTRAINT n UNIQUE (a)` | `n` |
+| `EXCLUDE USING btree (r WITH =)` twice | `t_r_excl` |
+| `UNIQUE (a), UNIQUE NULLS NOT DISTINCT (a)` | `t_a_key`, `t_a_key1` |
+
+Declared in separate statements, a `CREATE TABLE` and an `ALTER TABLE ... ADD`,
+both constraints are built. A render writes the second one as an
+`ALTER TABLE ... ADD CONSTRAINT` after its table, so a database built from the
+render holds both as well. Elements and clauses are compared as the server's
+lexer reads them: spacing and the case of an unquoted word do not matter, and
+an extra pair of parentheses does, so the server can build one constraint for a
+pair that Ptah reads as two. `DEFERRABLE` is part of the server's key, and the
+SQL reader does not read it on these constraints yet
+([stokaro/ptah#3818](https://github.com/stokaro/ptah/issues/3818)). A column's
+own `UNIQUE` is outside this rule
+([stokaro/ptah#3812](https://github.com/stokaro/ptah/issues/3812)).
+
 A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
 column of the table, and `<table>_check` when it names none or more than one.
 It makes no difference whether the `CHECK` is written on the column or on the
@@ -231,6 +258,16 @@ where there are several. Every other key of the table, a second key over the
 column or a key over more columns that the column leads, is compared by its
 name, so `a int UNIQUE, UNIQUE (a, b)` matches the two keys it builds, and a
 key the file no longer declares is dropped.
+
+A named `UNIQUE` over the column alone, written in the same `CREATE TABLE`, is
+the column's key too: the server
+builds `CONSTRAINT uq_a UNIQUE (a)` beside `a int UNIQUE` as `uq_a` alone.
+Written in separate statements, the two are two keys on the server, and Ptah
+still reads them as one
+([stokaro/ptah#3812](https://github.com/stokaro/ptah/issues/3812)). A
+unique index is an object apart, so `a int UNIQUE` beside
+`CREATE UNIQUE INDEX ux ON c (a)` builds `c_a_key` and `ux`, and a database
+with `ux` alone is planned `c_a_key`, as Atlas CE plans it.
 
 A plan that adds a column-level `UNIQUE` to an existing column writes
 `ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
@@ -556,23 +593,25 @@ global default. In Go the same declaration is the `revoked` attribute of
 
 Reading a live database describes the default privileges of each schema the
 read covers, the connection's default schema included, and renders each one
-with its `IN SCHEMA` clause. A global default, set without `IN SCHEMA`, is left
-out of the description, because no schema source can declare one. A
-description applied to another database therefore does not carry it, and
-`ptah db read` and `schema inspect` name each one on stderr, by object class
-and grantor, whichever schemas the read covers:
+with its `IN SCHEMA` clause. The description leaves out the forms no schema
+source can declare: a global default, set without `IN SCHEMA`, and a
+CockroachDB default set `FOR ALL ROLES`, which names no role. A description
+applied to another database therefore does not carry them, and `ptah db read`
+and `schema inspect` name each one on stderr, by object class, schema and
+grantor. A global default is named whichever schemas the read covers, and a
+`FOR ALL ROLES` default in a schema when the read covers that schema:
 
 ```text
-note: 2 global default privileges, set by ALTER DEFAULT PRIVILEGES without IN
-SCHEMA, are not described, because no schema source can declare one; a
-description applied to another database does not carry them: FUNCTIONS for
-app_owner, TABLES for app_owner.
+note: 2 default privileges are not described, because no schema source can
+declare one set without IN SCHEMA or FOR ALL ROLES; a description applied to
+another database does not carry them: FUNCTIONS in every schema for app_owner,
+TABLES in public for all roles.
 ```
 
 Run a statement such as
 `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
-on the other database yourself. On CockroachDB a default set `FOR ALL ROLES`
-is named as `for all roles`.
+on the other database yourself. `ptah db drop-all` revokes a CockroachDB
+`FOR ALL ROLES` default in the schemas it cleans, spelled `FOR ALL ROLES`.
 
 A privilege can be limited to columns of a table: `GRANT UPDATE (state,
 decided_at) ON proposals TO app`. Each column is compared on its own against

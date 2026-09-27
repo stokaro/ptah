@@ -658,13 +658,14 @@ func ToEnum(enum *ast.EnumNode, sourcePlatform string) schemamodel.Enum {
 func ToDatabase(
 	statements *ast.StatementList, sourcePlatform string,
 ) (schemamodel.Database, error) {
-	return toDatabase(statements, sourcePlatform, nil)
+	return toDatabase(statements, sourcePlatform, NewDocument(nil))
 }
 
-// toDatabase is [ToDatabase] read against the objects earlier documents of the
-// same schema declared. base is nil for a document that stands alone.
+// toDatabase is [ToDatabase] read against the objects earlier files of the
+// same document declared; see [Document]. The document's model is nil for a
+// file that stands alone.
 func toDatabase(
-	statements *ast.StatementList, sourcePlatform string, base *schemamodel.Database,
+	statements *ast.StatementList, sourcePlatform string, document *Document,
 ) (schemamodel.Database, error) {
 	database := schemamodel.Database{
 		Schemas: make([]schemamodel.Schema, 0),
@@ -676,7 +677,7 @@ func toDatabase(
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		if err := appendStatement(&database, base, stmt, sourcePlatform); err != nil {
+		if err := appendStatement(&database, document, stmt, sourcePlatform); err != nil {
 			return schemamodel.Database{}, err
 		}
 	}
@@ -705,8 +706,9 @@ func toDatabase(
 // this package deliberately does not model says so in a case of its own rather
 // than by not appearing.
 func appendStatement(
-	database, base *schemamodel.Database, stmt ast.Node, sourcePlatform string,
+	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) error {
+	base := document.base
 	if appendRoutine(database, stmt, sourcePlatform) {
 		return nil
 	}
@@ -727,11 +729,11 @@ func appendStatement(
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
 	case *ast.CreateTableNode:
-		return appendCreateTable(database, base, node, sourcePlatform)
+		return appendCreateTable(database, document, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
 	case *ast.AlterTableNode:
-		return appendAlterTable(database, base, node, sourcePlatform)
+		return appendAlterTable(database, document, node, sourcePlatform)
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.ExtensionNode:
@@ -868,8 +870,9 @@ func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, s
 }
 
 func appendCreateTable(
-	database, base *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string,
+	database *schemamodel.Database, document *Document, node *ast.CreateTableNode, sourcePlatform string,
 ) error {
+	base := document.base
 	tableSchema := ToTable(node, sourcePlatform)
 	declared := []*schemamodel.Database{database}
 	if base != nil {
@@ -898,6 +901,11 @@ func appendCreateTable(
 	constraintsStart := len(database.Constraints)
 	order := declaredOrder(database, node, tableSchema, sourcePlatform)
 
+	// A UNIQUE or EXCLUDE the server folds into another one is not built.
+	created := &database.Tables[len(database.Tables)-1]
+	foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, sourcePlatform)
+	tableSchema = *created
+
 	// A UNIQUE or foreign key the author left unnamed gets the name its server
 	// gives it, which is the name the other side of a comparison reads from the
 	// catalog.
@@ -906,14 +914,19 @@ func appendCreateTable(
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
 	// them onto one empty key.
-	if err := nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform); err != nil {
+	keyIndexes, err := nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform)
+	if err != nil {
 		return err
 	}
 	checks := declaredChecks(database, node, fieldsStart, constraintsStart)
 	if err := nameCreatedMySQLFamilyChecks(database, base, tableSchema, checks, sourcePlatform); err != nil {
 		return err
 	}
-	return nameCreatedMySQLForeignKeys(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform)
+	if err := nameCreatedMySQLForeignKeys(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform); err != nil {
+		return err
+	}
+	recordCreatedKeyIndexes(database, document, tableSchema, keyIndexes)
+	return nil
 }
 
 // declaredOrder appends this table's indexes and constraints to the model and
@@ -945,7 +958,7 @@ func declaredOrder(
 		if element.Index != nil {
 			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
-				constraint: noPosition, index: len(database.Indexes) - 1})
+				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: element.Index.ForeignKeyIndex})
 			continue
 		}
 		converted, ok := ToConstraint(element.Constraint, table.StructName, table.QualifiedName(), sourcePlatform)
@@ -993,7 +1006,7 @@ func unorderedElements(
 	for _, index := range node.Indexes {
 		database.Indexes = append(database.Indexes, ToIndex(index, sourcePlatform))
 		order = append(order, namedElement{
-			constraint: noPosition, index: len(database.Indexes) - 1})
+			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: index.ForeignKeyIndex})
 	}
 	return order
 }
@@ -1009,7 +1022,10 @@ func unorderedElements(
 // created, or change one of its columns. An added object is this file's
 // contribution and stays in database for the merge to place; a change to an
 // object base declares is made to base, in place. See [alterTarget].
-func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTableNode, sourcePlatform string) error {
+func appendAlterTable(
+	database *schemamodel.Database, document *Document, node *ast.AlterTableNode, sourcePlatform string,
+) error {
+	base := document.base
 	target, declared := findAlterTarget(database, base, node.Name, sourcePlatform)
 	statement := newAlterStatement(target, node.Operations)
 	for i, op := range node.Operations {
@@ -1018,6 +1034,7 @@ func appendAlterTable(database, base *schemamodel.Database, node *ast.AlterTable
 		}
 		statement.laterDrops = droppedConstraintNames(node.Operations[i+1:], sourcePlatform)
 		target.statement = statement
+		target.keys = &document.keys
 		if err := applyAlterOperation(database, base, target, op, sourcePlatform); err != nil {
 			return err
 		}
@@ -1037,7 +1054,11 @@ func applyAlterOperation(
 		if err := applyAlterTableAddColumn(database, base, target, typed); err != nil {
 			return err
 		}
-		return nameAddedColumnForeignKeys(database.Fields[added:], target)
+		if err := nameAddedColumnForeignKeys(database.Fields[added:], target); err != nil {
+			return err
+		}
+		target.buildColumnKeyIndexes(database.Fields[added:])
+		return nil
 	case *ast.AddConstraintOperation:
 		return applyAddConstraint(database, target, typed)
 	case *ast.AddIndexOperation:
@@ -1049,6 +1070,13 @@ func applyAlterOperation(
 		index := ToIndex(typed.Index, sourcePlatform)
 		index.StructName = target.structName
 		index.TableName = target.qualified
+		if typed.Index.ForeignKeyIndex {
+			// The key the clause belongs to is the next operation, and the
+			// index is its own; see [alterTarget.buildKeyIndex].
+			target.statement.clause = &index
+		} else {
+			target.releaseKeyIndexes(indexCandidate(index))
+		}
 		if err := nameAddedIndex(&index, target); err != nil {
 			return err
 		}
@@ -1105,10 +1133,17 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 	if !ok {
 		return nil
 	}
+	if strings.EqualFold(constraintSchema.Type, "UNIQUE") {
+		target.releaseKeyIndexes(ascending(constraintSchema.Columns))
+	}
+	derived := constraintSchema.Name == ""
 	if err := nameAddedConstraint(&constraintSchema, target); err != nil {
 		return err
 	}
 	database.Constraints = append(database.Constraints, constraintSchema)
+	if isForeignKey(constraintSchema) {
+		target.buildKeyIndex(constraintSchema.Name, derived, constraintSchema.Columns)
+	}
 	return nil
 }
 

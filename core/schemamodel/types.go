@@ -294,10 +294,11 @@ type Field struct {
 	Enum      []string // Enum values for ENUM type fields
 	Check     string   // Check constraint expression
 	// CheckName is an optional constraint name for the column-level CHECK.
-	// Left empty, the CHECK is rendered unnamed, and a comparison against
-	// PostgreSQL expects the name the server gives it: `<table>_<column>_check`
-	// when the condition names exactly one column, `<table>_check` otherwise.
-	// Other targets expect `<table>_<column>_check`.
+	// Left empty, the CHECK is rendered unnamed, and a comparison expects the
+	// name the server gives it: on PostgreSQL `<table>_<column>_check` when
+	// the condition names exactly one column and `<table>_check` otherwise, on
+	// MySQL `<table>_chk_<n>` in column order, on MariaDB the column's own
+	// name. Other targets expect `<table>_<column>_check`.
 	CheckName string
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
@@ -1922,7 +1923,7 @@ func (g Grant) ByColumn() []Grant {
 // schema of the database, which internal/devclean refuses during replay, so
 // this type has no spelling for it. The reader that fills it leaves those rows
 // out of the description and lists them in
-// catalog.Database.GlobalDefaultPrivileges, which the read surfaces report.
+// catalog.Database.UndescribedDefaultPrivileges, which the read surfaces report.
 //
 // Example:
 //

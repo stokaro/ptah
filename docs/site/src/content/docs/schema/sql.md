@@ -429,8 +429,10 @@ CREATE TABLE "pets" (
 - An index name between `FOREIGN KEY` and its column list is read under
   `--dialect mysql` and `--dialect mariadb`, and refused elsewhere. On MySQL
   the name declares the index that backs the key, so Ptah reads it as that
-  index. On MariaDB it is the key's own name, and the key's index takes it. No
-  other engine has the syntax:
+  index. It is the index the server builds for the key, so it is not built
+  where another index covers the key, and it gives way to a later index that
+  begins with its columns. On MariaDB it is the key's own name, and the key's
+  index takes it. No other engine has the syntax:
 
   ```sql
   CREATE TABLE child (a INT, FOREIGN KEY zidx (a) REFERENCES parents (id));

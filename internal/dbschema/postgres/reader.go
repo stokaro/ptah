@@ -4405,18 +4405,22 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 //
 // The join to pg_namespace is an inner join deliberately: it drops the global
 // entries, which pg_default_acl records with defaclnamespace 0 and which apply
-// in every schema of the database. Ptah models no such entry -- internal/devclean
-// refuses an ALTER DEFAULT PRIVILEGES with no IN SCHEMA during replay -- so a
-// described row of that shape names an object nothing could apply back. Its ACL
-// is also a different kind of value: a global row holds the whole ACL, the
-// built-in defaults included, where a schema-scoped row holds only what was
-// added. REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC stores {owner=X/owner}, measured
-// on PostgreSQL 18.6, so exploding it as grants would describe the owner's
-// implicit right and lose the revoke. Reporting or modeling the rows this join
-// drops is stokaro/ptah#3737. defaclobjtype 'n' (SCHEMAS) is left out because
-// the model has no spelling for it either, by the object-type filter, whose CASE
-// is also what turns the catalog's one-character codes into the keywords a
-// statement writes.
+// in every schema of the database. Ptah models no such entry --
+// internal/devclean refuses an ALTER DEFAULT PRIVILEGES with no IN SCHEMA
+// during replay -- so a described row of that shape names an object nothing
+// could apply back. Its ACL is also a different kind of value: a global row
+// holds the whole ACL, the built-in defaults included, where a schema-scoped
+// row holds only what was added. REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC stores
+// {owner=X/owner}, measured on PostgreSQL 18.6, so exploding it as grants would
+// describe the owner's implicit right and lose the revoke. CockroachDB's FOR
+// ALL ROLES, recorded with defaclrole 0, is left out as well, because a
+// declaration's grantor is a role, and role 0 has only the name
+// `unknown (OID=0)`. Both kinds are left out by the complement of
+// [undescribedDefaultACL], and [Reader.readUndescribedDefaultPrivileges] lists
+// them for the read surfaces to report; modeling them is stokaro/ptah#3772.
+// defaclobjtype 'n' (SCHEMAS) is left out because the model has no spelling for
+// it either, by the object-type filter, whose CASE is also what turns the
+// catalog's one-character codes into the keywords a statement writes.
 //
 // Every row carries its schema, the connected one included, unlike the other
 // reads here. A table in the connected schema is spelled unqualified, but a
@@ -4455,6 +4459,7 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 			JOIN pg_namespace n ON n.oid = d.defaclnamespace
 			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
 			WHERE n.nspname = $1
+			AND NOT ` + undescribedDefaultACL("d") + `
 			AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
 		)
 		SELECT grantor, schema_name, object_type, grantee, privilege, with_option
@@ -4559,76 +4564,68 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		return fmt.Errorf("failed to read default privileges: %w", err)
 	}
 	schema.DefaultPrivileges = defaultPrivileges
-	global, err := r.readGlobalDefaultPrivileges(ctx)
+	undescribed, err := r.readUndescribedDefaultPrivileges(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to read global default privileges: %w", err)
+		return fmt.Errorf("failed to read undescribed default privileges: %w", err)
 	}
-	schema.GlobalDefaultPrivileges = global
+	schema.UndescribedDefaultPrivileges = undescribed
 	return nil
 }
 
-// readGlobalDefaultPrivileges lists the pg_default_acl rows the read above
+// readUndescribedDefaultPrivileges lists the pg_default_acl rows the read above
 // leaves out: the ones recorded with defaclnamespace 0, which ALTER DEFAULT
-// PRIVILEGES writes when it has no IN SCHEMA.
+// PRIVILEGES writes when it has no IN SCHEMA, and the ones recorded with
+// defaclrole 0, which is CockroachDB's FOR ALL ROLES. No declaration can name
+// either, so the description does not carry them, and the list exists so that
+// the read surfaces can say what was left out (stokaro/ptah#3737,
+// stokaro/ptah#3770).
 //
 // It is a read of its own rather than a second projection of the one above,
-// because that read is asked once per inspected schema and these rows belong to
-// none: they apply in every schema of the database, so a read scoped to one
-// schema still has to report them. It asks for the identity only. The
-// description does not carry these rows, and the list exists so that the read
-// surfaces can say what was left out (stokaro/ptah#3737).
+// because that read is asked once per inspected schema and the rows without a
+// schema belong to none: they apply in every schema of the database, so a read
+// scoped to one schema still has to report them. A FOR ALL ROLES row does belong
+// to a schema, and it is kept only when the read covers that schema, as the
+// described rows are. It asks for the identity only.
 //
-// CockroachDB records FOR ALL ROLES as role 0, which pg_get_userbyid spells
-// `unknown (OID=0)`, measured on v26.3.2; the grantor is left empty for it
+// Role 0 is spelled `unknown (OID=0)` by pg_get_userbyid, measured on
+// CockroachDB v25.4.16, v26.2.7 and v26.3.1, so the grantor is left empty for it
 // rather than reported under a name no role has.
-func (r *Reader) readGlobalDefaultPrivileges(ctx context.Context) ([]catalog.GlobalDefaultPrivilege, error) {
+func (r *Reader) readUndescribedDefaultPrivileges(ctx context.Context) ([]catalog.UndescribedDefaultPrivilege, error) {
 	query := `
 		SELECT
 			CASE WHEN d.defaclrole = 0 THEN '' ELSE pg_get_userbyid(d.defaclrole) END AS grantor,
+			COALESCE(n.nspname, '') AS schema_name,
 			` + defaultACLObjectType("d") + ` AS object_type
 		FROM pg_default_acl d
-		WHERE d.defaclnamespace = 0
-		ORDER BY grantor, object_type`
+		LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		WHERE ` + undescribedDefaultACL("d") + `
+		ORDER BY schema_name, grantor, object_type`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query global default privileges: %w", err)
+		return nil, fmt.Errorf("failed to query undescribed default privileges: %w", err)
 	}
 	defer rows.Close()
 
-	var privileges []catalog.GlobalDefaultPrivilege
+	inScope := make(map[string]bool)
+	for _, schemaName := range r.schemasToRead() {
+		inScope[schemaName] = true
+	}
+	var privileges []catalog.UndescribedDefaultPrivilege
 	for rows.Next() {
-		var privilege catalog.GlobalDefaultPrivilege
-		if err := rows.Scan(&privilege.Grantor, &privilege.ObjectType); err != nil {
-			return nil, fmt.Errorf("failed to scan global default privilege: %w", err)
+		var privilege catalog.UndescribedDefaultPrivilege
+		if err := rows.Scan(&privilege.Grantor, &privilege.Schema, &privilege.ObjectType); err != nil {
+			return nil, fmt.Errorf("failed to scan undescribed default privilege: %w", err)
+		}
+		if privilege.Schema != "" && !inScope[privilege.Schema] {
+			continue
 		}
 		privileges = append(privileges, privilege)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read global default privileges: %w", err)
+		return nil, fmt.Errorf("failed to read undescribed default privileges: %w", err)
 	}
 	return privileges, nil
-}
-
-// defaultACLObjectType turns pg_default_acl's one-character object class into
-// the keyword a statement writes, over the alias the caller gives the relation.
-//
-// Both default-privilege reads use it, so the schema-scoped rows and the global
-// ones name a class the same way. SCHEMAS and LARGE OBJECTS are global only --
-// PostgreSQL 18.6 refuses IN SCHEMA for both -- so only the global read meets
-// them. A code this list does not know is kept as the catalog spells it, which
-// is enough to report it and says nothing false.
-func defaultACLObjectType(alias string) string {
-	column := alias + ".defaclobjtype"
-	return `CASE ` + column + `
-					WHEN 'r' THEN 'TABLES'
-					WHEN 'S' THEN 'SEQUENCES'
-					WHEN 'f' THEN 'FUNCTIONS'
-					WHEN 'T' THEN 'TYPES'
-					WHEN 'n' THEN 'SCHEMAS'
-					WHEN 'L' THEN 'LARGE OBJECTS'
-					ELSE ` + column + `::text
-				END`
 }
 
 // readCapabilityGatedObjects reads the object kinds whose presence a capability

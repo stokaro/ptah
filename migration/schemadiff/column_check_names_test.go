@@ -83,7 +83,7 @@ func TestCompare_AnUnnamedColumnCheckThatChangedIsPlanned(t *testing.T) {
 // name the column CHECKs and the `checks` entry by one rule, so nothing is
 // planned.
 func TestCompareSchemas_AnUnnamedColumnCheckPairsWithItself(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.MySQL} {
+	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

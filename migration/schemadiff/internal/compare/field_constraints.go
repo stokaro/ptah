@@ -32,7 +32,7 @@ func buildTablePrimaryKeyColumnSets(
 // isFieldLevelConstraint determines if a database constraint represents a field-level constraint
 // that is already represented in the field definitions (NOT NULL, PRIMARY KEY).
 // A column's UNIQUE is decided with every other key of its table in view; see
-// [columnOwnedUniques].
+// [readColumnKeys].
 //
 // A foreign key is never one of them, although a column can declare it. By the
 // time the comparison runs, every foreign key the desired side declares has a

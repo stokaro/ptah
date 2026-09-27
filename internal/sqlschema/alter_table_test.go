@@ -321,7 +321,7 @@ func TestReadOnto_AltersAnEarlierTable(t *testing.T) {
 
 	later, _, err := sqlschema.ReadOnto([]byte(
 		"ALTER TABLE t ADD PRIMARY KEY (id), ALTER COLUMN a SET DEFAULT 5, DROP COLUMN b, ADD COLUMN d int;",
-	), "postgres", &earlier)
+	), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(columnNamesOf(later), qt.DeepEquals, []string{"d"})

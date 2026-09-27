@@ -81,12 +81,11 @@ SQL:
   the column, and a key over more columns that the column leads. So
   `a INT UNIQUE, b INT, UNIQUE (a, b)` matches the keys `a` and `a_2` it
   builds, and a key the file no longer declares is dropped, as Atlas CE plans
-  it. A key over the column that the file declares by name stays that
-  declaration's. Where the file writes both `a INT UNIQUE` and
-  `CONSTRAINT uq_a UNIQUE (a)`, the declared key is taken to hold the column's
-  uniqueness, so a database with `uq_a` alone plans nothing, where Atlas CE
-  adds `a`
-  ([stokaro/ptah#3784](https://github.com/stokaro/ptah/issues/3784)).
+  it. A key over the column that the file declares by name, as a constraint
+  or as a unique index, stays that declaration's, and the column's own key is
+  compared beside it. Both engines build `a INT UNIQUE` and
+  `CONSTRAINT uq_a UNIQUE (a)` as two keys, so a database with `uq_a` alone
+  is planned the key `a`, as Atlas CE plans it.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so
@@ -148,6 +147,18 @@ SQL:
 - The name in `FOREIGN KEY idx (a) REFERENCES p(id)` names the key itself on
   MariaDB, and the key's index takes it. On MySQL it names only the key's
   index, and the key is `<table>_ibfk_<n>`.
+- The index the server builds for a foreign key follows its own rule, on both
+  engines, and Ptah reads a schema file by it. The server builds one only where
+  no other index begins with the key's columns: not where the body declares
+  such an index, and not for a key whose columns begin a longer key's, or match
+  a later key's. The index outlives its key: `ALTER TABLE ... DROP FOREIGN KEY`
+  and `DROP CONSTRAINT` leave it, and it keeps an index of the key's name that
+  the author declared. And it gives way to any index added later that begins
+  with its columns, which then takes its place and can take its name. The index
+  a MySQL `FOREIGN KEY idx (a)` clause names is such an index, under that
+  name. An index the author declared never gives way. So a file that drops a
+  key, or adds a `UNIQUE` over a key's column, compares equal to the database
+  it built.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
@@ -169,6 +180,12 @@ SQL:
   check of the table holds, the names the same statement writes included.
   MariaDB takes one check on a column and answers `ERROR 1064` to a second,
   and Ptah refuses it the same way.
+- A column `check` declared in YAML or a Go annotation without `check_name`
+  is written without a name, and the comparison looks for the name the server
+  gives it: `<table>_chk_<n>` on MySQL, numbered in column order among the
+  unnamed column checks, and the column's own name on MariaDB. Measured on
+  MySQL 8.4.11 and MariaDB 11.8.9, a table whose columns `a` and `b` each carry
+  one holds `e_chk_1` and `e_chk_2` on MySQL, and `a` and `b` on MariaDB.
 - Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
   `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
   `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as

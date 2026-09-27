@@ -55,6 +55,7 @@ func TestParseForeignKeyIndexName_MySQLHappyPath(t *testing.T) {
 
 			c.Assert(table.Indexes, qt.HasLen, 1)
 			c.Assert(table.Indexes[0].Name, qt.Equals, "zidxonly27")
+			c.Assert(table.Indexes[0].ForeignKeyIndex, qt.IsTrue)
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{"a"})
 			c.Assert(table.Indexes[0].Unique, qt.IsFalse)
 			c.Assert(table.Constraints, qt.HasLen, 1)
@@ -118,6 +119,7 @@ func TestParseAlterAddForeignKeyIndexName_MySQL(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(index.Index.Name, qt.Equals, "zidx")
 	c.Assert(index.Index.Columns, qt.DeepEquals, []string{"a"})
+	c.Assert(index.Index.ForeignKeyIndex, qt.IsTrue)
 	key, ok := operations[1].(*ast.AddConstraintOperation)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(key.Constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
@@ -207,4 +209,18 @@ func TestParseForeignKeyIndexName_FailurePath(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, "zidxonly27")
 		})
 	}
+}
+
+// An index the body declares beside the key is a declaration, even where it is
+// the index the key uses, so it carries no mark: the server keeps it when
+// another index covers the key, and drops only the one it built.
+func TestParseDeclaredIndexBesideAForeignKeyIsNotTheKeys(t *testing.T) {
+	c := qt.New(t)
+
+	table := parsedChildTable(c,
+		"CREATE TABLE child (a INT, KEY zidx (a), FOREIGN KEY (a) REFERENCES parents(id));", platform.MySQL)
+
+	c.Assert(table.Indexes, qt.HasLen, 1)
+	c.Assert(table.Indexes[0].Name, qt.Equals, "zidx")
+	c.Assert(table.Indexes[0].ForeignKeyIndex, qt.IsFalse)
 }

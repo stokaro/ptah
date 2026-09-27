@@ -33,6 +33,9 @@ type alterTarget struct {
 	// statement is what the operations of the statement share. It is set by
 	// [appendAlterTable] and never nil there.
 	statement *alterStatement
+	// keys are the indexes the document's server built for foreign keys; see
+	// [keyIndex]. Set by [appendAlterTable] and never nil there.
+	keys *keyIndexes
 }
 
 // alterStatement is what the operations of one ALTER TABLE share.
@@ -64,6 +67,10 @@ type alterStatement struct {
 	// laterDrops are the constraint names the operations after the current
 	// one drop. See [refuseCheckNameDroppedLater].
 	laterDrops []string
+	// clause is the index a MySQL `ADD FOREIGN KEY name (columns)` clause
+	// names, which the parser hands over as an operation of its own just
+	// before the key's, until that key takes it.
+	clause *schemamodel.Index
 }
 
 // newAlterStatement reads what the statement's operations share from the
@@ -445,7 +452,18 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		return nil
 	}
 	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
-	if target.removeNamedConstraint(name) {
+	if operation.ForeignKey {
+		if target.removeForeignKey(name) {
+			target.keepKeyIndexes(name)
+			return nil
+		}
+	} else if key := target.holdsForeignKey(name); target.removeNamedConstraint(name) {
+		if key {
+			target.keepKeyIndexes(name)
+		}
+		if operation.Unique {
+			target.keys.forget(target.qualified, name)
+		}
 		return nil
 	}
 	if operation.IfExists {

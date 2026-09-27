@@ -206,7 +206,7 @@ func pairedConstraints(
 //
 // Two exclusions, and they are different in kind. A field-level constraint is
 // carried by the column it belongs to, so the column's lifecycle creates and
-// drops it; for a UNIQUE, [columnOwnedUniques] says which one that is. A UNIQUE constraint the desired state names as an *index* is the
+// drops it; for a UNIQUE, [readColumnKeys] says which one that is. A UNIQUE constraint the desired state names as an *index* is the
 // same catalog object as that index, so index comparison creates and drops it;
 // see [uniqueConstraintOwnedByDeclaredIndex]. A desired state that names the
 // object as a constraint keeps it here, which is why the hand-off asks about
@@ -221,7 +221,7 @@ func collectDatabaseConstraints(
 	semantics identifier.Semantics,
 ) map[tableMemberKey]catalog.Constraint {
 	declaredIndexes := generatedIndexIdentities(desired, semantics)
-	ownedByColumns := columnOwnedUniques(desired, database, genConstraints, semantics)
+	ownedByColumns := readColumnKeys(desired, database, dialect, semantics).owned
 	dbConstraints := make(map[tableMemberKey]catalog.Constraint, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		key := newCatalogConstraintKey(constraint, semantics)

@@ -25,24 +25,28 @@ func Read(data []byte, dialect string) (schemamodel.Database, *ast.StatementList
 	return ReadOnto(data, dialect, nil)
 }
 
-// ReadOnto is [Read] for one file of a schema directory, read against base,
-// what the directory's earlier files declared.
+// ReadOnto is [Read] for one file of a schema directory, read against
+// document, what the directory's earlier files declared.
 //
 // A directory is one script run in file order, so a later file may add a
 // column to a table an earlier file created, or change one of its columns or
 // constraints. The result holds only what this file adds, the added column
-// included, and the caller merges it with base. A change to an object base
-// declares is made to base, in place, so base must be the caller's own
-// accumulated document rather than a copy. A nil base reads the file alone, as
-// [Read] does.
+// included, and the caller merges it with the document's model. A change to
+// an object that model declares is made to it, in place, so the model must be
+// the caller's own accumulated one rather than a copy; see [NewDocument]. The
+// same document is passed for every file, because it carries what the model
+// cannot. A nil document reads the file alone, as [Read] does.
 func ReadOnto(
-	data []byte, dialect string, base *schemamodel.Database,
+	data []byte, dialect string, document *Document,
 ) (schemamodel.Database, *ast.StatementList, error) {
 	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	database, err := toDatabase(statements, dialect, base)
+	if document == nil {
+		document = NewDocument(nil)
+	}
+	database, err := toDatabase(statements, dialect, document)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}

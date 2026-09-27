@@ -903,6 +903,15 @@ type IndexNode struct {
 	// instructs the ClickHouse renderer to fall back to its documented
 	// default (8192). Ignored by non-ClickHouse renderers.
 	Granularity int
+
+	// ForeignKeyIndex marks the index a MySQL `FOREIGN KEY name (columns)`
+	// clause names, rather than one the table body declares on its own.
+	//
+	// The server builds that index for the key, and treats it as the key's: it
+	// drops the index once another index begins with the same columns, which
+	// it never does to an index the author declared. Renderers ignore it: an
+	// index written out is declared, and its catalog is the same.
+	ForeignKeyIndex bool
 }
 
 // ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.
