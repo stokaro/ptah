@@ -31,6 +31,47 @@ func significantTokens(expression string) tokenList {
 	}
 }
 
+// Tokens reads text the way PostgreSQL's lexer does and returns one entry per
+// token, whitespace and comments left out. An unquoted word -- a name or a
+// keyword -- is folded as the server folds it, and every other token is kept as
+// written, a quoted identifier with its quotes. Operator characters written
+// next to each other are one entry, so `<>` and `< >` differ, as they do to
+// the server.
+//
+// Two texts with equal entries are the same text to the server's grammar, so
+// they parse to the same tree. The converse does not hold: `(a) + 1` and
+// `a + 1` differ here and parse alike, and so do `"a"` and `a`.
+func Tokens(text string) []string {
+	tokens := significantTokens(text)
+	entries := make([]string, 0, len(tokens))
+	previousEnd := -1
+	for _, token := range tokens {
+		value := token.Value
+		switch {
+		case token.Type == lexer.TokenIdentifier:
+			value = foldUnquoted(value)
+		case isOperatorRun(token) && len(entries) > 0 && previousEnd == token.Start &&
+			strings.Trim(entries[len(entries)-1], operatorCharacters) == "":
+			entries[len(entries)-1] += value
+			previousEnd = token.End
+			continue
+		}
+		entries = append(entries, value)
+		previousEnd = token.End
+	}
+	return entries
+}
+
+// operatorCharacters are the characters PostgreSQL's lexer reads a run of as
+// operators, with the colon of `::` and `:=`.
+const operatorCharacters = "~!@#^&|`?+-*/%<>=:"
+
+// isOperatorRun reports whether token is made of operator characters alone.
+func isOperatorRun(token lexer.Token) bool {
+	return token.Type == lexer.TokenOperator && token.Value != "" &&
+		strings.Trim(token.Value, operatorCharacters) == ""
+}
+
 // skipQualifiedName returns the position after the dotted name that starts at
 // position.
 func (t tokenList) skipQualifiedName(position int) int {
