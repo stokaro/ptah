@@ -143,6 +143,20 @@ ALTER TABLE g1 ADD UNIQUE (id);`,
 ALTER TABLE g2 ADD UNIQUE (a);`,
 	},
 	{
+		// PostgreSQL 18.6 keeps each key deferrable as written: dk1_pkey and
+		// dk1_pos_key DEFERRABLE, dk1_r_excl and dk2_b_uq INITIALLY DEFERRED
+		// too, and builds both keys over dk3.x, because a key that defers is
+		// not the same key as one that does not (stokaro/ptah#3824).
+		name: "deferrable keys",
+		sql: `CREATE TABLE dk1 (id int PRIMARY KEY DEFERRABLE, pos int UNIQUE DEFERRABLE, r int,
+  EXCLUDE USING btree (r WITH =) DEFERRABLE INITIALLY DEFERRED);
+CREATE TABLE dk2 (a int, b int, CONSTRAINT dk2_pk PRIMARY KEY (a, b) DEFERRABLE,
+  CONSTRAINT dk2_b_uq UNIQUE (b) DEFERRABLE INITIALLY DEFERRED);
+CREATE TABLE dk3 (x int, UNIQUE (x) DEFERRABLE, UNIQUE (x));
+CREATE TABLE dk4 (x int);
+ALTER TABLE dk4 ADD CONSTRAINT dk4_x_key UNIQUE (x) DEFERRABLE INITIALLY DEFERRED;`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -229,6 +243,18 @@ CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true;`
 		migration:  `CREATE TABLE nd (a int UNIQUE);`,
 		schema:     `CREATE TABLE nd (a int UNIQUE NULLS NOT DISTINCT);`,
 		wantInPlan: "NULLS NOT DISTINCT",
+	},
+	{
+		name:       "a UNIQUE starts deferring its check",
+		migration:  `CREATE TABLE dk5 (x int, CONSTRAINT dk5_x_key UNIQUE (x));`,
+		schema:     `CREATE TABLE dk5 (x int, CONSTRAINT dk5_x_key UNIQUE (x) DEFERRABLE INITIALLY DEFERRED);`,
+		wantInPlan: "DEFERRABLE INITIALLY DEFERRED",
+	},
+	{
+		name:       "a primary key stops deferring its check",
+		migration:  `CREATE TABLE dk6 (id int PRIMARY KEY DEFERRABLE);`,
+		schema:     `CREATE TABLE dk6 (id int PRIMARY KEY);`,
+		wantInPlan: "dk6_pkey",
 	},
 	{
 		name:       "a default interval grows",

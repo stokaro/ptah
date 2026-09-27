@@ -139,11 +139,14 @@ func synthesizeTablePrimaryKeyConstraints(
 
 	var synthesized []schemamodel.Constraint
 	for _, table := range desired.Tables {
+		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		columns := tablePrimaryKeyColumns(table)
+		if len(columns) == 0 && liveKeyDefers(database, identity, semantics) {
+			columns = columnPrimaryKey(table, desired.Fields)
+		}
 		if len(columns) == 0 {
 			continue
 		}
-		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		if _, exists := dbTables[identity]; !exists {
 			continue
 		}
@@ -176,9 +179,39 @@ func synthesizeTablePrimaryKeyConstraints(
 			// payload from the live index, after which the schema reads as synced
 			// (stokaro/ptah#2199).
 			IncludeColumns: append([]string(nil), table.PrimaryKeyInclude...),
+			// Compared the same way, for the same reason (stokaro/ptah#3824).
+			Deferrable: table.PrimaryKeyDeferrable,
+			Initially:  table.PrimaryKeyInitially,
 		})
 	}
 	return synthesized
+}
+
+// liveKeyDefers reports whether the live table's primary key defers its
+// check. A column's own primary key is compared as a flag on the column, and
+// the flag cannot defer; against a deferrable live key it is compared as the
+// table's key instead, so the difference is planned (stokaro/ptah#3824).
+// [isFieldLevelConstraint] answers from the same fact on the other side.
+func liveKeyDefers(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
+	for _, constraint := range database.Constraints {
+		if constraint.Type == "PRIMARY KEY" && constraint.Deferrable &&
+			newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == identity {
+			return true
+		}
+	}
+	return false
+}
+
+// columnPrimaryKey names the columns of table that declare themselves its
+// primary key, in declaration order.
+func columnPrimaryKey(table schemamodel.Table, fields []schemamodel.Field) []string {
+	var columns []string
+	for _, field := range fields {
+		if field.StructName == table.StructName && field.Primary {
+			columns = append(columns, field.Name)
+		}
+	}
+	return columns
 }
 
 // livePrimaryKeyIsOnTheColumns reports that the live table already has exactly

@@ -341,9 +341,9 @@ func constraintDefinitionsChanged(
 	case "CHECK":
 		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), semantics)
 	case "UNIQUE":
-		return uniqueConstraintChanged(genConstraint, dbConstraint)
+		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
-		return primaryKeyConstraintChanged(genConstraint, dbConstraint)
+		return primaryKeyConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "FOREIGN KEY":
 		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	default:
@@ -352,9 +352,18 @@ func constraintDefinitionsChanged(
 	}
 }
 
-func primaryKeyConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
-	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
-		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns)
+// primaryKeyConstraintChanged compares primary keys. The columns compare as
+// the dialect resolves names: Oracle reports an unquoted `id` as ID, and
+// compared as text, a key read back from Oracle 23 was dropped and added on
+// every plan.
+func primaryKeyConstraintChanged(
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
+	semantics identifier.Semantics,
+) bool {
+	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
+		deferralChanged(genConstraint, dbConstraint)
 }
 
 // excludeConstraintChanged compares EXCLUDE constraint definitions.
@@ -371,7 +380,8 @@ func excludeConstraintChanged(
 	excludes map[string]config.ExcludeExpression,
 	semantics identifier.Semantics,
 ) bool {
-	if !strings.EqualFold(genConstraint.UsingMethod, getStringValue(dbConstraint.UsingMethod)) {
+	if !strings.EqualFold(genConstraint.UsingMethod, getStringValue(dbConstraint.UsingMethod)) ||
+		deferralChanged(genConstraint, dbConstraint) {
 		return true
 	}
 	elements, where := genConstraint.ExcludeElements, genConstraint.WhereCondition
@@ -554,9 +564,16 @@ func checkExpressionsOf(opts *config.CompareOptions) map[string]config.CheckExpr
 	return opts.CheckExpressions
 }
 
-// uniqueConstraintChanged compares UNIQUE constraint definitions
-func uniqueConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
-	return !stringSetsEqual(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+// uniqueConstraintChanged compares UNIQUE constraint definitions. The columns
+// compare as the dialect resolves names, for the reason
+// primaryKeyConstraintChanged gives.
+func uniqueConstraintChanged(
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
+	semantics identifier.Semantics,
+) bool {
+	return !columnSetsMatch(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault(), semantics) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
-		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
+		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct) ||
+		deferralChanged(genConstraint, dbConstraint)
 }

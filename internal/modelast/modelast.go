@@ -803,6 +803,11 @@ func tableNeedsPrimaryKeyConstraint(table schemamodel.Table, fields []schemamode
 	if len(table.PrimaryKeyInclude) > 0 && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
+	// So is a deferral, which the column spelling can carry on PostgreSQL and
+	// cannot on every target that has the table spelling.
+	if table.PrimaryKeyDeferrable && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+		return true
+	}
 	// UNIQUE on the same column is a reason of the same kind. The column
 	// spelling has one slot for a key and the source declared two, and folding
 	// them is not a formatting choice: measured on MariaDB 11.8,
@@ -853,6 +858,8 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
 		constraint.Name = table.PrimaryKeyName
 		constraint.IncludeColumns = table.PrimaryKeyInclude
+		constraint.Deferrable = table.PrimaryKeyDeferrable
+		constraint.Initially = table.PrimaryKeyInitially
 		return constraint
 	}
 	columns := make([]string, 0, len(table.PrimaryKeyParts))
@@ -871,6 +878,8 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		Columns:        columns,
 		ColumnParts:    columnParts,
 		IncludeColumns: table.PrimaryKeyInclude,
+		Deferrable:     table.PrimaryKeyDeferrable,
+		Initially:      table.PrimaryKeyInitially,
 	}
 }
 
@@ -907,11 +916,13 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 		node := ast.NewPrimaryKeyConstraint(constraint.Columns...)
 		node.Name = constraint.Name
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
+		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
 		return node
 	case "UNIQUE":
 		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
 		node.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
+		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
 		return node
 	case "FOREIGN KEY":
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
@@ -932,8 +943,10 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 			Expression: constraint.CheckExpression,
 		}
 	case "EXCLUDE":
-		return ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements).
+		node := ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements).
 			SetWhereCondition(constraint.WhereCondition)
+		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
+		return node
 	default:
 		return nil
 	}

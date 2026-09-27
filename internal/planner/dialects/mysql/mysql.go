@@ -1890,9 +1890,13 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if info, modified := state.removalByTableName[add.Identity]; modified {
 			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
+		// The deferral rides with the key: Oracle, which this planner also
+		// serves, defers a key (stokaro/ptah#3824).
+		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
+		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
-			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},
 		})
 		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
@@ -2074,7 +2078,9 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		if len(add.Columns) == 0 {
 			return nil
 		}
-		return ast.NewUniqueConstraint(add.Name, add.Columns...)
+		unique := ast.NewUniqueConstraint(add.Name, add.Columns...)
+		unique.Deferrable, unique.Initially = add.Deferrable, add.Initially
+		return unique
 	default:
 		return nil
 	}

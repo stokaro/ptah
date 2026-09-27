@@ -357,6 +357,8 @@ func toDBConstraints(
 			Type:        "PRIMARY KEY",
 			ColumnNames: append([]string(nil), table.PrimaryKey...),
 			ColumnName:  first(table.PrimaryKey),
+			Deferrable:  table.PrimaryKeyDeferrable,
+			Initially:   table.PrimaryKeyInitially,
 		})
 	}
 	for _, constraint := range constraints {
@@ -377,6 +379,8 @@ func toDBConstraints(
 			),
 			WhereCondition: optionalStringPtr(constraint.WhereCondition),
 			Comment:        constraint.Comment,
+			Deferrable:     constraint.Deferrable,
+			Initially:      constraint.Initially,
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
@@ -387,8 +391,6 @@ func toDBConstraints(
 			dbConstraint.DeleteRule = optionalStringPtr(constraint.OnDelete)
 			dbConstraint.UpdateRule = optionalStringPtr(constraint.OnUpdate)
 			dbConstraint.OnDeleteColumns = append([]string(nil), constraint.OnDeleteColumns...)
-			dbConstraint.Deferrable = constraint.Deferrable
-			dbConstraint.Initially = constraint.Initially
 		}
 		appendConstraint(dbConstraint)
 	}

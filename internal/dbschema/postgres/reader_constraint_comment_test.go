@@ -39,9 +39,11 @@ func commentedConstraintCatalog(comment string) dbtest.QueryHandler {
 				Columns: []string{
 					"schema_name", "constraint_name", "table_name", "constraint_type",
 					"constraint_definition", "required_extensions", "constraint_comment",
+					"condeferrable", "condeferred",
 				},
 				Rows: [][]driver.Value{{
 					"public", "ex_room", "bookings", "x", "EXCLUDE USING gist (room WITH =)", "[]", comment,
+					false, false,
 				}},
 			}, nil
 		}

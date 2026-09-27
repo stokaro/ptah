@@ -57,9 +57,9 @@ type IndexConstraintFold struct {
 // Elements and predicates compare as [pgname.Tokens] reads them. Spellings
 // that differ in tokens and parse alike, such as a redundant pair of
 // parentheses, are not recognized, and the server folds a pair this keeps.
-// DEFERRABLE is part of the server's key and not of this one: Ptah neither
-// writes nor reads it on these constraints, so the statement the server sees
-// never carries it.
+// Deferral is part of the key too: `UNIQUE (a) DEFERRABLE, UNIQUE (a)` in one
+// CREATE TABLE builds two constraints on PostgreSQL 18.6, and so does a pair
+// that differs only in INITIALLY DEFERRED.
 //
 // A column's own UNIQUE is a key over that column alone, and it folds with an
 // equal primary key or UNIQUE the same way. Measured on PostgreSQL 18.6:
@@ -128,12 +128,14 @@ func FoldedIndexConstraints(
 // have the same kind of key, so they fold together. A list of names, or of
 // [pgname.Tokens] entries, is joined by [indexKeySeparator].
 type indexKey struct {
-	columns     string
-	include     string
-	notDistinct bool
-	method      string
-	elements    string
-	where       string
+	columns       string
+	include       string
+	notDistinct   bool
+	method        string
+	elements      string
+	where         string
+	deferrable    bool
+	deferredFirst bool
 }
 
 // indexKeySeparator joins the entries of a key's list. PostgreSQL allows it in
@@ -144,20 +146,26 @@ func indexKeyOf(constraint schemamodel.Constraint) (indexKey, bool) {
 	switch strings.ToUpper(constraint.Type) {
 	case "PRIMARY KEY":
 		return indexKey{
-			columns: strings.Join(constraint.Columns, indexKeySeparator),
-			include: strings.Join(constraint.IncludeColumns, indexKeySeparator),
+			columns:       strings.Join(constraint.Columns, indexKeySeparator),
+			include:       strings.Join(constraint.IncludeColumns, indexKeySeparator),
+			deferrable:    constraint.Deferrable,
+			deferredFirst: initiallyDeferred(constraint.Initially),
 		}, true
 	case "UNIQUE":
 		return indexKey{
-			columns:     strings.Join(constraint.Columns, indexKeySeparator),
-			include:     strings.Join(constraint.IncludeColumns, indexKeySeparator),
-			notDistinct: constraint.NullsDistinct != nil && !*constraint.NullsDistinct,
+			columns:       strings.Join(constraint.Columns, indexKeySeparator),
+			include:       strings.Join(constraint.IncludeColumns, indexKeySeparator),
+			notDistinct:   constraint.NullsDistinct != nil && !*constraint.NullsDistinct,
+			deferrable:    constraint.Deferrable,
+			deferredFirst: initiallyDeferred(constraint.Initially),
 		}, true
 	case "EXCLUDE":
 		return indexKey{
-			method:   tokenText(constraint.UsingMethod),
-			elements: tokenText(constraint.ExcludeElements),
-			where:    tokenText(constraint.WhereCondition),
+			method:        tokenText(constraint.UsingMethod),
+			elements:      tokenText(constraint.ExcludeElements),
+			where:         tokenText(constraint.WhereCondition),
+			deferrable:    constraint.Deferrable,
+			deferredFirst: initiallyDeferred(constraint.Initially),
 		}, true
 	default:
 		return indexKey{}, false
@@ -196,11 +204,19 @@ func primaryKeyIndex(
 		return indexKey{}, 0, false
 	}
 	return indexKey{
-		columns: strings.Join(columns, indexKeySeparator),
-		include: strings.Join(table.PrimaryKeyInclude, indexKeySeparator),
+		columns:       strings.Join(columns, indexKeySeparator),
+		include:       strings.Join(table.PrimaryKeyInclude, indexKeySeparator),
+		deferrable:    table.PrimaryKeyDeferrable,
+		deferredFirst: initiallyDeferred(table.PrimaryKeyInitially),
 	}, PrimaryKeyOutsideList, true
 }
 
 func isPrimaryKeyConstraint(constraint schemamodel.Constraint) bool {
 	return strings.EqualFold(constraint.Type, "PRIMARY KEY")
+}
+
+// initiallyDeferred reports whether a timing checks at the end of the
+// transaction by default. Empty and "immediate" both check at once.
+func initiallyDeferred(initially string) bool {
+	return strings.EqualFold(initially, "deferred")
 }

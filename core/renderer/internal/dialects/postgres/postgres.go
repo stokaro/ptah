@@ -2037,7 +2037,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		if len(constraint.IncludeColumns) > 0 {
 			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
-		return line, nil
+		return r.withKeyDeferral(line, constraint)
 	case ast.UniqueConstraint:
 		if !r.capabilities().Has(capability.UniqueConstraints) {
 			return "", r.uniqueConstraintUnsupported(constraint.Name, constraint.Columns)
@@ -2051,9 +2051,9 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 			columns += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s %s %s", r.escapeIdentifier(constraint.Name), clause, columns), nil
+			return r.withKeyDeferral(fmt.Sprintf("  CONSTRAINT %s %s %s", r.escapeIdentifier(constraint.Name), clause, columns), constraint)
 		}
-		return fmt.Sprintf("  %s %s", clause, columns), nil
+		return r.withKeyDeferral(fmt.Sprintf("  %s %s", clause, columns), constraint)
 	case ast.ForeignKeyConstraint:
 		// The empty string is this function's ONLY "the target cannot host
 		// it" answer, and a foreign key is the only constraint kind that can
@@ -2196,7 +2196,28 @@ func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (stri
 		result += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
 	}
 
-	return result, nil
+	return r.withKeyDeferral(result, constraint)
+}
+
+// withKeyDeferral appends the deferral of a PRIMARY KEY, UNIQUE or EXCLUDE to
+// line. A key that is not deferrable gets no clause, which is what the server
+// assumes. The shared renderer has refused a deferrable key on a target
+// without deferrable keys, so one that reaches here is written.
+func (r *Renderer) withKeyDeferral(line string, constraint *ast.ConstraintNode) (string, error) {
+	if !constraint.Deferrable {
+		return line, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(constraint.Initially)) {
+	case "":
+		return line + " DEFERRABLE", nil
+	case "deferred":
+		return line + " DEFERRABLE INITIALLY DEFERRED", nil
+	case "immediate":
+		return line + " DEFERRABLE INITIALLY IMMEDIATE", nil
+	default:
+		return "", fmt.Errorf(
+			"constraint %q declares initially %q, which is neither deferred nor immediate", constraint.Name, constraint.Initially)
+	}
 }
 
 const (

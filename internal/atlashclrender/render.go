@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgindexstorage"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/risk"
@@ -155,6 +156,11 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 				constraint.Name, constraint.OnDelete, strings.Join(constraint.OnDeleteColumns, ", "),
 			)
 		}
+	}
+	// Nor for a key that defers its check. Atlas writes a UNIQUE as a unique
+	// index, which cannot defer, and has no deferral on a primary key.
+	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
+		return Result{}, fmt.Errorf("%s defers its check, which Atlas HCL cannot represent", keys[0])
 	}
 
 	// Resolved once, here, rather than per index. A malformed value has to fail

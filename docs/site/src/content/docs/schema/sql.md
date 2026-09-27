@@ -138,37 +138,51 @@ every column: PostgreSQL before 15, YugabyteDB 2024.2, CockroachDB, and the
 other engines. The Go annotation and Atlas HCL exports refuse such a key for
 the same reason, because neither format can write the list.
 
-## Defer a foreign key check
+## Defer a check to the end of the transaction
 
-A foreign key can put its check off to the end of the transaction. The
-clauses follow the key, on the table or on its column, in any order:
+A foreign key, a primary key, a `UNIQUE` and an `EXCLUDE` can put their check
+off. The clauses follow the constraint, on the table or on its column, in any
+order:
 
 ```sql
 CREATE TABLE orders (id integer PRIMARY KEY);
 CREATE TABLE lines (
   id integer PRIMARY KEY,
   order_id integer REFERENCES orders (id) DEFERRABLE INITIALLY DEFERRED,
+  position integer UNIQUE DEFERRABLE,
   replaces integer,
   FOREIGN KEY (replaces) REFERENCES lines (id) INITIALLY DEFERRED
 );
 ```
 
-`INITIALLY DEFERRED` alone makes the key deferrable, as it does on
-PostgreSQL. `NOT DEFERRABLE` and `INITIALLY IMMEDIATE` say what a key is
-without them. The reader refuses what PostgreSQL 18.6 refuses:
-`DEFERRABLE` beside `NOT DEFERRABLE`, two timings, and `INITIALLY DEFERRED`
-beside `NOT DEFERRABLE`. It also refuses a clause after a column that
-declares no key, as in `a integer NOT NULL DEFERRABLE`. SQLite takes the
-clauses after a foreign key alone, and only with `DEFERRABLE` first. MySQL
-and MariaDB take none of them.
+`INITIALLY DEFERRED` alone makes the constraint deferrable, as on
+PostgreSQL. The reader refuses what PostgreSQL 18.6 refuses: `DEFERRABLE`
+beside `NOT DEFERRABLE`, two timings, `INITIALLY DEFERRED` beside `NOT
+DEFERRABLE`, a clause after a `CHECK`, and a clause after a column that
+declares no key, as in `a integer NOT NULL DEFERRABLE`.
 
-After a `PRIMARY KEY`, `UNIQUE` or `EXCLUDE`, `NOT DEFERRABLE` and
-`INITIALLY IMMEDIATE` are read and change nothing. `DEFERRABLE` and
-`INITIALLY DEFERRED` are refused by name, because the model cannot keep a
-deferrable key yet
-([stokaro/ptah#3824](https://github.com/stokaro/ptah/issues/3824)). So are
-the clauses PostgreSQL takes for the index behind a key, `WITH (...)` and
-`USING INDEX TABLESPACE`. A `CHECK` cannot be deferrable.
+A deferrable key on a column is read as the table's key over the column, as
+PostgreSQL reports it. A key that defers is a different key from one that
+does not, so changing the clause plans a drop and an add. A foreign key
+cannot reference a deferrable key; PostgreSQL refuses it.
+
+A render for a target without the clause refuses the constraint rather than
+write one that checks at once:
+
+| Target | Foreign key | Primary key, `UNIQUE` |
+| --- | --- | --- |
+| PostgreSQL | yes | yes, and `EXCLUDE` |
+| Oracle | yes | yes |
+| YugabyteDB | yes | no |
+| SQLite | yes, `DEFERRABLE` first | no |
+| CockroachDB, MySQL, MariaDB | no | no |
+
+The reader refuses the clauses on MySQL, MariaDB and CockroachDB, which
+refuses even `NOT DEFERRABLE`, and on SQLite after anything but a foreign key.
+The Atlas HCL and Go annotation exports refuse
+a deferrable key, because neither format can write one. The clauses
+PostgreSQL takes for the index behind a key, `WITH (...)` and `USING INDEX
+TABLESPACE`, are refused by name.
 
 ## Clauses after a constraint or a key
 

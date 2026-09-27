@@ -901,6 +901,13 @@ func prepareConstraintNode(
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
+	// A foreign key carries its deferral on its reference, so a constraint
+	// node that defers is a key.
+	if node.Deferrable {
+		if err := refuseDeferrableKey(dialect, caps, node.Type.String(), keyIdentity(node.Name, "")); err != nil {
+			return nil, err
+		}
+	}
 	if node.Type != ast.ForeignKeyConstraint {
 		return node, nil
 	}
@@ -1395,7 +1402,64 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
+		return err
+	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredKeyDeferral refuses a deferrable PRIMARY KEY, UNIQUE or
+// EXCLUDE the target cannot write, before any statement is built, for the
+// reason validateDeclaredNullsDistinct gives.
+func validateDeclaredKeyDeferral(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if !table.PrimaryKeyDeferrable {
+			continue
+		}
+		if err := refuseDeferrableKey(dialect, caps, "PRIMARY KEY", keyIdentity(table.PrimaryKeyName, table.Name)); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if !constraint.Deferrable || strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		if err := refuseDeferrableKey(dialect, caps, constraint.Type, keyIdentity(constraint.Name, constraint.Table)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseDeferrableKey refuses a deferrable key on a target without
+// [capability.DeferrableKeys]. Written without the clause, the key would
+// reject at once the rows its author arranged to fix before commit, so the
+// declaration is refused rather than weakened. A foreign key has a capability
+// of its own and is not asked here.
+func refuseDeferrableKey(dialect string, caps capability.Capabilities, kind, identity string) error {
+	if caps.Has(capability.DeferrableKeys) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "deferrable keys",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not support a DEFERRABLE %s; %s declares one",
+			platform.NormalizeDialect(dialect), kind, identity),
+	}
+}
+
+// keyIdentity names a key in a refusal: by its name, or by its table when
+// the key has none.
+func keyIdentity(name, table string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case table != "":
+		return fmt.Sprintf("an unnamed key of table %q", table)
+	default:
+		return "an unnamed key"
+	}
 }
 
 // validateDeclaredNullsDistinct runs the NULLS [NOT] DISTINCT refusal over a

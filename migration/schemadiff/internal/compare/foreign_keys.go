@@ -63,14 +63,17 @@ func foreignKeyConstraintChanged(
 	// Compare deferral. Without this a schema that declares DEFERRABLE against a
 	// constraint created without it reports no difference, so the plan is empty
 	// and the property never arrives (stokaro/ptah#1624).
-	if genConstraint.Deferrable != dbConstraint.Deferrable {
-		return true
-	}
-	if normalizeDeferralTiming(genConstraint.Initially) != normalizeDeferralTiming(dbConstraint.Initially) {
-		return true
-	}
+	return deferralChanged(genConstraint, dbConstraint)
+}
 
-	return false
+// deferralChanged reports whether a constraint defers its check differently
+// from the one the database holds. It is part of every constraint that can
+// defer: a foreign key, a primary key, a UNIQUE and an EXCLUDE. The server
+// changes only a foreign key's deferral in place, so a difference on a key is
+// a drop and an add (stokaro/ptah#3824).
+func deferralChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
+	return genConstraint.Deferrable != dbConstraint.Deferrable ||
+		normalizeDeferralTiming(genConstraint.Initially) != normalizeDeferralTiming(dbConstraint.Initially)
 }
 
 // foreignTableRefMatches reports whether a declared referenced table names the

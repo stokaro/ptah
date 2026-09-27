@@ -2941,7 +2941,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 			continue
 		}
 		if keyword == "DEFERRABLE" || keyword == "INITIALLY" || (keyword == "NOT" && p.nextIsDeferrable()) {
-			if err := p.parseColumnDeferral(column, last); err != nil {
+			if err := p.parseColumnDeferral(table, column, last); err != nil {
 				return err
 			}
 			continue

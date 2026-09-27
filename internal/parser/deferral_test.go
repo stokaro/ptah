@@ -105,7 +105,7 @@ func TestParse_ForeignKeyDeferral_HappyPath(t *testing.T) {
 			name:    "a table-level key on SQLite",
 			dialect: platform.SQLite,
 			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) NOT DEFERRABLE INITIALLY IMMEDIATE);",
-			want:    ast.ForeignKeyRef{Initially: "immediate"},
+			want:    ast.ForeignKeyRef{},
 		},
 	}
 	for _, test := range tests {
@@ -176,40 +176,22 @@ func TestParse_Deferral_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "a deferrable UNIQUE",
+			name:    "a column's deferrable UNIQUE, added by ALTER TABLE",
 			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, UNIQUE (a) DEFERRABLE);",
-			wantErr: `DEFERRABLE UNIQUE at position 34: a deferrable UNIQUE is not modeled yet \(stokaro/ptah#3824\).*`,
+			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ADD COLUMN b int UNIQUE DEFERRABLE;",
+			wantErr: `DEFERRABLE UNIQUE at position 62: a column's deferrable key is read as the table's key .*`,
 		},
 		{
-			name:    "a deferred EXCLUDE",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (r int, EXCLUDE USING btree (r WITH =) INITIALLY DEFERRED);",
-			wantErr: `DEFERRABLE EXCLUDE at position 54: a deferrable EXCLUDE is not modeled yet.*`,
+			name:    "CockroachDB",
+			dialect: platform.CockroachDB,
+			sql:     "CREATE TABLE c (a int, UNIQUE (a) NOT DEFERRABLE);",
+			wantErr: `deferral clause at position 34: CockroachDB has no deferrable constraints, .*`,
 		},
 		{
-			name:    "a deferrable table-level PRIMARY KEY",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, CONSTRAINT c_pk PRIMARY KEY (a) DEFERRABLE);",
-			wantErr: `DEFERRABLE PRIMARY KEY at position 55: .*`,
-		},
-		{
-			name:    "a column's deferrable UNIQUE",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int UNIQUE DEFERRABLE);",
-			wantErr: `DEFERRABLE UNIQUE at position 29: .*`,
-		},
-		{
-			name:    "a column's deferrable PRIMARY KEY",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int PRIMARY KEY DEFERRABLE);",
-			wantErr: `DEFERRABLE PRIMARY KEY at position 34: .*`,
-		},
-		{
-			name:    "ALTER TABLE adds a deferrable UNIQUE",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ADD CONSTRAINT u UNIQUE (a) DEFERRABLE;",
-			wantErr: `DEFERRABLE UNIQUE at position 66: .*`,
+			name:    "a foreign key on CockroachDB",
+			dialect: platform.CockroachDB,
+			sql:     "CREATE TABLE c (a int REFERENCES p (id) DEFERRABLE);",
+			wantErr: `deferral clause at position 40: CockroachDB has no deferrable constraints, .*`,
 		},
 		{
 			name:    "a deferrable CHECK",
@@ -222,6 +204,12 @@ func TestParse_Deferral_FailurePath(t *testing.T) {
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (a int NOT NULL DEFERRABLE);",
 			wantErr: `misplaced deferral clause at position 31: .*`,
+		},
+		{
+			name:    "after a column's second CHECK",
+			dialect: platform.Postgres,
+			sql:     "CREATE TABLE c (a int CHECK (a > 0) CHECK (a < 9) NOT DEFERRABLE);",
+			wantErr: `misplaced deferral clause at position 50: .*`,
 		},
 		{
 			name:    "on a column with no constraint",
