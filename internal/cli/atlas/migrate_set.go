@@ -125,7 +125,7 @@ func runAtlasMigrateSet(
 	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.url)
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("error connecting to database: %w", err))
 	}

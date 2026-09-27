@@ -117,15 +117,9 @@ var mysqlServerRefusals = []struct {
 	args func(server, dir string) []string
 }{
 	{
-		name: "migrate status",
+		name: "migrate down",
 		args: func(server, dir string) []string {
-			return []string{"migrate", "status", "--url", server, "--dir", "file://" + dir}
-		},
-	},
-	{
-		name: "migrate apply",
-		args: func(server, dir string) []string {
-			return []string{"migrate", "apply", "--url", server, "--dir", "file://" + dir}
+			return []string{"migrate", "down", "--url", server, "--dir", "file://" + dir}
 		},
 	},
 	{
