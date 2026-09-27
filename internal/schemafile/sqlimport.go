@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/sqlschema"
 )
 
 // sqlImportMarker is the directive a split SQL export writes into its entry
@@ -123,9 +124,12 @@ func hasDriveLetter(value string) bool {
 // document is everything the chain declared before this file. The whole chain
 // is one script, so each file is read against it -- a file may add a column to
 // a table a file before it created, or change one, as it may in a schema
-// directory -- and what the file adds is merged into it.
+// directory -- and what the file adds is merged into it. reads is the reader's
+// document over the same model, which carries what the model cannot; see
+// [sqlschema.Document].
 func loadSQLWithImports(
-	root, path string, opts Options, visited map[string]struct{}, depth int, document *schemamodel.Database,
+	root, path string, opts Options, visited map[string]struct{}, depth int,
+	document *schemamodel.Database, reads *sqlschema.Document,
 ) error {
 	if depth > maxSQLImportDepth {
 		return fmt.Errorf("%s chain is deeper than %d files", sqlImportMarker, maxSQLImportDepth)
@@ -145,7 +149,7 @@ func loadSQLWithImports(
 		return fmt.Errorf("parse SQL schema file %s: %w", path, err)
 	}
 
-	own, _, err := loadSQLFileWithStatements(path, opts, document)
+	own, _, err := loadSQLFileWithStatements(path, opts, reads)
 	if err != nil {
 		return err
 	}
@@ -169,7 +173,7 @@ func loadSQLWithImports(
 			return fmt.Errorf(
 				"%s %q: only %s files can be imported", sqlImportMarker, value, dirSQLExtension)
 		}
-		if err := loadSQLWithImports(root, resolved, opts, visited, depth+1, document); err != nil {
+		if err := loadSQLWithImports(root, resolved, opts, visited, depth+1, document, reads); err != nil {
 			return err
 		}
 	}
@@ -199,7 +203,10 @@ func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, erro
 		return loadSQLFile(resolved, opts)
 	}
 	merged := &schemamodel.Database{}
-	if err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged); err != nil {
+	reads := sqlschema.NewDocument(merged)
+	if err := loadSQLWithImports(
+		filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, reads,
+	); err != nil {
 		return nil, err
 	}
 	schemamodel.Finalize(merged)

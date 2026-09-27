@@ -201,7 +201,7 @@ func TestReadOnto_AlterTableUnnamedIndexNames_CountsEarlierFiles(t *testing.T) {
 				"CREATE TABLE c (id int PRIMARY KEY, a int, b int, KEY a (b));"), dialect)
 			c.Assert(err, qt.IsNil)
 
-			later, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE c ADD UNIQUE (a);"), dialect, &earlier)
+			later, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE c ADD UNIQUE (a);"), dialect, sqlschema.NewDocument(&earlier))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(keysOf(later, "c"), qt.DeepEquals, []string{"a_2(a)"})

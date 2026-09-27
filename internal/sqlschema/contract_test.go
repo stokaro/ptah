@@ -24,7 +24,9 @@ import (
 // real testing property for a naming one. What actually matters is that no
 // other package builds on them, so that is what is asserted -- outside this
 // package, the contract is Read, and ReadOnto for one file of a schema
-// directory, which is the same read against what earlier files declared.
+// directory, which is the same read against what earlier files declared. The
+// Document a directory's reads share, and NewDocument that starts one, belong
+// to that read: they carry what the earlier files declared beyond the model.
 //
 // The file list is discovered from git rather than written down, so a package
 // added later is covered by existing.
@@ -34,7 +36,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"Read", "ReadOnto"},
+	c.Assert(used, qt.DeepEquals, []string{"Document", "NewDocument", "Read", "ReadOnto"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))

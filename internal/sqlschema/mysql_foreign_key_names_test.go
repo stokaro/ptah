@@ -292,7 +292,7 @@ func TestReadOnto_MySQLUnnamedForeignKeyNames_CountsEarlierFiles(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			later, _, err := sqlschema.ReadOnto([]byte(
-				"ALTER TABLE c ADD FOREIGN KEY (y) REFERENCES p(id);"), dialect, &earlier)
+				"ALTER TABLE c ADD FOREIGN KEY (y) REFERENCES p(id);"), dialect, sqlschema.NewDocument(&earlier))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(foreignKeysOf(later), qt.DeepEquals, []string{"c c_ibfk_2(y)"})

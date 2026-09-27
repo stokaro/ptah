@@ -244,7 +244,7 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 // That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
 // it reports as a symlink rather than as a directory.
 func loadSchemaDirEntry(
-	path string, opts Options, earlier *schemamodel.Database,
+	path string, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, map[guardKey]struct{}, error) {
 	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
@@ -521,9 +521,10 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	}
 
 	merged := &schemamodel.Database{}
+	document := sqlschema.NewDocument(merged)
 	ledger := newDirDeclarations()
 	for _, name := range names {
-		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, merged)
+		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, document)
 		if err != nil {
 			return nil, err
 		}
@@ -708,7 +709,7 @@ func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
 // earlier is what a schema directory's earlier files declared, and nil for a
 // file read on its own; see [sqlschema.ReadOnto].
 func loadSQLFileWithStatements(
-	path string, opts Options, earlier *schemamodel.Database,
+	path string, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, *ast.StatementList, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

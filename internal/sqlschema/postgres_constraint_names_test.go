@@ -176,7 +176,7 @@ func TestReadOnto_PostgresUnnamedConstraintNames_ClaimsEarlierFiles(t *testing.T
 	c.Assert(err, qt.IsNil)
 
 	later, _, err := sqlschema.ReadOnto([]byte(
-		"CREATE TABLE child (id bigint PRIMARY KEY, parent_id bigint REFERENCES parent(id));"), "postgres", &earlier)
+		"CREATE TABLE child (id bigint PRIMARY KEY, parent_id bigint REFERENCES parent(id));"), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(derivedConstraintNames(later), qt.DeepEquals, []string{"fkey child child_parent_id_fkey1"})

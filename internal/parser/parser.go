@@ -4131,9 +4131,10 @@ func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.Ind
 		return nil
 	}
 	return &ast.IndexNode{
-		Name:    p.foreignKeyIndexName,
-		Columns: constraint.Columns,
-		Parts:   indexPartsFromConstraintColumns(constraint.ColumnParts),
+		Name:            p.foreignKeyIndexName,
+		Columns:         constraint.Columns,
+		Parts:           indexPartsFromConstraintColumns(constraint.ColumnParts),
+		ForeignKeyIndex: true,
 	}
 }
 

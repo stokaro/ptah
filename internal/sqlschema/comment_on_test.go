@@ -412,7 +412,7 @@ func TestReadOnto_CommentOnOneOverload(t *testing.T) {
 			c := qt.New(t)
 			base := overloadedBase(c)
 
-			_, _, err := sqlschema.ReadOnto([]byte(test.statement), "postgres", base)
+			_, _, err := sqlschema.ReadOnto([]byte(test.statement), "postgres", sqlschema.NewDocument(base))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert([]string{base.Functions[0].Comment, base.Functions[1].Comment}, qt.DeepEquals, test.want)
@@ -424,7 +424,7 @@ func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
 	c := qt.New(t)
 	base := overloadedBase(c)
 
-	_, _, err := sqlschema.ReadOnto([]byte("COMMENT ON FUNCTION app.f IS 'x';"), "postgres", base)
+	_, _, err := sqlschema.ReadOnto([]byte("COMMENT ON FUNCTION app.f IS 'x';"), "postgres", sqlschema.NewDocument(base))
 
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: COMMENT ON FUNCTION app.f names more than one `+
@@ -438,7 +438,7 @@ func TestReadOnto_CommentsOnAnEarlierTable(t *testing.T) {
 	earlier, _, err := sqlschema.Read([]byte(commentFixture), "postgres")
 	c.Assert(err, qt.IsNil)
 
-	later, _, err := sqlschema.ReadOnto([]byte("COMMENT ON TABLE app.t IS 'later';\nCOMMENT ON COLUMN app.t.a IS 'a';"), "postgres", &earlier)
+	later, _, err := sqlschema.ReadOnto([]byte("COMMENT ON TABLE app.t IS 'later';\nCOMMENT ON COLUMN app.t.a IS 'a';"), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(later.Tables, qt.HasLen, 0)

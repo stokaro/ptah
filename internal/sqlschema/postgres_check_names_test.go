@@ -148,7 +148,7 @@ func TestReadOnto_PostgresUnnamedCheckNames_ClaimsEarlierFiles(t *testing.T) {
 	earlier, _, err := sqlschema.Read([]byte("CREATE TABLE d (lo int, hi int, CHECK (lo < hi));"), "postgres")
 	c.Assert(err, qt.IsNil)
 
-	later, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE d ADD CHECK (lo < hi + 1);"), "postgres", &earlier)
+	later, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE d ADD CHECK (lo < hi + 1);"), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(checkNames(later), qt.DeepEquals, []string{"d d_check1: lo < hi + 1"})

@@ -191,16 +191,16 @@ var (
 func nameMySQLInlineIndexes(
 	database *schemamodel.Database, table schemamodel.Table,
 	fieldsStart int, order []namedElement, sourcePlatform string,
-) error {
+) (createdKeyIndexes, error) {
 	naming, ok := namingFor(sourcePlatform)
 	if !ok {
-		return nil
+		return createdKeyIndexes{}, nil
 	}
 	// Before anything folds a name: every comparison below -- the namespace,
 	// the coverage check, the derived names -- rests on a column equivalence
 	// the two engines do not share.
 	if err := refuseNonASCIIKeyColumns(database, table, fieldsStart, order); err != nil {
-		return err
+		return createdKeyIndexes{}, err
 	}
 	claimed := make(indexNames)
 	// PRIMARY is reserved rather than derived, and UNCONDITIONALLY: measured on
@@ -222,15 +222,15 @@ func nameMySQLInlineIndexes(
 	//
 	// Deciding it from what precedes the constraint refused all three, which
 	// are documents both engines accept.
-	covered := coversOf(database, table, fieldsStart, order)
-	for _, field := range database.Fields[fieldsStart:] {
+	keys := newCreateKeys(database, fieldsStart, order, coversOf(database, table, fieldsStart, order), naming)
+	for position, field := range database.Fields[fieldsStart:] {
 		// A column-level UNIQUE is an index named after its column, and it is
 		// created before any table-level element, so it claims the bare name.
 		if field.Unique {
 			claimed.claim(field.Name)
 		}
-		if err := claimColumnForeignKeyIndex(claimed, field, table, naming, covered); err != nil {
-			return err
+		if err := keys.claimColumnKey(claimed, fieldsStart+position, table); err != nil {
+			return createdKeyIndexes{}, err
 		}
 	}
 	// Names, though, are allocated in the order the document declared them:
@@ -239,18 +239,29 @@ func nameMySQLInlineIndexes(
 	// (stokaro/ptah#2773).
 	for _, element := range order {
 		if element.isIndex() {
+			// The index a FOREIGN KEY clause names is the key's, and takes its
+			// name where the key does.
+			if element.keyIndex {
+				continue
+			}
 			if err := claimIndexName(
 				claimed, &database.Indexes[element.index], table, naming); err != nil {
-				return err
+				return createdKeyIndexes{}, err
 			}
 			continue
 		}
-		if err := claimConstraintName(
-			claimed, &database.Constraints[element.constraint], table, naming, covered); err != nil {
-			return err
+		constraint := &database.Constraints[element.constraint]
+		if constraint.Type == "FOREIGN KEY" {
+			if err := keys.claimTableKey(claimed, element.constraint, table); err != nil {
+				return createdKeyIndexes{}, err
+			}
+			continue
+		}
+		if err := claimConstraintName(claimed, constraint, table, naming); err != nil {
+			return createdKeyIndexes{}, err
 		}
 	}
-	return nil
+	return keys.created, nil
 }
 
 // coversOf is every access path the table body declares, in any position.
@@ -269,6 +280,11 @@ func coversOf(
 		}
 	}
 	for _, element := range order {
+		// The index a FOREIGN KEY clause names is one the server builds for the
+		// key, not a declaration that covers it; see [createKeys].
+		if element.keyIndex {
+			continue
+		}
 		if element.isIndex() {
 			covered = append(covered, indexCandidate(database.Indexes[element.index]))
 			continue
@@ -325,6 +341,9 @@ type namedElement struct {
 	// index is the element's position in Database.Indexes, when it was an
 	// inline index.
 	index int
+	// keyIndex is whether the inline index is the one a MySQL
+	// `FOREIGN KEY name (columns)` clause names; see [keyIndex].
+	keyIndex bool
 }
 
 // noPosition marks the half of a namedElement that is not set.
@@ -397,43 +416,14 @@ func (c coverage) covers(columns []string, naming engineIndexNaming) bool {
 	return false
 }
 
-// claimConstraintName names one table-level constraint.
-//
-// Only the ones that occupy the index namespace. A UNIQUE constraint is an
-// index on these engines and always takes a name; a CHECK is not and never
-// does.
-//
-// A FOREIGN KEY is the one that depends on what came before it. It needs an
-// index whose leading columns are its own, so it reuses one already declared
-// and otherwise gets a backing index named after the constraint -- a name in
-// the same namespace every other key draws from. Measured on MySQL 26.7 and
-// MariaDB 12.3: `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)` builds `b` and
-// `b_2`, while `FOREIGN KEY (a) ..., KEY (a)` builds a single `a`, because
-// there the index covers the key.
-//
-// An earlier version of this comment said a foreign key "reuses a covering
-// index rather than adding a name" with no condition, generalized from the
-// second measurement alone. It is the first one this file has to get right.
+// claimConstraintName names one table-level UNIQUE, the one kind of
+// constraint besides a foreign key that occupies the index namespace: a UNIQUE
+// is an index on these engines and always takes a name, and a CHECK is not and
+// never does. A foreign key's index is claimed by [createKeys].
 func claimConstraintName(
 	claimed indexNames, constraint *schemamodel.Constraint, table schemamodel.Table,
-	naming engineIndexNaming, covered coverage,
+	naming engineIndexNaming,
 ) error {
-	if constraint.Type == "FOREIGN KEY" {
-		if covered.covers(constraint.Columns, naming) {
-			return nil
-		}
-		if constraint.Name != "" {
-			return claimExplicit(claimed, constraint.Name, table)
-		}
-		if len(constraint.Columns) == 0 {
-			return nil
-		}
-		// The key's own index takes the column's name, which no model object
-		// carries; claiming it is what gives the next unnamed index the
-		// server's name.
-		_, err := derive(claimed, constraint.Columns[0], table, naming)
-		return err
-	}
 	if constraint.Type != "UNIQUE" {
 		return nil
 	}
@@ -450,29 +440,6 @@ func claimConstraintName(
 	}
 	constraint.Name = name
 	return nil
-}
-
-// claimColumnForeignKeyIndex claims the name of the index the server builds
-// for a key a column declares with `REFERENCES`, where nothing in the table
-// body covers the column.
-//
-// It is claimed at the column's place, before any table-level element, as a
-// column-level UNIQUE is. Measured on MariaDB 11.8.9 and MySQL 26.7.0, which
-// build a key from the clause, `a INT REFERENCES p(id), KEY a (id)` is
-// `ERROR 1061 Duplicate key name 'a'`. On MariaDB a key the column names,
-// `a INT CONSTRAINT fkx REFERENCES p(id)`, builds its index under that name.
-func claimColumnForeignKeyIndex(
-	claimed indexNames, field schemamodel.Field, table schemamodel.Table,
-	naming engineIndexNaming, covered coverage,
-) error {
-	if field.Foreign == "" || covered.covers([]string{field.Name}, naming) {
-		return nil
-	}
-	if field.ForeignKeyName != "" {
-		return claimExplicit(claimed, field.ForeignKeyName, table)
-	}
-	_, err := derive(claimed, field.Name, table, naming)
-	return err
 }
 
 // claimIndexName names one inline index.
