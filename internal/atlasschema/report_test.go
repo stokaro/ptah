@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	digest "github.com/opencontainers/go-digest"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/atlasschema"
@@ -99,6 +100,32 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeNoChanges,
+			},
+		},
+		{
+			// Nothing ran, and the role was not checked: the outcome says
+			// the first, and the undecided list says the second.
+			name: "nothing planned, a declared role withheld",
+			evidence: atlasschema.ApplyEvidence{
+				Undecided: withheldRoles("reporter"), Completed: atlasschema.ApplyOutcomeNoChanges,
+			},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Outcome:         atlasschema.ApplyOutcomeNoChanges,
+				Undecided:       withheldRoles("reporter"),
+			},
+		},
+		{
+			name: "applied, a declared role withheld",
+			evidence: atlasschema.ApplyEvidence{
+				Statements: statements, Undecided: withheldRoles("reporter"),
+				Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied,
+			},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Outcome:         atlasschema.ApplyOutcomeApplied,
+				Statements:      statements,
+				Undecided:       withheldRoles("reporter"),
 			},
 		},
 		{
@@ -293,6 +320,26 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			},
 		},
 		{
+			name:     "nothing planned, a declared role withheld",
+			evidence: atlasschema.PlanEvidence{Plan: &synced, Undecided: withheldRoles("reporter")},
+			want: atlasschema.PlanReport{
+				ContractVersion: atlasschema.PlanReportContractVersion,
+				Outcome:         atlasschema.PlanOutcomeNoChanges,
+				Undecided:       withheldRoles("reporter"),
+			},
+		},
+		{
+			name:     "changes, a declared role withheld",
+			evidence: atlasschema.PlanEvidence{Plan: &plan, Document: document, Undecided: withheldRoles("reporter")},
+			want: atlasschema.PlanReport{
+				ContractVersion: atlasschema.PlanReportContractVersion,
+				Outcome:         atlasschema.PlanOutcomeChanges,
+				PlanDigest:      digest.FromBytes(document).String(),
+				Plan:            &plan,
+				Undecided:       withheldRoles("reporter"),
+			},
+		},
+		{
 			name:     "protected table",
 			evidence: atlasschema.PlanEvidence{Err: errs.fenced},
 			want: atlasschema.PlanReport{
@@ -357,6 +404,7 @@ func TestReports_WireNames(t *testing.T) {
 		PlanDigest:      "sha256:d",
 		PlanPath:        "p.plan.json",
 		Plan:            &plan,
+		Undecided:       withheldRoles("r"),
 		Refusal: &atlasschema.Refusal{
 			Code: atlasschema.RefusalStalePlan, Tables: []string{"t"}, Changed: "rows",
 			PlanFingerprint: "sha256:a", DatabaseFingerprint: "sha256:b",
@@ -368,6 +416,7 @@ func TestReports_WireNames(t *testing.T) {
 		`"plan_digest":"sha256:d","plan_path":"p.plan.json",`+
 		`"plan":{"format_version":1,"name":"p","dialect":"sqlite","from_fingerprint":"sha256:f",`+
 		`"to_fingerprint":"sha256:t","destructive":true,"statements":[{"sql":"S","severity":"destructive","reason":"R"}]},`+
+		`"undecided":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}],`+
 		`"refusal":{"code":"stale-plan","tables":["t"],"changed":"rows",`+
 		`"plan_fingerprint":"sha256:a","database_fingerprint":"sha256:b"},"error":"e"}`)
 
@@ -377,13 +426,27 @@ func TestReports_WireNames(t *testing.T) {
 		PlanName:        "p",
 		PlanDigest:      "sha256:d",
 		Statements:      []string{"S"},
+		Undecided:       withheldRoles("r"),
 		Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalLockTimeout},
 		Error:           "e",
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(applyReport), qt.Equals, `{"contract_version":1,"outcome":"unknown",`+
 		`"plan_name":"p","plan_digest":"sha256:d","statements":["S"],`+
+		`"undecided":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}],`+
 		`"refusal":{"code":"lock-timeout"},"error":"e"}`)
+}
+
+// withheldRoles is what the comparison withholds for declared roles a read
+// was refused the catalog of.
+func withheldRoles(names ...string) []coverage.Object {
+	objects := make([]coverage.Object, 0, len(names))
+	for _, name := range names {
+		object := coverage.Refused(coverage.Role)
+		object.Name = name
+		objects = append(objects, object)
+	}
+	return objects
 }
 
 // TestReports_OutcomeAndRefusalValues pins every value a consumer switches on.

@@ -6,6 +6,7 @@ package migratebaseline
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"strconv"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
@@ -218,6 +220,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	defer releaseShadow()
 
 	if err := verifyBaseline(ctx, baselineVerifyOptions{
+		diagnostics:    cmd.ErrOrStderr(),
 		dbURL:          opts.dbURL,
 		shadowDB:       shadowDB,
 		rootDir:        opts.rootDir,
@@ -241,6 +244,9 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 }
 
 type baselineVerifyOptions struct {
+	// diagnostics receives the warning for each declared object the entity
+	// comparison could not check.
+	diagnostics    io.Writer
 	dbURL          string
 	shadowDB       string
 	rootDir        string
@@ -283,13 +289,28 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 	if err != nil {
 		return err
 	}
-	if !result.Diff.HasChanges() {
-		return nil
-	}
-	findings := safety.ClassifySchemaDiff(result.Diff)
-	err = fmt.Errorf("baseline drift verification failed: schema drift detected; findings: %v", findings)
+	undecidednote.Report(opts.diagnostics, result.Undecided, "the database", "the entities")
 	handler.kind = "drift"
-	return handler.handle(err)
+	return handler.handle(entityDriftError(result))
+}
+
+// entityDriftError is the answer of the entity drift verification: nil when
+// the database is shown to match the entities, and the reason otherwise.
+//
+// A declared object the read could not check is not shown to match. Recording
+// a baseline says the database already holds what the migrations up to it
+// create, so it is refused on one, as on a difference, and --force records it
+// anyway.
+func entityDriftError(result *schemaops.CompareResult) error {
+	if result.Diff.HasChanges() {
+		findings := safety.ClassifySchemaDiff(result.Diff)
+		return fmt.Errorf("baseline drift verification failed: schema drift detected; findings: %v", findings)
+	}
+	if len(result.Undecided) > 0 {
+		return fmt.Errorf("baseline drift verification failed: %s; see the warnings above",
+			undecidednote.Summary(len(result.Undecided)))
+	}
+	return nil
 }
 
 type verificationErrorHandler struct {

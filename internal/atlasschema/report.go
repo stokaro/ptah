@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	digest "github.com/opencontainers/go-digest"
+
+	"ptah.run/core/coverage"
 )
 
 // PlanReportContractVersion is the version of the document `ptah schema plan
@@ -29,8 +31,10 @@ const (
 	// PlanOutcomeChanges means the plan holds statements, and the report
 	// carries the plan document.
 	PlanOutcomeChanges PlanOutcome = "changes"
-	// PlanOutcomeNoChanges means the database already matches the desired
-	// schema. No plan document exists, and none was saved.
+	// PlanOutcomeNoChanges means the comparison planned no statement. No plan
+	// document exists, and none was saved. The database matches the desired
+	// schema unless the report's Undecided names objects the read could not
+	// check.
 	PlanOutcomeNoChanges PlanOutcome = "no-changes"
 	// PlanOutcomeRefused means planning refused for a reason the report's
 	// [Refusal] names.
@@ -51,8 +55,9 @@ const (
 	// ApplyOutcomeApplied means every statement ran and the run returned
 	// without an error.
 	ApplyOutcomeApplied ApplyOutcome = "applied"
-	// ApplyOutcomeNoChanges means the database already matches the desired
-	// schema, so there was nothing to run.
+	// ApplyOutcomeNoChanges means the comparison planned no statement, so
+	// there was nothing to run. The database matches the desired schema unless
+	// the report's Undecided names objects the read could not check.
 	ApplyOutcomeNoChanges ApplyOutcome = "no-changes"
 	// ApplyOutcomeDryRun means the run was asked to change nothing, and did
 	// not. For a plan file the source fingerprint was verified first, so a
@@ -136,6 +141,24 @@ type PlanReport struct {
 	// Plan is the plan document's content, present when Outcome is changes.
 	// See PlanDigest for why it is not the document's bytes.
 	Plan *PlanFile `json:"plan,omitempty"`
+	// Undecided are the declared objects the comparison withheld, and absent
+	// when it withheld none.
+	//
+	// A declared object is undecided when the read of the database did not
+	// describe its kind -- the server refused the catalog, the selection left
+	// the kind out, or the target cannot report it -- so nothing checked
+	// whether the object exists. No statement is planned for it, because a
+	// creation could fail or diverge against an object that is already there.
+	// Each entry is a [coverage.Object]: the kind and the name, and the reason
+	// and provenance the read gave for not describing the kind. The entries are
+	// sorted by kind and then name, and the command explains each one on
+	// standard error.
+	//
+	// The field is independent of the outcome. Next to changes it names what
+	// the plan does not cover; next to no-changes it means the database is not
+	// shown to match. A caller that decides "in sync" from the outcome reads
+	// this field too.
+	Undecided []coverage.Object `json:"undecided,omitempty"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
 	// Error is the run's error message, present when Outcome is refused or
@@ -151,13 +174,16 @@ type PlanEvidence struct {
 	Document []byte
 	// Path is where the document was saved, and empty when it was not.
 	Path string
+	// Undecided are the declared objects the comparison withheld, from
+	// [PreparePlanFileReportingUndecided].
+	Undecided []coverage.Object
 	// Err is the run's error, and nil when it returned cleanly.
 	Err error
 }
 
 // NewPlanReport classifies one plan run from its evidence.
 func NewPlanReport(evidence PlanEvidence) PlanReport {
-	report := PlanReport{ContractVersion: PlanReportContractVersion}
+	report := PlanReport{ContractVersion: PlanReportContractVersion, Undecided: evidence.Undecided}
 	if evidence.Err != nil {
 		report.Error = evidence.Err.Error()
 		report.Refusal = refusalFor(evidence.Err)
@@ -196,6 +222,13 @@ type ApplyReport struct {
 	// order, and absent when it stopped before it had any. The outcome says
 	// what became of them: under applied they are what ran.
 	Statements []string `json:"statements,omitempty"`
+	// Undecided is [PlanReport.Undecided] for this run: next to applied it
+	// names what the run did not create, and next to no-changes it means the
+	// database is not shown to match. It is absent when nothing was withheld,
+	// and for a run that read --plan: a plan file records statements, and what
+	// was withheld when it was computed is in the report of the `schema plan`
+	// run that computed it.
+	Undecided []coverage.Object `json:"undecided,omitempty"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
 	// Error is the run's error message, present when Outcome is refused,
@@ -212,6 +245,9 @@ type ApplyEvidence struct {
 	PlanDigest string
 	// Statements are the statements the run listed as its planned changes.
 	Statements []string
+	// Undecided are the declared objects the comparison withheld, from
+	// [ApplyRuntimePlan.Undecided].
+	Undecided []coverage.Object
 	// Dispatched reports that the statements were handed to the database. It
 	// is set before execution starts, so a run that died inside it still
 	// reports it.
@@ -236,6 +272,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		PlanName:        evidence.PlanName,
 		PlanDigest:      evidence.PlanDigest,
 		Statements:      evidence.Statements,
+		Undecided:       evidence.Undecided,
 		Outcome:         evidence.Completed,
 	}
 	if evidence.Err == nil {

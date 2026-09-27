@@ -394,11 +394,13 @@ refusal means that nothing reached the database.
 | `plan_digest` | SHA-256 of the plan file, as `sha256:<hex>`: the bytes `--save` and `--output` write and `--dry-run` prints without `--json` |
 | `plan_path` | Where `--save` or `--output` wrote the file |
 | `plan` | The plan file itself, with each statement's `sql`, `severity` and `reason`, the plan-level `destructive` flag, and the `name` and fingerprints that identify it |
+| `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects) |
 | `refusal` | Why planning refused; see below |
 | `error` | The message printed on standard error, for `refused` and `failed` |
 
 `plan`, `plan_digest` and `plan_path` appear only with `changes`. `no-changes`
-means the database already matches the desired schema, and no file is written.
+means no statement was planned, and no file is written. The database matches
+the desired schema unless `undecided` is present.
 `failed` means the plan could not be computed or saved, for a reason that has
 no refusal code. The document does not depend on when it was written, so two
 plans against an unchanged database print the same bytes.
@@ -417,13 +419,14 @@ pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
 | `outcome` | How the run ended; see the next table |
 | `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read. The file is read once, so with `--require-approval` these are also the bytes the signature was checked against |
 | `statements` | The statements the run listed as its planned changes, in order |
+| `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
 
 | Outcome | Meaning |
 | --- | --- |
 | `applied` | Every statement ran |
-| `no-changes` | The database already matches the desired schema |
+| `no-changes` | No statement was planned. The database matches the desired schema unless `undecided` is present |
 | `dry-run` | Nothing ran. With `--plan`, the fingerprint was verified first |
 | `canceled` | The confirmation prompt was declined |
 | `refused` | Nothing reached the database, for the reason `refusal` names |
@@ -436,6 +439,24 @@ rolled them all back, a run without one may have left some, and a lost
 connection hides even that. Read the database before deciding. A lock session
 that fails after every statement committed is reported this way too, rather
 than as `applied`.
+
+### Undecided objects
+
+A comparison can only plan what the read of the database describes. When the
+account may not read a catalog, the read leaves that kind of object out, so
+nothing checks whether a declared object of that kind already exists. A MySQL
+account without access to the role tables is the usual case: a role the schema
+declares is withheld. No statement is planned for it, because creating it could
+fail or diverge against a role that is already there.
+
+Each withheld object is one entry in `undecided`, with its `kind` and `name`,
+and the `reason` and `provenance` the read gave. The entries are sorted by kind
+and then name, and standard error explains each one. The field is independent
+of the outcome: next to `changes` or `applied` it names what the run did not
+create, and next to `no-changes` it means the database is not shown to match.
+A caller that decides "in sync" from the outcome reads `undecided` too. A plan
+file does not record the field, so `apply --plan` does not report it; the
+`schema plan` run that computed the file did.
 
 ### Refusal codes
 

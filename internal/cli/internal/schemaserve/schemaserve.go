@@ -27,9 +27,11 @@ import (
 	"sync"
 	"time"
 
+	"ptah.run/core/coverage"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemadoc"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
 )
 
@@ -70,8 +72,12 @@ type observation struct {
 	At       time.Time
 	Findings []safety.Finding
 	Highest  safety.Severity
-	Err      error
-	Schema   *schemaSnapshot
+	// Undecided are the declared objects the comparison withheld because the
+	// read did not describe their kind. They are counted in Findings too, so a
+	// page that could not look never says the database matches.
+	Undecided []coverage.Object
+	Err       error
+	Schema    *schemaSnapshot
 }
 
 // schemaSnapshot is the declared schema as the page renders it, resolved with
@@ -164,20 +170,29 @@ func (s *server) observe(ctx context.Context) observation {
 		Schemas:        s.opts.Schemas,
 		ConnectTimeout: s.opts.ConnectTimeout,
 	})
-	current := observation{At: s.opts.Now()}
 	if err != nil {
-		current.Err = err
-		current.Schema = s.previousSchema()
-		return current
+		return observation{At: s.opts.Now(), Err: err, Schema: s.previousSchema()}
 	}
-	current.Findings = safety.ClassifySchemaDiff(result.Diff)
-	current.Highest = safety.Highest(current.Findings)
+	current := observationOf(result, s.opts.Now())
 	sidebar, content, renderErr := schemadoc.Page(result.Generated, schemadoc.Options{Title: s.opts.Title})
 	if renderErr == nil {
 		current.Schema = &schemaSnapshot{Sidebar: sidebar, Content: content}
 	}
 	s.remember(current)
 	return current
+}
+
+// observationOf grades one comparison for the page. The declared objects the
+// read could not check join the findings, so a page that could not look never
+// says the database matches.
+func observationOf(result *schemaops.CompareResult, at time.Time) observation {
+	findings := append(safety.ClassifySchemaDiff(result.Diff), undecidednote.Findings(result.Undecided)...)
+	return observation{
+		At:        at,
+		Findings:  findings,
+		Highest:   safety.Highest(findings),
+		Undecided: result.Undecided,
+	}
 }
 
 func (s *server) remember(current observation) {

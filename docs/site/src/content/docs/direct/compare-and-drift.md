@@ -125,8 +125,12 @@ schema declares is withheld. The report lists each such object under
 `Undecided`, and standard error says why the read could not decide it. When
 nothing else differs, the report starts with
 `No differences planned, but 1 declared object could not be decided:` rather
-than `No schema differences detected.` `ptah schema apply`, `ptah schema plan`
-and `ptah migrations plan` print the same warning on standard error.
+than `No schema differences detected.` `ptah schema apply`, `ptah schema plan`,
+`ptah migrations plan` and `ptah migrations generate` print the same warning on
+standard error, and none of them says the schema is synced while an object is
+undecided. The `--json` documents of `schema plan` and `schema apply` list the
+objects under
+[`undecided`](../apply/#undecided-objects).
 
 The command exits `0` whether or not differences exist; add `--exit-code` to
 exit `1` on a non-empty diff when a script needs the answer as a status code.
@@ -191,6 +195,17 @@ Three more flags shape the check:
   describe](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
+
+A declared object the read could not check is graded as well. It is not a
+difference, so the report opens with `No schema drift found, but 1 declared
+object could not be decided` rather than claiming there is no drift. It lists
+the object under `Undecided`, and counts the objects as one `undecided` finding
+at `warning` severity. The default threshold fails on it, and
+`--severity destructive` does not, because nothing the read could not see is a
+change that would lose data. The JSON report carries the objects in
+`undecided`, with `drift` false and `failed` set by the threshold, and
+`github-actions` annotates each one. `ptah schema serve` counts and lists them
+the same way.
 
 ### An extension the schema does not describe
 

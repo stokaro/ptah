@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -109,4 +110,49 @@ func TestCollectMismatches_ReportsQualifiedIndex(t *testing.T) {
 			Message: "missing index users.idx_shared",
 		},
 	})
+}
+
+// TestNewBaselineMismatchError_ReportsWhatTheTargetReadCouldNotCheck holds the
+// baseline to the objects the replay created and the target read could not
+// see. They are mismatches, one each after the differences, and without a
+// difference they are the whole error rather than a pass (stokaro/ptah#3844).
+func TestNewBaselineMismatchError_ReportsWhatTheTargetReadCouldNotCheck(t *testing.T) {
+	withheld := coverage.Refused(coverage.Role)
+	withheld.Name = "reporter"
+	undecided := Mismatch{
+		Kind:   "undecided_object",
+		Object: "reporter",
+		Message: "undecided role reporter: the target database does not describe role objects" +
+			" because the read was refused the catalog that would have listed them",
+	}
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+		want []Mismatch
+	}{
+		{
+			name: "nothing differs",
+			diff: &difftypes.SchemaDiff{},
+			want: []Mismatch{undecided},
+		},
+		{
+			name: "a missing table beside it",
+			diff: &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "notes"}}},
+			want: []Mismatch{
+				{Kind: "missing_table", Table: "notes", Object: "notes", Message: "missing table notes"},
+				undecided,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := newBaselineMismatchError(test.diff, []coverage.Object{withheld})
+
+			c.Assert(err.Result.Stage, qt.Equals, "schema-match")
+			c.Assert(err.Result.Mismatches, qt.DeepEquals, test.want)
+		})
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
@@ -90,6 +91,23 @@ type GenerateMigrationOptions struct {
 	// against. The plan must stay scoped to a single schema, and only dialects
 	// with schema-qualified object names are supported.
 	SchemaQualifier string
+	// OnUndecided, when set, receives the declared objects the comparison
+	// withheld: the read of the database did not describe their kind, so
+	// nothing checked whether they exist, and no generated statement creates
+	// them. It is called at most once per planning run, after the comparison
+	// and before planning returns, with the objects sorted by kind and then
+	// name, and it is not called when nothing was withheld. A run that
+	// generates no files after OnUndecided was called has not shown that the
+	// database matches the desired schema.
+	OnUndecided func([]coverage.Object)
+}
+
+// reportUndecided hands undecided to [GenerateMigrationOptions.OnUndecided],
+// when there is something to hand and somewhere to hand it.
+func (opts GenerateMigrationOptions) reportUndecided(undecided []coverage.Object) {
+	if len(undecided) > 0 && opts.OnUndecided != nil {
+		opts.OnUndecided(undecided)
+	}
 }
 
 // DiffPolicy is the generator-level view of the project diff policy.
@@ -264,7 +282,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 3. Calculate the diff between desired and current schema using live
 	// dialect and catalog identifier metadata.
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabase(
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx,
 		conn,
 		desired,
@@ -274,6 +292,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
 	}
+	opts.reportUndecided(undecided)
 
 	// Check if there are any changes
 	if !diff.HasChanges() {

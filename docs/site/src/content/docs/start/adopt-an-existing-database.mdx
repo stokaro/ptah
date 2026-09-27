@@ -557,6 +557,7 @@ The source tool already applied these changes to the database, so finish with th
 
 - `ptah migrations baseline` exits 2 with `error: schema migrations table is not empty; rerun with force to baseline anyway`: the database already has migration metadata. Add `--force` only when you intend to overwrite that record deliberately.
 - `ptah migrations baseline` exits 2 with `error: baseline drift verification failed: schema drift detected; findings: [...]`: the migration directory does not reproduce the live schema — usually the schema changed after step 1. Re-introspect and regenerate, then retry.
+- `ptah migrations baseline` exits 2 with `baseline drift verification failed: 1 declared object could not be decided`, or with `baseline shadow check failed: undecided role ...`: the account `--db-url` connects with may not read a catalog, so the verification cannot tell whether an object the migrations create is in the database. Standard error or the message names the object and the reason. Baseline with an account that may read the catalog, or add `--force` once you have checked the object yourself.
 - `ptah schema drift` exits 1 with findings such as `columns_removed: 1 (destructive)`: the live database and your desired-schema source have diverged. Findings describe what applying the desired schema would change, so `columns_removed` means the database has a column the source lacks.
 
 For symptoms outside this flow, see [Troubleshooting](../../operate/troubleshooting/).
