@@ -56,7 +56,9 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 // empty value lets the database URL decide, through
 // [ptah.run/internal/schemascope.ReadNames]: a PostgreSQL-family URL that
 // pins a schema with `search_path` is read at that schema, and one that pins
-// none is read across every schema of the connected database.
+// none is read across every schema of the connected database. A MySQL-family
+// URL that names no database is a whole server where the verb accepts one, and
+// the flag then names its databases (stokaro/ptah#3789).
 //
 // The two spellings exist because the two groups of verbs really do differ, and
 // one help string covering both would be false for one of them. `schema
@@ -65,8 +67,10 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 // silence into intent (stokaro/ptah#1264, stokaro/ptah#1276); `introspect`,
 // `compare`, `migrate` and the rest keep the narrower default they document.
 func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). "+
-		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema.")
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
+		"or the databases of a MySQL or MariaDB URL that names none. "+
+		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
+		"and a MySQL or MariaDB URL naming no database across every user database.")
 }
 
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.

@@ -59,6 +59,16 @@ func TestURLScopeAnswersFromTheURLAlone(t *testing.T) {
 			scope:   "appdb",
 			limited: true,
 		},
+		{
+			// The socket is the path and the database a parameter, so a reader
+			// of the path answered "limited to mysqld.sock" (stokaro/ptah#3789).
+			name:    "a socket URL names its database in a parameter",
+			url:     "mysql+unix://root@/run/mysqld/mysqld.sock?database=appdb",
+			scope:   "appdb",
+			limited: true,
+		},
+		{name: "a socket URL with no database", url: "mysql+unix://root@/run/mysqld/mysqld.sock", scope: "", limited: false},
+		{name: "mysql with no path at all", url: "mysql://localhost:3306", scope: "", limited: false},
 		{name: "an empty url limits nothing", url: "", scope: "", limited: false},
 		{name: "an unparseable url limits nothing", url: "not a url", scope: "", limited: false},
 	}

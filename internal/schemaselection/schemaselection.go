@@ -133,10 +133,9 @@ func fromQuery(query url.Values) Selection {
 // rather than less.
 //
 // MySQL-family connections answer from the connected schema instead of the URL
-// because dbschema resolves the database for every URL form, and an empty
-// answer cannot reach here: dbschema.ConnectToDatabase refuses a MySQL URL
-// that names no database before it connects (stokaro/ptah#3789 owns reading
-// one as the whole server).
+// because dbschema resolves the database for every URL form. An empty answer
+// is a URL that names no database, which dbschema.ConnectToServer reads as the
+// whole server and dbschema.ConnectToDatabase refuses (stokaro/ptah#3789).
 //
 // Two callers share this: the not-clean adoption gate (stokaro/ptah#1257) and
 // the Atlas-compatible `schema inspect` surface (stokaro/ptah#1264), which had
@@ -201,31 +200,20 @@ func URLScope(rawURL string) (scope string, limited bool) {
 		selected := FromURL(rawURL).Scope
 		return selected, selected != ""
 	case platform.MySQL, platform.MariaDB:
-		named := urlDatabaseName(rawURL)
+		// The database is read by atlasurl.ParseMySQLURL, the one reader of
+		// every MySQL-family URL form. A socket URL keeps its database in the
+		// `database` parameter and its socket in the path, so a reader of the
+		// path answered "limited to the socket file". A URL that does not parse
+		// limits nothing here; connecting to it fails before anything is reset.
+		parsed, err := atlasurl.ParseMySQLURL(rawURL)
+		if err != nil {
+			return "", false
+		}
+		named := parsed.Database()
 		return named, named != ""
 	default:
 		return "", false
 	}
-}
-
-// urlDatabaseName reads the database a MySQL-family URL names, which is the same
-// thing as its schema there.
-//
-// It cuts the string rather than going through [net/url.Parse] because the
-// driver's own `tcp(host:port)` spelling is not a parseable URL host, and a
-// parse failure would answer "no database" for a URL that names one -- the
-// looser direction.
-func urlDatabaseName(rawURL string) string {
-	_, afterScheme, ok := strings.Cut(rawURL, "://")
-	if !ok {
-		return ""
-	}
-	_, path, ok := strings.Cut(afterScheme, "/")
-	if !ok {
-		return ""
-	}
-	path, _, _ = strings.Cut(path, "?")
-	return strings.TrimSpace(path)
 }
 
 // RowsQuerier is the part of *sql.DB and dbschema.DatabaseConnection
@@ -244,22 +232,36 @@ type RowsQuerier interface {
 //
 // A dialect with no probe is an error rather than an empty list. Answering
 // "no schemas" would let a caller describe an empty database where the server
-// holds one, which is the failure stokaro/ptah#1264 is about. Only PostgreSQL
-// reaches realm scope through [Realm] with a connection that can be opened at
-// all, so only it has a probe.
+// holds one, which is the failure stokaro/ptah#1264 is about. PostgreSQL
+// reaches realm scope through [Realm] with a URL that pins no search_path, and
+// MySQL and MariaDB with one that names no database; each has a probe.
+//
+// A MySQL-family realm is the server's user databases. The pinned community
+// binary v1.3.0 describes the same set: measured on MySQL 8.4.11 and MariaDB
+// 11.8.9, `schema inspect` against a URL naming no database lists every
+// database but information_schema, mysql, performance_schema and sys.
 func RealmSchemas(
 	ctx context.Context,
 	dialect string,
 	caps capability.Capabilities,
 	q RowsQuerier,
 ) ([]string, error) {
-	if !platform.IsPostgresFamily(dialect) {
-		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
-	}
-	rows, err := q.QueryContext(ctx, `
+	var query string
+	switch {
+	case platform.IsPostgresFamily(dialect):
+		query = `
 		SELECT n.nspname
 		FROM pg_namespace n
-		WHERE `+systemschema.PostgresDescribedSchemasPredicate(dialect, caps))
+		WHERE ` + systemschema.PostgresDescribedSchemasPredicate(dialect, caps)
+	case isMySQLFamily(dialect):
+		query = `
+		SELECT SCHEMA_NAME
+		FROM information_schema.SCHEMATA
+		WHERE ` + systemschema.MySQLUserDatabasesPredicate("SCHEMA_NAME")
+	default:
+		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
+	}
+	rows, err := q.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
 	}
@@ -371,4 +373,15 @@ func (s Selection) ResolveCarried(ctx context.Context, db TxBeginner) (string, e
 // connection.
 type TxBeginner interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// isMySQLFamily reports whether dialect is MySQL or MariaDB, whose realm is a
+// server's databases.
+func isMySQLFamily(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }

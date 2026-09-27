@@ -706,12 +706,22 @@ func atlasSchemaInspectIndexPart(value string) atlasSchemaInspectJSONIndexPart {
 	return atlasSchemaInspectJSONIndexPart{Column: value}
 }
 
+// atlasSchemaInspectForeignKey is the JSON of one foreign key. A key that
+// references a table of its own schema names the table alone, as the pinned
+// community binary v1.3.0 names it: measured on PostgreSQL 18.6 for `app.x`
+// referencing `app.u`, and on MySQL 8.4.11 for `r5.x` referencing `r5.u` read
+// as a whole server, it writes `"table":"u"`. A key that references another
+// schema keeps that schema, which the community binary drops, so the document
+// still says which table it is.
 func atlasSchemaInspectForeignKey(constraint catalog.Constraint) atlasSchemaInspectJSONForeignKey {
 	foreignKey := atlasSchemaInspectJSONForeignKey{
 		Name:    constraint.Name,
 		Columns: constraint.ColumnNamesOrDefault(),
 	}
 	foreignKey.References.Table = constraint.QualifiedForeignTableName()
+	if constraint.ForeignTable != nil && constraint.ForeignSchema == constraint.Schema {
+		foreignKey.References.Table = *constraint.ForeignTable
+	}
 	foreignKey.References.Columns = constraint.ForeignColumnsOrDefault()
 	return foreignKey
 }

@@ -20,25 +20,13 @@ import (
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/systemschema"
 )
 
 const (
 	sessionRestoreTimeout = 5 * time.Second
 	metadataLockPollDelay = 10 * time.Millisecond
 )
-
-var protectedMySQLDatabases = []string{
-	"information_schema",
-	"metrics_schema",
-	"mysql",
-	"mysql_innodb_cluster_metadata",
-	"mysql_innodb_cluster_metadata_backup",
-	"mysql_innodb_cluster_metadata_bkp",
-	"mysql_innodb_cluster_metadata_previous",
-	"ndbinfo",
-	"performance_schema",
-	"sys",
-}
 
 func quoteIdent(name string) string {
 	return sqlident.Quote(platform.MySQL, name)
@@ -540,7 +528,7 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 }
 
 func rejectProtectedMySQLDatabase(database string) error {
-	if slices.Contains(protectedMySQLDatabases, strings.ToLower(database)) {
+	if systemschema.IsMySQLSystemDatabase(database) {
 		return fmt.Errorf("mysql: refusing to clean protected database %q", database)
 	}
 	return nil

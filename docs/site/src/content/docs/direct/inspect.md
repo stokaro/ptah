@@ -250,6 +250,15 @@ result.
 ptah schema inspect --db-url "sqlite://$PWD/app.db" --include users
 ```
 
+A MySQL or MariaDB URL that names no database is the whole server: the output
+describes every user database, each table under its database, and `--schemas`
+names databases. The server's own databases, such as `mysql` and `sys`, are
+left out.
+
+```bash
+ptah schema inspect --db-url "mysql://root:pass@localhost:3306" --schemas app,audit
+```
+
 Child resources — columns, indexes, constraints, triggers, policies, grants —
 ride along with their parent and cannot be selected on their own; a selector
 that names one with `[type=column]` fails before the database is contacted.

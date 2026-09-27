@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/shadow"
 )
@@ -121,21 +121,15 @@ func requireMySQLFamilyAdminConnection(
 // addressNamingDatabase names another database on the server an address
 // reaches. The address is not always a URL: CI configures the MySQL family in
 // the driver's own form, user:pass@tcp(host:port)/db, which url.Parse refuses at
-// the parenthesis. The database is the last path segment in every accepted form
-// -- a URL, tcp(...), and unix(/socket/path)/db, whose slashes sit inside the
-// parentheses -- so the name is replaced there, and the query string is kept.
-// A clickhouse:// URL is the plain first case.
+// the parenthesis. atlasurl.WithDatabaseName reads every MySQL-family form with
+// the parser Ptah connects with, keeps the form the address was written in, and
+// puts the name where that form keeps its database; a clickhouse:// URL is the
+// plain URL case.
 func addressNamingDatabase(c *qt.C, address, databaseName string) string {
 	c.Helper()
 
-	base, query, _ := strings.Cut(address, "?")
-	separator := strings.LastIndex(base, "/")
-	c.Assert(separator > strings.LastIndex(base, "@"), qt.IsTrue,
-		qt.Commentf("the address names no database to replace: %s", address))
-	replaced := base[:separator+1] + databaseName
-	if query != "" {
-		replaced += "?" + query
-	}
+	replaced, err := atlasurl.WithDatabaseName(address, databaseName)
+	c.Assert(err, qt.IsNil)
 	return replaced
 }
 
