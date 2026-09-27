@@ -94,15 +94,17 @@ type Database struct {
 	// dialect that has no such catalog byte-identical.
 	DefaultPrivileges []DefaultPrivilege `json:"default_privileges,omitempty"`
 
-	// GlobalDefaultPrivileges are the default privileges this read found set
-	// without IN SCHEMA, one per grantor and object class. The description does
-	// not carry them: see [GlobalDefaultPrivilege] for why.
+	// UndescribedDefaultPrivileges are the pg_default_acl rows this read found
+	// and left out of DefaultPrivileges, one per grantor, schema and object
+	// class: the ones set without IN SCHEMA, and CockroachDB's FOR ALL ROLES.
+	// See [UndescribedDefaultPrivilege] for why the description cannot carry
+	// either.
 	//
 	// They are recorded to be reported rather than compared: a description
 	// applied to another database leaves them behind, and the operator cannot
 	// see that from the statements. This field is not part of the
 	// description, so it is never serialized and never rendered.
-	GlobalDefaultPrivileges []GlobalDefaultPrivilege `json:"-"`
+	UndescribedDefaultPrivileges []UndescribedDefaultPrivilege `json:"-"`
 
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
@@ -1721,22 +1723,35 @@ func (d DefaultPrivilege) QualifiedName() string {
 	return d.ObjectType + " in " + d.Schema + " for " + d.Grantor + " to " + d.Grantee
 }
 
-// GlobalDefaultPrivilege is one pg_default_acl row recorded with
-// defaclnamespace 0: the default privileges ALTER DEFAULT PRIVILEGES sets
-// without IN SCHEMA, which apply in every schema of the database.
+// UndescribedDefaultPrivilege is one pg_default_acl row a read leaves out of
+// [DefaultPrivilege], because no declaration can name it: it has no schema, or
+// no grantor, or neither.
+//
+// A row recorded with defaclnamespace 0 is what ALTER DEFAULT PRIVILEGES sets
+// without IN SCHEMA; it applies in every schema of the database. Its ACL is a
+// different kind of value from a schema-scoped row's: PostgreSQL stores the
+// whole ACL, the built-in default included, so REVOKE EXECUTE ON FUNCTIONS FROM
+// PUBLIC is recorded as {owner=X/owner}, and CockroachDB records the same revoke
+// as {owner=X/} but a global grant on tables without the owner. No
+// desired-state source can declare the form, and internal/devclean refuses it
+// during replay.
+//
+// A row recorded with defaclrole 0 is CockroachDB's FOR ALL ROLES, measured on
+// v25.4.16, v26.2.7 and v26.3.1. PostgreSQL 18.6 and YugabyteDB 2026.1.2 answer
+// the clause with a syntax error, and a declaration's grantor is a role, so
+// there is nothing to declare it with. Described, it would name the role
+// `unknown (OID=0)`, which is what pg_get_userbyid answers for role 0, and a
+// description applied elsewhere fails on a role nobody has.
 //
 // Only the identity is kept, because the row is reported rather than
-// described. Its ACL is a different kind of value from a schema-scoped row's:
-// PostgreSQL stores the whole ACL, the built-in default included, so REVOKE
-// EXECUTE ON FUNCTIONS FROM PUBLIC is recorded as {owner=X/owner}, and
-// CockroachDB records the same revoke as {owner=X/} but a global grant on
-// tables without the owner. No desired-state source can declare the global
-// form, and internal/devclean refuses it during replay.
-type GlobalDefaultPrivilege struct {
+// described.
+type UndescribedDefaultPrivilege struct {
 	// Grantor is the role whose newly created objects the privileges apply
-	// to. It is empty for CockroachDB's FOR ALL ROLES, which the catalog
-	// records as role 0.
+	// to. It is empty for FOR ALL ROLES.
 	Grantor string `json:"grantor"`
+	// Schema is the schema the default applies in. It is empty for a default
+	// set without IN SCHEMA, which applies in every schema.
+	Schema string `json:"schema"`
 	// ObjectType is the object class, as the keyword a statement writes:
 	// TABLES, SEQUENCES, FUNCTIONS, TYPES, SCHEMAS or LARGE OBJECTS. A code
 	// the reader does not know is kept as the catalog spells it.

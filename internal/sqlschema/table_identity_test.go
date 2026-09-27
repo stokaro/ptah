@@ -203,7 +203,7 @@ func TestReadOnto_TableIdentity_LaterTableKeepsItsOwnStructName(t *testing.T) {
 	earlier, _, err := sqlschema.Read([]byte(`CREATE TABLE "Docs" (id int, a int);`), "postgres")
 	c.Assert(err, qt.IsNil)
 
-	later, _, err := sqlschema.ReadOnto([]byte(`CREATE TABLE docs (id int, b int);`), "postgres", &earlier)
+	later, _, err := sqlschema.ReadOnto([]byte(`CREATE TABLE docs (id int, b int);`), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(later.Tables, qt.HasLen, 1)

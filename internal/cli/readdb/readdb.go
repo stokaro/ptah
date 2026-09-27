@@ -14,7 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dburldisplay"
-	"ptah.run/internal/globaldefaults"
+	"ptah.run/internal/defaultprivnote"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
@@ -112,9 +112,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// below are correct and incomplete. See stokaro/ptah#1026.
 	timescale.ReportUndescribed(stderr, schema)
 
-	// A default privilege set without IN SCHEMA is not described, and applying
-	// the statements below elsewhere leaves it behind. See stokaro/ptah#3737.
-	globaldefaults.ReportUndescribed(stderr, schema)
+	// A default privilege set without IN SCHEMA or FOR ALL ROLES is not
+	// described, and applying the statements below elsewhere leaves it behind.
+	// See stokaro/ptah#3737 and stokaro/ptah#3770.
+	defaultprivnote.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect)

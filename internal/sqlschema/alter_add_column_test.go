@@ -126,7 +126,7 @@ func TestReadOnto_AddsAColumnToAnEarlierTable_HappyPath(t *testing.T) {
 	database, _, err := sqlschema.ReadOnto([]byte(
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;\n"+
 			"ALTER TABLE users ADD COLUMN IF NOT EXISTS note text;",
-	), "postgres", &earlier)
+	), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 0)
@@ -138,7 +138,7 @@ func TestReadOnto_AddsAColumnToAnEarlierTable_FailurePath(t *testing.T) {
 	earlier, _, err := sqlschema.Read([]byte("CREATE TABLE users (id uuid PRIMARY KEY, note text);"), "postgres")
 	c.Assert(err, qt.IsNil)
 
-	database, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE users ADD COLUMN note text;"), "postgres", &earlier)
+	database, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE users ADD COLUMN note text;"), "postgres", sqlschema.NewDocument(&earlier))
 
 	c.Assert(err, qt.ErrorMatches, `ALTER TABLE users ADD COLUMN note names a column the table already declares`)
 	c.Assert(database.Fields, qt.HasLen, 0)
