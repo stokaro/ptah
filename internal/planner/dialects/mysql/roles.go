@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"slices"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -64,10 +66,15 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	for _, revoke := range p.grantOptionRevocations(diff.GrantOptionsRevoked) {
+	ghosts, removed := p.splitGrantOptionGhosts(diff.GrantsRemoved)
+	revokes := diff.GrantOptionsRevoked
+	if len(ghosts) > 0 {
+		revokes = append(slices.Clone(revokes), ghosts...)
+	}
+	for _, revoke := range p.grantOptionRevocations(revokes) {
 		result = append(result, revoke)
 	}
-	for _, grant := range diff.GrantsRemoved {
+	for _, grant := range removed {
 		result = append(result, ast.NewRevokePrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
 	}
@@ -77,6 +84,44 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 			SetComment("WARNING: Ensure no other objects depend on this role"))
 	}
 	return result
+}
+
+// usageGrantOptionGhost is the pseudo-privilege MySQL and MariaDB report for a
+// grantee that holds a WITH GRANT OPTION row and no real privilege left on the
+// object. information_schema.TABLE_PRIVILEGES and SCHEMA_PRIVILEGES, and SHOW
+// GRANTS, name it USAGE -- the same placeholder they use for an account
+// granted nothing at all -- because that is the whole of what the row reports.
+const usageGrantOptionGhost = "USAGE"
+
+// splitGrantOptionGhosts separates the GrantsRemoved entries that are really an
+// orphaned grant option in disguise from the rest.
+//
+// Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3: revoking
+// the last privilege a WITH GRANT OPTION grant covered leaves exactly this row
+// behind -- USAGE, grantable -- and REVOKE USAGE ON db.t FROM r changes
+// nothing, since USAGE names no privilege bit to clear. Left alone, the
+// comparison reports the same row removed on every later run. REVOKE GRANT
+// OPTION ON db.t FROM r, the statement [grantOptionRevocations] already
+// renders for a kept privilege losing its option, removes it -- and is exactly
+// as correct here, because a grantable USAGE row means the grant option is the
+// only thing left on the object to take away.
+//
+// SQL Server and Oracle share this planner's type but not this quirk: neither
+// reports a bare USAGE this way, so the split runs only where
+// [grantOptionCoversTheObject] already says the grant option belongs to the
+// object rather than to the privilege -- MySQL and MariaDB.
+func (p *Planner) splitGrantOptionGhosts(refs []difftypes.GrantRef) (ghosts, rest []difftypes.GrantRef) {
+	if !p.grantOptionCoversTheObject() {
+		return nil, refs
+	}
+	for _, ref := range refs {
+		if ref.WithOption && ref.Privilege == usageGrantOptionGhost {
+			ghosts = append(ghosts, ref)
+			continue
+		}
+		rest = append(rest, ref)
+	}
+	return ghosts, rest
 }
 
 // grantOptionRevocations turns the grant options a diff revokes into the
