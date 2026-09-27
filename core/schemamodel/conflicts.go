@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/tableref"
 )
@@ -842,6 +844,88 @@ func contradictedRevoke(revoked Grant, grants []Grant) error {
 		}
 	}
 	return nil
+}
+
+// ValidateGrantOptionConsistency refuses two grants for the same role and
+// object that disagree on WithOption, for a target where
+// [platform.GrantOptionIsPerObject] says the grant option belongs to the
+// grantee at the whole object rather than to one privilege.
+//
+// There, one declaration's WITH GRANT OPTION and another's plain grant on the
+// same object cannot both hold: GRANT ... WITH GRANT OPTION makes every
+// privilege already granted on the object grantable too, and only REVOKE
+// GRANT OPTION takes it back -- from the whole object, not from the privilege
+// that asked to keep it. A plan built from both declarations does not
+// converge: it alternates between granting the option back, for the one that
+// wants it, and revoking it, for the one that does not, forever. Refusing the
+// pair here is cheaper than discovering the loop live.
+//
+// Column-scoped grants are compared at the table they scope, not at their own
+// column: MySQL and MariaDB have no per-column grant option to disagree on
+// (mysql.columns_priv carries no Grant_priv of its own), so a table-wide
+// option and a column grant on the same table share the one bit the table row
+// holds. A grant scoped away from dialect by [Grant.Dialects] never reaches
+// this target at all, and is left out rather than flagged for a conflict it
+// can never actually have.
+func ValidateGrantOptionConsistency(db *Database, dialect string) error {
+	if db == nil || !platform.GrantOptionIsPerObject(dialect) {
+		return nil
+	}
+	type objectKey struct {
+		role   string
+		target string
+	}
+	var order []objectKey
+	seenKeys := make(map[objectKey]bool)
+	withOption := make(map[objectKey]Grant)
+	withoutOption := make(map[objectKey]Grant)
+	for _, grant := range db.Grants {
+		if !dialectscope.Includes(grant.Dialects, dialect) {
+			continue
+		}
+		key := objectKey{role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant)}
+		if !seenKeys[key] {
+			seenKeys[key] = true
+			order = append(order, key)
+		}
+		bucket := withoutOption
+		if grant.WithOption {
+			bucket = withOption
+		}
+		if _, seen := bucket[key]; !seen {
+			bucket[key] = grant
+		}
+	}
+	for _, key := range order {
+		with, hasWith := withOption[key]
+		without, hasWithout := withoutOption[key]
+		if !hasWith || !hasWithout {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: role %q is granted %s on %s WITH GRANT OPTION and %s on the same object without it; "+
+				"%s keeps the grant option at the whole object, not at one privilege, so the two "+
+				"declarations can never both hold -- declare WITH GRANT OPTION for every grant on this "+
+				"object, or for none of them",
+			ptaherr.ErrInvalidSchemaDiff, key.role, strings.Join(with.Privileges, ", "), key.target,
+			strings.Join(without.Privileges, ", "), strings.ToUpper(platform.NormalizeDialect(dialect)),
+		)
+	}
+	return nil
+}
+
+// grantObjectIdentity is a grant's target, ignoring the columns it limits
+// itself to: the identity MySQL and MariaDB's single object-level grant
+// option actually keys on, one level coarser than [Grant.TargetKey].
+func grantObjectIdentity(g Grant) string {
+	whole := Grant{
+		OnTable:          g.OnTable,
+		OnSchema:         g.OnSchema,
+		OnSequence:       g.OnSequence,
+		OnRoutine:        g.OnRoutine,
+		RoutineArguments: g.RoutineArguments,
+	}
+	return whole.TargetKey()
 }
 
 // dialectScopesOverlap reports whether some dialect is in both scopes. An empty

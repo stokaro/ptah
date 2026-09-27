@@ -89,3 +89,16 @@ func TestIsPostgresFamily(t *testing.T) {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}
 }
+
+// Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3: the grant
+// option belongs to the grantee at the object, not to the privilege.
+func TestGrantOptionIsPerObject(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{"mysql", "mariadb", "maria"} {
+		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
+	}
+	for _, dialect := range []string{"postgres", "cockroachdb", "clickhouse", "sqlite", "sqlserver", "oracle", "bogus"} {
+		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
+	}
+}

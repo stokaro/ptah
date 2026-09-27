@@ -632,6 +632,13 @@ func validateDeclaredBeforeComparison(
 	if err := reservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
 		return err
 	}
+	// On a target where the grant option belongs to the grantee at the whole
+	// object, two declarations disagreeing on it for the same role and object
+	// would plan a REVOKE and a GRANT that undo each other forever. Refuse the
+	// pair here, before anything is compared (stokaro/ptah-operator#481).
+	if err := schemamodel.ValidateGrantOptionConsistency(desired, info.Dialect); err != nil {
+		return err
+	}
 	// The same ClickHouse refusals the renderer applies, at the other entry
 	// point a declaration reaches before a server does. The empty default
 	// database matches the renderer's, so one set of declarations cannot be

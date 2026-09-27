@@ -173,15 +173,12 @@ type grantObject struct {
 // grantOptionCoversTheObject reports whether the target keeps one grant option
 // per grantee and object rather than one per privilege.
 //
-// It is a question about the engines, not about Ptah. Measured on MySQL 8.4.11
-// and 26.7.0 and MariaDB 11.8.9 and 12.3.3: after `GRANT SELECT, INSERT ON t TO
-// r WITH GRANT OPTION`, one `REVOKE GRANT OPTION ON t FROM r` leaves both
-// privileges in place and neither grantable.
+// It is a question about the engines, not about Ptah, so it defers to
+// [platform.GrantOptionIsPerObject] rather than keeping its own dialect
+// switch: [schemamodel.ValidateGrantOptionConsistency] asks the same question
+// before this planner ever sees a diff, and the two must agree on every
+// target, or a declaration valid to one and refused by the other would be
+// Ptah's own inconsistency, not the engine's.
 func (p *Planner) grantOptionCoversTheObject() bool {
-	switch p.targetDialect() {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+	return platform.GrantOptionIsPerObject(p.targetDialect())
 }
