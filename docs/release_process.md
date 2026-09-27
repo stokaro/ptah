@@ -70,7 +70,7 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 
    ```bash
    go test ./...
-   golangci-lint run ./...
+   make lint-golangci
    goreleaser check
    goreleaser release --snapshot --clean --skip=sign,docker
    ```

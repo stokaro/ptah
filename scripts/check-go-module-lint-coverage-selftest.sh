@@ -56,57 +56,94 @@ assert_accepted() {
 	fi
 }
 
-two_jobs_both_modules='jobs:
-  lint:
-    steps:
-      - uses: golangci/golangci-lint-action@v9
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: nested
-  lint-windows:
-    steps:
-      - uses: golangci/golangci-lint-action@v9
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: nested'
+# lint_step prints one golangci-lint step. `.` is the root module, which is the
+# step that names no working-directory; tags is appended to the arguments.
+lint_step() {
+	local module=$1 tags=$2
+	printf '      - uses: golangci/golangci-lint-action@v9\n'
+	printf '        with:\n'
+	printf '          args: --timeout=30m%s\n' "$tags"
+	if [[ $module != "." ]]; then
+		printf '          working-directory: %s\n' "$module"
+	fi
+}
+
+# lint_steps prints a job that lints each module named in both contours.
+lint_steps() {
+	local job=$1
+	shift
+	printf '  %s:\n    steps:\n' "$job"
+	for module in "$@"; do
+		lint_step "$module" ""
+		lint_step "$module" " --build-tags=integration"
+	done
+}
+
+two_jobs_both_modules="jobs:
+$(lint_steps lint . nested)
+$(lint_steps lint-windows . nested)"
 
 # A module no job visits: the state the gate was written for.
-write_repo 'jobs:
-  lint:
-    steps:
-      - uses: golangci/golangci-lint-action@v9' nested
-assert_rejected 'a module no job lints' 'nested is linted by 0 of the 1 golangci-lint jobs'
+write_repo "jobs:
+$(lint_steps lint .)" nested
+assert_rejected 'a module no job lints' 'job lint in .github/workflows/go-lint.yml does not lint nested in the default contour'
 
-# Dropped from ONE job. This is why the gate counts rather than searching: with
-# `grep -q` the module stays green on the strength of the other job.
-write_repo 'jobs:
-  lint:
-    steps:
-      - uses: golangci/golangci-lint-action@v9
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: nested
-  lint-windows:
-    steps:
-      - uses: golangci/golangci-lint-action@v9' nested
-assert_rejected 'a module dropped from one of two jobs' 'nested is linted by 1 of the 2 golangci-lint jobs'
+# Dropped from ONE job. This is why the gate asks each job: searched over the
+# file, the module stays green on the strength of the other job.
+write_repo "jobs:
+$(lint_steps lint . nested)
+$(lint_steps lint-windows .)" nested
+assert_rejected 'a module dropped from one of two jobs' 'job lint-windows in .github/workflows/go-lint.yml does not lint nested in the default contour'
 
-# No unscoped invocation at all: nothing lints the root module.
+# No golangci-lint step anywhere.
 write_repo 'jobs:
   lint:
     steps:
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: nested' nested
-assert_rejected 'no job linting the root module' 'runs golangci-lint in no job at all'
+      - run: make lint-qtlint' nested
+assert_rejected 'a workflow running golangci-lint nowhere' 'runs golangci-lint in no job at all'
+
+# A job linting only the nested module: nothing in it lints the root.
+write_repo "jobs:
+$(lint_steps lint nested)" nested
+assert_rejected 'a job that never lints the root module' 'job lint in .github/workflows/go-lint.yml does not lint the root module in the default contour'
 
 # The control. Without it, a gate refusing every workflow satisfies every row.
 write_repo "$two_jobs_both_modules" nested
-assert_accepted 'both jobs visiting both modules'
+assert_accepted 'both jobs visiting both modules in both contours'
+
+# The build tag spelled with a space is the same contour.
+write_repo "jobs:
+$(lint_steps lint . nested | sed 's/--build-tags=/--build-tags /')" nested
+assert_accepted 'the build tag spelled with a space'
 
 # And a second module has to appear in both jobs too, so the control is not
 # passing on the strength of one module's arrangement.
 write_repo "$two_jobs_both_modules" nested other
-assert_rejected 'a second module visited by neither job' 'other is linted by 0 of the 2 golangci-lint jobs'
+assert_rejected 'a second module visited by neither job' 'job lint in .github/workflows/go-lint.yml does not lint other in the default contour'
 
-printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, and a workflow linting nothing are each reported\n'
+# The root module never linted with the integration tag: every golangci-lint
+# step passes no tags, which is how 84 findings in integration/ went unread
+# (stokaro/ptah#3882).
+write_repo "$(printf '%s\n' "$two_jobs_both_modules" | grep -v 'build-tags')" nested
+assert_rejected 'no step linting the integration contour' 'job lint in .github/workflows/go-lint.yml does not lint the root module in the integration contour'
+
+# The same step twice: the step count is right and the contour is not. A count
+# over the file cannot see this; asking each step for its contour does.
+write_repo "$(printf '%s\n' "$two_jobs_both_modules" | sed 's/ --build-tags=integration//')" nested
+assert_rejected 'the default contour linted twice' 'job lint in .github/workflows/go-lint.yml does not lint the root module in the integration contour'
+
+# A tag named only in a comment is not a tag the step passes.
+write_repo "$(printf '%s\n' "$two_jobs_both_modules" | sed 's/ --build-tags=integration/ # --build-tags=integration/')" nested
+assert_rejected 'a build tag named in a comment' 'job lint in .github/workflows/go-lint.yml does not lint the root module in the integration contour'
+
+# A nested module missing only its integration step in one job.
+write_repo "jobs:
+$(lint_steps lint . nested)
+  lint-windows:
+    steps:
+$(lint_step . '')
+$(lint_step . ' --build-tags=integration')
+$(lint_step nested '')" nested
+assert_rejected 'a nested module missing one contour in one job' 'job lint-windows in .github/workflows/go-lint.yml does not lint nested in the integration contour'
+
+printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, a workflow linting nothing, and a missing integration contour are each reported\n'

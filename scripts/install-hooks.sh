@@ -26,7 +26,7 @@ echo "Running test style baseline check..."
 scripts/check-test-style.sh
 
 echo "Running golangci-lint..."
-golangci-lint run ./...
+make lint-golangci
 HOOK
 
 chmod +x "$pre_commit"
