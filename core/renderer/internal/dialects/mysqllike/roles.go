@@ -109,7 +109,8 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	return nil
 }
 
-// renderRevokePrivilege renders REVOKE.
+// renderDefaultPrivilege names and skips ALTER DEFAULT PRIVILEGES.
+//
 // ALTER DEFAULT PRIVILEGES is PostgreSQL's own statement: it records, in
 // pg_default_acl, the privileges an object gets when a named role creates one.
 // No other engine here has a catalog for that, and the nearest thing on each --
@@ -128,6 +129,20 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 	return nil
 }
 
+// renderRevokePrivilege renders REVOKE.
+//
+// Revoking only the grant option has a spelling of its own, and it names no
+// privilege: a grant option here belongs to the grantee at one object, not to
+// one privilege. Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and
+// 12.3.3, over a role holding SELECT and INSERT on a table WITH GRANT OPTION:
+//
+//	REVOKE GRANT OPTION ON db.t FROM r            -- both kept, neither grantable
+//	REVOKE SELECT ON db.t FROM r                  -- SELECT gone
+//	REVOKE GRANT OPTION FOR SELECT ON db.t FROM r -- ERROR 1064 on both engines
+//
+// Without the first form, a plan that only takes the option away revokes the
+// privilege itself. The same form on a schema grant, `db`.*, leaves the schema
+// privilege in place too.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if err := grantrefusal.Routine(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
@@ -139,8 +154,12 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 		r.notGenerated("revoke", node.Role)
 		return nil
 	}
+	revoked := strings.Join(node.Privileges, ", ")
+	if node.GrantOptionFor {
+		revoked = "GRANT OPTION"
+	}
 	r.w.WriteLinef("REVOKE %s ON %s FROM %s;",
-		strings.Join(node.Privileges, ", "), grantScope(node.ObjectType, node.ObjectName), escapeIdentifier(node.Role))
+		revoked, grantScope(node.ObjectType, node.ObjectName), escapeIdentifier(node.Role))
 	return nil
 }
 
