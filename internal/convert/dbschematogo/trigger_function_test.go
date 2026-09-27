@@ -66,7 +66,7 @@ func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg_a"), "")
+	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg__a"), "")
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")

@@ -82,13 +82,13 @@ func TestSchemaApplyCreatesEveryHCLTriggerEventLive(t *testing.T) {
 	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", two, "--dry-run"),
 		qt.Contains, "Schema is synced")
 	c.Assert(hclTriggerDefinition(c, target), qt.Equals,
-		"CREATE TRIGGER t BEFORE INSERT OR UPDATE ON public.x FOR EACH ROW EXECUTE FUNCTION ptah_trigger_public_x_t()")
+		"CREATE TRIGGER t BEFORE INSERT OR UPDATE ON public.x FOR EACH ROW EXECUTE FUNCTION ptah_trigger_public__x_t()")
 
 	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", three, "--auto-approve")
 	c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", three, "--dry-run"),
 		qt.Contains, "Schema is synced")
 	c.Assert(hclTriggerDefinition(c, target), qt.Equals,
-		"CREATE TRIGGER t BEFORE INSERT OR DELETE OR UPDATE ON public.x FOR EACH ROW EXECUTE FUNCTION ptah_trigger_public_x_t()")
+		"CREATE TRIGGER t BEFORE INSERT OR DELETE OR UPDATE ON public.x FOR EACH ROW EXECUTE FUNCTION ptah_trigger_public__x_t()")
 }
 
 // TestSchemaInspectWritesEveryHCLTriggerEventLive inspects a trigger on two

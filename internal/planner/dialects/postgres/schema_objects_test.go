@@ -74,7 +74,7 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "DROP VIEW")
 	c.Assert(sql, qt.Contains, "DROP MATERIALIZED VIEW IF EXISTS user_stats CASCADE;")
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set_updated_at();")
+	c.Assert(sql, qt.Contains, "CREATE OR REPLACE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set__updated__at();")
 }
 
 // TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
@@ -699,10 +699,10 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_users_set_updated_at()")
-	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_posts_set_updated_at()")
-	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set_updated_at();")
-	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
+	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_users_set__updated__at()")
+	c.Assert(sql, qt.Contains, "CREATE FUNCTION ptah_trigger_posts_set__updated__at()")
+	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set__updated__at();")
+	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set__updated__at();")
 }
 
 // TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh asserts the
