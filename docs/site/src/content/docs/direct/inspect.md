@@ -73,8 +73,9 @@ schema.
 
 PostgreSQL roles are cluster-wide rather than per-database, so a read reports
 only the roles the schemas being read actually use: a role that holds a
-privilege on a relation in them or on one of the schemas, a role that granted
-one, or a role a row-level security policy on a table in them applies to. A
+privilege on a relation, a column or a routine in them or on one of the
+schemas, a role that granted one, a role a default privilege in them names, or
+a role a row-level security policy on a table in them applies to. A
 role that merely exists elsewhere on the server belongs to no schema being read
 and is not described.
 

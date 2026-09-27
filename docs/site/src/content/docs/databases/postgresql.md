@@ -704,9 +704,10 @@ either order; write that routine in PL/pgSQL.
 
 Reading a live database describes only the roles the schemas being read
 actually use, because a PostgreSQL role belongs to the cluster rather than to
-one database. A role counts as used when it holds a privilege on a relation in
-those schemas or on one of the schemas themselves, when it granted one, or when
-a row-level security policy on a table in them applies to it. A role that
+one database. A role counts as used when it holds a privilege on a relation, a
+column or a routine in those schemas or on one of the schemas themselves, when
+it granted one, when a default privilege in them names it, or when a row-level
+security policy on a table in them applies to it. A role that
 merely exists elsewhere on the server is not part of the schema being
 described, so it is left out — of `ptah db read` and of `ptah-compat schema
 inspect` alike.

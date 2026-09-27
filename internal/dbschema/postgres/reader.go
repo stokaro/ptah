@@ -3655,11 +3655,23 @@ func (r *Reader) rolesInScopeClauses(defaultACL defaultACLAccess, defaultPrivile
 // grantRolesInScopeClauses are the branches of the role scoping that read
 // object privileges. CockroachDB takes them from information_schema, for the
 // reason [Reader.readCockroachGrants] gives.
+//
+// There is a branch for every grant read in [Reader.readGrants], because a
+// grant the description carries names its grantee and its grantor, and a role
+// the description names has to be one it defines. A grant read without a
+// branch leaves the role that holds only that kind of grant out: the
+// description then grants to a role it never creates, and applying it to a
+// server without that role fails.
 func (r *Reader) grantRolesInScopeClauses() []string {
+	routines := r.caps.Has(capability.Functions)
 	if r.dialect == platform.CockroachDB {
-		return cockroachRolesInScopeClauses()
+		clauses := cockroachRolesInScopeClauses()
+		if routines {
+			clauses = append(clauses, cockroachRoutineRolesInScopeClause)
+		}
+		return clauses
 	}
-	return []string{
+	clauses := []string{
 		// Holds a privilege on a relation in scope -- table, view,
 		// materialized view or sequence (pg_class.relacl). An owner appears
 		// here as soon as the relation carries any explicit privilege, which
@@ -3678,7 +3690,43 @@ func (r *Reader) grantRolesInScopeClauses() []string {
 		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
 		`SELECT acl.grantor FROM scope s
 			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+		// Holds a privilege on a column of a relation in scope
+		// (pg_attribute.attacl). A column grant leaves pg_class.relacl as it
+		// was, so the relation branches do not see it. The filters are
+		// readColumnGrantsForSchema's.
+		`SELECT acl.grantee FROM pg_attribute a
+			JOIN pg_class c ON c.oid = a.attrelid
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(a.attacl) acl
+			WHERE ` + columnGrantPredicate,
+		// Granted a privilege on a column of a relation in scope
+		// (pg_attribute.attacl).
+		`SELECT acl.grantor FROM pg_attribute a
+			JOIN pg_class c ON c.oid = a.attrelid
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(a.attacl) acl
+			WHERE ` + columnGrantPredicate,
 	}
+	if !routines {
+		return clauses
+	}
+	return append(clauses,
+		// Holds a privilege on a routine in scope (pg_proc.proacl), for the
+		// routines readRoutineGrantsForSchema reports on. A routine whose ACL
+		// is NULL explodes to no rows: its default EXECUTE goes to PUBLIC,
+		// which is not a role, and the owner half is not reported.
+		`SELECT acl.grantee FROM pg_proc p
+			JOIN scope s ON s.oid = p.pronamespace
+			JOIN pg_language l ON l.oid = p.prolang
+			CROSS JOIN LATERAL aclexplode(p.proacl) acl
+			WHERE true`+describedRoutinePredicate,
+		// Granted a privilege on a routine in scope (pg_proc.proacl).
+		`SELECT acl.grantor FROM pg_proc p
+			JOIN scope s ON s.oid = p.pronamespace
+			JOIN pg_language l ON l.oid = p.prolang
+			CROSS JOIN LATERAL aclexplode(p.proacl) acl
+			WHERE true`+describedRoutinePredicate,
+	)
 }
 
 // readDefaultPrivilegeGrantees reads the roles a default privilege in schemas
@@ -4297,6 +4345,18 @@ func standaloneSequenceSet(sequences []catalog.Sequence) map[string]bool {
 	return set
 }
 
+// columnGrantPredicate says which rows of pg_attribute carry a column grant
+// this reader describes, joined to pg_class as c and pg_attribute as a: the
+// live columns of the relation kinds a column privilege applies to.
+//
+// It is one predicate for the column grant read and the role scoping, for the
+// reason [describedRoutinePredicate] gives: a role the read reports a grant to
+// has to be a role the description defines.
+const columnGrantPredicate = `c.relkind IN ('r', 'v', 'f', 'p', 'm')
+		AND a.attnum > 0
+		AND NOT a.attisdropped
+		AND a.attacl IS NOT NULL`
+
 // readColumnGrantsForSchema reads the privileges granted on columns, one row
 // per privilege and column, from pg_attribute.attacl.
 //
@@ -4307,7 +4367,7 @@ func standaloneSequenceSet(sequences []catalog.Sequence) map[string]bool {
 // The grantees are filtered as readTableGrantsForSchema filters them, and the
 // relation kinds are the ones a column privilege applies to.
 func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
-	const query = `
+	query := `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC'),
 			acl.privilege_type,
@@ -4322,10 +4382,7 @@ func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName strin
 		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
 		LEFT JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
-		AND c.relkind IN ('r', 'v', 'f', 'p', 'm')
-		AND a.attnum > 0
-		AND NOT a.attisdropped
-		AND a.attacl IS NOT NULL
+		AND ` + columnGrantPredicate + `
 		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY c.relname, a.attname, 1, 2`
