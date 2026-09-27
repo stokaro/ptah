@@ -209,7 +209,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "a routine declared immutable calls something whose result changes between two calls with the same arguments",
 	},
 	"DS101": {
-		Summary:   "DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
+		Summary:   "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
 		AtlasCode: "DS102",
 	},
 	"DS110P": {

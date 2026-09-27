@@ -218,6 +218,13 @@ func constraintDeletionRules() []Rule {
 // place because the named and unnamed message forms must not drift apart.
 const tableDroppedAdvice = "take a verified backup first and consider a rename-and-retire window instead"
 
+// tableDroppedRule reports DS101 on a DROP TABLE and, on MariaDB, on a
+// CREATE OR REPLACE TABLE. The replace form drops the named table and
+// recreates it empty -- measured on MariaDB 12.3.3, a table holding rows
+// holds none once its CREATE OR REPLACE TABLE runs -- so it destroys existing
+// data exactly as DROP TABLE does, under a name that never mentions DROP. The
+// TEMPORARY form is excluded by [replacedTableRef]: it replaces only a
+// session-local table, so it destroys nothing that outlives the session.
 func tableDroppedRule() Rule {
 	return Rule{
 		Code:     "DS101",
@@ -236,6 +243,13 @@ func tableDroppedRule() Rule {
 				stmt := &file.Statements[i]
 				if ref := createdTableRef(stmt.Words); ref != "" {
 					created[ref] = true
+					continue
+				}
+				if ref, isReplace := replacedTableRef(stmt.Words, stmt.sourceWords); isReplace {
+					if ref.normalized != "" && refersToCreated(created, ref.normalized) {
+						continue
+					}
+					findings = append(findings, tableReplacedFinding(file.Path, stmt.Line, i, ref))
 					continue
 				}
 				if !hasWordPrefix(stmt.Words, "DROP", "TABLE") {
@@ -355,6 +369,45 @@ func tableDroppedFindings(filePath string, line, statementIndex int, tables []ta
 		))
 	}
 	return findings
+}
+
+// replacedTableRef reads the table a non-temporary CREATE OR REPLACE TABLE
+// statement replaces. isReplace is false for any other statement, including
+// the TEMPORARY form (CREATE OR REPLACE TEMPORARY TABLE), which is a different
+// four-word prefix and so never matches here: it replaces only a table local to
+// the session, and destroys no row that outlives it.
+//
+// A true isReplace with a zero tableReference means the target could not be
+// parsed to the end. That is reported as an unnamed finding rather than
+// treated as safe, the same fail-closed contract [droppedTablesNotCreated]
+// documents for DROP TABLE.
+func replacedTableRef(w, sourceWords []string) (ref tableReference, isReplace bool) {
+	if !hasWordPrefix(w, "CREATE", "OR", "REPLACE", "TABLE") {
+		return tableReference{}, false
+	}
+	ref, _ = tableRefAt(w, sourceWords, 4)
+	return ref, true
+}
+
+// tableReplacedFinding reports the table a CREATE OR REPLACE TABLE statement
+// destroys, in [tableDroppedRule]'s DS101.
+func tableReplacedFinding(filePath string, line, statementIndex int, table tableReference) Finding {
+	message := "CREATE OR REPLACE TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice
+	var subjects []Subject
+	if table.name != "" {
+		message = fmt.Sprintf("CREATE OR REPLACE TABLE permanently deletes table %s and every row in it; %s",
+			table.name, tableDroppedAdvice)
+		subjects = []Subject{{Kind: SubjectTable, Name: table.name}}
+	}
+	return Finding{
+		Rule:     "DS101",
+		Title:    "table dropped",
+		Severity: SeverityError,
+		File:     filePath,
+		Line:     line,
+		Message:  message,
+		Context:  statementFindingContext(statementIndex, subjects...),
+	}
 }
 
 // logicalObjectName reduces a source-spelled reference to the bare object name

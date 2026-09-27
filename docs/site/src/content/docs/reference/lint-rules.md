@@ -194,7 +194,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `CD103` | dropping a primary key removes row identity and can break replication | both | Atlas |
 | `DD101` | adding a NOT NULL column without a default fails or blocks on a populated table | both | Atlas |
 | `DD102` | a routine declared immutable calls something whose result changes between two calls with the same arguments | both | Ptah |
-| `DS101` | DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows | both | Atlas |
+| `DS101` | DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows | both | Atlas |
 | `DS102` | DROP COLUMN destroys the column and every value stored in it | both | Atlas |
 | `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | Ptah |
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
