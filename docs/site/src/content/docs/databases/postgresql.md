@@ -275,6 +275,11 @@ unique index is an object apart, so `a int UNIQUE` beside
 `CREATE UNIQUE INDEX ux ON c (a)` builds `c_a_key` and `ux`, and a database
 with `ux` alone is planned `c_a_key`, as Atlas CE plans it.
 
+A database is described the same way. Where it holds `<table>_<column>_key`
+and a second key over the column alone, as `CREATE TABLE g2 (a int, UNIQUE
+(a))` followed by `ALTER TABLE g2 ADD UNIQUE (a)` builds, the description
+carries the column's `UNIQUE` and the second key under its name, `g2_a_key1`.
+
 A plan that adds a column-level `UNIQUE` to an existing column writes
 `ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
 because the plan cannot see which names the target already holds. MySQL and
