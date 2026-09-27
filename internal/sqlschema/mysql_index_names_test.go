@@ -83,7 +83,7 @@ func TestToDatabase_UnnamedMySQLIndexNames_HappyPath(t *testing.T) {
 			want: []string{"a"},
 		},
 		{
-			name: "a column-level UNIQUE claims its column before any index does",
+			name: "a column-level UNIQUE written first claims its column before a later index",
 			sql:  "CREATE TABLE u (id BIGINT NOT NULL PRIMARY KEY, a INT NOT NULL UNIQUE, KEY (a));",
 			want: []string{"a_2"},
 		},

@@ -112,8 +112,11 @@ SQL:
 - An inline `KEY`, `INDEX` or `UNIQUE KEY` the author did not name is read with
   the name its server would assign: the first key part's column, then `_2`,
   `_3` for a name already taken. A prefix length and a `DESC` direction stay
-  out of the name, and a column-level `UNIQUE` claims its column before any
-  index does. The name is decided when the SQL is read rather than when it is
+  out of the name. Names are taken in the order the body writes the keys, and
+  a column's own `UNIQUE`, or the index its `REFERENCES` builds on MariaDB,
+  takes its name at the column's place: `KEY (a), a INT UNIQUE` names the
+  index `a` and the column's key `a_2`, and `a INT UNIQUE, KEY (a)` the other
+  way round. The name is decided when the SQL is read rather than when it is
   written, because the catalog reports what the server chose and a desired
   schema that guessed differently would never converge with it.
 - An unnamed `UNIQUE`, `KEY` or `INDEX` that `ALTER TABLE ... ADD` adds is
