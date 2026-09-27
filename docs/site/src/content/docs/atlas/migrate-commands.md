@@ -1806,7 +1806,9 @@ With `--env`, it reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and
 `--revisions-schema` flags keep CLI precedence. `ptah-compat migrate status`
 also accepts `--revisions-schema` and runs against Atlas revision-table
-metadata.
+metadata. It only reads, as Atlas does: against a database with no revision
+table it reports every file pending and creates neither the table nor the
+schema or database that would hold it.
 
 A pre-apply check sequence for CI looks like:
 
