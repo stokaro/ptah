@@ -385,6 +385,8 @@ func toDBConstraints(
 			dbConstraint.DeleteRule = optionalStringPtr(constraint.OnDelete)
 			dbConstraint.UpdateRule = optionalStringPtr(constraint.OnUpdate)
 			dbConstraint.OnDeleteColumns = append([]string(nil), constraint.OnDeleteColumns...)
+			dbConstraint.Deferrable = constraint.Deferrable
+			dbConstraint.Initially = constraint.Initially
 		}
 		appendConstraint(dbConstraint)
 	}
@@ -473,6 +475,8 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, chec
 			ForeignColumns: append([]string(nil), fkRef.ReferencedColumns()...),
 			DeleteRule:     optionalStringPtr(field.OnDelete),
 			UpdateRule:     optionalStringPtr(field.OnUpdate),
+			Deferrable:     field.Deferrable,
+			Initially:      field.Initially,
 		})
 	}
 	return out

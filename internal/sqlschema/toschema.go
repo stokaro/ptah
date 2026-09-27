@@ -180,6 +180,8 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 		field.ForeignKeyName = normalizeSQLIdentifier(sourcePlatform, column.ForeignKey.Name)
 		field.OnDelete = column.ForeignKey.OnDelete
 		field.OnUpdate = column.ForeignKey.OnUpdate
+		field.Deferrable = column.ForeignKey.Deferrable
+		field.Initially = column.ForeignKey.Initially
 	}
 
 	return field
@@ -1362,6 +1364,8 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			fk.OnDelete = ref.OnDelete
 			fk.OnUpdate = ref.OnUpdate
 			fk.OnDeleteColumns = normalizeSQLIdentifiers(sourcePlatform, ref.OnDeleteColumns)
+			fk.Deferrable = ref.Deferrable
+			fk.Initially = ref.Initially
 		}
 		return fk, true
 	case ast.CheckConstraint:

@@ -148,6 +148,20 @@ ALTER TABLE g2 ADD UNIQUE (a);`,
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   code text, scope text, UNIQUE (code, scope));`,
 	},
+	{
+		// PostgreSQL 18.6 makes each key deferrable, and INITIALLY DEFERRED
+		// alone makes dc_b_fkey so too (stokaro/ptah#3818).
+		name: "deferrable foreign keys",
+		sql: `CREATE TABLE dp (id int PRIMARY KEY);
+CREATE TABLE dc (a int REFERENCES dp (id) DEFERRABLE INITIALLY DEFERRED, b int, c int REFERENCES dp (id) DEFERRABLE,
+  FOREIGN KEY (b) REFERENCES dp (id) INITIALLY DEFERRED);`,
+	},
+	{
+		// PostgreSQL 18.6 names the column's key nd_a_key and keeps the
+		// clause on it (stokaro/ptah#3821).
+		name: "a column UNIQUE NULLS NOT DISTINCT",
+		sql:  `CREATE TABLE nd (a int UNIQUE NULLS NOT DISTINCT, b int CONSTRAINT nd_b_uq UNIQUE NULLS NOT DISTINCT);`,
+	},
 }
 
 // serverRewrittenControls change one declaration of each family for real, so
@@ -203,6 +217,18 @@ CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true A
 		schema: `CREATE TABLE sites (id bigint PRIMARY KEY, owner text NOT NULL, is_default boolean NOT NULL, site_id bigint);
 CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true;`,
 		wantInPlan: "sites_default_idx",
+	},
+	{
+		name:       "a foreign key becomes deferrable",
+		migration:  `CREATE TABLE dp (id int PRIMARY KEY); CREATE TABLE dc (a int REFERENCES dp (id));`,
+		schema:     `CREATE TABLE dp (id int PRIMARY KEY); CREATE TABLE dc (a int REFERENCES dp (id) DEFERRABLE INITIALLY DEFERRED);`,
+		wantInPlan: "DEFERRABLE INITIALLY DEFERRED",
+	},
+	{
+		name:       "a column UNIQUE treats NULLs as equal",
+		migration:  `CREATE TABLE nd (a int UNIQUE);`,
+		schema:     `CREATE TABLE nd (a int UNIQUE NULLS NOT DISTINCT);`,
+		wantInPlan: "NULLS NOT DISTINCT",
 	},
 	{
 		name:       "a default interval grows",

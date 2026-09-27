@@ -138,6 +138,38 @@ every column: PostgreSQL before 15, YugabyteDB 2024.2, CockroachDB, and the
 other engines. The Go annotation and Atlas HCL exports refuse such a key for
 the same reason, because neither format can write the list.
 
+## Defer a foreign key check
+
+A foreign key can put its check off to the end of the transaction. The
+clauses follow the key, on the table or on its column, in any order:
+
+```sql
+CREATE TABLE orders (id integer PRIMARY KEY);
+CREATE TABLE lines (
+  id integer PRIMARY KEY,
+  order_id integer REFERENCES orders (id) DEFERRABLE INITIALLY DEFERRED,
+  replaces integer,
+  FOREIGN KEY (replaces) REFERENCES lines (id) INITIALLY DEFERRED
+);
+```
+
+`INITIALLY DEFERRED` alone makes the key deferrable, as it does on
+PostgreSQL. `NOT DEFERRABLE` and `INITIALLY IMMEDIATE` say what a key is
+without them. The reader refuses what PostgreSQL 18.6 refuses:
+`DEFERRABLE` beside `NOT DEFERRABLE`, two timings, and `INITIALLY DEFERRED`
+beside `NOT DEFERRABLE`. It also refuses a clause after a column that
+declares no key, as in `a integer NOT NULL DEFERRABLE`. SQLite takes the
+clauses after a foreign key alone, and only with `DEFERRABLE` first. MySQL
+and MariaDB take none of them.
+
+After a `PRIMARY KEY`, `UNIQUE` or `EXCLUDE`, `NOT DEFERRABLE` and
+`INITIALLY IMMEDIATE` are read and change nothing. `DEFERRABLE` and
+`INITIALLY DEFERRED` are refused by name, because the model cannot keep a
+deferrable key yet
+([stokaro/ptah#3824](https://github.com/stokaro/ptah/issues/3824)). So are
+the clauses PostgreSQL takes for the index behind a key, `WITH (...)` and
+`USING INDEX TABLESPACE`. A `CHECK` cannot be deferrable.
+
 ## Change a table after creating it
 
 A schema file is read as the script it is. An `ALTER TABLE` after the
@@ -406,6 +438,17 @@ CREATE TABLE "pets" (
   `sqlite: adding column email to table users requires a table rebuild plan`.
 - Unsupported DDL constructs fail with a parse error naming the statement.
   Treat the error as a compatibility gap and check the conformance reports.
+- A table element ends at a comma or at the closing parenthesis. A clause
+  the reader does not take after a column or constraint is refused by its
+  first word rather than read as another column:
+
+  ```sql
+  CREATE TABLE t (a integer, CHECK (a > 0) NOT ENFORCED);
+  ```
+
+  ```text
+  unexpected NOT after a table element at position 41: expected ',' or ')'
+  ```
 - A constraint name on `DEFAULT` is refused. Ptah keeps a name on `NOT NULL`,
   `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY` where the dialect's grammar
   takes one; the last two are read as the table constraint they describe, which
