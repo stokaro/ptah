@@ -13,7 +13,8 @@ links from site content); no reader page needs to.
 
 Companion documents:
 
-- `docs/site/content-inventory.json` — the generated factual page inventory.
+- `docs/site/scripts/build-content-inventory.mjs` — computes the factual page
+  inventory; `--print` shows it.
 - `docs/site/CONTENT_INVENTORY.md` — reader journeys and editorial decisions
   that cannot be derived from the tree.
 - `.agents/skills/ptah-documentation-maintenance/SKILL.md` — the workflow for
@@ -163,19 +164,20 @@ A fully generated page uses `generated: true` and requires both `generator` and
 `editSource`. Do not edit its rendered frontmatter separately from its
 generator.
 
-Regenerate the factual inventory after any page, frontmatter, sidebar, or
-internal-link change:
+The factual inventory is computed from the tree and never stored. It records
+routes, navigation paths, links, word and byte counts, metadata, and
+ownership. `check:editorial-shape`, `check:source-page-contracts`, and
+`check:navigation` build it on every run, and the build refuses invalid page
+metadata, a feature two pages own, an overlap that names no live route, and a
+page with no sidebar entry. To read it:
 
 ```bash
 cd docs/site
-npm run inventory:write
-npm run check:content-inventory:selftest
-npm run check:content-inventory
+node scripts/build-content-inventory.mjs --print
 ```
 
-The generated file records routes, navigation paths, links, word and byte
-counts, metadata, ownership, and freshness. Keep only non-derivable journey
-findings and editorial decisions in `CONTENT_INVENTORY.md`.
+Keep only non-derivable journey findings and editorial decisions in
+`CONTENT_INVENTORY.md`.
 
 ## 4. Voice and language
 
@@ -867,7 +869,6 @@ Complete this for every documentation PR:
    npm run check:core-doc-links &&
    npm run check:page-health:selftest && npm run check:page-health &&
    npm run check:content-inventory:selftest &&
-   npm run check:content-inventory &&
    npm run check:editorial-shape:selftest &&
    npm run check:editorial-shape &&
    npm run check:source-page-contracts:selftest &&
@@ -890,9 +891,9 @@ Complete this for every documentation PR:
    all pass in `docs/site`. `check:responsive` reads the built site, so it runs
    last. Run every `:selftest` alongside its check: a
    check whose self-test is failing is not reporting on your content.
-6. `docs/site/content-inventory.json` regenerated for any page, metadata,
-   sidebar, or internal-link change. Update `CONTENT_INVENTORY.md` only when a
-   journey or editorial decision changes.
+6. `CONTENT_INVENTORY.md` updated when a journey or editorial decision
+   changes. The page inventory is computed, so a page, metadata, sidebar, or
+   internal-link change needs no regeneration.
 7. Redirects added for every moved URL; no content links through a redirect. A
    new page joins `published-routes.json` in the same PR, through
    `node scripts/check-route-retirement.mjs --write`. A line is never removed
@@ -938,13 +939,13 @@ in this guide is a review responsibility.
 | Native help text obeys the section 7 rows `terminologyguard` holds | 7 | `internal/cli/internal/terminologyguard` |
 | Every image carries alt text | 11.3 | `check:style` |
 | `title` and `description` frontmatter | 13 | `check:page-health` |
-| Page type, audience, reader question, goal, source, generated state, overlaps, and disposition | 3.1 | Astro content schema; `check:content-inventory` |
-| Status verification date and evidence | 3.1 | Astro content schema; `check:content-inventory` |
-| Generated page source metadata | 3.1 | Astro content schema; `check:content-inventory` |
-| Verification dates are real and not in the future | 3.1 | Astro content schema; `check:content-inventory` |
-| Repository-local metadata references exist | 3.1 | Astro content schema; `check:content-inventory` |
+| Page type, audience, reader question, goal, source, generated state, overlaps, and disposition | 3.1 | Astro content schema; `check:editorial-shape` |
+| Status verification date and evidence | 3.1 | Astro content schema; `check:editorial-shape` |
+| Generated page source metadata | 3.1 | Astro content schema; `check:editorial-shape` |
+| Verification dates are real and not in the future | 3.1 | Astro content schema; `check:editorial-shape` |
+| Repository-local metadata references exist | 3.1 | Astro content schema; `check:editorial-shape` |
 | Source-consuming pages keep their declared input contract | 3.1, 8 | `check:source-page-contracts` |
-| Factual page inventory matches content, sidebar, and link graph | 3.1 | `check:content-inventory` |
+| One page owns each feature, and every overlap names a live route | 3.1 | `check:editorial-shape` |
 | Identical tab panels are not published | 8 | `check:editorial-shape` |
 | New editorial findings fail unless a live, specific waiver covers them | 13, 14 | `check:editorial-shape` |
 | Mutable development-source links are labeled as latest | 13 | `check:mutable-source-links` |

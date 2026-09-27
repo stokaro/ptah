@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { sidebar } from '../src/sidebar.mjs';
 import { pageActionsForSource, resolveSourceContext } from '../src/lib/source-context.mjs';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
+import { buildContentInventory } from './build-content-inventory.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
-const inventoryPath = join(siteRoot, 'content-inventory.json');
 const inferenceDownloads = [
   {
     fileName: 'inference-quick-start.zip',
@@ -433,7 +433,15 @@ async function main() {
     return;
   }
 
-  const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8'));
+  let inventory;
+  try {
+    inventory = buildContentInventory();
+  } catch (error) {
+    console.error('check-navigation.mjs: FAILED');
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
   const model = navigationModel(sidebar, inventory.pages);
   if (model.problems.length > 0) {
     console.error('check-navigation.mjs: FAILED');

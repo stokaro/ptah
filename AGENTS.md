@@ -581,8 +581,11 @@ What a page change needs, beyond passing the gates:
   refuses one. A route is Astro's,
   not the file path's -- `docs/site/scripts/lib/docroutes.mjs` is the one
   answer to "which routes does this site publish."
-- **Any page or navigation change** regenerates the content inventory
-  (`npm run inventory:write` in `docs/site`).
+- **The content inventory is computed, never committed.** The checks that
+  read it call `buildContentInventory()` in
+  `docs/site/scripts/build-content-inventory.mjs` on the tree they check;
+  `--print` shows it. A stored copy changes with every page edit, so any two
+  open pull requests that touch pages conflict on it.
 - **`docs/site/src/content/docs/atlas/feature-matrix.md` is generated** from
   `docs/site/scripts/data/feature-matrix-rows.json`; edit the data and run
   `node docs/site/scripts/build-feature-matrix.mjs`. A `note` is capped at 200

@@ -8,10 +8,11 @@ import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildContentInventory } from './build-content-inventory.mjs';
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
-const inventoryPath = join(siteRoot, 'content-inventory.json');
 const waiverPath = join(scriptDir, 'data', 'editorial-waivers.json');
 
 // Above these a page gets a review finding rather than a refusal: length is a
@@ -289,7 +290,16 @@ function main() {
     return;
   }
 
-  const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8'));
+  // The inventory is computed from this tree, so a page that grows past its
+  // word limit is reported by the change that grew it.
+  let inventory;
+  try {
+    inventory = buildContentInventory();
+  } catch (error) {
+    console.error('check-editorial-shape.mjs: FAILED');
+    console.error(error.message);
+    process.exit(1);
+  }
   const entries = inventory.pages.map((page) => ({
     page,
     source: readFileSync(join(repoRoot, page.path), 'utf8'),
