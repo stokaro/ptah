@@ -37,6 +37,41 @@ func TestPlanFileWithStatementsFromSQLReclassifiesStatements(t *testing.T) {
 	c.Assert(edited.Destructive, qt.IsTrue)
 }
 
+// An edit on MariaDB or ClickHouse that swaps a CREATE TABLE for a CREATE OR
+// REPLACE TABLE replaces a table that holds rows with an empty one. The plan
+// says so whether the statement is written out or sits in the executable comment
+// only MariaDB runs.
+func TestPlanFileWithStatementsFromSQLMarksAReplacedTableDestructive(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		edited  string
+	}{
+		{name: "MariaDB", dialect: "mariadb", edited: "CREATE OR REPLACE TABLE `victim` (`id` INT PRIMARY KEY);"},
+		{name: "MariaDB executable comment", dialect: "mariadb", edited: "/*M! CREATE OR REPLACE TABLE `victim` (`id` INT) */;"},
+		{
+			name:    "ClickHouse",
+			dialect: "clickhouse",
+			edited:  "CREATE OR REPLACE TABLE victim (id UInt32) ENGINE = MergeTree ORDER BY id;",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := atlasschema.PlanFile{
+				Dialect:    test.dialect,
+				Statements: []atlasschema.PlanStatement{{SQL: "CREATE TABLE fresh (id INT)", Severity: safety.Safe}},
+			}
+
+			edited := plan.WithStatementsFromSQL(test.edited)
+
+			c.Assert(edited.Statements, qt.HasLen, 1)
+			c.Assert(edited.Statements[0].Severity, qt.Equals, safety.Destructive)
+			c.Assert(edited.Destructive, qt.IsTrue)
+		})
+	}
+}
+
 func TestPlanFileWithStatementsFromSQLKeepsIdentityAndFingerprints(t *testing.T) {
 	c := qt.New(t)
 	plan := atlasschema.PlanFile{

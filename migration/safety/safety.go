@@ -704,28 +704,12 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 // existing constraint and not a new one.
 func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
+	if reason, found := destructivePrefixReason(words); found {
+		assessment.Severity = Destructive
+		assessment.Reason = reason
+		return assessment
+	}
 	switch {
-	case hasWordPrefix(words, "DROP", "TABLE"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP TABLE removes the table and all rows"
-	case hasWordPrefix(words, "DROP", "TYPE"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP TYPE removes an existing database type"
-	case hasWordPrefix(words, "DROP", "EXTENSION"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP EXTENSION removes database objects owned by the extension"
-	case hasWordPrefix(words, "DROP", "FUNCTION"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP FUNCTION removes executable database behavior"
-	case hasWordPrefix(words, "DROP", "ROLE"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP ROLE removes an existing database principal"
-	case hasWordPrefix(words, "DROP", "POLICY"):
-		assessment.Severity = Destructive
-		assessment.Reason = "DROP POLICY removes an access-control protection"
-	case hasWordPrefix(words, "TRUNCATE"):
-		assessment.Severity = Destructive
-		assessment.Reason = "TRUNCATE removes all rows from a table"
 	case hasWordSequence(words, "DISABLE", "ROW", "LEVEL", "SECURITY"):
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
@@ -928,6 +912,51 @@ func hasWordSequence(words []string, sequence ...string) bool {
 		}
 	}
 	return false
+}
+
+// replaceTableReason is why replacing a table is destructive.
+const replaceTableReason = "CREATE OR REPLACE TABLE drops the existing table and all its rows"
+
+// destructivePrefixes are the statements whose leading words alone make them
+// destructive, each with the reason it reports, in the order
+// [destructivePrefixReason] tries them.
+//
+// The two replace forms are MariaDB's and ClickHouse's CREATE OR REPLACE TABLE
+// and ClickHouse's REPLACE TABLE. Each drops the table it names and creates an
+// empty one: measured on MariaDB 11.8.9 and 12.3.3 and on ClickHouse 26.9.3, a
+// table holding two rows holds none after any of them. MySQL and PostgreSQL
+// refuse both forms as a syntax error, so reading the words the same way on
+// every dialect costs nothing. Without them the statement reads as a CREATE
+// TABLE and is reported Safe, and an edited plan that swaps a CREATE TABLE for
+// one keeps its destructive=false marker.
+//
+// CREATE OR REPLACE TEMPORARY TABLE is left out. It replaces only a temporary
+// table of the session: measured on MariaDB 12.3.3, over a table holding two
+// rows it leaves both rows there once the temporary table is dropped.
+var destructivePrefixes = []struct {
+	words  []string
+	reason string
+}{
+	{words: []string{"DROP", "TABLE"}, reason: "DROP TABLE removes the table and all rows"},
+	{words: []string{"CREATE", "OR", "REPLACE", "TABLE"}, reason: replaceTableReason},
+	{words: []string{"REPLACE", "TABLE"}, reason: replaceTableReason},
+	{words: []string{"DROP", "TYPE"}, reason: "DROP TYPE removes an existing database type"},
+	{words: []string{"DROP", "EXTENSION"}, reason: "DROP EXTENSION removes database objects owned by the extension"},
+	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
+	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
+	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
+	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
+}
+
+// destructivePrefixReason returns the reason of the first [destructivePrefixes]
+// entry the statement's words start with.
+func destructivePrefixReason(words []string) (string, bool) {
+	for _, prefix := range destructivePrefixes {
+		if hasWordPrefix(words, prefix.words...) {
+			return prefix.reason, true
+		}
+	}
+	return "", false
 }
 
 // noForceReason is why NO FORCE ROW LEVEL SECURITY is destructive, in the
