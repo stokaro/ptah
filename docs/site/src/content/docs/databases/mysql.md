@@ -181,6 +181,12 @@ SQL:
   check of the table holds, the names the same statement writes included.
   MariaDB takes one check on a column and answers `ERROR 1064` to a second,
   and Ptah refuses it the same way.
+- A column `check` declared in YAML or a Go annotation without `check_name`
+  is written without a name, and the comparison looks for the name the server
+  gives it: `<table>_chk_<n>` on MySQL, numbered in column order among the
+  unnamed column checks, and the column's own name on MariaDB. Measured on
+  MySQL 8.4.11 and MariaDB 11.8.9, a table whose columns `a` and `b` each carry
+  one holds `e_chk_1` and `e_chk_2` on MySQL, and `a` and `b` on MariaDB.
 - Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
   `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
   `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as
