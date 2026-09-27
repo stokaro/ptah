@@ -52,7 +52,52 @@ import (
 // promptly with the context error wrapped in a descriptive message. The
 // context does not affect the lifetime of the returned *DatabaseConnection;
 // callers are responsible for closing it.
+//
+// A MySQL or MariaDB URL that names no database is refused: a caller written
+// for one database would otherwise be handed a whole server. [ConnectToServer]
+// is the connector that accepts one.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
+	return connect(ctx, dbURL, requireDatabase)
+}
+
+// ConnectToServer is [ConnectToDatabase] for a caller that also handles a
+// whole MySQL or MariaDB server. A URL of either engine that names no database
+// -- `mysql://user@host:3306`, `mysql://user@host:3306/`, or a `+unix` socket
+// URL without `database=` -- opens a session that selects no database. Its
+// [catalog.ServerInfo.Schema] is empty, and a read of it describes every user
+// database, each object under the database it is in; see
+// [ReadSchemaWithSchemasContext] for reading some of them. Every other URL
+// connects exactly as ConnectToDatabase connects it.
+//
+// The pinned Atlas community binary v1.3.0 reads such a URL the same way
+// (stokaro/ptah#3789).
+func ConnectToServer(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
+	return connect(ctx, dbURL, acceptServer)
+}
+
+// scopeRule decides, from the URL alone, whether a connector opens a URL of
+// dialect: nil opens it, an error refuses it before anything is dialed.
+type scopeRule func(dialect string, parsedURL *url.URL) error
+
+// requireDatabase refuses a MySQL-family URL that names no database, whose
+// session would start with no default database, so what a caller written for
+// one database reads or changes would be decided by nothing the operator
+// wrote.
+func requireDatabase(dialect string, parsedURL *url.URL) error {
+	if isMySQLFamilyDialect(dialect) && strings.TrimPrefix(parsedURL.Path, "/") == "" {
+		return errMySQLURLNamesNoDatabase
+	}
+	return nil
+}
+
+// acceptServer opens every URL, a MySQL-family one naming no database as the
+// whole server.
+func acceptServer(string, *url.URL) error {
+	return nil
+}
+
+// connect opens dbURL once scope accepts it.
+func connect(ctx context.Context, dbURL string, scope scopeRule) (*DatabaseConnection, error) {
 	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)
@@ -60,6 +105,9 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
+		return nil, err
+	}
+	if err := scope(dialect, parsedURL); err != nil {
 		return nil, err
 	}
 
@@ -1110,10 +1158,7 @@ func CloseAndWarn(conn *DatabaseConnection) {
 }
 
 // connectionDialect is the dialect a parsed database URL connects with. It
-// makes the refusals the URL alone decides, before anything is dialed: a
-// missing or unknown scheme, and a MySQL-family URL that names no database,
-// whose session would start with no default database, so what a command reads
-// or changes would be decided by nothing the operator wrote.
+// refuses a missing or unknown scheme before anything is dialed.
 func connectionDialect(parsedURL *url.URL) (string, error) {
 	if parsedURL.Scheme == "" {
 		return "", errors.New("invalid database URL: missing scheme")
@@ -1122,9 +1167,6 @@ func connectionDialect(parsedURL *url.URL) (string, error) {
 	dialect := platform.NormalizeDialect(rawDialect)
 	if dialect == "" {
 		return "", fmt.Errorf("unsupported database dialect: %s", rawDialect)
-	}
-	if isMySQLFamilyDialect(dialect) && strings.TrimPrefix(parsedURL.Path, "/") == "" {
-		return "", errMySQLURLNamesNoDatabase
 	}
 	return dialect, nil
 }
@@ -1135,11 +1177,11 @@ func connectionDialect(parsedURL *url.URL) (string, error) {
 // The pinned community binary v1.3.0 reads such a URL as the whole server: it
 // inspects every database, plans CREATE DATABASE and DROP DATABASE, keeps its
 // revisions in a database of their own, and `schema clean` drops every
-// database on the server. Ptah reads and changes one MySQL-family database per
-// connection, so it refuses the URL rather than guess which one was meant
-// (stokaro/ptah#3761).
+// database on the server. [ConnectToServer] opens one for the callers that
+// handle a server; every other caller reads and changes one database, so it is
+// refused rather than handed a server (stokaro/ptah#3761, stokaro/ptah#3789).
 var errMySQLURLNamesNoDatabase = errors.New(
-	"the database URL names no database; Ptah reads and changes one MySQL or MariaDB database per run, " +
+	"the database URL names no database, and this command reads and changes one MySQL or MariaDB database, " +
 		"not a whole server. Name the database in the URL path (mysql://user@host:3306/app) or, " +
 		"for a socket URL, in the database parameter (mysql+unix://user@/run/mysqld/mysqld.sock?database=app), " +
 		"and run the command once for each database")
@@ -1218,8 +1260,9 @@ func getDatabaseInfo(
 		info.Dialect = detectMySQLWireDialect(version)
 		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
-		// The database the URL names; ConnectToDatabase refuses a URL that
-		// names none before it connects.
+		// The database the URL names. None is a whole-server connection,
+		// which only ConnectToServer opens: the session selects no database,
+		// and the empty schema is what every realm question reads it by.
 		info.Schema = strings.TrimPrefix(parsedURL.Path, "/")
 		// A MySQL-family schema is a database, so no static dialect rule can
 		// name the one that owns an unqualified table the way "public" and

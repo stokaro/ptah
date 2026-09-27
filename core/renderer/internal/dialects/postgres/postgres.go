@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"fmt"
-	"hash/fnv"
 	"maps"
 	"slices"
 	"strings"
@@ -3248,7 +3247,7 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 
 	functionName := node.FunctionName
 	if functionName == "" {
-		functionName = postgresTriggerFunctionName(node.Table, node.Name)
+		functionName = schemamodel.Trigger{Table: node.Table, Name: node.Name}.FunctionName()
 	}
 
 	// An external function is referenced, never defined: emitting a body for it
@@ -3358,60 +3357,10 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 
 	functionName := node.FunctionName
 	if functionName == "" {
-		functionName = postgresTriggerFunctionName(node.Table, node.Name)
+		functionName = schemamodel.Trigger{Table: node.Table, Name: node.Name}.FunctionName()
 	}
 	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", r.escapeQualifiedIdentifier(functionName))
 	return nil
-}
-
-func postgresTriggerFunctionName(tableName, triggerName string) string {
-	name := "ptah_trigger_" + sanitizeTriggerFunctionPart(tableName) + "_" + sanitizeTriggerFunctionPart(triggerName)
-	if len(name) <= maxPostgreSQLIdentifierLength {
-		return name
-	}
-
-	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(tableName))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(triggerName))
-	suffix := fmt.Sprintf("_%08x", hash.Sum32())
-	return name[:maxPostgreSQLIdentifierLength-len(suffix)] + suffix
-}
-
-const maxPostgreSQLIdentifierLength = 63
-
-func sanitizeTriggerFunctionPart(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	var builder strings.Builder
-	builder.Grow(len(value))
-	lastUnderscore := false
-	for i := range len(value) {
-		character := value[i]
-		if isIdentifierPart(character) {
-			builder.WriteByte(character)
-			lastUnderscore = false
-			continue
-		}
-		if !lastUnderscore {
-			builder.WriteByte('_')
-			lastUnderscore = true
-		}
-	}
-
-	result := strings.Trim(builder.String(), "_")
-	if result == "" {
-		return "object"
-	}
-	if result[0] >= '0' && result[0] <= '9' {
-		return "_" + result
-	}
-	return result
-}
-
-func isIdentifierPart(character byte) bool {
-	return character >= 'a' && character <= 'z' ||
-		character >= '0' && character <= '9' ||
-		character == '_'
 }
 
 // renderDropPolicy renders a DROP POLICY statement

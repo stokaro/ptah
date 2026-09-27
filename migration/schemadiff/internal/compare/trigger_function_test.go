@@ -104,7 +104,7 @@ func TestTriggerDefinitions_ATriggerPtahOwnsIsStillComparedByBody(t *testing.T) 
 
 			diff := compare.TriggerDefinitions(
 				declaredTrigger("", test.declared),
-				catalogTrigger("ptah_trigger_a_trg_a", auditBody),
+				catalogTrigger("ptah_trigger_a_trg__a", auditBody),
 				identifier.ForDialect(platform.Postgres),
 			)
 

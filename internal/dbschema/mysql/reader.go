@@ -1,10 +1,12 @@
 package mysql
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +16,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/sqlrunner"
+	"ptah.run/internal/systemschema"
 )
 
 // Reader reads schema information from MySQL/MariaDB databases
@@ -25,6 +28,21 @@ type Reader struct {
 	// reads the shape off the answer, which is what every caller did before
 	// stokaro/ptah#916 gave this reader a set.
 	caps capability.Capabilities
+	// databases are the databases a whole-server read covers, as
+	// [Reader.SetSchemas] named them; nil is every user database.
+	databases []string
+}
+
+// SetSchemas names the databases a whole-server read covers, from a
+// connection that selected no database. A nil or empty list is every user
+// database; see [systemschema.IsMySQLSystemDatabase].
+//
+// A connection that selected a database reads that database and nothing else,
+// whatever the list says. The pinned community binary v1.3.0 does the same:
+// measured on MySQL 8.4.11, `schema inspect -u mysql://host/r1 --schema r3`
+// describes r1.
+func (r *Reader) SetSchemas(names []string) {
+	r.databases = slices.Clone(names)
 }
 
 type checkConstraintClauses struct {
@@ -86,16 +104,158 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-// ReadSchemaContext reads the complete schema from MySQL/MariaDB
+// ReadSchemaContext reads the complete schema from MySQL/MariaDB.
+//
+// A connection that selected a database describes that database, and its
+// objects carry no schema: the connection's database is the one an unqualified
+// name means. A connection that selected none describes the whole server, every
+// user database or the ones [Reader.SetSchemas] named, and every object carries
+// the database it is in (stokaro/ptah#3789).
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
-	schema := &catalog.Database{}
-
-	// Get current database name
-	var dbName string
-	err := r.db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&dbName)
-	if err != nil {
+	var selected sql.NullString
+	if err := r.db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&selected); err != nil {
 		return nil, fmt.Errorf("failed to get database name: %w", err)
 	}
+	if !selected.Valid {
+		return r.readServer(ctx)
+	}
+	schema, err := r.readDatabase(ctx, selected.String, referencedTableAlone)
+	if err != nil {
+		return nil, err
+	}
+	// Roles and their grants are read only where the preset claims them, the
+	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
+	// need a privilege reading a table does not, so an account without it must
+	// not lose the whole description over an object kind the schema may not
+	// even declare.
+	if r.caps.Has(capability.RoleManagement) {
+		if err := r.readRolesInto(ctx, schema, []string{selected.String}); err != nil {
+			return nil, err
+		}
+	}
+	return schema, nil
+}
+
+// readServer describes the databases a whole-server read covers, each under
+// its own name, and the server's roles once.
+func (r *Reader) readServer(ctx context.Context) (*catalog.Database, error) {
+	databases, err := r.serverDatabases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	server := &catalog.Database{Schemas: databases}
+	names := make([]string, 0, len(databases))
+	for _, database := range databases {
+		part, err := r.readDatabase(ctx, database.Name, referencedDatabase)
+		if err != nil {
+			return nil, fmt.Errorf("database %s: %w", database.Name, err)
+		}
+		inDatabase(part, database.Name)
+		server.Tables = append(server.Tables, part.Tables...)
+		server.Enums = append(server.Enums, part.Enums...)
+		server.Indexes = append(server.Indexes, part.Indexes...)
+		server.Constraints = append(server.Constraints, part.Constraints...)
+		server.Views = append(server.Views, part.Views...)
+		server.Triggers = append(server.Triggers, part.Triggers...)
+		server.Functions = append(server.Functions, part.Functions...)
+		server.Sequences = append(server.Sequences, part.Sequences...)
+		names = append(names, database.Name)
+	}
+	if r.caps.Has(capability.RoleManagement) {
+		if err := r.readRolesInto(ctx, server, names); err != nil {
+			return nil, err
+		}
+	}
+	return server, nil
+}
+
+// serverDatabases lists the user databases a whole-server read covers, by
+// name, with the character set and collation each was created with. A name
+// [Reader.SetSchemas] gave that the server does not hold is left out, as the
+// pinned community binary v1.3.0 leaves it out: `--schema nope` describes
+// nothing and succeeds.
+func (r *Reader) serverDatabases(ctx context.Context) ([]catalog.Schema, error) {
+	query := `
+		SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
+		FROM information_schema.SCHEMATA
+		WHERE ` + systemschema.MySQLUserDatabasesPredicate("SCHEMA_NAME")
+	args := make([]any, 0, len(r.databases))
+	if len(r.databases) > 0 {
+		query += ` AND SCHEMA_NAME IN (?` + strings.Repeat(", ?", len(r.databases)-1) + `)`
+		for _, name := range r.databases {
+			args = append(args, name)
+		}
+	}
+	query += ` ORDER BY SCHEMA_NAME`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+	defer rows.Close()
+	var databases []catalog.Schema
+	for rows.Next() {
+		var database catalog.Schema
+		if err := rows.Scan(&database.Name, &database.Charset, &database.Collate); err != nil {
+			return nil, fmt.Errorf("failed to list databases: %w", err)
+		}
+		databases = append(databases, database)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+	return databases, nil
+}
+
+// inDatabase names database as the schema of every object part holds that
+// does not name one, and as the referenced schema of every foreign key that
+// references a table of the same database.
+func inDatabase(part *catalog.Database, database string) {
+	for i := range part.Tables {
+		part.Tables[i].Schema = cmp.Or(part.Tables[i].Schema, database)
+	}
+	for i := range part.Enums {
+		part.Enums[i].Schema = cmp.Or(part.Enums[i].Schema, database)
+	}
+	for i := range part.Indexes {
+		part.Indexes[i].Schema = cmp.Or(part.Indexes[i].Schema, database)
+	}
+	for i := range part.Constraints {
+		constraint := &part.Constraints[i]
+		constraint.Schema = cmp.Or(constraint.Schema, database)
+		if constraint.ForeignTable != nil {
+			constraint.ForeignSchema = cmp.Or(constraint.ForeignSchema, database)
+		}
+	}
+	for i := range part.Views {
+		part.Views[i].Schema = cmp.Or(part.Views[i].Schema, database)
+	}
+	for i := range part.Triggers {
+		part.Triggers[i].Schema = cmp.Or(part.Triggers[i].Schema, database)
+	}
+	for i := range part.Functions {
+		part.Functions[i].Schema = cmp.Or(part.Functions[i].Schema, database)
+	}
+	for i := range part.Sequences {
+		part.Sequences[i].Schema = cmp.Or(part.Sequences[i].Schema, database)
+	}
+}
+
+// foreignSchemaRule answers the schema a foreign key records for the database
+// its referenced table is in.
+type foreignSchemaRule func(referenced string) string
+
+// referencedDatabase is the rule of a whole-server read, which needs the
+// database to tell `r1.u` from `r2.u`.
+func referencedDatabase(referenced string) string { return referenced }
+
+// referencedTableAlone is the rule of a read of one database, which reads
+// every referenced table as one of its own.
+func referencedTableAlone(string) string { return "" }
+
+// readDatabase describes one database, dbName, recording referenced schemas
+// by foreignSchema.
+func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema foreignSchemaRule) (*catalog.Database, error) {
+	schema := &catalog.Database{}
 
 	// Read tables
 	tables, err := r.readTables(ctx, dbName)
@@ -119,7 +279,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	schema.Indexes = indexes
 
 	// Read constraints
-	constraints, err := r.readConstraints(ctx, dbName)
+	constraints, err := r.readConstraints(ctx, dbName, foreignSchema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
@@ -143,12 +303,6 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Functions = functions
 
-	// Reconcile per-column flags after all catalog metadata is loaded.
-	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
-	// information_schema.STATISTICS (NON_UNIQUE) is authoritative for unique
-	// indexes. Keeping these derived flags in one post-pass avoids depending on
-	// per-column metadata that is either absent or lossy across MySQL/MariaDB
-	// versions.
 	// Read only where the preset claims the object. MySQL answers a sequence
 	// question with a syntax error rather than an empty result, so asking
 	// unconditionally would fail the whole description on the engine that has
@@ -158,17 +312,14 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	schema.Sequences = sequences
-	// Roles and their grants are read only where the preset claims them, the
-	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
-	// need a privilege reading a table does not, so an account without it must
-	// not lose the whole description over an object kind the schema may not
-	// even declare.
-	if r.caps.Has(capability.RoleManagement) {
-		if err := r.readRolesInto(ctx, schema, dbName); err != nil {
-			return nil, err
-		}
-	}
 
+	// Reconcile per-column flags after all catalog metadata is loaded.
+	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
+	// information_schema.STATISTICS (NON_UNIQUE) is authoritative for unique
+	// indexes. Keeping these derived flags in one post-pass avoids depending on
+	// per-column metadata that is either absent or lossy across MySQL/MariaDB
+	// versions. The pass keys by table name alone, which is why it runs over
+	// one database at a time.
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 
@@ -1033,8 +1184,9 @@ func indexKeyPrefix(subPart sql.NullInt64) string {
 	return strconv.FormatInt(subPart.Int64, 10)
 }
 
-// readConstraints reads all constraints
-func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.Constraint, error) {
+// readConstraints reads all constraints, a foreign key recording the schema
+// foreignSchema answers for the database of the table it references.
+func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSchema foreignSchemaRule) ([]catalog.Constraint, error) {
 	checkClauses, err := r.readCheckConstraintClauses(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("read check constraint clauses: %w", err)
@@ -1045,6 +1197,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 			tc.TABLE_NAME,
 			tc.CONSTRAINT_TYPE,
 			COALESCE(kcu.COLUMN_NAME, '') as COLUMN_NAME,
+			COALESCE(kcu.REFERENCED_TABLE_SCHEMA, '') as REFERENCED_TABLE_SCHEMA,
 			COALESCE(kcu.REFERENCED_TABLE_NAME, '') as REFERENCED_TABLE_NAME,
 			COALESCE(kcu.REFERENCED_COLUMN_NAME, '') as REFERENCED_COLUMN_NAME,
 			COALESCE(rc.DELETE_RULE, '') as DELETE_RULE,
@@ -1095,12 +1248,13 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 
 	for rows.Next() {
 		var constraintName, tableName, constraintType, columnName string
-		var referencedTable, referencedColumn, deleteRule, updateRule string
+		var referencedSchema, referencedTable, referencedColumn, deleteRule, updateRule string
 		err := rows.Scan(
 			&constraintName,
 			&tableName,
 			&constraintType,
 			&columnName,
+			&referencedSchema,
 			&referencedTable,
 			&referencedColumn,
 			&deleteRule,
@@ -1127,6 +1281,9 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 				},
 				checkClauses,
 			)
+			if constraint.ForeignTable != nil {
+				constraint.ForeignSchema = foreignSchema(referencedSchema)
+			}
 			constraintMap[key] = constraint
 			constraintOrder = append(constraintOrder, key)
 		}

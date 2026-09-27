@@ -265,19 +265,42 @@ func TestNativeSchemaApplyConnectsThroughASocketE2E(t *testing.T) {
 	}
 }
 
-// TestCompatRefusesASocketURLNamingNoDatabaseE2E names the socket and no
-// database. The community binary reads that URL as the whole server, which
-// Ptah does not (stokaro/ptah#3789), so the refusal comes before connecting
-// and says what to write instead.
+// TestCompatReadsASocketURLNamingNoDatabaseAsTheServerE2E names the socket and
+// no database. The community binary reads that URL as the whole server, and so
+// does `schema inspect` (stokaro/ptah#3789): the database is read from the
+// `database` parameter, so a URL without one names none, whatever its path.
+func TestCompatReadsASocketURLNamingNoDatabaseAsTheServerE2E(t *testing.T) {
+	for _, server := range mysqlSocketServers {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLSocketScratch(c, server.socket, server.admin, server.scheme)
+			database := scratch.database(c, "sock_server")
+			_, err := scratch.admin.ExecContext(c.Context(), "CREATE TABLE `"+database+"`.widgets (id int PRIMARY KEY)")
+			c.Assert(err, qt.IsNil)
+
+			out, err := runCompatVerb("schema", "inspect", "--url", scratch.socket.String(),
+				"--schema", database, "--format", "{{ sql . }}")
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "CREATE TABLE `"+database+"`.`widgets`")
+		})
+	}
+}
+
+// TestCompatRefusesASocketURLNamingNoDatabaseE2E is the control: a command
+// that reads one database refuses the same URL before connecting, and says
+// what to write instead.
 func TestCompatRefusesASocketURLNamingNoDatabaseE2E(t *testing.T) {
 	for _, server := range mysqlSocketServers {
 		t.Run(server.name, func(t *testing.T) {
 			c := qt.New(t)
 			scratch := newMySQLSocketScratch(c, server.socket, server.admin, server.scheme)
+			dir := filepath.Join(c.TempDir(), "migrations")
+			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 
-			out, err := runCompatVerb("schema", "inspect", "--url", scratch.socket.String())
+			out, err := runCompatVerb("migrate", "status", "--url", scratch.socket.String(), "--dir", "file://"+dir)
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*the database URL names no database; .*, and run the command once for each database.*`, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches, `(?s).*the database URL names no database, and this command reads and changes one MySQL or MariaDB database, not a whole server.*, and run the command once for each database.*`, qt.Commentf("%s", out))
 		})
 	}
 }

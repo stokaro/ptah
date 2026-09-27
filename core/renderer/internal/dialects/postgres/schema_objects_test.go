@@ -50,6 +50,13 @@ func TestPostgreSQLRenderer_DropTriggerUsesConfiguredFunctionName(t *testing.T) 
 	c.Assert(legacyPostgresSQL(sql), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_custom_set_updated_at();")
 }
 
+// The table part carries a "." between schema and table, and the trigger
+// name here carries its own underscores; sanitizeTriggerFunctionPart escapes
+// both, so the derived name below doubles every underscore that was not
+// itself the join FunctionName inserts (schemamodel's own
+// TestTrigger_FunctionName_EscapesTheJoinBoundary covers the escaping itself;
+// this locks in that the renderer's own auto-derive call sites still reach
+// it, for both CREATE and DROP).
 func TestPostgreSQLRenderer_DefaultTriggerFunctionNameIsTableScoped(t *testing.T) {
 	c := qt.New(t)
 
@@ -62,9 +69,46 @@ func TestPostgreSQLRenderer_DefaultTriggerFunctionNameIsTableScoped(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE FUNCTION ptah_trigger_public_users_set_updated_at()")
-	c.Assert(legacyPostgresSQL(sql), qt.Contains, "EXECUTE FUNCTION ptah_trigger_public_users_set_updated_at();")
-	c.Assert(legacyPostgresSQL(sql), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_public_users_set_updated_at();")
+	c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE FUNCTION ptah_trigger_public__users_set__updated__at()")
+	c.Assert(legacyPostgresSQL(sql), qt.Contains, "EXECUTE FUNCTION ptah_trigger_public__users_set__updated__at();")
+	c.Assert(legacyPostgresSQL(sql), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_public__users_set__updated__at();")
+}
+
+// TestPostgreSQLRenderer_CollidingTableAndTriggerNamesGetDistinctFunctions is
+// the reported collision, reached through the renderer's own auto-derive call
+// sites rather than through schemamodel.Trigger.FunctionName directly:
+// VisitCreateTrigger and VisitDropTrigger both derive the function name from
+// a bare ast node when FunctionName is left unset, which is the path
+// postgresTriggerFunctionName used to duplicate before it was rerouted to the
+// one implementation in core/schemamodel.
+func TestPostgreSQLRenderer_CollidingTableAndTriggerNamesGetDistinctFunctions(t *testing.T) {
+	c := qt.New(t)
+
+	underscoreInTable, err := renderer.RenderSQL("postgres",
+		ast.NewCreateTrigger("c", "a_b").SetTiming("BEFORE").SetEvent("UPDATE").SetBody("RETURN NEW;"),
+	)
+	c.Assert(err, qt.IsNil)
+
+	underscoreInName, err := renderer.RenderSQL("postgres",
+		ast.NewCreateTrigger("b_c", "a").SetTiming("BEFORE").SetEvent("UPDATE").SetBody("RETURN NEW;"),
+	)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(legacyPostgresSQL(underscoreInTable), qt.Contains, "CREATE FUNCTION ptah_trigger_a__b_c()")
+	c.Assert(legacyPostgresSQL(underscoreInName), qt.Contains, "CREATE FUNCTION ptah_trigger_a_b__c()")
+
+	dropUnderscoreInTable, err := renderer.RenderSQL("postgres",
+		ast.NewDropTrigger("c", "a_b").SetIfExists(),
+	)
+	c.Assert(err, qt.IsNil)
+
+	dropUnderscoreInName, err := renderer.RenderSQL("postgres",
+		ast.NewDropTrigger("b_c", "a").SetIfExists(),
+	)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(legacyPostgresSQL(dropUnderscoreInTable), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_a__b_c();")
+	c.Assert(legacyPostgresSQL(dropUnderscoreInName), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_a_b__c();")
 }
 
 func TestPostgreSQLRenderer_EscapesReservedIdentifiers(t *testing.T) {

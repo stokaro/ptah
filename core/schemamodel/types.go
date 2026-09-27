@@ -1515,6 +1515,14 @@ func (t Trigger) RunsDeclaredFunction(executed string) bool {
 // FunctionName returns the deterministic PostgreSQL trigger function name used
 // for this trigger. PostgreSQL stores executable trigger code in a function, so
 // Ptah manages that linked function as part of the trigger definition.
+//
+// The table segment and the name segment are each produced by
+// sanitizeTriggerFunctionPart and joined by one "_". That function escapes
+// every underscore a segment keeps, so the joining "_" is the only unescaped
+// one anywhere in the two segments and the pair is always recoverable from the
+// join: table "a_b" trigger "c" and table "a" trigger "b_c" land on different
+// names, where joining the two segments directly would give both the same
+// "ptah_trigger_a_b_c".
 func (t Trigger) FunctionName() string {
 	name := "ptah_trigger_" + sanitizeTriggerFunctionPart(t.Table) + "_" + sanitizeTriggerFunctionPart(t.Name)
 	if len(name) <= maxPostgreSQLIdentifierLength {
@@ -1531,6 +1539,19 @@ func (t Trigger) FunctionName() string {
 
 const maxPostgreSQLIdentifierLength = 63
 
+// sanitizeTriggerFunctionPart normalizes value into one segment of the name
+// FunctionName builds: lower case, every run of characters outside
+// [a-z0-9_] collapsed to a single "_", leading and trailing "_" trimmed,
+// "object" for a result with nothing left, and a leading "_" for a result
+// that would otherwise read as a number to PostgreSQL.
+//
+// The segment built so far then has every "_" it carries doubled to "__".
+// That doubling happens last, so the digit-escape prefix above is doubled
+// along with the rest. A segment therefore never contains a lone, undoubled
+// underscore anywhere in it, including at the very start, and FunctionName's
+// single joining "_" stays the one character that decides where one segment
+// ends and the next begins, whatever underscores the original table or
+// trigger name held.
 func sanitizeTriggerFunctionPart(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	var builder strings.Builder
@@ -1551,12 +1572,11 @@ func sanitizeTriggerFunctionPart(value string) string {
 
 	result := strings.Trim(builder.String(), "_")
 	if result == "" {
-		return "object"
+		result = "object"
+	} else if result[0] >= '0' && result[0] <= '9' {
+		result = "_" + result
 	}
-	if result[0] >= '0' && result[0] <= '9' {
-		return "_" + result
-	}
-	return result
+	return strings.ReplaceAll(result, "_", "__")
 }
 
 func isIdentifierPart(character byte) bool {

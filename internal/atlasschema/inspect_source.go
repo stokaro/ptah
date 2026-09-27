@@ -258,7 +258,11 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 		ValidateRenderedVirtualTables: opts.ValidateRenderedVirtualTables,
 	}
 	if set.Kind == atlassource.KindDatabase {
-		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)
+		// The database is the source, so a MySQL-family URL naming none is
+		// the whole server, as the pinned community binary v1.3.0 reads it
+		// (stokaro/ptah#3789). A dev database is not: it is reset, and a
+		// server nobody named as disposable is never reset.
+		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout, dbschema.ConnectToServer)
 		if err != nil {
 			return InspectResult{}, fmt.Errorf("connect to --url: %w", err)
 		}
@@ -396,7 +400,7 @@ func inspectOnDev(
 	defer releaseDev()
 	devURL = strings.TrimSpace(resolved)
 
-	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
+	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToDatabase)
 	if err != nil {
 		return InspectResult{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
@@ -647,19 +651,20 @@ func readValidatedInspectDevSchema(
 	return schema, validatedOpts, nil
 }
 
-// connectInspectSource opens one source connection, bounding only the initial
-// connection attempt by timeout: [dbschema.ConnectToDatabase] uses its
-// context for the verification ping and metadata queries, not for the
-// returned connection's lifetime.
+// connectInspectSource opens one connection with connect, bounding only the
+// initial connection attempt by timeout: the connectors use their context for
+// the verification ping and metadata queries, not for the returned
+// connection's lifetime.
 func connectInspectSource(
 	ctx context.Context,
 	url string,
 	timeout time.Duration,
+	connect func(context.Context, string) (*dbschema.DatabaseConnection, error),
 ) (*dbschema.DatabaseConnection, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	return dbschema.ConnectToDatabase(ctx, url)
+	return connect(ctx, url)
 }

@@ -135,7 +135,8 @@ func cleanupSchemaObjects(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec("DROP MATERIALIZED VIEW IF EXISTS ptah_schema_objects_user_stats CASCADE")
 	_, _ = db.Exec("DROP VIEW IF EXISTS ptah_schema_objects_active_users CASCADE")
 	_, _ = db.Exec("DROP TABLE IF EXISTS ptah_schema_objects_users CASCADE")
-	_, _ = db.Exec("DROP FUNCTION IF EXISTS ptah_trigger_ptah_schema_objects_users_ptah_schema_objects_set_updated_at()")
+	functionName := (schemamodel.Trigger{Table: "ptah_schema_objects_users", Name: "ptah_schema_objects_set_updated_at"}).FunctionName()
+	_, _ = db.Exec("DROP FUNCTION IF EXISTS " + functionName + "()")
 }
 
 func filterSchemaObjects(in *catalog.Database) *catalog.Database {

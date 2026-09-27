@@ -554,7 +554,7 @@ func materializedState(
 		return atlassource.State{}, err
 	}
 	defer releaseDev()
-	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
+	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToDatabase)
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}

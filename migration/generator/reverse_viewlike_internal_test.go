@@ -143,7 +143,7 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 		{name: "drops the view", fragment: "DROP VIEW IF EXISTS rev_active_users CASCADE;"},
 		{name: "drops the materialized view", fragment: "DROP MATERIALIZED VIEW IF EXISTS rev_user_stats CASCADE;"},
 		{name: "drops the trigger", fragment: "DROP TRIGGER IF EXISTS rev_touch ON rev_view_users CASCADE;"},
-		{name: "drops the trigger function", fragment: "DROP FUNCTION IF EXISTS ptah_trigger_rev_view_users_rev_touch();"},
+		{name: "drops the trigger function", fragment: "DROP FUNCTION IF EXISTS ptah_trigger_rev__view__users_rev__touch();"},
 	}
 
 	for _, want := range wants {
@@ -190,7 +190,7 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 		{name: "recreates the view", fragment: "CREATE VIEW rev_active_users AS"},
 		{name: "recreates the view body", fragment: revViewBody},
 		{name: "recreates the materialized view", fragment: "CREATE MATERIALIZED VIEW rev_user_stats AS"},
-		{name: "recreates the trigger function", fragment: "CREATE FUNCTION ptah_trigger_rev_view_users_rev_touch()"},
+		{name: "recreates the trigger function", fragment: "CREATE FUNCTION ptah_trigger_rev__view__users_rev__touch()"},
 		{name: "recreates the trigger", fragment: "CREATE TRIGGER rev_touch BEFORE UPDATE ON rev_view_users"},
 	}
 
@@ -328,7 +328,7 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 		{name: "drops the materialized view", fragment: "DROP MATERIALIZED VIEW IF EXISTS rev_user_stats CASCADE;"},
 		{name: "recreates the materialized view", fragment: "CREATE MATERIALIZED VIEW rev_user_stats AS"},
 		{name: "restores the prior materialized body", fragment: oldMatView},
-		{name: "replaces the trigger function", fragment: "CREATE OR REPLACE FUNCTION ptah_trigger_rev_view_users_rev_touch()"},
+		{name: "replaces the trigger function", fragment: "CREATE OR REPLACE FUNCTION ptah_trigger_rev__view__users_rev__touch()"},
 		{name: "restores the prior trigger body", fragment: oldTrigger},
 	}
 	for _, want := range wants {

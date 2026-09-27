@@ -203,7 +203,7 @@ func isRoleReadDenied(err error) bool {
 // it did not look, so a declared role is reported as an undecided addition
 // instead of planned from nothing. Nothing destructive follows either: role and
 // grant removals are decided from live rows, and there are none.
-func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, dbName string) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, databases []string) error {
 	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
@@ -214,7 +214,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, db
 	}
 	schema.Roles = roles
 
-	grants, err := r.readGrants(ctx, dbName)
+	grants, err := r.readGrantsIn(ctx, databases)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)
@@ -243,6 +243,19 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, db
 	}
 	schema.RoleMemberships = memberships
 	return nil
+}
+
+// readGrantsIn reads the grants on each of databases, in that order.
+func (r *Reader) readGrantsIn(ctx context.Context, databases []string) ([]catalog.Grant, error) {
+	var grants []catalog.Grant
+	for _, database := range databases {
+		inDatabase, err := r.readGrants(ctx, database)
+		if err != nil {
+			return nil, err
+		}
+		grants = append(grants, inDatabase...)
+	}
+	return grants, nil
 }
 
 // membershipTable picks the table this server records the role graph in.

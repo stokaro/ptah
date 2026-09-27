@@ -363,8 +363,8 @@ func TestTrigger_FunctionNameIsTableScoped(t *testing.T) {
 	userTrigger := schemamodel.Trigger{Name: "set_updated_at", Table: "public.users"}
 	postTrigger := schemamodel.Trigger{Name: "set_updated_at", Table: "public.posts"}
 
-	c.Assert(userTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_users_set_updated_at")
-	c.Assert(postTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_posts_set_updated_at")
+	c.Assert(userTrigger.FunctionName(), qt.Equals, "ptah_trigger_public__users_set__updated__at")
+	c.Assert(postTrigger.FunctionName(), qt.Equals, "ptah_trigger_public__posts_set__updated__at")
 	c.Assert(userTrigger.FunctionName(), qt.Not(qt.Equals), postTrigger.FunctionName())
 }
 
