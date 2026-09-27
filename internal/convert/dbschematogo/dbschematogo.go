@@ -880,7 +880,13 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		// author had written `customers_email_uq`. A constraint name is an
 		// interface: it appears in every violation error the application sees
 		// (stokaro/ptah#2102).
-		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) {
+		//
+		// NULLS NOT DISTINCT is the exception: the column's `unique = true`
+		// has no room for it either, so such a key stays a constraint.
+		// Measured on PostgreSQL 18.6, `a int UNIQUE NULLS NOT DISTINCT`
+		// builds `<table>_a_key`, and described as the column's flag it
+		// compares equal to a plain UNIQUE (stokaro/ptah#3821).
+		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) && !nullsNotDistinct(dbConstraint) {
 			return schemamodel.Constraint{}, false
 		}
 	case "CHECK":
@@ -1349,4 +1355,9 @@ func clickHouseTableOverrides(dbTable catalog.Table) map[string]map[string]strin
 		return nil
 	}
 	return map[string]map[string]string{"clickhouse": overrides}
+}
+
+// nullsNotDistinct reports whether a UNIQUE treats NULLs as equal.
+func nullsNotDistinct(constraint catalog.Constraint) bool {
+	return constraint.NullsDistinct != nil && !*constraint.NullsDistinct
 }

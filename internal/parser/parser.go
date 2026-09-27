@@ -2093,24 +2093,14 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 			break
 		}
 
-		if p.current.Type == lexer.TokenWhitespace {
-			// Skip whitespace and try again
-			p.skipWhitespace()
-			if p.current.MatchOperatorValue(",") {
-				p.advance()
-				continue
-			}
-
-			if p.current.MatchOperatorValue(")") {
-				break
-			}
-		}
-
-		// If we get here and it's an identifier, it might be another table element
+		// An element ends at a comma or at the closing parenthesis. A word
+		// here is a clause the element did not read, and starting a new
+		// element with it turns `UNIQUE (a) DEFERRABLE` into a column named
+		// deferrable with no type and drops the clause (stokaro/ptah#3818).
 		if p.current.Type == lexer.TokenIdentifier {
-			continue
+			return fmt.Errorf("unexpected %s after a table element at position %d: expected ',' or ')'",
+				p.current.Value, p.current.Start)
 		}
-
 		return fmt.Errorf("expected ',' or ')' after table element at position %d", p.current.Start)
 	}
 
@@ -2408,12 +2398,6 @@ func (p *Parser) handlePrimaryKey(column *ast.ColumnNode) error {
 	}
 	column.SetPrimary()
 	return nil
-}
-
-func (p *Parser) handleUnique(column *ast.ColumnNode) {
-	// Handle UNIQUE
-	p.advance()
-	column.SetUnique()
 }
 
 func (p *Parser) handleAutoIncrement(column *ast.ColumnNode) {
@@ -2928,6 +2912,9 @@ func isOnUpdateExpressionTerminator(value string) bool {
 
 func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	var err error
+	// The constraint a deferral clause belongs to: PostgreSQL attaches one to
+	// the constraint written just before it.
+	last := columnClause{}
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
@@ -2941,10 +2928,23 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 		}
 
 		keyword := strings.ToUpper(p.current.Value)
+		if keyword == "DEFERRABLE" || keyword == "INITIALLY" || (keyword == "NOT" && p.nextIsDeferrable()) {
+			if err := p.parseColumnDeferral(column, last); err != nil {
+				return err
+			}
+			continue
+		}
+		if last.key != "" && (keyword == "USING" || keyword == "WITH") {
+			if err := p.refuseKeyIndexClause(last.key); err != nil {
+				return err
+			}
+		}
+		before := snapshotColumnClauses(table, column)
 		err = p.parseColumnConstraintOrAttribute(table, column, keyword)
 		if err != nil {
 			return err
 		}
+		last = before.clauseRead(table, column)
 	}
 
 	return nil
@@ -2959,7 +2959,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "PRIMARY":
 		return p.handlePrimaryKeyAttribute(table, column)
 	case "UNIQUE":
-		p.handleUnique(column)
+		return p.handleColumnUnique(table, column)
 	case "AUTO_INCREMENT", "AUTOINCREMENT":
 		p.handleAutoIncrement(column)
 	case "DEFAULT":
@@ -3161,11 +3161,20 @@ func (p *Parser) namedSingleColumnConstraint(
 			name, p.current.Start, kind)
 	}
 	p.advance()
-	table.AddConstraint(&ast.ConstraintNode{
+	constraint := &ast.ConstraintNode{
 		Type:    kind,
 		Name:    name,
 		Columns: []string{column.Name},
-	})
+	}
+	if kind == ast.UniqueConstraint {
+		p.skipWhitespace()
+		nullsDistinct, err := p.parseNullsDistinctClause()
+		if err != nil {
+			return err
+		}
+		constraint.NullsDistinct = nullsDistinct
+	}
+	table.AddConstraint(constraint)
 	return nil
 }
 
@@ -4955,31 +4964,19 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		}
 	}
 
+	kind := tableElementKind(constraint)
+	if isIndex {
+		kind = indexElement
+	}
+	if err := p.refuseKeyIndexClause(kind); err != nil {
+		return nil, nil, err
+	}
 	parserName, err := p.indexParserName(indexMethod)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = p.handleTableConstraintInclude(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle FOREIGN KEY REFERENCES
-	err = p.handleTableForeignKey(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle CHECK expression
-	err = p.handleTableCheck(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle EXCLUDE WHERE clause
-	err = p.handleTableExcludeWhere(constraint)
-	if err != nil {
+	if err := p.readConstraintClauses(constraint, kind); err != nil {
 		return nil, nil, err
 	}
 
