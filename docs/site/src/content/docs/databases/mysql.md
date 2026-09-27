@@ -135,13 +135,15 @@ SQL:
   and on, and that index is read as the key's, so a schema file compares equal
   to the database its own SQL built. A derived name that another foreign key of
   the database already holds is refused, because the server refuses it: MySQL
-  answers `ERROR 1826` and MariaDB `ERROR 1005`.
+  answers `ERROR 1826` and MariaDB `ERROR 1005`. So is a derived name the
+  server does not keep as it is. MySQL answers `ERROR 1059` to a name over 64
+  characters. MariaDB through 12.0 answers it to a name of 64 characters in
+  `CREATE TABLE`, and in `ALTER TABLE` cuts a longer name to 64 without a
+  warning. Ptah refuses the cut name too, because the key would not have the
+  name the file implies.
 - On MariaDB a column-level `a INT REFERENCES p(id)` builds a key, numbered
-  with the table's other unnamed keys. Ptah numbers the columns' keys first,
-  which is the server's order when the columns come before the table-level
-  keys; a table-level key written before such a column takes the lower number
-  on the server
-  ([stokaro/ptah#3765](https://github.com/stokaro/ptah/issues/3765)). MySQL
+  with the table's other unnamed keys in the order the body writes them: a
+  table-level key written before the column takes the lower number. MySQL
   8.4 builds nothing from the clause, and Ptah refuses it under
   `--dialect mysql`.
 - The name in `FOREIGN KEY idx (a) REFERENCES p(id)` names the key itself on
@@ -163,9 +165,13 @@ SQL:
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
   older name and compares a key the server numbered with the key of the same
-  definition. A document whose older name would collide, or would pass 64
-  characters, is refused on every line, including the lines that accept it
-  ([stokaro/ptah#3762](https://github.com/stokaro/ptah/issues/3762)).
+  definition. Two effects of that choice stay on the newer lines
+  ([stokaro/ptah#3762](https://github.com/stokaro/ptah/issues/3762)). A
+  document whose older name collides with another key, or is too long for the
+  older lines, is refused on every line, although 12.1 and later accept it.
+  And a key Ptah creates is written with the older name, so the database
+  holds `c_ibfk_1` where the file run by hand would hold `1`; a later
+  comparison matches either.
 - A `CHECK` the author did not name is read with the name its server gives
   it. MySQL names it `<table>_chk_<n>`: in `CREATE TABLE` the unnamed checks
   are numbered from 1 in the order they are written, on a column or on the
