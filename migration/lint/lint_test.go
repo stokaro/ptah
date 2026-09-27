@@ -726,6 +726,92 @@ func TestLintFS_SameFileCreatedTablesAreExempt(t *testing.T) {
 	}
 }
 
+// CREATE OR REPLACE TABLE is MariaDB syntax that drops the named table and
+// recreates it empty. Measured on MariaDB 12.3.3: a table holding rows holds
+// none once its CREATE OR REPLACE TABLE runs, so DS101 has to catch it exactly
+// as it catches DROP TABLE (stokaro/ptah-operator#481).
+func TestLintFS_ReplacedTableIsDestructive(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{"basic form", "CREATE OR REPLACE TABLE victim (id INT);", []string{"DS101"}},
+		{"lower case", "create or replace table victim (id int);", []string{"DS101"}},
+		{"schema-qualified", "CREATE OR REPLACE TABLE app.victim (id INT);", []string{"DS101"}},
+		{"from a query", "CREATE OR REPLACE TABLE victim AS SELECT id FROM source;", []string{"DS101"}},
+		{"like another table", "CREATE OR REPLACE TABLE victim LIKE template;", []string{"DS101"}},
+		// TEMPORARY replaces only a table local to the session, so it destroys
+		// no row that outlives it.
+		{"temporary form stays safe", "CREATE OR REPLACE TEMPORARY TABLE scratch (id INT);", make([]string, 0)},
+		// A table literally named "replace" is a quoted identifier, never the
+		// OR REPLACE keyword pair.
+		{"table literally named replace", "CREATE TABLE `replace` (id INT);", make([]string, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := lintOne(c, tt.sql)
+			c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
+		})
+	}
+}
+
+// The create-staging/backfill/replace pattern mirrors DROP TABLE's same-file
+// exemption: replacing a table this same migration created destroys no
+// pre-existing data.
+func TestLintFS_ReplacedTableSameFileCreatedIsExempt(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{"replace of table created in same file",
+			"CREATE TABLE staging (id INT);\nCREATE OR REPLACE TABLE staging (id INT);", make([]string, 0)},
+		{"replace of pre-existing table still fires",
+			"CREATE TABLE staging (id INT);\nCREATE OR REPLACE TABLE users (id INT);", []string{"DS101"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := lintOne(c, tt.sql)
+			c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
+		})
+	}
+}
+
+// MariaDB's own /*M!...*/ executable comment is real SQL to the server. The
+// default hybrid and an explicit mysql/mariadb target all scan its content
+// rather than hide the hazard inside it, exactly as they already do for the
+// bare /*!NNNNN form; PostgreSQL has no such convention, and the block there
+// stays an ordinary comment.
+func TestLintFS_MariaDBExecutableCommentIsScanned(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		want    []string
+	}{
+		{"mariadb executable comment hides real ddl", "mariadb",
+			"/*M! CREATE OR REPLACE TABLE `victim` (`id` INT) */;", []string{"DS101"}},
+		{"mariadb executable comment with a version marker", "mariadb",
+			"/*M!100001 DROP TABLE victim */;", []string{"BC103", "DS101"}},
+		{"default dialect scans it too", "",
+			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"DS101"}},
+		{"mysql target scans it too", "mysql",
+			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"DS101"}},
+		{"postgres leaves the marker as an inert comment", "postgres",
+			"/*M! DROP TABLE users */;\nSELECT 1;", make([]string, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := lintOneDialect(c, tt.dialect, tt.sql)
+			c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
+		})
+	}
+}
+
 func TestLintFS_MY101PinnedOnlineDDLIsExempt(t *testing.T) {
 	c := qt.New(t)
 

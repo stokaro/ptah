@@ -19,8 +19,14 @@ type scanMode struct {
 	// backslashEscapes makes a backslash escape the next character inside
 	// quoted strings (MySQL/MariaDB default; wrong for PostgreSQL).
 	backslashEscapes bool
-	// execComments treats MySQL executable comments /*!...*/ as real SQL:
-	// the server executes their content, so the linter must scan it.
+	// execComments treats MySQL executable comments /*!...*/ and MariaDB's own
+	// /*M!...*/ marker as real SQL: the server executes their content, so the
+	// linter must scan it. MySQL does not understand /*M!, so on a MySQL
+	// server that block is dead, inert comment text -- but scanning it anyway
+	// costs nothing and stays on the same side of the "never hide a hazard"
+	// rule execComments already follows for /*!NNNNN, which is scanned on
+	// every dialect without checking whether the server's own version would
+	// actually run it.
 	execComments bool
 	// dollarQuotes recognizes $tag$...$tag$ string bodies (PostgreSQL).
 	dollarQuotes bool
@@ -142,12 +148,11 @@ func nextPunctToken(input string, i int, mode scanMode, execDepth int) (kind lin
 	case c == '#' && mode.hashComments:
 		return tokComment, lineCommentEnd(input, i+1), execDepth
 	case c == '/' && i+1 < n && input[i+1] == '*':
-		if mode.execComments && i+2 < n && input[i+2] == '!' {
-			// The /*!NNNNN marker is comment syntax, but its content is SQL
-			// the MySQL family executes; scan it as code until the */.
-			return tokComment, execCommentMarkerEnd(input, i+3), execDepth + 1
+		end, opensExec := blockCommentOpen(input, i, mode)
+		if opensExec {
+			return tokComment, end, execDepth + 1
 		}
-		return tokComment, blockCommentEnd(input, i+2, mode.nestedComments), execDepth
+		return tokComment, end, execDepth
 	case c == '*' && execDepth > 0 && i+1 < n && input[i+1] == '/':
 		return tokComment, i + 2, execDepth - 1
 	case c == '$' && mode.dollarQuotes:
@@ -191,8 +196,36 @@ func lineCommentEnd(input string, i int) int {
 	return i
 }
 
-// execCommentMarkerEnd consumes the optional version digits of a /*!NNNNN
-// executable-comment marker.
+// blockCommentOpen scans a block comment opened at input[i] == '/' (with
+// input[i+1] == '*' already confirmed by the caller) and reports where it
+// ends and whether it opened as an executable-comment marker rather than an
+// ordinary comment: MariaDB's /*M!NNNNN or the /*!NNNNN form MySQL and
+// MariaDB share. Neither marker is recognized unless mode.execComments is set.
+func blockCommentOpen(input string, i int, mode scanMode) (end int, opensExec bool) {
+	if mode.execComments && isMariaDBExecMarker(input, i) {
+		// The /*M!NNNNN marker is comment syntax, but MariaDB executes its
+		// content; scan it as code until the */.
+		return execCommentMarkerEnd(input, i+4), true
+	}
+	if mode.execComments && i+2 < len(input) && input[i+2] == '!' {
+		// The /*!NNNNN marker is comment syntax, but its content is SQL the
+		// MySQL family executes; scan it as code until the */.
+		return execCommentMarkerEnd(input, i+3), true
+	}
+	return blockCommentEnd(input, i+2, mode.nestedComments), false
+}
+
+// isMariaDBExecMarker reports whether input[i:] opens a MariaDB executable
+// comment, /*M!NNNNN with M matched case-insensitively, exactly as MariaDB
+// itself matches it.
+func isMariaDBExecMarker(input string, i int) bool {
+	return i+3 < len(input) &&
+		(input[i+2] == 'M' || input[i+2] == 'm') &&
+		input[i+3] == '!'
+}
+
+// execCommentMarkerEnd consumes the optional version digits of a /*!NNNNN or
+// /*M!NNNNN executable-comment marker.
 func execCommentMarkerEnd(input string, i int) int {
 	for i < len(input) && input[i] >= '0' && input[i] <= '9' {
 		i++
