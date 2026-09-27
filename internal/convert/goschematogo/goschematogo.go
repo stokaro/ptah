@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/uniquename"
 )
 
@@ -56,6 +57,10 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	}
 	if err := refuseNarrowedDeleteActions(db.Constraints); err != nil {
 		return nil, err
+	}
+	// The key annotations have no attribute for a deferral (stokaro/ptah#3824).
+	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
+		return nil, fmt.Errorf("%s defers its check, which a Go annotation cannot represent", keys[0])
 	}
 
 	ctx := newRenderContext(db, opts)

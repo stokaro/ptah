@@ -151,6 +151,18 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	return schema, nil
 }
 
+// carriedOnColumns reports whether a key is left to the flags of its columns
+// rather than read as a constraint: a PRIMARY KEY or UNIQUE Oracle named
+// itself. A primary key that defers its check is kept whatever its name,
+// because a column flag has no deferral, and the comparison pairs a primary
+// key by its table rather than its name (stokaro/ptah#3824).
+func carriedOnColumns(generated, kind, deferrable string) bool {
+	if generated != "GENERATED NAME" {
+		return false
+	}
+	return kind == "U" || kind == "P" && deferrable != "DEFERRABLE"
+}
+
 // withoutGeneratedKeys drops the PRIMARY KEY and UNIQUE constraints Oracle named
 // itself, after markKeyColumns has taken the fact off them.
 //
@@ -419,7 +431,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			&deleteRule, &deferrable, &deferred, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
-		if desired == "GENERATED NAME" && (kind == "P" || kind == "U") {
+		if carriedOnColumns(desired, kind, deferrable) {
 			generatedKeys[name] = true
 		}
 

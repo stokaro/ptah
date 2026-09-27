@@ -215,9 +215,8 @@ both constraints are built. A render writes the second one as an
 render holds both as well. Elements and clauses are compared as the server's
 lexer reads them: spacing and the case of an unquoted word do not matter, and
 an extra pair of parentheses does, so the server can build one constraint for a
-pair that Ptah reads as two. `DEFERRABLE` is part of the server's key. The SQL
-reader refuses it on these constraints, because the model cannot keep it yet
-([stokaro/ptah#3824](https://github.com/stokaro/ptah/issues/3824)).
+pair that Ptah reads as two. Deferral is part of the key too:
+`UNIQUE (a) DEFERRABLE, UNIQUE (a)` builds both constraints.
 
 A column's own `UNIQUE` is a key over that column alone, and it folds the same
 way into an equal primary key or `UNIQUE` of the same `CREATE TABLE`:

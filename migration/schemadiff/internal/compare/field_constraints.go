@@ -84,9 +84,12 @@ func isFieldLevelConstraint(
 		// Table.PrimaryKey; it is synthesized as a table-level constraint, so the
 		// database constraint must stay in the comparison to match/add correctly
 		// (#708).
+		//
+		// A deferrable key is never the column's own: the column spelling has
+		// no deferral, so the key is compared as the table's (liveKeyDefers).
 		column := getConstraintColumn(dbConstraint)
 		key := newTableMemberKey(dbConstraint.QualifiedTableName(), column, semantics)
-		if field, exists := fieldMap[key]; exists && field.Primary {
+		if field, exists := fieldMap[key]; exists && field.Primary && !dbConstraint.Deferrable {
 			pkKey := newQualifiedTableIdentity(dbConstraint.QualifiedTableName(), semantics)
 			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized {
 				return true

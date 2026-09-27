@@ -848,6 +848,28 @@ const (
 	// false there rather than partially true (stokaro/ptah#1624).
 	DeferrableConstraints Capability = "deferrable_constraints"
 
+	// DeferrableKeys marks support for a PRIMARY KEY, UNIQUE or EXCLUDE
+	// constraint declared DEFERRABLE, whose uniqueness check can be postponed
+	// to the end of a transaction.
+	//
+	// It is a key of its own because the engines that defer a foreign key do
+	// not all defer a key. Measured 2026-09-27 with `UNIQUE (x) DEFERRABLE`,
+	// `PRIMARY KEY (x) DEFERRABLE INITIALLY DEFERRED` and the EXCLUDE
+	// spelling, in CREATE TABLE and in ALTER TABLE ... ADD:
+	//
+	//	PostgreSQL 18.6        accepts all; condeferrable and condeferred read back
+	//	Oracle Free 23         accepts PRIMARY KEY and UNIQUE; user_constraints
+	//	                       reads back DEFERRABLE and DEFERRED
+	//	YugabyteDB 2026.1.2    `DEFERRABLE unique constraints are not supported
+	//	                       yet`, and the same for a table-level primary key
+	//	CockroachDB v26.3.2    `unimplemented: this syntax`, NOT DEFERRABLE too
+	//
+	// YugabyteDB accepts `x int PRIMARY KEY DEFERRABLE` on a column and
+	// records the key deferrable, while refusing every other spelling of the
+	// same key; false describes what a rendered statement can rely on. The
+	// other engines have no deferrable key, or none measured here.
+	DeferrableKeys Capability = "deferrable_keys"
+
 	// UniqueConstraints reports whether the target accepts UNIQUE as a CONSTRAINT
 	// -- table-level `CONSTRAINT x UNIQUE (col)` or the column-level `col ... UNIQUE`
 	// -- rather than requiring a unique index for the same guarantee.
@@ -1181,6 +1203,9 @@ var registry = map[Capability]spec{
 		// that -- four renderer tests that disable foreign keys stopped
 		// reaching their own refusal and failed on an invalid set instead.
 	},
+	DeferrableKeys: {
+		doc: "PRIMARY KEY, UNIQUE and EXCLUDE constraints declared DEFERRABLE (PostgreSQL, and Oracle, which has no EXCLUDE)",
+	},
 	UniqueConstraints: {
 		doc: "UNIQUE accepted as a constraint rather than only as a unique index (false on Spanner and ClickHouse)",
 	},
@@ -1424,6 +1449,7 @@ func MySQL84() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
+		DeferrableKeys:                  false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -1578,6 +1604,7 @@ func MariaDB1011() Capabilities {
 		CatalogCheckConstraintTableName: true,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
+		DeferrableKeys:                  false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -1681,6 +1708,7 @@ func Postgres16() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
+		DeferrableKeys:                  true,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       true,
 		ForeignKeyDeleteColumnList:      true,
@@ -1908,6 +1936,7 @@ func ClickHouse24() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
+		DeferrableKeys:                  false,
 		UniqueConstraints:               false,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -2019,6 +2048,7 @@ func SQLite3() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
+		DeferrableKeys:                  false,
 		UniqueConstraints:               true,
 		// SQLite has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one
@@ -2213,6 +2243,7 @@ func SQLServer2022() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
+		DeferrableKeys:                  false,
 		UniqueConstraints:               true,
 		// SQL Server has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one.
@@ -2276,8 +2307,10 @@ func CockroachDB23() Capabilities {
 		// CockroachDB is the one PostgreSQL-family target without this, and it
 		// is a whole absence rather than a partial one: v26.2.5 answers
 		// `unimplemented: this syntax` to DEFERRABLE, to DEFERRABLE INITIALLY
-		// IMMEDIATE and to NOT DEFERRABLE alike (stokaro/ptah#1624).
+		// IMMEDIATE and to NOT DEFERRABLE alike (stokaro/ptah#1624), and
+		// v26.3.2 answers the same to every deferral clause after a key.
 		With(DeferrableConstraints, false).
+		With(DeferrableKeys, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
@@ -2438,6 +2471,10 @@ func CockroachDB263() Capabilities {
 // policy DDL, matching the enabled keys below.
 func YugabyteDB25() Capabilities {
 	return Postgres16().
+		// Measured on 2026.1.2: `DEFERRABLE unique constraints are not
+		// supported yet`, and `DEFERRABLE primary key constraints are not
+		// supported yet` for a table-level or added key. A foreign key defers.
+		With(DeferrableKeys, false).
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false)
 }
@@ -2526,6 +2563,10 @@ func SpannerPostgres() Capabilities {
 		// side: the list is PostgreSQL 15 grammar, and Spanner's foreign keys
 		// take neither SET NULL nor SET DEFAULT at all.
 		With(ForeignKeyDeleteColumnList, false).
+		// Unmeasured against a live emulator and false on the conservative
+		// side: the emulator refuses DEFERRABLE on a foreign key, and a key
+		// is no likelier to take it.
+		With(DeferrableKeys, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
 		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
 		// reads back from information_schema.tables. It is the one row-expiry
@@ -2826,7 +2867,11 @@ func Oracle23() Capabilities {
 		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
 		GeneratedColumns: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
-		DeferrableConstraints:      true,
+		DeferrableConstraints: true,
+		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a PRIMARY KEY and a
+		// UNIQUE, in CREATE TABLE and ALTER TABLE ... ADD, and read back from
+		// user_constraints.
+		DeferrableKeys:             true,
 		UniqueConstraints:          true,
 		UniqueNullsDistinctClause:  false,
 		ForeignKeyDeleteColumnList: false,

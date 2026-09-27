@@ -284,6 +284,33 @@ func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
 	}
 }
 
+// TestCarriedOnColumns_KeepsADeferrablePrimaryKey leaves a key Oracle named to
+// its columns, except a primary key that defers: a column flag has no
+// deferral, so read as one the key would compare equal to a plain one.
+func TestCarriedOnColumns_KeepsADeferrablePrimaryKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		generated  string
+		kind       string
+		deferrable string
+		want       bool
+	}{
+		{name: "a primary key Oracle named", generated: "GENERATED NAME", kind: "P", deferrable: "NOT DEFERRABLE", want: true},
+		{name: "a UNIQUE Oracle named", generated: "GENERATED NAME", kind: "U", deferrable: "NOT DEFERRABLE", want: true},
+		{name: "a deferrable UNIQUE Oracle named", generated: "GENERATED NAME", kind: "U", deferrable: "DEFERRABLE", want: true},
+		{name: "a deferrable primary key Oracle named", generated: "GENERATED NAME", kind: "P", deferrable: "DEFERRABLE"},
+		{name: "a primary key the user named", generated: "USER NAME", kind: "P", deferrable: "NOT DEFERRABLE"},
+		{name: "a CHECK Oracle named", generated: "GENERATED NAME", kind: "C", deferrable: "NOT DEFERRABLE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(carriedOnColumns(tt.generated, tt.kind, tt.deferrable), qt.Equals, tt.want)
+		})
+	}
+}
+
 // text wraps a catalog string that may be absent.
 func text(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: true}

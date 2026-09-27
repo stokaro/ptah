@@ -1699,6 +1699,10 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		constraint.OnDelete,
 		constraint.OnUpdate,
 		strings.Join(constraint.OnDeleteColumns, "\x01"),
+		// Two constraints that differ only in deferral are two constraints:
+		// PostgreSQL 18.6 builds both of `UNIQUE (a) DEFERRABLE, UNIQUE (a)`.
+		strconv.FormatBool(constraint.Deferrable),
+		strings.ToLower(constraint.Initially),
 	}, "\x00")
 }
 

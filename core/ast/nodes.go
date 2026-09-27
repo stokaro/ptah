@@ -784,6 +784,15 @@ type ConstraintNode struct {
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not specified.
 	NullsDistinct *bool
+	// Deferrable marks a PRIMARY KEY, UNIQUE or EXCLUDE constraint whose check
+	// may be postponed to the end of a transaction. A foreign key carries its
+	// own on [ForeignKeyRef.Deferrable]. A renderer for a target without
+	// deferrable keys refuses the constraint rather than write it plain.
+	Deferrable bool
+	// Initially is the default timing of a deferrable key: "deferred" or
+	// "immediate", or empty for a clause the author did not write, which is
+	// IMMEDIATE.
+	Initially string
 	// Reference contains foreign key reference information (only for FOREIGN KEY constraints)
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)

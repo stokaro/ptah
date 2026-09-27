@@ -520,6 +520,7 @@ func (t alterTarget) hasPrimaryField() bool {
 func (t alterTarget) clearPrimaryKey() {
 	t.table.PrimaryKey, t.table.PrimaryKeyName = nil, ""
 	t.table.PrimaryKeyParts, t.table.PrimaryKeyInclude = nil, nil
+	t.table.PrimaryKeyDeferrable, t.table.PrimaryKeyInitially = false, ""
 	for _, database := range t.databases {
 		for i := range database.Fields {
 			if database.Fields[i].StructName == t.structName {

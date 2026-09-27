@@ -2383,7 +2383,9 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
 			-- class. See requiredExtensionsProjection.
 			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions,
-			COALESCE(obj_description(c.oid, 'pg_constraint'), '') AS constraint_comment
+			COALESCE(obj_description(c.oid, 'pg_constraint'), '') AS constraint_comment,
+			c.condeferrable,
+			c.condeferred
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
 		JOIN pg_namespace n ON cl.relnamespace = n.oid
@@ -2404,8 +2406,9 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 	for rows.Next() {
 		var schemaName, constraintName, tableName, constraintType, definition string
 		var requiredExtensions, comment string
+		var deferrable, deferred bool
 		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions,
-			&comment)
+			&comment, &deferrable, &deferred)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
@@ -2432,6 +2435,10 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 			Type:               stdType,
 			RequiresExtensions: required,
 			Comment:            comment,
+			Deferrable:         deferrable,
+		}
+		if deferrable {
+			constraint.Initially = deferralTimings[deferred]
 		}
 
 		// Parse constraint definition for EXCLUDE constraints
@@ -2523,9 +2530,11 @@ func ParseExcludeConstraintDefinition(definition string) (*ExcludeConstraintDefi
 	// Extract elements (content between parentheses)
 	elements := strings.TrimSpace(remaining[openParenIdx+1 : elementsEndIdx])
 
-	// Check for WHERE clause
+	// Check for WHERE clause. pg_get_constraintdef ends a deferrable
+	// constraint with DEFERRABLE and, when it defers by default, INITIALLY
+	// DEFERRED; both are read from pg_constraint and are not the predicate.
 	whereCondition := ""
-	afterElements := strings.TrimSpace(remaining[elementsEndIdx+1:])
+	afterElements := trimDeferralSuffix(strings.TrimSpace(remaining[elementsEndIdx+1:]))
 	if strings.HasPrefix(strings.ToUpper(afterElements), "WHERE") {
 		whereClause := strings.TrimSpace(afterElements[5:]) // len("WHERE") = 5
 		// Remove outer parentheses if present
@@ -2541,6 +2550,15 @@ func ParseExcludeConstraintDefinition(definition string) (*ExcludeConstraintDefi
 		Elements:       elements,
 		WhereCondition: whereCondition,
 	}, nil
+}
+
+// trimDeferralSuffix removes the deferral clauses pg_get_constraintdef
+// appends to a constraint's definition: ` DEFERRABLE`, then ` INITIALLY
+// DEFERRED` when the constraint defers by default. It never prints NOT
+// DEFERRABLE or INITIALLY IMMEDIATE.
+func trimDeferralSuffix(definition string) string {
+	definition = strings.TrimSpace(strings.TrimSuffix(definition, " INITIALLY DEFERRED"))
+	return strings.TrimSpace(strings.TrimSuffix(definition, " DEFERRABLE"))
 }
 
 func (r *Reader) readExtensions(ctx context.Context) ([]catalog.Extension, error) {

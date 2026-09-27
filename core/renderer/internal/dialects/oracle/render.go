@@ -330,9 +330,11 @@ func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	}
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return prefix + "PRIMARY KEY (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")", nil
+		return prefix + "PRIMARY KEY (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")" +
+			renderKeyDeferral(constraint), nil
 	case ast.UniqueConstraint:
-		return prefix + "UNIQUE (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")", nil
+		return prefix + "UNIQUE (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")" +
+			renderKeyDeferral(constraint), nil
 	case ast.ForeignKeyConstraint:
 		if constraint.Reference == nil {
 			return "", fmt.Errorf("foreign key constraint missing reference")
@@ -397,6 +399,17 @@ func renderDeferral(ref *ast.ForeignKeyRef) string {
 	default:
 		return " DEFERRABLE"
 	}
+}
+
+// renderKeyDeferral renders the deferral of a PRIMARY KEY or UNIQUE, measured
+// accepted on Oracle Free 23 in CREATE TABLE and ALTER TABLE ... ADD, and read
+// back from user_constraints as DEFERRABLE with the timing written. A key that
+// is not deferrable gets no clause.
+func renderKeyDeferral(constraint *ast.ConstraintNode) string {
+	if !constraint.Deferrable {
+		return ""
+	}
+	return renderDeferral(&ast.ForeignKeyRef{Deferrable: true, Initially: constraint.Initially})
 }
 
 func renderIndexParts(parts []ast.IndexPart) []string {

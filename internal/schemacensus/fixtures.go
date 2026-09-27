@@ -58,6 +58,7 @@ func Fixtures() []Fixture {
 		{Name: "table-custom-sql", Schema: tableCustomSQLFixture()},
 		{Name: "table-pk", Schema: tablePrimaryKeyFixture()},
 		{Name: "table-pk-include", Schema: tablePrimaryKeyIncludeFixture()},
+		{Name: "table-pk-deferrable", Schema: tablePrimaryKeyDeferrableFixture()},
 		{Name: "table-pk-parts", Schema: tablePrimaryKeyPartsFixture()},
 		{Name: "table-partition", Schema: tablePartitionFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
@@ -592,6 +593,20 @@ func tablePrimaryKeyIncludeFixture() schemamodel.Database {
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "A", Name: "a", Type: "VARCHAR(16)"},
 			{StructName: "T", FieldName: "B", Name: "b", Type: "BIGINT", Nullable: true},
+		},
+	}
+}
+
+// tablePrimaryKeyDeferrableFixture is a primary key that defers its check to
+// the end of the transaction (stokaro/ptah#3824).
+func tablePrimaryKeyDeferrableFixture() schemamodel.Database {
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "T", Name: "t",
+			PrimaryKey: []string{"a"}, PrimaryKeyDeferrable: true, PrimaryKeyInitially: "deferred",
+		}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", FieldName: "A", Name: "a", Type: "BIGINT"},
 		},
 	}
 }

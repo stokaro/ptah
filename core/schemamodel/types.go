@@ -533,8 +533,11 @@ type Constraint struct {
 	ForeignColumns []string // Referenced column names for composite foreign keys
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
-	// Deferrable marks a foreign key whose check may be postponed to the end of
-	// a transaction. See [ptah.run/core/ast.ForeignKeyRef.Deferrable].
+	// Deferrable marks a FOREIGN KEY, UNIQUE or EXCLUDE constraint whose check
+	// may be postponed to the end of a transaction. See
+	// [ptah.run/core/ast.ForeignKeyRef.Deferrable] and
+	// [ptah.run/core/ast.ConstraintNode.Deferrable]. A target without the
+	// capability refuses a deferrable constraint rather than write it plain.
 	Deferrable bool
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
@@ -728,10 +731,19 @@ type Table struct {
 	// PrimaryKeyInclude carries PostgreSQL INCLUDE columns for table-level
 	// primary keys.
 	PrimaryKeyInclude []string
-	Checks            []string                     // Table-level check constraints
-	Partition         *PartitionSpec               // PostgreSQL table partitioning metadata
-	CustomSQL         string                       // Custom SQL to append to CREATE TABLE
-	Overrides         map[string]map[string]string // Platform-specific overrides
+	// PrimaryKeyDeferrable marks a primary key whose uniqueness check may be
+	// postponed to the end of a transaction, as
+	// [Constraint.Deferrable] does for another constraint. A deferrable key
+	// renders as a table constraint, because the column spelling has no
+	// place for the clause on every target.
+	PrimaryKeyDeferrable bool
+	// PrimaryKeyInitially is the default timing of a deferrable primary key:
+	// "deferred", "immediate", or empty for a clause the author did not write.
+	PrimaryKeyInitially string
+	Checks              []string                     // Table-level check constraints
+	Partition           *PartitionSpec               // PostgreSQL table partitioning metadata
+	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
+	Overrides           map[string]map[string]string // Platform-specific overrides
 	// RowTTL is the CockroachDB row-level TTL this table declares, nil for a
 	// table declaring none.
 	//

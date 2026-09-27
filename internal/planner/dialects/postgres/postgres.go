@@ -3678,6 +3678,7 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 		constraint := ast.NewUniqueConstraint(add.Name, add.Columns...)
 		constraint.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		constraint.NullsDistinct = cloneBoolPtr(add.NullsDistinct)
+		constraint.Deferrable, constraint.Initially = add.Deferrable, add.Initially
 		return constraint
 	case "EXCLUDE":
 		// Both halves are required: an EXCLUDE with no method or no elements is
@@ -3691,6 +3692,7 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 		if add.WhereCondition != "" {
 			exclude = exclude.SetWhereCondition(add.WhereCondition)
 		}
+		exclude.Deferrable, exclude.Initially = add.Deferrable, add.Initially
 		return exclude
 	default:
 		return nil
@@ -3715,6 +3717,8 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		// DROP just removed never comes back (stokaro/ptah#2199).
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
 		primaryKey.IncludeColumns = append([]string(nil), add.IncludeColumns...)
+		// So does the deferral (stokaro/ptah#3824).
+		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},

@@ -94,6 +94,16 @@ type when it produces a different one. Replacing a type a column uses answers
 `ORA-02303` and changes nothing — the server declining to leave that column
 naming a shape it no longer has, which is kept rather than forced.
 
+## Keys that defer their check
+
+A primary key and a `UNIQUE` can be `DEFERRABLE`, with `INITIALLY DEFERRED`
+or `INITIALLY IMMEDIATE`, as a foreign key can. Ptah writes the clause and
+reads it back from `ALL_CONSTRAINTS`, measured on Oracle Free 23. A primary
+key Oracle named itself is compared through the table's column flags, which
+cannot defer, so a deferrable one is compared as the table's key instead.
+Name a deferrable `UNIQUE`: Oracle names an unnamed one `SYS_C<n>`, which
+differs in every database. A change of deferral is a drop and an add.
+
 ## Functions and procedures
 
 **Functions and procedures** are rendered, read back and planned on both lines.

@@ -154,9 +154,12 @@ func convertTablesAndFields(
 			// carry it: convertConstraint refuses a PRIMARY KEY outright so the
 			// key renders once, and the column flag has no slot for it.
 			PrimaryKeyInclude: primaryKey.include,
-			Strict:            dbTable.Strict,
-			WithoutRowID:      dbTable.WithoutRowID,
-			Unlogged:          dbTable.Unlogged,
+			// So does the deferral, for the same reason.
+			PrimaryKeyDeferrable: primaryKey.deferrable,
+			PrimaryKeyInitially:  primaryKey.initially,
+			Strict:               dbTable.Strict,
+			WithoutRowID:         dbTable.WithoutRowID,
+			Unlogged:             dbTable.Unlogged,
 			// A virtual table's module declaration is what recreates it.
 			// Dropping it here is what made `ptah db read` describe an FTS5
 			// index as an ordinary table. See stokaro/ptah#1028.
@@ -690,8 +693,10 @@ func convertRLSEnabledTables(
 // tablePrimaryKey is a primary key the description writes as a declaration of
 // its own rather than as a flag on one column.
 type tablePrimaryKey struct {
-	columns []string
-	include []string
+	columns    []string
+	include    []string
+	deferrable bool
+	initially  string
 }
 
 func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[string]map[string]bool {
@@ -718,7 +723,8 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // columns it has -- `PRIMARY KEY (a) INCLUDE (payload)` is as covering as
 // `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
 // dropped the first of them before it reached this map at all
-// (stokaro/ptah#2199).
+// (stokaro/ptah#2199). A deferral is the same kind of payload
+// (stokaro/ptah#3824).
 func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
@@ -729,12 +735,14 @@ func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 		if len(columns) == 0 {
 			continue
 		}
-		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 {
+		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
-			columns: columns,
-			include: slices.Clone(constraint.IncludeColumns),
+			columns:    columns,
+			include:    slices.Clone(constraint.IncludeColumns),
+			deferrable: constraint.Deferrable,
+			initially:  constraint.Initially,
 		}
 	}
 	return result
@@ -885,8 +893,11 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		// has no room for it either, so such a key stays a constraint.
 		// Measured on PostgreSQL 18.6, `a int UNIQUE NULLS NOT DISTINCT`
 		// builds `<table>_a_key`, and described as the column's flag it
-		// compares equal to a plain UNIQUE (stokaro/ptah#3821).
-		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) && !nullsNotDistinct(dbConstraint) {
+		// compares equal to a plain UNIQUE (stokaro/ptah#3821). A deferrable
+		// key is the other exception, for the same reason
+		// (stokaro/ptah#3824).
+		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) &&
+			!nullsNotDistinct(dbConstraint) && !dbConstraint.Deferrable {
 			return schemamodel.Constraint{}, false
 		}
 	case "CHECK":

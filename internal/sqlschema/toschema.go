@@ -291,6 +291,8 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			tableSchema.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
 			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
+			tableSchema.PrimaryKeyDeferrable = constraint.Deferrable
+			tableSchema.PrimaryKeyInitially = constraint.Initially
 			break // Only one primary key constraint per table
 		}
 	}
@@ -1324,6 +1326,8 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
 	target.table.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
 	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
+	target.table.PrimaryKeyDeferrable = constraint.Deferrable
+	target.table.PrimaryKeyInitially = constraint.Initially
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
 	}
@@ -1348,6 +1352,8 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 				constraint.IncludeColumns,
 			),
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
+			Deferrable:    constraint.Deferrable,
+			Initially:     constraint.Initially,
 		}, true
 	case ast.ForeignKeyConstraint:
 		fk := schemamodel.Constraint{
@@ -1385,6 +1391,8 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			UsingMethod:     constraint.UsingMethod,
 			ExcludeElements: constraint.ExcludeElements,
 			WhereCondition:  constraint.WhereCondition,
+			Deferrable:      constraint.Deferrable,
+			Initially:       constraint.Initially,
 		}, true
 	case ast.PrimaryKeyConstraint:
 		// The only kind this deliberately declines. A table-level PRIMARY KEY

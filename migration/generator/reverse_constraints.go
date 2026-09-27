@@ -71,6 +71,8 @@ func reverseIndexRemovals(
 			Columns:        slices.Clone(columns),
 			IncludeColumns: slices.Clone(dbConstraint.IncludeColumns),
 			NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
+			Deferrable:     dbConstraint.Deferrable,
+			Initially:      dbConstraint.Initially,
 		})
 	}
 	return additions, restored
@@ -149,12 +151,14 @@ func reverseConstraintAdditions(
 		case "PRIMARY KEY":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
 				infos = append(infos, difftypes.ConstraintAdditionInfo{
-					Name:      removed.Name,
-					TableName: removed.TableName,
-					Identity:  constraintscope.Identity(semantics, removed.TableName, removed.Name),
-					Type:      "PRIMARY KEY",
-					Columns:   append([]string(nil), columns...),
-					Comment:   dbConstraint.Comment,
+					Name:       removed.Name,
+					TableName:  removed.TableName,
+					Identity:   constraintscope.Identity(semantics, removed.TableName, removed.Name),
+					Type:       "PRIMARY KEY",
+					Columns:    append([]string(nil), columns...),
+					Deferrable: dbConstraint.Deferrable,
+					Initially:  dbConstraint.Initially,
+					Comment:    dbConstraint.Comment,
 				})
 			}
 		case "CHECK":
@@ -178,6 +182,8 @@ func reverseConstraintAdditions(
 					Columns:        append([]string(nil), columns...),
 					IncludeColumns: append([]string(nil), dbConstraint.IncludeColumns...),
 					NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
+					Deferrable:     dbConstraint.Deferrable,
+					Initially:      dbConstraint.Initially,
 					Comment:        dbConstraint.Comment,
 				})
 			}

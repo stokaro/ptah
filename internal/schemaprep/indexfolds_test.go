@@ -35,6 +35,26 @@ func TestFoldedIndexConstraints_Folds(t *testing.T) {
 		wantFolds   []schemaprep.IndexConstraintFold
 	}{
 		{
+			name:  "two deferrable UNIQUEs, one written immediate",
+			table: foldTable,
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true},
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true, Initially: "immediate"},
+			},
+			wantFolds: []schemaprep.IndexConstraintFold{{Folded: 1, Into: 0}},
+		},
+		{
+			name: "a deferred UNIQUE over a deferred key",
+			table: schemamodel.Table{
+				StructName: "T", Name: "t", PrimaryKey: []string{"id"},
+				PrimaryKeyDeferrable: true, PrimaryKeyInitially: "deferred",
+			},
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"id"}, Deferrable: true, Initially: "deferred"},
+			},
+			wantFolds: []schemaprep.IndexConstraintFold{{Folded: 0, Into: schemaprep.PrimaryKeyOutsideList}},
+		},
+		{
 			name:        "an EXCLUDE declared twice",
 			table:       foldTable,
 			constraints: []schemamodel.Constraint{foldExclude("btree", "r WITH =", ""), foldExclude("btree", "r WITH =", "")},
@@ -172,6 +192,30 @@ func TestFoldedIndexConstraints_Keeps(t *testing.T) {
 		fields      []schemamodel.Field
 		constraints []schemamodel.Constraint
 	}{
+		{
+			name:    "a deferrable UNIQUE beside a plain one",
+			dialect: platform.Postgres,
+			table:   foldTable,
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true},
+				foldUnique("", "a"),
+			},
+		},
+		{
+			name:    "two deferrable UNIQUEs, one deferred first",
+			dialect: platform.Postgres,
+			table:   foldTable,
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true},
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, Deferrable: true, Initially: "deferred"},
+			},
+		},
+		{
+			name:        "a UNIQUE over a deferrable key",
+			dialect:     platform.Postgres,
+			table:       schemamodel.Table{StructName: "T", Name: "t", PrimaryKey: []string{"id"}, PrimaryKeyDeferrable: true},
+			constraints: []schemamodel.Constraint{foldUnique("", "id")},
+		},
 		{
 			name:        "columns in another order",
 			dialect:     platform.Postgres,
