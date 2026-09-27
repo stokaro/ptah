@@ -125,7 +125,7 @@ func TableColumnsWithSemantics(
 		desired,
 		dialect,
 		semantics,
-		nil,
+		columnUniqueness{},
 		ServerSpellings{},
 	)
 }
@@ -136,7 +136,7 @@ func tableColumnsWithSemantics(
 	desired *schemamodel.Database,
 	dialect string,
 	semantics identifier.Semantics,
-	objectOwnedUniqueColumns map[columnIdentity]struct{},
+	uniqueness columnUniqueness,
 	spellings ServerSpellings,
 ) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{
@@ -187,10 +187,7 @@ func tableColumnsWithSemantics(
 				genCol.Nullable = dbCol.IsNullable == "YES"
 			}
 			columnKey := newColumnIdentityForTable(genTable.Schema, genTable.Name, identity, semantics)
-			if _, objectOwned := objectOwnedUniqueColumns[columnKey]; objectOwned {
-				genCol.Unique = false
-				dbCol.IsUnique = false
-			}
+			genCol, dbCol = uniqueness.compared(columnKey, genCol, dbCol)
 			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
 				schema:               genTable.Schema,
 				table:                genTable.Name,

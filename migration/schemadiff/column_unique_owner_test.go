@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // uniqueKey is one UNIQUE of `c`: its name and its columns.
@@ -90,11 +91,6 @@ func TestCompare_AColumnUniqueBesideAnotherUniqueIsSynced(t *testing.T) {
 			declared: []uniqueKey{{name: "b", columns: []string{"b", "a"}}},
 			live:     []uniqueKey{{name: "a", columns: []string{"a"}}, {name: "b", columns: []string{"b", "a"}}},
 		},
-		{
-			name:     "a declared key that is the only key over the column",
-			declared: []uniqueKey{{name: "uq_a", columns: []string{"a"}}},
-			live:     []uniqueKey{{name: "uq_a", columns: []string{"a"}}},
-		},
 	}
 	for _, dialect := range mysqlEngines {
 		for _, test := range tests {
@@ -110,6 +106,148 @@ func TestCompare_AColumnUniqueBesideAnotherUniqueIsSynced(t *testing.T) {
 			})
 		}
 	}
+}
+
+// columnChanges lists the columns a diff modifies, each as `table.column:
+// change`, sorted.
+func columnChanges(diff *difftypes.SchemaDiff) []string {
+	var changes []string
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			for key, change := range column.Changes {
+				changes = append(changes, table.TableName+"."+column.ColumnName+": "+key+" "+change)
+			}
+		}
+	}
+	slices.Sort(changes)
+	return changes
+}
+
+// desiredUniqueIndex is desiredUniqueTable with a unique index over a, as
+// `CREATE UNIQUE INDEX ux ON c (a)` declares it.
+func desiredUniqueIndex() *schemamodel.Database {
+	database := desiredUniqueTable()
+	database.Indexes = []schemamodel.Index{{StructName: "C", Name: "ux", TableName: "c", Fields: []string{"a"}, Unique: true}}
+	return database
+}
+
+// TestCompare_AColumnUniqueBesideADeclaredKeyIsItsOwn covers
+// stokaro/ptah#3784. On MySQL and MariaDB a column's UNIQUE is a key of its
+// own beside a named UNIQUE or a unique index over the same column, so a
+// database that holds only the declared one lacks the column's. Measured on
+// MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3: the file builds both
+// keys, and Atlas CE v1.3.0 plans `ADD UNIQUE INDEX a (a)` against a database
+// that holds only the declared one.
+func TestCompare_AColumnUniqueBesideADeclaredKeyIsItsOwn(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		live    []uniqueKey
+		want    []string
+	}{
+		{
+			name:    "a named UNIQUE, and no key of the column's",
+			desired: desiredUniqueTable(uniqueKey{name: "uq_a", columns: []string{"a"}}),
+			live:    []uniqueKey{{name: "uq_a", columns: []string{"a"}}},
+			want:    []string{"c.a: unique false -> true"},
+		},
+		{
+			name:    "a unique index, and no key of the column's",
+			desired: desiredUniqueIndex(),
+			live:    []uniqueKey{{name: "ux", columns: []string{"a"}}},
+			want:    []string{"c.a: unique false -> true"},
+		},
+		{
+			name:    "a named UNIQUE beside the column's key",
+			desired: desiredUniqueTable(uniqueKey{name: "uq_a", columns: []string{"a"}}),
+			live:    []uniqueKey{{name: "a", columns: []string{"a"}}, {name: "uq_a", columns: []string{"a"}}},
+		},
+		{
+			name:    "a unique index beside the column's key",
+			desired: desiredUniqueIndex(),
+			live:    []uniqueKey{{name: "a", columns: []string{"a"}}, {name: "ux", columns: []string{"a"}}},
+		},
+	}
+	for _, dialect := range mysqlEngines {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				diff := compareForDialect(dialect, test.desired, liveUniqueTable(test.live...))
+
+				c.Assert(columnChanges(diff), qt.DeepEquals, test.want)
+				c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+				c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+				c.Assert(diff.IndexesAdded, qt.HasLen, 0)
+				c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
+			})
+		}
+	}
+}
+
+// TestCompare_PostgresColumnUniqueBesideADeclaredKey keeps PostgreSQL apart.
+// Measured on PostgreSQL 18, `CREATE TABLE c (a int UNIQUE, CONSTRAINT uq_a
+// UNIQUE (a))` builds `uq_a` alone, so a database that holds it holds the
+// column's key too. A unique index is an object apart, and `a int UNIQUE`
+// beside `CREATE UNIQUE INDEX ux ON c (a)` builds `c_a_key` and `ux`, which
+// Atlas CE v1.3.0 plans as `ADD CONSTRAINT c_a_key` against a database that
+// holds only `ux`.
+func TestCompare_PostgresColumnUniqueBesideADeclaredKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		live    *catalog.Database
+		want    []string
+	}{
+		{
+			name:    "a named UNIQUE is the column's key",
+			desired: desiredUniqueTable(uniqueKey{name: "uq_a", columns: []string{"a"}}),
+			live:    postgresUniqueTable([]uniqueKey{{name: "uq_a", columns: []string{"a"}}}, nil),
+		},
+		{
+			name:    "a unique index is not",
+			desired: desiredUniqueIndex(),
+			live:    postgresUniqueTable(nil, []uniqueKey{{name: "ux", columns: []string{"a"}}}),
+			want:    []string{"c.a: unique false -> true"},
+		},
+		{
+			name:    "a unique index beside the column's key",
+			desired: desiredUniqueIndex(),
+			live: postgresUniqueTable([]uniqueKey{{name: "c_a_key", columns: []string{"a"}}},
+				[]uniqueKey{{name: "ux", columns: []string{"a"}}}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compareForDialect(platform.Postgres, test.desired, test.live)
+
+			c.Assert(columnChanges(diff), qt.DeepEquals, test.want)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.IndexesAdded, qt.HasLen, 0)
+			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
+		})
+	}
+}
+
+// postgresUniqueTable is a catalog of `c (id, a, b)` in the shape the
+// PostgreSQL reader reports: a UNIQUE constraint and its index per constraint,
+// an index alone per unique index, and a column unique where either covers
+// that column alone.
+func postgresUniqueTable(constraints, indexes []uniqueKey) *catalog.Database {
+	database := liveUniqueTable(constraints...)
+	for _, index := range indexes {
+		database.Indexes = append(database.Indexes, catalog.Index{
+			Name: index.name, TableName: "c", Columns: index.columns, IsUnique: true,
+		})
+		for i := range database.Tables[0].Columns {
+			column := &database.Tables[0].Columns[i]
+			column.IsUnique = column.IsUnique || slices.Equal(index.columns, []string{column.Name})
+		}
+	}
+	return database
 }
 
 // TestCompare_AUniqueBesideAColumnUniqueIsRemoved is the other direction of

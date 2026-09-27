@@ -1,8 +1,11 @@
 package compare
 
 import (
+	"maps"
 	"strings"
 
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectidentity"
@@ -33,18 +36,124 @@ type (
 	objectIdentity = objectidentity.Key
 )
 
-// collectGeneratedObjectOwnedUniqueColumns identifies desired single-column
-// uniqueness whose lifecycle is explicitly represented by an index or table
-// constraint. Live objects alone cannot suppress a column difference because
-// database-side index filters may intentionally exclude backing indexes.
-func collectGeneratedObjectOwnedUniqueColumns(
+// columnUniqueness says how the column comparison reads the uniqueness of a
+// column that a declared unique index or UNIQUE constraint also covers.
+type columnUniqueness struct {
+	// objectOwned are the columns whose uniqueness such an object holds. The
+	// column comparison leaves their uniqueness out, and the object's own
+	// comparison creates and drops it.
+	objectOwned map[columnIdentity]struct{}
+	// ownKey are the columns that declare UNIQUE themselves beside such an
+	// object, on an engine that builds the two as two keys, with whether the
+	// database holds the column's own key. The column comparison reads the
+	// database's uniqueness of such a column from it.
+	ownKey map[columnIdentity]bool
+}
+
+// readColumnUniqueness identifies desired single-column uniqueness whose
+// lifecycle an index or table constraint represents. Live objects alone cannot
+// suppress a column difference because database-side index filters may
+// intentionally exclude backing indexes.
+//
+// A column that declares UNIQUE itself beside such an object is a second key
+// on some engines, and its own key is compared rather than left out. Measured
+// on MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18,
+// with Atlas CE v1.3.0 comparing a database that holds only the object:
+//
+//	declaration                                      MySQL, MariaDB  PostgreSQL
+//	a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)         two keys        one key
+//	a int UNIQUE; CREATE UNIQUE INDEX ux ON c (a)    two keys        two keys
+//
+// PostgreSQL builds one constraint from two identical UNIQUE declarations of
+// one table, and a unique index is an object apart from any constraint. Where
+// two keys are built, Atlas CE adds the column's own key to a database that
+// holds only the object, and so does this (stokaro/ptah#3784). The other
+// engines are not measured, and keep the column's uniqueness with the object.
+func readColumnUniqueness(
 	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
 	semantics identifier.Semantics,
-) map[columnIdentity]struct{} {
-	columns := make(map[columnIdentity]struct{})
-	collectGeneratedUniqueIndexColumns(columns, desired, semantics)
-	collectGeneratedUniqueConstraintColumns(columns, desired, semantics)
-	return columns
+) columnUniqueness {
+	byIndex := make(map[columnIdentity]struct{})
+	collectGeneratedUniqueIndexColumns(byIndex, desired, semantics)
+	byConstraint := make(map[columnIdentity]struct{})
+	collectGeneratedUniqueConstraintColumns(byConstraint, desired, semantics)
+	uniqueness := columnUniqueness{
+		objectOwned: make(map[columnIdentity]struct{}, len(byIndex)+len(byConstraint)),
+		ownKey:      make(map[columnIdentity]bool),
+	}
+	maps.Copy(uniqueness.objectOwned, byIndex)
+	maps.Copy(uniqueness.objectOwned, byConstraint)
+	if database == nil {
+		return uniqueness
+	}
+	held := readColumnKeys(desired, database, dialect, semantics).held
+	tables := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, table := range desired.Tables {
+		if _, seen := tables[table.StructName]; !seen {
+			tables[table.StructName] = table
+		}
+	}
+	for _, field := range desired.Fields {
+		table, ok := tables[field.StructName]
+		if !field.Unique || !ok {
+			continue
+		}
+		identity := newColumnIdentityForTable(table.Schema, table.Name, field.Name, semantics)
+		_, besideIndex := byIndex[identity]
+		_, besideConstraint := byConstraint[identity]
+		separate := (besideIndex && buildsColumnKeyBesideUniqueIndex(dialect)) ||
+			(besideConstraint && buildsColumnKeyBesideUniqueConstraint(dialect))
+		if !separate {
+			continue
+		}
+		_, holds := held[newTableMemberKey(table.QualifiedName(), field.Name, semantics)]
+		uniqueness.ownKey[identity] = holds
+	}
+	return uniqueness
+}
+
+// compared answers both sides of the column at key with their uniqueness as
+// the column comparison reads it: the database's own key of a column that
+// declares one beside a separate object, and nothing for a column whose
+// uniqueness an object holds.
+func (u columnUniqueness) compared(
+	key columnIdentity, desired schemamodel.Field, database catalog.Column,
+) (schemamodel.Field, catalog.Column) {
+	if holds, separate := u.ownKey[key]; separate {
+		database.IsUnique = holds
+		return desired, database
+	}
+	if _, owned := u.objectOwned[key]; owned {
+		desired.Unique = false
+		database.IsUnique = false
+	}
+	return desired, database
+}
+
+// buildsColumnKeyBesideUniqueIndex reports whether a column's UNIQUE and a
+// unique index over the same column are two keys on dialect; see
+// [readColumnUniqueness].
+func buildsColumnKeyBesideUniqueIndex(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB, platform.Postgres:
+		return true
+	default:
+		return false
+	}
+}
+
+// buildsColumnKeyBesideUniqueConstraint reports whether a column's UNIQUE and
+// a UNIQUE constraint over the same column are two keys on dialect; see
+// [readColumnUniqueness].
+func buildsColumnKeyBesideUniqueConstraint(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 func collectGeneratedUniqueIndexColumns(
