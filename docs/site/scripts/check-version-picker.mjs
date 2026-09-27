@@ -21,16 +21,22 @@
 //   - a choice that lands on the same page in the other version, and one that
 //     lands on that version's home page because the page does not exist there;
 //   - scripting disabled, where the mount point shows the version as text;
-//   - axe's WCAG rules over the open panel, in the light and the dark theme.
+//   - the banner a page from an older release shows at the top of <main>:
+//     present on such a page, linking to the same page in the latest release
+//     or to its home page when the page does not exist there, and absent on
+//     edge, on the latest release, on a release newer than it and on a page
+//     with no index;
+//   - axe's WCAG rules over the open panel and over the banner, in the light
+//     and the dark theme.
 //
 //   node scripts/check-version-picker.mjs            # needs `npm run build`
 //   node scripts/check-version-picker.mjs --selftest
 import AxeBuilder from '@axe-core/playwright';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
+import { detectBase, loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { mountFixture, mountProblems, pickerRoute, readPicker } from './lib/version-picker-check.mjs';
 import { WCAG_TAGS } from './lib/wcag.mjs';
 
@@ -46,6 +52,16 @@ const RELEASED = { [WITH_PAGE]: '2030-02-01', [WITHOUT_PAGE]: '2030-01-01' };
 const LISTED = ['edge', WITH_PAGE, WITHOUT_PAGE];
 // An index that does not name the page's version: the panel puts it first.
 const UNLISTED = [WITH_PAGE, WITHOUT_PAGE];
+// Pages this check serves as other versions of the built page. OLDER is a
+// release older than the latest that the index does not list, as a release
+// past the retention window would be; NEWER is newer than the latest, and
+// compares as newer only by number, since "v10" sorts before "v9" as text.
+const OLDER = 'v9.7.0';
+const NEWER = 'v10.0.0';
+const GONE = 'gone/';
+const BANNER_TEXT = `This page documents ${OLDER}, an older release. `;
+const BANNER_SAME_PAGE = { text: `${BANNER_TEXT}Read it in ${WITH_PAGE}, the latest release`, href: `/${WITH_PAGE}/${PAGE}`, first: true, role: 'note', ignored: true };
+const BANNER_HOME = { text: `${BANNER_TEXT}Go to ${WITH_PAGE}, the latest release`, href: `/${WITH_PAGE}/`, first: true, role: 'note', ignored: true };
 const GROUPS = ['In development', 'Releases'];
 
 // pickerBehaviorProblems judges every reading one run takes.
@@ -80,6 +96,12 @@ export function pickerBehaviorProblems(readings) {
   expect('no index: the listed versions', readings.missing.slugs, [version]);
   expect(`choosing ${WITH_PAGE} leads to`, readings.samePage, `/${WITH_PAGE}/${PAGE}`);
   expect(`choosing ${WITHOUT_PAGE} leads to`, readings.homePage, `/${WITHOUT_PAGE}/`);
+  expect('the banner on an older release', readings.banner.older, BANNER_SAME_PAGE);
+  expect('the banner on an older release whose page the latest lacks', readings.banner.gone, BANNER_HOME);
+  expect('the banner on edge', readings.banner.edge, null);
+  expect('the banner on the latest release', readings.banner.latest, null);
+  expect('the banner on a release newer than the latest', readings.banner.newer, null);
+  expect('the banner with no index', readings.banner.missing, null);
   expect('accessibility violations in the open panel', readings.violations, []);
   expect('page errors', readings.errors, []);
   return problems;
@@ -111,6 +133,7 @@ function selftest() {
     keyboard: WITH_PAGE,
     samePage: `/${WITH_PAGE}/${PAGE}`,
     homePage: `/${WITHOUT_PAGE}/`,
+    banner: { older: BANNER_SAME_PAGE, gone: BANNER_HOME, edge: null, latest: null, newer: null, missing: null },
     violations: [],
     errors: [],
   };
@@ -141,6 +164,15 @@ function selftest() {
     ['a second mount point', (r) => { r.unlisted.mounts = 2; }],
     ['a button with no name', (r) => { r.listed.label = null; }],
     ['no text without scripting', (r) => { r.noScript.text = ''; }],
+    ['no banner on an older release', (r) => { r.banner.older = null; }],
+    ['a banner linking to the latest home page although the page exists there', (r) => { r.banner.older.href = `/${WITH_PAGE}/`; }],
+    ['a banner linking to a page the latest release lacks', (r) => { r.banner.gone.href = `/${WITH_PAGE}/${GONE}`; }],
+    ['a banner below the content rather than above it', (r) => { r.banner.older.first = false; }],
+    ['a banner the search index would read', (r) => { r.banner.older.ignored = false; }],
+    ['a banner on edge', (r) => { r.banner.edge = BANNER_SAME_PAGE; }],
+    ['a banner on the latest release', (r) => { r.banner.latest = BANNER_SAME_PAGE; }],
+    ['a banner on a release that compares older only as text', (r) => { r.banner.newer = BANNER_SAME_PAGE; }],
+    ['a banner with no index to name the latest release', (r) => { r.banner.missing = BANNER_SAME_PAGE; }],
     ['an accessibility violation', (r) => { r.violations = ['color-contrast: .ptah-version-picker__meta']; }],
     ['a page error', (r) => { r.errors = ['boom']; }],
   ];
@@ -159,6 +191,23 @@ function settled(tab) {
 }
 
 const html = (text) => ({ status: 200, body: `<!doctype html><title>${text}</title><p>${text}</p>`, type: 'text/html' });
+
+// readBanner reads the version banner at the top of <main>, or null when the
+// page has none. `href` is the link's path, since the host is the check's.
+function readBanner(tab) {
+  return tab.evaluate(() => {
+    const banner = document.querySelector('.ptah-version-banner');
+    if (!banner) return null;
+    const link = banner.querySelector('a');
+    return {
+      text: banner.textContent,
+      href: link ? new URL(link.href).pathname : null,
+      first: banner.parentElement?.tagName === 'MAIN' && banner.parentElement.firstElementChild === banner,
+      role: banner.getAttribute('role'),
+      ignored: banner.hasAttribute('data-pagefind-ignore'),
+    };
+  });
+}
 
 // readPanel reads the open panel: the rows in order, the group titles, which
 // row is the page's own, which carry the latest badge, and each row's date.
@@ -195,10 +244,21 @@ async function main() {
   if (!chromium) return;
 
   const state = { index: undefined };
+  const builtVersion = (detectBase(distRoot) ?? '').split('/').filter(Boolean).pop() ?? 'edge';
+  // The built page as another version would serve it: the same bytes, with
+  // the mount point naming that version.
+  const pageAs = (slug) => ({
+    status: 200,
+    body: readFileSync(join(distRoot, PAGE, 'index.html'), 'utf8').replaceAll(`data-current="${builtVersion}"`, `data-current="${slug}"`),
+    type: 'text/html',
+  });
   const others = new Map([
     [`/${WITH_PAGE}/`, html(WITH_PAGE)],
-    [`/${WITH_PAGE}/${PAGE}`, html(`${WITH_PAGE} ${PAGE}`)],
+    [`/${WITH_PAGE}/${PAGE}`, pageAs(WITH_PAGE)],
     [`/${WITHOUT_PAGE}/`, html(WITHOUT_PAGE)],
+    [`/${OLDER}/${PAGE}`, pageAs(OLDER)],
+    [`/${OLDER}/${GONE}`, pageAs(OLDER)],
+    [`/${NEWER}/${PAGE}`, pageAs(NEWER)],
   ]);
   const route = pickerRoute((path) => {
     if (path === '/versions.json') {
@@ -269,6 +329,23 @@ async function main() {
     await load(undefined);
     const missing = { ...(await readPicker(tab)), slugs: (await openPanel()).slugs };
 
+    // The banner waits for the index and then for the latest release to
+    // answer, and both are network requests, so a quiet network means it has
+    // been placed or never will be.
+    const bannerAt = async (path, slugs) => {
+      state.index = slugs ? index(slugs) : undefined;
+      await tab.goto(`http://127.0.0.1:${built.port}${path}`, { waitUntil: 'networkidle' });
+      return readBanner(tab);
+    };
+    const banner = {
+      older: await bannerAt(`/${OLDER}/${PAGE}`, LISTED),
+      gone: await bannerAt(`/${OLDER}/${GONE}`, LISTED),
+      edge: await bannerAt(`${built.base}/${PAGE}`, LISTED),
+      latest: await bannerAt(`/${WITH_PAGE}/${PAGE}`, LISTED),
+      newer: await bannerAt(`/${NEWER}/${PAGE}`, LISTED),
+      missing: await bannerAt(`/${OLDER}/${PAGE}`, undefined),
+    };
+
     // axe reads the panel open, in both themes: the colors are the part most
     // likely to fail, and they differ between the two.
     const violations = [];
@@ -282,6 +359,17 @@ async function main() {
       const result = await new AxeBuilder({ page: view }).include('.ptah-version-picker__panel').withTags(WCAG_TAGS).analyze();
       for (const violation of result.violations) {
         violations.push(`${colorScheme} ${violation.id}: ${violation.nodes.slice(0, 3).map((node) => node.target.join(' ')).join(', ')}`);
+      }
+      // axe refuses an include that matches nothing, which would end the run
+      // before the readings could say the banner is missing.
+      await view.goto(`http://127.0.0.1:${built.port}/${OLDER}/${PAGE}`, { waitUntil: 'networkidle' });
+      if ((await view.locator('.ptah-version-banner').count()) === 0) {
+        violations.push(`${colorScheme} banner: no banner on ${OLDER} to check`);
+      } else {
+        const bannerResult = await new AxeBuilder({ page: view }).include('.ptah-version-banner').withTags(WCAG_TAGS).analyze();
+        for (const violation of bannerResult.violations) {
+          violations.push(`${colorScheme} banner ${violation.id}: ${violation.nodes.slice(0, 3).map((node) => node.target.join(' ')).join(', ')}`);
+        }
       }
       await themed.close();
     }
@@ -301,6 +389,7 @@ async function main() {
       keyboard,
       samePage: await choose(WITH_PAGE),
       homePage: await choose(WITHOUT_PAGE),
+      banner,
       errors,
     };
     const noScript = await browser.newContext({ javaScriptEnabled: false });
@@ -315,7 +404,7 @@ async function main() {
     await new Promise((resolveClose) => built.server.close(resolveClose));
   }
   console.log(
-    `check-version-picker.mjs: OK (${version}: panel, groups, latest, dates, filter, Escape, keyboard, unlisted version, no index, same page, home page, no scripting, axe in both themes)`,
+    `check-version-picker.mjs: OK (${version}: panel, groups, latest, dates, filter, Escape, keyboard, unlisted version, no index, same page, home page, no scripting, older-release banner, axe in both themes)`,
   );
 }
 
