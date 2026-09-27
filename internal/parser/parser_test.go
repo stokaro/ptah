@@ -286,7 +286,7 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c.Assert(createTable.Name, qt.Equals, "products")
 	c.Assert(createTable.Options["ENGINE"], qt.Equals, "InnoDB")
 	c.Assert(createTable.Options["CHARSET"], qt.Equals, "utf8mb4")
-	c.Assert(createTable.Comment, qt.Equals, "'Product catalog'")
+	c.Assert(createTable.Comment, qt.Equals, "Product catalog")
 }
 
 func TestParser_ParseCreateTable_WithSQLiteTableOptions(t *testing.T) {
@@ -598,7 +598,7 @@ func TestParser_ParseCreateTable_MySQLColumnModifiers(t *testing.T) {
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 3)
-	c.Assert(createTable.Columns[0].Comment, qt.Equals, "COMMENT 'column1'")
+	c.Assert(createTable.Columns[0].Comment, qt.Equals, "column1")
 	c.Assert(createTable.Columns[1].Charset, qt.Equals, "utf8")
 	c.Assert(createTable.Columns[1].Nullable, qt.IsFalse)
 	c.Assert(createTable.Columns[2].Charset, qt.Equals, "utf8")
@@ -3456,7 +3456,7 @@ func TestParser_ParseComplexTable(t *testing.T) {
 	// Check table options
 	c.Assert(createTable.Options["ENGINE"], qt.Equals, "InnoDB")
 	c.Assert(createTable.Options["CHARSET"], qt.Equals, "utf8mb4")
-	c.Assert(createTable.Comment, qt.Equals, "'Complex table example'")
+	c.Assert(createTable.Comment, qt.Equals, "Complex table example")
 }
 
 func TestParser_ParseAlterTableMultipleOperations(t *testing.T) {
@@ -3814,7 +3814,7 @@ func TestParser_ParseMySQLTableOptions(t *testing.T) {
 	c.Assert(createTable.Options["ENGINE"], qt.Equals, "MyISAM")
 	c.Assert(createTable.Options["CHARSET"], qt.Equals, "latin1")
 	c.Assert(createTable.Options["COLLATE"], qt.Equals, "latin1_swedish_ci")
-	c.Assert(createTable.Comment, qt.Equals, "'Test table'")
+	c.Assert(createTable.Comment, qt.Equals, "Test table")
 }
 
 func TestParser_ParsePostgreSQLEnum(t *testing.T) {
@@ -4933,7 +4933,7 @@ func TestParser_ParseMariaDBComprehensiveDemo(t *testing.T) {
 	c.Assert(createTable.Options["CHARSET"], qt.Equals, "utf8mb4")
 	c.Assert(createTable.Options["COLLATE"], qt.Equals, "utf8mb4_unicode_ci")
 	c.Assert(createTable.Options["ROW_FORMAT"], qt.Equals, "DYNAMIC")
-	c.Assert(createTable.Comment, qt.Equals, "'Comprehensive MariaDB table'")
+	c.Assert(createTable.Comment, qt.Equals, "Comprehensive MariaDB table")
 }
 
 func TestParser_TimeoutProtection(t *testing.T) {
@@ -5317,7 +5317,7 @@ func TestParser_MariaDBOnUpdateBeforeComment(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 1)
 	c.Assert(createTable.Columns[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
-	c.Assert(createTable.Columns[0].Comment, qt.Equals, "COMMENT 'Updated timestamp'")
+	c.Assert(createTable.Columns[0].Comment, qt.Equals, "Updated timestamp")
 }
 
 func TestParser_MariaDBFirst5Columns(t *testing.T) {

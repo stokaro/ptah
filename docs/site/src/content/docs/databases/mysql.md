@@ -344,6 +344,10 @@ SQL:
   answer. Folding the first into the second would lose MariaDB's second index.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
+- A schema file's column `COMMENT 'text'` and table `COMMENT = 'text'`, with
+  or without the `=`, hold the text the server stores. A doubled quote and a
+  backslash escape are read as the server reads them, and of two `COMMENT`
+  clauses on one column the last is kept.
 
 ## Dev-database cleanup privileges
 
