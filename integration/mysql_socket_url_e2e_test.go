@@ -298,7 +298,7 @@ func TestCompatRefusesASocketURLNamingNoDatabaseE2E(t *testing.T) {
 			dir := filepath.Join(c.TempDir(), "migrations")
 			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 
-			out, err := runCompatVerb("migrate", "status", "--url", scratch.socket.String(), "--dir", "file://"+dir)
+			out, err := runCompatVerb("migrate", "down", "--url", scratch.socket.String(), "--dir", "file://"+dir)
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*the database URL names no database, and this command reads and changes one MySQL or MariaDB database, not a whole server.*, and run the command once for each database.*`, qt.Commentf("%s", out))
 		})

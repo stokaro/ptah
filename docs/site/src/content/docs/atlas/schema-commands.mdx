@@ -243,8 +243,10 @@ community binary reads it
   JSON format, as the community binary does. One to another database keeps
   the database, which the community binary drops.
 - `schema apply`, `schema diff` and `schema clean` read the URL the same way;
-  see [A whole MySQL or MariaDB server](#a-whole-mysql-or-mariadb-server). The
-  `migrate` verbs refuse it before connecting.
+  see [A whole MySQL or MariaDB server](#a-whole-mysql-or-mariadb-server).
+  `migrate status`, `migrate apply` and `migrate set` read it too; see
+  [Migrate commands](../migrate-commands/). A dev database cannot be a whole
+  server yet.
 
 A URL that names a database reads that database whatever `--schema` says, as
 the community binary does. `--format`

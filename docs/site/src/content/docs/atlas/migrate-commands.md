@@ -489,11 +489,19 @@ anything is recorded.
 
 The gate is enforced on PostgreSQL, MySQL, MariaDB, and SQLite. Other dialects
 are not gated, because the behavior to match has not been measured on them.
-Realm scope is enforced on PostgreSQL only: a MySQL URL that names no database
-is refused before Ptah connects, so that combination never applies anything
-either. Native
+Native
 [`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
 [#1231](https://github.com/stokaro/ptah/issues/1231).
+
+On MySQL and MariaDB, realm scope is a URL that names no database, which is the
+whole server. There the gate counts databases, as Atlas does: every user
+database, plus the database that holds the revision table, which Atlas creates
+before it looks. One other database, even an empty one, reads
+`found multiple schemas: 2`, and two read `3`. The bookkeeping database alone,
+holding a table besides the revision table, reads `found multiple tables: 2`.
+`migrate status`, `migrate apply` and `migrate set` read such a URL;
+`migrate down` refuses it, and so does every verb given one as its dev database
+([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)).
 
 The revision table lands in the schema Atlas uses, `atlas_schema_revisions`,
 whenever the URL names a PostgreSQL-family database and neither
@@ -504,7 +512,12 @@ the database as never migrated.
 
 The default is scoped to that family because the location is a per-dialect
 fact. On MySQL a schema is a database, so the table stays in the one the
-connection opened; SQLite has no schema to name at all.
+connection opened; SQLite has no schema to name at all. A MySQL or MariaDB URL
+that names no database opened no database, so there the table lands in the
+database `atlas_schema_revisions`, as Atlas puts it. A migration directory for a
+whole server qualifies every name with its database, and a file that creates a
+database runs with `-- atlas:txmode none`, because a `file` body refuses
+`CREATE DATABASE`, as the list above says.
 
 ```bash
 ptah-compat migrate apply 2 \
