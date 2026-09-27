@@ -107,11 +107,11 @@ func cockroachDevDatabase(c *qt.C) devDialectDatabase {
 	devURL := createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.CockroachDB),
 		"DROP DATABASE IF EXISTS %s CASCADE", renameInPath)
 	return devDialectDatabase{
-		url:          devURL,
-		conn:         connectDevDialect(c, devURL),
-		keepDDL:      []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
-		keepRows:     "SELECT count(*) FROM keep_me",
-		droppedDDL:   []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		url:        devURL,
+		conn:       connectDevDialect(c, devURL),
+		keepDDL:    []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
+		keepRows:   "SELECT count(*) FROM keep_me",
+		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
 	}
 }
 
@@ -136,11 +136,11 @@ func yugabyteDevDatabase(c *qt.C) devDialectDatabase {
 	devURL := createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.YugabyteDB),
 		"DROP DATABASE IF EXISTS %s", renameInPath)
 	return devDialectDatabase{
-		url:          devURL,
-		conn:         connectDevDialect(c, devURL),
-		keepDDL:      []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
-		keepRows:     "SELECT count(*) FROM keep_me",
-		droppedDDL:   []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		url:        devURL,
+		conn:       connectDevDialect(c, devURL),
+		keepDDL:    []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
+		keepRows:   "SELECT count(*) FROM keep_me",
+		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
 	}
 }
 
@@ -156,11 +156,11 @@ func spannerDevDatabase(c *qt.C) devDialectDatabase {
 		c.Check(err, qt.IsNil)
 	})
 	return devDialectDatabase{
-		url:          devURL,
-		conn:         conn,
-		keepDDL:      []string{"CREATE TABLE keep_me (id bigint PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
-		keepRows:     "SELECT count(*) FROM keep_me",
-		droppedDDL:   []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
+		url:        devURL,
+		conn:       conn,
+		keepDDL:    []string{"CREATE TABLE keep_me (id bigint PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
+		keepRows:   "SELECT count(*) FROM keep_me",
+		droppedDDL: []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
 	}
 }
 
