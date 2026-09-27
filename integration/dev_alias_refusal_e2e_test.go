@@ -22,24 +22,27 @@ import (
 // so the two URLs name different databases and reach one. Without the live
 // comparison ahead of every reset, each verb here empties ptah_aliased:
 // `schema apply` refuses after the reset, and `schema diff` and `migrate diff`
-// exit 0 (stokaro/ptah#3769). Each test reads `kept` back over the direct URL
-// after the refusal.
+// exit 0 (stokaro/ptah#3769). Each test reads ptah_aliased back over the
+// direct URL after the refusal.
 //
 // Two guards stand between the reset and ptah_aliased, and each fixture state
-// reaches a different one first. A database holding a table is not clean, and
-// the Atlas-compatible verbs refuse it as the pinned binary does before they
-// compare anything (stokaro/ptah#3797). A database holding only a view is
-// clean to that check, so the live comparison is what refuses it.
+// reaches a different one first. A database holding a table, or anything else
+// the reset drops, is not clean, and the Atlas-compatible verbs refuse it
+// before they compare anything (stokaro/ptah#3797, stokaro/ptah#3849). An
+// empty database is clean to that check, so the live comparison is what
+// refuses it. It holds nothing to read back, so the test reads the oid of its
+// public schema instead: the realm reset drops public and creates it again,
+// and the new schema has a new oid.
 
 const (
 	// aliasedTable is ptah_aliased holding a table, which is not clean.
 	aliasedTable = "CREATE TABLE kept (id int NOT NULL, PRIMARY KEY (id));\nINSERT INTO kept (id) VALUES (1);\n"
-	// aliasedView is ptah_aliased holding a view and no table, which is
-	// clean; the reset would still drop the view.
-	aliasedView = "CREATE VIEW kept AS SELECT 1 AS id;\n"
+	// aliasedEmpty is ptah_aliased holding nothing but an empty public
+	// schema, which is clean.
+	aliasedEmpty = ""
 )
 
-// devAliasFixture is the aliased database, emptied and given `kept`, the two
+// devAliasFixture is the aliased database, emptied and given a state, the two
 // URLs that reach it, and the files the verbs plan toward.
 type devAliasFixture struct {
 	direct, alias string
@@ -65,12 +68,22 @@ func newDevAliasFixture(c *qt.C, state string) devAliasFixture {
 	return devAliasFixture{direct: direct, alias: alias, conn: conn, schemaFile: schemaFile, dir: dir, emptyDir: emptyDir}
 }
 
-// keptRows counts the rows of `kept`, a table or a view, over the direct URL.
+// keptRows counts the rows of the table `kept` over the direct URL.
 func (f devAliasFixture) keptRows(c *qt.C) int {
 	c.Helper()
 	var rows int
 	c.Assert(f.conn.QueryRowContext(c.Context(), "SELECT count(*) FROM kept").Scan(&rows), qt.IsNil)
 	return rows
+}
+
+// publicOID is the oid of the public schema over the direct URL. A reset of
+// the realm drops public and creates it again, so the oid changes; the same
+// oid afterwards means nothing reset the database.
+func (f devAliasFixture) publicOID(c *qt.C) uint32 {
+	c.Helper()
+	var oid uint32
+	c.Assert(f.conn.QueryRowContext(c.Context(), "SELECT oid FROM pg_namespace WHERE nspname = 'public'").Scan(&oid), qt.IsNil)
+	return oid
 }
 
 // args spells a row's arguments with the fixture's URLs and files.
@@ -92,7 +105,7 @@ func (f devAliasFixture) args(template []string) []string {
 
 // TestCompatVerbsRefuseADevURLThatAliasesADatabaseTheyReadE2E runs each
 // Atlas-compatible verb that resets its dev database with the dev URL naming,
-// through the pooler, the database the verb reads, which holds a view.
+// through the pooler, the database the verb reads, which is empty.
 func TestCompatVerbsRefuseADevURLThatAliasesADatabaseTheyReadE2E(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -136,15 +149,16 @@ func TestCompatVerbsRefuseADevURLThatAliasesADatabaseTheyReadE2E(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := newDevAliasFixture(c, aliasedView)
+			fixture := newDevAliasFixture(c, aliasedEmpty)
 			for name, value := range test.env {
 				t.Setenv(name, value)
 			}
+			before := fixture.publicOID(c)
 
 			out, err := runCompatVerb(fixture.args(test.args)...)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
-			c.Assert(fixture.keptRows(c), qt.Equals, 1)
+			c.Assert(fixture.publicOID(c), qt.Equals, before)
 		})
 	}
 }
