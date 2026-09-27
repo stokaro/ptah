@@ -904,16 +904,22 @@ func appendCreateTable(
 	// the naming pass below.
 	constraintsStart := len(database.Constraints)
 	order := declaredOrder(database, node, tableSchema, sourcePlatform)
+	places := constraintPlaces(order, constraintsStart, len(database.Constraints)-constraintsStart)
 
 	// A UNIQUE or EXCLUDE the server folds into another one is not built.
 	created := &database.Tables[len(database.Tables)-1]
-	foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, sourcePlatform)
+	places = foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, places, sourcePlatform)
 	tableSchema = *created
 
 	// A UNIQUE or foreign key the author left unnamed gets the name its server
 	// gives it, which is the name the other side of a comparison reads from the
 	// catalog.
-	nameCreatedConstraints(database, base, tableSchema, fieldsStart, constraintsStart, sourcePlatform)
+	if err := nameCreatedConstraints(
+		database, base, tableSchema, createdRange{fields: fieldsStart, constraints: constraintsStart, places: places},
+		sourcePlatform,
+	); err != nil {
+		return err
+	}
 
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
@@ -1253,6 +1259,10 @@ func applyAlterTableAddColumn(
 		if err := nameAddedMySQLFamilyCheck(&field.CheckName, &field, target); err != nil {
 			return err
 		}
+	}
+	if key, numbered := numberedAddedColumnKey(field, target); numbered {
+		field.Unique = false
+		database.Constraints = append(database.Constraints, key)
 	}
 	database.Fields = append(database.Fields, field)
 	return nil
