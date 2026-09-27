@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/systemschema"
@@ -1860,6 +1861,37 @@ func FromDefaultPrivilege(defaultPrivilege schemamodel.DefaultPrivilege) *ast.De
 	).SetComment(defaultPrivilege.Comment)
 }
 
+// FromGlobalDefaultPrivilegeRevoke converts the Revoked of a global
+// schemamodel.DefaultPrivilege to an ast.RevokeDefaultPrivilegeNode, and
+// returns nil for a schema-scoped declaration or one that revokes nothing. The
+// declaration is canonicalized first, for the reason [FromDefaultPrivilege]
+// gives.
+//
+// A revoke from the owner that names every privilege of the object class is
+// written as ALL. The SQL schema reader spells REVOKE ALL as that list, and on
+// CockroachDB the owner's ALL covers privileges the list does not name, so the
+// list would leave the owner holding them.
+func FromGlobalDefaultPrivilegeRevoke(defaultPrivilege schemamodel.DefaultPrivilege) *ast.RevokeDefaultPrivilegeNode {
+	defaultPrivilege.Canonicalize()
+	if defaultPrivilege.Schema != "" || len(defaultPrivilege.Revoked) == 0 {
+		return nil
+	}
+	revoked := slices.Clone(defaultPrivilege.Revoked)
+	if defaultPrivilege.Grantee == defaultPrivilege.Grantor &&
+		pgprivilege.NamesAll(defaultPrivilege.ObjectType, revoked) {
+		revoked = []string{"ALL"}
+	}
+	revoke := ast.NewRevokeDefaultPrivilege(
+		defaultPrivilege.Grantor,
+		"",
+		defaultPrivilege.ObjectType,
+		defaultPrivilege.Grantee,
+		revoked,
+	)
+	revoke.SetComment(defaultPrivilege.Comment)
+	return revoke
+}
+
 // WalkDatabase converts a complete schemamodel.Database to AST nodes and visits
 // them in executable order without materializing a second whole-schema
 // representation.
@@ -2487,22 +2519,39 @@ func appendPostTableObjectStatements(
 	// Beside the grants, and unconditional. A default privilege names a schema
 	// and two roles, and both kinds are emitted earlier in this walk, so there
 	// is nothing here to wait for. The traversal is hand-written and no
-	// reflection reads it, so leaving the loop out gives a schema that parses,
+	// reflection reads it, so leaving the call out gives a schema that parses,
 	// compares and renders at exit 0 with the declaration nowhere in the output.
-	for _, defaultPrivilege := range database.DefaultPrivileges {
-		if len(defaultPrivilege.Privileges) == 0 {
-			// Revoked privileges only. A schema-scoped default privilege is
-			// only ever added to the global ones, so on a database this
-			// schema creates there is nothing for a REVOKE to take back; a
-			// comparison plans one where the database holds the privilege.
-			continue
-		}
-		if err := visit(FromDefaultPrivilege(defaultPrivilege)); err != nil {
-			return err
-		}
+	if err := visitDefaultPrivileges(visit, database.DefaultPrivileges); err != nil {
+		return err
 	}
 	for _, trigger := range database.Triggers {
 		if err := visit(FromTrigger(trigger)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// visitDefaultPrivileges visits the statements a new database needs for each
+// default privilege: its grant, and for the global default its revoke.
+//
+// Revoked privileges render only for the global default. A new database
+// starts from the built-in default, so a global revoke of PUBLIC's EXECUTE on
+// functions is a statement it needs. A schema-scoped default is only ever
+// added to the global ones, so on a database this schema creates there is
+// nothing for its REVOKE to take back; a comparison plans one where the
+// database holds the privilege.
+func visitDefaultPrivileges(visit func(ast.Node) error, defaultPrivileges []schemamodel.DefaultPrivilege) error {
+	for _, defaultPrivilege := range defaultPrivileges {
+		if revoke := FromGlobalDefaultPrivilegeRevoke(defaultPrivilege); revoke != nil {
+			if err := visit(revoke); err != nil {
+				return err
+			}
+		}
+		if len(defaultPrivilege.Privileges) == 0 {
+			continue
+		}
+		if err := visit(FromDefaultPrivilege(defaultPrivilege)); err != nil {
 			return err
 		}
 	}

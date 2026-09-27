@@ -96,7 +96,8 @@ type Database struct {
 
 	// UndescribedDefaultPrivileges are the pg_default_acl rows this read found
 	// and left out of DefaultPrivileges, one per grantor, schema and object
-	// class: the ones set without IN SCHEMA, and CockroachDB's FOR ALL ROLES.
+	// class: CockroachDB's FOR ALL ROLES, and on CockroachDB the owner's part
+	// of a global default whose owner holds only some of its own privileges.
 	// See [UndescribedDefaultPrivilege] for why the description cannot carry
 	// either.
 	//
@@ -1702,63 +1703,77 @@ type RoleMembership struct {
 // 17. A comparison that dropped the grantor would plan a change that deletes
 // somebody else's default.
 //
-// Schema is always set, the read's default schema included. That makes this
-// type the exception to the convention [Database] describes, and deliberately:
-// the schema here is the IN SCHEMA clause rather than where an object lives, and
-// a statement without the clause is the global default -- a different object,
-// not the same one spelled unqualified. A blank schema therefore cannot mean
-// "the default schema" here, and a consumer that met one would have to choose
-// between two readings (stokaro/ptah#3732).
+// Schema is the IN SCHEMA clause rather than where an object lives, so it does
+// not follow the convention [Database] describes. A schema-scoped row always
+// carries its schema, the read's default schema included. An empty schema is
+// the global default: what ALTER DEFAULT PRIVILEGES sets without IN SCHEMA,
+// which pg_default_acl records with defaclnamespace 0 and which applies in
+// every schema of the database (stokaro/ptah#3732, stokaro/ptah#3772).
 //
-// The global form, which pg_default_acl records with defaclnamespace 0, is
-// outside what Ptah models: internal/devclean refuses an ALTER DEFAULT
-// PRIVILEGES with no IN SCHEMA during replay, so a described row of that shape
-// could not be applied back.
+// A schema-scoped row holds only what was added, so each entry is a granted
+// privilege. A global row holds the whole list, the built-in default included,
+// so the read reports its difference from the built-in default instead: an
+// entry with Revoked false is a privilege the row adds, and an entry with
+// Revoked true is a privilege of the built-in default the row takes away, such
+// as PUBLIC's EXECUTE on functions. Without that difference the description
+// would declare the owner's own privileges as grants on every read, and lose
+// the revoke.
 type DefaultPrivilege struct {
 	// Grantor is the role whose newly created objects the privileges apply to,
 	// pg_get_userbyid(pg_default_acl.defaclrole).
 	Grantor string `json:"grantor"`
-	// Schema is the schema the default applies in.
+	// Schema is the schema the default applies in, or empty for the global
+	// default.
 	Schema string `json:"schema"`
 	// ObjectType is the object class, as the keyword a statement writes:
-	// TABLES, SEQUENCES, FUNCTIONS or TYPES.
+	// TABLES, SEQUENCES, FUNCTIONS or TYPES, and for the global default also
+	// SCHEMAS and LARGE OBJECTS.
 	ObjectType string `json:"object_type"`
 	// Grantee is the role receiving the privilege. PUBLIC is the spelling for
 	// aclexplode's grantee 0.
 	Grantee string `json:"grantee"`
-	// Privilege is the granted privilege, e.g. SELECT or USAGE.
+	// Privilege is the granted privilege, e.g. SELECT or USAGE. A revoke read
+	// from CockroachDB can name ALL.
 	Privilege string `json:"privilege"`
 	// WithOption reports aclexplode's is_grantable for this privilege alone.
 	// The catalog records grantability per privilege, so one identity can hold
 	// a grantable privilege beside a plain one.
 	WithOption bool `json:"with_option,omitempty"`
+	// Revoked reports a privilege of the built-in default that a global row
+	// takes away. It is only ever set on a global entry.
+	Revoked bool `json:"revoked,omitempty"`
+}
+
+// Global reports whether the entry is a global default, one set without IN
+// SCHEMA.
+func (d DefaultPrivilege) Global() bool {
+	return d.Schema == ""
 }
 
 // QualifiedName names one default-privilege object, which is its whole identity
 // rather than a name the catalog stores.
 func (d DefaultPrivilege) QualifiedName() string {
-	return d.ObjectType + " in " + d.Schema + " for " + d.Grantor + " to " + d.Grantee
+	where := "in " + d.Schema
+	if d.Global() {
+		where = "in every schema"
+	}
+	return d.ObjectType + " " + where + " for " + d.Grantor + " to " + d.Grantee
 }
 
-// UndescribedDefaultPrivilege is one pg_default_acl row a read leaves out of
-// [DefaultPrivilege], because no declaration can name it: it has no schema, or
-// no grantor, or neither.
-//
-// A row recorded with defaclnamespace 0 is what ALTER DEFAULT PRIVILEGES sets
-// without IN SCHEMA; it applies in every schema of the database. Its ACL is a
-// different kind of value from a schema-scoped row's: PostgreSQL stores the
-// whole ACL, the built-in default included, so REVOKE EXECUTE ON FUNCTIONS FROM
-// PUBLIC is recorded as {owner=X/owner}, and CockroachDB records the same revoke
-// as {owner=X/} but a global grant on tables without the owner. No
-// desired-state source can declare the form, and internal/devclean refuses it
-// during replay.
+// UndescribedDefaultPrivilege is one pg_default_acl row, or one part of a row,
+// a read leaves out of [DefaultPrivilege], because no declaration can name it.
 //
 // A row recorded with defaclrole 0 is CockroachDB's FOR ALL ROLES, measured on
-// v25.4.16, v26.2.7 and v26.3.1. PostgreSQL 18.6 and YugabyteDB 2026.1.2 answer
-// the clause with a syntax error, and a declaration's grantor is a role, so
-// there is nothing to declare it with. Described, it would name the role
-// `unknown (OID=0)`, which is what pg_get_userbyid answers for role 0, and a
-// description applied elsewhere fails on a role nobody has.
+// v25.4.16, v26.2.7 and v26.3.1. PostgreSQL 18.6 and YugabyteDB 2026.1.2
+// answer the clause with a syntax error, and a declaration's grantor is a
+// role, so there is nothing to declare it with. Described, it would name the
+// role `unknown (OID=0)`, which is what pg_get_userbyid answers for role 0, and
+// a description applied elsewhere fails on a role nobody has.
+//
+// On CockroachDB a global default whose owner holds some of its own privileges
+// and not all of them is left out too, the owner's part only. CockroachDB lists
+// privileges PostgreSQL does not have, and which of them ALL covers depends on
+// the line, so what the owner lost cannot be named.
 //
 // Only the identity is kept, because the row is reported rather than
 // described.

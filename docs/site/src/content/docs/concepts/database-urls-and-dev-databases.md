@@ -15,10 +15,10 @@ disposition: keep
 ---
 
 Every Ptah command that touches a database takes a URL, and the URL's scheme
-selects the engine. The same URL syntax names databases in four different
-roles, though — the target you are changing, plus up to three kinds of
-disposable databases that exist so mistakes happen somewhere harmless. This
-page defines all four; other pages link here instead of redefining them.
+selects the engine. The same syntax names databases in four roles: the target
+you are changing, and up to three kinds of disposable databases that exist so
+mistakes happen somewhere harmless. This page defines all four; other pages
+link here instead of redefining them.
 
 ## URL formats
 
@@ -201,7 +201,8 @@ proven to stay inside the disposable realm:
 
 - PostgreSQL-family `DO`, `CALL`, routine creation or alteration, foreign-table
   creation or alteration, foreign servers, `IMPORT FOREIGN SCHEMA`,
-  `SET search_path`, and `SELECT INTO` protected namespaces.
+  `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
+  `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, events, triggers, routines,
   `LOAD DATA`/`LOAD XML`, and externally backed `FEDERATED` or `CONNECT`
   tables.
@@ -233,29 +234,28 @@ alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
 who the rest of the migration runs as.
 
 The rejection happens while Ptah validates the whole migration, before its
-first statement executes. Realm-local removal forms that Ptah can classify
-without interpreting a routine body, such as `DROP FUNCTION`,
-`DROP FOREIGN TABLE`, `DROP SYNONYM`, and `DROP EXTERNAL TABLE`, remain
-allowed.
+first statement executes. Realm-local removals Ptah can classify without
+reading a routine body, such as `DROP FUNCTION`, `DROP FOREIGN TABLE`,
+`DROP SYNONYM` and `DROP EXTERNAL TABLE`, stay allowed.
 
 ### A server Ptah provisions
 
-A `docker://` dev URL starts a server for one command and removes it when the
-command ends, so the server holds nothing that is not the run's. On such a
-server, replay also runs the statements it refuses elsewhere only because
-their effect reaches past the dev database:
+A `docker://` dev URL starts a server for one command and removes it
+afterwards, so the server holds only what the run put there. On such a server,
+replay also runs the statements it refuses elsewhere only because their effect
+reaches past the dev database:
 
 - PostgreSQL-family `DO`, `CALL`, routine creation and alteration,
   `CREATE` and `DROP` of a role, user, group or database, `ALTER ROLE`
   without `SET` or `RESET`, role membership, privileges on a role, database,
-  schema, language or parameter, `ALTER DEFAULT PRIVILEGES` without
-  `IN SCHEMA`, `DROP OWNED`, `REASSIGN OWNED`, and `COMMENT ON ROLE` or
-  `DATABASE`.
+  schema, language or parameter, CockroachDB's
+  `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
+  `REASSIGN OWNED`, and `COMMENT ON ROLE` or `DATABASE`.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 
-So a migration directory that creates its application role in a `DO` block or
-defines a function replays on `docker://postgres/18/dev`.
+So a migration directory that creates its role in a `DO` block or defines a
+function replays on `docker://postgres/18/dev`.
 
 The rest of the list above still fails closed on a provisioned server. Those
 statements change the replay session or the sessions the rest of the command
@@ -267,9 +267,9 @@ such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
 scheduler runs it during the rest of the command.
 
 The decision reads what Ptah recorded when it started the server, not the
-spelling of the URL. A server URL keeps the whole list, because such a server
-may hold databases and roles that are not the run's: a role a replay created
-there would outlive the command.
+URL's spelling. A server URL keeps the whole list, because such a server may
+hold databases and roles that are not the run's: a role a replay created there
+would outlive the command.
 
 ### A server declared disposable
 

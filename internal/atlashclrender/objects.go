@@ -642,7 +642,8 @@ func (r *renderer) renderableGrants(grants []schemamodel.Grant, path, noun strin
 }
 
 // renderDefaultPrivileges writes one `default_privilege` block per declaration:
-// the privileges an object gets when a named role creates one in a named schema.
+// the privileges an object gets when a named role creates one, in a named
+// schema or, for a block without `schema`, in every schema of the database.
 //
 // The block is a sibling of `permission` rather than a shape of it, because a
 // default privilege's identity includes the GRANTOR and a `permission` block has
@@ -665,7 +666,7 @@ func (r *renderer) renderDefaultPrivileges() {
 		privilege.Canonicalize()
 		if !defaultPrivilegeComplete(privilege) {
 			r.warn("default_privileges."+privilege.Grantee,
-				"default privilege requires a grantor, a schema, an object type, "+
+				"default privilege requires a grantor, an object type, "+
 					"a grantee, and at least one privilege granted or revoked")
 			continue
 		}
@@ -695,7 +696,11 @@ func (r *renderer) renderDefaultPrivileges() {
 		// object granted on, and one word meaning the target in one block and the
 		// grantor in its sibling is a document nobody can skim.
 		r.rawAttr(1, "for_role", r.roleTarget(privilege.Grantor))
-		r.rawAttr(1, "schema", r.schemaRef(privilege.Schema))
+		// No schema is the global default, ALTER DEFAULT PRIVILEGES without
+		// IN SCHEMA, and the block says so by leaving the attribute out.
+		if privilege.Schema != "" {
+			r.rawAttr(1, "schema", r.schemaRef(privilege.Schema))
+		}
 		// Quoted, for the reason every keyword-valued attribute in this file is:
 		// bare, TABLES is an HCL variable reference with nothing behind it.
 		r.stringAttr(1, "object_type", privilege.ObjectType)
@@ -712,10 +717,10 @@ func (r *renderer) renderDefaultPrivileges() {
 }
 
 // defaultPrivilegeComplete reports whether a declaration carries everything the
-// statement needs: its four-part identity and at least one privilege.
+// statement needs: its identity and at least one privilege. The schema is not
+// required, because the global default has none.
 func defaultPrivilegeComplete(privilege schemamodel.DefaultPrivilege) bool {
 	return privilege.Grantor != "" &&
-		privilege.Schema != "" &&
 		privilege.ObjectType != "" &&
 		privilege.Grantee != "" &&
 		len(privilege.Privileges)+len(privilege.Revoked) > 0

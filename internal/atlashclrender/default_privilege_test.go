@@ -128,13 +128,6 @@ func TestRenderDefaultPrivilegeDropsAnIncompleteDeclaration(t *testing.T) {
 			},
 		},
 		{
-			name: "no schema",
-			privilege: schemamodel.DefaultPrivilege{
-				Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader",
-				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
-			},
-		},
-		{
 			name: "no object type",
 			privilege: schemamodel.DefaultPrivilege{
 				Grantor: "app_owner", Schema: "public", Grantee: "app_reader",
@@ -170,10 +163,37 @@ func TestRenderDefaultPrivilegeDropsAnIncompleteDeclaration(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(rendered.Data), qt.Not(qt.Contains), "default_privilege {")
 			c.Assert(diagnosticMessages(rendered.Diagnostics), qt.Contains,
-				"default privilege requires a grantor, a schema, an object type, "+
+				"default privilege requires a grantor, an object type, "+
 					"a grantee, and at least one privilege granted or revoked")
 		})
 	}
+}
+
+// TestRenderDefaultPrivilegeWritesTheGlobalFormWithoutASchema writes the
+// global default, which has no schema, as a block without `schema`, and reads
+// it back to the same declaration (stokaro/ptah#3772).
+func TestRenderDefaultPrivilegeWritesTheGlobalFormWithoutASchema(t *testing.T) {
+	c := qt.New(t)
+	declared := schemamodel.DefaultPrivilege{
+		Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC",
+		Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+	}
+
+	rendered, err := atlashclrender.Render(&schemamodel.Database{
+		Roles:             []schemamodel.Role{{Name: "app_owner"}},
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{declared},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Contains, `default_privilege {
+  for_role = role.app_owner
+  object_type = "FUNCTIONS"
+  to = "PUBLIC"
+  revoked = ["EXECUTE"]
+}`)
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{declared})
 }
 
 // TestRenderDefaultPrivilegeIsDeterministic pins that two renders of one schema

@@ -13,6 +13,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgdefaultacl"
+	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -835,24 +837,62 @@ func sameRoutine(a, b schemamodel.Grant) bool {
 // never close, and each package's own tests drive one direction and cannot see
 // it. TestToDBSchema_DefaultPrivilegesSurviveTheRoundTrip drives both.
 //
+// A global declaration's Revoked becomes rows marked
+// [catalog.DefaultPrivilege.Revoked], one per privilege of the built-in
+// default it takes away, which is what a read of the global row reports. A
+// revoked privilege the built-in default does not hold is nothing the catalog
+// could report, and a schema-scoped revoke is only ever an absence, so neither
+// becomes a row. A revoked ALL stands for each built-in privilege the grantee
+// holds.
+//
 // The result is nil rather than an empty slice when nothing is declared, copying
 // toDBGrants, the sibling that fans out the same way.
 func toDBDefaultPrivileges(privileges []schemamodel.DefaultPrivilege) []catalog.DefaultPrivilege {
 	var out []catalog.DefaultPrivilege
 	for _, privilege := range privileges {
 		privilege.Canonicalize()
+		identity := catalog.DefaultPrivilege{
+			Grantor:    privilege.Grantor,
+			Schema:     privilege.Schema,
+			ObjectType: privilege.ObjectType,
+			Grantee:    privilege.Grantee,
+		}
 		for _, granted := range privilege.Privileges {
-			out = append(out, catalog.DefaultPrivilege{
-				Grantor:    privilege.Grantor,
-				Schema:     privilege.Schema,
-				ObjectType: privilege.ObjectType,
-				Grantee:    privilege.Grantee,
-				Privilege:  granted.Privilege,
-				WithOption: granted.WithOption,
-			})
+			row := identity
+			row.Privilege = granted.Privilege
+			row.WithOption = granted.WithOption
+			out = append(out, row)
+		}
+		if privilege.Schema != "" {
+			continue
+		}
+		for _, revoked := range builtinRevokes(privilege) {
+			row := identity
+			row.Privilege = revoked
+			row.Revoked = true
+			out = append(out, row)
 		}
 	}
 	return out
+}
+
+// builtinRevokes lists the built-in privileges a global declaration's Revoked
+// takes away, with ALL spelled out.
+func builtinRevokes(privilege schemamodel.DefaultPrivilege) []string {
+	var revoked []string
+	for _, name := range privilege.Revoked {
+		candidates := []string{name}
+		if name == "ALL" {
+			candidates = pgprivilege.All(privilege.ObjectType)
+		}
+		for _, candidate := range candidates {
+			if pgdefaultacl.Builtin(privilege.ObjectType, privilege.Grantor, privilege.Grantee, candidate) &&
+				!slices.Contains(revoked, candidate) {
+				revoked = append(revoked, candidate)
+			}
+		}
+	}
+	return revoked
 }
 
 func clonePtr[T any](value *T) *T {

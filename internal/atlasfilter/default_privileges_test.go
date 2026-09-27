@@ -30,7 +30,7 @@ func defaultPrivilegeDatabaseFixture() *catalog.Database {
 		},
 		DefaultPrivileges: []catalog.DefaultPrivilege{
 			{
-				Grantor: "defaults_owner", ObjectType: "TABLES",
+				Grantor: "defaults_owner", Schema: "public", ObjectType: "TABLES",
 				Grantee: "defaults_reader", Privilege: "SELECT",
 			},
 			{
@@ -62,7 +62,7 @@ func defaultPrivilegeGeneratedFixture() *schemamodel.Database {
 		},
 		DefaultPrivileges: []schemamodel.DefaultPrivilege{
 			{
-				StructName: "PublicDefaults", Grantor: "defaults_owner",
+				StructName: "PublicDefaults", Grantor: "defaults_owner", Schema: "public",
 				ObjectType: "TABLES", Grantee: "defaults_reader",
 				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
 			},
@@ -228,6 +228,60 @@ func TestScopeNarrowsDefaultPrivilegesToTheSchemaUniverse(t *testing.T) {
 				qt.DeepEquals, test.want)
 			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges),
 				qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse holds the global
+// default, which has no schema, to the rule of its own: it applies in every
+// schema, so --schema keeps it whatever it names, and an include selection
+// drops it, because no selector names it (stokaro/ptah#3772). Read as the
+// connected schema's, it would be dropped from --schema app.
+func TestScopeKeepsTheGlobalDefaultInEverySchemaUniverse(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope atlasfilter.Scope
+		want  []string
+	}{
+		{
+			name:  "a schema other than the connected one",
+			scope: atlasfilter.Scope{Schemas: []string{"app"}, DefaultSchema: "public"},
+			want:  []string{"SCHEMAS"},
+		},
+		{
+			name:  "an include selection",
+			scope: atlasfilter.Scope{Schemas: []string{"public"}, Include: []string{"users"}, DefaultSchema: "public"},
+			want:  make([]string, 0),
+		},
+	}
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
+		Tables:  []catalog.Table{{Name: "users", Columns: []catalog.Column{{Name: "id"}}}},
+		DefaultPrivileges: []catalog.DefaultPrivilege{{
+			Grantor: "defaults_owner", ObjectType: "SCHEMAS", Grantee: "defaults_reader", Privilege: "USAGE",
+		}},
+	}
+	generated := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "app"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "BIGINT"}},
+		DefaultPrivileges: []schemamodel.DefaultPrivilege{{
+			Grantor: "defaults_owner", ObjectType: "SCHEMAS", Grantee: "defaults_reader",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			gotDatabase, err := atlasfilter.ScopeDatabase(database, test.scope)
+			c.Assert(err, qt.IsNil)
+			gotGenerated, err := atlasfilter.ScopeGenerated(generated, test.scope)
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(databaseDefaultPrivilegeTypes(gotDatabase.DefaultPrivileges), qt.DeepEquals, test.want)
+			c.Assert(generatedDefaultPrivilegeTypes(gotGenerated.DefaultPrivileges), qt.DeepEquals, test.want)
 		})
 	}
 }

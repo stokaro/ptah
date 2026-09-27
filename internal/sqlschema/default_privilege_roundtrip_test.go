@@ -8,7 +8,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/parser"
 )
 
 // TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration drives the
@@ -120,6 +119,23 @@ func TestDefaultPrivilege_RenderedStatementReadsBackAsTheSameDeclaration(t *test
 			},
 		},
 		{
+			// No schema is the global default, and the statement leaves IN
+			// SCHEMA out rather than writing an empty one.
+			name: "the global default",
+			declared: schemamodel.DefaultPrivilege{
+				Grantor:    "app_owner",
+				ObjectType: "SCHEMAS",
+				Grantee:    "app_reader",
+				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE", WithOption: true}},
+			},
+			want: schemamodel.DefaultPrivilege{
+				Grantor:    "app_owner",
+				ObjectType: "SCHEMAS",
+				Grantee:    "app_reader",
+				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE", WithOption: true}},
+			},
+		},
+		{
 			// Canonicalize owns the spellings, and the loop has to agree with
 			// it at both ends: the render upper-cases what the author wrote and
 			// the read reports what PostgreSQL would.
@@ -181,26 +197,32 @@ ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES
 	}})
 }
 
-// TestDefaultPrivilege_ClusterWideFormIsRefused pins where a .sql source loses
-// the statement the model cannot hold.
-//
-// A default with no IN SCHEMA applies in every schema in the database, which no
-// field here records. Refusing it in the parser puts the failure in front of the
-// author; reading it would put an unrenderable declaration into a desired schema
-// and lose it further down.
-func TestDefaultPrivilege_ClusterWideFormIsRefused(t *testing.T) {
+// TestDefaultPrivilege_GlobalFormReachesTheModel reads the statement without
+// IN SCHEMA, the global default, as a declaration with no schema. A revoke of a
+// built-in privilege is kept as Revoked, which is what a new database needs to
+// be told (stokaro/ptah#3772).
+func TestDefaultPrivilege_GlobalFormReachesTheModel(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := parser.NewParser(
-		"ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;").Parse()
+	database := parseToDatabase(c, `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;`)
+	schemamodel.Finalize(&database)
 
-	c.Assert(err, qt.ErrorMatches, `ALTER DEFAULT PRIVILEGES requires IN SCHEMA: .*`)
-	c.Assert(statements, qt.IsNil)
+	c.Assert(database.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{
+		{
+			Grantor: "app_owner", ObjectType: "TABLES", Grantee: "app_reader",
+			Privileges: []schemamodel.PrivilegeGrant{{Privilege: "SELECT"}},
+		},
+		{
+			Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC",
+			Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+		},
+	})
 }
 
 // TestDefaultPrivilege_SchemaScopedFormReachesTheModel is the control for the
-// refusal above: the same statement carrying the clause the model needs. Without
-// it, a grammar that refused every ALTER DEFAULT PRIVILEGES would pass.
+// global form: the same statement with IN SCHEMA keeps its schema, so a reader
+// that dropped the clause would fail here.
 func TestDefaultPrivilege_SchemaScopedFormReachesTheModel(t *testing.T) {
 	c := qt.New(t)
 

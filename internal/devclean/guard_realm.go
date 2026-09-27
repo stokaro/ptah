@@ -80,8 +80,8 @@ func postgresServerWideCreateOrDrop(first string, tokens []lexer.Token) string {
 }
 
 // postgresServerWideAlter names a routine alteration, a role, user or group
-// altered without SET or RESET, and ALTER DEFAULT PRIVILEGES without IN
-// SCHEMA.
+// altered without SET or RESET, and ALTER DEFAULT PRIVILEGES FOR ALL ROLES
+// without IN SCHEMA, which the realm cleanup cannot reset.
 func postgresServerWideAlter(tokens []lexer.Token) string {
 	if definesPostgresRoutine(tokens) {
 		return "ALTER routine definition"
@@ -94,9 +94,8 @@ func postgresServerWideAlter(tokens []lexer.Token) string {
 		}
 		return "ALTER " + normalizedIdentifier(tokens[1])
 	case "DEFAULT":
-		if tokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") &&
-			!containsTokenSequence(tokens, "IN", "SCHEMA") {
-			return "ALTER DEFAULT PRIVILEGES without IN SCHEMA"
+		if isGlobalAllRolesDefaultPrivileges(tokens) {
+			return "ALTER DEFAULT PRIVILEGES FOR ALL ROLES without IN SCHEMA"
 		}
 	}
 	return ""

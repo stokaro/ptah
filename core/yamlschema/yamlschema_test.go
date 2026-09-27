@@ -481,16 +481,18 @@ default_privileges:
 			want: `default privilege "owner_tables" requires for_role`,
 		},
 		{
-			name: "missing schema",
+			name: "schemas beside a schema",
 			yaml: `
 default_privileges:
-  owner_tables:
+  owner_schemas:
     for_role: app_owner
-    object_type: TABLES
+    schema: public
+    object_type: SCHEMAS
     grantee: app_user
-    privileges: [SELECT]
+    privileges: [USAGE]
 `,
-			want: `default privilege "owner_tables" requires schema`,
+			want: `parse YAML schema: default privilege on SCHEMAS for role app_owner names schema public: ` +
+				`PostgreSQL sets default privileges on SCHEMAS for the whole database only, so leave the schema out`,
 		},
 		{
 			name: "missing grantee",
@@ -527,7 +529,8 @@ default_privileges:
     grantee: app_user
     privileges: [SELECT]
 `,
-			want: `default privilege "owner_tables" has unsupported object_type "TABLE", expected one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,
+			want: `default privilege "owner_tables" has unsupported object_type "TABLE", ` +
+				`expected one of TABLES, SEQUENCES, FUNCTIONS, TYPES, SCHEMAS, LARGE OBJECTS`,
 		},
 		{
 			name: "dialects written with nothing in it",

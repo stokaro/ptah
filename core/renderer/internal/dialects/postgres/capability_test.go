@@ -248,12 +248,6 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 			wantErr: "ALTER DEFAULT PRIVILEGES requires a grantor role",
 		},
 		{
-			name: "default privilege without schema",
-			node: ast.NewDefaultPrivilege("app_owner", "", "TABLES", "app_reader",
-				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
-			wantErr: "ALTER DEFAULT PRIVILEGES requires a schema",
-		},
-		{
 			name: "default privilege without object type",
 			node: ast.NewDefaultPrivilege("app_owner", "app", "", "app_reader",
 				[]ast.DefaultPrivilege{{Privilege: "SELECT"}}),
@@ -274,11 +268,6 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 			name:    "revoke default privilege without grantor",
 			node:    ast.NewRevokeDefaultPrivilege("", "app", "TABLES", "app_reader", []string{"SELECT"}),
 			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires a grantor role",
-		},
-		{
-			name:    "revoke default privilege without schema",
-			node:    ast.NewRevokeDefaultPrivilege("app_owner", "", "TABLES", "app_reader", []string{"SELECT"}),
-			wantErr: "ALTER DEFAULT PRIVILEGES REVOKE requires a schema",
 		},
 		{
 			name:    "revoke default privilege without object type",

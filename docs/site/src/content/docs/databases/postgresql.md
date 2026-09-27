@@ -602,34 +602,69 @@ annotations do, `on_function: purge_workspace(uuid)`.
 `ALTER DEFAULT PRIVILEGES ... GRANT` statements before it. A revoke with no
 grant before it says the default privilege is absent, and Ptah revokes it
 wherever the database holds it for that grantor, schema, object type and
-grantee. A schema-scoped default is only ever added to the global defaults, so
-such a revoke takes back what a schema-scoped grant gave; it cannot take away a
-global default. In Go the same declaration is the `revoked` attribute of
+grantee. In Go the same declaration is the `revoked` attribute of
 `//ptah:schema:defaultprivilege`, in HCL the `revoked` attribute of a
 `default_privilege` block, and in YAML the `revoked` key of a
 `default_privileges` entry.
 
-Reading a live database describes the default privileges of each schema the
-read covers, the connection's default schema included, and renders each one
-with its `IN SCHEMA` clause. The description leaves out the forms no schema
-source can declare: a global default, set without `IN SCHEMA`, and a
-CockroachDB default set `FOR ALL ROLES`, which names no role. A description
-applied to another database therefore does not carry them, and `ptah db read`
-and `schema inspect` name each one on stderr, by object class, schema and
-grantor. A global default is named whichever schemas the read covers, and a
-`FOR ALL ROLES` default in a schema when the read covers that schema:
+#### Global default privileges
 
-```text
-note: 2 default privileges are not described, because no schema source can
-declare one set without IN SCHEMA or FOR ALL ROLES; a description applied to
-another database does not carry them: FUNCTIONS in every schema for app_owner,
-TABLES in public for all roles.
+A default privilege set without `IN SCHEMA` is the global default. It applies
+in every schema of the database, and each schema source declares it by leaving
+the schema out:
+
+```sql
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT USAGE ON SCHEMAS TO app_reader;
 ```
 
-Run a statement such as
-`ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
-on the other database yourself. `ptah db drop-all` revokes a CockroachDB
-`FOR ALL ROLES` default in the schemas it cleans, spelled `FOR ALL ROLES`.
+A schema-scoped default is only ever added to the global one, and the global
+one starts from the built-in default: the owner holds every privilege on the
+objects it creates, and `PUBLIC` can execute a new function and use a new
+type. A global revoke can take a built-in privilege away, so Ptah compares a
+global default with the built-in one:
+
+- a declared global grant of a built-in privilege, such as `EXECUTE` on
+  functions to `PUBLIC`, is already held unless the database revoked it;
+- a declared global revoke of a built-in privilege is planned wherever the
+  database still has it, a database with no default privileges included;
+- a built-in privilege the database revoked and the declaration does not is
+  granted back, when the grantor is a role the declaration manages or the
+  declaration names that default.
+
+`SCHEMAS`, and `LARGE OBJECTS` on PostgreSQL 18 and later, exist only in the
+global form, so a declaration that gives either one a schema is refused.
+
+Reading a live database describes the schema-scoped defaults of each schema
+the read covers, the connection's default schema included, and every global
+default whichever schemas the read covers. A global default is described as
+its difference from the built-in one.
+
+The description leaves out a CockroachDB default set `FOR ALL ROLES`, which
+names no role, so no schema source can declare it. A description applied to
+another database therefore does not carry it, and `ptah db read` and
+`schema inspect` name each one on stderr, by object class, schema and grantor:
+
+```text
+note: 1 default privilege is not described, because no schema source can
+declare one set FOR ALL ROLES; a description applied to another database does
+not carry it: TABLES in public for all roles.
+```
+
+`ptah db drop-all` revokes a CockroachDB `FOR ALL ROLES` default in the
+schemas it cleans, spelled `FOR ALL ROLES`.
+
+CockroachDB's `SHOW DEFAULT PRIVILEGES` lists privileges PostgreSQL does not
+have, and which of them `ALL` covers depends on the release. When a global
+default takes some of the owner's own privileges away and leaves the rest, the
+read cannot say which, so it leaves the owner's part out of the description and
+names it in the same note. `REVOKE ALL` and `GRANT ALL` converge from there
+whatever the owner holds, and a comparison plans one of them when the
+declaration asks for it, or `GRANT ALL` when the declaration says nothing about
+the owner of a role it manages. Any other change to the owner's part is
+withheld and reported as undecided, so on CockroachDB a declared revoke of part
+of the owner's own privileges is applied once and reported as undecided after
+that.
 
 CockroachDB v26.2 refuses every read of `pg_default_acl` once a default
 privilege names a role whose name needs quoting, such as one with a dash. On

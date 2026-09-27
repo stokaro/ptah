@@ -33,15 +33,16 @@ import (
 //
 // The fixture carries a grant and a revoke for tables and for functions, in
 // the default schema, in a second schema, and in the global form, which has no
-// IN SCHEMA. The global entries are not described -- the model has no spelling
-// for them, and every desired-state source refuses one -- so the read must
-// neither fail on them nor render a statement for them, and both read surfaces
-// name them in a note on stderr (stokaro/ptah#3737). The schema-scoped entries
-// must arrive in the fresh database exactly as pg_default_acl holds them in
-// the source.
+// IN SCHEMA. A global row holds the built-in default too, so the read
+// describes it as its difference from the built-in one: the grant on tables,
+// and the revoke of PUBLIC's EXECUTE on functions (stokaro/ptah#3772). Every
+// read surface renders both, whichever schemas it covers, and names nothing in
+// a note. Every entry must arrive in the fresh database exactly as the source
+// holds it.
 //
 // CockroachDB and YugabyteDB are in the table because the same reader serves
-// them and both hold the same pg_default_acl rows for this fixture.
+// them. CockroachDB answers the global rows through SHOW DEFAULT PRIVILEGES,
+// so the global state is compared through it there.
 func TestDefaultPrivilegeReadRoundTripE2E_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -62,12 +63,12 @@ func TestDefaultPrivilegeReadRoundTripE2E_HappyPath(t *testing.T) {
 			read, readErr, err := runPtahSplitStreams(ctx, []string{"db", "read", "--db-url", fixture.sourceURL})
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", readErr))
 			c.Assert(defaultPrivilegeStatements(read), qt.DeepEquals, fixture.statements("public"))
-			c.Assert(readErr, qt.Contains, fixture.globalNote())
+			c.Assert(readErr, qt.Not(qt.Contains), "default privilege")
 
 			inspected, inspectErr, err := runCompatSQLInspect(ctx, fixture.sourceURL)
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", inspectErr))
 			c.Assert(defaultPrivilegeStatements(inspected), qt.DeepEquals, fixture.statements("public", "app"))
-			c.Assert(inspectErr, qt.Contains, fixture.globalNote())
+			c.Assert(inspectErr, qt.Not(qt.Contains), "default privilege")
 
 			both, bothErr, err := runPtahSplitStreams(ctx, []string{
 				"db", "read", "--db-url", fixture.sourceURL, "--schemas", "public,app",
@@ -101,9 +102,11 @@ func TestDefaultPrivilegeReadRoundTripE2E_HappyPath(t *testing.T) {
 
 			source := fixture.schemaScopedACL(c, ctx, fixture.sourceURL)
 			c.Assert(source, qt.HasLen, 3, qt.Commentf("the fixture holds %v", source))
-			c.Assert(fixture.globalEntries(c, ctx, fixture.sourceURL), qt.Equals, 2,
-				qt.Commentf("without global entries in the source, the read never met one"))
 			c.Assert(fixture.schemaScopedACL(c, ctx, fixture.targetURL), qt.DeepEquals, source)
+			global := fixture.globalDefaults(c, ctx, fixture.sourceURL)
+			c.Assert(global, qt.Not(qt.HasLen), 0,
+				qt.Commentf("without global entries in the source, the read never met one"))
+			c.Assert(fixture.globalDefaults(c, ctx, fixture.targetURL), qt.DeepEquals, global)
 		})
 	}
 }
@@ -111,6 +114,7 @@ func TestDefaultPrivilegeReadRoundTripE2E_HappyPath(t *testing.T) {
 // defaultPrivilegeFixture is a source database holding default privileges, an
 // empty target database on the same server, and the three roles they name.
 type defaultPrivilegeFixture struct {
+	engine    dbtarget.Engine
 	sourceURL string
 	targetURL string
 	grantor   string
@@ -132,6 +136,7 @@ func newDefaultPrivilegeFixture(c *qt.C, ctx context.Context, engine dbtarget.En
 
 	stamp := time.Now().UnixNano()
 	fixture := defaultPrivilegeFixture{
+		engine:   engine,
 		grantor:  fmt.Sprintf("ptah_dp_owner_%d", stamp),
 		reader:   fmt.Sprintf("ptah_dp_reader_%d", stamp),
 		executor: fmt.Sprintf("ptah_dp_executor_%d", stamp),
@@ -188,10 +193,12 @@ func (f defaultPrivilegeFixture) seed() []string {
 }
 
 // statements is what a description of the named schemas renders for the
-// seed: the schema-scoped entries that survive their revokes, and nothing for
-// the global ones. Sorted, as [defaultPrivilegeStatements] is.
+// seed: the schema-scoped entries that survive their revokes, and the global
+// ones, which every description carries. Sorted, as
+// [defaultPrivilegeStatements] is.
 func (f defaultPrivilegeFixture) statements(schemas ...string) []string {
-	prefix := "ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteE2EIdent(f.grantor) + " IN SCHEMA "
+	global := "ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteE2EIdent(f.grantor)
+	prefix := global + " IN SCHEMA "
 	reader := quoteE2EIdent(f.reader)
 	bySchema := map[string][]string{
 		"public": {
@@ -201,22 +208,15 @@ func (f defaultPrivilegeFixture) statements(schemas ...string) []string {
 		},
 		"app": {prefix + `"app" GRANT SELECT ON TABLES TO ` + reader + ";"},
 	}
-	var want []string
+	want := []string{
+		global + " GRANT SELECT ON TABLES TO " + reader + ";",
+		global + " REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;",
+	}
 	for _, schema := range schemas {
 		want = append(want, bySchema[schema]...)
 	}
 	slices.Sort(want)
 	return want
-}
-
-// globalNote is the note a read of the source prints for the seed's two global
-// entries, the grant on tables and the revoke on functions. The source's
-// catalog is what says they exist; see [defaultPrivilegeFixture.globalEntries].
-func (f defaultPrivilegeFixture) globalNote() string {
-	return "note: 2 default privileges are not described, because no schema source can declare one" +
-		" set without IN SCHEMA or FOR ALL ROLES; a description applied to another database" +
-		" does not carry them: FUNCTIONS in every schema for " + f.grantor +
-		", TABLES in every schema for " + f.grantor + ".\n"
 }
 
 // schemaScopedACL is every schema-scoped pg_default_acl row of one database,
@@ -247,19 +247,41 @@ func (f defaultPrivilegeFixture) schemaScopedACL(c *qt.C, ctx context.Context, d
 	return entries
 }
 
-// globalEntries counts the grantor's global pg_default_acl rows, the ones
-// recorded with defaclnamespace 0.
-func (f defaultPrivilegeFixture) globalEntries(c *qt.C, ctx context.Context, dbURL string) int {
+// globalDefaults is what the grantor's new objects receive in every schema of
+// one database, one line per grantee and privilege. PostgreSQL and YugabyteDB
+// answer it with the global pg_default_acl rows, the built-in default
+// included. CockroachDB answers it with SHOW DEFAULT PRIVILEGES without IN
+// SCHEMA, because its pg_default_acl leaves PUBLIC out both when PUBLIC holds
+// its built-in privilege and when it was revoked.
+func (f defaultPrivilegeFixture) globalDefaults(c *qt.C, ctx context.Context, dbURL string) []string {
 	c.Helper()
 	db, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbURL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
-	var count int
-	c.Assert(db.QueryRowContext(ctx, `
-		SELECT count(*) FROM pg_default_acl
-		WHERE defaclnamespace = 0 AND pg_get_userbyid(defaclrole) = $1`, f.grantor,
-	).Scan(&count), qt.IsNil)
-	return count
+	query := `
+		SELECT d.defaclobjtype::text || ' ' || d.defaclacl::text
+		FROM pg_default_acl d
+		WHERE d.defaclnamespace = 0 AND pg_get_userbyid(d.defaclrole) = $1
+		ORDER BY 1`
+	args := []any{f.grantor}
+	if f.engine == dbtarget.CockroachDB {
+		query = `
+			SELECT object_type || ' ' || grantee || ' ' || privilege_type || ' ' || is_grantable::text
+			FROM [SHOW DEFAULT PRIVILEGES FOR ROLE ` + quoteE2EIdent(f.grantor) + `]
+			ORDER BY 1`
+		args = nil
+	}
+	rows, err := db.QueryContext(ctx, query, args...)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var entries []string
+	for rows.Next() {
+		var entry string
+		c.Assert(rows.Scan(&entry), qt.IsNil)
+		entries = append(entries, entry)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return entries
 }
 
 // defaultPrivilegeStatements is every ALTER DEFAULT PRIVILEGES line of a

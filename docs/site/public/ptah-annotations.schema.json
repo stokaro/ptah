@@ -294,7 +294,7 @@
     },
     "ptah.schema.defaultprivilege": {
       "additionalProperties": false,
-      "description": "Declares a PostgreSQL default privilege: what a grantee receives on objects a named role creates in a named schema.",
+      "description": "Declares a PostgreSQL default privilege: what a grantee receives on objects a named role creates, in a named schema or, without one, in every schema of the database.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
@@ -320,7 +320,7 @@
               "type": "string"
             },
             "object_type": {
-              "description": "TABLES, SEQUENCES, FUNCTIONS or TYPES.",
+              "description": "TABLES, SEQUENCES, FUNCTIONS or TYPES; without a schema also SCHEMAS or LARGE OBJECTS.",
               "type": "string"
             },
             "privileges": {
@@ -332,15 +332,14 @@
               "type": "string"
             },
             "schema": {
-              "description": "Schema the default applies in. The global form, written without IN SCHEMA, has no spelling here.",
+              "description": "Schema the default applies in. Left out, the declaration is the global default, ALTER DEFAULT PRIVILEGES without IN SCHEMA, which starts from the built-in default: revoked can take a built-in privilege away, such as EXECUTE from PUBLIC.",
               "type": "string"
             }
           },
           "required": [
             "for_role",
             "grantee",
-            "object_type",
-            "schema"
+            "object_type"
           ],
           "type": "object"
         },

@@ -786,7 +786,10 @@ func managedDataDefinitionIdentity(data ManagedData) string {
 
 // ValidateRevokedGrants refuses a privilege db both grants and revokes to one
 // role on one object for a dialect both declarations reach, and a default
-// privilege one identity both grants and revokes.
+// privilege one identity both grants and revokes. It also refuses a
+// schema-scoped default privilege on an object class only the global form
+// names, see [GlobalOnlyDefaultPrivilegeObjectType], because it is the check
+// every declarative source runs over its default privileges.
 //
 // A declarative source has no statement order, so neither declaration can win
 // the way a later statement of a SQL script does, and keeping either one would
@@ -798,6 +801,9 @@ func ValidateRevokedGrants(db *Database) error {
 		return nil
 	}
 	if err := validateRevokedDefaultPrivileges(db.DefaultPrivileges); err != nil {
+		return err
+	}
+	if err := validateDefaultPrivilegeScopes(db.DefaultPrivileges); err != nil {
 		return err
 	}
 	for _, declared := range db.RevokedGrants {
@@ -847,6 +853,32 @@ func dialectScopesOverlap(a, b []string) bool {
 	return slices.ContainsFunc(a, func(dialect string) bool { return dialectscope.Includes(b, dialect) })
 }
 
+// GlobalOnlyDefaultPrivilegeObjectType reports whether objectType is an object
+// class ALTER DEFAULT PRIVILEGES names only without IN SCHEMA: SCHEMAS and
+// LARGE OBJECTS. PostgreSQL 18.6 answers IN SCHEMA with either with `cannot use
+// IN SCHEMA clause when using GRANT/REVOKE ON SCHEMAS`.
+func GlobalOnlyDefaultPrivilegeObjectType(objectType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(objectType)) {
+	case "SCHEMAS", "LARGE OBJECTS":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateDefaultPrivilegeScopes refuses a default privilege with a schema on
+// an object class only the global form names.
+func validateDefaultPrivilegeScopes(privileges []DefaultPrivilege) error {
+	for _, privilege := range privileges {
+		if strings.TrimSpace(privilege.Schema) != "" && GlobalOnlyDefaultPrivilegeObjectType(privilege.ObjectType) {
+			return fmt.Errorf("default privilege on %s for role %s names schema %s: "+
+				"PostgreSQL sets default privileges on %s for the whole database only, so leave the schema out",
+				privilege.ObjectType, privilege.Grantor, privilege.Schema, strings.ToUpper(privilege.ObjectType))
+		}
+	}
+	return nil
+}
+
 // validateRevokedDefaultPrivileges refuses a default privilege listed both in
 // Privileges and in Revoked of one identity, across every declaration of it.
 // A revoked ALL contradicts any privilege granted to the identity.
@@ -869,9 +901,19 @@ func validateRevokedDefaultPrivileges(privileges []DefaultPrivilege) error {
 			if !held[revoked] && (revoked != "ALL" || len(held) == 0) {
 				continue
 			}
-			return fmt.Errorf("default privilege %s on %s in schema %s for role %s is both granted to and revoked from %q; "+
-				"declare one or the other", revoked, privilege.ObjectType, privilege.Schema, privilege.Grantor, privilege.Grantee)
+			return fmt.Errorf("default privilege %s on %s %s for role %s is both granted to and revoked from %q; "+
+				"declare one or the other", revoked, privilege.ObjectType, schemaPhrase(privilege.Schema),
+				privilege.Grantor, privilege.Grantee)
 		}
 	}
 	return nil
+}
+
+// schemaPhrase names where a default privilege applies, for a message: in its
+// schema, or in every schema for the global default.
+func schemaPhrase(schema string) string {
+	if strings.TrimSpace(schema) == "" {
+		return "in every schema"
+	}
+	return "in schema " + schema
 }

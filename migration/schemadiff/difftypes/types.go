@@ -3707,7 +3707,8 @@ type GrantRef struct {
 }
 
 // DefaultPrivilegeRef identifies one PostgreSQL default privilege: the
-// privileges an object gets when a named role creates one in a named schema.
+// privileges an object gets when a named role creates one, in a named schema
+// or, with an empty Schema, in every schema of the database.
 //
 // The object's identity is Grantor, Schema, ObjectType and Grantee together;
 // Privilege and WithOption are what the object holds. Two refs differing only
@@ -3726,11 +3727,12 @@ type DefaultPrivilegeRef struct {
 	Grantor string `json:"grantor"`
 
 	// Schema is the schema the default applies in, the IN SCHEMA clause. It is
-	// always set: Ptah does not model the cluster-wide form.
+	// empty for the global default, the statement without the clause.
 	Schema string `json:"schema"`
 
 	// ObjectType is the object class as the keyword a statement writes:
-	// TABLES, SEQUENCES, FUNCTIONS or TYPES.
+	// TABLES, SEQUENCES, FUNCTIONS or TYPES, and for the global default also
+	// SCHEMAS and LARGE OBJECTS.
 	ObjectType string `json:"object_type"`
 
 	// Grantee is the role receiving the privilege, the TO clause. PUBLIC names
@@ -3738,6 +3740,7 @@ type DefaultPrivilegeRef struct {
 	Grantee string `json:"grantee"`
 
 	// Privilege is the individual privilege, e.g. SELECT, INSERT or USAGE.
+	// A revoke of the whole built-in default of a global grantee is ALL.
 	Privilege string `json:"privilege"`
 
 	// WithOption records whether this privilege alone carries WITH GRANT
@@ -3754,6 +3757,9 @@ type DefaultPrivilegeRef struct {
 // only in grantor -- print as one identical line and an operator reading
 // `ptah schema compare` cannot tell which object changed.
 func (r DefaultPrivilegeRef) String() string {
-	return r.Privilege + " on " + r.ObjectType +
-		" in " + r.Schema + " for " + r.Grantor + " to " + r.Grantee
+	where := "in " + r.Schema
+	if r.Schema == "" {
+		where = "in every schema"
+	}
+	return r.Privilege + " on " + r.ObjectType + " " + where + " for " + r.Grantor + " to " + r.Grantee
 }

@@ -487,11 +487,19 @@ func postgresGlobalDCLOrMetadata(tokens []lexer.Token) string {
 	return ""
 }
 
+// postgresGlobalAlterOperation names an ALTER whose effect outlives the realm
+// cleanup, or "" for any other.
+//
+// ALTER DEFAULT PRIVILEGES without IN SCHEMA is not one of them: it sets a
+// global default, which pg_default_acl records per database, and the realm
+// cleanup returns every global default of a named role to the built-in one
+// (stokaro/ptah#3772). CockroachDB's FOR ALL ROLES without IN SCHEMA is: no
+// read can say what it holds apart from the built-in default, so the cleanup
+// cannot reset it.
 func postgresGlobalAlterOperation(tokens []lexer.Token) string {
 	switch {
-	case tokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") &&
-		!containsTokenSequence(tokens, "IN", "SCHEMA"):
-		return "ALTER DEFAULT PRIVILEGES without IN SCHEMA"
+	case isGlobalAllRolesDefaultPrivileges(tokens):
+		return "ALTER DEFAULT PRIVILEGES FOR ALL ROLES without IN SCHEMA"
 	case tokenSequenceAt(tokens, 1, "GROUP"):
 		return "ALTER GROUP"
 	case tokenSequenceAt(tokens, 1, "LARGE", "OBJECT"):
@@ -503,6 +511,13 @@ func postgresGlobalAlterOperation(tokens []lexer.Token) string {
 	default:
 		return ""
 	}
+}
+
+// isGlobalAllRolesDefaultPrivileges reports ALTER DEFAULT PRIVILEGES FOR ALL
+// ROLES without IN SCHEMA.
+func isGlobalAllRolesDefaultPrivileges(tokens []lexer.Token) bool {
+	return tokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES", "FOR", "ALL", "ROLES") &&
+		!containsTokenSequence(tokens, "IN", "SCHEMA")
 }
 
 func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {

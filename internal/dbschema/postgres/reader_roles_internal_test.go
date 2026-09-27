@@ -122,6 +122,14 @@ const (
 	readsDefaultPrivilegeACL     = "array_to_json(d.defaclacl)"
 	readsDefaultPrivilegeGrantee = "g.rolname IN ("
 
+	// A default privilege is schema-scoped or global, and each has its own
+	// branch. A schema-scoped row is joined to the scope; a global row is in
+	// scope whatever the scope is, because it applies in every schema
+	// (stokaro/ptah#3772). A role whose reason is global carries
+	// [globalReason] as its schema.
+	readsScopedDefaultPrivilegeRow = "s.oid = d.defaclnamespace"
+	readsGlobalDefaultPrivilegeRow = "d.defaclnamespace = 0 AND"
+
 	// readsScopedRoleSet is the outer statement consuming the set the branches
 	// build. Binding the schema names is not on its own a restriction: the
 	// scope CTE still references them, so a query that computes the used-role
@@ -234,8 +242,9 @@ var (
 	byRoutineGrantor  = []string{readsRoutineACL, readsGrantor, readsDescribedRoutines}
 	byPolicy          = []string{readsPolicyRoles}
 
-	byDefaultPrivilegeRole  = []string{readsDefaultPrivilegeRole}
-	byDefaultPrivilegeGrant = []string{readsDefaultPrivilegeGrantee}
+	byDefaultPrivilegeRole       = []string{readsDefaultPrivilegeRole, readsScopedDefaultPrivilegeRow}
+	byDefaultPrivilegeGrant      = []string{readsDefaultPrivilegeGrantee}
+	byGlobalDefaultPrivilegeRole = []string{readsDefaultPrivilegeRole, readsGlobalDefaultPrivilegeRow}
 
 	bySchemaOwner   = []string{readsSchemaOwner}
 	byRelationOwner = []string{readsRelationOwner}
@@ -368,14 +377,22 @@ func answerDefaultPrivilegeGrantees(
 	if !strings.Contains(stripped, readsDefaultPrivilegeACL) {
 		return result, nil
 	}
+	global := strings.Contains(stripped, readsGlobalDefaultPrivilegeRow)
 	for _, role := range cluster {
-		if !slices.Contains(role.reads, readsDefaultPrivilegeGrantee) || !bound[role.schema] {
+		if !slices.Contains(role.reads, readsDefaultPrivilegeGrantee) {
+			continue
+		}
+		if !bound[role.schema] && (role.schema != globalReason || !global) {
 			continue
 		}
 		result.Rows = append(result.Rows, []driver.Value{`["=r/owner","` + role.name + `=r/owner"]`})
 	}
 	return result, nil
 }
+
+// globalReason is the schema of a role whose reason is a global default
+// privilege, which is in scope whatever schemas the read covers.
+const globalReason = "*global*"
 
 // boundNames returns the names a statement binds, and refuses an argument
 // whose placeholder the statement never mentions, or that is empty: no schema
@@ -525,7 +542,7 @@ func roleIsUsedByScope(role clusterRole, stripped string, branches []string, bou
 		// on the server is in it.
 		return true
 	}
-	if role.schema == "" || !bound[role.schema] {
+	if role.schema == "" || (!bound[role.schema] && role.schema != globalReason) {
 		return false
 	}
 	if slices.Contains(role.reads, readsDefaultPrivilegeGrantee) && !bound[role.name] {
@@ -874,6 +891,26 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 				reads:  byDefaultPrivilegeGrant,
 			},
 			schemas: []string{"public"},
+		},
+		{
+			// A global default applies in every schema, so it is in scope
+			// for a read of any of them (stokaro/ptah#3772).
+			name: "the role a global default applies to",
+			used: clusterRole{
+				name:   "global_default_role",
+				schema: globalReason,
+				reads:  byGlobalDefaultPrivilegeRole,
+			},
+			schemas: []string{"app"},
+		},
+		{
+			name: "granted a global default",
+			used: clusterRole{
+				name:   "global_default_grantee",
+				schema: globalReason,
+				reads:  byDefaultPrivilegeGrant,
+			},
+			schemas: []string{"app"},
 		},
 	}
 

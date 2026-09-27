@@ -24,7 +24,14 @@ import (
 // no object type.
 func isDefaultPrivilegeRead(query string) bool {
 	return strings.Contains(query, "pg_default_acl") && !strings.Contains(query, "pg_roles") &&
-		strings.Contains(query, "AS object_type") && !isUndescribedDefaultPrivilegeRead(query)
+		strings.Contains(query, "AS object_type") && !isUndescribedDefaultPrivilegeRead(query) &&
+		!isGlobalDefaultPrivilegeRead(query)
+}
+
+// isGlobalDefaultPrivilegeRead names the read of the global rows, the one that
+// selects the built-in default beside each list.
+func isGlobalDefaultPrivilegeRead(query string) bool {
+	return strings.Contains(query, "pg_default_acl") && strings.Contains(query, "AS builtin")
 }
 
 // answersOneDefaultPrivilege answers a full ReadSchemaContext, giving the
@@ -47,17 +54,25 @@ func isUndescribedDefaultPrivilegeRead(query string) bool {
 
 // withDefaultPrivilegeRow answers the undescribed read with every shape it
 // records, plus a FOR ALL ROLES row in a schema the read does not cover, which
-// has to stay out of the list the way it stays out of the description.
+// has to stay out of the list the way it stays out of the description. The
+// global read gets one row that revokes PUBLIC's built-in EXECUTE.
 func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.QueryResult {
 	if isUndescribedDefaultPrivilegeRead(query) {
 		return dbtest.QueryResult{
 			Columns: []string{"grantor", "schema_name", "object_type"},
 			Rows: [][]driver.Value{
-				{"app_owner", "", "FUNCTIONS"},
 				{"", "", "TYPES"},
 				{"", "public", "TABLES"},
 				{"", "elsewhere", "SEQUENCES"},
 			},
+		}
+	}
+	if isGlobalDefaultPrivilegeRead(query) {
+		return dbtest.QueryResult{
+			Columns: []string{"grantor", "object_type", "acl", "builtin"},
+			Rows: [][]driver.Value{{
+				"app_owner", "FUNCTIONS", `["app_owner=X/app_owner"]`, `["=X/app_owner","app_owner=X/app_owner"]`,
+			}},
 		}
 	}
 	if !isDefaultPrivilegeRead(query) {
@@ -94,15 +109,23 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 		{
 			name: "role management and the catalog relation",
 			caps: capability.Postgres16(),
-			want: []catalog.DefaultPrivilege{{
-				Grantor:    "app_owner",
-				Schema:     "public",
-				ObjectType: "TABLES",
-				Grantee:    "app_reader",
-				Privilege:  "SELECT",
-			}},
+			want: []catalog.DefaultPrivilege{
+				{
+					Grantor:    "app_owner",
+					ObjectType: "FUNCTIONS",
+					Grantee:    "PUBLIC",
+					Privilege:  "EXECUTE",
+					Revoked:    true,
+				},
+				{
+					Grantor:    "app_owner",
+					Schema:     "public",
+					ObjectType: "TABLES",
+					Grantee:    "app_reader",
+					Privilege:  "SELECT",
+				},
+			},
 			wantUndescribed: []catalog.UndescribedDefaultPrivilege{
-				{Grantor: "app_owner", ObjectType: "FUNCTIONS"},
 				{ObjectType: "TYPES"},
 				{Schema: "public", ObjectType: "TABLES"},
 			},

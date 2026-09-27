@@ -795,7 +795,9 @@ func defaultPrivilegeAnnotation(privilege schemamodel.DefaultPrivilege) string {
 	}
 	return annotation("ptah:schema:defaultprivilege",
 		attr{name: "for_role", value: privilege.Grantor, set: true},
-		attr{name: "schema", value: privilege.Schema, set: true},
+		// No schema is the global default, which the directive spells by leaving
+		// the attribute out.
+		attr{name: "schema", value: privilege.Schema, set: privilege.Schema != ""},
 		attr{name: "object_type", value: privilege.ObjectType, set: true},
 		attr{name: "grantee", value: privilege.Grantee, set: true},
 		attr{name: "privileges", value: strings.Join(names, ","), set: len(names) > 0},

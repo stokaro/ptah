@@ -11,12 +11,12 @@ import (
 	"ptah.run/internal/defaultprivnote"
 )
 
-// TestReportUndescribed_HappyPath pins the note for one undescribed default and
-// for several. The several arrive out of order and cover each shape the reader
-// records: a default without IN SCHEMA for a role, CockroachDB's FOR ALL ROLES
-// in a schema, and FOR ALL ROLES without IN SCHEMA. So the row also pins that
-// the note sorts what it names, and says "every schema" and "all roles" where
-// the reader leaves a name empty.
+// TestReportUndescribed_HappyPath pins the note for each shape the reader
+// records, alone and together: CockroachDB's FOR ALL ROLES in a schema and
+// without IN SCHEMA, and the owner's part of a global default on CockroachDB.
+// Each gives only the reason that applies to it. The several arrive out of
+// order, so the row also pins that the note sorts what it names, and says
+// "every schema" and "all roles" where the reader leaves a name empty.
 func TestReportUndescribed_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -24,11 +24,18 @@ func TestReportUndescribed_HappyPath(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "one",
-			privileges: []catalog.UndescribedDefaultPrivilege{{Grantor: "app_owner", ObjectType: "FUNCTIONS"}},
+			name:       "for all roles",
+			privileges: []catalog.UndescribedDefaultPrivilege{{Schema: "public", ObjectType: "TABLES"}},
 			want: "note: 1 default privilege is not described, because no schema source can declare one" +
-				" set without IN SCHEMA or FOR ALL ROLES; a description applied to another database" +
-				" does not carry it: FUNCTIONS in every schema for app_owner.\n",
+				" set FOR ALL ROLES; a description applied to another database" +
+				" does not carry it: TABLES in public for all roles.\n",
+		},
+		{
+			name:       "an owner's part",
+			privileges: []catalog.UndescribedDefaultPrivilege{{Grantor: "app_owner", ObjectType: "TABLES"}},
+			want: "note: 1 default privilege is not described, because CockroachDB does not show which of" +
+				" its own privileges an owner took away from a default without IN SCHEMA; a description" +
+				" applied to another database does not carry it: TABLES in every schema for app_owner.\n",
 		},
 		{
 			name: "several of every shape",
@@ -38,7 +45,8 @@ func TestReportUndescribed_HappyPath(t *testing.T) {
 				{Grantor: "app_owner", ObjectType: "FUNCTIONS"},
 			},
 			want: "note: 3 default privileges are not described, because no schema source can declare one" +
-				" set without IN SCHEMA or FOR ALL ROLES; a description applied to another database" +
+				" set FOR ALL ROLES, and CockroachDB does not show which of its own privileges an owner" +
+				" took away from a default without IN SCHEMA; a description applied to another database" +
 				" does not carry them: FUNCTIONS in every schema for app_owner, TABLES in public for all roles," +
 				" TYPES in every schema for all roles.\n",
 		},
@@ -74,10 +82,10 @@ func TestReportUndescribed_NamesARefusedReadHappyPath(t *testing.T) {
 		{name: "alone", want: refused},
 		{
 			name:       "beside an undescribed default",
-			privileges: []catalog.UndescribedDefaultPrivilege{{Grantor: "app_owner", ObjectType: "FUNCTIONS"}},
+			privileges: []catalog.UndescribedDefaultPrivilege{{ObjectType: "FUNCTIONS"}},
 			want: refused + "note: 1 default privilege is not described, because no schema source can" +
-				" declare one set without IN SCHEMA or FOR ALL ROLES; a description applied to another" +
-				" database does not carry it: FUNCTIONS in every schema for app_owner.\n",
+				" declare one set FOR ALL ROLES; a description applied to another" +
+				" database does not carry it: FUNCTIONS in every schema for all roles.\n",
 		},
 	}
 

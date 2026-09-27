@@ -46,8 +46,8 @@
 //
 // A default_privileges key is a label rather than a default name, because a
 // default privilege has no name. The role whose new objects it covers, the
-// schema, the object type and the grantee identify it, and the entry states
-// all four.
+// schema, the object type and the grantee identify it. An entry without a
+// schema is the global default, ALTER DEFAULT PRIVILEGES without IN SCHEMA.
 //
 // # Strictness
 //
@@ -389,7 +389,8 @@ type revokeSpec struct {
 }
 
 // defaultPrivilegeSpec is one entry under `default_privileges`: the privileges
-// a grantee receives on objects a named role creates in a named schema.
+// a grantee receives on objects a named role creates, in a named schema or,
+// without `schema`, in every schema of the database.
 //
 // The keys are the attribute names //ptah:schema:defaultprivilege accepts, so
 // one declaration reads the same in both authoring formats.
@@ -1061,11 +1062,9 @@ func (d document) addDefaultPrivileges(db *schemamodel.Database) error {
 }
 
 // defaultPrivilegeObjectTypes is the set of object classes an entry may name.
-//
-// SCHEMAS is absent deliberately: this family is schema-scoped, and PostgreSQL
-// accepts a default privilege on schemas only in the global form, without
-// IN SCHEMA, which the model has no spelling for.
-var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
+// SCHEMAS and LARGE OBJECTS need an entry without a schema, which
+// [schemamodel.ValidateRevokedGrants] checks for every source.
+var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES", "SCHEMAS", "LARGE OBJECTS"}
 
 // buildDefaultPrivilege turns one entry into a model object, refusing an entry
 // that does not say what it declares.
@@ -1084,7 +1083,6 @@ func buildDefaultPrivilege(key string, spec defaultPrivilegeSpec) (schemamodel.D
 		value     string
 	}{
 		{attribute: "for_role", value: string(spec.ForRole)},
-		{attribute: "schema", value: string(spec.Schema)},
 		{attribute: "object_type", value: string(spec.ObjectType)},
 		{attribute: "grantee", value: string(spec.Grantee)},
 	}

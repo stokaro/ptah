@@ -244,14 +244,23 @@ func revokeDefaultPrivilegeOption(database *schemamodel.Database, revoked schema
 		}
 		if held < 0 {
 			return fmt.Errorf(
-				"ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s REVOKE GRANT OPTION FOR %s ON %s FROM %s names a "+
+				"ALTER DEFAULT PRIVILEGES FOR ROLE %s%s REVOKE GRANT OPTION FOR %s ON %s FROM %s names a "+
 					"default privilege this schema does not grant: the schema can say a privilege is held or not held, "+
 					"not that it is held without the option; declare the GRANT without WITH GRANT OPTION instead",
-				revoked.Grantor, revoked.Schema, privilege, revoked.ObjectType, revoked.Grantee)
+				revoked.Grantor, inSchemaClause(revoked.Schema), privilege, revoked.ObjectType, revoked.Grantee)
 		}
 		database.DefaultPrivileges[index].Privileges[held].WithOption = false
 	}
 	return nil
+}
+
+// inSchemaClause is the IN SCHEMA clause a message quotes, and nothing for the
+// global default, which has none.
+func inSchemaClause(schema string) string {
+	if schema == "" {
+		return ""
+	}
+	return " IN SCHEMA " + schema
 }
 
 // refuseColumnRevokeUnderTableGrant refuses a revoke on columns of a privilege

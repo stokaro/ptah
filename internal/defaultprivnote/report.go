@@ -1,14 +1,15 @@
 // Package defaultprivnote reports the default privileges a schema read leaves
 // out of its description.
 //
-// Two kinds of pg_default_acl row have no declaration: one set by ALTER DEFAULT
-// PRIVILEGES without IN SCHEMA, which applies in every schema of the database,
-// and CockroachDB's FOR ALL ROLES, which has no grantor role. The SQL schema
-// reader, HCL, YAML and the Go annotation all require a schema and a grantor, so
-// the PostgreSQL-family reader does not describe either kind and records it in
-// [catalog.Database.UndescribedDefaultPrivileges] instead. This package turns
-// that list into the note the read surfaces print, and also says so when the
-// server refused to show pg_default_acl at all.
+// Two kinds of default privilege have no declaration. CockroachDB's FOR ALL
+// ROLES has no grantor role, and every schema source requires one. And on
+// CockroachDB, a global default whose owner holds only some of its own
+// privileges cannot be told apart from the built-in default: SHOW DEFAULT
+// PRIVILEGES lists privileges PostgreSQL does not have, so what the owner took
+// away cannot be named. The PostgreSQL-family reader does not describe either
+// kind and records it in [catalog.Database.UndescribedDefaultPrivileges]
+// instead. This package turns that list into the note the read surfaces print,
+// and also says so when the server refused to show pg_default_acl at all.
 package defaultprivnote
 
 import (
@@ -26,11 +27,13 @@ import (
 //
 // It belongs on the read surfaces, `ptah db read` and `schema inspect`, whose
 // output an operator may apply to another database. A default such as
-// `ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` changes
-// what every new function allows there, and nothing in the statements shows it
-// is missing: measured on PostgreSQL 18.6, a function the grantor creates in the
-// source is not executable by PUBLIC, and the same function created in a
-// database built from the description is.
+// `ALTER DEFAULT PRIVILEGES FOR ALL ROLES GRANT SELECT ON TABLES TO reader`
+// changes what every new table allows there, and nothing in the statements
+// shows it is missing.
+//
+// The note gives the reason that applies to what it names: FOR ALL ROLES for
+// an entry with no grantor, and the owner's own privileges for one with a
+// grantor, which the reader records only for a global default on CockroachDB.
 //
 // It names each one by object class, schema and grantor rather than counting
 // them, which is the choice [ptah.run/internal/timescale.ReportUndescribed]
@@ -61,10 +64,28 @@ func ReportUndescribed(w io.Writer, schema *catalog.Database) {
 		subject, verb, object = "1 default privilege", "is", "it"
 	}
 	_, _ = fmt.Fprintf(w,
-		"note: %s %s not described, because no schema source can declare one set"+
-			" without IN SCHEMA or FOR ALL ROLES; a description applied to another"+
+		"note: %s %s not described, because %s; a description applied to another"+
 			" database does not carry %s: %s.\n",
-		subject, verb, object, strings.Join(named, ", "))
+		subject, verb, reasons(schema.UndescribedDefaultPrivileges), object, strings.Join(named, ", "))
+}
+
+// reasons says why the entries are not described, naming only the reasons
+// that apply to them.
+func reasons(privileges []catalog.UndescribedDefaultPrivilege) string {
+	var allRoles, ownerPart bool
+	for _, privilege := range privileges {
+		allRoles = allRoles || privilege.Grantor == ""
+		ownerPart = ownerPart || privilege.Grantor != ""
+	}
+	var said []string
+	if allRoles {
+		said = append(said, "no schema source can declare one set FOR ALL ROLES")
+	}
+	if ownerPart {
+		said = append(said, "CockroachDB does not show which of its own privileges"+
+			" an owner took away from a default without IN SCHEMA")
+	}
+	return strings.Join(said, ", and ")
 }
 
 // reportRefused writes the note for a read that could not look at the default
