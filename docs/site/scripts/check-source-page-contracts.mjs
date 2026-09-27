@@ -7,10 +7,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildContentInventory } from './build-content-inventory.mjs';
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
-const inventoryPath = join(siteRoot, 'content-inventory.json');
 const supportPath = join(repoRoot, 'docs', 'source-support.json');
 const defaultManifest = JSON.parse(readFileSync(supportPath, 'utf8'));
 
@@ -626,7 +627,15 @@ function main() {
     return;
   }
 
-  const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8'));
+  let inventory;
+  try {
+    inventory = buildContentInventory();
+  } catch (error) {
+    console.error('check-source-page-contracts.mjs: FAILED');
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
   const manifest = JSON.parse(readFileSync(supportPath, 'utf8'));
   const problems = [];
   const contractPages = [];

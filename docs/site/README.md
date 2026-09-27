@@ -12,7 +12,6 @@ ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
 ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
 ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory:selftest
-ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
@@ -135,15 +134,17 @@ disposition. `src/content.config.ts` validates the contract. Status pages also
 name a verification date and evidence; fully generated pages name their
 generator and edit source.
 
-`content-inventory.json` is generated from that metadata, the content
-collection, the sidebar, and the internal link graph:
+`scripts/build-content-inventory.mjs` computes the page inventory from that
+metadata, the content collection, the sidebar, and the internal link graph.
+Nothing stores it: `check-editorial-shape.mjs`, `check-navigation.mjs`, and
+`check-source-page-contracts.mjs` build it from the current tree each time
+they run. To read it:
 
 ```bash
-npm run inventory:write
+node scripts/build-content-inventory.mjs --print
 ```
 
-Do not edit the JSON by hand. `CONTENT_INVENTORY.md` contains reader journeys
-and editorial decisions only.
+`CONTENT_INVENTORY.md` contains reader journeys and editorial decisions only.
 
 ## Published routes
 

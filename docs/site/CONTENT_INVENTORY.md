@@ -1,21 +1,20 @@
 # Documentation content inventory
 
-The machine-readable page map is
-[`content-inventory.json`](content-inventory.json). It is generated from the
-content collection, page frontmatter, the sidebar, and internal links. It
+The machine-readable page map is computed by
+[`scripts/build-content-inventory.mjs`](scripts/build-content-inventory.mjs)
+from the content collection, page frontmatter, the sidebar, and internal links.
+Nothing stores it: the checks that read it build it from the current tree. It
 records every published page's route, title, audience, reader question, reader
 outcome, page type, sources of truth, feature ownership, generated status,
 overlaps, inbound and outbound links, source size, visible word count,
 verification date, search aliases, and editorial disposition.
 
 Do not add page counts, route lists, source sizes, or link counts to this file.
-Those facts belong in the generated inventory:
+Those facts belong to the computed inventory. To read it:
 
 ```bash
 cd docs/site
-npm run inventory:write
-npm run check:content-inventory:selftest
-npm run check:content-inventory
+node scripts/build-content-inventory.mjs --print
 ```
 
 `CONTENT_INVENTORY.md` contains only decisions and findings that cannot be
@@ -57,7 +56,7 @@ landing page as an explicit child such as `Overview`.
   Every published page now carries validated editorial metadata in its own
   frontmatter.
 - This file manually repeated routes, word counts, and sidebar structure from
-  an old tree. The generated inventory now owns those facts.
+  an old tree. The computed inventory owns those facts.
 - Status pages now name a verification date and evidence. Fully generated pages
   name both their generator and the file a contributor should edit.
 
@@ -180,9 +179,9 @@ Status pages additionally declare `lastVerified` and `evidence`. Fully
 generated pages declare `generator` and `editSource`. `owns` remains the
 feature-ownership identifier checked by the repository's feature inventory.
 
-The content schema and the generated inventory use the shared rules in
+The content schema and the inventory builder use the shared rules in
 `src/lib/content-metadata.mjs`. A missing or invalid field fails both the site
-build and the inventory check.
+build and every check that builds the inventory.
 
 ## Reader-journey report
 
@@ -204,7 +203,7 @@ tutorials have separate acceptance checks for commands and stable results.
 | Embed Ptah as Go packages | `Extend and integrate > Overview`; choose the Go API path | `extend/overview` → `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without entering CLI reference. |
 | Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → `operate/ai-agent-connect` → permissions, patch workflow, or tool reference | Complete: setup, authority, changes, diagnostics, and exhaustive tool lookup are separate reader tasks. |
 | Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Complete: general, inference, and AI-agent symptom indexes route to focused fixes; canonical checksum, recovery, and exit-code results are top-three gated. |
-| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration → editorial check | Governed by build checks, stale waiver detection, and the current contributor instructions. |
+| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → editorial check | Governed by build checks, stale waiver detection, and the current contributor instructions. |
 
 ## Implementation sequence
 

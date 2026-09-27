@@ -24,22 +24,26 @@ types, it is two pages.
 
 ## Maintain The Content Inventory
 
-`docs/site/content-inventory.json` is the generated factual inventory of every
-published page. Page frontmatter owns the editorial metadata: audience, reader
-question, outcome, page type, sources of truth, overlaps, generated status,
-search aliases, and disposition. The generator derives routes, sidebar paths,
-links, word counts, and source sizes.
+`docs/site/scripts/build-content-inventory.mjs` computes the factual inventory
+of every published page, and nothing stores it. Page frontmatter owns the
+editorial metadata: audience, reader question, outcome, page type, sources of
+truth, overlaps, generated status, search aliases, and disposition. The builder
+derives routes, sidebar paths, links, word counts, and source sizes.
 
-Whenever page content, metadata, navigation, or internal links change, run
-`npm run inventory:write` in `docs/site` and commit the result. Keep reader
+`check:editorial-shape`, `check:source-page-contracts`, and `check:navigation`
+build the inventory from the current tree on every run. The build refuses
+invalid page metadata, a feature two pages own, an overlap that names no live
+route, and a page with no sidebar entry. To read the inventory, run
+`node scripts/build-content-inventory.mjs --print` in `docs/site`. Keep reader
 journeys and non-derivable decisions in `docs/site/CONTENT_INVENTORY.md`; never
-copy mechanical counts or route lists back into that file.
+copy mechanical counts or route lists into that file.
 
 Run `npm run check:editorial-shape:selftest` and
-`npm run check:editorial-shape` after regenerating the inventory. Length,
-mixed-type, generic-introduction, and near-duplicate findings are review
-warnings. Keep a deliberate warning quiet only through a reasoned entry in
-`scripts/data/editorial-waivers.json`; the check rejects stale waivers.
+`npm run check:editorial-shape` after any page, metadata, navigation, or link
+change. Length, mixed-type, generic-introduction, and near-duplicate findings
+are review warnings. Keep a deliberate warning quiet only through a reasoned
+entry in `scripts/data/editorial-waivers.json`; the check rejects stale
+waivers.
 
 ## Preserve The Navigation Contract
 
@@ -96,10 +100,9 @@ Inspect every surface that can be stale for the change class:
   behavior changes.
 - Release, CI, and operational docs when workflows, checks, or deployment
   behavior changes.
-- The generated inventory `docs/site/content-inventory.json` whenever page
-  content, metadata, navigation, or links change, and
-  `docs/site/CONTENT_INVENTORY.md` when an editorial decision or reader journey
-  changes.
+- `docs/site/CONTENT_INVENTORY.md` when an editorial decision or reader
+  journey changes. The page inventory itself is computed, so nothing needs
+  regenerating when pages, metadata, navigation, or links change.
 
 Do not stop at the first matching file. Ptah often has both a terse root
 entrypoint and deeper reference/site pages for the same behavior.
@@ -289,7 +292,6 @@ practical, live commands:
   npm run check:core-doc-links
   npm run check:page-health
   npm run check:content-inventory:selftest
-  npm run check:content-inventory
   npm run check:editorial-shape:selftest
   npm run check:editorial-shape
   npm run check:support-matrix:selftest
@@ -360,7 +362,6 @@ Before opening or updating a PR, perform three passes:
 
 1. **Coverage pass**: for each change class, list which docs were checked,
    changed, or intentionally left unchanged. Confirm
-   `docs/site/content-inventory.json` is regenerated and
    `docs/site/CONTENT_INVENTORY.md` reflects any changed journey or editorial
    decision.
 2. **Truth pass**: verify examples, command paths, claims, links, American
