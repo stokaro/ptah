@@ -213,10 +213,10 @@ func (f defaultPrivilegeFixture) statements(schemas ...string) []string {
 // entries, the grant on tables and the revoke on functions. The source's
 // catalog is what says they exist; see [defaultPrivilegeFixture.globalEntries].
 func (f defaultPrivilegeFixture) globalNote() string {
-	return "note: 2 global default privileges, set by ALTER DEFAULT PRIVILEGES without IN SCHEMA," +
-		" are not described, because no schema source can declare one; a description applied" +
-		" to another database does not carry them: FUNCTIONS for " + f.grantor +
-		", TABLES for " + f.grantor + ".\n"
+	return "note: 2 default privileges are not described, because no schema source can declare one" +
+		" set without IN SCHEMA or FOR ALL ROLES; a description applied to another database" +
+		" does not carry them: FUNCTIONS in every schema for " + f.grantor +
+		", TABLES in every schema for " + f.grantor + ".\n"
 }
 
 // schemaScopedACL is every schema-scoped pg_default_acl row of one database,

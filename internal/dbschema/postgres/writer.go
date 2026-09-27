@@ -934,7 +934,8 @@ func notExtensionOwned(keyword, catalogTable, oid string) string {
 // have removed (stokaro/ptah#1811).
 // The branch keeps format() unconditionally: it only exists where
 // CatalogDefaultPrivileges is true, and a server with that relation is a real
-// PostgreSQL, which has format() too.
+// PostgreSQL, which has format() too. The grantor clause spells CockroachDB's
+// FOR ALL ROLES, which has no role to name; see [defaultACLGrantorClause].
 func defaultPrivilegeObjects(caps capability.Capabilities) string {
 	if !caps.Has(capability.CatalogDefaultPrivileges) {
 		return ""
@@ -948,7 +949,7 @@ func defaultPrivilegeObjects(caps capability.Capabilities) string {
 				n.nspname,
 				format(
 					'%s/%s/%s',
-					pg_get_userbyid(d.defaclrole),
+					` + defaultACLGrantorName("d") + `,
 					d.defaclobjtype,
 					CASE acl.grantee
 						WHEN 0 THEN 'PUBLIC'
@@ -957,16 +958,11 @@ func defaultPrivilegeObjects(caps capability.Capabilities) string {
 				),
 				NULL::text,
 				format(
-					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
+					'ALTER DEFAULT PRIVILEGES %s IN SCHEMA %I ' ||
 					'REVOKE ALL PRIVILEGES ON %s FROM %s',
-					pg_get_userbyid(d.defaclrole),
+					` + defaultACLGrantorClause("d") + `,
 					n.nspname,
-					CASE d.defaclobjtype
-						WHEN 'r' THEN 'TABLES'
-						WHEN 'S' THEN 'SEQUENCES'
-						WHEN 'f' THEN 'FUNCTIONS'
-						WHEN 'T' THEN 'TYPES'
-					END,
+					` + defaultACLObjectType("d") + `,
 					CASE acl.grantee
 						WHEN 0 THEN 'PUBLIC'
 						ELSE format('%I', pg_get_userbyid(acl.grantee))

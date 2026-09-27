@@ -35,17 +35,26 @@ func answersOneDefaultPrivilege(asked *[]string) dbtest.QueryHandler {
 	}
 }
 
-// isGlobalDefaultPrivilegeRead names the second read over pg_default_acl, the
-// one listing the rows recorded without a schema.
-func isGlobalDefaultPrivilegeRead(query string) bool {
-	return strings.Contains(query, "pg_default_acl") && strings.Contains(query, "defaclnamespace = 0")
+// isUndescribedDefaultPrivilegeRead names the second read over pg_default_acl,
+// the one listing the rows no declaration can name. It is the one that keeps a
+// row with no namespace, so it joins pg_namespace from the left.
+func isUndescribedDefaultPrivilegeRead(query string) bool {
+	return strings.Contains(query, "pg_default_acl") && strings.Contains(query, "LEFT JOIN pg_namespace")
 }
 
+// withDefaultPrivilegeRow answers the undescribed read with every shape it
+// records, plus a FOR ALL ROLES row in a schema the read does not cover, which
+// has to stay out of the list the way it stays out of the description.
 func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.QueryResult {
-	if isGlobalDefaultPrivilegeRead(query) {
+	if isUndescribedDefaultPrivilegeRead(query) {
 		return dbtest.QueryResult{
-			Columns: []string{"grantor", "object_type"},
-			Rows:    [][]driver.Value{{"app_owner", "FUNCTIONS"}, {"", "TYPES"}},
+			Columns: []string{"grantor", "schema_name", "object_type"},
+			Rows: [][]driver.Value{
+				{"app_owner", "", "FUNCTIONS"},
+				{"", "", "TYPES"},
+				{"", "public", "TABLES"},
+				{"", "elsewhere", "SEQUENCES"},
+			},
 		}
 	}
 	if !isDefaultPrivilegeRead(query) {
@@ -70,15 +79,16 @@ func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.Que
 // roles without that catalog, and one gated on the narrower key alone asks a
 // server that models no roles at all.
 //
-// The global rows are read under the same two keys, since they live in the same
-// relation. The empty grantor is CockroachDB's FOR ALL ROLES, which the read
-// leaves empty rather than naming role 0.
+// The undescribed rows are read under the same two keys, since they live in the
+// same relation. The empty grantor is CockroachDB's FOR ALL ROLES, which the
+// read leaves empty rather than naming role 0; the one in a schema the read does
+// not cover is dropped, as a described row there would be.
 func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testing.T) {
 	tests := []struct {
-		name       string
-		caps       capability.Capabilities
-		want       []catalog.DefaultPrivilege
-		wantGlobal []catalog.GlobalDefaultPrivilege
+		name            string
+		caps            capability.Capabilities
+		want            []catalog.DefaultPrivilege
+		wantUndescribed []catalog.UndescribedDefaultPrivilege
 	}{
 		{
 			name: "role management and the catalog relation",
@@ -90,9 +100,10 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 				Grantee:    "app_reader",
 				Privilege:  "SELECT",
 			}},
-			wantGlobal: []catalog.GlobalDefaultPrivilege{
+			wantUndescribed: []catalog.UndescribedDefaultPrivilege{
 				{Grantor: "app_owner", ObjectType: "FUNCTIONS"},
 				{ObjectType: "TYPES"},
+				{Schema: "public", ObjectType: "TABLES"},
 			},
 		},
 		{
@@ -119,7 +130,7 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema, qt.IsNotNil)
 			c.Assert(schema.DefaultPrivileges, qt.DeepEquals, test.want)
-			c.Assert(schema.GlobalDefaultPrivileges, qt.DeepEquals, test.wantGlobal)
+			c.Assert(schema.UndescribedDefaultPrivileges, qt.DeepEquals, test.wantUndescribed)
 		})
 	}
 }

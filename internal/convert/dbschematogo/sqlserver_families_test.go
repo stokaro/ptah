@@ -245,11 +245,11 @@ var convertedFamilies = map[string]string{
 // unconvertedFamilies are the read families that deliberately do not become
 // declarations, with the reason each one does not.
 var unconvertedFamilies = map[string]string{
-	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
-	"RoleMemberships":           "read for the role graph rather than as a declarable object",
-	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
-	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
-	"GlobalDefaultPrivileges":   "a report about default privileges set without IN SCHEMA, which no declaration carries",
+	"ObjectOwners":                 "ownership is read for diagnostics; no declaration carries it",
+	"RoleMemberships":              "read for the role graph rather than as a declarable object",
+	"RolesOutOfScope":              "a report about what the read did not cover, not an object",
+	"UnregisteredVirtualTables":    "a report about SQLite virtual tables no module registered",
+	"UndescribedDefaultPrivileges": "a report about default privileges no declaration can carry: without IN SCHEMA, or FOR ALL ROLES",
 }
 
 // TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept pins WHICH
