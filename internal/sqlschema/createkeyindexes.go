@@ -43,8 +43,8 @@ type keyCandidate struct {
 	// FOREIGN KEY clause names for the key, and noPosition without one.
 	clause  int
 	columns []string
-	// order is the key's place among the table's keys: the columns' first,
-	// then the table-level ones in the order the body writes them.
+	// order is the key's place among the table's keys, in the order the body
+	// writes them.
 	order int
 }
 
@@ -69,12 +69,15 @@ type keyCandidate struct {
 // that name, and it is not built where the key's index would not be. See
 // [keyIndex] for what happens to these indexes after the CREATE TABLE.
 //
-// A column's key is claimed at the column's place, before any table-level
-// element, as a column-level UNIQUE is. Measured on MariaDB 11.8.9 and MySQL
+// A column's key is claimed at the column's place in the body, as a
+// column-level UNIQUE is; see [bodyItems]. Measured on MariaDB 11.8.9 and MySQL
 // 26.7.0, which build a key from the clause, `a INT REFERENCES p(id), KEY a
-// (id)` is `ERROR 1061 Duplicate key name 'a'`. On MariaDB a key the column
+// (id)` is `ERROR 1061 Duplicate key name 'a'`, and `b INT, KEY a (b), a INT
+// REFERENCES p(id)` names the key's index a_2. On MariaDB a key the column
 // names, `a INT CONSTRAINT fkx REFERENCES p(id)`, builds its index under that
-// name.
+// name. The column's place decides which of two identical keys is later, too:
+// `CONSTRAINT fk FOREIGN KEY (a) ..., a INT REFERENCES p(id)` builds the
+// column's key's index, a, where the other order builds fk.
 type createKeys struct {
 	database   *schemamodel.Database
 	naming     engineIndexNaming
@@ -91,17 +94,20 @@ func newCreateKeys(
 	declared coverage, naming engineIndexNaming,
 ) *createKeys {
 	keys := &createKeys{database: database, naming: naming, declared: declared}
-	for position, field := range database.Fields[fieldsStart:] {
-		if field.Foreign == "" {
+	var clauses []int
+	for _, item := range bodyItems(order, len(database.Fields)-fieldsStart) {
+		if item.field != noPosition {
+			field := database.Fields[fieldsStart+item.field]
+			if field.Foreign == "" {
+				continue
+			}
+			keys.candidates = append(keys.candidates, keyCandidate{
+				field: fieldsStart + item.field, constraint: noPosition, clause: noPosition,
+				columns: []string{field.Name}, order: len(keys.candidates),
+			})
 			continue
 		}
-		keys.candidates = append(keys.candidates, keyCandidate{
-			field: fieldsStart + position, constraint: noPosition, clause: noPosition,
-			columns: []string{field.Name}, order: len(keys.candidates),
-		})
-	}
-	var clauses []int
-	for _, element := range order {
+		element := order[item.element]
 		if element.keyIndex {
 			clauses = append(clauses, element.index)
 			continue

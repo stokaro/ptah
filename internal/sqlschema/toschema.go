@@ -950,15 +950,26 @@ func declaredOrder(
 	if !ordersEverything(node) {
 		return unorderedElements(database, node, table, sourcePlatform)
 	}
+	// A node whose columns were assigned rather than added records no place
+	// for them, and every element comes after all of them.
+	recordsColumns := ordersColumnsAndConstraints(node)
+	columns := 0
 	order := make([]namedElement, 0, len(node.Elements))
 	for _, element := range node.Elements {
 		if element.Column != nil {
+			columns++
 			continue
+		}
+		before := len(node.Columns)
+		if recordsColumns {
+			before = columns
 		}
 		if element.Index != nil {
 			database.Indexes = append(database.Indexes, ToIndex(element.Index, sourcePlatform))
 			order = append(order, namedElement{
-				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: element.Index.ForeignKeyIndex})
+				constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: element.Index.ForeignKeyIndex,
+				columnsBefore: before,
+			})
 			continue
 		}
 		converted, ok := ToConstraint(element.Constraint, table.StructName, table.QualifiedName(), sourcePlatform)
@@ -967,7 +978,7 @@ func declaredOrder(
 		}
 		database.Constraints = append(database.Constraints, converted)
 		order = append(order, namedElement{
-			constraint: len(database.Constraints) - 1, index: noPosition})
+			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: before})
 	}
 	return order
 }
@@ -1001,12 +1012,14 @@ func unorderedElements(
 		}
 		database.Constraints = append(database.Constraints, converted)
 		order = append(order, namedElement{
-			constraint: len(database.Constraints) - 1, index: noPosition})
+			constraint: len(database.Constraints) - 1, index: noPosition, columnsBefore: len(node.Columns)})
 	}
 	for _, index := range node.Indexes {
 		database.Indexes = append(database.Indexes, ToIndex(index, sourcePlatform))
 		order = append(order, namedElement{
-			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: index.ForeignKeyIndex})
+			constraint: noPosition, index: len(database.Indexes) - 1, keyIndex: index.ForeignKeyIndex,
+			columnsBefore: len(node.Columns),
+		})
 	}
 	return order
 }

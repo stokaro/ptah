@@ -164,8 +164,8 @@ var (
 // 8.4.11 and 26.7.0 and on MariaDB 11.8.9 and 12.3.3, including the cases that
 // look like they might differ: the prefix in `KEY (email(10))` and the
 // direction in `KEY (a DESC)` are both outside the name, a quoted column keeps
-// its spaces, and a column-level UNIQUE claims its column's name before any
-// index gets to.
+// its spaces, and a column-level UNIQUE takes its column's name at the column's
+// place in the body; see [bodyItems].
 //
 // The name has to be decided HERE, on the desired model, rather than invented
 // when the SQL is written. A live reader takes index names from the catalog, so
@@ -223,21 +223,20 @@ func nameMySQLInlineIndexes(
 	// Deciding it from what precedes the constraint refused all three, which
 	// are documents both engines accept.
 	keys := newCreateKeys(database, fieldsStart, order, coversOf(database, table, fieldsStart, order), naming)
-	for position, field := range database.Fields[fieldsStart:] {
-		// A column-level UNIQUE is an index named after its column, and it is
-		// created before any table-level element, so it claims the bare name.
-		if field.Unique {
-			claimed.claim(field.Name)
-		}
-		if err := keys.claimColumnKey(claimed, fieldsStart+position, table); err != nil {
-			return createdKeyIndexes{}, err
-		}
-	}
 	// Names, though, are allocated in the order the document declared them:
 	// that is the order the server allocates in, and the two disagree on a
 	// document that is valid one way round and refused the other
-	// (stokaro/ptah#2773).
-	for _, element := range order {
+	// (stokaro/ptah#2773). A column's own UNIQUE is an index named after its
+	// column, and it takes the next free name at the column's place.
+	for _, item := range bodyItems(order, len(database.Fields)-fieldsStart) {
+		if item.field != noPosition {
+			if err := claimColumnKeys(claimed, keys, database.Fields[fieldsStart+item.field],
+				fieldsStart+item.field, table, naming); err != nil {
+				return createdKeyIndexes{}, err
+			}
+			continue
+		}
+		element := order[item.element]
 		if element.isIndex() {
 			// The index a FOREIGN KEY clause names is the key's, and takes its
 			// name where the key does.
@@ -344,6 +343,9 @@ type namedElement struct {
 	// keyIndex is whether the inline index is the one a MySQL
 	// `FOREIGN KEY name (columns)` clause names; see [keyIndex].
 	keyIndex bool
+	// columnsBefore is how many of the table's columns the body writes before
+	// the element; see [bodyItems].
+	columnsBefore int
 }
 
 // noPosition marks the half of a namedElement that is not set.
@@ -351,6 +353,47 @@ const noPosition = -1
 
 // isIndex reports whether this element is an inline index.
 func (e namedElement) isIndex() bool { return e.index != noPosition }
+
+// bodyItem is one element of a CREATE TABLE body: a column, or an entry of the
+// table's other elements. Exactly one position is set.
+type bodyItem struct {
+	// field is the column's place among the table's columns.
+	field int
+	// element is the position in the table's other elements.
+	element int
+}
+
+// bodyItems lists the columns of a table and its other elements, order, in
+// the order the body writes them. columns is how many columns the table has.
+//
+// MySQL and MariaDB name the keys of a CREATE TABLE in that order, a column's
+// own UNIQUE and the index of its REFERENCES at the column's place. Measured on
+// MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3, with the indexes of
+// c:
+//
+//	body of c                                   indexes of c
+//	KEY (a), a int UNIQUE                       a (a), a_2 (a) unique
+//	a int UNIQUE, KEY (a)                       a (a) unique, a_2 (a)
+//	b int, KEY a (b), a int UNIQUE              a (b), a_2 (a) unique
+//	b int, KEY a (b), a int REFERENCES p(id)    a (b), a_2 (a), not MySQL 8.4
+//
+// A node that did not record where its columns sit gives each element every
+// column before it, which is the order a table written column by column
+// declares them in.
+func bodyItems(order []namedElement, columns int) []bodyItem {
+	items := make([]bodyItem, 0, columns+len(order))
+	next := 0
+	for position, element := range order {
+		for ; next < min(element.columnsBefore, columns); next++ {
+			items = append(items, bodyItem{field: next, element: noPosition})
+		}
+		items = append(items, bodyItem{field: noPosition, element: position})
+	}
+	for ; next < columns; next++ {
+		items = append(items, bodyItem{field: next, element: noPosition})
+	}
+	return items
+}
 
 // coverage is the key prefixes a table already has an access path for, in the
 // order they were declared.
@@ -440,6 +483,21 @@ func claimConstraintName(
 	}
 	constraint.Name = name
 	return nil
+}
+
+// claimColumnKeys claims the names of the keys the column at field declares:
+// its own UNIQUE, which the model keeps on the column and the server names
+// after it, then the index of its REFERENCES, if the server builds one.
+func claimColumnKeys(
+	claimed indexNames, keys *createKeys, column schemamodel.Field, field int,
+	table schemamodel.Table, naming engineIndexNaming,
+) error {
+	if column.Unique {
+		if _, err := derive(claimed, column.Name, table, naming); err != nil {
+			return err
+		}
+	}
+	return keys.claimColumnKey(claimed, field, table)
 }
 
 // claimIndexName names one inline index.
