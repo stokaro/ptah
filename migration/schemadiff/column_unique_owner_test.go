@@ -185,13 +185,15 @@ func TestCompare_AColumnUniqueBesideADeclaredKeyIsItsOwn(t *testing.T) {
 	}
 }
 
-// TestCompare_PostgresColumnUniqueBesideADeclaredKey keeps PostgreSQL apart.
-// Measured on PostgreSQL 18, `CREATE TABLE c (a int UNIQUE, CONSTRAINT uq_a
-// UNIQUE (a))` builds `uq_a` alone, so a database that holds it holds the
-// column's key too. A unique index is an object apart, and `a int UNIQUE`
-// beside `CREATE UNIQUE INDEX ux ON c (a)` builds `c_a_key` and `ux`, which
-// Atlas CE v1.3.0 plans as `ADD CONSTRAINT c_a_key` against a database that
-// holds only `ux`.
+// TestCompare_PostgresColumnUniqueBesideADeclaredKey is the same rule on
+// PostgreSQL (stokaro/ptah#3812). A model that declares a column's UNIQUE
+// beside an equal named UNIQUE holds two keys: the SQL reader folds the pair
+// one CREATE TABLE declares, which PostgreSQL builds as the named key alone,
+// so what reaches the comparison came from separate statements. Measured on
+// PostgreSQL 18.6, `a int UNIQUE` and a later `ALTER TABLE c ADD CONSTRAINT
+// uq_a UNIQUE (a)` build `c_a_key` and `uq_a`, and so do `a int UNIQUE` and
+// `CREATE UNIQUE INDEX ux ON c (a)`; Atlas CE v1.3.0 plans `ADD CONSTRAINT
+// c_a_key` against a database that holds only the other key.
 func TestCompare_PostgresColumnUniqueBesideADeclaredKey(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -200,12 +202,20 @@ func TestCompare_PostgresColumnUniqueBesideADeclaredKey(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "a named UNIQUE is the column's key",
+			name:    "a named UNIQUE, and no key of the column's",
 			desired: desiredUniqueTable(uniqueKey{name: "uq_a", columns: []string{"a"}}),
 			live:    postgresUniqueTable([]uniqueKey{{name: "uq_a", columns: []string{"a"}}}, nil),
+			want:    []string{"c.a: unique false -> true"},
 		},
 		{
-			name:    "a unique index is not",
+			name:    "a named UNIQUE beside the column's key",
+			desired: desiredUniqueTable(uniqueKey{name: "uq_a", columns: []string{"a"}}),
+			live: postgresUniqueTable([]uniqueKey{
+				{name: "c_a_key", columns: []string{"a"}}, {name: "uq_a", columns: []string{"a"}},
+			}, nil),
+		},
+		{
+			name:    "a unique index, and no key of the column's",
 			desired: desiredUniqueIndex(),
 			live:    postgresUniqueTable(nil, []uniqueKey{{name: "ux", columns: []string{"a"}}}),
 			want:    []string{"c.a: unique false -> true"},

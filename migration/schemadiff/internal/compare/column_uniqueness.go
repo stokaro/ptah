@@ -55,20 +55,25 @@ type columnUniqueness struct {
 // suppress a column difference because database-side index filters may
 // intentionally exclude backing indexes.
 //
-// A column that declares UNIQUE itself beside such an object is a second key
-// on some engines, and its own key is compared rather than left out. Measured
-// on MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18,
-// with Atlas CE v1.3.0 comparing a database that holds only the object:
+// A column that declares UNIQUE itself beside such an object is a second key,
+// and its own key is compared rather than left out. Measured on MySQL 8.4.11
+// and 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18.6, with Atlas CE
+// v1.3.0 comparing a database that holds only the object:
 //
-//	declaration                                      MySQL, MariaDB  PostgreSQL
-//	a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)         two keys        one key
-//	a int UNIQUE; CREATE UNIQUE INDEX ux ON c (a)    two keys        two keys
+//	declaration                                        MySQL, MariaDB  PostgreSQL
+//	a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)           two keys        one key
+//	a int UNIQUE; ALTER TABLE c ADD CONSTRAINT uq_a    two keys        two keys
+//	UNIQUE (a)
+//	a int UNIQUE; CREATE UNIQUE INDEX ux ON c (a)      two keys        two keys
 //
-// PostgreSQL builds one constraint from two identical UNIQUE declarations of
-// one table, and a unique index is an object apart from any constraint. Where
-// two keys are built, Atlas CE adds the column's own key to a database that
-// holds only the object, and so does this (stokaro/ptah#3784). The other
-// engines are not measured, and keep the column's uniqueness with the object.
+// Atlas CE adds the column's own key to a database that holds only the object,
+// and so does this (stokaro/ptah#3784, stokaro/ptah#3812). PostgreSQL builds
+// one key from the pair in one CREATE TABLE, and the SQL reader folds that
+// pair into the named key before it reaches the model; see
+// [schemaprep.FoldedIndexConstraints]. So a column that still declares UNIQUE
+// beside an equal constraint in the model is two keys on every engine this
+// covers. The other engines are not measured, and keep the column's uniqueness
+// with the object.
 func readColumnUniqueness(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -103,9 +108,8 @@ func readColumnUniqueness(
 		identity := newColumnIdentityForTable(table.Schema, table.Name, field.Name, semantics)
 		_, besideIndex := byIndex[identity]
 		_, besideConstraint := byConstraint[identity]
-		separate := (besideIndex && buildsColumnKeyBesideUniqueIndex(dialect)) ||
-			(besideConstraint && buildsColumnKeyBesideUniqueConstraint(dialect))
-		if !separate {
+		declared := besideIndex || besideConstraint
+		if !declared || !buildsColumnKeyBesideDeclaredKey(dialect) {
 			continue
 		}
 		_, holds := held[newTableMemberKey(table.QualifiedName(), field.Name, semantics)]
@@ -132,24 +136,12 @@ func (u columnUniqueness) compared(
 	return desired, database
 }
 
-// buildsColumnKeyBesideUniqueIndex reports whether a column's UNIQUE and a
-// unique index over the same column are two keys on dialect; see
-// [readColumnUniqueness].
-func buildsColumnKeyBesideUniqueIndex(dialect string) bool {
+// buildsColumnKeyBesideDeclaredKey reports whether a column's UNIQUE and a
+// unique index or UNIQUE constraint the model declares over the same column
+// are two keys on dialect; see [readColumnUniqueness].
+func buildsColumnKeyBesideDeclaredKey(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB, platform.Postgres:
-		return true
-	default:
-		return false
-	}
-}
-
-// buildsColumnKeyBesideUniqueConstraint reports whether a column's UNIQUE and
-// a UNIQUE constraint over the same column are two keys on dialect; see
-// [readColumnUniqueness].
-func buildsColumnKeyBesideUniqueConstraint(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
 		return true
 	default:
 		return false

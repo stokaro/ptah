@@ -20,9 +20,12 @@ var (
 // a schema file that also declares the column's own. Measured on MySQL 8.4.11
 // and 26.7.0 and MariaDB 11.8.9 and 12.3.3, the file builds two keys, and
 // Atlas CE v1.3.0 plans `ADD UNIQUE INDEX a (a)` against the database the
-// migration built. PostgreSQL 18 builds a unique index apart from any
-// constraint, and Atlas CE plans `ADD CONSTRAINT c_a_key` there
-// (stokaro/ptah#3784). want is the statement each engine is planned.
+// migration built (stokaro/ptah#3784). PostgreSQL 18.6 builds two keys where
+// the declared one is a unique index or comes from a later statement, and
+// Atlas CE plans `ADD CONSTRAINT c_a_key` there (stokaro/ptah#3812); one
+// CREATE TABLE that declares both builds the named key alone, which
+// [TestMigrateDiffFindsAColumnUniqueBesideANamedUniqueSyncedOnPostgresE2E]
+// covers. want is the statement each engine is planned.
 var columnKeyBesideDeclaredKey = []struct {
 	name      string
 	engines   []uniqueEngine
@@ -48,6 +51,27 @@ CREATE UNIQUE INDEX ux ON c (a);`,
 			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
 			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
 		},
+	},
+	{
+		name:    "a named UNIQUE a later statement adds",
+		engines: uniqueEngines,
+		migration: `CREATE TABLE c (id int PRIMARY KEY, a int);
+ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
+		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
+ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
+		want: map[string]string{
+			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
+			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
+		},
+	},
+	{
+		name:    "two columns, each beside a named UNIQUE a later statement adds",
+		engines: []uniqueEngine{postgresUniqueEngine},
+		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, b int);
+ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
+		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE);
+ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
+		want: map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
 	},
 	{
 		name:      "two columns, each beside a named UNIQUE",
