@@ -448,6 +448,18 @@ not come up.
 The panel is appended to the body and fixed to the viewport, because the
 header clips what overflows it.
 
+A page from a release older than the one `versions.json` names latest also gets
+a banner, because a reader who arrives from a search engine may never look at
+the picker. The script places it as the first child of `<main>`, where
+Starlight places its own banner, once the latest release has answered: it names
+the page's version and links to the same page in the latest release, or to that
+release's home page when the page does not exist there. Edge, the latest
+release, a version newer than it and a page with no index show no banner.
+Release numbers compare as numbers, so `v0.10.0` is newer than `v0.9.0`. The
+banner carries `data-pagefind-ignore` and is hidden in print. It reaches the
+same versions the picker does; a release older than the overlay's
+`minimumRelease` has no mount point and shows none.
+
 `npm run dev` serves `public/` under the version's base rather than at the root,
 so in dev the mount point loads the picker from `/edge/` and reads the version
 list from the published site. The list is real; the other versions are not
@@ -456,8 +468,9 @@ served locally, so choosing one leads to a 404.
 `scripts/check-version-picker.mjs` runs the picker in a browser against the
 built site: the list, its groups and order, the page's own version, the latest
 badge, the dates, the filter, the keyboard, a version the list does not name, a
-missing list, where a choice leads, and axe's WCAG rules over the open panel in
-both themes. `scripts/check-release-page-actions.mjs` requires each overlaid
+missing list, where a choice leads, the banner on an older release and its
+absence everywhere else, and axe's WCAG rules over the open panel and the
+banner in both themes. `scripts/check-release-page-actions.mjs` requires each overlaid
 release to carry the mount point and to load the picker from the root.
 `check-pages-root.mjs --site` requires the assembled `versions.json` to date
 every release and to name the newest one latest.

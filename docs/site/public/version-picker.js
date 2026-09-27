@@ -24,6 +24,13 @@
  * points at the same page in that version when the page exists there, and at
  * that version's home page when it does not.
  *
+ * A page from a release older than the index's latest one also gets a banner
+ * at the top of its content, since a reader who arrives from a search engine
+ * may not look at the picker. The banner names the page's version and links to
+ * the same page in the latest release, or to that release's home page when
+ * the page does not exist there. Edge, the latest release, a version newer
+ * than it and a page with no index show no banner.
+ *
  * Plain script, no build step and no imports: this file is published as it is
  * written, and old releases load it through a tag that none of them can update.
  */
@@ -33,6 +40,10 @@
   var MOUNT = '[data-ptah-version-picker]';
   var READY = 'data-ptah-version-picker-ready';
   var EDGE = 'edge';
+  var BANNER = 'ptah-version-banner';
+  // A release slug, as scripts/lib/doc-versions.mjs reads it: the patch
+  // number may be absent.
+  var RELEASE = /^v(\d+)\.(\d+)(?:\.(\d+))?$/;
   var mountCount = 0;
 
   function element(tag, className, text) {
@@ -40,6 +51,20 @@
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  // olderRelease reports whether `slug` is a release older than the release
+  // `than`, comparing numbers rather than text: v0.10.0 is newer than v0.9.0.
+  function olderRelease(slug, than) {
+    var a = RELEASE.exec(slug || '');
+    var b = RELEASE.exec(than || '');
+    if (!a || !b) return false;
+    for (var i = 1; i <= 3; i += 1) {
+      var left = Number(a[i] || 0);
+      var right = Number(b[i] || 0);
+      if (left !== right) return left < right;
+    }
+    return false;
   }
 
   // The page path below the version directory, so a reader on
@@ -195,6 +220,7 @@
         self.versions = entries(index, self.current);
         self.render();
         if (self.isOpen()) self.resolve();
+        self.announce(index);
       })
       .catch(function () {
         // Without the index the panel lists the current version alone, which
@@ -221,6 +247,30 @@
         });
     }
     return this.targets[slug];
+  };
+
+  // The banner is placed where Starlight places its own, as the first child of
+  // <main>, and only once the latest release has answered, so its link never
+  // names a page that does not exist.
+  Picker.prototype.announce = function (index) {
+    var self = this;
+    var latest = typeof index.latest === 'string' ? index.latest : '';
+    if (!olderRelease(this.current, latest)) return;
+    var main = document.querySelector('main');
+    if (!main || main.querySelector('.' + BANNER)) return;
+    this.target(latest).then(function (href) {
+      if (main.querySelector('.' + BANNER)) return;
+      var home = href === self.root + latest + '/' && self.page !== '';
+      var banner = element('div', BANNER);
+      banner.setAttribute('role', 'note');
+      banner.setAttribute('data-pagefind-ignore', '');
+      var text = element('p', BANNER + '__text', 'This page documents ' + self.current + ', an older release. ');
+      var link = element('a', BANNER + '__link', (home ? 'Go to ' : 'Read it in ') + latest + ', the latest release');
+      link.href = href;
+      text.appendChild(link);
+      banner.appendChild(text);
+      main.insertBefore(banner, main.firstChild);
+    });
   };
 
   Picker.prototype.row = function (version) {
