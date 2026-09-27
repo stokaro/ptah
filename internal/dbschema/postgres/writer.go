@@ -1,12 +1,14 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -1597,6 +1599,70 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, 
 		)
 	}
 	return w.dropDatabaseRealm(ctx, extensions, schemas)
+}
+
+// ResetObject is something a reset of a dev database drops: an object of one
+// of the reset's schemas, or a large object, which belongs to no schema and
+// has its oid as its name.
+type ResetObject struct {
+	Kind   string
+	Schema string
+	Name   string
+}
+
+// ResetObjects lists what a reset of schemas drops, keeping keptExtensions and
+// everything they own: tables, views, sequences, routines, types, collations
+// and foreign tables, and the default privileges it revokes, sorted by schema,
+// name and kind. A constraint or an index
+// is left out, since it is dropped with the relation it belongs to, which is
+// listed. Where the realm cleanup removes large objects, which is PostgreSQL
+// itself, the lowest one is listed last, whatever the schemas: a replay of a
+// dev database whose URL pins one schema still resets the realm, and removes
+// them.
+//
+// The list is the reset's own, read without dropping anything, so a caller
+// that refuses a database holding one of them refuses exactly what the reset
+// would remove. An object the reset does not list, such as a text search
+// configuration, is not dropped: the realm cleanup then fails to drop its
+// schema and says so.
+func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, schemas, keptExtensions []string) ([]ResetObject, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return nil, err
+	}
+	collected, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope(schemas, keptExtensions), capabilities)
+	if err != nil {
+		return nil, err
+	}
+	objects := make([]ResetObject, 0, len(collected))
+	for _, object := range collected {
+		if object.Kind == "constraint" || object.Kind == "index" {
+			continue
+		}
+		objects = append(objects, ResetObject{Kind: object.Kind, Schema: object.Schema, Name: object.Name})
+	}
+	slices.SortFunc(objects, func(a, b ResetObject) int {
+		return cmp.Or(cmp.Compare(a.Schema, b.Schema), cmp.Compare(a.Name, b.Name), cmp.Compare(a.Kind, b.Kind))
+	})
+	// The large objects go in the realm cleanup's transaction. A server that
+	// refuses DDL inside one never gets that far, and the Spanner interface,
+	// which reports itself as PostgreSQL 14.1, has no pg_largeobject_metadata
+	// to read.
+	if !capabilities.cleanupLargeObjects || !w.caps.Has(capability.DDLInsideTransaction) {
+		return objects, nil
+	}
+	var oid uint32
+	err = w.db.QueryRowContext(ctx, `SELECT oid FROM pg_largeobject_metadata ORDER BY oid LIMIT 1`).Scan(&oid)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return objects, nil
+	case err != nil:
+		return nil, fmt.Errorf("failed to list PostgreSQL large objects: %w", err)
+	}
+	return append(objects, ResetObject{Kind: "large object", Name: strconv.FormatUint(uint64(oid), 10)}), nil
 }
 
 // UserSchemas returns the database's user schemas, sorted: every schema but

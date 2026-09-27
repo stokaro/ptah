@@ -47,7 +47,8 @@ ptah migrations checkpoint \
 
 The shadow database is dropped and replayed from scratch, so it must be an
 ephemeral, disposable database — never a real environment. Ptah refuses one
-that holds a table, and empties it again when the command finishes. The dialect is
+that holds anything the reset would drop, and empties it again when the command
+finishes. The dialect is
 inferred from the shadow database URL; pass `--dialect` only to assert it
 explicitly. Use `--dry-run` to print the checkpoint SQL without writing files:
 

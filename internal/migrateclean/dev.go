@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 // NotCleanError is the refusal of a dev database that already holds objects,
@@ -17,9 +18,13 @@ import (
 // there differs -- `sql/migrate: taking database snapshot: sql/migrate:` for a
 // source it replays, `sql/migrate:` alone for an HCL one -- and belongs to the
 // Atlas-compatible verb; a native one words it itself.
+//
+// The binary refuses tables and schemas only. A refusal naming another object
+// is Ptah's, in the same shape; see [Scope.DevRefusal].
 type NotCleanError struct {
 	// Reason names the object that made the database unclean:
-	// `found table "t" in connected schema`, `found schema "s"`.
+	// `found table "t" in connected schema`, `found schema "s"`,
+	// `found view "v" in connected schema`.
 	Reason string
 }
 
@@ -39,6 +44,10 @@ func (e *NotCleanError) Error() string {
 // `migrate lint`, `migrate validate`, `schema inspect`, `schema diff` and
 // `schema apply`, each refusing at exit 1 with the dev database untouched.
 //
+// It also reads what else the reset would drop, where the dialect's writer can
+// say: on the PostgreSQL family, every object of the scope's schemas the reset
+// lists and every large object. See [Scope.DevRefusal] for why those refuse.
+//
 // An error that is not a *NotCleanError means the catalog could not be read,
 // and the caller must not treat the database as clean.
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
@@ -46,7 +55,59 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if err != nil {
 		return err
 	}
+	scope.Dropped, err = resetObjects(ctx, conn, scope)
+	if err != nil {
+		return fmt.Errorf("clean check: %w", err)
+	}
 	return scope.DevRefusal()
+}
+
+// resetObjectLister is the writer that says what a reset of its database
+// drops. The list is the reset's own, so the check and the reset cannot
+// disagree about which objects a reset removes.
+type resetObjectLister interface {
+	ResetObjects(ctx context.Context, schemas, keptExtensions []string) ([]postgres.ResetObject, error)
+}
+
+// installedExtensionLister is the writer that names the extensions a claim
+// keeps, and with them everything they own.
+type installedExtensionLister interface {
+	InstalledExtensions(ctx context.Context) ([]string, error)
+}
+
+// resetObjects reads what a reset of the scope drops, keeping the extensions
+// the database holds, which is what a claim keeps. A writer that cannot say
+// yields nothing, and the check counts tables alone there.
+func resetObjects(ctx context.Context, conn *dbschema.DatabaseConnection, scope Scope) ([]DroppedObject, error) {
+	writer := conn.SchemaWriter()
+	lister, ok := writer.(resetObjectLister)
+	if !ok {
+		return nil, nil
+	}
+	var kept []string
+	if extensions, ok := writer.(installedExtensionLister); ok {
+		installed, err := extensions.InstalledExtensions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		kept = installed
+	}
+	schemas := []string{scope.Schema}
+	if scope.Realm {
+		schemas = make([]string, 0, len(scope.Schemas))
+		for _, schema := range scope.Schemas {
+			schemas = append(schemas, schema.Name)
+		}
+	}
+	listed, err := lister.ResetObjects(ctx, schemas, kept)
+	if err != nil {
+		return nil, err
+	}
+	dropped := make([]DroppedObject, 0, len(listed))
+	for _, object := range listed {
+		dropped = append(dropped, DroppedObject(object))
+	}
+	return dropped, nil
 }
 
 // GovernsDev reports whether a dev database of the dialect is checked before
@@ -97,8 +158,8 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 	return realmScoped(info.Dialect, info.URL, strings.TrimSpace(info.Schema))
 }
 
-// DevRefusal returns the pinned binary's refusal of a dev database with this
-// scope, or nil when the database is clean.
+// DevRefusal returns the refusal of a dev database with this scope, or nil when
+// the database is clean.
 //
 // The operand is tables, as it is for `migrate apply`, and the object the
 // refusal names is chosen the same way; the sentences differ, and a dev
@@ -118,15 +179,35 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 //     schema, even an empty one, refuses with `found schema "s"`, naming the
 //     first schema in byte order -- which is `public` itself when it sorts
 //     first, whether or not it holds anything.
+//
+// Past those, the refusal is Ptah's and deliberately stricter than the
+// binary's: a dev database holding anything else the reset would drop, listed
+// in Dropped, is refused with the first of them, `found view "v" in connected
+// schema` in schema scope and `found view "v" in schema "public"` in realm
+// scope, `found large object "16385"`, or a default privilege the reset
+// revokes, named by owner, object type and grantee. Measured against the
+// binary v1.3.0 on PostgreSQL 18.6 on 2026-09-27, with a view, a materialized
+// view, a function, a procedure, a sequence, an enum, a domain, a composite
+// type, a collation or a default privilege alone in the dev database: with a
+// search_path it accepts the database and leaves the object in place, because
+// it does not model those kinds; with none it accepts the database and drops
+// every one of them but the enum. Ptah's reset drops all of them in both scopes, and a replay drops a
+// large object too, where the binary leaves it. A refusal keeps the object
+// where the binary would keep it, and says so where the binary would drop it
+// in silence; keeping it instead would have every dev read filter it out, and
+// a migration's `CREATE ... IF NOT EXISTS` pass against it (stokaro/ptah#3808).
 func (s Scope) DevRefusal() error {
 	if !GovernsDev(s.Dialect) {
 		return nil
 	}
 	if s.Realm {
-		return s.devRealmRefusal()
+		if refusal := s.devRealmRefusal(); refusal != nil {
+			return refusal
+		}
+		return s.droppedRefusal()
 	}
 	if len(s.Tables) == 0 {
-		return nil
+		return s.droppedRefusal()
 	}
 	switch platform.NormalizeDialect(s.Dialect) {
 	case platform.SQLite:
@@ -135,6 +216,23 @@ func (s Scope) DevRefusal() error {
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in connected schema", s.Tables[0])}
 	default:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q", s.Tables[0], s.Schema)}
+	}
+}
+
+// droppedRefusal names the first object in Dropped, or returns nil when the
+// reset drops nothing but the tables already judged.
+func (s Scope) droppedRefusal() error {
+	if len(s.Dropped) == 0 {
+		return nil
+	}
+	object := s.Dropped[0]
+	switch {
+	case object.Schema == "":
+		return &NotCleanError{Reason: fmt.Sprintf("found %s %q", object.Kind, object.Name)}
+	case s.Realm:
+		return &NotCleanError{Reason: fmt.Sprintf("found %s %q in schema %q", object.Kind, object.Name, object.Schema)}
+	default:
+		return &NotCleanError{Reason: fmt.Sprintf("found %s %q in connected schema", object.Kind, object.Name)}
 	}
 }
 

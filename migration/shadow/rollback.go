@@ -52,8 +52,9 @@ type RollbackVerifyOptions struct {
 // migrated down to the requested target version. Any failure aborts with the
 // target untouched.
 //
-// A shadow database that holds a table is refused before anything resets it,
-// and the shadow database is emptied again on every return. A failure to empty
+// A shadow database that holds anything the reset would drop is refused
+// before anything resets it, and the shadow database is emptied again on every
+// return. A failure to empty
 // it is joined to the result.
 //
 // The replay assumes a linear history: every migration at or below

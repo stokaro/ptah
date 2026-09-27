@@ -142,8 +142,8 @@ func runAtlasMigrateValidate(
 	return replayAtlasMigrateSource(cmd, source, fsys, devServerDisposable)
 }
 
-// refuseUncleanAtlasValidateDev refuses a dev database that holds a table in
-// the words this verb prints; see [refuseUncleanAtlasDevDatabase]. Without a
+// refuseUncleanAtlasValidateDev refuses a dev database that holds a table, or
+// anything else the reset would drop, in the words this verb prints; see [refuseUncleanAtlasDevDatabase]. Without a
 // --dev-url the verb reads no database, and the binary exits 0.
 func refuseUncleanAtlasValidateDev(cmd *cobra.Command, devURL string) error {
 	if err := devsnapshot.Refuse(cmd.Context(), devURL, devsnapshot.Replay); err != nil {

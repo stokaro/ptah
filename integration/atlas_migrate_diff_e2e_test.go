@@ -49,16 +49,14 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	devDB, err := sql.Open("pgx", testDBURL)
 	c.Assert(err, qt.IsNil)
 	defer devDB.Close()
-	_, err = devDB.ExecContext(ctx, `
+	// replayedObjects are relations and types of each kind a realm cleanup
+	// drops besides tables. A dev database holding one is refused before
+	// anything runs, so the replay creates them and the cleanup after it has to
+	// remove them. A routine cannot be among them: the replay refuses CREATE
+	// FUNCTION, whose effects it cannot confine to the dev database.
+	const replayedObjects = `
 CREATE VIEW stale_dev_view AS SELECT 1 AS value;
 CREATE MATERIALIZED VIEW stale_dev_materialized_view AS SELECT 1 AS value;
-CREATE FUNCTION stale_dev_function() RETURNS integer LANGUAGE sql AS 'SELECT 1';
-CREATE PROCEDURE stale_dev_procedure() LANGUAGE sql AS 'SELECT 1';
-CREATE AGGREGATE stale_dev_aggregate(integer) (
-	SFUNC = int4pl,
-	STYPE = integer,
-	INITCOND = '0'
-);
 CREATE SEQUENCE stale_dev_sequence;
 CREATE DOMAIN stale_dev_domain AS text;
 CREATE TYPE stale_dev_composite AS (value integer);
@@ -66,8 +64,7 @@ CREATE TYPE z_stale_dev_range AS RANGE (
 	subtype = integer,
 	multirange_type_name = a_stale_dev_multirange
 );
-`)
-	c.Assert(err, qt.IsNil)
+`
 	// crossSchemaDependencies is a table in public, a second schema, and a
 	// view and a foreign key in that schema that depend on the table.
 	const crossSchemaDependencies = `
@@ -130,13 +127,13 @@ SELECT
 	t.Run("database realm cleans dependencies across schemas", func(t *testing.T) {
 		// The replay creates the objects this time, and the cleanup after it
 		// has to remove a schema whose view and foreign key depend on a table
-		// in public.
+		// in public, and one object of every other kind it drops.
 		c := qt.New(t)
 		dir := t.TempDir()
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "20260101000000_cross_schema.sql"),
-			[]byte(crossSchemaDependencies), 0o600), qt.IsNil)
+			[]byte(crossSchemaDependencies+replayedObjects), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 		schemaPath := filepath.Join(dir, "schema.sql")
@@ -157,6 +154,7 @@ SELECT
 		objects, schemas := crossSchemaObjects(c)
 		c.Assert(objects, qt.Equals, 0)
 		c.Assert(schemas, qt.Equals, 0)
+		c.Assert(e2eStaleObjectCount(c, ctx, testDBURL), qt.Equals, 0)
 		migrationSQL := readFirstMatchingFile(
 			c,
 			migrationsDir,
@@ -226,7 +224,6 @@ env "dev" {
 		c.Assert(queryErr, qt.IsNil)
 		c.Assert(sourceTableCount, qt.Equals, 1)
 		c.Assert(e2eUserTableCount(c, ctx, testDBURL), qt.Equals, 0)
-		c.Assert(e2eStaleObjectCount(c, ctx, testDBURL), qt.Equals, 0)
 
 		applyDBName := testDBName + "_env_apply"
 		createE2EDatabase(c, ctx, adminDB, applyDBName)
@@ -448,11 +445,6 @@ SELECT
 		'stale_dev_view',
 		'stale_dev_materialized_view',
 		'stale_dev_sequence'
-	)) +
-	(SELECT COUNT(*) FROM pg_proc WHERE proname IN (
-		'stale_dev_function',
-		'stale_dev_procedure',
-		'stale_dev_aggregate'
 	)) +
 	(SELECT COUNT(*) FROM pg_type WHERE typname IN (
 		'stale_dev_domain',

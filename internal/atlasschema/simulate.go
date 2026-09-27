@@ -234,10 +234,10 @@ func connectSimulationDev(
 		release()
 		return simulationDev{}, err
 	}
-	// A dev database that holds tables was not left by a rehearsal: each one
-	// hands back what it claimed, over the scope it claimed. The reset before
-	// the rehearsal and the cleanup after it would drop those tables, so they
-	// are refused here, for the same reason and at the same point as the
+	// A dev database that holds tables, or other objects the reset drops, was
+	// not left by a rehearsal: each one hands back what it claimed, over the
+	// scope it claimed. The reset before the rehearsal and the cleanup after it
+	// would drop them, so they are refused here, for the same reason and at the same point as the
 	// identity check above. The claim records what the resets keep and which
 	// scope they empty; see [devclean.Reset].
 	baseline, err := devclean.Claim(ctx, devConn)

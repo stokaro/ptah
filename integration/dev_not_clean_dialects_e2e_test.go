@@ -34,14 +34,15 @@ import (
 
 // devDialectDatabase is a scratch database on one engine: its URL, an open
 // connection, the statements that create keep_me with a row in it, the query
-// that counts the rows, and statements that leave only objects the check does
-// not count.
+// that counts the rows, statements that leave only objects the check does not
+// count, and statements that leave objects the reset drops besides tables.
 type devDialectDatabase struct {
 	url          string
 	conn         *dbschema.DatabaseConnection
 	keepDDL      []string
 	keepRows     string
 	uncountedDDL []string
+	droppedDDL   []string
 }
 
 // exec runs statements on the scratch database.
@@ -110,7 +111,7 @@ func cockroachDevDatabase(c *qt.C) devDialectDatabase {
 		conn:         connectDevDialect(c, devURL),
 		keepDDL:      []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:     "SELECT count(*) FROM keep_me",
-		uncountedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		droppedDDL:   []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
 	}
 }
 
@@ -139,7 +140,7 @@ func yugabyteDevDatabase(c *qt.C) devDialectDatabase {
 		conn:         connectDevDialect(c, devURL),
 		keepDDL:      []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:     "SELECT count(*) FROM keep_me",
-		uncountedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
+		droppedDDL:   []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
 	}
 }
 
@@ -159,7 +160,7 @@ func spannerDevDatabase(c *qt.C) devDialectDatabase {
 		conn:         conn,
 		keepDDL:      []string{"CREATE TABLE keep_me (id bigint PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:     "SELECT count(*) FROM keep_me",
-		uncountedDDL: []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
+		droppedDDL:   []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
 	}
 }
 
@@ -277,8 +278,10 @@ func TestDevDatabaseClaimRefusesATableOnEveryEngineLive(t *testing.T) {
 }
 
 // TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive is the
-// control: a scratch database holding a view and the engine's other objects
-// the check does not count is claimed, as a PostgreSQL one is.
+// control: a scratch database holding nothing but objects the check does not
+// count is claimed. On the PostgreSQL family that is nothing at all, since the
+// reset lists every object it drops; on the other engines it is a view and
+// what else each keeps beside it.
 func TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive(t *testing.T) {
 	for _, engine := range devDialectEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -289,6 +292,40 @@ func TestDevDatabaseClaimTakesADatabaseWithNoTableOnEveryEngineLive(t *testing.T
 			_, err := devclean.Claim(c.Context(), dev.conn)
 
 			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// devDialectDroppingEngines are the engines whose reset says what else it
+// drops, with the object each refusal names: the first of a view "v" and a
+// sequence "s" by name, which is the sequence where there is one.
+var devDialectDroppingEngines = []devDialectEngine{
+	{name: "CockroachDB", server: cockroachDevDatabase, reason: `found sequence "s" in schema "public"`},
+	{name: "CockroachDB pinned to public", server: cockroachPinnedDevDatabase, reason: `found sequence "s" in connected schema`},
+	{name: "YugabyteDB", server: yugabyteDevDatabase, reason: `found sequence "s" in schema "public"`},
+	{name: "Spanner", server: spannerDevDatabase, reason: `found view "v" in schema "public"`},
+}
+
+// TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnThePostgresFamilyLive
+// claims a dev database holding a view, and a sequence where the engine has
+// one, on the PostgreSQL family besides PostgreSQL itself. The reset would
+// drop both, so the claim refuses the database and names one; both are still
+// there (stokaro/ptah#3808).
+func TestDevDatabaseClaimRefusesAnObjectTheResetDropsOnThePostgresFamilyLive(t *testing.T) {
+	for _, engine := range devDialectDroppingEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			dev := engine.server(c)
+			dev.exec(c, dev.droppedDDL)
+
+			_, err := devclean.Claim(c.Context(), dev.conn)
+
+			c.Assert(err, qt.ErrorMatches, `connected database is not clean: `+engine.reason+
+				`; Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`)
+			var views int
+			c.Assert(dev.conn.QueryRowContext(c.Context(),
+				"SELECT count(*) FROM information_schema.views WHERE table_name = 'v'").Scan(&views), qt.IsNil)
+			c.Assert(views, qt.Equals, 1)
 		})
 	}
 }

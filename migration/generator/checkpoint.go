@@ -337,8 +337,8 @@ type CheckpointFromShadowOptions struct {
 // shadow database, introspects the resulting cumulative schema, and renders it
 // as a checkpoint migration body pair (up creates everything, down drops it).
 // The migration directory is the source of truth, so no target database is
-// needed. A shadow database that holds a table is refused before anything
-// resets it. Otherwise it is dropped clean before the replay, its migration
+// needed. A shadow database that holds anything the reset would drop is
+// refused before anything resets it. Otherwise it is dropped clean before the replay, its migration
 // metadata is removed before introspection, and it is emptied again on every
 // return; a failure to empty it fails the generation. For a SQLite shadow,
 // malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused

@@ -14,8 +14,9 @@
 // The database is disposable by construction. Every entry point refuses a URL
 // that could resolve to the target's live realm, because the verification is
 // destructive and the target is not. It also refuses a database that holds a
-// table, which the reset before the replay would drop, and it empties the
-// database again on its way out, so the same URL serves the next run.
+// table, or on the PostgreSQL family anything else the reset before the replay
+// would drop, and it empties the database again on its way out, so the same
+// URL serves the next run.
 //
 // # The four questions
 //
