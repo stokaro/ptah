@@ -84,11 +84,17 @@ const (
 	// The two ends of a default privilege. They are separate reasons because
 	// the catalog stores them in separate places: the role whose new objects
 	// the defaults apply to is a column of pg_default_acl, and the role
-	// receiving them is inside the aclitem[] the server explodes. A branch
-	// that read one and not the other would leave the description naming a
-	// role it does not define, which is the invariant readRoles states.
-	readsDefaultPrivilegeRole = "d.defaclrole"
-	readsDefaultPrivilegeACL  = "aclexplode(d.defaclacl)"
+	// receiving them is inside the ACL. A branch that read one and not the
+	// other would leave the description naming a role it does not define,
+	// which is the invariant readRoles states.
+	//
+	// The ACL is exploded in Go, so the receiving end takes two statements: a
+	// read of the ACL, which this fake answers with the grantees in the bound
+	// schemas, and a branch of the role statement matching the names that
+	// read found, which this fake honors only for a name the statement binds.
+	readsDefaultPrivilegeRole    = "d.defaclrole"
+	readsDefaultPrivilegeACL     = "array_to_json(d.defaclacl)"
+	readsDefaultPrivilegeGrantee = "g.rolname IN ("
 
 	// readsScopedRoleSet is the outer statement consuming the set the branches
 	// build. Binding the schema names is not on its own a restriction: the
@@ -188,7 +194,7 @@ var (
 	byPolicy          = []string{readsPolicyRoles}
 
 	byDefaultPrivilegeRole  = []string{readsDefaultPrivilegeRole}
-	byDefaultPrivilegeGrant = []string{readsDefaultPrivilegeACL, readsGrantee}
+	byDefaultPrivilegeGrant = []string{readsDefaultPrivilegeGrantee}
 
 	bySchemaOwner   = []string{readsSchemaOwner}
 	byRelationOwner = []string{readsRelationOwner}
@@ -235,9 +241,10 @@ func newRolesServer(
 	return reader
 }
 
-// newRecordingRolesServer is newRolesServer plus every statement the reader
-// sent, in order, so a test can assert on the SQL itself rather than only on
-// what a fake chose to answer.
+// newRecordingRolesServer is newRolesServer plus every role statement the
+// reader sent, in order, so a test can assert on the SQL itself rather than
+// only on what a fake chose to answer. The read of the default privilege
+// grantees that precedes each role statement is answered and not recorded.
 func newRecordingRolesServer(
 	tb interface{ Cleanup(func()) },
 	cluster []clusterRole,
@@ -277,12 +284,78 @@ func newRecordingRolesServerWithPasswordVisibility(
 				strings.Contains(normalized, ".rolpassword")) {
 			return dbtest.QueryResult{}, fmt.Errorf("unprivileged role query reads protected password metadata")
 		}
-		sent = append(sent, query)
+		recordRoleStatement(&sent, query)
 		return answerRoles(query, args, cluster)
 	})
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, schemas[0], caps)
 	reader.SetSchemas(schemas)
 	return reader, &sent
+}
+
+// recordRoleStatement appends query to sent unless it is the read of the
+// default privilege grantees, which is not a role statement.
+func recordRoleStatement(sent *[]string, query string) {
+	if isDefaultPrivilegeGranteeRead(stripSQLComments(query)) {
+		return
+	}
+	*sent = append(*sent, query)
+}
+
+// isDefaultPrivilegeGranteeRead reports whether the statement is the read of
+// the ACLs whose grantees the role statement then matches by name. The role
+// statement reads pg_default_acl too, for the grantor, and is the one that
+// selects from pg_roles.
+func isDefaultPrivilegeGranteeRead(stripped string) bool {
+	return strings.Contains(stripped, "FROM pg_default_acl") && !strings.Contains(stripped, "FROM pg_roles")
+}
+
+// answerDefaultPrivilegeGrantees plays PostgreSQL for the grantee read: one
+// ACL per role granted a default privilege in a bound schema, and nothing when
+// the statement does not select the ACL. Each ACL holds PUBLIC too, which is
+// not a role, so a reader that bound it as one gets the error boundNames gives
+// for an empty name.
+func answerDefaultPrivilegeGrantees(
+	stripped string,
+	args []driver.NamedValue,
+	cluster []clusterRole,
+) (dbtest.QueryResult, error) {
+	bound, err := boundNames(stripped, args)
+	if err != nil {
+		return dbtest.QueryResult{}, err
+	}
+	result := dbtest.QueryResult{Columns: []string{"acl"}}
+	if !strings.Contains(stripped, readsDefaultPrivilegeACL) {
+		return result, nil
+	}
+	for _, role := range cluster {
+		if !slices.Contains(role.reads, readsDefaultPrivilegeGrantee) || !bound[role.schema] {
+			continue
+		}
+		result.Rows = append(result.Rows, []driver.Value{`["=r/owner","` + role.name + `=r/owner"]`})
+	}
+	return result, nil
+}
+
+// boundNames returns the names a statement binds, and refuses an argument
+// whose placeholder the statement never mentions, or that is empty: no schema
+// and no role has an empty name, so binding one means the reader took
+// something else for a name.
+func boundNames(stripped string, args []driver.NamedValue) (map[string]bool, error) {
+	bound := make(map[string]bool, len(args))
+	for _, arg := range args {
+		placeholder := fmt.Sprintf("$%d", arg.Ordinal)
+		if !strings.Contains(stripped, placeholder) {
+			return nil, fmt.Errorf(
+				"argument %s is bound but %s never appears in the query", arg.Value, placeholder,
+			)
+		}
+		name, ok := arg.Value.(string)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("argument %s is not a name", placeholder)
+		}
+		bound[name] = true
+	}
+	return bound, nil
 }
 
 // answerRoles plays PostgreSQL for the roles query.
@@ -294,6 +367,9 @@ func newRecordingRolesServerWithPasswordVisibility(
 // predicate, not from spotting a token inside it.
 func answerRoles(query string, args []driver.NamedValue, cluster []clusterRole) (dbtest.QueryResult, error) {
 	stripped := stripSQLComments(query)
+	if isDefaultPrivilegeGranteeRead(stripped) {
+		return answerDefaultPrivilegeGrantees(stripped, args, cluster)
+	}
 
 	membership, err := membershipPredicate(stripped)
 	if err != nil {
@@ -305,19 +381,9 @@ func answerRoles(query string, args []driver.NamedValue, cluster []clusterRole) 
 		return dbtest.QueryResult{}, err
 	}
 
-	bound := make(map[string]bool, len(args))
-	for _, arg := range args {
-		placeholder := fmt.Sprintf("$%d", arg.Ordinal)
-		if !strings.Contains(stripped, placeholder) {
-			return dbtest.QueryResult{}, fmt.Errorf(
-				"argument %s is bound but %s never appears in the query", arg.Value, placeholder,
-			)
-		}
-		name, ok := arg.Value.(string)
-		if !ok {
-			return dbtest.QueryResult{}, fmt.Errorf("argument %s is not a schema name", placeholder)
-		}
-		bound[name] = true
+	bound, err := boundNames(stripped, args)
+	if err != nil {
+		return dbtest.QueryResult{}, err
 	}
 
 	result := dbtest.QueryResult{
@@ -419,6 +485,11 @@ func roleIsUsedByScope(role clusterRole, stripped string, branches []string, bou
 		return true
 	}
 	if role.schema == "" || !bound[role.schema] {
+		return false
+	}
+	if slices.Contains(role.reads, readsDefaultPrivilegeGrantee) && !bound[role.name] {
+		// The branch matches names, so it reaches a grantee only when the
+		// statement binds that grantee's name.
 		return false
 	}
 	return someBranchReads(branches, role.reads)
@@ -534,7 +605,7 @@ func TestReadRolesCockroachLeavesPasswordStateUnknownWithoutProtectedCatalogRead
 		normalized := strings.Join(strings.Fields(query), " ")
 		c.Assert(normalized, qt.Not(qt.Contains), "has_table_privilege",
 			qt.Commentf("this dialect must not trust the table-privilege answer"))
-		sent = append(sent, query)
+		recordRoleStatement(&sent, query)
 		return answerRoles(query, args, cluster)
 	})
 	reader := NewPostgreSQLWireReaderWithCapabilities(

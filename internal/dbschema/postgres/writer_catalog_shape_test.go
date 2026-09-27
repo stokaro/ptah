@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"database/sql/driver"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -11,12 +12,14 @@ import (
 	"ptah.run/internal/dbschema/postgres"
 )
 
-// cleanupQueryFor captures the catalog query DropAllTables sends for a given
-// capability set.
+// cleanupQueryFor captures every catalog statement DropAllTables sends for a
+// given capability set, joined.
 //
-// The query is the subject rather than the drops: a relation the server does
-// not have is a PARSE failure, so a cleanup that names one drops nothing at all
-// rather than missing one object (stokaro/ptah#1811).
+// The statements are the subject rather than the drops: a relation the server
+// does not have is a PARSE failure, so a cleanup that names one drops nothing
+// at all rather than missing one object (stokaro/ptah#1811). They are joined
+// because the default privileges are read by a statement of their own, and a
+// relation the server lacks must be absent from all of them.
 func cleanupQueryFor(c *qt.C, caps capability.Capabilities) string {
 	c.Helper()
 	var queries []string
@@ -30,7 +33,7 @@ func cleanupQueryFor(c *qt.C, caps capability.Capabilities) string {
 
 	c.Assert(writer.DropAllTables(c.TB.Context()), qt.IsNil)
 	c.Assert(len(queries) >= 3, qt.IsTrue)
-	return queries[2]
+	return strings.Join(queries, "\n")
 }
 
 // fullCatalogCaps is a server whose catalog answers everything the cleanup can
@@ -132,7 +135,7 @@ func TestNewPostgreSQLWriterForRunner_DeclaresTheCatalogItAssumes(t *testing.T) 
 }
 
 // cleanupQueryForDefaultWriter is cleanupQueryFor through the constructor that
-// chooses the capabilities itself.
+// chooses the capabilities itself, joined the same way.
 func cleanupQueryForDefaultWriter(c *qt.C) string {
 	c.Helper()
 	var queries []string
@@ -146,5 +149,5 @@ func cleanupQueryForDefaultWriter(c *qt.C) string {
 
 	c.Assert(writer.DropAllTables(c.TB.Context()), qt.IsNil)
 	c.Assert(len(queries) >= 3, qt.IsTrue)
-	return queries[2]
+	return strings.Join(queries, "\n")
 }

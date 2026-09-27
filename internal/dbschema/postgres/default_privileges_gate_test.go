@@ -16,12 +16,15 @@ import (
 // isDefaultPrivilegeRead names the default-privilege read among the two dozen
 // statements a full schema read sends.
 //
-// The catalog relation alone does not identify it: the role read joins
-// pg_default_acl too, because a default privilege names a grantor and a grantee
-// and a description that did not report them would reference roles it never
-// defines. The role read is the one that selects from pg_roles.
+// The catalog relation alone does not identify it. The role read joins
+// pg_default_acl too, and so does the read of the grantees it counts, because a
+// default privilege names a grantor and a grantee and a description that did
+// not report them would reference roles it never defines. The role read is the
+// one that selects from pg_roles; the grantee read selects the ACL alone, with
+// no object type.
 func isDefaultPrivilegeRead(query string) bool {
-	return strings.Contains(query, "pg_default_acl") && !strings.Contains(query, "pg_roles")
+	return strings.Contains(query, "pg_default_acl") && !strings.Contains(query, "pg_roles") &&
+		strings.Contains(query, "AS object_type") && !isUndescribedDefaultPrivilegeRead(query)
 }
 
 // answersOneDefaultPrivilege answers a full ReadSchemaContext, giving the
@@ -61,10 +64,8 @@ func withDefaultPrivilegeRow(query string, result dbtest.QueryResult) dbtest.Que
 		return result
 	}
 	return dbtest.QueryResult{
-		Columns: []string{
-			"grantor", "schema_name", "object_type", "grantee", "privilege", "with_option",
-		},
-		Rows: [][]driver.Value{{"app_owner", "public", "TABLES", "app_reader", "SELECT", false}},
+		Columns: []string{"grantor", "schema_name", "object_type", "acl"},
+		Rows:    [][]driver.Value{{"app_owner", "public", "TABLES", `["app_reader=r/app_owner"]`}},
 	}
 }
 

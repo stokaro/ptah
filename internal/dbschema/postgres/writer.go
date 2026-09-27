@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/aclitem"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
@@ -698,8 +700,6 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				{{DROP_EXPR_6}}
 			FROM pg_collation c
 			JOIN managed_namespaces n ON n.oid = c.collnamespace{{EXTENSION_OWNED_COLLATION_FILTER}}
-
-{{DEFAULT_PRIVILEGE_OBJECTS}}
 		)
 {{BRANCH_COLLATION_END}}		SELECT object_kind, object_schema, object_name, object_qualifier, drop_statement
 		FROM cleanup_objects
@@ -717,8 +717,6 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	} else {
 		query = withoutExtensionOwnedFilters(query)
 	}
-	query = strings.ReplaceAll(
-		query, "{{DEFAULT_PRIVILEGE_OBJECTS}}", defaultPrivilegeObjects(w.caps))
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query schema objects: %w", err)
@@ -746,7 +744,12 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate schema objects: %w", err)
 	}
-	return objects, nil
+	// The revokes run after every drop.
+	revokes, err := w.collectDefaultPrivilegeRevokes(ctx, tx, scope.schemas)
+	if err != nil {
+		return nil, err
+	}
+	return append(objects, revokes...), nil
 }
 
 // The routine kinds are compared with OR rather than IN, and pg_class's are
@@ -923,55 +926,86 @@ func notExtensionOwned(keyword, catalogTable, oid string) string {
 			  )`
 }
 
-// defaultPrivilegeObjects returns the UNION branch that revokes ALTER DEFAULT
-// PRIVILEGES grants, or an empty string on a server whose catalog has no
-// pg_default_acl to read them from.
-//
-// Same reasoning as extensionOwnedRoutineFilter and for the same relation-shaped
-// reason: a missing relation is a parse failure, so asking anyway costs the
-// whole cleanup rather than one branch. A server without the relation has no
-// default-privilege grants to revoke, so the branch removes nothing it would
-// have removed (stokaro/ptah#1811).
-// The branch keeps format() unconditionally: it only exists where
-// CatalogDefaultPrivileges is true, and a server with that relation is a real
-// PostgreSQL, which has format() too. The grantor clause spells CockroachDB's
-// FOR ALL ROLES, which has no role to name; see [defaultACLGrantorClause].
-func defaultPrivilegeObjects(caps capability.Capabilities) string {
-	if !caps.Has(capability.CatalogDefaultPrivileges) {
-		return ""
-	}
-	return `			UNION ALL
+// defaultPrivilegeKind is the cleanup object kind of one grantee's default
+// privileges, revoked rather than dropped.
+const defaultPrivilegeKind = "default privilege"
 
-			SELECT DISTINCT
-				70,
-				0,
-				'default privilege',
-				n.nspname,
-				format(
-					'%s/%s/%s',
-					` + defaultACLGrantorName("d") + `,
-					d.defaclobjtype,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE pg_get_userbyid(acl.grantee)
-					END
-				),
-				NULL::text,
-				format(
-					'ALTER DEFAULT PRIVILEGES %s IN SCHEMA %I ' ||
-					'REVOKE ALL PRIVILEGES ON %s FROM %s',
-					` + defaultACLGrantorClause("d") + `,
-					n.nspname,
-					` + defaultACLObjectType("d") + `,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE format('%I', pg_get_userbyid(acl.grantee))
-					END
-				)
-			FROM pg_default_acl d
-			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
-			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+// collectDefaultPrivilegeRevokes returns one ALTER DEFAULT PRIVILEGES ...
+// REVOKE ALL per grantee of each default privilege set in the managed schemas,
+// or nothing on a server whose catalog has no pg_default_acl.
+//
+// It is a query of its own rather than a branch of the cleanup query, because
+// the ACL is exploded here in Go. aclexplode answers no rows on CockroachDB
+// v25.4.16, so a branch built on it revokes nothing there, and `ptah db
+// drop-all` leaves every default privilege in place (stokaro/ptah#3802). See
+// [defaultACLList].
+//
+// A server without the relation is not asked, for the reason the cleanup
+// query's optional branches give: a missing relation is a parse failure, and a
+// server without it has no default privilege to revoke (stokaro/ptah#1811). The
+// grantor clause spells CockroachDB's FOR ALL ROLES, which has no role to name;
+// see [defaultACLGrantor].
+func (w *PostgreSQLWriter) collectDefaultPrivilegeRevokes(
+	ctx context.Context,
+	tx cleanupConn,
+	schemas []string,
+) ([]postgresCleanupObject, error) {
+	if !w.caps.Has(capability.CatalogDefaultPrivileges) {
+		return nil, nil
+	}
+	query := `
+		SELECT
+			n.nspname,
+			` + defaultACLGrantor("d") + ` AS grantor,
+			d.defaclobjtype,
+			` + defaultACLObjectType("d") + ` AS object_type,
+			` + defaultACLList("d") + ` AS acl
+		FROM pg_default_acl d
+		JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		WHERE ` + postgresSchemaPredicate(len(schemas)) + `
+		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+	rows, err := tx.QueryContext(ctx, query, stringsToAny(schemas)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query default privileges: %w", err)
+	}
+	defer rows.Close()
+
+	var revokes []postgresCleanupObject
+	for rows.Next() {
+		var schema, grantor, class, objectType, acl string
+		if err := rows.Scan(&schema, &grantor, &class, &objectType, &acl); err != nil {
+			return nil, fmt.Errorf("failed to scan default privileges: %w", err)
+		}
+		items, err := aclitem.ParseJSON(acl)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to read the default privileges %s set on %s in schema %s: %w",
+				defaultACLGrantorName(grantor), objectType, schema, err,
+			)
+		}
+		for _, item := range items {
+			revokes = append(revokes, postgresCleanupObject{
+				Kind:   defaultPrivilegeKind,
+				Schema: schema,
+				Name:   defaultACLGrantorName(grantor) + "/" + class + "/" + defaultACLGranteeName(item),
+				Statement: "ALTER DEFAULT PRIVILEGES " + defaultACLGrantorClause(grantor) +
+					" IN SCHEMA " + quoteIdent(schema) +
+					" REVOKE ALL PRIVILEGES ON " + objectType +
+					" FROM " + defaultACLGranteeClause(item),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate default privileges: %w", err)
+	}
+	slices.SortFunc(revokes, func(a, b postgresCleanupObject) int {
+		return cmp.Or(
+			strings.Compare(a.Schema, b.Schema),
+			strings.Compare(a.Name, b.Name),
+			strings.Compare(a.Statement, b.Statement),
+		)
+	})
+	return revokes, nil
 }
 
 // viewOrderingShapeFor picks the shape a server can answer.
