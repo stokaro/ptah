@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"ptah.run/core/coverage"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -22,6 +24,26 @@ func newSchemaMismatchError(diff *difftypes.SchemaDiff) *VerificationError {
 		Stage:      "schema-match",
 		Mismatches: collectMismatches(diff),
 	}}
+}
+
+// newBaselineMismatchError is [newSchemaMismatchError] for a baseline, which
+// also reports each declared object the comparison withheld because the
+// target read did not describe its kind. Those come after the differences, one
+// "undecided_object" mismatch each.
+func newBaselineMismatchError(diff *difftypes.SchemaDiff, undecided []coverage.Object) *VerificationError {
+	var mismatches []Mismatch
+	if diff.HasChanges() {
+		mismatches = collectMismatches(diff)
+	}
+	for _, object := range undecided {
+		mismatches = append(mismatches, Mismatch{
+			Kind:   "undecided_object",
+			Object: object.Name,
+			Message: fmt.Sprintf("undecided %s %s: %s",
+				object.Kind, object.Name, undecidednote.Cause(object, "the target database")),
+		})
+	}
+	return &VerificationError{Result: VerificationResult{Stage: "schema-match", Mismatches: mismatches}}
 }
 
 func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {

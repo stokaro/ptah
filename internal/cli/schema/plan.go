@@ -245,7 +245,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		}
 	}
 
-	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
+	plan, undecided, err := atlasschema.PreparePlanFileReportingUndecided(cmd.Context(), conn, atlasschema.PlanFileOptions{
 		ProjectRoot:     schemaroot.Of(opts.rootDirs),
 		Name:            opts.name,
 		DevURL:          opts.devURL,
@@ -259,14 +259,14 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		return atlasschema.PlanEvidence{}, err
 	}
 	if !plan.HasChanges() {
-		fmt.Fprintln(human, "Schema is synced, no changes to be made.")
-		return atlasschema.PlanEvidence{Plan: &plan}, nil
+		printNothingPlanned(human, undecided)
+		return atlasschema.PlanEvidence{Plan: &plan, Undecided: undecided}, nil
 	}
 	document, err := atlasschema.MarshalPlanFile(plan)
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
-	evidence := atlasschema.PlanEvidence{Plan: &plan, Document: document}
+	evidence := atlasschema.PlanEvidence{Plan: &plan, Document: document, Undecided: undecided}
 	if opts.dryRun {
 		// Under --json the report carries the document, and printing it a
 		// second time would put two JSON values on one stream.

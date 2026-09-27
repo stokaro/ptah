@@ -138,6 +138,12 @@ Those are the categories and severities
 [`ptah schema drift`](../../direct/compare-and-drift/) reports, from the same
 classification.
 
+A declared object the read of the database could not check is counted as one
+`undecided` category at `warning` severity, so the page does not say the
+database matches. An **Undecided** table below the counters names each object
+and the reason the read gave, for example an account that may not read the
+role catalog.
+
 Below the panel is the schema, rendered by the same code as
 [`ptah schema export --to html`](../document/): an entity diagram, then one
 section per table with its columns and indexes. The sidebar names the page, the

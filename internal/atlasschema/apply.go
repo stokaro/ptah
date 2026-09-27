@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -199,6 +200,8 @@ type ApplyRuntimePlan struct {
 	// target state the plan was computed against; the dev database simulation
 	// recreates it before rehearsing the plan.
 	current *catalog.Database
+	// undecided is what [ApplyRuntimePlan.Undecided] returns.
+	undecided []coverage.Object
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -256,6 +259,9 @@ func (c applyComputation) dataIndex() int {
 // re-reading the database.
 type applyComputation struct {
 	statements []string
+	// undecided are the declared objects the comparison withheld because the
+	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
+	undecided []coverage.Object
 	// dataStatements reconcile declared rows. They are kept apart from the DDL
 	// so a plan can record the severity this package assigns them: a SQL
 	// analyzer reads a DELETE of a reference row as safe, which is true about
@@ -421,6 +427,7 @@ func computeApplyPlan(
 	// wording names neither surface's flags: native `schema apply` and the
 	// compatibility one both come through here.
 	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
+	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	if diff.HasChanges() {
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
@@ -807,11 +814,12 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 	return ApplyRuntimePlan{
-		plan:    ApplyPlan{statements: computation.executionStatements()},
-		dryRun:  opts.DryRun,
-		conn:    conn,
-		txMode:  opts.TxMode,
-		current: computation.current,
+		plan:      ApplyPlan{statements: computation.executionStatements()},
+		dryRun:    opts.DryRun,
+		conn:      conn,
+		txMode:    opts.TxMode,
+		current:   computation.current,
+		undecided: computation.undecided,
 	}, nil
 }
 
@@ -869,6 +877,15 @@ func (p ApplyRuntimePlan) SQL() string {
 
 func (p ApplyRuntimePlan) Statements() []string {
 	return p.plan.Statements()
+}
+
+// Undecided returns the declared objects the comparison withheld: the read of
+// the target did not describe their kind, so nothing checked whether they
+// exist, and no statement in the plan creates them. They are sorted by kind and
+// then name. A plan with no statements and a non-empty Undecided has not shown
+// that the target matches the desired schema.
+func (p ApplyRuntimePlan) Undecided() []coverage.Object {
+	return slices.Clone(p.undecided)
 }
 
 // Execute applies the prepared schema diff. Dry-run and no-op plans return

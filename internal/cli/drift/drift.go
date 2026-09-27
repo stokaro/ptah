@@ -14,12 +14,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/datamigrate"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -130,6 +132,13 @@ type driftReport struct {
 	DatabaseURL      string           `json:"database_url,omitempty"`
 	IgnoredTables    []string         `json:"ignored_tables,omitempty"`
 	Findings         []safety.Finding `json:"findings,omitempty"`
+	// Undecided names the declared objects the comparison withheld: the read
+	// of the database did not describe their kind, so nothing checked whether
+	// they exist. They count as one finding at warning severity, so a
+	// threshold of all fails on them and destructive does not. Drift stays
+	// false when they are all there is, because no difference was found, and
+	// Failed says whether the check passed.
+	Undecided []coverage.Object `json:"undecided,omitempty"`
 	// ManagedData names the declared reference tables whose live rows differ,
 	// in counts. It is absent when every declared row is in place, so the
 	// section appears only where there is something to act on, and it carries
@@ -218,28 +227,8 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	// The row findings join the schema findings in one list, so the severity
-	// threshold, the text report and the workflow annotations read row drift
-	// through the code that already reads structural drift. A database whose
-	// structure matches and whose declared rows were edited by hand is drift,
-	// and the check exists to say so.
-	findings := append(safety.ClassifySchemaDiff(result.Diff), managedDataFindings(result.DataDrift)...)
-	highest := safety.Highest(findings)
-	hasDrift := result.Diff.HasChanges() || result.DataDrift.HasChanges()
-	failed := opts.useExitCode && hasDrift && shouldFailDrift(highest, opts.severity)
-	report := driftReport{
-		Drift:            hasDrift,
-		Failed:           failed,
-		FailureThreshold: opts.severity,
-		HighestSeverity:  highest,
-		Dialect:          result.Dialect,
-		Sources:          result.Sources,
-		DatabaseURL:      result.DatabaseURL,
-		IgnoredTables:    ignoredTables,
-		Findings:         findings,
-		ManagedData:      driftedManagedData(result.DataDrift),
-		Diff:             result.Diff,
-	}
+	undecidednote.Report(cmd.ErrOrStderr(), result.Undecided, "the database", "the desired schema")
+	report := assessDrift(result, opts.severity, opts.useExitCode, ignoredTables)
 
 	// The report is the answer, not a diagnostic, so it goes to stdout whether
 	// or not there is drift. It went to stderr when there was, which put the
@@ -254,10 +243,48 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err := writeReport(cmd.OutOrStdout(), opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
 	}
-	if failed {
+	if report.Failed {
 		return exitcode.New(1, errDriftDetected)
 	}
 	return nil
+}
+
+// assessDrift grades one comparison into the report the command prints.
+//
+// The row findings join the schema findings in one list, so the severity
+// threshold, the text report and the workflow annotations read row drift
+// through the code that already reads structural drift. A database whose
+// structure matches and whose declared rows were edited by hand is drift, and
+// the check exists to say so.
+//
+// The declared objects the read could not check join the list the same way. A
+// comparison that did not look is not a database that matches, so the check
+// does not pass on one at the default threshold.
+func assessDrift(
+	result *schemaops.CompareResult,
+	severity string,
+	useExitCode bool,
+	ignoredTables []string,
+) driftReport {
+	findings := append(safety.ClassifySchemaDiff(result.Diff), managedDataFindings(result.DataDrift)...)
+	findings = append(findings, undecidednote.Findings(result.Undecided)...)
+	highest := safety.Highest(findings)
+	hasDrift := result.Diff.HasChanges() || result.DataDrift.HasChanges()
+	unproven := hasDrift || len(result.Undecided) > 0
+	return driftReport{
+		Drift:            hasDrift,
+		Failed:           useExitCode && unproven && shouldFailDrift(highest, severity),
+		FailureThreshold: severity,
+		HighestSeverity:  highest,
+		Dialect:          result.Dialect,
+		Sources:          result.Sources,
+		DatabaseURL:      result.DatabaseURL,
+		IgnoredTables:    ignoredTables,
+		Findings:         findings,
+		Undecided:        result.Undecided,
+		ManagedData:      driftedManagedData(result.DataDrift),
+		Diff:             result.Diff,
+	}
 }
 
 // managedDataFindings returns the row-drift findings the comparison produced.
@@ -360,13 +387,11 @@ func writeTextReport(w io.Writer, report driftReport) error {
 		_, err := fmt.Fprintf(w, "Error: %s\n", report.Error)
 		return err
 	}
-	if !report.Drift {
-		_, err := fmt.Fprintln(w, "No schema drift detected.")
+	if _, err := fmt.Fprintln(w, textHeadline(report)); err != nil {
 		return err
 	}
-
-	if _, err := fmt.Fprintf(w, "Schema drift detected (highest severity: %s).\n", report.HighestSeverity); err != nil {
-		return err
+	if !report.Drift && len(report.Undecided) == 0 {
+		return nil
 	}
 	if _, err := fmt.Fprintf(w, "Failure threshold: %s. Failing: %t.\n", report.FailureThreshold, report.Failed); err != nil {
 		return err
@@ -384,6 +409,9 @@ func writeTextReport(w io.Writer, report driftReport) error {
 	if err := writeManagedDataSection(w, report.ManagedData); err != nil {
 		return err
 	}
+	if err := writeUndecidedSection(w, report.Undecided); err != nil {
+		return err
+	}
 	if len(report.Findings) == 0 {
 		return nil
 	}
@@ -393,6 +421,39 @@ func writeTextReport(w io.Writer, report driftReport) error {
 	}
 	for _, finding := range report.Findings {
 		if _, err := fmt.Fprintf(w, "- %s: %d (%s)\n", finding.Category, finding.Count, finding.Severity); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// textHeadline is the first line of the text report. A run that found no
+// difference and withheld nothing is the only one that says no drift was
+// detected: with an undecided object the read did not look at something the
+// desired schema declares, and "no drift" would claim a check that did not run.
+func textHeadline(report driftReport) string {
+	switch {
+	case report.Drift:
+		return fmt.Sprintf("Schema drift detected (highest severity: %s).", report.HighestSeverity)
+	case len(report.Undecided) > 0:
+		return fmt.Sprintf("No schema drift found, but %s (highest severity: %s).",
+			undecidednote.Summary(len(report.Undecided)), report.HighestSeverity)
+	default:
+		return "No schema drift detected."
+	}
+}
+
+// writeUndecidedSection prints one line per declared object the comparison
+// withheld. Standard error says why the read could not decide each one.
+func writeUndecidedSection(w io.Writer, undecided []coverage.Object) error {
+	if len(undecided) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nUndecided:"); err != nil {
+		return err
+	}
+	for _, object := range undecided {
+		if _, err := fmt.Fprintf(w, "- %s %q\n", object.Kind, object.Name); err != nil {
 			return err
 		}
 	}
@@ -435,7 +496,7 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 		_, err := fmt.Fprintf(w, "::error title=Ptah drift check failed::%s\n", escapeWorkflowCommand(report.Error))
 		return err
 	}
-	if !report.Drift {
+	if !report.Drift && len(report.Undecided) == 0 {
 		_, err := fmt.Fprintln(w, "::notice title=Ptah drift check::No schema drift detected")
 		return err
 	}
@@ -445,7 +506,8 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 		level = "error"
 	}
 	message := fmt.Sprintf(
-		"Schema drift detected; highest severity: %s; failure threshold: %s",
+		"%s; highest severity: %s; failure threshold: %s",
+		annotationHeadline(report),
 		report.HighestSeverity,
 		report.FailureThreshold,
 	)
@@ -460,6 +522,12 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 			}
 		}
 	}
+	for _, object := range report.Undecided {
+		message := fmt.Sprintf("%s %q could not be checked", object.Kind, object.Name)
+		if _, err := fmt.Fprintf(w, "::%s title=Ptah undecided object::%s\n", level, escapeWorkflowCommand(message)); err != nil {
+			return err
+		}
+	}
 	for _, finding := range report.Findings {
 		message := fmt.Sprintf("%s: %d (%s)", finding.Category, finding.Count, finding.Severity)
 		if _, err := fmt.Fprintf(w, "::%s title=Ptah drift finding::%s\n", level, escapeWorkflowCommand(message)); err != nil {
@@ -467,6 +535,15 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 		}
 	}
 	return nil
+}
+
+// annotationHeadline opens the workflow annotation, for the reason
+// [textHeadline] gives.
+func annotationHeadline(report driftReport) string {
+	if report.Drift {
+		return "Schema drift detected"
+	}
+	return "No schema drift found, but " + undecidednote.Summary(len(report.Undecided))
 }
 
 func escapeWorkflowCommand(s string) string {

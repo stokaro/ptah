@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/migration/safety"
 )
 
 // The warning is the only place a withheld addition surfaces at all: no
@@ -120,4 +121,46 @@ func TestUndecidedWarningsAreDistinctPerReason(t *testing.T) {
 	}
 
 	c.Assert(warnings, qt.HasLen, len(limits))
+}
+
+// TestFindingsCountsTheWithheldObjects grades what a drift check could not see:
+// one finding counting every withheld object, at warning severity, so the
+// default threshold fails on it and the destructive one does not.
+func TestFindingsCountsTheWithheldObjects(t *testing.T) {
+	c := qt.New(t)
+
+	findings := undecidednote.Findings([]coverage.Object{
+		withheldExtension(coverage.Refused(coverage.Extension)),
+		withheldExtension(coverage.Object{Reason: coverage.OutsideScope, Provenance: coverage.Configured}),
+	})
+
+	c.Assert(findings, qt.DeepEquals, []safety.Finding{
+		{Category: undecidednote.FindingCategory, Count: 2, Severity: safety.Warning},
+	})
+}
+
+// TestFindingsIsEmptyWhenNothingWasWithheld is the control: a comparison that
+// withheld nothing adds no finding, so a clean database stays clean.
+func TestFindingsIsEmptyWhenNothingWasWithheld(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(undecidednote.Findings(nil), qt.HasLen, 0)
+}
+
+func TestSummaryCountsTheObjects(t *testing.T) {
+	tests := []struct {
+		count int
+		want  string
+	}{
+		{count: 1, want: "1 declared object could not be decided"},
+		{count: 2, want: "2 declared objects could not be decided"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(undecidednote.Summary(test.count), qt.Equals, test.want)
+		})
+	}
 }

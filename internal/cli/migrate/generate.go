@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
@@ -26,6 +27,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
 )
@@ -559,8 +561,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
 		},
 	}
+	outcome := &generateOutcome{current: "the database"}
+	generateOpts.OnUndecided = outcome.collect
 	var files *generator.MigrationFiles
 	if replay {
+		outcome.current = "the replayed migration directory"
 		var plan *generator.MigrationPlan
 		plan, err = planGeneratedMigrationByReplay(cmd, generateOpts, generateReplayOptions{
 			migrationsDir:  migrationsDir,
@@ -589,11 +594,37 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		generateOpts.ConnectTimeout = connectTimeout
 		files, err = generator.GenerateMigration(cmd.Context(), generateOpts)
 	}
+	return outcome.report(cmd, targetURL, files, err)
+}
+
+// generateOutcome collects what the comparison withheld during one generate
+// and reports the run.
+type generateOutcome struct {
+	// current names the side the comparison read: the target, or in a replay
+	// the replayed directory.
+	current   string
+	undecided []coverage.Object
+}
+
+// collect is [generator.GenerateMigrationOptions.OnUndecided].
+func (o *generateOutcome) collect(objects []coverage.Object) {
+	o.undecided = objects
+}
+
+// report explains each withheld object once planning is over, whether or not
+// it succeeded, and then says what the run produced.
+func (o *generateOutcome) report(
+	cmd *cobra.Command,
+	targetURL string,
+	files *generator.MigrationFiles,
+	err error,
+) error {
+	undecidednote.Report(cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
 	if err != nil {
 		return err
 	}
 	if files == nil {
-		reportNothingToGenerate(cmd.OutOrStdout(), targetURL)
+		reportNothingToGenerate(cmd.OutOrStdout(), targetURL, o.undecided)
 		return nil
 	}
 	reportGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
@@ -608,7 +639,16 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 // neighbouring verb says something for the same state: `schema apply --dry-run`
 // answers `Schema is synced, no changes to be made.` and `migrations plan`
 // answers that it has no executable statements (stokaro/ptah#2083).
-func reportNothingToGenerate(out io.Writer, targetURL string) {
+//
+// It says the schema is synced only when the comparison withheld nothing. With
+// an undecided object the read did not look at something the desired schema
+// declares, and "synced" would claim a check that did not run.
+func reportNothingToGenerate(out io.Writer, targetURL string, undecided []coverage.Object) {
+	if len(undecided) > 0 {
+		fmt.Fprintf(out, "No migration files generated for %s, but %s.\n",
+			dburldisplay.Format(targetURL), undecidednote.Summary(len(undecided)))
+		return
+	}
 	fmt.Fprintf(out, "Schema is synced with %s, no migration files generated.\n",
 		dburldisplay.Format(targetURL))
 }

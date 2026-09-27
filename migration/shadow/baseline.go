@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/convert/dbschematogo"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // BaselineVerifyOptions configures shadow verification before metadata
@@ -162,7 +164,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 	if err != nil {
 		return baselineError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
-	diff, err := schemadiff.CompareWithDatabase(
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx,
 		opts.TargetConn,
 		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, opts.TargetConn.Info().Dialect),
@@ -199,10 +201,21 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 			nil,
 		)
 	}
-	if !diff.HasChanges() {
+	return baselineMatchError(diff, undecided)
+}
+
+// baselineMatchError is nil when the target matches the replay, and the
+// mismatch otherwise.
+//
+// An object the replay created that the target read could not check is not
+// shown to be in the target, and a baseline says the target already holds
+// everything the replayed migrations create. So it is a mismatch, as a missing
+// object is.
+func baselineMatchError(diff *difftypes.SchemaDiff, undecided []coverage.Object) error {
+	if !diff.HasChanges() && len(undecided) == 0 {
 		return nil
 	}
-	return wrapBaselineError(newSchemaMismatchError(diff))
+	return wrapBaselineError(newBaselineMismatchError(diff, undecided))
 }
 
 func baselineError(stage, kind, message string, err error) error {

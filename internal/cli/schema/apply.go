@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
@@ -28,6 +29,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrator"
 )
@@ -486,8 +488,9 @@ func runSchemaApplyOnLockedSession(
 	if err != nil {
 		return "", err
 	}
+	run.evidence.Undecided = plan.Undecided()
 	if !plan.HasChanges() {
-		fmt.Fprintln(run.human, "Schema is synced, no changes to be made.")
+		printNothingPlanned(run.human, run.evidence.Undecided)
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 
@@ -745,6 +748,18 @@ func editSchemaApplySQL(ctx context.Context, sqlText string) (string, error) {
 		return "", fmt.Errorf("read edited schema apply SQL: %w", err)
 	}
 	return string(edited), nil
+}
+
+// printNothingPlanned says that no statement was planned. It says the schema is
+// synced only when the comparison withheld nothing: with an undecided object,
+// the read did not look at something the desired schema declares, and "synced"
+// would claim a check that did not run. The warnings above it say what and why.
+func printNothingPlanned(out io.Writer, undecided []coverage.Object) {
+	if len(undecided) > 0 {
+		fmt.Fprintf(out, "No changes planned, but %s.\n", undecidednote.Summary(len(undecided)))
+		return
+	}
+	fmt.Fprintln(out, "Schema is synced, no changes to be made.")
 }
 
 func printSchemaApplyPlan(out io.Writer, sqlText string) {

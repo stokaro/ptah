@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
@@ -68,6 +69,12 @@ type CompareResult struct {
 	Generated   *schemamodel.Database
 	Database    *catalog.Database
 	Diff        *difftypes.SchemaDiff
+	// Undecided are the declared objects the comparison withheld: the read of
+	// the database did not describe their kind, so nothing checked whether they
+	// exist, and Diff plans nothing for them. Sorted by kind and then name. An
+	// empty Diff beside a non-empty Undecided has not shown that the database
+	// matches.
+	Undecided []coverage.Object
 	// DataDrift is the reference-row comparison, in counts, and is nil when
 	// [CompareOptions.ManagedData] did not ask for one. A non-nil DataDrift
 	// with no tables is a comparison that ran and found the declared rows in
@@ -126,7 +133,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	info := conn.Info()
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.IgnoredExtensions = append(compareOpts.IgnoredExtensions, opts.IgnoredExtensions...)
-	diff, err := schemadiff.CompareWithDatabase(
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx,
 		conn,
 		desired,
@@ -153,6 +160,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		Generated:   desired,
 		Database:    dbSchema,
 		Diff:        diff,
+		Undecided:   undecided,
 		DataDrift:   dataDrift,
 	}, nil
 }

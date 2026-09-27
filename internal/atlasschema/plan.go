@@ -14,6 +14,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
@@ -158,17 +159,32 @@ func (e *StalePlanError) Error() string {
 // PreparePlanFile computes the declarative migration plan from the connected
 // database (the plan source and later apply target) to the desired schema
 // files, and packages it as a fingerprinted local plan document. A plan with
-// no statements means the schema is synced; callers should not save it.
+// no statements means nothing is planned; callers should not save it.
 func PreparePlanFile(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	opts PlanFileOptions,
 ) (PlanFile, error) {
+	plan, _, err := PreparePlanFileReportingUndecided(ctx, conn, opts)
+	return plan, err
+}
+
+// PreparePlanFileReportingUndecided is [PreparePlanFile], and it also returns
+// the declared objects the comparison withheld: the read of the database did
+// not describe their kind, so nothing checked whether they exist, and the plan
+// creates none of them. They are sorted by kind and then name, and not recorded
+// in the plan file. A plan with no statements and a non-empty list has not
+// shown that the database matches the desired schema.
+func PreparePlanFileReportingUndecided(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts PlanFileOptions,
+) (PlanFile, []coverage.Object, error) {
 	if conn == nil {
-		return PlanFile{}, errors.New("schema plan requires database connection")
+		return PlanFile{}, nil, errors.New("schema plan requires database connection")
 	}
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
-		return PlanFile{}, err
+		return PlanFile{}, nil, err
 	}
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
 
@@ -194,24 +210,24 @@ func PreparePlanFile(
 		Diagnostics:           opts.Diagnostics,
 	})
 	if err != nil {
-		return PlanFile{}, err
+		return PlanFile{}, nil, err
 	}
 
 	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude)
 	if err != nil {
-		return PlanFile{}, err
+		return PlanFile{}, nil, err
 	}
 	fromFingerprint, err := SchemaFingerprint(from)
 	if err != nil {
-		return PlanFile{}, fmt.Errorf("fingerprint current schema: %w", err)
+		return PlanFile{}, nil, fmt.Errorf("fingerprint current schema: %w", err)
 	}
 	toFingerprint, err := desiredSchemaFingerprint(computation.desired)
 	if err != nil {
-		return PlanFile{}, fmt.Errorf("fingerprint desired schema: %w", err)
+		return PlanFile{}, nil, fmt.Errorf("fingerprint desired schema: %w", err)
 	}
 	rowsFingerprint, err := managedRowsFingerprint(ctx, conn, computation.rowSets)
 	if err != nil {
-		return PlanFile{}, err
+		return PlanFile{}, nil, err
 	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
@@ -247,7 +263,7 @@ func PreparePlanFile(
 		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
 		Statements:       statements,
-	}, nil
+	}, computation.undecided, nil
 }
 
 // planSourceSchema is the target state a plan's from-fingerprint describes.

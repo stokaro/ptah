@@ -4,15 +4,18 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/coverage"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 )
@@ -55,6 +58,23 @@ const undecidedTableSchema = "CREATE TABLE notes (id INT PRIMARY KEY);\n"
 // only the table.
 func restrictedMySQLTarget(c *qt.C) (target, workDir string) {
 	c.Helper()
+	restricted := newRestrictedMySQLTarget(c)
+	return restricted.url, restricted.workDir
+}
+
+// restrictedMySQL is what [newRestrictedMySQLTarget] set up: the restricted
+// URL and working directory, and the administrative server, for a test that
+// provisions more on it.
+type restrictedMySQL struct {
+	url     string
+	workDir string
+	server  mysqlFamilyServer
+}
+
+// newRestrictedMySQLTarget is [restrictedMySQLTarget], keeping the
+// administrative server.
+func newRestrictedMySQLTarget(c *qt.C) restrictedMySQL {
+	c.Helper()
 	// The administrative account, because the fixture creates a database and
 	// an account.
 	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
@@ -72,19 +92,19 @@ func restrictedMySQLTarget(c *qt.C) (target, workDir string) {
 		"GRANT SELECT, CREATE, DROP, ALTER, INSERT, UPDATE, DELETE ON `%s`.* TO '%s'@'%%'", database, account))
 	c.Assert(err, qt.IsNil)
 
-	workDir = c.TempDir()
+	workDir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(workDir, "undecided.sql"),
 		[]byte(undecidedTableSchema+"CREATE ROLE "+undecidedRoleName+";\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(workDir, "converged.sql"),
 		[]byte(undecidedTableSchema), 0o600), qt.IsNil)
 
-	target = (&url.URL{
+	target := (&url.URL{
 		Scheme: "mysql",
 		User:   url.UserPassword(account, password),
 		Host:   server.config.Addr,
 		Path:   "/" + database,
 	}).String()
-	return target, workDir
+	return restrictedMySQL{url: target, workDir: workDir, server: server}
 }
 
 // TestSchemaCompareReportsAnUndecidedObjectE2E holds `ptah schema compare` to
@@ -170,6 +190,7 @@ func TestPlanningVerbsNameAnUndecidedObjectE2E(t *testing.T) {
 		{name: "schema apply", args: []string{"schema", "apply", "--dry-run"}},
 		{name: "schema plan", args: []string{"schema", "plan", "--dry-run"}},
 		{name: "migrations plan", args: []string{"migrations", "plan"}},
+		{name: "migrations generate", args: []string{"migrations", "generate", "--migrations-dir", "migrations"}},
 	}
 
 	for _, test := range tests {
@@ -184,4 +205,192 @@ func TestPlanningVerbsNameAnUndecidedObjectE2E(t *testing.T) {
 			c.Assert(got.Stderr, qt.Contains, undecidedRoleWarning)
 		})
 	}
+}
+
+// TestSchemaDriftReportsAnUndecidedObjectE2E holds `ptah schema drift` to the
+// rule `schema compare --exit-code` keeps: a comparison that could not look is
+// not a database without drift (stokaro/ptah#3844). The role is no difference,
+// so the headline does not say drift was detected, and it is not destructive,
+// so the destructive threshold passes. The converged schema is the control.
+func TestSchemaDriftReportsAnUndecidedObjectE2E(t *testing.T) {
+	c := qt.New(t)
+	target, workDir := restrictedMySQLTarget(c)
+
+	tests := []struct {
+		name       string
+		args       []string
+		wantExit   int
+		wantStdout string
+		wantStderr string
+	}{
+		{
+			name:     "a declared role the account may not read",
+			args:     []string{"--schema-file", "undecided.sql"},
+			wantExit: 1,
+			wantStdout: "No schema drift found, but 1 declared object could not be decided (highest severity: warning).\n" +
+				"Failure threshold: all. Failing: true.\n",
+			wantStderr: undecidedRoleWarning,
+		},
+		{
+			name:       "the same at the destructive threshold",
+			args:       []string{"--schema-file", "undecided.sql", "--severity", "destructive"},
+			wantExit:   0,
+			wantStdout: "Failure threshold: destructive. Failing: false.\n",
+			wantStderr: undecidedRoleWarning,
+		},
+		{
+			name:       "only what the account can read",
+			args:       []string{"--schema-file", "converged.sql"},
+			wantExit:   0,
+			wantStdout: "No schema drift detected.\n",
+			wantStderr: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir},
+				append([]string{"schema", "drift", "--db-url", target}, test.args...)...)
+
+			c.Assert(got.ExitCode, qt.Equals, test.wantExit,
+				qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout, qt.Contains, test.wantStdout)
+			c.Assert(got.Stderr, qt.Equals, test.wantStderr)
+		})
+	}
+}
+
+// undecidedDocument is the part of a JSON document these tests read.
+type undecidedDocument struct {
+	Outcome   string            `json:"outcome"`
+	Drift     bool              `json:"drift"`
+	Failed    bool              `json:"failed"`
+	Undecided []coverage.Object `json:"undecided"`
+}
+
+// TestJSONDocumentsCarryAnUndecidedObjectE2E holds each machine-readable
+// document to the withheld role: kind, name, and the reason and provenance the
+// read gave. A caller that reads only the outcome sees no-changes, and the
+// undecided list is what tells it the database is not shown to match.
+func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
+	c := qt.New(t)
+	target, workDir := restrictedMySQLTarget(c)
+	withheld := coverage.Refused(coverage.Role)
+	withheld.Name = undecidedRoleName
+
+	tests := []struct {
+		name string
+		args []string
+		want undecidedDocument
+	}{
+		{
+			name: "schema plan",
+			args: []string{"schema", "plan", "--dry-run", "--json"},
+			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+		},
+		{
+			name: "schema apply",
+			args: []string{"schema", "apply", "--auto-approve", "--json"},
+			want: undecidedDocument{Outcome: "no-changes", Undecided: []coverage.Object{withheld}},
+		},
+		{
+			name: "schema drift",
+			args: []string{"schema", "drift", "--format", "json"},
+			want: undecidedDocument{Failed: true, Undecided: []coverage.Object{withheld}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir},
+				append(test.args, "--db-url", target, "--schema-file", "undecided.sql")...)
+
+			var document undecidedDocument
+			c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil,
+				qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(document, qt.DeepEquals, test.want)
+			c.Assert(got.Stderr, qt.Contains, undecidedRoleWarning)
+		})
+	}
+}
+
+// undecidedEntities declares the notes table and the role, as Go annotations.
+const undecidedEntities = `package entities
+
+//ptah:schema:role name="` + undecidedRoleName + `"
+//ptah:schema:table name="notes"
+type Note struct {
+	//ptah:schema:field name="id" type="INT" primary="true"
+	ID int64
+}
+`
+
+// TestMigrationsBaselineRefusesAnUndecidedObjectE2E holds the entity
+// verification of `ptah migrations baseline` to what a baseline claims: the
+// database already holds what the migrations create. The role is not shown to
+// be there, so the baseline is refused, and --force records it anyway.
+//
+// The steps run in order because the forced run writes the revision table, and
+// a refused run after it would measure that table rather than the refusal.
+func TestMigrationsBaselineRefusesAnUndecidedObjectE2E(t *testing.T) {
+	c := qt.New(t)
+	target, workDir := restrictedMySQLTarget(c)
+	entities := filepath.Join(workDir, "entities")
+	migrations := filepath.Join(workDir, "migrations")
+	c.Assert(os.MkdirAll(entities, 0o750), qt.IsNil)
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(entities, "notes.go"), []byte(undecidedEntities), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "0000000001_notes.up.sql"),
+		[]byte(undecidedTableSchema), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "0000000001_notes.down.sql"),
+		[]byte("DROP TABLE notes;\n"), 0o600), qt.IsNil)
+	args := []string{"migrations", "baseline", "--db-url", target, "--migrations-dir", migrations, "--root-dir", entities}
+
+	refused := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir}, args...)
+
+	c.Assert(refused.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", refused.Stdout, refused.Stderr))
+	c.Assert(refused.Stderr, qt.Contains, strings.ReplaceAll(undecidedRoleWarning, "the desired schema", "the entities"))
+	c.Assert(refused.Stderr, qt.Contains,
+		"baseline drift verification failed: 1 declared object could not be decided")
+
+	forced := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: workDir}, append(args, "--force")...)
+
+	c.Assert(forced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", forced.Stdout, forced.Stderr))
+	c.Assert(forced.Stdout, qt.Contains, "Baselined 1 migration(s) through version 1")
+}
+
+// TestMigrationsBaselineShadowRefusesAnUndecidedObjectE2E is the shadow half:
+// the replay creates a role on the shadow database, the target account cannot
+// read roles, and the verification reports the role as an undecided mismatch
+// rather than passing on a target that was never checked.
+func TestMigrationsBaselineShadowRefusesAnUndecidedObjectE2E(t *testing.T) {
+	c := qt.New(t)
+	restricted := newRestrictedMySQLTarget(c)
+	shadowDatabase := restricted.server.database(c, "undecided_shadow")
+	role := fmt.Sprintf("ptah_undecided_shadow_%d", time.Now().UnixNano()%1_000_000_000)
+	// Roles belong to the server, so the one the replay creates outlives the
+	// shadow database unless it is dropped here.
+	c.Cleanup(func() {
+		_, err := restricted.server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS `"+role+"`")
+		c.Check(err, qt.IsNil)
+	})
+	migrations := filepath.Join(restricted.workDir, "shadow-migrations")
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "0000000001_notes.up.sql"),
+		[]byte(undecidedTableSchema+"CREATE ROLE `"+role+"`;\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "0000000001_notes.down.sql"),
+		[]byte("DROP TABLE notes;\nDROP ROLE `"+role+"`;\n"), 0o600), qt.IsNil)
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: restricted.workDir},
+		"migrations", "baseline", "--db-url", restricted.url, "--migrations-dir", migrations,
+		"--shadow-db", restricted.server.url("mysql", shadowDatabase))
+
+	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains, "baseline shadow check failed: undecided role "+role+
+		": the target database does not describe role objects because the read was refused"+
+		" the catalog that would have listed them")
 }

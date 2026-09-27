@@ -244,8 +244,7 @@ func writeComparison(
 	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
 	categories := diffreport.Categories(diff)
 	if len(categories) == 0 && len(undecided) > 0 {
-		fmt.Fprintf(out, "No differences planned, but %d declared %s could not be decided:\n",
-			len(undecided), pluralize("object", "objects", len(undecided)))
+		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(len(undecided)))
 		writeUndecided(out, undecided)
 		return
 	}
@@ -285,8 +284,8 @@ func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, s
 	fmt.Fprint(out, sql)
 }
 
-// writeUndecided names each undecided object by kind and name, sorted so the
-// report is the same on every run: the comparators emit them in map order.
+// writeUndecided names each undecided object by kind and name, sorted here so
+// the report does not depend on the order its caller passes them in.
 func writeUndecided(out io.Writer, undecided []coverage.Object) {
 	names := make([]string, 0, len(undecided))
 	for _, object := range undecided {
@@ -319,8 +318,7 @@ func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided []coverage.Objec
 		return exitcode.New(1, errors.New("schema diff is non-empty"))
 	}
 	if len(undecided) > 0 {
-		return exitcode.New(1, fmt.Errorf("%d declared %s could not be decided",
-			len(undecided), pluralize("object", "objects", len(undecided))))
+		return exitcode.New(1, errors.New(undecidednote.Summary(len(undecided))))
 	}
 	return nil
 }
