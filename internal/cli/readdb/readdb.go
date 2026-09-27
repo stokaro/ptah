@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/defaultprivnote"
+	"ptah.run/internal/hashshard"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
@@ -116,6 +117,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// described, and applying the statements below elsewhere leaves it behind.
 	// See stokaro/ptah#3737 and stokaro/ptah#3770.
 	defaultprivnote.ReportUndescribed(stderr, schema)
+
+	// A CockroachDB key or index built USING HASH is described without the
+	// sharding, which no schema source can declare. See stokaro/ptah#3771.
+	hashshard.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect)

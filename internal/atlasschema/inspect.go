@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/defaultprivnote"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/fileplan"
+	"ptah.run/internal/hashshard"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemascope"
@@ -226,6 +227,9 @@ func renderInspectSchema(
 	// the list survives selection unchanged, so the note says what the read
 	// left out (stokaro/ptah#3737, stokaro/ptah#3770).
 	defaultprivnote.ReportUndescribed(opts.Diagnostics, schema)
+	// From the scoped schema too, so a table a selector left out is not named
+	// (stokaro/ptah#3771).
+	hashshard.ReportUndescribed(opts.Diagnostics, schema)
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,

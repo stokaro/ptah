@@ -1518,6 +1518,9 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 				FROM unnest(ix.indoption) WITH ORDINALITY AS keys(optionbits, ordinality)
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_key_options,
+			-- Which keys are CockroachDB's hidden shard column; see
+			-- indexKeyHiddenExpr.
+			` + r.indexKeyHiddenExpr() + ` as index_key_hidden,
 			-- INCLUDE payload columns are the keys past indnkeyatts. They are
 			-- absent from indclass and indoption, which cover key columns
 			-- only, so they are read separately rather than filtered out of
@@ -1602,7 +1605,7 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 		var row postgresIndexRow
 		err := rows.Scan(
 			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
-			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
+			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions, &row.keyHidden,
 			&row.includeColumns, &row.method, &row.storageParams, &row.requiredExtensions,
 			&row.comment,
 			&row.predicate, &row.isPrimary, &row.isUnique, &row.partitionAttached,
@@ -1643,6 +1646,9 @@ type postgresIndexRow struct {
 	keyOpclasses string
 	// keyOptions is the JSON array of pg_index.indoption bitmasks.
 	keyOptions string
+	// keyHidden is the JSON array of per-key hidden-column flags, or an empty
+	// array on a target without hidden columns. See indexKeyHiddenExpr.
+	keyHidden string
 	// includeColumns is the JSON array of INCLUDE payload column texts.
 	includeColumns string
 	// method is pg_am.amname.
@@ -1766,6 +1772,12 @@ func buildPostgresIndex(dialect string, row postgresIndexRow) (catalog.Index, er
 	if err != nil {
 		return catalog.Index{}, fmt.Errorf("failed to parse index storage parameters for %s: %w", row.indexName, err)
 	}
+
+	index.Columns, index.Parts, err = withoutHiddenKeys(index.Columns, index.Parts, row.keyHidden)
+	if err != nil {
+		return catalog.Index{}, fmt.Errorf("failed to parse index hidden keys for %s: %w", row.indexName, err)
+	}
+	index.HashShardBuckets = hashShardBuckets(dialect, row.indexDef)
 
 	return index, nil
 }
@@ -2078,7 +2090,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 				tc.constraint_name,
 				tc.constraint_type,
 				COALESCE(string_agg(local_column.attname, ',' ORDER BY local_key_columns.ordinality)
-					FILTER (WHERE local_column.attname IS NOT NULL), ''),
+					FILTER (WHERE local_column.attname IS NOT NULL` + r.visibleKeyColumn("local_column") + `), ''),
 				COALESCE(max(foreign_schema.nspname), ''),
 				COALESCE(max(foreign_table.relname), ''),
 				COALESCE(string_agg(foreign_column.attname, ',' ORDER BY local_key_columns.ordinality)
@@ -2204,6 +2216,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 		}
 		constraint.NullsDistinct = postgresNullsDistinctFromDefinition(constraintDefinition)
 		constraint.IncludeColumns = postgresIncludeColumnsFromDefinition(constraintDefinition)
+		constraint.HashShardBuckets = hashShardBuckets(r.dialect, constraintDefinition)
 		if constraint.Type == "FOREIGN KEY" {
 			constraint.OnDeleteColumns = postgresDeleteColumnsFromDefinition(constraintDefinition)
 		}
