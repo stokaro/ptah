@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -14,7 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/aclitem"
+	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
@@ -954,17 +953,15 @@ const defaultPrivilegeKind = "default privilege"
 // REVOKE ALL per grantee of each default privilege set in the managed schemas,
 // or nothing on a server whose catalog has no pg_default_acl.
 //
-// It is a query of its own rather than a branch of the cleanup query, because
-// the ACL is exploded here in Go. aclexplode answers no rows on CockroachDB
-// v25.4.16, so a branch built on it revokes nothing there, and `ptah db
-// drop-all` leaves every default privilege in place (stokaro/ptah#3802). See
-// [defaultACLList].
+// The revokes come from [pgdefaultacl.ReadRevokes], which the plan `schema
+// clean` prints reads too, so the plan names the statements this runs. It is a
+// query of its own rather than a branch of the cleanup query because the ACL
+// is exploded in Go: aclexplode answers no rows on CockroachDB v25.4, so a
+// branch built on it revokes nothing there (stokaro/ptah#3802).
 //
 // A server without the relation is not asked, for the reason the cleanup
 // query's optional branches give: a missing relation is a parse failure, and a
-// server without it has no default privilege to revoke (stokaro/ptah#1811). The
-// grantor clause spells CockroachDB's FOR ALL ROLES, which has no role to name;
-// see [defaultACLGrantor].
+// server without it has no default privilege to revoke (stokaro/ptah#1811).
 func (w *PostgreSQLWriter) collectDefaultPrivilegeRevokes(
 	ctx context.Context,
 	tx cleanupConn,
@@ -973,59 +970,20 @@ func (w *PostgreSQLWriter) collectDefaultPrivilegeRevokes(
 	if !w.caps.Has(capability.CatalogDefaultPrivileges) {
 		return nil, nil
 	}
-	query := `
-		SELECT
-			n.nspname,
-			` + defaultACLGrantor("d") + ` AS grantor,
-			d.defaclobjtype,
-			` + defaultACLObjectType("d") + ` AS object_type,
-			` + defaultACLList("d") + ` AS acl
-		FROM pg_default_acl d
-		JOIN pg_namespace n ON n.oid = d.defaclnamespace
-		WHERE ` + postgresSchemaPredicate(len(schemas)) + `
-		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
-	rows, err := tx.QueryContext(ctx, query, stringsToAny(schemas)...)
+	revokes, err := pgdefaultacl.ReadRevokes(ctx, tx, schemas)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query default privileges: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-
-	var revokes []postgresCleanupObject
-	for rows.Next() {
-		var schema, grantor, class, objectType, acl string
-		if err := rows.Scan(&schema, &grantor, &class, &objectType, &acl); err != nil {
-			return nil, fmt.Errorf("failed to scan default privileges: %w", err)
-		}
-		items, err := aclitem.ParseJSON(acl)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"failed to read the default privileges %s set on %s in schema %s: %w",
-				defaultACLGrantorName(grantor), objectType, schema, err,
-			)
-		}
-		for _, item := range items {
-			revokes = append(revokes, postgresCleanupObject{
-				Kind:   defaultPrivilegeKind,
-				Schema: schema,
-				Name:   defaultACLGrantorName(grantor) + "/" + class + "/" + defaultACLGranteeName(item),
-				Statement: "ALTER DEFAULT PRIVILEGES " + defaultACLGrantorClause(grantor) +
-					" IN SCHEMA " + quoteIdent(schema) +
-					" REVOKE ALL PRIVILEGES ON " + objectType +
-					" FROM " + defaultACLGranteeClause(item),
-			})
-		}
+	objects := make([]postgresCleanupObject, 0, len(revokes))
+	for _, revoke := range revokes {
+		objects = append(objects, postgresCleanupObject{
+			Kind:      defaultPrivilegeKind,
+			Schema:    revoke.Schema,
+			Name:      revoke.Name(),
+			Statement: revoke.Statement,
+		})
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate default privileges: %w", err)
-	}
-	slices.SortFunc(revokes, func(a, b postgresCleanupObject) int {
-		return cmp.Or(
-			strings.Compare(a.Schema, b.Schema),
-			strings.Compare(a.Name, b.Name),
-			strings.Compare(a.Statement, b.Statement),
-		)
-	})
-	return revokes, nil
+	return objects, nil
 }
 
 // viewOrderingShapeFor picks the shape a server can answer.

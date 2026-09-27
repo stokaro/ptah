@@ -245,6 +245,7 @@ linters:
         - ptah.run/internal/atlasscript
         - ptah.run/internal/dbschema/postgres
         - ptah.run/internal/embedpg
+        - ptah.run/internal/pgdefaultacl
         - ptah.run/internal/schemaselection
         - ptah.run/internal/sqlitemodule
         - ptah.run/internal/sqlrunner

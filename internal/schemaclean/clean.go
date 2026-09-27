@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
 )
@@ -930,53 +931,6 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema str
 			FROM pg_collation c
 			JOIN pg_namespace n ON n.oid = c.collnamespace
 			WHERE n.nspname = $1
-
-			UNION ALL
-
-			SELECT DISTINCT
-				'default_privilege',
-				n.nspname,
-				format(
-					'%s/%s/%s',
-					pg_get_userbyid(d.defaclrole),
-					d.defaclobjtype,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE pg_get_userbyid(acl.grantee)
-					END
-				),
-				format(
-					'%s:%s:%s',
-					pg_get_userbyid(d.defaclrole),
-					d.defaclobjtype,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE pg_get_userbyid(acl.grantee)
-					END
-				),
-				false,
-				'',
-				format(
-					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
-					'REVOKE ALL PRIVILEGES ON %s FROM %s',
-					pg_get_userbyid(d.defaclrole),
-					n.nspname,
-					CASE d.defaclobjtype
-						WHEN 'r' THEN 'TABLES'
-						WHEN 'S' THEN 'SEQUENCES'
-						WHEN 'f' THEN 'FUNCTIONS'
-						WHEN 'T' THEN 'TYPES'
-					END,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE format('%I', pg_get_userbyid(acl.grantee))
-					END
-				)
-			FROM pg_default_acl d
-			JOIN pg_namespace n ON n.oid = d.defaclnamespace
-			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-			WHERE n.nspname = $1
-			  AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
 		)
 		SELECT object_kind, object_schema, object_name, selector_name, is_implicit, owner_table, drop_statement
 		FROM runtime_objects
@@ -1014,6 +968,39 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema str
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate PostgreSQL runtime objects: %w", err)
+	}
+	revokes, err := inspectPostgresDefaultPrivileges(conn, schema)
+	if err != nil {
+		return nil, err
+	}
+	return append(objects, revokes...), nil
+}
+
+// inspectPostgresDefaultPrivileges names each default privilege the cleanup
+// revokes, one object per grantee, with the statement the writer's cleanup
+// runs for it.
+//
+// Both read through [pgdefaultacl.ReadRevokes], so the plan prints the revoke
+// DropAllTables executes and a narrowed plan executes the same statement. A
+// read of its own spelled the revoke differently and exploded the ACL with
+// aclexplode, which answers nothing on CockroachDB v25.4 (stokaro/ptah#3832).
+//
+// The inventory takes no context, as the query above it runs without one, so
+// the read gets the background context that query runs under.
+func inspectPostgresDefaultPrivileges(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
+	revokes, err := pgdefaultacl.ReadRevokes(context.Background(), conn, []string{schema})
+	if err != nil {
+		return nil, fmt.Errorf("inspect PostgreSQL default privileges: %w", err)
+	}
+	objects := make([]Object, 0, len(revokes))
+	for _, revoke := range revokes {
+		objects = append(objects, Object{
+			Type:         ObjectTypeDefaultPrivilege,
+			Schema:       revoke.Schema,
+			Name:         revoke.Name(),
+			SelectorName: revoke.GrantorName() + ":" + revoke.Class + ":" + revoke.GranteeName(),
+			Command:      revoke.Statement,
+		})
 	}
 	return objects, nil
 }

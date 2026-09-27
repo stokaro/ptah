@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/aclitem"
+	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/rolescope"
@@ -3655,7 +3656,7 @@ func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
 		// agree on which rows the description can carry.
 		clauses = append(clauses, `SELECT d.defaclrole FROM pg_default_acl d
 			JOIN scope s ON s.oid = d.defaclnamespace
-			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`)
+			WHERE `+pgdefaultacl.ScopedClassesSQL("d"))
 	}
 	if defaultPrivilegeGrantees != "" {
 		// Granted a default privilege in scope (pg_default_acl.defaclacl).
@@ -3682,11 +3683,11 @@ func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
 // same for the same catalog.
 func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []string) ([]string, error) {
 	query := `
-		SELECT ` + defaultACLList("d") + ` AS acl
+		SELECT ` + pgdefaultacl.ListSQL("d") + ` AS acl
 		FROM pg_default_acl d
 		JOIN pg_namespace n ON n.oid = d.defaclnamespace
 		WHERE n.nspname IN (` + postgresPlaceholders(len(schemas)) + `)
-		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+		AND ` + pgdefaultacl.ScopedClassesSQL("d")
 	rows, err := r.db.QueryContext(ctx, query, stringsToAny(schemas)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query default privilege grantees: %w", err)
@@ -4479,7 +4480,7 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 // one grantability for the whole identity and compare a guess against the
 // catalog forever.
 //
-// The ACL is selected whole, through [defaultACLList], and exploded here rather
+// The ACL is selected whole, through [pgdefaultacl.ListSQL], and exploded here rather
 // than by aclexplode, which answers no rows on CockroachDB v25.4.16: a read
 // built on it finds no default privilege there, so a declared one is planned
 // again on every run (stokaro/ptah#3802).
@@ -4497,7 +4498,7 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 // ALL ROLES, recorded with defaclrole 0, is left out as well, because a
 // declaration's grantor is a role, and role 0 has only the name
 // `unknown (OID=0)`. Both kinds are left out by the complement of
-// [undescribedDefaultACL], and [Reader.readUndescribedDefaultPrivileges] lists
+// [pgdefaultacl.UndescribedSQL], and [Reader.readUndescribedDefaultPrivileges] lists
 // them for the read surfaces to report; modeling them is stokaro/ptah#3772.
 // defaclobjtype 'n' (SCHEMAS) is left out because the model has no spelling for
 // it either, by the object-type filter, whose CASE is also what turns the
@@ -4522,13 +4523,13 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 		SELECT
 			pg_get_userbyid(d.defaclrole) AS grantor,
 			n.nspname AS schema_name,
-			` + defaultACLObjectType("d") + ` AS object_type,
-			` + defaultACLList("d") + ` AS acl
+			` + pgdefaultacl.ObjectTypeSQL("d") + ` AS object_type,
+			` + pgdefaultacl.ListSQL("d") + ` AS acl
 		FROM pg_default_acl d
 		JOIN pg_namespace n ON n.oid = d.defaclnamespace
 		WHERE n.nspname = $1
-		AND NOT ` + undescribedDefaultACL("d") + `
-		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+		AND NOT ` + pgdefaultacl.UndescribedSQL("d") + `
+		AND ` + pgdefaultacl.ScopedClassesSQL("d")
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
@@ -4576,7 +4577,7 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 func explodeDefaultPrivileges(identity catalog.DefaultPrivilege, items []aclitem.Item) []catalog.DefaultPrivilege {
 	var privileges []catalog.DefaultPrivilege
 	for _, item := range items {
-		grantee := defaultACLGranteeName(item)
+		grantee := pgdefaultacl.GranteeName(item)
 		if reservedrole.Is(grantee) {
 			continue
 		}
@@ -4703,10 +4704,10 @@ func (r *Reader) readUndescribedDefaultPrivileges(ctx context.Context) ([]catalo
 		SELECT
 			CASE WHEN d.defaclrole = 0 THEN '' ELSE pg_get_userbyid(d.defaclrole) END AS grantor,
 			COALESCE(n.nspname, '') AS schema_name,
-			` + defaultACLObjectType("d") + ` AS object_type
+			` + pgdefaultacl.ObjectTypeSQL("d") + ` AS object_type
 		FROM pg_default_acl d
 		LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
-		WHERE ` + undescribedDefaultACL("d") + `
+		WHERE ` + pgdefaultacl.UndescribedSQL("d") + `
 		ORDER BY schema_name, grantor, object_type`
 
 	rows, err := r.db.QueryContext(ctx, query)
