@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"time"
@@ -51,10 +52,14 @@ type RollbackVerifyOptions struct {
 // migrated down to the requested target version. Any failure aborts with the
 // target untouched.
 //
+// A shadow database that holds a table is refused before anything resets it,
+// and the shadow database is emptied again on every return. A failure to empty
+// it is joined to the result.
+//
 // The replay assumes a linear history: every migration at or below
 // CurrentVersion is applied during the up phase, so a target database with a
 // non-linear applied set is approximated by its full linear prefix.
-func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
+func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr error) {
 	if opts.ShadowDatabaseURL == "" {
 		return fmt.Errorf("rollback verification failed: a shadow database URL is required")
 	}
@@ -98,6 +103,13 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
+	lease, err := shadowdb.Claim(ctx, shadowConn)
+	if err != nil {
+		return fmt.Errorf("rollback verification failed: %w", err)
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, lease.Release(ctx))
+	}()
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("rollback verification failed: drop all objects: %w", err)
 	}
@@ -109,15 +121,14 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 	mig = mig.WithSkipChecks(opts.SkipChecks)
 
 	// DropAllTables leaves the revision table behind, because it is metadata
-	// rather than part of the schema under test. On a shadow database reused
-	// from an earlier verification the rows it holds name versions the replay
-	// below then skips, so the rollback tries to revert a migration whose
-	// objects were never created and fails on a missing table -- an error about
-	// the schema, for a state left by the previous run (stokaro/ptah#3065).
-	//
-	// The baseline verification drops the same table for the same reason. It
-	// does so after its replay, where the point is a clean introspection; here
-	// the point is a clean starting version, so it happens before.
+	// rather than part of the schema under test. Rows left in it name versions
+	// the replay below then skips, so the rollback tries to revert a migration
+	// whose objects were never created and fails on a missing table -- an error
+	// about the schema, for a state the shadow database already held
+	// (stokaro/ptah#3065). The claim refuses a revision table it can see, and
+	// the release drops the one this run writes; this covers one kept outside
+	// the claimed scope, such as in another schema.
+	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := shadowdb.DropMigrationMetadata(
 		ctx, shadowConn, mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(),
 	); err != nil {

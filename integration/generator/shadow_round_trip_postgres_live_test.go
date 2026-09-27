@@ -40,12 +40,17 @@ const roundTripReversedDownSQL = `DROP TABLE "orders";
 DROP TABLE "order_items";
 `
 
+// roundTripIncompleteDownSQL runs, and leaves "orders" behind, so reapplying
+// the candidate fails on the table it creates first.
+const roundTripIncompleteDownSQL = `DROP TABLE "order_items";
+`
+
 // TestVerifyMigrationRoundTrip_HappyPath drives the whole of
 // [shadow.VerifyMigration] on PostgreSQL: the prior history and the candidate
 // replay, the resulting catalog matches the desired schema, and the candidate
-// is then rolled back and reapplied. The read-back afterwards is what says the
-// round trip ran rather than that nothing objected -- both candidate tables are
-// present again, which only the round-trip-up replay can produce.
+// is then rolled back and reapplied. The verification hands the shadow database
+// back empty, so what says the round trip ran is the failure-path test that
+// breaks each half of it; here the read-back says nothing was left behind.
 func TestVerifyMigrationRoundTrip_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
@@ -69,7 +74,40 @@ func TestVerifyMigrationRoundTrip_HappyPath(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(readRoundTripShadowTables(c, shadowURL), qt.DeepEquals, []string{"order_items", "orders", "users"})
+	c.Assert(readRoundTripShadowTables(c, shadowURL), qt.HasLen, 0)
+}
+
+// TestVerifyMigrationRoundTrip_FailurePathReapply is the second half of the
+// round trip: a down body that runs but leaves a table behind is found when the
+// candidate is applied again, at the round-trip-up stage. Nothing but that
+// replay can report it.
+func TestVerifyMigrationRoundTrip_FailurePathReapply(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	dbURL, admin := openShadowTestPostgres(c)
+	defer dbschema.CloseAndWarn(admin)
+	shadowURL, shadowDatabase := createShadowTestPostgres(c, admin, dbURL)
+	defer dropShadowTestPostgres(c, admin, shadowDatabase)
+
+	err := shadow.VerifyMigration(ctx, shadow.MigrationVerifyOptions{
+		ShadowDatabaseURL: shadowURL,
+		TargetConnection:  admin,
+		MigrationsFS:      roundTripPriorHistory(),
+		Dialect:           platform.Postgres,
+		Candidates: []shadow.Candidate{{
+			Version: 2,
+			Name:    "create_orders",
+			UpSQL:   roundTripCandidateUpSQL,
+			DownSQL: roundTripIncompleteDownSQL,
+		}},
+		Generated: roundTripDesiredSchema(c),
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)shadow check failed: round-trip up: .*"orders" already exists.*`)
+	var shadowErr *shadow.VerificationError
+	c.Assert(err, qt.ErrorAs, &shadowErr)
+	c.Assert(shadowErr.Result.Stage, qt.Equals, "round-trip-up")
+	c.Assert(readRoundTripShadowTables(c, shadowURL), qt.HasLen, 0)
 }
 
 // TestVerifyMigrationRoundTrip_FailurePath varies one axis against the happy

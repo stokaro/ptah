@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -21,9 +22,10 @@ type DynamicRollbackOptions struct {
 	// TargetConnection is the live database the plan would be applied to. It is
 	// read, never written, by planning.
 	TargetConnection *dbschema.DatabaseConnection
-	// DevDatabaseURL is an ephemeral database the planner drops clean and
-	// replays the migration directory into, to materialize the target state.
-	// Its contents are discarded.
+	// DevDatabaseURL is an ephemeral database the planner replays the
+	// migration directory into, to materialize the target state. It must hold
+	// no table when planning starts, and it is empty again when planning
+	// returns.
 	DevDatabaseURL string
 	// FS is the migration filesystem the target state is replayed from.
 	FS fs.FS
@@ -69,8 +71,10 @@ type DynamicRollbackOptions struct {
 // what is being changed, and it is not any file in the directory, since a
 // version's schema is the accumulation of every migration up to it. The only
 // way to see it is to build it, and the only safe place to build it is a
-// database whose contents can be destroyed.
-func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]string, error) {
+// database whose contents can be destroyed. A dev database that holds a table
+// is refused before anything resets it, and it is emptied again before
+// planning returns; a failure to empty it fails the planning.
+func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (statements []string, resultErr error) {
 	if opts.TargetConnection == nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: a target database connection is required")
 	}
@@ -88,7 +92,19 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]st
 	defer dbschema.CloseAndWarn(devConn)
 
 	// Build the target state: a clean database carrying exactly what the
-	// directory defines at TargetVersion.
+	// directory defines at TargetVersion. A dev database holding a table is
+	// refused before the reset would drop it, and the database is emptied
+	// again once the plan is read, on every return.
+	lease, err := shadowdb.Claim(ctx, devConn)
+	if err != nil {
+		return nil, fmt.Errorf("dynamic rollback planning failed: %w", err)
+	}
+	defer func() {
+		if releaseErr := lease.Release(ctx); releaseErr != nil {
+			statements = nil
+			resultErr = errors.Join(resultErr, fmt.Errorf("dynamic rollback planning failed: %w", releaseErr))
+		}
+	}()
 	if err := devConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: drop all objects: %w", err)
 	}
@@ -96,6 +112,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]st
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: register migrations: %w", err)
 	}
+	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateTo(ctx, opts.TargetVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return nil, fmt.Errorf("dynamic rollback planning failed: replay migrations: %s", description)
@@ -124,7 +141,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]st
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", err)
 	}
-	statements := make([]string, 0, len(diff.Changes))
+	statements = make([]string, 0, len(diff.Changes))
 	for _, change := range diff.Changes {
 		statements = append(statements, change.Cmd)
 	}

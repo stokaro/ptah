@@ -272,7 +272,8 @@ Generated migration files for ...
 
 The shadow database must be an ephemeral database of the same engine as the
 target and must identify a different live database realm. Never point it at a
-real environment.
+real environment: one that holds a table is refused before anything is dropped,
+and the run empties it again when it finishes.
 
 Before shadow verification, Ptah captures the existing migration directory
 once and checks `ptah.sum` when the directory is hashed. The shadow run replays

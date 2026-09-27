@@ -11,9 +11,11 @@
 // that results is compared with the schema that was asked for. What comes back
 // is a fact about a real server rather than an inference about text.
 //
-// The database is disposable by construction. Every entry point drops it clean
-// before the replay and refuses a URL that could resolve to the target's live
-// realm, because the verification is destructive and the target is not.
+// The database is disposable by construction. Every entry point refuses a URL
+// that could resolve to the target's live realm, because the verification is
+// destructive and the target is not. It also refuses a database that holds a
+// table, which the reset before the replay would drop, and it empties the
+// database again on its way out, so the same URL serves the next run.
 //
 // # The four questions
 //

@@ -71,8 +71,10 @@ func TestCheckpointBinaryColumnReplaysBytewise_PostgreSQLLive(t *testing.T) {
 	defer dropGeneratorTestPostgres(c, admin, shadowDatabase)
 	freshURL, freshDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_3297_fresh")
 	defer dropGeneratorTestPostgres(c, admin, freshDatabase)
+	historyURL, historyDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_3297_history")
+	defer dropGeneratorTestPostgres(c, admin, historyDatabase)
 
-	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL,
+	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL, historyURL,
 		"CREATE TABLE ptah_3297_payloads (code VARCHAR(16) PRIMARY KEY, payload BYTEA NOT NULL, amount NUMERIC(12,4) NOT NULL);\n"+
 			"INSERT INTO ptah_3297_payloads (code, payload, amount) VALUES "+
 			"('alpha', decode('5cff41', 'hex'), 12.3456), "+
@@ -89,8 +91,9 @@ func TestCheckpointBinaryColumnReplaysBytewise_MySQLLive(t *testing.T) {
 	c := qt.New(t)
 	shadowURL := mySQLScratchDatabaseURL(c, "ptah_3297_shadow")
 	freshURL := mySQLScratchDatabaseURL(c, "ptah_3297_fresh")
+	historyURL := mySQLScratchDatabaseURL(c, "ptah_3297_history")
 
-	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL,
+	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL, historyURL,
 		"CREATE TABLE ptah_3297_payloads (code VARCHAR(16) NOT NULL PRIMARY KEY, payload VARBINARY(16) NOT NULL, amount DECIMAL(12,4) NOT NULL);\n"+
 			"INSERT INTO ptah_3297_payloads (code, payload, amount) VALUES "+
 			"('alpha', UNHEX('5CFF41'), 12.3456), "+
@@ -107,8 +110,9 @@ func TestCheckpointBinaryColumnReplaysBytewise_SQLServerLive(t *testing.T) {
 	c := qt.New(t)
 	shadowURL := sqlServerScratchDatabaseURL(c, "ptah_3297_shadow")
 	freshURL := sqlServerScratchDatabaseURL(c, "ptah_3297_fresh")
+	historyURL := sqlServerScratchDatabaseURL(c, "ptah_3297_history")
 
-	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL,
+	fromHistory, fromCheckpoint := replayBinaryCheckpoint(c, shadowURL, freshURL, historyURL,
 		"CREATE TABLE ptah_3297_payloads (code NVARCHAR(16) NOT NULL PRIMARY KEY, payload VARBINARY(16) NOT NULL, amount DECIMAL(12,4) NOT NULL);\n"+
 			"INSERT INTO ptah_3297_payloads (code, payload, amount) VALUES "+
 			"(N'alpha', CONVERT(VARBINARY(16), '5CFF41', 2), 12.3456), "+
@@ -125,9 +129,10 @@ func TestCheckpointBinaryColumnReplaysBytewise_SQLServerLive(t *testing.T) {
 // checkpoint that carries the reference table's rows, applies the checkpoint
 // alone to a fresh database, and reads both databases back.
 //
-// The shadow database is the history side: the generator replays the whole
-// directory into it and only removes the migration bookkeeping afterward.
-func replayBinaryCheckpoint(c *qt.C, shadowURL, freshURL, historyUp string) (fromHistory, fromCheckpoint []binaryCheckpointRow) {
+// The history side is its own database, migrated with the history directory:
+// the generator empties its shadow database before it returns, so the rows the
+// replay wrote there are gone by the time the test could read them.
+func replayBinaryCheckpoint(c *qt.C, shadowURL, freshURL, historyURL, historyUp string) (fromHistory, fromCheckpoint []binaryCheckpointRow) {
 	c.Helper()
 	ctx := c.Context()
 
@@ -154,11 +159,14 @@ func replayBinaryCheckpoint(c *qt.C, shadowURL, freshURL, historyUp string) (fro
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil, qt.Commentf("checkpoint:\n%s", upSQL))
 
-	shadow, err := dbschema.ConnectToDatabase(ctx, shadowURL)
+	replayed, err := dbschema.ConnectToDatabase(ctx, historyURL)
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(shadow)
+	defer dbschema.CloseAndWarn(replayed)
+	historyMig, err := migrator.NewFSMigrator(replayed, os.DirFS(history))
+	c.Assert(err, qt.IsNil)
+	c.Assert(historyMig.MigrateUp(ctx), qt.IsNil)
 
-	return readBinaryCheckpointRows(c, shadow), readBinaryCheckpointRows(c, fresh)
+	return readBinaryCheckpointRows(c, replayed), readBinaryCheckpointRows(c, fresh)
 }
 
 func readBinaryCheckpointRows(c *qt.C, conn *dbschema.DatabaseConnection) []binaryCheckpointRow {

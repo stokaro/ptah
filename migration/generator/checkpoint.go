@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -336,8 +337,10 @@ type CheckpointFromShadowOptions struct {
 // shadow database, introspects the resulting cumulative schema, and renders it
 // as a checkpoint migration body pair (up creates everything, down drops it).
 // The migration directory is the source of truth, so no target database is
-// needed. The shadow database is dropped clean before the replay and its
-// migration metadata is removed before introspection. For a SQLite shadow,
+// needed. A shadow database that holds a table is refused before anything
+// resets it. Otherwise it is dropped clean before the replay, its migration
+// metadata is removed before introspection, and it is emptied again on every
+// return; a failure to empty it fails the generation. For a SQLite shadow,
 // malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused
 // before the shadow connection or replay.
 //
@@ -379,6 +382,16 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		)
 	}
 
+	lease, err := shadowdb.Claim(ctx, shadowConn)
+	if err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
+	}
+	defer func() {
+		if releaseErr := lease.Release(ctx); releaseErr != nil {
+			upSQL, downSQL = "", ""
+			err = errors.Join(err, fmt.Errorf("checkpoint generation failed: %w", releaseErr))
+		}
+	}()
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: drop all objects: %w", err)
 	}
@@ -396,6 +409,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 
 	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout)
+	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return "", "", fmt.Errorf("checkpoint generation failed: %s", description)

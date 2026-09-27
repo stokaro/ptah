@@ -1,5 +1,6 @@
 // Package shadowdb owns the disposable databases migration workflows replay
-// into: the connection lifecycle, the history a replay applies, and the reset
+// into: the connection lifecycle, the claim that refuses a database holding a
+// table and hands it back empty, the history a replay applies, and the reset
 // that leaves the database holding the schema those migrations describe and
 // nothing else.
 //
