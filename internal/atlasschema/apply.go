@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/systemschema"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -411,10 +412,15 @@ func computeApplyPlan(
 	// (stokaro/ptah#1028).
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, compareOpts)
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
+	// No statement is planned for a withheld object, so a plan that says
+	// nothing about it quietly does less than the desired schema asks for. The
+	// wording names neither surface's flags: native `schema apply` and the
+	// compatibility one both come through here.
+	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
 	diff = applyDiffPolicy(diff, opts.Policy)
 	if diff.HasChanges() {
 		computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{

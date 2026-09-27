@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/systemschema"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/schemadiff/difftypes"
@@ -295,7 +296,7 @@ func diffResolvedStates(
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	ReportUndecidedAdditions(opts.Diagnostics, undecided, "--from", "--to")
+	undecidednote.Report(opts.Diagnostics, undecided, "--from", "--to")
 	// Same second half the native seam applies, applied here for the same
 	// reason the refusal above is: this surface reaches the comparator through
 	// the variant that returns no error. A table both sides name and describe

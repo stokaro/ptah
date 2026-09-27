@@ -117,10 +117,22 @@ for is still named. When that happens the SQL section reads
 planner could not turn into statements, so an empty statement list is never
 reported as agreement.
 
+A declared object the database read could not look at is named too. When the
+account may not read a catalog, the comparison cannot tell whether a declared
+object of that kind already exists, so it plans nothing for it. A MySQL
+account without access to the role tables is the usual case: a role the
+schema declares is withheld. The report lists each such object under
+`Undecided`, and standard error says why the read could not decide it. When
+nothing else differs, the report starts with
+`No differences planned, but 1 declared object could not be decided:` rather
+than `No schema differences detected.` `ptah schema apply`, `ptah schema plan`
+and `ptah migrations plan` print the same warning on standard error.
+
 The command exits `0` whether or not differences exist; add `--exit-code` to
 exit `1` on a non-empty diff when a script needs the answer as a status code.
 Every category counts toward that check, including one whose SQL the dialect
-cannot produce.
+cannot produce. An undecided object counts too: a comparison that could not
+look is not proof that nothing drifted.
 
 ## Drift: the difference as a check
 

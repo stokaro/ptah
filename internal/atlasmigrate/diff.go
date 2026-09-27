@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -688,7 +689,7 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
 	}
-	atlasschema.ReportUndecidedAdditions(
+	undecidednote.Report(
 		diagnostics,
 		undecided,
 		"the replayed migration directory",
