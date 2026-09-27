@@ -93,20 +93,20 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	devConn, releaseDev, err := connectSimulationDev(ctx, opts.DevURL, p.conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, p.conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
 	// Registered before the close so it runs after it: a provisioned container
 	// is removed only once the connection to it is gone.
-	defer releaseDev()
-	defer dbschema.CloseAndWarn(devConn)
+	defer dev.release()
+	defer dbschema.CloseAndWarn(dev.conn)
 	// Registered after the close, so it runs before it: the dev database is
 	// handed back with nothing the rehearsal put in it, whether the rehearsal
 	// succeeded or failed.
-	defer discardDevRehearsalArtifacts(ctx, devConn)
+	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
 
-	return rehearseStatementsOnDev(ctx, p.conn, devConn, p.current, p.txMode, statements)
+	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.txMode, statements)
 }
 
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev
@@ -121,7 +121,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 //
 // Failure to clean is reported rather than returned: it must not replace the
 // rehearsal's own verdict, which is what the caller acts on.
-func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.DatabaseConnection) {
+func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.DatabaseConnection, baseline devclean.Baseline) {
 	if devConn == nil {
 		return
 	}
@@ -130,10 +130,19 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 	cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)
 	defer release()
 	devConn.SchemaWriter().SetDryRun(false)
-	if err := devConn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
+	if err := devclean.Reset(cleanupCtx, devConn, baseline); err != nil {
 		slog.Warn("failed to clean the dev database after the rehearsal; it may still hold rehearsed objects",
 			"error", err)
 	}
+}
+
+// simulationDev is a dev database a rehearsal has claimed: the connection,
+// the baseline every reset of it hands to [devclean.Reset], and the release of
+// a container the connection may run in.
+type simulationDev struct {
+	conn     *dbschema.DatabaseConnection
+	baseline devclean.Baseline
+	release  func()
 }
 
 // connectSimulationDev validates the dev database URL against the target and
@@ -144,24 +153,22 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 // promotes a value the pinned binary cannot parse into a started container.
 // See [devdocker.Parse]. The callers have already answered an empty one.
 //
-// The caller owns both returned values: the connection must be closed, and the
-// release must be called to remove a container this call may have started. The
-// release is always non-nil, including on the error return, so a caller can
-// defer it without asking whether provisioning happened.
+// The caller owns the returned [simulationDev]: its connection must be closed,
+// and its release called to remove a container this call may have started.
+// On an error return nothing is left open or running.
 func connectSimulationDev(
 	ctx context.Context,
 	devURL string,
 	targetConn *dbschema.DatabaseConnection,
 	targetURL string,
 	desiredURLs []string,
-) (*dbschema.DatabaseConnection, func(), error) {
-	noRelease := func() {}
+) (simulationDev, error) {
 	targetInfo := targetConn.Info()
 	// The dialect check reads the URL as written: a `docker://` value names its
 	// engine in the text, so a mismatch is answerable before a container is
 	// started and a refused run pays for none.
 	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
-		return nil, noRelease, err
+		return simulationDev{}, err
 	}
 	// The alias checks below ask whether the dev database IS the target or the
 	// desired-state database, because the dev database is reset destructively.
@@ -173,20 +180,20 @@ func connectSimulationDev(
 	for _, target := range aliasCandidates(devURL, []string{targetURL}) {
 		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
 		if err != nil {
-			return nil, noRelease, fmt.Errorf("compare --dev-url with target database: %w", err)
+			return simulationDev{}, fmt.Errorf("compare --dev-url with target database: %w", err)
 		}
 		if sameTarget {
-			return nil, noRelease, errDevURLIsTarget
+			return simulationDev{}, errDevURLIsTarget
 		}
 	}
 	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
 		if err != nil {
-			return nil, noRelease, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
+			return simulationDev{}, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
 		}
 		if sameDesired {
-			return nil, noRelease, devURLIsDesiredError(desired)
+			return simulationDev{}, devURLIsDesiredError(desired)
 		}
 		if isDirectDatabaseURL(desired) {
 			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
@@ -195,25 +202,25 @@ func connectSimulationDev(
 
 	resolved, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
 	if err != nil {
-		return nil, noRelease, err
+		return simulationDev{}, err
 	}
 
 	devConn, err := dbschema.ConnectToDatabase(ctx, strings.TrimSpace(resolved))
 	if err != nil {
 		release()
-		return nil, noRelease, fmt.Errorf("connect to --dev-url: %w", err)
+		return simulationDev{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}
 
 	devInfo := devConn.Info()
 	if platform.NormalizeDialect(devInfo.Dialect) != platform.NormalizeDialect(targetInfo.Dialect) {
 		dbschema.CloseAndWarn(devConn)
 		release()
-		return nil, noRelease, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
+		return simulationDev{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
 	}
 	if err := checkSimulationSchemaScope(devInfo, targetInfo); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
-		return nil, noRelease, err
+		return simulationDev{}, err
 	}
 	// The URL comparisons above cannot see every alias: a connection pooler
 	// can serve the target under another database name. Each server is asked
@@ -224,9 +231,21 @@ func connectSimulationDev(
 	if err := devlock.EnsureDistinct(ctx, devConn, protected...); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
-		return nil, noRelease, err
+		return simulationDev{}, err
 	}
-	return devConn, release, nil
+	// A dev database that holds tables was not left by a rehearsal: each one
+	// hands back what it claimed, over the scope it claimed. The reset before
+	// the rehearsal and the cleanup after it would drop those tables, so they
+	// are refused here, for the same reason and at the same point as the
+	// identity check above. The claim records what the resets keep and which
+	// scope they empty; see [devclean.Reset].
+	baseline, err := devclean.Claim(ctx, devConn)
+	if err != nil {
+		dbschema.CloseAndWarn(devConn)
+		release()
+		return simulationDev{}, err
+	}
+	return simulationDev{conn: devConn, baseline: baseline, release: release}, nil
 }
 
 // errDevURLIsTarget is the refusal of a dev URL that names the target, by its
@@ -301,6 +320,7 @@ func rehearseStatementsOnDev(
 	ctx context.Context,
 	targetConn,
 	devConn *dbschema.DatabaseConnection,
+	baseline devclean.Baseline,
 	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
@@ -325,7 +345,7 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		return rehearseOnPreparedDev(ctx, session, current, txMode, statements)
+		return rehearseOnPreparedDev(ctx, session, baseline, current, txMode, statements)
 	})
 }
 
@@ -337,12 +357,13 @@ var checkPlanStatements = CheckPlanStatementsSandboxable
 func rehearseOnPreparedDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
+	baseline devclean.Baseline,
 	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
 	devConn.SchemaWriter().SetDryRun(false)
-	if err := devConn.SchemaWriter().DropAllTables(ctx); err != nil {
+	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
 	if err := recreateCurrentSchema(ctx, devConn, current); err != nil {

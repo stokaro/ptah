@@ -513,9 +513,9 @@ func withMaterializedDevSchema(
 	}()
 
 	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
-		baseline, err := devclean.CaptureBaseline(ctx, materializedConn)
+		baseline, err := devclean.Claim(ctx, materializedConn)
 		if err != nil {
-			return fmt.Errorf("reset dev database: %w", err)
+			return err
 		}
 		defer func() {
 			cleanupCtx, release := devclean.CleanupContext(ctx, devclean.CleanupGrace)

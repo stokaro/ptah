@@ -17,9 +17,11 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationvalidate"
 	"ptah.run/internal/ociartifact"
@@ -175,6 +177,7 @@ func runNativeValidate(cmd *cobra.Command, src *source) error {
 func runAtlasValidate(cmd *cobra.Command, src *source) error {
 	checked, err := validate(cmd.Context(), src)
 	result := checked.result
+	var notClean *migrateclean.NotCleanError
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
 		empty, emptyErr := DirectoryHoldsNoSQLFiles(src.dir)
@@ -191,6 +194,13 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 			// The refusal stays for a directory that DOES hold migration files
 			// and carries no integrity file: measured on that binary, exit 1
 			// with this same byte-identical guidance block.
+			//
+			// With a --dev-url the binary still takes its snapshot of the dev
+			// database for the empty directory, and refuses one that holds a
+			// table (stokaro/ptah#3797).
+			if err := devsnapshot.Refuse(cmd.Context(), src.devURL, devsnapshot.Replay); err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
 			return nil
 		}
 		return FailAtlasChecksumFileNotFound(cmd)
@@ -202,6 +212,10 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 		// prints the checksum preamble for it, so this is a checksum refusal
 		// and not a usage failure.
 		return FailAtlasChecksumUnreadableEntry(cmd, err)
+	case errors.As(err, &notClean):
+		// The replay refused a dev database that holds a table before it
+		// reset it. The binary's sentence names the step it was in.
+		return cmdutil.Fail(cmd, devsnapshot.Replay.Wrap(notClean))
 	case err != nil:
 		return cmdutil.Fail(cmd, AtlasDirectoryError(src.dir, err))
 	}

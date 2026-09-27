@@ -308,7 +308,7 @@ func replayMigrations(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	baseline, err := devclean.CaptureBaseline(ctx, conn)
+	baseline, err := devclean.Claim(ctx, conn)
 	if err != nil {
 		return err
 	}

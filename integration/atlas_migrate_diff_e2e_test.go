@@ -16,6 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E runs the real ptah-compat
@@ -66,9 +68,9 @@ CREATE TYPE z_stale_dev_range AS RANGE (
 );
 `)
 	c.Assert(err, qt.IsNil)
-	t.Run("database realm cleans dependencies across schemas", func(t *testing.T) {
-		c := qt.New(t)
-		_, err := devDB.ExecContext(ctx, `
+	// crossSchemaDependencies is a table in public, a second schema, and a
+	// view and a foreign key in that schema that depend on the table.
+	const crossSchemaDependencies = `
 CREATE TABLE public.stale_dependency_parent (id integer PRIMARY KEY);
 CREATE SCHEMA audit;
 CREATE VIEW audit.external_parent_view AS
@@ -77,7 +79,28 @@ CREATE TABLE audit.external_child (
 	id integer PRIMARY KEY,
 	parent_id integer REFERENCES public.stale_dependency_parent(id)
 );
-`)
+`
+	crossSchemaObjects := func(c *qt.C) (objects, schemas int) {
+		c.Helper()
+		c.Assert(devDB.QueryRowContext(ctx, `
+SELECT
+	(SELECT COUNT(*) FROM pg_class c
+	 JOIN pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'audit'
+	   AND c.relname IN ('external_parent_view', 'external_child')) +
+	(SELECT COUNT(*) FROM pg_class c
+	 JOIN pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'public'
+	   AND c.relname = 'stale_dependency_parent')
+`).Scan(&objects), qt.IsNil)
+		c.Assert(devDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_namespace WHERE nspname = 'audit'`).Scan(&schemas), qt.IsNil)
+		return objects, schemas
+	}
+	t.Run("a dev database holding another schema is refused before it is cleaned", func(t *testing.T) {
+		// The pinned binary refuses a dev database whose realm holds a schema
+		// besides an empty public, and names it (stokaro/ptah#3797).
+		c := qt.New(t)
+		_, err := devDB.ExecContext(ctx, crossSchemaDependencies)
 		c.Assert(err, qt.IsNil)
 		defer func() {
 			_, cleanupErr := devDB.ExecContext(
@@ -87,7 +110,35 @@ CREATE TABLE audit.external_child (
 			c.Check(cleanupErr, qt.IsNil)
 		}()
 		dir := t.TempDir()
+		schemaPath := filepath.Join(dir, "schema.sql")
+		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE desired_items (id BIGSERIAL PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+		output, err := runPtah(ctx, dir, binaryPath,
+			"migrate", "diff",
+			"--to", "file://"+schemaPath,
+			"--dev-url", testDBURL,
+			"--dir", "file://"+filepath.Join(dir, "migrations"),
+			"database_realm_dependencies")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(output, qt.Contains,
+			`sql/migrate: taking database snapshot: sql/migrate: connected database is not clean: found schema "audit"`)
+		objects, schemas := crossSchemaObjects(c)
+		c.Assert(objects, qt.Equals, 3)
+		c.Assert(schemas, qt.Equals, 1)
+	})
+	t.Run("database realm cleans dependencies across schemas", func(t *testing.T) {
+		// The replay creates the objects this time, and the cleanup after it
+		// has to remove a schema whose view and foreign key depend on a table
+		// in public.
+		c := qt.New(t)
+		dir := t.TempDir()
 		migrationsDir := filepath.Join(dir, "migrations")
+		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "20260101000000_cross_schema.sql"),
+			[]byte(crossSchemaDependencies), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
+		c.Assert(err, qt.IsNil)
 		schemaPath := filepath.Join(dir, "schema.sql")
 		c.Assert(os.WriteFile(
 			schemaPath,
@@ -103,28 +154,9 @@ CREATE TABLE audit.external_child (
 			"database_realm_dependencies")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		var externalObjectCount int
-		err = devDB.QueryRowContext(ctx, `
-SELECT
-	(SELECT COUNT(*) FROM pg_class c
-	 JOIN pg_namespace n ON n.oid = c.relnamespace
-	 WHERE n.nspname = 'audit'
-	   AND c.relname IN ('external_parent_view', 'external_child')) +
-	(SELECT COUNT(*) FROM pg_class c
-	 JOIN pg_namespace n ON n.oid = c.relnamespace
-	 WHERE n.nspname = 'public'
-	   AND c.relname = 'stale_dependency_parent')
-`).Scan(&externalObjectCount)
-		c.Assert(err, qt.IsNil)
-		c.Assert(externalObjectCount, qt.Equals, 0)
-		var auditSchemaCount int
-		err = devDB.QueryRowContext(ctx, `
-SELECT COUNT(*)
-FROM pg_namespace
-WHERE nspname = 'audit'
-`).Scan(&auditSchemaCount)
-		c.Assert(err, qt.IsNil)
-		c.Assert(auditSchemaCount, qt.Equals, 0)
+		objects, schemas := crossSchemaObjects(c)
+		c.Assert(objects, qt.Equals, 0)
+		c.Assert(schemas, qt.Equals, 0)
 		migrationSQL := readFirstMatchingFile(
 			c,
 			migrationsDir,

@@ -235,6 +235,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		Vars:                      schemaVars,
+		CheckDevDatabase:          atlasDiffDevCheck(opts.devURL),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

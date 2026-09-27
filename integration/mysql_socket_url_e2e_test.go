@@ -189,13 +189,10 @@ func TestCompatMigrateVerbsConnectThroughASocketE2E(t *testing.T) {
 
 // TestCompatRefusesADevURLNamingTheTargetThroughAnotherTransportE2E points the
 // dev URL at the target database over TCP while the target is named through
-// the socket. The dev database is reset before the plan is rehearsed on it, so
-// the run is refused and the target keeps its table.
-//
-// Read from the path, the target is a database called after the socket, the two
-// URLs look distinct, and the reset runs against the target. The community
-// binary refuses the same argv, because the dev database it is given is not
-// clean.
+// the socket. The target holds a table, so the run takes the dev database for
+// its snapshot and refuses it as not clean before anything is dropped, in the
+// community binary's words for the same argv (stokaro/ptah#3797). The target
+// keeps its table.
 func TestCompatRefusesADevURLNamingTheTargetThroughAnotherTransportE2E(t *testing.T) {
 	for _, server := range mysqlSocketServers {
 		t.Run(server.name, func(t *testing.T) {
@@ -211,8 +208,36 @@ func TestCompatRefusesADevURLNamingTheTargetThroughAnotherTransportE2E(t *testin
 				"--to", "file://"+writeMySQLSocketSchema(c),
 				"--auto-approve")
 
-			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches,
+				`sql/migrate: taking database snapshot: sql/migrate: connected database is not clean: found table "keep" in schema "`+target+`"`,
+				qt.Commentf("%s", out))
 			c.Assert(scratch.tables(c, target), qt.Equals, "keep")
+		})
+	}
+}
+
+// TestCompatRefusesADevURLNamingAnEmptyTargetThroughAnotherTransportE2E is the
+// same argv with a target that holds a view and no table, which the snapshot
+// takes as clean. Read from the path, the target is a database called after
+// the socket, the two URLs look distinct, and the reset would run against the
+// target; the identity check refuses first, and the view survives.
+func TestCompatRefusesADevURLNamingAnEmptyTargetThroughAnotherTransportE2E(t *testing.T) {
+	for _, server := range mysqlSocketServers {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLSocketScratch(c, server.socket, server.admin, server.scheme)
+			target := scratch.database(c, "sock_guard")
+			_, err := scratch.admin.ExecContext(c.Context(), "CREATE VIEW `"+target+"`.keep_v AS SELECT 1 AS id")
+			c.Assert(err, qt.IsNil)
+
+			out, err := runCompatVerb("schema", "apply",
+				"--url", scratch.socketURL(target),
+				"--dev-url", scratch.tcpURL(c, target),
+				"--to", "file://"+writeMySQLSocketSchema(c),
+				"--auto-approve")
+
+			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
+			c.Assert(scratch.tables(c, target), qt.Equals, "keep_v")
 		})
 	}
 }

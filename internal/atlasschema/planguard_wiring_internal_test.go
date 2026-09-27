@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devclean"
 	"ptah.run/migration/migrator"
 )
 
@@ -82,7 +83,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 		"CREATE TABLE victim.pwned (id integer)",
 	}
 
-	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, migrator.MigrationTxModeNone, statements)
+	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone, statements)
 
 	// The refusal comes from SQLite, not from Ptah's scanner.
 	c.Assert(err, qt.IsNotNil)
@@ -114,7 +115,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 			devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 			targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, tt.txMode,
+			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, tt.txMode,
 				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)})
 
 			c.Assert(err, qt.IsNotNil)
@@ -136,7 +137,7 @@ func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, migrator.MigrationTxModeNone,
+	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone,
 		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)})
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))

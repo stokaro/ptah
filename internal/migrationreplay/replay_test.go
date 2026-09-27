@@ -41,32 +41,67 @@ func TestReplayRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 }
 
-func TestReplayCleansDevDatabaseAndIgnoresExistingRevisionRows(t *testing.T) {
+// devNotCleanRefusal is the replay's refusal of a SQLite dev database whose
+// first table is stale_replay_runs.
+const devNotCleanRefusal = `connected database is not clean: found table "stale_replay_runs"; ` +
+	`Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`
+
+// TestReplay_RefusesADevDatabaseThatHoldsATable replays a directory on a dev
+// database that already holds tables and a revision row. The replay resets
+// the dev database before its first migration and after its last, so it
+// refuses first, as the pinned community binary does, and every table and the
+// row are still there afterwards (stokaro/ptah#3797).
+func TestReplay_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_create_replay_runs.sql"),
 		[]byte("CREATE TABLE replay_runs (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
 	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
 	_, err = conn.ExecContext(t.Context(), "CREATE TABLE stale_replay_runs (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(), "CREATE TABLE schema_migrations (version BIGINT NOT NULL PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(), "INSERT INTO schema_migrations (version) VALUES (1)")
 	c.Assert(err, qt.IsNil)
-	dbschema.CloseAndWarn(conn)
 
 	err = migrationreplay.Replay(t.Context(), migrationreplay.Options{
 		Dir:       migrationsDir,
 		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "sqlite://" + devDBPath,
 	})
-	c.Assert(err, qt.IsNil)
-	conn, err = dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
+
+	c.Assert(err, qt.ErrorMatches, devNotCleanRefusal)
+	assertSQLiteRealmObjectCount(c, conn, 2)
+	var rows int
+	c.Assert(conn.QueryRowContext(t.Context(), "SELECT count(*) FROM schema_migrations").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
+}
+
+// TestReplay_ResetsWhatACleanDevDatabaseHolds replays on a dev database holding
+// only a view, which the pinned binary counts as clean. The replay resets it
+// first and last, so neither the view nor the replayed table is left.
+func TestReplay_ResetsWhatACleanDevDatabaseHolds(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_create_replay_runs.sql"),
+		[]byte("CREATE TABLE replay_runs (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(t.Context(), "CREATE VIEW stale_replay_view AS SELECT 1 AS id")
+	c.Assert(err, qt.IsNil)
+
+	err = migrationreplay.Replay(t.Context(), migrationreplay.Options{
+		Dir:       migrationsDir,
+		DirFormat: migrationfile.DirFormatAtlas,
+		DevURL:    "sqlite://" + devDBPath,
+	})
+
+	c.Assert(err, qt.IsNil)
 	assertSQLiteRealmObjectCount(c, conn, 0)
 }
 

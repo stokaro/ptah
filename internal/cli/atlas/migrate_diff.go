@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/pathguard"
@@ -323,6 +324,9 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --dev-url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if err := devsnapshot.RefuseConnection(cmd.Context(), conn, devsnapshot.Snapshot); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	var preparePublication func([]string) error
 	if opts.edit {

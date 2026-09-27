@@ -259,7 +259,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		Vars:                          schemaVars,
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, atlasInspectDevRefusal(opts, projectEnv, err))
 	}
 	if web {
 		if err := writeAtlasSchemaERD(cmd, atlasSchemaERD{

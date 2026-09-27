@@ -1,13 +1,14 @@
-// Package migrateclean answers the precondition the Atlas-compatible
-// `migrate apply` enforces before it adopts a database for the first time:
-// whether the database already holds objects that no migration in the
-// directory created.
+// Package migrateclean answers whether a database is clean, the question the
+// pinned community binary asks in two places: before `migrate apply` adopts a
+// database for the first time, and before any verb uses a dev database.
 //
-// It sits between the compat command in internal/cli/atlas and the live catalog. The
-// command owns the two questions this package cannot see — whether the run was
-// opted out of the gate, and whether the revision table already holds rows —
-// and this package owns the three it can: which scope the connection selected,
-// what is in that scope, and what the refusal says.
+// It sits between its callers and the live catalog. The Atlas-compatible
+// `migrate apply` owns the two questions this package cannot see -- whether
+// the run was opted out of the gate, and whether the revision table already
+// holds rows -- and every caller that resets a dev database asks
+// [DevRefusal] before it does. This package owns the three questions it can
+// answer: which scope the connection selected, what is in that scope, and what
+// the refusal says.
 //
 // # Two scopes, not one
 //
@@ -105,8 +106,9 @@ type Scope struct {
 	// not look in. In realm scope it is recorded for context only: a realm
 	// refusal names schemas out of Schemas and never this field.
 	Schema string
-	// Tables lists the base tables found in Schema, sorted by name. Empty in
-	// realm scope.
+	// Tables lists the base tables found in Schema, sorted by name, except on
+	// SQLite, where it keeps the catalog's order; see [Scope.DevRefusal]. Empty
+	// in realm scope.
 	Tables []string
 	// RevisionTable is the unqualified table this run records revisions in. In
 	// schema scope it is empty when the run was pointed at another schema with
@@ -162,7 +164,7 @@ type RealmSchema struct {
 // A dialect Governs does not cover yields a zero Scope, whose Refusal is nil.
 func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, error) {
 	if conn == nil {
-		return Scope{}, fmt.Errorf("migrate apply clean check requires a database connection")
+		return Scope{}, fmt.Errorf("clean check requires a database connection")
 	}
 	dialect := conn.Info().Dialect
 	if !Governs(dialect) {
@@ -177,18 +179,18 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, err
 		// Governs said yes and this function has no probe for it. Reporting a
 		// clean database would be a gate that passes without running, so it
 		// fails loudly instead.
-		return Scope{}, fmt.Errorf("migrate apply clean check has no catalog probe for dialect %q", dialect)
+		return Scope{}, fmt.Errorf("clean check has no catalog probe for dialect %q", dialect)
 	}
 	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
-		return Scope{}, fmt.Errorf("migrate apply clean check: %w", err)
+		return Scope{}, fmt.Errorf("clean check: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		schema, name, scanErr := scanProbeRow(dialect, rows)
 		if scanErr != nil {
-			return Scope{}, fmt.Errorf("migrate apply clean check: %w", scanErr)
+			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
 		}
 		// The schema comes back with the rows so the refusal names the schema
 		// the probe really read rather than the one the connection reported.
@@ -201,9 +203,14 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, err
 		scope.Tables = append(scope.Tables, name)
 	}
 	if err := rows.Err(); err != nil {
-		return Scope{}, fmt.Errorf("migrate apply clean check: %w", err)
+		return Scope{}, fmt.Errorf("clean check: %w", err)
 	}
-	slices.Sort(scope.Tables)
+	// SQLite keeps the catalog's order, which the probe reads: a dev refusal
+	// names the first table in it. A `migrate apply` refusal counts SQLite's
+	// tables and names none, so the order is not an operand there.
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		slices.Sort(scope.Tables)
+	}
 	return scope, nil
 }
 
@@ -261,13 +268,13 @@ func inspectRealm(
 		// realmProbe; the connection layer refuses that URL first, so writing
 		// the probe would be writing code nothing can reach.
 		return Scope{}, fmt.Errorf(
-			"migrate apply clean check has no realm-scope catalog probe for dialect %q", scope.Dialect,
+			"clean check has no realm-scope catalog probe for dialect %q", scope.Dialect,
 		)
 	}
 	scope.Realm = true
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return Scope{}, fmt.Errorf("migrate apply clean check: %w", err)
+		return Scope{}, fmt.Errorf("clean check: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -275,7 +282,7 @@ func inspectRealm(
 	for rows.Next() {
 		var schema, table string
 		if scanErr := rows.Scan(&schema, &table); scanErr != nil {
-			return Scope{}, fmt.Errorf("migrate apply clean check: %w", scanErr)
+			return Scope{}, fmt.Errorf("clean check: %w", scanErr)
 		}
 		// The left join yields one row per schema even when it holds no table,
 		// which is the whole point at this scope: an EMPTY schema refuses.
@@ -288,7 +295,7 @@ func inspectRealm(
 		tables[schema] = append(tables[schema], table)
 	}
 	if err := rows.Err(); err != nil {
-		return Scope{}, fmt.Errorf("migrate apply clean check: %w", err)
+		return Scope{}, fmt.Errorf("clean check: %w", err)
 	}
 	for name, held := range tables {
 		slices.Sort(held)
@@ -482,12 +489,17 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 		// The ESCAPE clause matters: in LIKE, `_` matches any single
 		// character, so an unescaped 'sqlite_%' would also hide a user table
 		// named `sqliteXthing` and under-report the database.
+		//
+		// rowid is the catalog's order, the order the tables were created in,
+		// and the first table in it is the one the pinned binary names when it
+		// refuses a dev database: with `zzz_t` created before `aaa_t` it names
+		// `zzz_t`.
 		return `
 			SELECT name
 			FROM sqlite_master
 			WHERE type = 'table'
 			  AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
-			ORDER BY name`, nil
+			ORDER BY rowid`, nil
 	case platform.MySQL, platform.MariaDB:
 		return `
 			SELECT table_schema, table_name

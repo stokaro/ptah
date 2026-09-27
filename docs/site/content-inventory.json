@@ -235,8 +235,8 @@
         "/migrate-from/atlas/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8400,
-      "sourceBytes": 59097
+      "visibleWords": 8414,
+      "sourceBytes": 59153
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -330,8 +330,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 14554,
-      "sourceBytes": 101381
+      "visibleWords": 14622,
+      "sourceBytes": 101798
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -598,8 +598,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 13097,
-      "sourceBytes": 95605
+      "visibleWords": 13187,
+      "sourceBytes": 96168
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -710,8 +710,8 @@
         "/versioned/generate/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2497,
-      "sourceBytes": 17772
+      "visibleWords": 2499,
+      "sourceBytes": 17775
     },
     {
       "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
@@ -6759,8 +6759,8 @@
         "/versioned/lint/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1507,
-      "sourceBytes": 15226
+      "visibleWords": 1515,
+      "sourceBytes": 15267
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",
@@ -6881,8 +6881,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5559,
-      "sourceBytes": 39136
+      "visibleWords": 5575,
+      "sourceBytes": 39230
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",

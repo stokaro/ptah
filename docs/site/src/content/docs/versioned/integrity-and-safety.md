@@ -581,9 +581,10 @@ has what the pinned community binary does with the same history.
 ## Replay on a dev database
 
 Hashes prove the files are unchanged, not that the SQL executes. Add
-`--dev-url` to also clean a disposable
-**[dev database](../../concepts/database-urls-and-dev-databases/)** and replay
-the whole directory on it:
+`--dev-url` to also replay the whole directory on a disposable
+**[dev database](../../concepts/database-urls-and-dev-databases/)**, which Ptah
+empties before and after. One that already holds a table is refused before
+anything is dropped:
 
 ```bash
 ptah migrations validate \

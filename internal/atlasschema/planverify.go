@@ -115,19 +115,20 @@ func RehearsePlanStatements(
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 
-	devConn, releaseDev, err := connectSimulationDev(ctx, opts.DevURL, conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
+	devConn := dev.conn
 	// Registered before the close so it runs after it: a provisioned container
 	// is removed only once the connection to it is gone.
-	defer releaseDev()
+	defer dev.release()
 	defer dbschema.CloseAndWarn(devConn)
 	// Registered after the close so it runs before it, and after the
 	// end-state comparison below, which reads the rehearsed state it drops.
-	defer discardDevRehearsalArtifacts(ctx, devConn)
+	defer discardDevRehearsalArtifacts(ctx, devConn, dev.baseline)
 
-	if err := rehearseStatementsOnDev(ctx, conn, devConn, current, opts.TxMode, statements); err != nil {
+	if err := rehearseStatementsOnDev(ctx, conn, devConn, dev.baseline, current, opts.TxMode, statements); err != nil {
 		return err
 	}
 

@@ -21,6 +21,7 @@ import (
 	"ptah.run/dbschema"
 	mysqlschema "ptah.run/internal/dbschema/mysql"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/sqlident"
 )
 
@@ -609,24 +610,35 @@ func runMySQLMigrateDiffCase(
 	))
 	c.Assert(err, qt.IsNil)
 
-	limitedRejectionDir := c.TempDir()
-	limitedMigrationsDir := filepath.Join(limitedRejectionDir, "migrations")
+	// The dev database holds tables no run of Ptah put there, so migrate diff
+	// refuses it before anything is dropped, as the pinned binary does
+	// (stokaro/ptah#3797). dependency_parent is the first table in byte order.
+	uncleanDir := c.TempDir()
+	output, err := runPtah(ctx, uncleanDir, binaryPath,
+		"migrate", "diff",
+		"--to", desiredURL,
+		"--dev-url", devURL,
+		"--dir", "file://"+filepath.Join(uncleanDir, "migrations"),
+		"must_refuse_unclean_dev",
+	)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output, qt.Contains, fmt.Sprintf(
+		`sql/migrate: taking database snapshot: sql/migrate: connected database is not clean: found table "dependency_parent" in schema %q`,
+		devName,
+	))
+	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
+
+	// The cleanup a run performs on what it created refuses the same states
+	// it always refused. Those states need a table in the dev database before
+	// the cleanup runs, which a run now refuses to start with, so the cleanup
+	// is driven directly, on the connection a run would hold.
 	limitedDevURL := replaceMySQLCredentials(
 		c,
 		devURL,
 		limitedUser,
 		limitedPassword,
 	)
-	output, err := runPtah(ctx, limitedRejectionDir, binaryPath,
-		"migrate", "diff",
-		"--to", desiredURL,
-		"--dev-url", limitedDevURL,
-		"--dir", "file://"+limitedMigrationsDir,
-		"must_reject_limited_metadata",
-	)
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(output, qt.Contains, "global SELECT")
-	c.Assert(output, qt.Contains, "complete metadata visibility")
+	c.Assert(cleanMySQLDevRealm(c, ctx, limitedDevURL), qt.ErrorMatches, `(?s).*global SELECT.*complete metadata visibility.*`)
 	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
@@ -635,17 +647,7 @@ func runMySQLMigrateDiffCase(
 		devName,
 	))
 	c.Assert(err, qt.IsNil)
-	rejectionDir := c.TempDir()
-	rejectionMigrationsDir := filepath.Join(rejectionDir, "migrations")
-	output, err = runPtah(ctx, rejectionDir, binaryPath,
-		"migrate", "diff",
-		"--to", desiredURL,
-		"--dev-url", devURL,
-		"--dir", "file://"+rejectionMigrationsDir,
-		"must_reject_external_view",
-	)
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(output, qt.Contains, "views from other databases reference it")
+	c.Assert(cleanMySQLDevRealm(c, ctx, devURL), qt.ErrorMatches, `(?s).*views from other databases reference it.*`)
 	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
 	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "external_parent_view"), qt.Equals, 1)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP VIEW `%s`.`external_parent_view`", externalName))
@@ -659,34 +661,13 @@ CREATE TABLE %[1]s.external_child (
 		FOREIGN KEY (parent_id) REFERENCES %[2]s.dependency_parent(id)
 )`, sqlident.Quote(platform.MySQL, externalName), sqlident.Quote(platform.MySQL, devName)))
 	c.Assert(err, qt.IsNil)
-
-	foreignKeyRejectionDir := c.TempDir()
-	foreignKeyRejectionMigrationsDir := filepath.Join(foreignKeyRejectionDir, "migrations")
-	output, err = runPtah(ctx, foreignKeyRejectionDir, binaryPath,
-		"migrate", "diff",
-		"--to", desiredURL,
-		"--dev-url", devURL,
-		"--dir", "file://"+foreignKeyRejectionMigrationsDir,
-		"must_reject_external_foreign_key",
-	)
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(output, qt.Contains, "foreign key constraints from other databases reference it")
+	c.Assert(cleanMySQLDevRealm(c, ctx, devURL), qt.ErrorMatches, `(?s).*foreign key constraints from other databases reference it.*`)
 	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
 	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "external_child"), qt.Equals, 1)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP DATABASE `%s`", externalName))
 	c.Assert(err, qt.IsNil)
-
-	managedViewCleanupDir := c.TempDir()
-	managedViewMigrationsDir := filepath.Join(managedViewCleanupDir, "migrations")
-	output, err = runPtah(ctx, managedViewCleanupDir, binaryPath,
-		"migrate", "diff",
-		"--to", desiredURL,
-		"--dev-url", devURL,
-		"--dir", "file://"+managedViewMigrationsDir,
-		"clean_managed_view",
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
+	c.Assert(cleanMySQLDevRealm(c, ctx, devURL), qt.IsNil)
 	c.Assert(mySQLUserObjectCount(c, ctx, adminDB, devName), qt.Equals, 0)
 
 	workDir := c.TempDir()
@@ -869,4 +850,14 @@ func mySQLUserObjectCount(
 	).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
+}
+
+// cleanMySQLDevRealm runs the dev database cleanup a replay runs, on a fresh
+// connection to devURL, and returns its verdict.
+func cleanMySQLDevRealm(c *qt.C, ctx context.Context, devURL string) error {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	return devclean.DatabaseRealm(ctx, conn)
 }
