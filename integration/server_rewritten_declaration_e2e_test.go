@@ -136,6 +136,13 @@ CREATE TABLE f3 (r int, EXCLUDE USING btree (r WITH =), EXCLUDE USING btree (r W
 ALTER TABLE g1 ADD UNIQUE (id);`,
 	},
 	{
+		// PostgreSQL 18.6 builds both constraints: g2_a_key and g2_a_key1
+		// (stokaro/ptah#3819).
+		name: "a UNIQUE an ALTER TABLE declares again over one column",
+		sql: `CREATE TABLE g2 (a int, UNIQUE (a));
+ALTER TABLE g2 ADD UNIQUE (a);`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,

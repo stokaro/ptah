@@ -32,6 +32,22 @@ func TestSchemaDiffFromADatabaseFindsAServerRewrittenDeclarationSyncedE2E(t *tes
 	}
 }
 
+// TestSchemaDiffFromADatabaseToItselfIsSyncedE2E diffs the database the SQL
+// built against itself. Both sides are the server's own description, so every
+// difference is one the reading made up (stokaro/ptah#3819).
+func TestSchemaDiffFromADatabaseToItselfIsSyncedE2E(t *testing.T) {
+	for _, test := range serverRewrittenDeclarations {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := databaseBuiltFrom(c, test.sql)
+
+			out := runPtahNative(c, "schema", "diff", "--from", source, "--to", source)
+
+			c.Assert(out, qt.Contains, "Schemas are synced")
+		})
+	}
+}
+
 // TestSchemaDiffFromADirectoryFindsAServerRewrittenDeclarationSyncedE2E diffs
 // a directory whose one migration is the schema file, replayed on the dev
 // database, against that file: the replay session answers before its cleanup.
@@ -61,6 +77,23 @@ func TestSchemaDiffFromADatabasePlansAServerRewrittenDeclarationThatChangedE2E(t
 			source := databaseBuiltFrom(c, test.migration)
 
 			out := runPtahNative(c, "schema", "diff", "--from", source, "--to", "file://"+schema)
+
+			c.Assert(out, qt.Contains, test.wantInPlan)
+		})
+	}
+}
+
+// TestSchemaDiffFromADatabaseToAChangedDatabasePlansTheChangeE2E is the
+// control for the rows that diff a database with itself: two databases a
+// changed declaration built differently are not synced.
+func TestSchemaDiffFromADatabaseToAChangedDatabasePlansTheChangeE2E(t *testing.T) {
+	for _, test := range serverRewrittenControls {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := databaseBuiltFrom(c, test.migration)
+			target := databaseBuiltFrom(c, test.schema)
+
+			out := runPtahNative(c, "schema", "diff", "--from", source, "--to", target)
 
 			c.Assert(out, qt.Contains, test.wantInPlan)
 		})

@@ -49,7 +49,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	indexDescribed := indexDescribedUniques(dbSchema)
 	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed)
-	clearColumnUniqueForNamedConstraints(database)
+	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
 	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
@@ -764,7 +764,21 @@ func generatedUniqueConstraintName(constraint catalog.Constraint, columns []stri
 //
 // Both spellings mean one constraint, so writing both would put two of them in
 // the document and plan a duplicate on apply.
-func clearColumnUniqueForNamedConstraints(database *schemamodel.Database) {
+//
+// A column keeps the flag when the flag is its own key: the catalog holds a
+// UNIQUE over the column alone that no index or constraint of the description
+// names, because [convertConstraint] left it to the flag. The named constraint
+// is then a second key.
+// Measured on PostgreSQL 18.6, `CREATE TABLE g2 (a int, UNIQUE (a))` and
+// `ALTER TABLE g2 ADD UNIQUE (a)` build g2_a_key and g2_a_key1. Cleared for
+// g2_a_key1, the flag takes g2_a_key out of the description, and a diff of the
+// database with itself plans to drop it (stokaro/ptah#3819).
+func clearColumnUniqueForNamedConstraints(
+	database *schemamodel.Database,
+	dbSchema *catalog.Database,
+	tableStructNames map[string]string,
+) {
+	ownKeys := columnOwnUniqueKeys(database, dbSchema, tableStructNames)
 	named := make(map[tableMemberKey]struct{}, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.Columns) != 1 {
@@ -788,10 +802,44 @@ func clearColumnUniqueForNamedConstraints(database *schemamodel.Database) {
 	}
 	for i := range database.Fields {
 		field := &database.Fields[i]
-		if _, isNamed := named[tableMemberKey{table: field.StructName, member: field.Name}]; isNamed {
+		key := tableMemberKey{table: field.StructName, member: field.Name}
+		if _, own := ownKeys[key]; own {
+			continue
+		}
+		if _, isNamed := named[key]; isNamed {
 			field.Unique = false
 		}
 	}
+}
+
+// columnOwnUniqueKeys answers the columns whose `unique = true` stands for a
+// key of their own, keyed by struct and column name: a UNIQUE over the column
+// alone that no index or constraint of database describes by its name.
+func columnOwnUniqueKeys(
+	database *schemamodel.Database,
+	dbSchema *catalog.Database,
+	tableStructNames map[string]string,
+) map[tableMemberKey]struct{} {
+	described := make(map[tableMemberKey]struct{}, len(database.Indexes)+len(database.Constraints))
+	for _, index := range database.Indexes {
+		described[tableMemberKey{table: index.StructName, member: index.Name}] = struct{}{}
+	}
+	for _, constraint := range database.Constraints {
+		described[tableMemberKey{table: constraint.StructName, member: constraint.Name}] = struct{}{}
+	}
+	own := make(map[tableMemberKey]struct{})
+	for _, constraint := range dbSchema.Constraints {
+		columns := constraint.ColumnNamesOrDefault()
+		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(columns) != 1 {
+			continue
+		}
+		structName := structNameForTable(tableStructNames, constraint.QualifiedTableName(), constraint.TableName)
+		if _, ok := described[tableMemberKey{table: structName, member: constraint.Name}]; ok {
+			continue
+		}
+		own[tableMemberKey{table: structName, member: columns[0]}] = struct{}{}
+	}
+	return own
 }
 
 func convertConstraints(
