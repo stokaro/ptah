@@ -91,7 +91,13 @@ func GrantsWithSemantics(
 		// A revoke of a table privilege takes it off every column too, as
 		// PostgreSQL does, so it reaches the column rows. A column the schema
 		// grants the privilege on is kept by the check below.
-		if managedRoles[ref.Role] || revokedGrants[key] || revokedGrants[key.onWholeObject()] {
+		//
+		// An implicit row is a privilege the object holds by default, which a
+		// declaration that leaves it out does not ask to take away; only a
+		// revoke does. A CockroachDB routine's owner is one: it keeps EXECUTE
+		// through REVOKE ALL, so revoking it from a managed owner the
+		// declaration did not name would be planned again on every run.
+		if (managedRoles[ref.Role] && !grant.Implicit) || revokedGrants[key] || revokedGrants[key.onWholeObject()] {
 			databaseGrantMapForRemovals[key] = ref
 		}
 	}

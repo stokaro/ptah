@@ -539,6 +539,13 @@ A name without the types is refused. The types are matched against the
 catalog without parameter names or `OUT` arguments, so `purge_workspace(uuid)`
 and `purge_workspace(p_id uuid)` name the same function.
 
+On CockroachDB, grants are read from `information_schema` on every release
+line, because v25.4 and v26.2 leave the catalog's ACL columns empty. The read
+leaves out privileges nobody granted: the built-in `admin` role and the `root`
+user hold `ALL` on every object and cannot lose it, and an owner holds `ALL`
+on what it owns. CockroachDB records no grantor, so a described grant names
+none.
+
 ### Revoking privileges nobody granted
 
 PostgreSQL gives some privileges without a `GRANT`: every role can execute a
