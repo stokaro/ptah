@@ -77,6 +77,21 @@ func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *te
 		c.Assert(predicate, qt.Contains, "n.nspname <> 'crdb_internal'")
 		c.Assert(predicate, qt.Contains, "n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
 	})
+
+	t.Run("spanner", func(t *testing.T) {
+		c := qt.New(t)
+		predicate := systemschema.PostgresNonSystemSchemasPredicate("spanner")
+
+		c.Assert(predicate, qt.Contains, "n.nspname <> 'spanner_sys'")
+		c.Assert(predicate, qt.Not(qt.Contains), "crdb_internal")
+	})
+
+	t.Run("cockroachdb has no spanner_sys", func(t *testing.T) {
+		c := qt.New(t)
+		predicate := systemschema.PostgresNonSystemSchemasPredicate("cockroachdb")
+
+		c.Assert(predicate, qt.Not(qt.Contains), "spanner_sys")
+	})
 }
 
 func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {

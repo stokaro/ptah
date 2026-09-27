@@ -163,11 +163,18 @@ type RealmSchema struct {
 //
 // A dialect Governs does not cover yields a zero Scope, whose Refusal is nil.
 func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, error) {
+	return inspect(ctx, conn, Governs)
+}
+
+// inspect is [Inspect] for the dialects governs covers. The `migrate apply`
+// gate and the dev database check cover different sets, and read them the
+// same way.
+func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs func(string) bool) (Scope, error) {
 	if conn == nil {
 		return Scope{}, fmt.Errorf("clean check requires a database connection")
 	}
 	dialect := conn.Info().Dialect
-	if !Governs(dialect) {
+	if !governs(dialect) {
 		return Scope{}, nil
 	}
 	scope := Scope{Dialect: dialect, Schema: strings.TrimSpace(conn.Info().Schema)}
@@ -176,7 +183,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Scope, err
 	}
 	query, args := tableProbe(dialect, conn.Info().Capabilities, scope.Schema)
 	if query == "" {
-		// Governs said yes and this function has no probe for it. Reporting a
+		// governs said yes and this function has no probe for it. Reporting a
 		// clean database would be a gate that passes without running, so it
 		// fails loudly instead.
 		return Scope{}, fmt.Errorf("clean check has no catalog probe for dialect %q", dialect)
@@ -261,9 +268,10 @@ func inspectRealm(
 ) (Scope, error) {
 	query := realmProbe(scope.Dialect, conn.Info().Capabilities)
 	if query == "" {
-		// Governs said yes, the connection selected realm scope, and this
-		// function has no probe for it. Reporting a clean database would be a
-		// gate that passes without running, so it fails loudly instead. The
+		// The caller's dialect predicate said yes, the connection selected
+		// realm scope, and this function has no probe for it. Reporting a
+		// clean database would be a gate that passes without running, so it
+		// fails loudly instead. The
 		// shapes this branch would need on MySQL are measured and recorded on
 		// realmProbe; the connection layer refuses that URL first, so writing
 		// the probe would be writing code nothing can reach.
@@ -507,7 +515,7 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
 			  AND table_type = 'BASE TABLE'
 			ORDER BY table_name`, []any{schema}
-	case platform.Postgres:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		// relkind 'r' and 'p' are ordinary and partitioned tables. Views,
 		// sequences, materialized views and indexes are excluded on purpose:
 		// measured on PostgreSQL 17, a database holding only a view or only a
@@ -521,6 +529,42 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 			  AND c.relkind IN ('r', 'p')
 			  AND ` + postgresUserTable(caps) + `
 			ORDER BY c.relname`, []any{schema}
+	case platform.SQLServer:
+		// A replay empties every user schema of a SQL Server dev database,
+		// so the probe reads them all and returns the first table in byte
+		// order. A rehearsal empties only the connected schema and is refused
+		// over a table elsewhere too, since one claim serves both.
+		// is_ms_shipped leaves the server's own out.
+		return `
+			SELECT TOP 1 s.name, t.name
+			FROM sys.tables t
+			JOIN sys.schemas s ON s.schema_id = t.schema_id
+			WHERE t.is_ms_shipped = 0
+			ORDER BY s.name COLLATE Latin1_General_BIN2, t.name COLLATE Latin1_General_BIN2`, nil
+	case platform.ClickHouse:
+		// A view, a dictionary and the storage a materialized view keeps in
+		// an `.inner` table are not tables a reset would lose data from.
+		return `
+			SELECT database, name
+			FROM system.tables
+			WHERE database = currentDatabase()
+			  AND is_temporary = 0
+			  AND engine NOT IN ('View', 'MaterializedView', 'LiveView', 'WindowView', 'Dictionary')
+			  AND NOT startsWith(name, '.inner')
+			ORDER BY name`, nil
+	case platform.Oracle:
+		// The tables the Oracle reset drops: every table the connected account
+		// owns that Oracle did not generate and that is not already in the
+		// recycle bin. The list is the reset's own, so an account that owns
+		// tables Oracle maintains, such as SYSTEM, is refused rather than
+		// emptied.
+		return `
+			SELECT USER, o.object_name
+			FROM user_objects o
+			WHERE o.object_type = 'TABLE'
+			  AND o.object_name NOT LIKE 'BIN$%'
+			  AND o.generated = 'N'
+			ORDER BY o.object_name`, nil
 	default:
 		return "", nil
 	}
@@ -542,7 +586,7 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 // DATABASE(). Writing that probe would be writing code no test could reach, so
 // this returns nothing and Inspect fails loudly instead.
 func realmProbe(dialect string, caps capability.Capabilities) string {
-	if platform.NormalizeDialect(dialect) != platform.Postgres {
+	if !platform.IsPostgresFamily(dialect) {
 		return ""
 	}
 	// Which schemas belong to the realm is
@@ -580,11 +624,16 @@ func realmProbe(dialect string, caps capability.Capabilities) string {
 // Both change which table a schema-scope refusal names as well as whether it
 // refuses, because the refusal names the first counted table by name.
 //
+// The partition arm is `IS NOT TRUE` rather than `NOT`: CockroachDB answers
+// NULL for relispartition on every table, measured on 26.2, and `NOT NULL`
+// would leave out every table there, so a dev database holding one would read
+// as clean and be reset.
+//
 // The extension arm reads pg_depend and is gated on
 // [capability.CatalogDependencies] for the reason
 // [systemschema.PostgresDescribedSchemasPredicate] gives.
 func postgresUserTable(caps capability.Capabilities) string {
-	predicate := `NOT c.relispartition`
+	predicate := `c.relispartition IS NOT TRUE`
 	if !caps.Has(capability.CatalogDependencies) {
 		return predicate
 	}

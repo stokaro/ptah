@@ -106,8 +106,8 @@ func ForSources(sets ...atlassource.Set) (Check, bool) {
 // answers itself. A `docker://` value names a container the run starts, which
 // is empty. A dev database that cannot be reached or read is reported by the
 // verb when it connects, in the words its own tests pin; this check does not
-// guess at them. And a dialect [migrateclean.Governs] does not cover has no
-// measured refusal to reproduce.
+// guess at them. And a dialect [migrateclean.GovernsDev] does not cover is
+// not checked.
 func Refuse(ctx context.Context, devURL string, check Check) error {
 	if strings.TrimSpace(devURL) == "" || devdocker.IsURL(devURL) {
 		return nil
