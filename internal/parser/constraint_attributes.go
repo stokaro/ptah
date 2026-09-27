@@ -216,8 +216,9 @@ func tableElementKind(constraint *ast.ConstraintNode) string {
 
 // readConstraintClauses reads what may follow a table constraint's key or
 // expression, in PostgreSQL's order: INCLUDE, the clauses of the index behind
-// a key, REFERENCES, the CHECK expression, the EXCLUDE predicate and the
-// deferral clauses.
+// a key, REFERENCES, the CHECK expression, the EXCLUDE predicate, and the
+// deferral clauses with `[NOT] ENFORCED` and `NOT VALID` on either side of
+// them.
 func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind string) error {
 	if err := p.handleTableConstraintInclude(constraint); err != nil {
 		return err
@@ -234,11 +235,17 @@ func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind stri
 	if err := p.handleTableExcludeWhere(constraint); err != nil {
 		return err
 	}
+	if err := p.readConstraintAttributes(kind); err != nil {
+		return err
+	}
 	clauses, err := p.parseDeferral()
 	if err != nil {
 		return err
 	}
-	return clauses.applyToTableElement(constraint, kind)
+	if err := clauses.applyToTableElement(constraint, kind); err != nil {
+		return err
+	}
+	return p.readConstraintAttributes(kind)
 }
 
 // applyToTableElement carries the clauses after a table element of kind onto
