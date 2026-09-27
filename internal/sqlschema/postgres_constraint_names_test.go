@@ -147,6 +147,18 @@ func TestRead_PostgresUnnamedConstraintNames_HappyPath(t *testing.T) {
 			want: []string{"fkey late late_q_p_fkey1"},
 		},
 		{
+			name: "a column's own UNIQUE holds its name against a UNIQUE added later",
+			sql: "CREATE TABLE own (id bigint PRIMARY KEY, b bigint UNIQUE);\n" +
+				"ALTER TABLE own ADD UNIQUE (b);",
+			want: []string{"key own own_b_key1"},
+		},
+		{
+			name: "a column added with UNIQUE holds its name against a UNIQUE in the same statement",
+			sql: "CREATE TABLE own (id bigint PRIMARY KEY, a bigint);\n" +
+				"ALTER TABLE own ADD COLUMN b bigint UNIQUE, ADD UNIQUE (b);",
+			want: []string{"key own own_b_key1"},
+		},
+		{
 			name: "a named foreign key keeps its name",
 			sql:  "CREATE TABLE child (id bigint PRIMARY KEY, parent_id bigint CONSTRAINT my_fk REFERENCES parent(id));",
 			want: []string{"fkey child my_fk"},

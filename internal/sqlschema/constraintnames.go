@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
@@ -93,7 +94,9 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 // model gives it to `a < 10`.
 //
 // A column-level UNIQUE is not named here: the model keeps it on the column,
-// and the comparison matches it by its columns.
+// and the comparison derives its name; see [columnkey.Name]. The name is held
+// all the same, so an unnamed UNIQUE over the column alone takes the next
+// number; see [constraintNamesInSchema].
 func nameCreatedConstraints(
 	database, base *schemamodel.Database,
 	table schemamodel.Table,
@@ -105,7 +108,7 @@ func nameCreatedConstraints(
 	}
 	databases := []*schemamodel.Database{database, base}
 	constraints := constraintNamesInSchema(databases, table.Schema)
-	relations := relationNamesInSchema(databases, table.Schema)
+	relations := pgname.RelationNames(databases, table.Schema)
 	nameCreatedChecks(database, table, fieldsStart, constraintsStart, constraints)
 	for i := constraintsStart; i < len(database.Constraints); i++ {
 		nameIndexedConstraint(&database.Constraints[i], table.Name, constraints, relations)
@@ -311,7 +314,7 @@ func nameCreatedChecks(
 	database *schemamodel.Database,
 	table schemamodel.Table,
 	fieldsStart, constraintsStart int,
-	constraints namespaceNames,
+	constraints pgname.Names,
 ) {
 	fields := database.Fields[fieldsStart:]
 	columns := make([]string, 0, len(fields))
@@ -384,7 +387,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 		_, columns := tableColumns(target.databases, target.structName)
 		constraint.Name = claimCheckName(table, constraint.CheckExpression, columns, constraints)
 	case strings.EqualFold(constraint.Type, "UNIQUE"), strings.EqualFold(constraint.Type, "EXCLUDE"):
-		nameIndexedConstraint(constraint, table, constraints, relationNamesInSchema(target.databases, schema))
+		nameIndexedConstraint(constraint, table, constraints, pgname.RelationNames(target.databases, schema))
 	case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
 		constraint.Name = claimDerivedName(table, constraint.Columns, foreignKeyLabel, constraints)
 	}
@@ -398,7 +401,7 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 func nameIndexedConstraint(
 	constraint *schemamodel.Constraint,
 	table string,
-	constraints, relations namespaceNames,
+	constraints, relations pgname.Names,
 ) {
 	if constraint.Name != "" {
 		return
@@ -408,130 +411,67 @@ func nameIndexedConstraint(
 		constraint.Name = claimDerivedName(table, constraint.Columns, uniqueLabel, constraints, relations)
 	case strings.EqualFold(constraint.Type, "EXCLUDE"):
 		constraint.Name = pgname.Exclude(table, constraint.ExcludeElements, func(candidate string) bool {
-			return constraints.taken(candidate) || relations.taken(candidate)
+			return constraints.Taken(candidate) || relations.Taken(candidate)
 		})
 	default:
 		return
 	}
-	relations.claim(constraint.Name)
+	relations.Claim(constraint.Name)
 }
 
 // claimCheckName derives the name of an unnamed CHECK on table and claims it in
 // the constraint namespace. A CHECK has no index behind it, so the relation
 // namespace does not constrain it: measured, an index already called
 // `l_a_check` leaves `CHECK (a > 0)` on `l` named `l_a_check`.
-func claimCheckName(table, expression string, columns []string, constraints namespaceNames) string {
-	name := pgname.Check(table, expression, columns, constraints.taken)
-	constraints.claim(name)
+func claimCheckName(table, expression string, columns []string, constraints pgname.Names) string {
+	name := pgname.Check(table, expression, columns, constraints.Taken)
+	constraints.Claim(name)
 	return name
 }
 
 // claimDerivedName derives the first name none of the sets holds and claims it
 // in the first set, which is the constraint namespace.
-func claimDerivedName(table string, columns []string, label string, sets ...namespaceNames) string {
+func claimDerivedName(table string, columns []string, label string, sets ...pgname.Names) string {
 	name := pgname.Constraint(table, columns, label, func(candidate string) bool {
 		for _, set := range sets {
-			if set.taken(candidate) {
+			if set.Taken(candidate) {
 				return true
 			}
 		}
 		return false
 	})
-	sets[0].claim(name)
+	sets[0].Claim(name)
 	return name
 }
 
-// namespaceNames is the set of names one namespace of one schema holds.
-//
-// Schema-wide rather than per table, because that is where PostgreSQL looks:
-// it picks a name no constraint in the schema carries, and for the index
-// behind a UNIQUE, no relation either. Exact rather than folded, because every
-// name reaching here was already read the way the server stores it.
-type namespaceNames map[string]struct{}
-
-func (n namespaceNames) taken(name string) bool {
-	_, found := n[name]
-	return found
-}
-
-func (n namespaceNames) claim(name string) {
-	if name != "" {
-		n[name] = struct{}{}
-	}
-}
-
 // constraintNamesInSchema collects every constraint name the databases give
-// the tables of one schema: table constraints, the names a column carries for
-// its own constraints, and a table's named primary key.
+// the tables of one schema, as [pgname.ConstraintNames] reads them, and the
+// name of each column's own UNIQUE.
 //
-// Explicit names and the names derived here are the only ones that can
-// collide with a derived `_check`, `_fkey` or `_key`: every other name
-// PostgreSQL derives ends in a label of its own, such as `_pkey` or
-// `_not_null`.
-func constraintNamesInSchema(databases []*schemamodel.Database, schema string) namespaceNames {
-	names := make(namespaceNames)
+// A column's own UNIQUE holds `<table>_<column>_key` although the model keeps
+// no name for it; see [columnkey.Name]. Measured on PostgreSQL 18.6, `ALTER
+// TABLE c ADD COLUMN b int UNIQUE, ADD UNIQUE (b)` names the column's key
+// c_b_key and the other c_b_key1, and `UNIQUE (b)` added to a table whose b is
+// UNIQUE is c_b_key1. Named c_b_key here, the table's key would pair with the
+// column's in the database, and the comparison would plan the column's key
+// under a name the database holds.
+func constraintNamesInSchema(databases []*schemamodel.Database, schema string) pgname.Names {
+	names := pgname.ConstraintNames(databases, schema)
 	for _, database := range databases {
 		if database == nil {
 			continue
 		}
-		inSchema := tablesInSchema(database, schema)
+		tables := make(map[string]string, len(database.Tables))
 		for _, table := range database.Tables {
 			if table.Schema == schema {
-				names.claim(table.PrimaryKeyName)
-			}
-		}
-		for _, constraint := range database.Constraints {
-			if tableSchema, _ := splitQualifiedTable(constraint.Table); tableSchema == schema {
-				names.claim(constraint.Name)
+				tables[table.StructName] = table.Name
 			}
 		}
 		for _, field := range database.Fields {
-			if !inSchema[field.StructName] {
-				continue
-			}
-			names.claim(field.ForeignKeyName)
-			names.claim(field.CheckName)
-			names.claim(field.NotNullConstraintName)
-		}
-	}
-	return names
-}
-
-// relationNamesInSchema collects the names of the relations the databases
-// declare in one schema -- tables, views, materialized views, sequences and
-// indexes -- which the index behind a UNIQUE may not take either. Measured, an
-// index or a table already called `q_a_key` makes `UNIQUE (a)` on `q` become
-// `q_a_key1`.
-func relationNamesInSchema(databases []*schemamodel.Database, schema string) namespaceNames {
-	names := make(namespaceNames)
-	for _, database := range databases {
-		if database == nil {
-			continue
-		}
-		inSchema := tablesInSchema(database, schema)
-		for _, table := range database.Tables {
-			if table.Schema == schema {
-				names.claim(table.Name)
-			}
-		}
-		for _, view := range database.Views {
-			if viewSchema, name := splitQualifiedTable(view.Name); viewSchema == schema {
-				names.claim(name)
-			}
-		}
-		for _, view := range database.MaterializedViews {
-			if viewSchema, name := splitQualifiedTable(view.Name); viewSchema == schema {
-				names.claim(name)
-			}
-		}
-		for _, sequence := range database.Sequences {
-			if sequence.Schema == schema {
-				names.claim(sequence.Name)
-			}
-		}
-		for _, index := range database.Indexes {
-			if indexInSchema(index, inSchema, schema) {
-				names.claim(index.Name)
+			table, inSchema := tables[field.StructName]
+			if inSchema && field.Unique && strings.TrimSpace(field.UniqueExpr) == "" {
+				name, _ := columnkey.Name(platform.Postgres, table, field.Name, nil)
+				names.Claim(name)
 			}
 		}
 	}
@@ -548,16 +488,6 @@ func tablesInSchema(database *schemamodel.Database, schema string) map[string]bo
 		}
 	}
 	return inSchema
-}
-
-// indexInSchema reports whether an index belongs to a table of schema, read
-// from the table it names when it names one and from its owner otherwise.
-func indexInSchema(index schemamodel.Index, inSchema map[string]bool, schema string) bool {
-	if index.TableName != "" {
-		tableSchema, _ := splitQualifiedTable(index.TableName)
-		return tableSchema == schema
-	}
-	return inSchema[index.StructName]
 }
 
 // splitQualifiedTable returns the schema and bare name of a table reference the

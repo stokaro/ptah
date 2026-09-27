@@ -640,6 +640,16 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 				},
 			},
 		}},
+		Constraints: []catalog.Constraint{
+			{Name: "PRIMARY", TableName: "invoices", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
+			{
+				Name:        "invoice_number",
+				TableName:   "invoices",
+				Type:        "UNIQUE",
+				ColumnName:  "invoice_number",
+				ColumnNames: []string{"invoice_number"},
+			},
+		},
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, database, "mysql")

@@ -42,6 +42,32 @@ func liveUniqueTable(keys ...uniqueKey) *catalog.Database {
 	return database
 }
 
+// withIndexOnD adds a table d (id, y) and an index named name over y to
+// desired and to live, as a schema file and the database it built hold them.
+func withIndexOnD(desired *schemamodel.Database, live *catalog.Database, name string) (*schemamodel.Database, *catalog.Database) {
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "D", Name: "d"})
+	desired.Fields = append(desired.Fields,
+		schemamodel.Field{StructName: "D", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "D", Name: "y", Type: "int", Nullable: true},
+	)
+	desired.Indexes = append(desired.Indexes, schemamodel.Index{StructName: "D", Name: name, Fields: []string{"y"}})
+	live.Tables = append(live.Tables, catalog.Table{Name: "d", Columns: []catalog.Column{
+		{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
+		{Name: "y", DataType: "int", IsNullable: "YES"},
+	}})
+	live.Indexes = append(live.Indexes, catalog.Index{Name: name, TableName: "d", Columns: []string{"y"}})
+	return desired, live
+}
+
+// sqlServerUniqueTable is liveUniqueTable as the SQL Server reader returns it:
+// the index behind a UNIQUE constraint is the constraint's, and the reader
+// leaves it out of the table's indexes.
+func sqlServerUniqueTable(keys ...uniqueKey) *catalog.Database {
+	database := liveUniqueTable(keys...)
+	database.Indexes = nil
+	return database
+}
+
 // desiredUniqueTable declares `c (id, a UNIQUE, b)` and the table-level keys
 // given, as a schema file read for the dialect holds them.
 func desiredUniqueTable(keys ...uniqueKey) *schemamodel.Database {
@@ -263,9 +289,9 @@ func postgresUniqueTable(constraints, indexes []uniqueKey) *catalog.Database {
 // TestCompare_AUniqueBesideAColumnUniqueIsRemoved is the other direction of
 // stokaro/ptah#3764: a key the file does not declare is dropped. Read as the
 // column's own, it is never planned. Atlas CE v1.3.0 plans each drop, measured
-// on the same servers. The last two rows choose which of two
-// keys over the column is the column's: the one named after the column, then
-// the first by name.
+// on the same servers. The last rows choose which key over the column is the
+// column's: the one named after the column, and none where no key carries that
+// name, so every key over the column is dropped (stokaro/ptah#3723).
 func TestCompare_AUniqueBesideAColumnUniqueIsRemoved(t *testing.T) {
 	tests := []struct {
 		name string
@@ -298,9 +324,9 @@ func TestCompare_AUniqueBesideAColumnUniqueIsRemoved(t *testing.T) {
 			want: []string{"UQ_A"},
 		},
 		{
-			name: "no key named after the column: the first by name is the column's",
+			name: "no key named after the column: none is the column's",
 			live: []uniqueKey{{name: "uq_y", columns: []string{"a"}}, {name: "uq_x", columns: []string{"a"}}},
-			want: []string{"uq_y"},
+			want: []string{"uq_x", "uq_y"},
 		},
 	}
 	for _, dialect := range mysqlEngines {
@@ -336,16 +362,127 @@ func TestCompare_PostgresColumnUniqueIsNamedForTheTable(t *testing.T) {
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 }
 
-// TestCompare_TheColumnsKeyUnderAnotherNameIsTheColumns is the control for
-// the rows above: a column's UNIQUE is compared by its column, not by its
-// name, so the one key over the column is the column's whatever it is called.
-func TestCompare_TheColumnsKeyUnderAnotherNameIsTheColumns(t *testing.T) {
-	for _, dialect := range mysqlEngines {
-		t.Run(dialect, func(t *testing.T) {
+// TestCompare_TheColumnsKeyUnderAnotherNameIsRenamed covers stokaro/ptah#3723.
+// A column's own UNIQUE is compared by the name the server gives it, so a key
+// over the column under another name is dropped and the column's key is added.
+// Measured on MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and
+// PostgreSQL 18.6: Atlas CE v1.3.0 plans `DROP INDEX c_x_uq, ADD UNIQUE INDEX
+// x (x)` on MySQL and MariaDB, and `DROP CONSTRAINT c_x_uq, ADD CONSTRAINT
+// c_x_key UNIQUE (x)` on PostgreSQL, for a file writing `x int UNIQUE` against
+// a database whose one key over x is `c_x_uq`.
+func TestCompare_TheColumnsKeyUnderAnotherNameIsRenamed(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		live    *catalog.Database
+		want    []string
+	}{
+		{
+			name:    "MySQL, a name of the author's",
+			dialect: platform.MySQL,
+			live:    liveUniqueTable(uniqueKey{name: "c_a_uq", columns: []string{"a"}}),
+			want:    []string{"c_a_uq"},
+		},
+		{
+			name:    "MariaDB, PostgreSQL's name",
+			dialect: platform.MariaDB,
+			live:    liveUniqueTable(uniqueKey{name: "c_a_key", columns: []string{"a"}}),
+			want:    []string{"c_a_key"},
+		},
+		{
+			name:    "PostgreSQL, a name of the author's",
+			dialect: platform.Postgres,
+			live:    postgresUniqueTable([]uniqueKey{{name: "c_a_uq", columns: []string{"a"}}}, nil),
+			want:    []string{"c_a_uq"},
+		},
+		{
+			name:    "PostgreSQL, MySQL's name",
+			dialect: platform.Postgres,
+			live:    postgresUniqueTable([]uniqueKey{{name: "a", columns: []string{"a"}}}, nil),
+			want:    []string{"a"},
+		},
+		{
+			name:    "PostgreSQL, a number where nothing holds the table's name for the column",
+			dialect: platform.Postgres,
+			live:    postgresUniqueTable([]uniqueKey{{name: "c_a_key1", columns: []string{"a"}}}, nil),
+			want:    []string{"c_a_key1"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compareForDialect(dialect, desiredUniqueTable(),
-				liveUniqueTable(uniqueKey{name: "uq_x", columns: []string{"a"}}))
+			diff := compareForDialect(test.dialect, desiredUniqueTable(), test.live)
+
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.want)
+			c.Assert(columnChanges(diff), qt.DeepEquals, []string{"c.a: unique false -> true"})
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompare_TheColumnsKeyUnderTheServersNameIsTheColumns is the control for
+// the rows above: the key the server names as the column's own is the column's.
+// MySQL and MariaDB compare index names without case, so `A` over a is the
+// column's key there; Atlas CE v1.3.0 renames it to `a`, which the server does
+// not tell apart. A name taken by another key moves the column's key to `a_2`,
+// measured as `KEY a (b), a int UNIQUE` on the same servers. PostgreSQL 18.6
+// looks for its name across the schema: `CREATE INDEX c_a_key ON d (y)` before
+// `CREATE TABLE c (a int UNIQUE)` names the key c_a_key1.
+func TestCompare_TheColumnsKeyUnderTheServersNameIsTheColumns(t *testing.T) {
+	pgDesired, pgLive := withIndexOnD(
+		desiredUniqueTable(), postgresUniqueTable([]uniqueKey{{name: "c_a_key1", columns: []string{"a"}}}, nil), "c_a_key",
+	)
+	tests := []struct {
+		name    string
+		dialect string
+		desired *schemamodel.Database
+		live    *catalog.Database
+	}{
+		{
+			name:    "MySQL, the column's name",
+			dialect: platform.MySQL,
+			desired: desiredUniqueTable(),
+			live:    liveUniqueTable(uniqueKey{name: "a", columns: []string{"a"}}),
+		},
+		{
+			name:    "MariaDB, the column's name in another case",
+			dialect: platform.MariaDB,
+			desired: desiredUniqueTable(),
+			live:    liveUniqueTable(uniqueKey{name: "A", columns: []string{"a"}}),
+		},
+		{
+			name:    "MySQL, the next name where another key holds the column's",
+			dialect: platform.MySQL,
+			desired: desiredUniqueTable(uniqueKey{name: "a", columns: []string{"b"}}),
+			live: liveUniqueTable(
+				uniqueKey{name: "a", columns: []string{"b"}}, uniqueKey{name: "a_2", columns: []string{"a"}},
+			),
+		},
+		{
+			name:    "PostgreSQL, the table's name for the column",
+			dialect: platform.Postgres,
+			desired: desiredUniqueTable(),
+			live:    postgresUniqueTable([]uniqueKey{{name: "c_a_key", columns: []string{"a"}}}, nil),
+		},
+		{
+			name:    "PostgreSQL, the next number where an index of another table holds the name",
+			dialect: platform.Postgres,
+			desired: pgDesired,
+			live:    pgLive,
+		},
+		{
+			name:    "SQL Server keeps the key under any name",
+			dialect: platform.SQLServer,
+			desired: desiredUniqueTable(),
+			live:    sqlServerUniqueTable(uniqueKey{name: "uq_x", columns: []string{"a"}}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compareForDialect(test.dialect, test.desired, test.live)
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
 		})

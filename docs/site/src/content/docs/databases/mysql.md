@@ -75,10 +75,19 @@ SQL:
   default engine a desired `HASH` reads back as `BTREE`, and reporting it would
   plan a rebuild MySQL immediately undoes. Deciding the MySQL case properly
   needs the table's storage engine, which the index comparison does not have.
-- A column-level `UNIQUE` accounts for one key over its column alone, the one
-  named after the column where there are several, as the server names it.
-  Every other `UNIQUE` of the table is compared by its name: a second key over
-  the column, and a key over more columns that the column leads. So
+- A column-level `UNIQUE` is compared by the name the server gives it: the
+  column's name, with `_2` and on where another key of the table holds it.
+  When the database holds the key over the column under another name, the
+  plan drops that key and adds the column's, as Atlas CE plans it. For a
+  migration that names the key `c_x_uq` and a schema file that writes
+  `x INT UNIQUE`, the plan drops `c_x_uq` and adds `x`. Where a key the plan
+  drops holds the column's name, the plan drops it first, so the server gives
+  the column's key that name. Both engines compare index names without case,
+  so a key named `X` over `x` is the column's key; Atlas CE renames it to `x`,
+  and Ptah keeps it, because the server does not tell the two names apart.
+- A column-level `UNIQUE` accounts for one key over its column alone. Every
+  other `UNIQUE` of the table is compared by its name: a second key over the
+  column, and a key over more columns that the column leads. So
   `a INT UNIQUE, b INT, UNIQUE (a, b)` matches the keys `a` and `a_2` it
   builds, and a key the file no longer declares is dropped, as Atlas CE plans
   it. A key over the column that the file declares by name, as a constraint

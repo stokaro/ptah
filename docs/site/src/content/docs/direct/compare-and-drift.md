@@ -384,6 +384,11 @@ only when their identities agree, whether the schema declares the key on its
 column or on its table. A key the database holds under another name is in
 `constraints_removed`, and the declared key is in `constraints_added`.
 
+A column-level `UNIQUE` is matched the same way on MySQL, MariaDB and
+PostgreSQL, by the name the server gives the column's key. A key over the
+column that the database holds under another name is in `constraints_removed`,
+and the column's change reads `unique: false -> true`.
+
 The same pair identifies a policy everywhere else it is named: the plan resolves
 `rls_policies_added`, `rls_policies_removed` and `rls_policies_modified` by the
 owning table together with the policy name, and the table is matched under the
