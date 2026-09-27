@@ -1020,8 +1020,8 @@
         "/databases/postgresql/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 3746,
-      "sourceBytes": 22722
+      "visibleWords": 3828,
+      "sourceBytes": 23180
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
