@@ -179,10 +179,15 @@ lint-nolintguard:
 		(cd "$$module" && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
 	done
 
+# Both contours, every module, like lint-nolintguard. A file behind
+# //go:build integration is not in the default build, so a run without the tag
+# never reads it: before this target ran the second contour, 84 findings sat
+# in integration/ with every lint job green (stokaro/ptah#3882).
 lint-golangci:
 	@echo "Running golangci-lint..."
 	@for module in $(GO_MODULES); do \
 		(cd "$$module" && golangci-lint run ./...) || exit 1; \
+		(cd "$$module" && golangci-lint run --build-tags=integration ./...) || exit 1; \
 	done
 
 # Both invocations are required, and neither is redundant.
@@ -231,6 +236,7 @@ lint-fix:
 	@echo "Running auto-fixable linters..."
 	$(MAKE) lint-qtlint-fix
 	golangci-lint run --fix ./...
+	golangci-lint run --fix --build-tags=integration ./...
 	$(MAKE) lint
 
 # Atlas parity scoreboard. The executable harness and Apache-2.0 Atlas fixture
