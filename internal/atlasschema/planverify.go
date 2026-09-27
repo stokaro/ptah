@@ -133,8 +133,9 @@ func RehearsePlanStatements(
 	}
 
 	computation, err := computeApplyPlan(ctx, devConn, ApplyOptions{
-		Desired: desired,
-		Exclude: opts.Exclude,
+		Desired:        desired,
+		Exclude:        opts.Exclude,
+		keptExtensions: dev.baseline.Extensions(),
 	})
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)

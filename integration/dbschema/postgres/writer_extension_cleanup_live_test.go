@@ -250,3 +250,130 @@ func TestWriterDropDatabaseRealmKeeping_LiveTimescaleDB(t *testing.T) {
 	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
 	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "\\_hyper\\_%"), qt.Equals, 0)
 }
+
+// TestWriterDropAllTablesKeeping_LivePostgres empties the public schema while
+// hstore, installed in it, is kept: the extension and a table it owns stay,
+// and the user's objects in the schema go (stokaro/ptah#3810).
+func TestWriterDropAllTablesKeeping_LivePostgres(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE EXTENSION hstore SCHEMA public;
+		CREATE TABLE public.member_table (id integer PRIMARY KEY);
+		ALTER EXTENSION hstore ADD TABLE public.member_table;
+		CREATE TABLE public.user_table (id integer PRIMARY KEY, attrs hstore);
+		CREATE VIEW public.user_view AS SELECT id FROM public.user_table;
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, []string{"hstore"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "plpgsql"})
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "member_table"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "user_table"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRoutineCount(c, ctx, db, "public", "hstore_in"), qt.Equals, 1)
+}
+
+// TestWriterDropAllTablesKeeping_LivePostgresRefusesAnExtensionItWasNotAsked
+// is the control: an extension in the schema the caller did not name is still
+// refused, because dropping it removes its members wherever they are.
+func TestWriterDropAllTablesKeeping_LivePostgresRefusesAnExtensionItWasNotAsked(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE EXTENSION hstore SCHEMA public;
+		CREATE EXTENSION pg_trgm SCHEMA public;
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropAllTablesKeeping(ctx, []string{"hstore"})
+
+	c.Assert(err, qt.ErrorMatches, `refusing to clean schema "public": extension "pg_trgm" is owned by it; .*`)
+	c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, []string{"hstore", "pg_trgm", "plpgsql"})
+}
+
+// TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres empties the realm of
+// a database whose schema kept_schema is named: it stays with its table and
+// row, while a user schema not named goes and public is emptied, even though
+// the list names it too (stokaro/ptah#3808).
+func TestWriterDropDatabaseRealmKeepingSchemas_LivePostgres(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE SCHEMA kept_schema;
+		CREATE TABLE kept_schema.kept (id integer PRIMARY KEY);
+		INSERT INTO kept_schema.kept VALUES (1);
+		CREATE SCHEMA user_schema;
+		CREATE TABLE user_schema.t (id integer);
+		CREATE TABLE public.user_table (id integer PRIMARY KEY);
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"kept_schema", "public"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "kept_schema"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "user_schema"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "user_table"), qt.Equals, 0)
+	var rows int
+	c.Assert(db.QueryRowContext(ctx, "SELECT count(*) FROM kept_schema.kept").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
+}
+
+// TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot
+// cleans a realm whose root is app while the caller keeps public, which holds
+// a table with a row. public is kept like any other schema: the cleanup
+// neither drops it nor empties it in place. CockroachDB is the engine that
+// empties public in place rather than dropping it, so it is the row that
+// keeps that arm honest.
+func TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot(t *testing.T) {
+	engines := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "CockroachDB", engine: dbtarget.CockroachDB},
+	}
+
+	for _, engine := range engines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, engine.engine))
+			defer liveDatabase.cleanup()
+			db := liveDatabase.db
+			for _, statement := range []string{
+				"CREATE TABLE public.user_table (id integer PRIMARY KEY)",
+				"INSERT INTO public.user_table VALUES (1)",
+				"CREATE SCHEMA app",
+				"CREATE TABLE app.t (id integer PRIMARY KEY)",
+			} {
+				_, err := db.ExecContext(ctx, statement)
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+			}
+
+			err := postgres.NewPostgreSQLWriter(db, "app").DropDatabaseRealmKeepingSchemas(ctx, nil, []string{"public"})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "app"), qt.Equals, 1)
+			c.Assert(postgresWriterLiveRelationsLike(c, ctx, db, "t"), qt.Equals, 0)
+			var rows int
+			c.Assert(db.QueryRowContext(ctx, "SELECT count(*) FROM public.user_table").Scan(&rows), qt.IsNil)
+			c.Assert(rows, qt.Equals, 1)
+		})
+	}
+}

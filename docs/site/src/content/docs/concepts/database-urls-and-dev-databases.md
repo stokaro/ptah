@@ -128,20 +128,19 @@ exercise a real server dialect — see
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
   in the selected database as one dependency graph. Extensions the dev
-  database already held when the run started are its environment and stay
-  installed, with everything they own, so a migration may use a type from one
-  without creating it, as it may under Atlas. A schema such an extension is
-  installed in is emptied where it stands. An extension the run created is
-  dropped, and that drop removes the schemas it owns and its member tables,
-  so the cleanup does not queue their objects one by one; TimescaleDB's
-  catalog schemas are this shape. MySQL, MariaDB, and
-  ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
-  supported user schemas in the selected database. SQLite cleanup owns `main`
-  on one pinned session.
-- **PostgreSQL cleanup gives back the schemas it drops.** The schema the dev
-  URL selects comes back after the cleanup, and so does `public` when the URL
-  selects another schema. Each keeps the owner, grants and comment it had.
-  A role created on the server afterwards can use `public` as it could before.
+  database held when the run started stay installed, with everything they own,
+  so a migration may use a type from one without creating it, as under Atlas;
+  a schema one is installed in is emptied in place. A dev URL that selects a
+  schema with `search_path` also keeps the database's other schemas as they
+  were, `public` included. An extension the run created is dropped with the
+  schemas and tables it owns; TimescaleDB's catalog schemas are this shape.
+  MySQL, MariaDB, and ClickHouse cleanup owns the selected database. SQL
+  Server cleanup owns all supported user schemas in the selected database.
+  SQLite cleanup owns `main` on one pinned session.
+- **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
+  URL selects, `public` when it selects none, comes back after the cleanup
+  with the owner, grants and comment it had. A role created on the server
+  afterwards can use `public` as it could before.
 - **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
   credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
   `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires global `TRIGGER`

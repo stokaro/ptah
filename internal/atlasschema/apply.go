@@ -58,6 +58,11 @@ type ApplyOptions struct {
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
 	DevURL string
+	// keptExtensions are extensions the database held before a rehearsal
+	// claimed it; the comparison leaves the ones the desired state does not
+	// declare out of the current state. Only the rehearsal's end-state check
+	// sets it, on the dev database it rehearsed on.
+	keptExtensions []string
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
@@ -353,7 +358,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current := read.current
+	current := withoutKeptExtensions(read.current, opts.keptExtensions, declaredExtensionNames(desired))
 	if err := validateCurrentApplyState(conn, current, read.readScope, opts); err != nil {
 		return applyComputation{}, err
 	}

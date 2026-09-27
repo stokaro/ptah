@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -366,7 +367,7 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current, baseline.Extensions()); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
@@ -396,10 +397,16 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // recreateCurrentSchema converges the freshly reset dev database to the
 // target's introspected (and scope/exclude-filtered) current schema, so the plan is
 // rehearsed against the same starting state it was computed for.
+//
+// keptExtensions are the extensions the dev database held before the run. The
+// reset left them in place, and the comparison below does not plan to drop the
+// ones the target lacks: they are the dev database's environment, not a
+// difference from the target. See [devclean.Baseline].
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	current *catalog.Database,
+	keptExtensions []string,
 ) error {
 	if current == nil {
 		return nil
@@ -410,6 +417,7 @@ func recreateCurrentSchema(
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
+	devCurrent = withoutKeptExtensions(devCurrent, keptExtensions, catalogExtensionNames(current))
 	info := devConn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, baseline, devCurrent, nil)
 	if err != nil {
@@ -426,6 +434,46 @@ func recreateCurrentSchema(
 		return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 	}
 	return executeApplyStatements(ctx, devConn.Writer(), statements)
+}
+
+// withoutKeptExtensions returns dev without the kept extensions the other side
+// of a comparison does not name, so the comparison plans no DROP EXTENSION for
+// them: they are the dev database's environment, see [devclean.Baseline]. A
+// kept extension the other side names too is left in, and matches.
+func withoutKeptExtensions(dev *catalog.Database, kept []string, named map[string]bool) *catalog.Database {
+	if dev == nil || len(kept) == 0 {
+		return dev
+	}
+	filtered := *dev
+	filtered.Extensions = nil
+	for _, extension := range dev.Extensions {
+		if slices.Contains(kept, extension.Name) && !named[extension.Name] {
+			continue
+		}
+		filtered.Extensions = append(filtered.Extensions, extension)
+	}
+	return &filtered
+}
+
+// catalogExtensionNames is the set of extensions a read database holds.
+func catalogExtensionNames(database *catalog.Database) map[string]bool {
+	names := make(map[string]bool, len(database.Extensions))
+	for _, extension := range database.Extensions {
+		names[extension.Name] = true
+	}
+	return names
+}
+
+// declaredExtensionNames is the set of extensions a desired state declares.
+func declaredExtensionNames(database *schemamodel.Database) map[string]bool {
+	names := make(map[string]bool)
+	if database == nil {
+		return names
+	}
+	for _, extension := range database.Extensions {
+		names[extension.Name] = true
+	}
+	return names
 }
 
 // normalizeBaselineSerialColumns rewrites introspected PostgreSQL-family

@@ -1196,7 +1196,8 @@ planned.
 The dev database is handed back with nothing the rehearsal put in it, on both
 the success and the failure path, so the same `--dev-url` stays usable by the
 next command. The rehearsal empties the whole database when `--dev-url` pins no
-schema, keeping the extensions it held, and only the pinned schema otherwise.
+schema, and only the pinned schema otherwise; either way the extensions the dev
+database held stay installed.
 A dev database that already holds a table is refused before
 anything is dropped, as the pinned binary refuses it, whether or not there is a
 change to rehearse. `schema inspect` and `schema diff` refuse it too whenever a

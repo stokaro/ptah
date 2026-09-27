@@ -429,10 +429,13 @@ func (c postgresCleanupCapabilities) dropObjects(
 	return dropCleanupObjectsOnce(ctx, tx, objects)
 }
 
-func postgresSchemaCleanupScope(schemas []string) postgresCleanupScope {
+// postgresSchemaCleanupScope is the cleanup of the named schemas, leaving the
+// kept extensions in them and every object those extensions own.
+func postgresSchemaCleanupScope(schemas, keptExtensions []string) postgresCleanupScope {
 	return postgresCleanupScope{
 		schemas:                schemas,
 		extensionNamespaceJoin: "JOIN managed_namespaces n ON n.oid = e.extnamespace",
+		systemExtensions:       keptExtensions,
 	}
 }
 
@@ -479,6 +482,10 @@ type postgresDatabaseCleanupPlan struct {
 	// recreating them: DROP SCHEMA is refused while the extension depends on
 	// the schema.
 	inPlaceSchemas []string
+	// untouched are the schemas the cleanup leaves as they are, contents and
+	// all. They are not in schemas, and the check that the cleanup finished
+	// does not look at them.
+	untouched []string
 }
 
 // keptExtensionSchemas returns the schemas the named extensions are installed
@@ -522,18 +529,31 @@ func keptCleanupExtensions(system, keep []string) []string {
 	return slices.Compact(kept)
 }
 
-func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx cleanupConn) error {
+func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx cleanupConn, keep []string) error {
 	// DROP EXTENSION removes every member regardless of the member's schema.
 	// Refuse it here because a schema-scoped cleanup cannot safely own that
 	// database-wide operation, even when DROP EXTENSION uses RESTRICT.
+	//
+	// A kept extension is not dropped, so it is not refused -- as long as the
+	// catalog can say which objects it owns, which is how the cleanup leaves
+	// them alone.
+	if !extensionOwnershipReadable(w.caps) {
+		keep = nil
+	}
+	args := []any{w.schema}
+	keptFilter := ""
+	if len(keep) > 0 {
+		// #nosec G202 -- Only placeholders are built here; the names are bound.
+		keptFilter = " AND e.extname NOT IN (" + postgresPlaceholdersFrom(2, len(keep)) + ")"
+		args = append(args, stringsToAny(keep)...)
+	}
 	var count int
 	var first string
 	err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(MIN(e.extname), '')
 		FROM pg_extension e
 		JOIN pg_namespace n ON n.oid = e.extnamespace
-		WHERE n.nspname = $1
-	`, w.schema).Scan(&count, &first)
+		WHERE n.nspname = $1`+keptFilter, args...).Scan(&count, &first)
 	if err != nil {
 		return fmt.Errorf("failed to inspect schema-owned extensions: %w", err)
 	}
@@ -712,7 +732,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	query = applyCleanupBranches(query, w.caps)
 	query = strings.ReplaceAll(
 		query, "{{EXTENSION_OWNED_ROUTINE_FILTER}}", extensionOwnedRoutineFilter(w.caps))
-	if scope.realm && extensionOwnershipReadable(w.caps) {
+	if (scope.realm || len(scope.systemExtensions) > 0) && extensionOwnershipReadable(w.caps) {
 		query = withExtensionOwnedFilters(query)
 	} else {
 		query = withoutExtensionOwnedFilters(query)
@@ -1527,7 +1547,21 @@ func retryCleanupObjects(
 
 // DropAllTables drops all user objects in the configured database schema.
 func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
-	return w.dropSchemaObjects(ctx)
+	return w.dropSchemaObjects(ctx, nil)
+}
+
+// DropAllTablesKeeping is DropAllTables that leaves the named extensions
+// installed in the schema, together with every object they own. An extension
+// the schema holds and the caller did not name is refused, as DropAllTables
+// refuses every one: dropping an extension removes its members wherever they
+// are, which a cleanup of one schema cannot own. A server whose catalog cannot
+// say what an extension owns refuses the named ones too.
+//
+// A dev database is the caller, as for [PostgreSQLWriter.DropDatabaseRealmKeeping]:
+// an extension it held before the run is its environment, and the pinned
+// community binary applies a plan against a dev database that has one.
+func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, extensions []string) error {
+	return w.dropSchemaObjects(ctx, extensions)
 }
 
 // DropDatabaseRealm removes every user schema and recreates the configured
@@ -1550,6 +1584,20 @@ func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
 // the same session by the replay's first migration, answered `schema
 // "_timescaledb_functions" does not exist` (stokaro/ptah#3542).
 func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensions []string) error {
+	return w.DropDatabaseRealmKeepingSchemas(ctx, extensions, nil)
+}
+
+// DropDatabaseRealmKeepingSchemas is [PostgreSQLWriter.DropDatabaseRealmKeeping]
+// that also leaves the named schemas as they are: neither they nor anything in
+// them is dropped, and the check that the cleanup finished does not look at
+// them. The configured root schema is emptied whatever the list says;
+// "public" is kept when the list names it and the root is another schema.
+//
+// A dev database whose URL pins one schema is the caller. The clean check
+// judges that schema alone, and the pinned community binary leaves the other
+// schemas of the database as they were, tables included; a cleanup of the
+// whole realm dropped them.
+func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, extensions, schemas []string) error {
 	if w.dryRun {
 		return nil
 	}
@@ -1562,7 +1610,18 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, extensi
 			w.schema,
 		)
 	}
-	return w.dropDatabaseRealm(ctx, extensions)
+	return w.dropDatabaseRealm(ctx, extensions, schemas)
+}
+
+// UserSchemas returns the database's user schemas, sorted: every schema but
+// the server's own and those an extension owns. It is the list a realm
+// cleanup empties, and what a caller reads to name the schemas it keeps with
+// [PostgreSQLWriter.DropDatabaseRealmKeepingSchemas].
+func (w *PostgreSQLWriter) UserSchemas(ctx context.Context) ([]string, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	return collectCleanupSchemas(ctx, w.db, w.caps)
 }
 
 // InstalledExtensions returns the extensions installed in the database, sorted
@@ -1765,7 +1824,7 @@ func verifyPostgresLargeObjects(ctx context.Context, tx *sql.Tx) error {
 	return fmt.Errorf("PostgreSQL database realm cleanup left residual large object %d", oid)
 }
 
-func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr error) {
+func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context, keep []string) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
@@ -1779,7 +1838,7 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 	// scratch database this drops and is the only way the run can finish at all
 	// (#1811). Every other PostgreSQL-family engine keeps the transaction.
 	if !w.caps.Has(capability.DDLInsideTransaction) {
-		return w.dropSchemaObjectsWithoutTransaction(ctx)
+		return w.dropSchemaObjectsWithoutTransaction(ctx, keep)
 	}
 
 	sqlTx, err := w.db.BeginTx(ctx, nil)
@@ -1800,13 +1859,13 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 	if err != nil {
 		return err
 	}
-	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx); err != nil {
+	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx, keep); err != nil {
 		return err
 	}
 	objects, err := w.collectAllObjects(
 		ctx,
 		sqlTx,
-		postgresSchemaCleanupScope([]string{w.schema}),
+		postgresSchemaCleanupScope([]string{w.schema}, keep),
 	)
 	if err != nil {
 		return err
@@ -1848,16 +1907,16 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 // one, leaving this path a single ordered pass that has to get dependency order
 // right the first time -- see [dropCleanupObjectsRetrying] for the server that
 // shows it cannot.
-func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context) error {
+func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context, keep []string) error {
 	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
 	if err != nil {
 		return err
 	}
 	capabilities = capabilities.withoutTransaction()
-	if err := w.rejectSchemaScopedExtensions(ctx, w.db); err != nil {
+	if err := w.rejectSchemaScopedExtensions(ctx, w.db, keep); err != nil {
 		return err
 	}
-	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}))
+	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}, keep))
 	if err != nil {
 		return err
 	}
@@ -1872,7 +1931,7 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	return nil
 }
 
-func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep []string) (resultErr error) {
+func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep, untouched []string) (resultErr error) {
 	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -1881,7 +1940,7 @@ func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context, keep []string)
 		finishPostgresCleanupTransaction(sqlTx, &resultErr)
 	}()
 
-	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep)
+	plan, err := w.planDatabaseRealmCleanup(ctx, sqlTx, keep, untouched)
 	if err != nil {
 		return err
 	}
@@ -1908,7 +1967,7 @@ func finishPostgresCleanupTransaction(tx *sql.Tx, resultErr *error) {
 func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	ctx context.Context,
 	tx *sql.Tx,
-	keep []string,
+	keep, untouched []string,
 ) (postgresDatabaseCleanupPlan, error) {
 	capabilities, err := inspectCleanupCapabilities(ctx, tx)
 	if err != nil {
@@ -1937,6 +1996,10 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
+	untouched = untouchedCleanupSchemas(untouched, w.schema)
+	for _, schema := range untouched {
+		schemas = excludeString(schemas, schema)
+	}
 	keptExtensions := keptCleanupExtensions(capabilities.systemExtensions, keep)
 	inPlaceSchemas, err := keptExtensionSchemas(ctx, tx, keep)
 	if err != nil {
@@ -1963,7 +2026,24 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		objects:        objects,
 		keptExtensions: keptExtensions,
 		inPlaceSchemas: inPlaceSchemas,
+		untouched:      untouched,
 	}, nil
+}
+
+// untouchedCleanupSchemas is the caller's list of schemas a realm cleanup
+// leaves alone, less the root schema, which a realm cleanup empties whatever
+// it is asked. "public" stays on the list when the caller put it there: with
+// another schema pinned, it is outside the run's scope like any other schema,
+// and emptying it would drop tables the dev database held before the run.
+func untouchedCleanupSchemas(untouched []string, root string) []string {
+	var kept []string
+	for _, schema := range untouched {
+		if schema == root || slices.Contains(kept, schema) {
+			continue
+		}
+		kept = append(kept, schema)
+	}
+	return kept
 }
 
 func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
@@ -1984,7 +2064,7 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	preservedSchemas := []string{w.schema}
 	droppableSchemas := plan.schemas
 	inPlace := slices.Clone(plan.inPlaceSchemas)
-	if plan.capabilities.preservePublicSchema {
+	if plan.capabilities.preservePublicSchema && !slices.Contains(plan.untouched, "public") {
 		inPlace = appendUniqueString(inPlace, "public")
 	}
 	for _, schema := range inPlace {
@@ -2041,6 +2121,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 		ctx,
 		tx,
 		preservedSchemas,
+		plan.untouched,
 		plan.keptExtensions,
 		caps,
 	); err != nil {
@@ -2069,7 +2150,7 @@ func verifyCompletedPostgresDatabaseCleanup(
 //
 // The filter reads pg_depend and is gated on [capability.CatalogDependencies],
 // like the other extension filters of this cleanup.
-func collectCleanupSchemas(ctx context.Context, tx *sql.Tx, caps capability.Capabilities) ([]string, error) {
+func collectCleanupSchemas(ctx context.Context, tx cleanupConn, caps capability.Capabilities) ([]string, error) {
 	if !caps.Has(capability.CatalogDependencies) {
 		return queryUserSchemas(ctx, tx, userSchemasQuery)
 	}
@@ -2101,7 +2182,7 @@ const userSchemasWithoutExtensionSchemasQuery = `
 		ORDER BY n.nspname
 	`
 
-func queryUserSchemas(ctx context.Context, tx *sql.Tx, query string) ([]string, error) {
+func queryUserSchemas(ctx context.Context, tx cleanupConn, query string) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query PostgreSQL user schemas: %w", err)
@@ -2308,6 +2389,7 @@ func verifyPostgresDatabaseRealm(
 	ctx context.Context,
 	tx *sql.Tx,
 	preservedSchemas,
+	untouchedSchemas,
 	keptExtensions []string,
 	caps capability.Capabilities,
 ) error {
@@ -2323,6 +2405,9 @@ func verifyPostgresDatabaseRealm(
 		expected[schema] = struct{}{}
 	}
 	for _, schema := range schemas {
+		if slices.Contains(untouchedSchemas, schema) {
+			continue
+		}
 		if _, ok := expected[schema]; !ok {
 			return fmt.Errorf(
 				"PostgreSQL database realm cleanup left residual user schema %q",
