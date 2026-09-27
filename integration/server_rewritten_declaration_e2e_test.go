@@ -176,6 +176,31 @@ CREATE TABLE dc (a int REFERENCES dp (id) DEFERRABLE INITIALLY DEFERRED, b int, 
 		name: "a column UNIQUE NULLS NOT DISTINCT",
 		sql:  `CREATE TABLE nd (a int UNIQUE NULLS NOT DISTINCT, b int CONSTRAINT nd_b_uq UNIQUE NULLS NOT DISTINCT);`,
 	},
+	{
+		// PostgreSQL 18.6 names the keys inc_x_y_key and inc_x_y_z_x1_key:
+		// every column of the index, INCLUDE columns among them, with a
+		// repeated one numbered (stokaro/ptah#3863).
+		name: "unnamed UNIQUEs with INCLUDE columns",
+		sql:  `CREATE TABLE inc (x int, y int, z int, UNIQUE (x) INCLUDE (y), UNIQUE (x, y) INCLUDE (z, x));`,
+	},
+	{
+		// PostgreSQL 18.6 builds the CHECKs, then the keys, each in the order
+		// the statement writes them, and a written name before a derived one
+		// numbers it: ord_a_check is a > 0, ord_b_key the table's key and
+		// ord_b_key1 the column's, and d's keys are ord_d_key1 and ord_d_key2
+		// (stokaro/ptah#3858).
+		name: "unnamed constraints named in the order the server builds them",
+		sql: `CREATE TABLE ord (CHECK (a > 0), a int CHECK (a < 10), UNIQUE NULLS NOT DISTINCT (b), b int UNIQUE,
+  CONSTRAINT ord_d_key UNIQUE (e), d int UNIQUE, e int, UNIQUE NULLS NOT DISTINCT (d));`,
+	},
+	{
+		// PostgreSQL 18.6 names the column's key an3_x_key1, because the index
+		// holds an3_x_key when the column takes its key (stokaro/ptah#3859).
+		name: "a column an ALTER TABLE adds with a UNIQUE whose first name an index holds",
+		sql: `CREATE TABLE an3 (id int PRIMARY KEY, y int);
+CREATE UNIQUE INDEX an3_x_key ON an3 (y);
+ALTER TABLE an3 ADD COLUMN x int UNIQUE;`,
+	},
 }
 
 // serverRewrittenControls change one declaration of each family for real, so
@@ -255,6 +280,12 @@ CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true;`
 		migration:  `CREATE TABLE dk6 (id int PRIMARY KEY DEFERRABLE);`,
 		schema:     `CREATE TABLE dk6 (id int PRIMARY KEY);`,
 		wantInPlan: "dk6_pkey",
+	},
+	{
+		name:       "an unnamed UNIQUE changes its INCLUDE columns",
+		migration:  `CREATE TABLE inc (x int, y int, z int, UNIQUE (x) INCLUDE (y));`,
+		schema:     `CREATE TABLE inc (x int, y int, z int, UNIQUE (x) INCLUDE (z));`,
+		wantInPlan: "inc_x_z_key",
 	},
 	{
 		name:       "a default interval grows",
