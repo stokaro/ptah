@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/aclitem"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/rolescope"
@@ -3613,7 +3615,9 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 // always a fact about the inspected scope rather than about the server.
 //
 // The `scope` CTE the branches join against is defined by readRoles.
-func (r *Reader) rolesInScopeClauses() []string {
+// defaultPrivilegeGrantees is the placeholder list binding the names
+// [Reader.readDefaultPrivilegeGrantees] found, and empty when it found none.
+func (r *Reader) rolesInScopeClauses(defaultPrivilegeGrantees string) []string {
 	clauses := []string{
 		// Holds a privilege on a relation in scope -- table, view,
 		// materialized view or sequence (pg_class.relacl). An owner appears
@@ -3652,16 +3656,64 @@ func (r *Reader) rolesInScopeClauses() []string {
 		clauses = append(clauses, `SELECT d.defaclrole FROM pg_default_acl d
 			JOIN scope s ON s.oid = d.defaclnamespace
 			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`)
-		// Granted a default privilege in scope (pg_default_acl.defaclacl),
-		// read in the same shape readDefaultPrivilegesForSchema uses. A
-		// grantee of 0 is PUBLIC, which matches no pg_roles row and so adds
-		// nothing here.
-		clauses = append(clauses, `SELECT acl.grantee FROM pg_default_acl d
-			JOIN scope s ON s.oid = d.defaclnamespace
-			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`)
+	}
+	if defaultPrivilegeGrantees != "" {
+		// Granted a default privilege in scope (pg_default_acl.defaclacl).
+		// The ACL is exploded in Go, as readDefaultPrivilegesForSchema
+		// explodes it, so the branch matches the names that read found
+		// rather than exploding the ACL itself.
+		clauses = append(clauses, `SELECT g.oid FROM pg_roles g
+			WHERE g.rolname IN (`+defaultPrivilegeGrantees+`)`)
 	}
 	return clauses
+}
+
+// readDefaultPrivilegeGrantees reads the roles a default privilege in schemas
+// is granted to, for the branch of the role scoping that counts them as used.
+//
+// The ACL is selected whole and exploded in Go, because aclexplode answers no
+// rows on CockroachDB v25.4.16 (stokaro/ptah#3802), and a branch built on it
+// leaves a default privilege's grantee out of the description that names it
+// there.
+//
+// The rows are the ones the defaclrole branch reads: every schema-scoped row of
+// the four object classes. PUBLIC is not a role and is left out. The names come
+// back sorted and without duplicates, so the statement that binds them is the
+// same for the same catalog.
+func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []string) ([]string, error) {
+	query := `
+		SELECT ` + defaultACLList("d") + ` AS acl
+		FROM pg_default_acl d
+		JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		WHERE n.nspname IN (` + postgresPlaceholders(len(schemas)) + `)
+		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+	rows, err := r.db.QueryContext(ctx, query, stringsToAny(schemas)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query default privilege grantees: %w", err)
+	}
+	defer rows.Close()
+
+	var grantees []string
+	for rows.Next() {
+		var acl string
+		if err := rows.Scan(&acl); err != nil {
+			return nil, fmt.Errorf("failed to scan default privilege grantees: %w", err)
+		}
+		items, err := aclitem.ParseJSON(acl)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read default privilege grantees: %w", err)
+		}
+		for _, item := range items {
+			if item.Grantee != "" {
+				grantees = append(grantees, item.Grantee)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read default privilege grantees: %w", err)
+	}
+	slices.Sort(grantees)
+	return slices.Compact(grantees), nil
 }
 
 // readRoles reads the PostgreSQL roles the inspected scope actually uses.
@@ -3885,6 +3937,17 @@ func (r *Reader) queryRoles(
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 		args = append(args, schemaName)
 	}
+	granteePlaceholders := ""
+	if r.caps.Has(capability.CatalogDefaultPrivileges) {
+		grantees, err := r.readDefaultPrivilegeGrantees(ctx, schemas)
+		if err != nil {
+			return nil, err
+		}
+		if len(grantees) > 0 {
+			granteePlaceholders = postgresPlaceholdersFrom(len(args)+1, len(grantees))
+			args = append(args, stringsToAny(grantees)...)
+		}
+	}
 	authProjection := `NULL::boolean AS has_password`
 	protectedJoin := ""
 	if catalogAccess == roleAuthCatalogReadable {
@@ -3899,7 +3962,7 @@ func (r *Reader) queryRoles(
 			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
 		),
 		used AS (
-			` + strings.Join(r.rolesInScopeClauses(), `
+			` + strings.Join(r.rolesInScopeClauses(granteePlaceholders), `
 			UNION
 			`) + `
 		)
@@ -4409,12 +4472,17 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 
 // readDefaultPrivilegesForSchema reads one schema's pg_default_acl entries.
 //
-// The grain is one privilege per row, which is what aclexplode answers: the
-// catalog stores a merged aclitem[] per (defaclrole, defaclnamespace,
-// defaclobjtype), and grantability is recorded per privilege inside it. Folding
-// the rows back into a declaration is the desired side's job, and a read that
-// collapsed them here would have to pick one grantability for the whole
-// identity and compare a guess against the catalog forever.
+// The grain is one privilege per row: the catalog stores a merged ACL per
+// (defaclrole, defaclnamespace, defaclobjtype), and grantability is recorded
+// per privilege inside it. Folding the rows back into a declaration is the
+// desired side's job, and a read that collapsed them here would have to pick
+// one grantability for the whole identity and compare a guess against the
+// catalog forever.
+//
+// The ACL is selected whole, through [defaultACLList], and exploded here rather
+// than by aclexplode, which answers no rows on CockroachDB v25.4.16: a read
+// built on it finds no default privilege there, so a declared one is planned
+// again on every run (stokaro/ptah#3802).
 //
 // The join to pg_namespace is an inner join deliberately: it drops the global
 // entries, which pg_default_acl records with defaclnamespace 0 and which apply
@@ -4444,41 +4512,23 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 // so a declared default privilege is planned again on every run
 // (stokaro/ptah#3732).
 //
-// The grantee carries the reserved-name exclusion the other grant reads carry,
-// through the one definition of "reserved", so a default privilege held by a
-// pg_ role is left out of the description exactly as an ordinary grant to it is.
-// The escape is load-bearing: LIKE reads a bare underscore as a
-// single-character wildcard, so an unescaped 'pg_%' also drops pgbouncer,
-// pgadmin and pgpool, which are ordinary user roles. The GRANTOR is not
-// filtered, because the bootstrap superuser is the ordinary grantor of a default
-// privilege -- excluding it there would empty this read on a stock server.
+// The grantee carries the reserved-name exclusion the other grant reads carry;
+// see [explodeDefaultPrivileges].
 func (r *Reader) readDefaultPrivilegesForSchema(
 	ctx context.Context,
 	schemaName string,
 ) ([]catalog.DefaultPrivilege, error) {
 	query := `
-		WITH exploded AS (
-			SELECT
-				pg_get_userbyid(d.defaclrole) AS grantor,
-				n.nspname AS schema_name,
-				` + defaultACLObjectType("d") + ` AS object_type,
-				CASE acl.grantee
-					WHEN 0 THEN 'PUBLIC'
-					ELSE pg_get_userbyid(acl.grantee)
-				END AS grantee,
-				acl.privilege_type AS privilege,
-				acl.is_grantable AS with_option
-			FROM pg_default_acl d
-			JOIN pg_namespace n ON n.oid = d.defaclnamespace
-			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-			WHERE n.nspname = $1
-			AND NOT ` + undescribedDefaultACL("d") + `
-			AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
-		)
-		SELECT grantor, schema_name, object_type, grantee, privilege, with_option
-		FROM exploded
-		WHERE ` + reservedrole.ExcludeSQL("grantee") + `
-		ORDER BY schema_name, grantor, object_type, grantee, privilege`
+		SELECT
+			pg_get_userbyid(d.defaclrole) AS grantor,
+			n.nspname AS schema_name,
+			` + defaultACLObjectType("d") + ` AS object_type,
+			` + defaultACLList("d") + ` AS acl
+		FROM pg_default_acl d
+		JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		WHERE n.nspname = $1
+		AND NOT ` + undescribedDefaultACL("d") + `
+		AND d.defaclobjtype IN ('r', 'S', 'f', 'T')`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
@@ -4488,26 +4538,71 @@ func (r *Reader) readDefaultPrivilegesForSchema(
 
 	var privileges []catalog.DefaultPrivilege
 	for rows.Next() {
-		var privilege catalog.DefaultPrivilege
 		// The schema is scanned as pg_namespace names it and never passed
 		// through outputSchema, which blanks the connected schema. See
 		// [catalog.DefaultPrivilege] for why this family is the exception.
-		if err := rows.Scan(
-			&privilege.Grantor,
-			&privilege.Schema,
-			&privilege.ObjectType,
-			&privilege.Grantee,
-			&privilege.Privilege,
-			&privilege.WithOption,
-		); err != nil {
+		var identity catalog.DefaultPrivilege
+		var acl string
+		if err := rows.Scan(&identity.Grantor, &identity.Schema, &identity.ObjectType, &acl); err != nil {
 			return nil, fmt.Errorf("failed to scan default privilege for schema %s: %w", schemaName, err)
 		}
-		privileges = append(privileges, privilege)
+		items, err := aclitem.ParseJSON(acl)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to read the default privileges %s set on %s in schema %s: %w",
+				identity.Grantor, identity.ObjectType, schemaName, err,
+			)
+		}
+		privileges = append(privileges, explodeDefaultPrivileges(identity, items)...)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read default privileges for schema %s: %w", schemaName, err)
 	}
+	slices.SortFunc(privileges, compareDefaultPrivileges)
 	return privileges, nil
+}
+
+// explodeDefaultPrivileges turns one pg_default_acl row into one entry per
+// granted privilege, which is the grain aclexplode answers. identity carries
+// the row's grantor, schema and object type.
+//
+// A reserved grantee is left out through [reservedrole.Is], the Go spelling of
+// the exclusion every role read renders in SQL, so a default privilege held by
+// a pg_ role is left out of the description exactly as an ordinary grant to it
+// is. The prefix test is a plain one: pgbouncer, pgadmin and pgpool are
+// ordinary user roles and stay. The GRANTOR is not filtered, because the
+// bootstrap superuser is the ordinary grantor of a default privilege --
+// excluding it there would empty this read on a stock server.
+func explodeDefaultPrivileges(identity catalog.DefaultPrivilege, items []aclitem.Item) []catalog.DefaultPrivilege {
+	var privileges []catalog.DefaultPrivilege
+	for _, item := range items {
+		grantee := defaultACLGranteeName(item)
+		if reservedrole.Is(grantee) {
+			continue
+		}
+		for _, privilege := range item.Privileges {
+			entry := identity
+			entry.Grantee = grantee
+			entry.Privilege = privilege.Name
+			entry.WithOption = privilege.Grantable
+			privileges = append(privileges, entry)
+		}
+	}
+	return privileges
+}
+
+// compareDefaultPrivileges orders default privileges by schema, grantor,
+// object type, grantee and privilege, byte by byte. The order is Ptah's rather
+// than the server's, so two descriptions of one catalog do not differ by row
+// order, whatever collation or ACL order the server has.
+func compareDefaultPrivileges(a, b catalog.DefaultPrivilege) int {
+	return cmp.Or(
+		strings.Compare(a.Schema, b.Schema),
+		strings.Compare(a.Grantor, b.Grantor),
+		strings.Compare(a.ObjectType, b.ObjectType),
+		strings.Compare(a.Grantee, b.Grantee),
+		strings.Compare(a.Privilege, b.Privilege),
+	)
 }
 
 // readAllViews reads views from whichever currentCatalog the server has. A view is not

@@ -61,8 +61,9 @@ func defaultPrivilegeSchema(schemaName, owner, reader string) *schemamodel.Datab
 //     have compared strings and passed.
 //  2. The catalog reports the object back, with the grantor the declaration
 //     named. The reader projects pg_get_userbyid over pg_default_acl.defaclrole
-//     and explodes the ACL with aclexplode, and a fake server answers by column
-//     name, so it would agree with a projection that reports the wrong role.
+//     and parses the ACL array_to_json renders, and a fake server answers by
+//     column name, so it would agree with a projection that reports the wrong
+//     role.
 //  3. Comparing the same declaration against what the server now holds finds
 //     nothing to do. This is the step that catches the whole family: a dropped
 //     conversion, an unfiltered projection, a grantor lost in the comparator's

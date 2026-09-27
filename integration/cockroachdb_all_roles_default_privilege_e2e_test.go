@@ -25,9 +25,7 @@ import (
 // `ALTER DEFAULT PRIVILEGES FOR ROLE "unknown (OID=0)" ...`, and applying the
 // description elsewhere fails on a role nobody has; `ptah db drop-all` builds
 // the same name into its revoke and stops after the tables are gone
-// (stokaro/ptah#3770). Measured on CockroachDB v26.2.7 and v26.3.1; on v25.4.16
-// aclexplode answers no rows, so no default privilege is described or revoked
-// there at all (stokaro/ptah#3802).
+// (stokaro/ptah#3770). Measured on CockroachDB v25.4.16, v26.2.7 and v26.3.1.
 //
 // No declaration can name FOR ALL ROLES, so the read leaves those rows out and
 // the note names them. The FOR ROLE default beside them is the control: it is
