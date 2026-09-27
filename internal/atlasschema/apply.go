@@ -706,7 +706,11 @@ func loadDesiredApplySchema(
 		Dialect:           conn.Info().Dialect,
 		DialectFlag:       "--url",
 		DialectFromServer: true,
-		DevURL:            opts.DevURL,
+		// A --to database naming no database is read as the whole server, so
+		// that a server applies to a server; against one database it is
+		// refused below.
+		ServerScope: true,
+		DevURL:      opts.DevURL,
 		// A --to migration directory replays on the dev database, and the
 		// replay resets it first: the dev database must not be the target, or
 		// a database --to also names.
@@ -727,6 +731,9 @@ func loadDesiredApplySchema(
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseServerScopeMismatch(connectionSide(conn.Info()), stateSide(state)); err != nil {
 		return nil, err
 	}
 	return state.Schema, nil
@@ -756,6 +763,9 @@ func loadAndValidateDesiredApplySchema(
 	opts ApplyOptions,
 ) (*schemamodel.Database, error) {
 	desired, err := loadDesiredApplySchema(ctx, conn, opts)
+	if _, mismatch := errors.AsType[*ServerScopeMismatchError](err); mismatch {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load --to schema: %w", err)
 	}
@@ -779,6 +789,9 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
 	}
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+		return ApplyRuntimePlan{}, err
+	}
+	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 

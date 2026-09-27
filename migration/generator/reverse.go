@@ -136,8 +136,14 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// And the same for the functions this direction creates: they are the
 		// ones that database held, and what they call is what it recorded.
 		DeclaredFunctions: difftypes.FunctionOrderingOf(prior),
-		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
+		// Reverse the databases of a whole MySQL-family server: a created one
+		// is dropped, a dropped one is created with the character set and
+		// collation the pre-change server held, and a changed one is set back.
+		SchemasAdded:    schemaCreationsFromRemovals(diff.SchemasRemoved, prior),
+		SchemasRemoved:  schemaNames(diff.SchemasAdded),
+		SchemasModified: reverseSchemaChanges(diff.SchemasModified),
+		TablesRemoved:   deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:  reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -388,7 +394,58 @@ func priorTableSchema(prior *schemamodel.Database, tableName string) string {
 	return ""
 }
 
-// priorTables is every table the pre-change database declared.
+// schemaCreationsFromRemovals is the creation of each removed schema, carrying
+// what the pre-change database declared for it. A removal is a name, and a
+// database recreated without its character set and collation is not the one
+// the rollback puts back.
+func schemaCreationsFromRemovals(removed []string, prior *schemamodel.Database) []schemamodel.Schema {
+	if len(removed) == 0 {
+		return nil
+	}
+	creations := make([]schemamodel.Schema, 0, len(removed))
+	for _, name := range removed {
+		creation := schemamodel.Schema{Name: name}
+		for _, held := range priorSchemas(prior) {
+			if held.Name == name {
+				creation = held
+				break
+			}
+		}
+		creations = append(creations, creation)
+	}
+	return creations
+}
+
+// schemaNames is the names of schemas.
+func schemaNames(schemas []schemamodel.Schema) []string {
+	if len(schemas) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		names = append(names, schema.Name)
+	}
+	return names
+}
+
+// reverseSchemaChanges sets each changed schema back to what the server held.
+func reverseSchemaChanges(changes []difftypes.SchemaChange) []difftypes.SchemaChange {
+	if len(changes) == 0 {
+		return nil
+	}
+	reversed := make([]difftypes.SchemaChange, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, difftypes.SchemaChange{
+			Name:           change.Name,
+			Charset:        change.CurrentCharset,
+			Collate:        change.CurrentCollate,
+			CurrentCharset: change.Charset,
+			CurrentCollate: change.Collate,
+		})
+	}
+	return reversed
+}
+
 // priorSchemas is the schema declarations of the pre-change database, for the
 // reason [priorTables] gives about tables.
 func priorSchemas(prior *schemamodel.Database) []schemamodel.Schema {
@@ -398,6 +455,7 @@ func priorSchemas(prior *schemamodel.Database) []schemamodel.Schema {
 	return prior.Schemas
 }
 
+// priorTables is every table the pre-change database declared.
 func priorTables(prior *schemamodel.Database) []schemamodel.Table {
 	if prior == nil {
 		return nil

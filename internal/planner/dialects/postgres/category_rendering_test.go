@@ -47,6 +47,18 @@ var supplementalDiffCategories = map[string]string{
 // without anything noticing, which is the failure this whole file exists to
 // prevent one level down.
 var refusedDiffCategories = map[string]refusedFixture{
+	"SchemasAdded": {
+		why:  "the comparison records a created database only for a whole MySQL or MariaDB server (stokaro/ptah#3789), so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would call the two sides equal",
+		diff: &difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "app"}}},
+	},
+	"SchemasRemoved": {
+		why:  "a dropped database is a whole-server MySQL-family change for the same reason",
+		diff: &difftypes.SchemaDiff{SchemasRemoved: []string{"app"}},
+	},
+	"SchemasModified": {
+		why:  "a database's character set and collation are a whole-server MySQL-family change for the same reason",
+		diff: &difftypes.SchemaDiff{SchemasModified: []difftypes.SchemaChange{{Name: "app", Collate: "C"}}},
+	},
 	"HypertablesRemoved": {
 		why: "TimescaleDB has no statement that turns a hypertable back into an ordinary table -- measured on 2.29.2, drop_hypertable does not exist -- so the planner refuses instead of emitting nothing and calling the two sides equal",
 		diff: &difftypes.SchemaDiff{HypertablesRemoved: difftypes.HypertableChanges{{

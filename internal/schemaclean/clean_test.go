@@ -488,3 +488,29 @@ func TestPlanFromSchemaAcceptsNilSchema(t *testing.T) {
 	c.Assert(plan.Objects, qt.IsNil)
 	c.Assert(plan.Changes, qt.IsNil)
 }
+
+// TestPlanFromObjectsDropsAWholeServerDatabaseByDatabase is the cleanup of a
+// whole MySQL-family server: every user database dropped whole, and every
+// foreign key one database keeps into another (stokaro/ptah#3789). The pinned
+// community binary v1.3.0 drops the databases alone and stops at the first one
+// another database's key references; the order the keys go first in is the
+// execution order, which the report does not show.
+func TestPlanFromObjectsDropsAWholeServerDatabaseByDatabase(t *testing.T) {
+	c := qt.New(t)
+
+	plan := schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeSchema, Schema: "r1", Name: "r1"},
+		{Type: schemaclean.ObjectTypeSchema, Schema: "r4", Name: "r4"},
+		{Type: schemaclean.ObjectTypeForeignKey, Schema: "r4", Table: "z", Name: "zfk"},
+	}, "mysql")
+	executed := make([]string, 0, len(plan.Changes))
+	for _, change := range plan.Changes {
+		executed = append(executed, change.Cmd)
+	}
+
+	c.Assert(executed, qt.ContentEquals, []string{
+		"ALTER TABLE `r4`.`z` DROP FOREIGN KEY `zfk`",
+		"DROP DATABASE `r1`",
+		"DROP DATABASE `r4`",
+	})
+}

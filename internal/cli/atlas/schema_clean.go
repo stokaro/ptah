@@ -93,11 +93,23 @@ still depends on it.`
 	return cmd
 }
 
+// errAtlasServerCleanSelectors refuses --include and --exclude on a URL naming
+// no database, before anything is dropped.
+var errAtlasServerCleanSelectors = errors.New(
+	"--include and --exclude are not supported when the URL names no database; " +
+		"schema clean drops every user database of the server, so name a database in the URL to clean part of one")
+
 func runAtlasSchemaClean(
 	cmd *cobra.Command,
 	opts atlasSchemaCleanOptions,
 	policy atlascompatpolicy.Policy,
 ) error {
+	// Before every early return: a malformed value is refused on every run,
+	// not only on one that reaches a whole server.
+	serverClean, err := schemaclean.ResolveServerCleanPolicy()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if err != nil {
@@ -153,12 +165,19 @@ func runAtlasSchemaClean(
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.url)
 	cancel()
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// A whole server is cleaned database by database; a selector would have to
+	// say which databases and which objects inside them it keeps, and a
+	// selector this command ignored would drop what it named
+	// (stokaro/ptah#3789).
+	if schemaclean.IsServer(conn) && opts.scoped() {
+		return cmdutil.Fail(cmd, errAtlasServerCleanSelectors)
+	}
 
 	plan, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, conn)
 	if err != nil {
@@ -174,6 +193,11 @@ func runAtlasSchemaClean(
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	// A dry run is refused too: the refusal lists what the cleanup would
+	// drop, so it answers what the dry run was asked.
+	if err := serverClean.Refuse(conn.Info(), plan); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput && !opts.dryRun {
 		if err := validateAtlasSchemaCleanActualFormat(opts, conn, plan); err != nil {

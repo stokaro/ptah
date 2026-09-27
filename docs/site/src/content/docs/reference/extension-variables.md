@@ -52,6 +52,7 @@ community CLI does on the same input.
 | [`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`](#ptah_sqlite_allow_virtual_table_drop) | Plan a virtual-table drop |
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
 | [`PTAH_ALLOW_EXTERNAL_SCHEMA`](#ptah_allow_external_schema) | Evaluate `data "external_schema"` |
+| [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
 | [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
 | [`PTAH_STRICT_DIR_QUERY`](#ptah_strict_dir_query) | Refuse an unknown `--dir` query key |
@@ -171,6 +172,18 @@ reported a synced schema and changed nothing.
   refused again.
 
 See [SQLite](../../databases/sqlite/) for the whole picture.
+
+## `PTAH_ALLOW_SERVER_CLEAN`
+
+By default, `ptah-compat schema clean` and native `ptah db drop-all` refuse a
+MySQL or MariaDB URL that names no database, dry run included, when the cleanup
+would drop a database. That URL is the whole server, and the cleanup drops every
+user database on it, so one confirmation or `--auto-approve` in a script would
+drop databases nobody named. The refusal lists them in the form a dry run
+prints them. Set it to `1` and the cleanup runs as the pinned community binary
+runs it, with the confirmation and `--dry-run` as usual. A URL that names a
+database is not affected. See
+[Compatibility differences](../../atlas/retained-divergences/#a-whole-server-cleaned-without-an-opt-in).
 
 ## `PTAH_ALLOW_EXTERNAL_SCHEMA`
 

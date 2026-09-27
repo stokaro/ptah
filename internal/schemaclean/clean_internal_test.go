@@ -59,6 +59,24 @@ func TestPlanExecutionOrdersKnownDependentsWithoutChangingReport(t *testing.T) {
 	})
 }
 
+// TestPlanExecutionDropsAServerAfterItsCrossDatabaseKeys executes a whole
+// server's cleanup with every foreign key between databases first and the
+// databases last, whatever the alphabetical report says (stokaro/ptah#3789).
+func TestPlanExecutionDropsAServerAfterItsCrossDatabaseKeys(t *testing.T) {
+	c := qt.New(t)
+	plan := PlanFromObjects([]Object{
+		{Type: ObjectTypeSchema, Schema: "a", Name: "a"},
+		{Type: ObjectTypeForeignKey, Schema: "z", Table: "t", Name: "fk"},
+		{Type: ObjectTypeSchema, Schema: "z", Name: "z"},
+	}, "mysql")
+
+	c.Assert(changeTypes(plan.executionChanges), qt.DeepEquals, []string{
+		ObjectTypeForeignKey,
+		ObjectTypeSchema,
+		ObjectTypeSchema,
+	})
+}
+
 func TestPlanExecutionOrdersSameKindDependentsByCatalogDepth(t *testing.T) {
 	c := qt.New(t)
 	objects := []Object{

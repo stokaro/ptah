@@ -165,6 +165,16 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		return nil, nil, err
 	}
 	merged.IdentifierSemantics = &semantics
+	// A connection to a whole MySQL-family server compares its databases as
+	// well as what is in them. Only the connection says it is one: a server
+	// read and a read of one database both describe tables, and only the
+	// first describes the databases (stokaro/ptah#3789).
+	merged.ServerSchemas = merged.ServerSchemas || info.WholeServer
+	if merged.ServerSchemas && isMySQLFamilyComparison(info.Dialect) {
+		if err := compare.RequireServerDatabases(desired); err != nil {
+			return nil, nil, err
+		}
+	}
 	diff, undecided := compareReportingUndecidedAdditions(desired, database, merged, info.Capabilities)
 	// The half of the SQLite virtual-table guard that only the comparator can
 	// answer. A table both sides name and describe differently is rebuilt by
@@ -320,6 +330,12 @@ func compareReportingUndecidedAdditions(
 	// four surfaces resolve a desired state independently, and one of them
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database)
+
+	// Compare the databases of a whole MySQL-family server, before what is in
+	// them; see [config.CompareOptions.ServerSchemas].
+	if opts.ServerSchemas && isMySQLFamilyComparison(opts.Dialect) {
+		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
+	}
 
 	// Compare tables and their column structures
 	compare.TablesAndColumnsWithServerSpellings(
@@ -731,4 +747,15 @@ func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInf
 		info.Dialect,
 		caps,
 	)
+}
+
+// isMySQLFamilyComparison reports whether dialect names MySQL or MariaDB, the
+// dialects whose schemas are databases.
+func isMySQLFamilyComparison(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }

@@ -114,36 +114,24 @@ func TestSchemaInspectNamesAReferenceInTheKeysOwnDatabaseAloneE2E(t *testing.T) 
 // server, and these commands do not yet (stokaro/ptah#3789).
 var mysqlServerRefusals = []struct {
 	name string
-	args func(server, dir, schema string) []string
+	args func(server, dir string) []string
 }{
 	{
-		name: "schema apply",
-		args: func(server, _, schema string) []string {
-			return []string{"schema", "apply", "--url", server, "--to", "file://" + schema, "--auto-approve"}
-		},
-	},
-	{
-		name: "schema diff",
-		args: func(server, _, _ string) []string {
-			return []string{"schema", "diff", "--from", server, "--to", server}
-		},
-	},
-	{
-		name: "schema clean",
-		args: func(server, _, _ string) []string {
-			return []string{"schema", "clean", "--url", server, "--auto-approve"}
-		},
-	},
-	{
 		name: "migrate status",
-		args: func(server, dir, _ string) []string {
+		args: func(server, dir string) []string {
 			return []string{"migrate", "status", "--url", server, "--dir", "file://" + dir}
 		},
 	},
 	{
 		name: "migrate apply",
-		args: func(server, dir, _ string) []string {
+		args: func(server, dir string) []string {
 			return []string{"migrate", "apply", "--url", server, "--dir", "file://" + dir}
+		},
+	},
+	{
+		name: "migrate diff with the server as the dev database",
+		args: func(server, dir string) []string {
+			return []string{"migrate", "diff", "--dir", "file://" + dir, "--to", "file://" + dir, "--dev-url", server}
 		},
 	},
 }
@@ -159,10 +147,8 @@ func TestCommandsForOneDatabaseRefuseAMySQLServerURLE2E(t *testing.T) {
 				server := newMySQLServer(c, engine.admin)
 				dir := filepath.Join(c.TempDir(), "migrations")
 				c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
-				schema := filepath.Join(c.TempDir(), "schema.hcl")
-				c.Assert(os.WriteFile(schema, []byte(`schema "`+server.first+`" {}`+"\n"), 0o600), qt.IsNil)
 
-				out, err := runCompatVerb(test.args(server.url, dir, schema)...)
+				out, err := runCompatVerb(test.args(server.url, dir)...)
 
 				c.Assert(err, qt.ErrorMatches,
 					`(?s).*the database URL names no database, and this command reads and changes one MySQL or MariaDB database, not a whole server.*`,

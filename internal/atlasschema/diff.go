@@ -175,7 +175,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		// projection below filters a universe that never contained the
 		// requested schema, so the diff answers "synced" for a database it
 		// never looked at.
-		Schemas:                   opts.Schemas,
+		Schemas: opts.Schemas,
+		// Two databases are compared as they are, a MySQL-family server as
+		// the whole server. A file or a directory on either side is compared
+		// through a dev database's replay, and a dev server is not taken yet
+		// (stokaro/ptah#3789).
+		ServerScope:               fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase,
 		ConnectTimeout:            opts.ConnectTimeout,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
@@ -218,6 +223,9 @@ func diffResolvedStates(
 	capabilities capability.Capabilities,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	if err := refuseServerScopeMismatch(stateSide(fromState), stateSide(toState)); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -248,6 +256,11 @@ func diffResolvedStates(
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = dialect
+	// Two whole MySQL-family servers are compared database by database too,
+	// as the pinned community binary v1.3.0 compares them: measured on MySQL
+	// 8.4.11 and MariaDB 11.8.9, `schema diff` between two servers plans
+	// CREATE DATABASE and DROP DATABASE (stokaro/ptah#3789).
+	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
 	// A comparison on a held connection runs the SQLite virtual-table guard
 	// itself, and the guard reads the drop policy from here: without it, a
 	// project that skips `drop_table` is refused for a DROP the policy deletes
@@ -888,4 +901,10 @@ func validateRowTTL(dialect string, to *schemamodel.Database) error {
 		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
 	}
 	return crdbttl.ValidateDeclared(dialect, capability.ForDialect(dialect), crdbttl.DeclaredIn(tables))
+}
+
+// comparesTwoServers reports whether both sides of a diff were read from a
+// whole MySQL or MariaDB server, a connection that selected no database.
+func comparesTwoServers(fromState, toState atlassource.State) bool {
+	return fromState.WholeServer && toState.WholeServer
 }

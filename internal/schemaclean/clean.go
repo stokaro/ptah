@@ -183,6 +183,13 @@ func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, 
 		}
 	}
 	dialect := conn.Info().Dialect
+	if IsServer(conn) {
+		objects, err := inspectServer(ctx, conn)
+		if err != nil {
+			return Plan{}, err
+		}
+		return planFromObjects(objects, dialect, nil), nil
+	}
 	objects := cleanupObjects(schema, dialect)
 	runtimeObjects, err := inspectRuntimeObjects(conn)
 	if err != nil {
@@ -216,6 +223,15 @@ func Execute(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 }
 
 func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	// A whole server has no writer scope to hand DropAllTables: its cleanup
+	// is the plan of its databases, executed as planned.
+	if IsServer(conn) {
+		plan, err := Inspect(ctx, conn)
+		if err != nil {
+			return err
+		}
+		return ApplyPlan(ctx, conn, plan)
+	}
 	conn.SchemaWriter().SetDryRun(false)
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("drop schema objects: %w", err)
@@ -1513,6 +1529,11 @@ func dropCommand(dialect string, object Object) string {
 		return "DROP EVENT IF EXISTS " + name
 	case ObjectTypeForeignKey:
 		return dropForeignKeyCommand(dialect, object)
+	case ObjectTypeSchema:
+		if isMySQLFamily(dialect) {
+			return "DROP DATABASE " + sqlident.Quote(dialect, object.Name)
+		}
+		return ""
 	case ObjectTypeFunction:
 		return dropRoutineCommand(dialect, "FUNCTION", name, object.Parameters)
 	case ObjectTypeMaterializedView:

@@ -545,11 +545,14 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.url)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if opts.policy.IsStrictCE() {
 		if err := atlasschema.PreflightApplyTarget(
 			cmd.Context(),
