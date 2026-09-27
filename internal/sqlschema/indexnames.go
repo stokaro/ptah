@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
@@ -111,14 +109,9 @@ func (n indexNames) claim(name string) {
 // off documentation. A family-wide rule is what produced the defect this
 // replaces: the two agree on the namespace and disagree on the length.
 type engineIndexNaming struct {
-	// baseBytes is how much of the base name survives before a `_N` suffix is
-	// appended, zero where the engine does not truncate.
-	//
-	// BYTES rather than characters, and 61 rather than 64 - len(suffix):
-	// measured on MySQL 9.7.2, a 64-character column yields a 63-character
-	// `_2` and a 64-character `_10`, so the base is cut to 61 whatever the
-	// suffix costs.
-	baseBytes int
+	// dialect is the engine, which [mysqlname.IndexName] reads for how much of
+	// a base name survives before a `_N` suffix.
+	dialect string
 	// maxBytes is the longest index name the engine accepts.
 	maxBytes int
 	// functionalBase is the name the engine gives an index whose first key
@@ -149,11 +142,11 @@ type engineIndexNaming struct {
 // and `a_2` to the key's.
 var (
 	mysqlNaming = engineIndexNaming{
-		baseBytes:      mysqlname.IndexBaseBytes,
+		dialect:        platform.MySQL,
 		maxBytes:       64,
 		functionalBase: "functional_index",
 	}
-	mariaDBNaming = engineIndexNaming{maxBytes: 64, descendingCovers: true}
+	mariaDBNaming = engineIndexNaming{dialect: platform.MariaDB, maxBytes: 64, descendingCovers: true}
 )
 
 // nameMySQLInlineIndexes gives every unnamed inline index and unique constraint
@@ -594,36 +587,9 @@ func derive(
 }
 
 // firstFree is the first name of the server's sequence for column that nothing
-// has claimed: the column name, then _2, _3 and so on.
+// claimed holds; see [mysqlname.IndexName].
 func firstFree(claimed indexNames, column string, naming engineIndexNaming) string {
-	candidate := column
-	for suffix := 2; claimed.taken(candidate); suffix++ {
-		candidate = truncateBase(column, naming) + "_" + strconv.Itoa(suffix)
-	}
-	return candidate
-}
-
-// truncateBase cuts the base name down to what the engine leaves room for.
-//
-// MySQL truncates to 61 BYTES and does it whatever the suffix costs -- measured
-// on 9.7.2, a 64-character column yields a 63-character `_2` and a
-// 64-character `_10`. MariaDB does not truncate at all and refuses the result
-// instead, which is what maxBytes then reports.
-//
-// Truncation that splits a multibyte character is the engine's behavior too,
-// and the engine then rejects its own name: measured, a 32-character `ä` column
-// produces `ERROR 1280` naming a string cut mid-character. Ptah cuts on a rune
-// boundary instead, so the name it derives is one the engine can accept -- the
-// alternative is reproducing a defect for the sake of matching it.
-func truncateBase(column string, naming engineIndexNaming) string {
-	if naming.baseBytes <= 0 || len(column) <= naming.baseBytes {
-		return column
-	}
-	cut := naming.baseBytes
-	for cut > 0 && !utf8.RuneStart(column[cut]) {
-		cut--
-	}
-	return column[:cut]
+	return mysqlname.IndexName(naming.dialect, column, claimed.taken)
 }
 
 // namingFor answers which engine's rules apply, and whether any do.

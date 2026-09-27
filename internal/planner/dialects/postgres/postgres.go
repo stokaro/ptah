@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/planner/columnchange"
+	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/rlsscope"
@@ -1257,13 +1258,8 @@ func (p *Planner) addNewIndexes(
 func (p *Planner) removeIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
+	released map[difftypes.IndexRef]struct{},
 ) []ast.Node {
-	// IF EXISTS on DROP INDEX is capability-gated intent, mirroring the MySQL
-	// planner (issue #226). Every supported PostgreSQL line has the guard, so
-	// the default preset keeps today's output; a preset without it (or a
-	// composed set) actually changes the plan.
-	guarded := p.capabilities().Has(capability.DropIndexIfExists)
-	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1276,30 +1272,54 @@ func (p *Planner) removeIndexes(
 		// A removal a UNIQUE constraint addition rebuilds was already emitted
 		// ahead of that addition, which is the only order the server accepts;
 		// dropping it again here would land after the add and delete the index
-		// the constraint now needs.
-		if _, rebuilt := rebuiltAsConstraint[ref]; rebuilt {
+		// the constraint now needs. A released one went ahead of the column
+		// changes, for the same reason.
+		_, rebuilt := rebuiltAsConstraint[ref]
+		_, dropped := released[ref]
+		if rebuilt || dropped {
 			continue
 		}
-		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
-			result = append(result, p.constraintBackedIndexDropNode(ref))
-			continue
-		}
-		dropIndexNode := ast.NewDropIndex(ref.Name).
-			SetTable(ref.TableName)
-		if guarded {
-			dropIndexNode.SetIfExists()
-		}
-		// CONCURRENTLY on a drop is opt-in policy AND capability-gated, exactly
-		// like the build side. A redefinition never reaches here (it is skipped
-		// above as an addition conflict), and a constraint's backing index left
-		// through the branch above, so a concurrent drop is always a standalone
-		// index removal — never the drop half of a rebuild and never an index
-		// backing a constraint, both of which PostgreSQL refuses to drop
-		// concurrently.
-		if p.usesConcurrentIndexDrop(ref) && p.capabilities().Has(capability.DropIndexConcurrently) {
-			dropIndexNode.SetConcurrently()
-		}
-		result = append(result, dropIndexNode)
+		result = append(result, p.dropIndexNode(diff, ref))
+	}
+	return result
+}
+
+// dropIndexNode is the statement that removes the index ref.
+func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) ast.Node {
+	if _, ownedByConstraint := diff.ConstraintBackedIndexRemovalSet()[ref]; ownedByConstraint {
+		return p.constraintBackedIndexDropNode(ref)
+	}
+	dropIndexNode := ast.NewDropIndex(ref.Name).
+		SetTable(ref.TableName)
+	// IF EXISTS on DROP INDEX is capability-gated intent, mirroring the MySQL
+	// planner (issue #226). Every supported PostgreSQL line has the guard, so
+	// the default preset keeps today's output; a preset without it (or a
+	// composed set) actually changes the plan.
+	if p.capabilities().Has(capability.DropIndexIfExists) {
+		dropIndexNode.SetIfExists()
+	}
+	// CONCURRENTLY on a drop is opt-in policy AND capability-gated, exactly
+	// like the build side. A redefinition never reaches here (removeIndexes
+	// skips it as an addition conflict), and a constraint's backing index left
+	// through the branch above, so a concurrent drop is always a standalone
+	// index removal — never the drop half of a rebuild and never an index
+	// backing a constraint, both of which PostgreSQL refuses to drop
+	// concurrently.
+	if p.usesConcurrentIndexDrop(ref) && p.capabilities().Has(capability.DropIndexConcurrently) {
+		dropIndexNode.SetConcurrently()
+	}
+	return dropIndexNode
+}
+
+// releaseKeyNames drops the removed keys released holds, each as its removal
+// step would drop it; see [keyrelease.Find].
+func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff, released keyrelease.Releases) []ast.Node {
+	state := constraintPlanState{droppedForModify: make(map[constraintHostKey]struct{})}
+	for _, info := range released.Constraints {
+		result = p.appendScopedDrop(result, info.TableName, info.Name, info.Identity, state)
+	}
+	for _, ref := range released.Indexes {
+		result = append(result, p.dropIndexNode(diff, ref))
 	}
 	return result
 }
@@ -1832,6 +1852,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// 5. Add new tables
 	result = p.addNewTables(result, diff, relationPlaced)
 
+	// 5b. Drop a removed key that holds the name a column's own UNIQUE takes,
+	// before the column changes below add that key. ADD CONSTRAINT c_x_key
+	// otherwise answers that the name exists, and ADD COLUMN x int UNIQUE names
+	// the key c_x_key1. Steps 11 and 12.5 skip what this drops.
+	released := keyrelease.Find(diff, p.targetDialect())
+	result = p.releaseKeyNames(result, diff, released)
+
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
 
@@ -1923,7 +1950,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = changeConstraintComments(result, diff)
 
 	// 11. Remove indexes (safe operations)
-	result = p.removeIndexes(result, diff)
+	result = p.removeIndexes(result, diff, released.IndexSet())
 
 	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
 	result = p.removeRLSPolicies(result, diff)
@@ -1958,7 +1985,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.removeTableColumns(result, diff)
 
 	// 12.5. Remove constraints (must be done before removing tables)
-	result = p.removeConstraints(result, diff)
+	result = p.removeConstraints(result, diff, released.ConstraintSet())
 
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
@@ -3800,7 +3827,11 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 //
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
-func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) removeConstraints(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	released map[constraintHostKey]struct{},
+) []ast.Node {
 	// The pure-removal path keys its hosts by the same rule addNewConstraints
 	// does, for the same reason: the two sides of a modify spell one table two
 	// ways, and a verbatim key answers that they are two (stokaro/ptah#1987).
@@ -3889,6 +3920,11 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 		key := info.Identity
 		if _, modified := modifySet[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+			continue
+		}
+		if _, dropped := released[key]; dropped {
+			// Dropped ahead of the column changes, to free the name a
+			// column's own UNIQUE takes; a second drop would remove that key.
 			continue
 		}
 		if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {

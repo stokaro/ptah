@@ -270,6 +270,31 @@ func IsUnnamedKeyIndexName(column, index string, same func(a, b string) bool) bo
 	return same(index[:cut], column) || same(index[:cut], indexBase(column))
 }
 
+// IndexName answers the name a server of dialect gives an index it names after
+// base: base itself where no index of the table holds it, and otherwise base
+// followed by `_2`, `_3` and on, the first that is free. taken reports whether
+// the table holds a name, and compares as the server compares index names,
+// without case.
+//
+// MySQL cuts base to [IndexBaseBytes] bytes before the number, on a character
+// boundary; MariaDB keeps it whole. Measured on MySQL 9.7.2, a 64-character
+// column yields a 63-character `_2` and a 64-character `_10`. The server cuts
+// inside a character where the byte count falls there, and then refuses the name
+// it built; this cut stops before the character, so the name is one the server
+// accepts. The SQL reader names every index the server names by this, and the
+// comparison names a column's own UNIQUE by it, so both answer the same.
+func IndexName(dialect, base string, taken func(string) bool) string {
+	candidate := base
+	prefix := base
+	if platform.NormalizeDialect(dialect) == platform.MySQL {
+		prefix = indexBase(base)
+	}
+	for suffix := 2; taken(candidate); suffix++ {
+		candidate = prefix + "_" + strconv.Itoa(suffix)
+	}
+	return candidate
+}
+
 // indexBase is the part of a column name MySQL keeps before it appends a
 // number, cut on a character boundary.
 func indexBase(column string) string {

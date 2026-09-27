@@ -258,12 +258,19 @@ keys a new database built from the file has. For a migration that names the
 key `c_p_fk` and a schema file that writes `p_id bigint REFERENCES p(id)` on
 `c`, the plan drops `c_p_fk` and adds `c_p_id_fkey`, as Atlas CE does.
 
-A column-level `UNIQUE` is compared by its columns, not by its name. It
-accounts for one key over the column alone, the one named `<table>_<column>_key`
-where there are several. Every other key of the table, a second key over the
-column or a key over more columns that the column leads, is compared by its
-name, so `a int UNIQUE, UNIQUE (a, b)` matches the two keys it builds, and a
-key the file no longer declares is dropped.
+A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
+`<table>_<column>_key`, numbered `1` and on where another relation or
+constraint of the schema already holds that name. When the database holds the
+key over the column under another name, the plan drops that key and adds
+`<table>_<column>_key`, as Atlas CE does. For a migration that names the key
+`c_x_uq` and a schema file that writes `x int UNIQUE` on `c`, the plan drops
+`c_x_uq` and adds `c_x_key`. Where a key the plan drops holds that name, the
+plan drops it before it adds the column's key.
+
+The column's key is one key over the column alone. Every other key of the
+table, a second key over the column or a key over more columns that the column
+leads, is compared by its name, so `a int UNIQUE, UNIQUE (a, b)` matches the
+two keys it builds, and a key the file no longer declares is dropped.
 
 A named `UNIQUE` over the column alone, written in the same `CREATE TABLE`, is
 the column's key too: the server builds `CONSTRAINT uq_a UNIQUE (a)` beside
@@ -282,7 +289,9 @@ carries the column's `UNIQUE` and the second key under its name, `g2_a_key1`.
 
 A plan that adds a column-level `UNIQUE` to an existing column writes
 `ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
-because the plan cannot see which names the target already holds. MySQL and
+as Atlas CE writes it. The plan cannot see which names the target already
+holds, so where an object the plan keeps holds that name, PostgreSQL refuses
+the statement. MySQL and
 MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
 [MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
 an unnamed foreign key, `fk_<table>_<column>`. MySQL and MariaDB name an

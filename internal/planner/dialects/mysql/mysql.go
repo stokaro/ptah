@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
+	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
@@ -1108,20 +1109,13 @@ func (p *Planner) addNewIndexes(
 func (p *Planner) removeIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
+	released map[difftypes.IndexRef]struct{},
 ) []ast.Node {
-	// The IF EXISTS guard on DROP INDEX is capability-gated INTENT (issue
-	// #226): MariaDB accepts it, MySQL has no such form. The renderer
-	// additionally validates the flag against its own target set, so the
-	// guard is emitted only when both layers agree. Gating here (rather than
-	// always setting the flag) keeps the capability composable — disabling
-	// capability.DropIndexIfExists on a planner actually changes the plan.
-	guarded := p.capabilities().Has(capability.DropIndexIfExists)
 	replacements := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexAdditions(),
 	)
 	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
-	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	for _, ref := range diff.IndexRemovals() {
 		if replacements.Contains(ref) {
 			continue
@@ -1129,18 +1123,44 @@ func (p *Planner) removeIndexes(
 		// A removal a UNIQUE constraint addition rebuilds was already emitted
 		// ahead of that addition, which is the only order the server accepts;
 		// dropping it again here would land after the add and delete the key
-		// the constraint now is.
-		if _, rebuilt := rebuiltAsConstraint[ref]; rebuilt {
+		// the constraint now is. A released one went ahead of the column
+		// changes, for the same reason.
+		_, rebuilt := rebuiltAsConstraint[ref]
+		_, dropped := released[ref]
+		if rebuilt || dropped {
 			continue
 		}
-		dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
-		if guarded {
-			dropIndexNode.SetIfExists()
-		}
-		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
-			dropIndexNode.SetEnforcesUniqueConstraint()
-		}
-		result = append(result, dropIndexNode)
+		result = append(result, p.dropIndexNode(diff, ref))
+	}
+	return result
+}
+
+// dropIndexNode is the DROP INDEX for the removed index ref.
+func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) ast.Node {
+	dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
+	// The IF EXISTS guard on DROP INDEX is capability-gated INTENT (issue
+	// #226): MariaDB accepts it, MySQL has no such form. The renderer
+	// additionally validates the flag against its own target set, so the
+	// guard is emitted only when both layers agree. Gating here (rather than
+	// always setting the flag) keeps the capability composable — disabling
+	// capability.DropIndexIfExists on a planner actually changes the plan.
+	if p.capabilities().Has(capability.DropIndexIfExists) {
+		dropIndexNode.SetIfExists()
+	}
+	if _, ownedByConstraint := diff.ConstraintBackedIndexRemovalSet()[ref]; ownedByConstraint {
+		dropIndexNode.SetEnforcesUniqueConstraint()
+	}
+	return dropIndexNode
+}
+
+// releaseKeyNames drops the removed keys released holds, each as its removal
+// step would drop it; see [keyrelease.Find].
+func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff, released keyrelease.Releases) []ast.Node {
+	for _, info := range released.Constraints {
+		result = append(result, p.dropConstraintNode(info))
+	}
+	for _, ref := range released.Indexes {
+		result = append(result, p.dropIndexNode(diff, ref))
 	}
 	return result
 }
@@ -1316,6 +1336,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
 	result = append(result, fkPlan.drops...)
 
+	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,
+	// before the column changes below add that key. Otherwise the server names
+	// the column's key `x_2`, and the next comparison plans the key again.
+	// Steps 6 and 6.7 skip what this drops.
+	released := keyrelease.Find(diff, p.targetDialect())
+	result = p.releaseKeyNames(result, diff, released)
+
 	result, err = p.modifyExistingTables(result, diff)
 	if err != nil {
 		return nil, err
@@ -1368,7 +1395,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
 	// rollback plans may need to drop both. The FK must go first. fkPlan.dropped
 	// suppresses any removed-only FK already dropped at step 4.
-	result = p.removeConstraints(result, diff, fkPlan.dropped)
+	alreadyDropped := released.ConstraintSet()
+	maps.Copy(alreadyDropped, fkPlan.dropped)
+	result = p.removeConstraints(result, diff, alreadyDropped)
 
 	// 6.6. Remove triggers and view-like objects before dependent tables.
 	result = p.removeTriggers(result, diff)
@@ -1378,7 +1407,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	result = p.removeSynonyms(result, diff)
 
 	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
-	result = p.removeIndexes(result, diff)
+	result = p.removeIndexes(result, diff, released.IndexSet())
 
 	// 6z. Drop the security policies before the tables they are schema-bound
 	// to, which the engine will not drop out from under a standing policy.

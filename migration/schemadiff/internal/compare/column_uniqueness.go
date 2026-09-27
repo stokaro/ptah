@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnkey"
 	"ptah.run/internal/objectidentity"
 	"ptah.run/internal/tableref"
 )
@@ -43,10 +43,10 @@ type columnUniqueness struct {
 	// column comparison leaves their uniqueness out, and the object's own
 	// comparison creates and drops it.
 	objectOwned map[columnIdentity]struct{}
-	// ownKey are the columns that declare UNIQUE themselves beside such an
-	// object, on an engine that builds the two as two keys, with whether the
-	// database holds the column's own key. The column comparison reads the
-	// database's uniqueness of such a column from it.
+	// ownKey are the columns that declare UNIQUE themselves, on an engine
+	// whose name for the column's own key is measured, with whether the
+	// database holds that key. The column comparison reads the database's
+	// uniqueness of such a column from it.
 	ownKey map[columnIdentity]bool
 }
 
@@ -55,10 +55,16 @@ type columnUniqueness struct {
 // suppress a column difference because database-side index filters may
 // intentionally exclude backing indexes.
 //
-// A column that declares UNIQUE itself beside such an object is a second key,
-// and its own key is compared rather than left out. Measured on MySQL 8.4.11
-// and 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18.6, with Atlas CE
-// v1.3.0 comparing a database that holds only the object:
+// A column that declares UNIQUE itself has a key of its own, and on an engine
+// [columnkey.Named] names, the database holds it only under the name the
+// server gives it; see [readColumnKeys]. A key over the column under another
+// name leaves the column without its own, so the comparison adds it, as Atlas
+// CE v1.3.0 does (stokaro/ptah#3723).
+//
+// Beside such an object the column's key is a second key, compared rather than
+// left out. Measured on MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and
+// PostgreSQL 18.6, with Atlas CE v1.3.0 comparing a database that holds only
+// the object:
 //
 //	declaration                                        MySQL, MariaDB  PostgreSQL
 //	a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)           two keys        one key
@@ -72,8 +78,8 @@ type columnUniqueness struct {
 // pair into the named key before it reaches the model; see
 // [schemaprep.FoldedIndexConstraints]. So a column that still declares UNIQUE
 // beside an equal constraint in the model is two keys on every engine this
-// covers. The other engines are not measured, and keep the column's uniqueness
-// with the object.
+// covers. The other engines are not measured: they keep the column's
+// uniqueness with the object, and read it from the catalog otherwise.
 func readColumnUniqueness(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -93,6 +99,7 @@ func readColumnUniqueness(
 	if database == nil {
 		return uniqueness
 	}
+	named := columnkey.Named(dialect)
 	held := readColumnKeys(desired, database, dialect, semantics).held
 	tables := make(map[string]schemamodel.Table, len(desired.Tables))
 	for _, table := range desired.Tables {
@@ -105,13 +112,10 @@ func readColumnUniqueness(
 		if !field.Unique || !ok {
 			continue
 		}
-		identity := newColumnIdentityForTable(table.Schema, table.Name, field.Name, semantics)
-		_, besideIndex := byIndex[identity]
-		_, besideConstraint := byConstraint[identity]
-		declared := besideIndex || besideConstraint
-		if !declared || !buildsColumnKeyBesideDeclaredKey(dialect) {
+		if !named {
 			continue
 		}
+		identity := newColumnIdentityForTable(table.Schema, table.Name, field.Name, semantics)
 		_, holds := held[newTableMemberKey(table.QualifiedName(), field.Name, semantics)]
 		uniqueness.ownKey[identity] = holds
 	}
@@ -134,18 +138,6 @@ func (u columnUniqueness) compared(
 		database.IsUnique = false
 	}
 	return desired, database
-}
-
-// buildsColumnKeyBesideDeclaredKey reports whether a column's UNIQUE and a
-// unique index or UNIQUE constraint the model declares over the same column
-// are two keys on dialect; see [readColumnUniqueness].
-func buildsColumnKeyBesideDeclaredKey(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.Postgres:
-		return true
-	default:
-		return false
-	}
 }
 
 func collectGeneratedUniqueIndexColumns(
