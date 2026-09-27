@@ -41,12 +41,17 @@ type Parser struct {
 	// indexAccessMethod is the USING clause the element being read asked for,
 	// and it lives here for the same reason.
 	indexAccessMethod string
-	lexer             *lexer.Lexer
-	input             string
-	current           lexer.Token
-	previous          lexer.Token
-	startTime         time.Time
-	timeout           time.Duration
+	// columnChecks are the CHECKs the table body being read wrote on its
+	// columns, the ones read at table level included. MySQL's rule for them
+	// needs every column of the table, so they are checked once the body is
+	// read; see [refuseMySQLColumnCheckReferences].
+	columnChecks []columnCheck
+	lexer        *lexer.Lexer
+	input        string
+	current      lexer.Token
+	previous     lexer.Token
+	startTime    time.Time
+	timeout      time.Duration
 
 	dialect      string
 	capabilities capability.Capabilities
@@ -2056,6 +2061,7 @@ func (p *Parser) parseCreateTableBeforeColumnList(table *ast.CreateTableNode) (b
 }
 
 func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
+	p.columnChecks = nil
 	// Parse column definitions and constraints
 	for {
 		// Check for timeout to prevent infinite loops
@@ -2113,7 +2119,10 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	// naming a column the body declares later (`KEYY k (b), b INT`) is caught by
 	// that one. Measured: moving the call inside the loop changes no test.
 	// It is one pass over the columns rather than one per element.
-	return refuseTableElementTypo(table, p.dialect, p.current.Start)
+	if err := refuseTableElementTypo(table, p.dialect, p.current.Start); err != nil {
+		return err
+	}
+	return refuseMySQLColumnCheckReferences(table, p.columnChecks, p.dialect)
 }
 
 // parseCreateTableSuffix reads everything after the column list: table options
@@ -2453,6 +2462,9 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 	checkExpr, err := p.parseCheckExpression()
 	if err != nil {
 		return fmt.Errorf("expected check expression: %w", err)
+	}
+	if table != nil {
+		p.columnChecks = append(p.columnChecks, columnCheck{column: column.Name, expression: checkExpr, position: position})
 	}
 	if column.Check == "" {
 		column.SetCheck(checkExpr)

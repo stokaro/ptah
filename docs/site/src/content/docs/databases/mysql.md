@@ -186,6 +186,13 @@ SQL:
   unnamed column checks, and the column's own name on MariaDB. Measured on
   MySQL 8.4.11 and MariaDB 11.8.9, a table whose columns `a` and `b` each carry
   one holds `e_chk_1` and `e_chk_2` on MySQL, and `a` and `b` on MariaDB.
+- A `CHECK` written on a column may name only that column on MySQL.
+  `CREATE TABLE c (a int, b int CHECK (b > a))` is
+  `ERROR 3813 (HY000): Column check constraint ... references other column`
+  on MySQL 8.4 and 26.7, and so is the same check on a column that
+  `ALTER TABLE` adds or modifies. Ptah refuses such a file when it reads it for
+  MySQL, and the message says to write the check at table level. MariaDB
+  accepts it.
 - Both engines accept `CONSTRAINT` without a name before `PRIMARY KEY`,
   `UNIQUE`, `FOREIGN KEY` and `CHECK`, as in
   `CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id)`. Ptah reads such a clause as

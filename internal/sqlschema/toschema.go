@@ -1227,6 +1227,9 @@ func applyAlterTableAddColumn(
 		}
 		return nil
 	}
+	if err := refuseMySQLColumnCheckReference(field, append(names, field.Name), target); err != nil {
+		return err
+	}
 	nameAddedColumnCheck(&field, target, append(names, field.Name))
 	if field.Check != "" {
 		if err := nameAddedMySQLFamilyCheck(&field.CheckName, &field, target); err != nil {
