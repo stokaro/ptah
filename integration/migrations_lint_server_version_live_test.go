@@ -5,10 +5,12 @@ package integration_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -29,7 +31,7 @@ import (
 // literal would pin the CI image rather than the path (stokaro/ptah#3420).
 func TestMigrationsLintReadsTheServerVersionFromTheDevDatabaseLive(t *testing.T) {
 	c := qt.New(t)
-	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	devURL := postgresScratchDevURL(c, "ptah_lint_version_dev")
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
@@ -50,7 +52,7 @@ func TestMigrationsLintReadsTheServerVersionFromTheDevDatabaseLive(t *testing.T)
 // that wrote down the version it targets gets that one.
 func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *testing.T) {
 	c := qt.New(t)
-	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	devURL := postgresScratchDevURL(c, "ptah_lint_declared_dev")
 	dir := writeServerVersionLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
@@ -66,6 +68,26 @@ func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.ServerVersion, qt.Equals, "13")
 	c.Assert(report.ServerVersion, qt.Not(qt.Equals), serverVersionOf(c, devURL))
+}
+
+// postgresScratchDevURL is an empty PostgreSQL database of this test's own,
+// created now and dropped when the test ends.
+//
+// A lint replay refuses a dev database that holds a table and empties the one
+// it takes, so the shared test database is no dev database: other tests leave
+// tables in it, and whether this one passed would depend on which ran first.
+func postgresScratchDevURL(c *qt.C, prefix string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	admin, err := sql.Open("pgx", adminURL)
+	c.Assert(err, qt.IsNil)
+	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	createE2EDatabase(c, c.Context(), admin, name)
+	c.Cleanup(func() {
+		dropE2EDatabase(c, context.Background(), admin, name)
+		c.Check(admin.Close(), qt.IsNil)
+	})
+	return replaceDatabaseName(c, adminURL, name)
 }
 
 func writeServerVersionLintDir(c *qt.C, t *testing.T) string {
@@ -209,7 +231,7 @@ func databaseInURL(c *qt.C, rawURL, name string) string {
 // (stokaro/ptah#3420).
 func TestMigrationsLintPartialReportKeepsTheResolvedServerVersionLive(t *testing.T) {
 	c := qt.New(t)
-	devURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	devURL := postgresScratchDevURL(c, "ptah_lint_partial_dev")
 	dir := writeFailingReplayLintDir(c, t)
 
 	report, err := migrationlintreport.Build(c.Context(), migrationlintreport.Options{
@@ -222,7 +244,7 @@ func TestMigrationsLintPartialReportKeepsTheResolvedServerVersionLive(t *testing
 		},
 	}, projectconfig.Config{})
 
-	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database.*ptah_lint_partial_absent.*`)
 	c.Assert(report.ServerVersion, qt.Equals, "13")
 	c.Assert(len(report.Findings) > 0, qt.IsTrue,
 		qt.Commentf("the partial report carries what the analysis found before the replay stopped"))

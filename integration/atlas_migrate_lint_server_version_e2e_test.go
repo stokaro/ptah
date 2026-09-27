@@ -11,7 +11,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/atlas"
-	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/lint"
 )
 
@@ -57,7 +56,7 @@ func runCompatLintVersion(c *qt.C, t *testing.T, migrationsDir string) (stdout, 
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--dir", "file://" + migrationsDir,
-		"--dev-url", dbtarget.URL(c, dbtarget.PostgreSQL),
+		"--dev-url", postgresScratchDevURL(c, "ptah_compat_lint_version_dev"),
 		"--latest", "1",
 	})
 	err = cmd.Execute()
@@ -93,7 +92,7 @@ func TestCompatMigrateLintReportsAFallbackTargetOnAReplayErrorE2E(t *testing.T) 
 
 	_, stderr, err := runCompatLintVersionLatest(c, t, dir, "2")
 
-	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database: replay migration 2 on dev database: .*ptah_compat_lint_broken.*`)
 	c.Assert(stderr, qt.Contains,
 		"warning: postgres 99 is newer than the newest measured release line")
 }
@@ -107,7 +106,7 @@ func runCompatLintVersionLatest(c *qt.C, t *testing.T, migrationsDir, latest str
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--dir", "file://" + migrationsDir,
-		"--dev-url", dbtarget.URL(c, dbtarget.PostgreSQL),
+		"--dev-url", postgresScratchDevURL(c, "ptah_compat_lint_version_dev"),
 		"--latest", latest,
 	})
 	err = cmd.Execute()
