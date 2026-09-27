@@ -16,8 +16,8 @@ type StatusOptions struct {
 	AtlasEnv        string
 	RevisionsSchema string
 	// MigrationsEngine names the storage engine the revision table is created
-	// with. Status reads revisions, and reading them initializes the metadata,
-	// so this path creates the table too (stokaro/ptah#2234).
+	// with. Status creates no table, but an engine the revision table cannot
+	// have is refused here as it is on apply (stokaro/ptah#2234).
 	MigrationsEngine string
 	// RevisionVersions maps converted numeric order keys to exact revision
 	// identities. A full mapping may include baseline-squashed history; only
@@ -44,6 +44,17 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	if opts.FS == nil {
 		return StatusResult{}, fmt.Errorf("migrate status requires migration filesystem")
 	}
+	// A status is a read: the pinned community binary v1.3.0 creates nothing
+	// on `migrate status`, measured on MySQL 8.4.11 and PostgreSQL 18
+	// (stokaro/ptah#3881). With the writer in dry-run mode the migrator
+	// inspects the revision table instead of creating it, and an absent table
+	// reads as no revisions. Without it, the status of an empty database
+	// leaves a revision table behind, with the schema or database that holds
+	// it.
+	writer := conn.SchemaWriter()
+	restore := writer.IsDryRun()
+	writer.SetDryRun(true)
+	defer writer.SetDryRun(restore)
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		opts.FS,
