@@ -222,7 +222,7 @@ func seedSecretSource(c *qt.C, ctx context.Context, dbURL string) (*sql.DB, stri
 
 // writeInferenceSpec writes a specification naming that table, and returns the
 // path and the directory that contains it.
-func writeInferenceSpec(c *qt.C, table string) (string, string) {
+func writeInferenceSpec(c *qt.C, table string) (specPath, dir string) {
 	c.Helper()
 	root := c.TempDir()
 	document := fmt.Sprintf(`

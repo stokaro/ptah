@@ -668,7 +668,9 @@ without it comes back tomorrow.
 
 `.golangci.yml` is a strict contract: fix code rather than relaxing thresholds
 or broadening exclusions. Run both passes, `golangci-lint run --fix ./...` then
-`golangci-lint run ./...`, and clean the second-pass fallout by hand.
+`golangci-lint run ./...`, and clean the second-pass fallout by hand. Then run
+both again with `--build-tags=integration`: a tagged file is outside the
+default build, and CI lints both contours, as `make lint-golangci` does.
 
 Ptah is pre-GA: prefer the cleaner architecture over an alias, wrapper or
 fallback kept for an older internal shape, and update callers, tests and docs.
@@ -689,9 +691,9 @@ rewrite, which re-wraps what it touches.
 
 **Discover the module list, never write it out.** `scripts/list-go-modules.sh`
 is the answer, from `git ls-files`; `make lint` consumes it, and
-`scripts/check-go-module-lint-coverage.sh` fails when a tracked module is
-missing from any workflow job that lints. Any "we do X for every module" claim
-needs discovery or a check.
+`scripts/check-go-module-lint-coverage.sh` fails when a workflow job that lints
+misses a tracked module in either build-tag contour. Any "we do X for every
+module" claim needs discovery or a check.
 
 Every package carries a `// Package <name>` comment that says what it does and
 where it sits, grounded in the code (`ST1000`); filler is not acceptable.

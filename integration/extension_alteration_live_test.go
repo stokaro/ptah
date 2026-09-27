@@ -158,7 +158,7 @@ func TestExtensionAlterationRefusalsMatchTheServerLive(t *testing.T) {
 
 		live, readErr := conn.Reader().ReadSchemaContext(ctx)
 		c.Assert(readErr, qt.IsNil)
-		byName := map[string]bool{}
+		byName := make(map[string]bool)
 		for _, extension := range live.Extensions {
 			byName[extension.Name] = extension.Relocatable
 		}

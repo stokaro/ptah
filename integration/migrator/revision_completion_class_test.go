@@ -163,7 +163,6 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 // target with one would be asserting that signing off a rolled-back body is
 // fine.
 func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testing.T) {
-
 	repaired := make(map[string]bool)
 	for _, target := range revisionCompletionRepairTargets() {
 		repaired[target.name] = true

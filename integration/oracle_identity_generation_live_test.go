@@ -31,7 +31,10 @@ func TestOracleReaderRecordsIdentityGenerationLive(t *testing.T) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	// A cleanup rather than a defer: the tables below are dropped by cleanups
+	// through conn, and cleanups run after the function's defers, so a deferred
+	// close would take conn away before the drops run.
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	suffix := time.Now().UnixNano() % 100000000
 	tests := []struct {
@@ -45,7 +48,7 @@ func TestOracleReaderRecordsIdentityGenerationLive(t *testing.T) {
 	}
 	for _, test := range tests {
 		dropOracleTable(ctx, conn, test.table)
-		defer dropOracleTable(context.WithoutCancel(ctx), conn, test.table)
+		c.Cleanup(func() { dropOracleTable(context.WithoutCancel(ctx), conn, test.table) })
 		c.Assert(conn.SchemaWriter().ExecuteSQL(ctx, fmt.Sprintf(
 			`CREATE TABLE %s (ID NUMBER(10) GENERATED %s AS IDENTITY PRIMARY KEY, CODE VARCHAR2(40) NOT NULL)`,
 			test.table, test.generation)), qt.IsNil)

@@ -89,7 +89,7 @@ func TestPostgresApplyDeclaredRowsE2E(t *testing.T) {
 	rows, err := targetDB.QueryContext(ctx, "SELECT code, name FROM regions ORDER BY code")
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
-	declared := map[string]string{}
+	declared := make(map[string]string)
 	for rows.Next() {
 		var code, name string
 		c.Assert(rows.Scan(&code, &name), qt.IsNil)

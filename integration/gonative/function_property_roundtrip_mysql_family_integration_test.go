@@ -505,12 +505,12 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(live.Functions, qt.HasLen, 2)
 
-			function := liveRoutineOfKind(c, live.Functions, false)
+			function := liveRoutineOfKind(c, live.Functions, schemamodel.FunctionKindFunction)
 			c.Check(function.Parameters, qt.Equals, "a int")
 			c.Check(function.Parameters, qt.Not(qt.Contains), "p_x")
 			c.Check(function.Parameters, qt.Not(qt.Contains), "p_y")
 
-			procedure := liveRoutineOfKind(c, live.Functions, true)
+			procedure := liveRoutineOfKind(c, live.Functions, schemamodel.FunctionKindProcedure)
 			c.Check(procedure.Parameters, qt.Contains, "p_x")
 			c.Check(procedure.Parameters, qt.Not(qt.Contains), "a int")
 
@@ -535,6 +535,20 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 	}
 }
 
+// liveRoutineOfKind picks the one routine whose kind is kind, failing when the
+// read holds none or more than one.
+func liveRoutineOfKind(c *qt.C, routines []catalog.Function, kind string) catalog.Function {
+	c.Helper()
+	var found []catalog.Function
+	for _, routine := range routines {
+		if strings.EqualFold(strings.TrimSpace(routine.Kind), kind) {
+			found = append(found, routine)
+		}
+	}
+	c.Assert(found, qt.HasLen, 1)
+	return found[0]
+}
+
 // TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration is the
 // acceptance for the one outcome that must never ship: a drop whose paired
 // create is skipped.
@@ -555,20 +569,6 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 //
 // The count is read from the catalog after a SUCCESSFUL apply, because that is
 // the failure mode: the migration reports success.
-// liveRoutineOfKind picks the one routine of the asked-for kind, failing when
-// the read holds none or more than one.
-func liveRoutineOfKind(c *qt.C, routines []catalog.Function, procedures bool) catalog.Function {
-	c.Helper()
-	var found []catalog.Function
-	for _, routine := range routines {
-		if strings.EqualFold(strings.TrimSpace(routine.Kind), "procedure") == procedures {
-			found = append(found, routine)
-		}
-	}
-	c.Assert(found, qt.HasLen, 1)
-	return found[0]
-}
-
 func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.T) {
 	tests := []struct {
 		name     string

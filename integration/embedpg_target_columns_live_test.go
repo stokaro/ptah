@@ -180,7 +180,7 @@ func embeddingColumns(
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	found := map[string]string{}
+	found := make(map[string]string)
 	for rows.Next() {
 		var name, kind string
 		c.Assert(rows.Scan(&name, &kind), qt.IsNil)

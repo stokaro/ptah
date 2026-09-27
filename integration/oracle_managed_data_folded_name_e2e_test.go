@@ -202,7 +202,7 @@ func oracleFoldedRows(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConne
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	got := []string{}
+	got := make([]string, 0)
 	for rows.Next() {
 		var code, label string
 		c.Assert(rows.Scan(&code, &label), qt.IsNil)

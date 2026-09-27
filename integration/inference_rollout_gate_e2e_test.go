@@ -218,8 +218,7 @@ func runPtahForStatusWithEnv(
 	if err == nil {
 		return string(output), 0
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return string(output), exitErr.ExitCode()
 	}
 	// Something other than the process refusing: report it as the failure it

@@ -37,7 +37,7 @@ func TestSchemaPlanTest_ExternalStepNeedsTheAuthorization(t *testing.T) {
 	t.Run("refused without the variable", func(t *testing.T) {
 		c := qt.New(t)
 
-		err, output := runCompatPlanTest(c, dir)
+		output, err := runCompatPlanTest(c, dir)
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(output, qt.Contains, dbtest.AllowExternalCommandsEnvVar)
@@ -47,7 +47,7 @@ func TestSchemaPlanTest_ExternalStepNeedsTheAuthorization(t *testing.T) {
 		c := qt.New(t)
 		t.Setenv(dbtest.AllowExternalCommandsEnvVar, "1")
 
-		err, output := runCompatPlanTest(c, dir)
+		output, err := runCompatPlanTest(c, dir)
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output: %s", output))
 		c.Assert(output, qt.Contains, "external output")
@@ -71,9 +71,9 @@ test "plan" "runs a program" {
 	return dir
 }
 
-// runCompatPlanTest executes `schema plan test` over dir and returns its error
-// and combined output.
-func runCompatPlanTest(c *qt.C, dir string) (error, string) {
+// runCompatPlanTest executes `schema plan test` over dir and returns its
+// combined output and its error.
+func runCompatPlanTest(c *qt.C, dir string) (string, error) {
 	cmd := atlas.NewCompatCommand("atlas")
 
 	var out bytes.Buffer
@@ -83,5 +83,5 @@ func runCompatPlanTest(c *qt.C, dir string) (error, string) {
 
 	err := cmd.Execute()
 	c.Logf("schema plan test output: %s", out.String())
-	return err, out.String()
+	return out.String(), err
 }

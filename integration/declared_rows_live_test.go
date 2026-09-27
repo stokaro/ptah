@@ -460,8 +460,11 @@ func TestDeclaredRowsWidenedDeclarationLive(t *testing.T) {
 	conn, done := declaredRowsDatabase(c, ctx, "widen")
 	defer done()
 
-	applyDeclaredRows(c, ctx, conn, declaredWidthSchema(false))
-	applyDeclaredRows(c, ctx, conn, declaredWidthSchema(true))
+	applyDeclaredRows(c, ctx, conn, declaredWidthSchema())
+	applyDeclaredRows(c, ctx, conn, declaredWidthSchema(declaredColumn{
+		field: schemamodel.Field{StructName: "Setting", FieldName: "Note", Name: "note", Type: "TEXT", Nullable: true},
+		value: schemamodel.ManagedValue{Tag: "str", Text: "added with the column"},
+	}))
 
 	c.Assert(declaredRowLabel(c, ctx, conn, "one"), qt.Equals, "Retention window")
 	c.Assert(declaredRowNote(c, ctx, conn, "one"), qt.Equals, "added with the column")
@@ -480,9 +483,17 @@ func declaredRowNote(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnec
 	return note
 }
 
-// declaredWidthSchema is one declared row, with a second column and its value
-// arriving in the wider revision.
-func declaredWidthSchema(wide bool) *schemamodel.Database {
+// declaredColumn is a column a revision adds to the table, with the value the
+// declared row gives it.
+type declaredColumn struct {
+	field schemamodel.Field
+	value schemamodel.ManagedValue
+}
+
+// declaredWidthSchema is one declared row. Each extra column arrives in the
+// table and in the row together, which is how the wider revision differs from
+// the first one.
+func declaredWidthSchema(extra ...declaredColumn) *schemamodel.Database {
 	fields := []schemamodel.Field{
 		{StructName: "Setting", FieldName: "Code", Name: "code", Type: "TEXT", Primary: true},
 		{StructName: "Setting", FieldName: "Label", Name: "label", Type: "TEXT"},
@@ -491,11 +502,9 @@ func declaredWidthSchema(wide bool) *schemamodel.Database {
 		"code":  {Tag: "str", Text: "one"},
 		"label": {Tag: "str", Text: "Retention window"},
 	}
-	if wide {
-		fields = append(fields, schemamodel.Field{
-			StructName: "Setting", FieldName: "Note", Name: "note", Type: "TEXT", Nullable: true,
-		})
-		row["note"] = schemamodel.ManagedValue{Tag: "str", Text: "added with the column"}
+	for _, column := range extra {
+		fields = append(fields, column.field)
+		row[column.field.Name] = column.value
 	}
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Setting", Name: "settings"}},

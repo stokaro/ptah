@@ -343,12 +343,27 @@ jobs:
           args: --timeout=30m
           version: v2.14.0
 
+      # The second build-tag contour. A file behind //go:build integration is
+      # not in the default build, so the step above never reads it. qtlint and
+      # nolintguard ran both contours while golangci-lint ran one, and 84
+      # findings sat in integration/ with this job green (stokaro/ptah#3882).
+      - name: Golint (integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
+          version: v2.14.0
+
       # The action lints one directory per invocation, so a nested module needs
-      # its own step. scripts/check-go-module-lint-coverage.sh fails when a
-      # tracked module has none, which is what keeps this list from going stale
-      # the way it already had: golangci-lint ran only from the repository root,
-      # so the gorm example was unlinted, as was the testkit module before it
-      # moved to stokaro/ptah-testkit.
+      # its own step, one per contour. scripts/check-go-module-lint-coverage.sh
+      # fails when a tracked module misses either, which is what keeps this list
+      # from going stale the way it already had: golangci-lint ran only from the
+      # repository root, so the gorm example was unlinted, as was the testkit
+      # module before it moved to stokaro/ptah-testkit.
+      #
+      # Neither nested module tracks an integration-tagged file today, so their
+      # second runs read the same files as their first. They are cheap next to
+      # the root module's runs, and they are what lints a tagged file added
+      # there later without anyone having to remember this list.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
@@ -356,10 +371,24 @@ jobs:
           version: v2.14.0
           working-directory: examples/orm-loaders/gorm
 
+      - name: Golint (gorm example, integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
+          version: v2.14.0
+          working-directory: examples/orm-loaders/gorm
+
       - name: Golint (documentation source fixture)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
+          version: v2.14.0
+          working-directory: docs/site/fixtures/source-equivalence
+
+      - name: Golint (documentation source fixture, integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
           version: v2.14.0
           working-directory: docs/site/fixtures/source-equivalence
 
@@ -459,12 +488,26 @@ jobs:
           args: --timeout=30m
           version: v2.14.0
 
+      # Both build-tag contours here too, for the reason the Ubuntu job gives:
+      # a tagged file is outside the default build. This run reads the tagged
+      # files as Windows compiles them, which neither Ubuntu run can.
+      - name: Golint (integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
+          version: v2.14.0
+
       # The action lints one directory per invocation, so a nested module needs
-      # its own step. scripts/check-go-module-lint-coverage.sh fails when a
-      # tracked module has none, which is what keeps this list from going stale
-      # the way it already had: golangci-lint ran only from the repository root,
-      # so the gorm example was unlinted, as was the testkit module before it
-      # moved to stokaro/ptah-testkit.
+      # its own step, one per contour. scripts/check-go-module-lint-coverage.sh
+      # fails when a tracked module misses either, which is what keeps this list
+      # from going stale the way it already had: golangci-lint ran only from the
+      # repository root, so the gorm example was unlinted, as was the testkit
+      # module before it moved to stokaro/ptah-testkit.
+      #
+      # Neither nested module tracks an integration-tagged file today, so their
+      # second runs read the same files as their first. They are cheap next to
+      # the root module's runs, and they are what lints a tagged file added
+      # there later without anyone having to remember this list.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
@@ -472,9 +515,23 @@ jobs:
           version: v2.14.0
           working-directory: examples/orm-loaders/gorm
 
+      - name: Golint (gorm example, integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
+          version: v2.14.0
+          working-directory: examples/orm-loaders/gorm
+
       - name: Golint (documentation source fixture)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
+          version: v2.14.0
+          working-directory: docs/site/fixtures/source-equivalence
+
+      - name: Golint (documentation source fixture, integration contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration
           version: v2.14.0
           working-directory: docs/site/fixtures/source-equivalence

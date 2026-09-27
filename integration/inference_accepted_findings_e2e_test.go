@@ -234,20 +234,20 @@ func blockingSummaries(c *qt.C, ctx context.Context, specPath, dbURL, runID stri
 
 	var summaries []string
 	for line := range strings.SplitSeq(output, "\n") {
-		after, found := strings.CutPrefix(strings.TrimSpace(line), "- [")
-		layer, rest, split := strings.Cut(after, "] ")
-		summaries = appendBlocking(summaries, found && split, layer, rest)
+		summaries = appendBlocking(summaries, line)
 	}
 	return summaries
 }
 
-// appendBlocking adds one printed finding when it is a blocking one.
+// appendBlocking adds one printed line when it is a blocking finding.
 //
 // A helper rather than a conditional in the loop above, which the style rule
 // forbids: the branch is which lines are findings and which are the report's
 // other bullets.
-func appendBlocking(summaries []string, matched bool, layer, summary string) []string {
-	if !matched || !strings.HasSuffix(layer, "/blocking") {
+func appendBlocking(summaries []string, line string) []string {
+	after, found := strings.CutPrefix(strings.TrimSpace(line), "- [")
+	layer, summary, split := strings.Cut(after, "] ")
+	if !found || !split || !strings.HasSuffix(layer, "/blocking") {
 		return summaries
 	}
 	return append(summaries, summary)

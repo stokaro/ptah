@@ -41,7 +41,7 @@ func TestMySQLLiveRoleReadDegradesWithoutPrivilege(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	tableName := fmt.Sprintf("ptah_priv_t_%d", suffix)
 	account := fmt.Sprintf("ptah_priv_%d", suffix)
-	const password = "ptah_priv_password"
+	const password = "ptah_priv_password" // #nosec G101 -- the password of an account this test creates and drops
 
 	_, err = admin.ExecContext(ctx, fmt.Sprintf("CREATE TABLE `%s` (id INT PRIMARY KEY)", tableName))
 	c.Assert(err, qt.IsNil)
