@@ -82,15 +82,15 @@ func SurfaceDifferences() []SurfaceDifference {
 		{
 			Field: "schemamodel.Schema.Charset", RenderOnly: true,
 			Reason: "only the MySQL-family renderer writes DEFAULT CHARACTER SET, " +
-				"and a plan creates no schema on those dialects at all: a schema there IS " +
-				"a database, so `internal/planner/dialects/mysql.planSchemaPreconditions` " +
-				"runs on SQL Server alone and creating one is an administrative act " +
-				"outside what a schema migration owns. The field reaches every " +
+				"and a plan creates a schema on those dialects only for a whole server: a schema " +
+				"there IS a database, and a plan creates one only against a connection that " +
+				"selected no database (stokaro/ptah#3789). This measurement plans without a " +
+				"connection, so it never plans a server. The field reaches every " +
 				"CREATE SCHEMA a plan does emit (stokaro/ptah#2618)",
 		},
 		{
 			Field: "schemamodel.Schema.Collate", RenderOnly: true,
-			Reason: "the collation half of the same decision, unreachable on a plan for the same reason",
+			Reason: "the collation half of the same decision, unreachable on this plan for the same reason",
 		},
 		{
 			Field: "schemamodel.ExtendedProperty.Comment", RenderOnly: true,

@@ -421,7 +421,7 @@ func applySchema(
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.dbURL)
 	if err != nil {
 		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err)
 	}

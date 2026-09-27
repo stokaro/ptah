@@ -1264,6 +1264,7 @@ func getDatabaseInfo(
 		// which only ConnectToServer opens: the session selects no database,
 		// and the empty schema is what every realm question reads it by.
 		info.Schema = strings.TrimPrefix(parsedURL.Path, "/")
+		info.WholeServer = info.Schema == ""
 		// A MySQL-family schema is a database, so no static dialect rule can
 		// name the one that owns an unqualified table the way "public" and
 		// "main" do; only the connection knows it. Leaving the field empty is

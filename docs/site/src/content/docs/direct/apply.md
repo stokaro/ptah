@@ -509,6 +509,16 @@ names no plan, because the gate runs before the file is decoded.
 - Declining the confirmation prompt cancels with `Schema apply canceled.` and
   no changes.
 
+## A whole MySQL or MariaDB server
+
+A `--db-url` that names no MySQL or MariaDB database is the whole server. The
+plan creates each database the desired schema declares and the server lacks,
+changes a declared character set or collation, and drops every other user
+database. When the server holds databases the file does not describe, name
+the ones it does describe with `--schemas`, and the others are left alone.
+[Atlas schema commands](../../atlas/schema-commands/#a-whole-mysql-or-mariadb-server)
+gives the rules, which both surfaces share.
+
 ## Limitations
 
 - `--schema-file` accepts local SQL, YAML, HCL, and DBML files plus OCI schema

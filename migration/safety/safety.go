@@ -86,6 +86,11 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	}
 
 	var findings []Finding
+	// A dropped database takes every object in it; a changed character set or
+	// collation changes what a table created later in the database defaults to.
+	add(&findings, "schemas_added", len(diff.SchemasAdded), Safe)
+	add(&findings, "schemas_removed", len(diff.SchemasRemoved), Destructive)
+	add(&findings, "schemas_modified", len(diff.SchemasModified), Warning)
 	add(&findings, "tables_added", len(diff.TablesAdded), Safe)
 	add(&findings, "tables_removed", len(diff.TablesRemoved), Destructive)
 	add(&findings, "enums_added", len(diff.EnumsAdded), Safe)
@@ -938,6 +943,8 @@ var destructivePrefixes = []struct {
 	reason string
 }{
 	{words: []string{"DROP", "TABLE"}, reason: "DROP TABLE removes the table and all rows"},
+	{words: []string{"DROP", "DATABASE"}, reason: "DROP DATABASE removes the database and every object in it"},
+	{words: []string{"DROP", "SCHEMA"}, reason: "DROP SCHEMA removes the schema and every object in it"},
 	{words: []string{"CREATE", "OR", "REPLACE", "TABLE"}, reason: replaceTableReason},
 	{words: []string{"REPLACE", "TABLE"}, reason: replaceTableReason},
 	{words: []string{"DROP", "TYPE"}, reason: "DROP TYPE removes an existing database type"},

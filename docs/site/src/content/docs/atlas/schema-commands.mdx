@@ -242,7 +242,9 @@ community binary reads it
 - A foreign key to a table of its own database names the table alone in the
   JSON format, as the community binary does. One to another database keeps
   the database, which the community binary drops.
-- The other verbs refuse the URL before connecting.
+- `schema apply`, `schema diff` and `schema clean` read the URL the same way;
+  see [A whole MySQL or MariaDB server](#a-whole-mysql-or-mariadb-server). The
+  `migrate` verbs refuse it before connecting.
 
 A URL that names a database reads that database whatever `--schema` says, as
 the community binary does. `--format`
@@ -1040,6 +1042,48 @@ evaluated `atlas.hcl` env.
 All `--to` values must be one source kind, and an unsupported scheme fails
 before the target database is contacted.
 
+### A whole MySQL or MariaDB server
+
+A `--url` that names no MySQL or MariaDB database is the whole server, as on
+the community binary. The plan compares the databases as well as the objects in
+them:
+
+- A database the desired schema declares and the server lacks is created before
+  anything in it. Ptah writes `CREATE SCHEMA IF NOT EXISTS`, which MySQL and
+  MariaDB read as `CREATE DATABASE`.
+- A declared character set or collation that differs is changed with
+  `ALTER DATABASE`. One the declaration leaves out is the server's to choose.
+- A database the server holds and the desired schema does not declare is
+  dropped with everything in it, after every other statement.
+- The server's own databases, such as `mysql` and `sys`, are never planned.
+
+`--schema` limits the run to the databases it names. Use it to apply a file
+that describes some of the databases on a shared server:
+
+```bash
+ptah-compat schema apply --url "mysql://root:pass@localhost:3306/" \
+  --to file://schema.hcl --schema app --schema audit
+```
+
+A database that a declared table is in counts as declared, with or without a
+`schema` block of its own. A table that names no database is refused, because
+the server has no database to create it in; the community binary refuses an
+HCL table without a schema too. Applied a second time, the plan is empty. The
+community binary v1.3.0 plans the table collation and the foreign key index a
+second time, measured on MySQL 8.4.11 and MariaDB 11.8.9.
+
+`--to` may name a whole server too, and that server is the desired schema. A
+whole server and one database are refused together, in either order, with the
+community binary's message:
+
+```text
+Error: cannot diff a schema "app" with a database connection
+```
+
+A `--dev-url` beside a whole server is refused before the dev database is
+contacted. Replaying a desired schema on a dev server is not supported yet
+([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)).
+
 ### A registry artifact as the desired state
 
 `atlas://<repository>` names a schema artifact held in a registry. The
@@ -1729,6 +1773,14 @@ as on Atlas. Both reset the dev database first, so a database-URL side must not
 be the dev database: Ptah compares the URLs, then asks each server which
 database the session selected, and refuses before the reset when they match.
 
+Two database URLs that each name no MySQL or MariaDB database compare two whole
+servers, databases included, as the community binary compares them: a database
+only `--to` holds is created, one only `--from` holds is dropped, and a
+character set or collation that differs is changed. `--schema` limits both
+sides to the databases it names. A whole server and one database are refused
+together, in either order, with the community binary's message, as
+[`schema apply`](#a-whole-mysql-or-mariadb-server) refuses them.
+
 PostgreSQL-family server namespaces are not migration-managed desired state.
 An authored `schema "pg_catalog" {}`, `schema "information_schema" {}`, or
 CockroachDB `schema "crdb_internal" {}` is refused as a declaration. A database
@@ -1900,6 +1952,15 @@ An implicit sequence is not independently selectable: including it without its
 owning table, or excluding it while the table remains selected, is refused
 before cleanup mutates the database. Select or exclude the owning table so the
 child sequence rides with the same decision.
+
+A `--url` that names no MySQL or MariaDB database cleans the whole server, as
+on the community binary: every user database is dropped, and the server's own
+databases, such as `mysql` and `sys`, are kept. A foreign key from one database
+into another is dropped first. The community binary v1.3.0 drops the databases
+in name order instead, and stops with MySQL error 3730 when a database another
+one references comes first, measured on MySQL 8.4.11. `--include` and `--exclude` are refused at that
+scope, because a selector the command ignored would drop what it named; name a
+database in the URL to clean part of one.
 
 :::danger
 Without `--dry-run`, cleanup drops the listed objects after confirmation

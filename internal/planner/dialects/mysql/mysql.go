@@ -1286,8 +1286,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 
 	// 0. Create the schemas the added objects live in, before any of them.
 	// SQL Server only; the reason a schema is not created on the other
-	// dialects of this planner is on [Planner.planSchemaPreconditions].
+	// dialects of this planner is on [Planner.planSchemaPreconditions]. On
+	// MySQL and MariaDB a comparison of a whole server creates and changes
+	// databases instead; see [Planner.planServerSchemas].
 	result = p.planSchemaPreconditions(result, diff)
+	result, err = p.planServerSchemas(result, diff)
+	if err != nil {
+		return nil, err
+	}
 
 	// 0a. Name the declared objects this target cannot host, before anything
 	// else that emits SQL, mirroring the order `schema render` emits them in.
@@ -1429,6 +1435,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 
 	// 8. Handle enum removals (MySQL-specific warnings)
 	result = p.handleEnumRemovals(result, diff)
+
+	// 9. Drop the databases a comparison of a whole server removed, after
+	// every object in them and every key into them is gone.
+	result = p.removeServerSchemas(result, diff)
 
 	return result, nil
 }

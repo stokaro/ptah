@@ -1745,6 +1745,9 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
+		return nil, err
+	}
 	var result []ast.Node
 	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
 		return nil, err

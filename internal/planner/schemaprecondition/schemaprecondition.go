@@ -1,5 +1,6 @@
 // Package schemaprecondition builds the CREATE SCHEMA node a migration plan
-// emits before the objects that are declared inside that schema.
+// emits before the objects that are declared inside that schema, and refuses a
+// database change a planner does not plan.
 //
 // It exists so that the two planners which emit such a node -- the PostgreSQL
 // family's and SQL Server's -- construct it the same way. Both derive the
@@ -12,9 +13,13 @@
 package schemaprecondition
 
 import (
+	"fmt"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Node returns the creation for one schema, carrying what the declaration says
@@ -71,4 +76,17 @@ func find(name string, declared []schemamodel.Schema, semantics identifier.Seman
 		found = &declared[i]
 	}
 	return found
+}
+
+// RefuseServerSchemas refuses a diff that creates, drops or changes a
+// database, for a planner of dialect that plans no databases. The comparison
+// records those changes only for a whole MySQL or MariaDB server
+// (stokaro/ptah#3789), so another planner reaches one only through a diff
+// built by hand, and planning nothing would report the two sides equal.
+func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil || len(diff.SchemasAdded)+len(diff.SchemasRemoved)+len(diff.SchemasModified) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: the diff creates, drops or changes a database, which only a MySQL or MariaDB plan of a whole server does; the %s planner plans none",
+		ptaherr.ErrUnsupportedFeature, dialect)
 }

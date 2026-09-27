@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/migration/schemadiff/difftypes"
 )
 
@@ -89,6 +90,9 @@ func (p *Planner) capabilities() capability.Capabilities {
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if err := schemaprecondition.RefuseServerSchemas(platform.ClickHouse, diff); err != nil {
+		return nil, err
+	}
 	var result []ast.Node
 
 	// The identity check alone. Nothing is resolved: an addition carries its

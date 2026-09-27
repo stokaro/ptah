@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqliteforeignkeys"
@@ -52,6 +53,9 @@ func (p *Planner) capabilities() capability.Capabilities {
 }
 
 func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
+		return nil, err
+	}
 	// The identity check alone. Nothing is resolved: an addition carries its
 	// own declaration (stokaro/ptah#2315).
 	if err := indexscope.ValidateDiffWithSemantics(

@@ -48,6 +48,10 @@ SQLite keeps Ptah's revision table. Everything else in the database goes, so
 "ptah migrations up" finds nothing pending against an emptied database. Use
 "ptah migrations baseline" to put the recorded history back in step.
 
+A MySQL or MariaDB URL that names no database is the whole server: every user
+database is dropped with everything in it, and the server's own databases,
+such as mysql and sys, are kept.
+
 Run --dry-run first. It connects, reports how many objects would be dropped,
 and changes nothing.
 
@@ -101,7 +105,7 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
@@ -109,6 +113,11 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	defer dbschema.CloseAndWarn(conn)
 
 	fmt.Fprintf(out, "Connected to %s database successfully!\n", conn.Info().Dialect)
+	if schemaclean.IsServer(conn) {
+		// The URL names no database, so the scope is the server: every user
+		// database is dropped whole (stokaro/ptah#3789).
+		fmt.Fprintln(out, "The URL names no database: every user database on the server is dropped.")
+	}
 	fmt.Fprintln(out)
 
 	plan, err := schemaclean.Inspect(cmd.Context(), conn)

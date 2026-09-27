@@ -1085,6 +1085,15 @@ type ServerInfo struct {
 	// dialect has a selectable schema, a URL naming one selects it here.
 	Schema string `json:"schema"`
 
+	// WholeServer reports a connection to a whole MySQL or MariaDB server:
+	// one opened from a URL that names no database, which
+	// dbschema.ConnectToServer accepts. Schema is empty then, a read of the
+	// connection describes every user database with each object under the
+	// database it is in, and a comparison against it creates and drops
+	// databases. A ServerInfo built without a connection leaves it false: an
+	// empty Schema alone does not make a server.
+	WholeServer bool `json:"whole_server,omitempty"`
+
 	// URL is the database connection URL the connection was opened from, with
 	// whatever credentials it carried. Callers that reconnect to the same
 	// target read it -- a dev-database URL, a second session for an online DDL

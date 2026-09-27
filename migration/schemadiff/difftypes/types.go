@@ -943,6 +943,25 @@ type SchemaDiff struct {
 	// conservative offline defaults.
 	IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
 
+	// SchemasAdded are the schemas a whole-server comparison creates: on
+	// MySQL and MariaDB, the databases the desired state declares, or puts a
+	// table or a sequence in, and the server does not hold, each with the
+	// character set and collation the declaration gives it. Only a comparison
+	// of a whole MySQL-family server fills it; a comparison scoped to one
+	// database or one schema never does.
+	SchemasAdded []schemamodel.Schema `json:"schemas_added,omitempty"`
+
+	// SchemasRemoved are the schemas, by name, that a whole-server comparison
+	// drops: on MySQL and MariaDB, the user databases the server holds and
+	// the desired state neither declares nor puts a table or a sequence in.
+	// Dropping one drops every object in it.
+	SchemasRemoved []string `json:"schemas_removed,omitempty"`
+
+	// SchemasModified are the schemas both sides hold whose character set or
+	// collation the desired state declares differently, on a whole-server
+	// comparison of MySQL or MariaDB.
+	SchemasModified []SchemaChange `json:"schemas_modified,omitempty"`
+
 	// TablesAdded is the tables that exist in the target schema and not in
 	// the current database, each carried as the [TableCreation] CREATE TABLE
 	// renders from. Names gives the table spellings, and the JSON stays the
@@ -1530,7 +1549,8 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //		log.Println("No schema changes detected")
 //	}
 func (d *SchemaDiff) HasChanges() bool {
-	return d.hasTableChanges() ||
+	return d.hasSchemaChanges() ||
+		d.hasTableChanges() ||
 		d.hasEnumChanges() ||
 		d.hasIndexChanges() ||
 		d.hasExtensionChanges() ||
@@ -1548,6 +1568,28 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasRoleChanges() ||
 		d.hasConstraintChanges() ||
 		len(d.ObjectCommentsChanged) > 0
+}
+
+// SchemaChange is a schema whose attributes a whole-server comparison
+// changes: on MySQL and MariaDB, the default character set and collation of a
+// database, the attributes `ALTER DATABASE` sets.
+type SchemaChange struct {
+	// Name is the schema.
+	Name string `json:"name"`
+	// Charset and Collate are the values the desired state declares. A blank
+	// one is an attribute the declaration leaves to the server, and it is not
+	// changed.
+	Charset string `json:"charset,omitempty"`
+	Collate string `json:"collate,omitempty"`
+	// CurrentCharset and CurrentCollate are the values the server holds.
+	CurrentCharset string `json:"current_charset,omitempty"`
+	CurrentCollate string `json:"current_collate,omitempty"`
+}
+
+// hasSchemaChanges reports whether a whole-server comparison creates, drops
+// or changes a schema.
+func (d *SchemaDiff) hasSchemaChanges() bool {
+	return len(d.SchemasAdded) > 0 || len(d.SchemasRemoved) > 0 || len(d.SchemasModified) > 0
 }
 
 // hasTableChanges returns true if there are any table-related changes

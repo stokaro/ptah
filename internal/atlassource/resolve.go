@@ -53,6 +53,12 @@ type ResolveOptions struct {
 	// With a Dialect read from a scheme, the source is compared by its scheme
 	// alone.
 	DialectFromServer bool
+	// ServerScope reads a database source whose MySQL-family URL names no
+	// database as the whole server, every user database under its own name
+	// (stokaro/ptah#3789). Without it such a URL is refused, as it is by a
+	// caller written for one database. It never reaches the dev database,
+	// which is reset.
+	ServerScope bool
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
@@ -155,6 +161,9 @@ type State struct {
 	// that schema or an object in it (stokaro/ptah#1703). False for a local
 	// schema file, which names no URL to be scoped by.
 	RealmScoped bool
+	// WholeServer reports that a database source is a whole MySQL or MariaDB
+	// server; see [catalog.ServerInfo.WholeServer].
+	WholeServer bool
 }
 
 // Resolve materializes the set's desired state. Local schema files load
@@ -326,7 +335,11 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 	if err := s.ensureDialect(opts); err != nil {
 		return err
 	}
-	conn, err := connectDatabase(ctx, s.Sources[0].Raw, opts.ConnectTimeout)
+	connect := dbschema.ConnectToDatabase
+	if opts.ServerScope {
+		connect = dbschema.ConnectToServer
+	}
+	conn, err := connectWith(ctx, s.Sources[0].Raw, opts.ConnectTimeout, connect)
 	if err != nil {
 		return fmt.Errorf("connect to %s database: %w", s.Flag, err)
 	}
@@ -360,6 +373,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
+		WholeServer:   conn.Info().WholeServer,
 	}, conn)
 }
 
@@ -527,12 +541,23 @@ func connectDatabase(
 	rawURL string,
 	timeout time.Duration,
 ) (*dbschema.DatabaseConnection, error) {
+	return connectWith(ctx, rawURL, timeout, dbschema.ConnectToDatabase)
+}
+
+// connectWith opens rawURL with connect, bounding the connection attempt by
+// timeout when there is one.
+func connectWith(
+	ctx context.Context,
+	rawURL string,
+	timeout time.Duration,
+	connect func(context.Context, string) (*dbschema.DatabaseConnection, error),
+) (*dbschema.DatabaseConnection, error) {
 	if timeout <= 0 {
-		return dbschema.ConnectToDatabase(ctx, rawURL)
+		return connect(ctx, rawURL)
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return dbschema.ConnectToDatabase(connectCtx, rawURL)
+	return connect(connectCtx, rawURL)
 }
 
 // CaptureVerifiedMigrationDir returns one stable migration-directory snapshot
