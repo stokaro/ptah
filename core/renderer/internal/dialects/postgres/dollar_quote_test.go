@@ -29,7 +29,7 @@ func TestPostgres_CreateFunction_QuotesTheBodyWithATagItDoesNotHold(t *testing.T
 
 			got := renderPostgres(c, function)
 
-			c.Assert(got, qt.Equals, "CREATE OR REPLACE FUNCTION \"f\"() RETURNS text AS "+test.quote+"\n"+
+			c.Assert(got, qt.Equals, "CREATE FUNCTION \"f\"() RETURNS text AS "+test.quote+"\n"+
 				test.body+"\n"+test.quote+"\nLANGUAGE sql;\n")
 		})
 	}

@@ -79,7 +79,7 @@ func TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles(t *testing.T) {
 	}, {
 		name:      "function",
 		statement: `CREATE FUNCTION f1() RETURNS INT AS $$ SELECT 1 $$ LANGUAGE SQL;`,
-		want:      `CREATE OR REPLACE FUNCTION "f1"() RETURNS int AS $$`,
+		want:      `CREATE FUNCTION "f1"() RETURNS int AS $$`,
 	}, {
 		name:      "trigger executing an existing function",
 		statement: `CREATE TRIGGER tg1 AFTER INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION f1();`,
@@ -101,15 +101,15 @@ func TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles(t *testing.T) {
 // TestLoadAll_TriggerOnAnExistingFunctionDoesNotRedefineIt pins the half of the
 // trigger case that a "the object appears" assertion would miss. A trigger that
 // executes a function it did not define must reference that function, never
-// emit a body for it: rendering CREATE OR REPLACE FUNCTION "f1"() with an empty
-// body would erase whatever f1 actually contains.
+// emit a body for it. A plain CREATE of "f1"() fails on the function that
+// exists, and a replacing one with an empty body erases whatever f1 contains.
 func TestLoadAll_TriggerOnAnExistingFunctionDoesNotRedefineIt(t *testing.T) {
 	c := qt.New(t)
 
 	sql := loadRenderedPostgresSQL(c, `CREATE TRIGGER tg1 AFTER INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION f1();`)
 
 	c.Assert(sql, qt.Contains, `EXECUTE FUNCTION "f1"();`)
-	c.Assert(sql, qt.Not(qt.Contains), `CREATE OR REPLACE FUNCTION "f1"()`)
+	c.Assert(sql, qt.Not(qt.Matches), `(?s).*CREATE (OR REPLACE )?FUNCTION "f1"\(\).*`)
 	c.Assert(sql, qt.Not(qt.Contains), "ptah_trigger_t1_tg1")
 }
 

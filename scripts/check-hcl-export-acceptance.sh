@@ -43,7 +43,7 @@ required_sql=(
 	'CREATE SEQUENCE IF NOT EXISTS "app"."order_seq"'
 	'CREATE DOMAIN "app"."email_address"'
 	'CREATE TYPE "app"."postal_address"'
-	'CREATE OR REPLACE FUNCTION "app"."lookup_user"'
+	'CREATE FUNCTION "app"."lookup_user"'
 	'CREATE MATERIALIZED VIEW "app"."user_stats"'
 	'CREATE POLICY "users_policy"'
 	'GRANT SELECT, INSERT ON TABLE "app"."users"'

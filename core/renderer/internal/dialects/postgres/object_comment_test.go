@@ -216,7 +216,7 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			caps: capability.Postgres18(),
 			node: ast.NewCreateFunction("app.f").SetParameters("a integer, b text DEFAULT 'x'").SetReturns("integer").
 				SetLanguage("sql").SetBody("SELECT 1").SetComment("note"),
-			want: "CREATE OR REPLACE FUNCTION \"app\".\"f\"(a integer, b text DEFAULT 'x') RETURNS integer AS $$\nSELECT 1\n$$\n" +
+			want: "CREATE FUNCTION \"app\".\"f\"(a integer, b text DEFAULT 'x') RETURNS integer AS $$\nSELECT 1\n$$\n" +
 				"LANGUAGE sql;\nCOMMENT ON FUNCTION \"app\".\"f\"(a integer, b text) IS 'note';\n",
 		},
 		{
@@ -224,7 +224,7 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			caps: capability.Postgres18(),
 			node: ast.NewCreateFunction("app.p").SetKind("PROCEDURE").SetParameters("INOUT a integer").
 				SetLanguage("sql").SetBody("SELECT 1").SetComment("note"),
-			want: "CREATE OR REPLACE PROCEDURE \"app\".\"p\"(INOUT a integer) AS $$\nSELECT 1\n$$\n" +
+			want: "CREATE PROCEDURE \"app\".\"p\"(INOUT a integer) AS $$\nSELECT 1\n$$\n" +
 				"LANGUAGE sql;\nCOMMENT ON PROCEDURE \"app\".\"p\"(INOUT a integer) IS 'note';\n",
 		},
 		{

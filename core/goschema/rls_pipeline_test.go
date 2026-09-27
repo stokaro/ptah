@@ -146,12 +146,12 @@ type Product struct {
 
 	// Verify function creation SQL
 	// Types lowercased by Function.Canonicalize to match Postgres' canonical form.
-	c.Assert(sqlOutput, qt.Contains, "CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param text)")
+	c.Assert(sqlOutput, qt.Contains, "CREATE FUNCTION set_tenant_context(tenant_id_param text)")
 	c.Assert(sqlOutput, qt.Contains, "RETURNS void")
 	c.Assert(sqlOutput, qt.Contains, "LANGUAGE plpgsql SECURITY DEFINER")
 	c.Assert(sqlOutput, qt.Contains, "PERFORM set_config('app.current_tenant_id', tenant_id_param, false)")
 
-	c.Assert(sqlOutput, qt.Contains, "CREATE OR REPLACE FUNCTION get_current_tenant_id()")
+	c.Assert(sqlOutput, qt.Contains, "CREATE FUNCTION get_current_tenant_id()")
 	// The annotation omits security=, so the parser canonicalizes it to
 	// INVOKER (PostgreSQL's default). Emitting it explicitly is harmless and
 	// makes a later DEFINER → INVOKER switch work via CREATE OR REPLACE.

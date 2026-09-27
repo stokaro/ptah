@@ -562,10 +562,10 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return p.parseCreateOrReplaceView()
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
-		return p.parseCreateRoutine("FUNCTION", statementStart)
+		return replacingRoutine(p.parseCreateRoutine("FUNCTION", statementStart))
 	}
 	if p.current.MatchIdentifierValue("PROCEDURE") {
-		return p.parseCreateRoutine("PROCEDURE", statementStart)
+		return replacingRoutine(p.parseCreateRoutine("PROCEDURE", statementStart))
 	}
 	if p.current.MatchIdentifierValue("DEFINER") {
 		return p.parseCreateDefinerRoutine(statementStart)
@@ -582,6 +582,17 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return trigger.SetReplace(), nil
 	}
 	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
+}
+
+// replacingRoutine keeps OR REPLACE on a routine parsed into a
+// CreateFunctionNode. Without it the node renders as a plain CREATE, which
+// fails on a routine that exists instead of replacing it. A routine kept as
+// raw SQL carries its own text and is returned unchanged.
+func replacingRoutine(node ast.Node, err error) (ast.Node, error) {
+	if function, ok := node.(*ast.CreateFunctionNode); ok && err == nil {
+		return function.SetReplace(), nil
+	}
+	return node, err
 }
 
 // advance moves to the next token.

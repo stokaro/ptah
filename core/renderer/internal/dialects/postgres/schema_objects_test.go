@@ -62,7 +62,7 @@ func TestPostgreSQLRenderer_DefaultTriggerFunctionNameIsTableScoped(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE OR REPLACE FUNCTION ptah_trigger_public_users_set_updated_at()")
+	c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE FUNCTION ptah_trigger_public_users_set_updated_at()")
 	c.Assert(legacyPostgresSQL(sql), qt.Contains, "EXECUTE FUNCTION ptah_trigger_public_users_set_updated_at();")
 	c.Assert(legacyPostgresSQL(sql), qt.Contains, "DROP FUNCTION IF EXISTS ptah_trigger_public_users_set_updated_at();")
 }
