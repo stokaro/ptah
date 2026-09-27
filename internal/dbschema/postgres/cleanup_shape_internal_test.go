@@ -63,7 +63,7 @@ func collectedQueryFor(t *testing.T, caps capability.Capabilities) string {
 	runner := newRecordingRunner(t)
 	writer := NewPostgreSQLWriterForRunnerWithCapabilities(runner, "public", caps)
 	_, _ = writer.collectAllObjects(
-		context.Background(), runner, postgresSchemaCleanupScope([]string{"public"}))
+		context.Background(), runner, postgresSchemaCleanupScope([]string{"public"}, nil))
 	return lastRecordedQuery
 }
 

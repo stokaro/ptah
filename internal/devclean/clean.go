@@ -31,7 +31,8 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 }
 
 // Baseline is what a dev database held before a run, and what the run's
-// cleanups leave in place: the extensions installed there.
+// cleanups leave in place: the extensions installed there, and, when the URL
+// pinned one schema, the other schemas of the database.
 //
 // A dev database's extensions are its environment, as they are to the Atlas
 // community binary, which applies a migration that uses a preinstalled
@@ -41,9 +42,18 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // (stokaro/ptah#3542). An extension the run creates is not in the baseline,
 // so the cleanup after the run still removes it.
 //
+// A URL that pins one schema has the claim judge that schema alone, as the
+// pinned community binary judges it, and that binary leaves the database's
+// other schemas as they were, tables included. A replay empties the engine's
+// whole realm, so without the schemas in the baseline it dropped a table in a
+// schema nobody had checked. A schema the run creates is not in the baseline
+// either, and is removed; an object the run creates inside a kept schema stays.
+//
 // The zero Baseline keeps nothing, which is [DatabaseRealm].
 type Baseline struct {
 	extensions []string
+	// schemas are the schemas outside the one the URL pinned; see above.
+	schemas []string
 	// realm records whether the claim judged the dev database's whole realm
 	// or only its connected schema; see [Reset].
 	realm bool
@@ -54,12 +64,27 @@ func (b Baseline) Extensions() []string {
 	return slices.Clone(b.extensions)
 }
 
+// Schemas returns the schemas a realm cleanup leaves as they are, sorted: the
+// ones outside the schema the URL pinned. It is empty when the URL pinned
+// none.
+func (b Baseline) Schemas() []string {
+	return slices.Clone(b.schemas)
+}
+
 type extensionLister interface {
 	InstalledExtensions(context.Context) ([]string, error)
 }
 
+type schemaLister interface {
+	UserSchemas(context.Context) ([]string, error)
+}
+
 type databaseRealmKeeper interface {
-	DropDatabaseRealmKeeping(context.Context, []string) error
+	DropDatabaseRealmKeepingSchemas(context.Context, []string, []string) error
+}
+
+type schemaKeeper interface {
+	DropAllTablesKeeping(context.Context, []string) error
 }
 
 // Claim takes a dev database for one run. It refuses one that is not clean,
@@ -75,16 +100,28 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	if err := EnsureClean(ctx, conn); err != nil {
 		return Baseline{}, err
 	}
-	realm := migrateclean.RealmScoped(conn)
-	lister, ok := conn.SchemaWriter().(extensionLister)
-	if !ok {
-		return Baseline{realm: realm}, nil
+	baseline := Baseline{realm: migrateclean.RealmScoped(conn)}
+	writer := conn.SchemaWriter()
+	if lister, ok := writer.(extensionLister); ok {
+		extensions, err := lister.InstalledExtensions(ctx)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		baseline.extensions = extensions
 	}
-	extensions, err := lister.InstalledExtensions(ctx)
-	if err != nil {
-		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+	if lister, ok := writer.(schemaLister); ok && !baseline.realm {
+		schemas, err := lister.UserSchemas(ctx)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		pinned := conn.Info().Schema
+		for _, schema := range schemas {
+			if schema != pinned {
+				baseline.schemas = append(baseline.schemas, schema)
+			}
+		}
 	}
-	return Baseline{extensions: extensions, realm: realm}, nil
+	return baseline, nil
 }
 
 // EnsureClean refuses a dev database that holds objects no run of Ptah put
@@ -114,7 +151,8 @@ func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // connected schema when it pinned one. A rehearsal resets its dev database
 // this way before and after it runs, so it removes what it created -- a schema
 // or an extension schema included -- and leaves a schema outside the pinned
-// one alone, since the claim did not look there.
+// one alone, since the claim did not look there. The baseline's extensions
+// stay in either scope.
 //
 // A migration replay resets the engine's realm instead, whatever the URL
 // pinned; see [DatabaseRealmKeeping].
@@ -125,7 +163,14 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 	if baseline.realm {
 		return DatabaseRealmKeeping(ctx, conn, baseline)
 	}
-	return conn.SchemaWriter().DropAllTables(ctx)
+	writer := conn.SchemaWriter()
+	if keeper, ok := writer.(schemaKeeper); ok {
+		return keeper.DropAllTablesKeeping(ctx, baseline.extensions)
+	}
+	if len(baseline.extensions) > 0 {
+		return fmt.Errorf("reset dev database: this writer cannot keep the extensions the database held before the run")
+	}
+	return writer.DropAllTables(ctx)
 }
 
 // DatabaseRealmKeeping is [DatabaseRealm] that leaves the baseline in place.
@@ -138,10 +183,10 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 		return fmt.Errorf("clean dev database realm: nil database connection")
 	}
 	if keeper, ok := conn.SchemaWriter().(databaseRealmKeeper); ok {
-		return keeper.DropDatabaseRealmKeeping(ctx, baseline.extensions)
+		return keeper.DropDatabaseRealmKeepingSchemas(ctx, baseline.extensions, baseline.schemas)
 	}
-	if len(baseline.extensions) > 0 {
-		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions the database held before the run")
+	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 {
+		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions or schemas the database held before the run")
 	}
 	return DatabaseRealm(ctx, conn)
 }
