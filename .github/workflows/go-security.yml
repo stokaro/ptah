@@ -104,12 +104,36 @@ jobs:
           args: --enable-only=gosec --output.sarif.path=gosec.sarif --timeout=30m
           version: v2.14.0
 
+      # The second build-tag contour. A file behind //go:build integration is
+      # outside the default build, so the run above never reads it, and code
+      # scanning showed none of those files (stokaro/ptah#3895). It runs even
+      # when the first run found something, so both reports are uploaded, and
+      # scripts/check-go-module-lint-coverage.sh fails if it is removed.
+      - name: Run gosec (integration contour)
+        if: ${{ !cancelled() }}
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --enable-only=gosec --build-tags=integration --output.sarif.path=gosec-integration.sarif --timeout=30m
+          version: v2.14.0
+
+      # One upload per contour, each under its own category. The pinned
+      # upload-sarif refuses two runs from one tool under one category: it
+      # throws when a directory holds both, and a second upload in the same job
+      # with the same category aborts. A file in both builds is reported by both
+      # configurations, and code scanning shows that as one alert.
       - name: Upload gosec SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@v4.38.2
         with:
           sarif_file: gosec.sarif
           category: gosec
+
+      - name: Upload gosec SARIF (integration contour)
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v4.38.2
+        with:
+          sarif_file: gosec-integration.sarif
+          category: gosec-integration
 
   coverage:
     name: coverage
