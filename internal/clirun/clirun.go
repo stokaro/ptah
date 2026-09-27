@@ -21,16 +21,27 @@
 // test is what the program returns to a shell, calling the command in-process
 // compares an error value against an exit status and cannot see a regression in
 // how one becomes the other.
+//
+// The build outlives every test that uses it, so no test can remove it. The
+// test binary does, through [Main], which a package that builds calls from its
+// TestMain; [Build] refuses to run without it. A test binary that dies before
+// Main returns, killed by its timeout for one, leaves its directory behind, and
+// the next build in any process removes it: see [Build].
 package clirun
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
@@ -88,13 +99,89 @@ type Options struct {
 //
 // The directory is deliberately not cleaned up per test: a t.Cleanup would
 // remove a binary other tests in the same package still hold, and the package
-// has no single owner to hang the removal on. It is a few megabytes under the
-// system temp directory, and a test binary's process is short-lived.
+// has no single owner to hang the removal on. [Main] removes it when the tests
+// end.
 var built sync.Map
+
+// mainRunning records that [Main] is running this test binary, so the build
+// will be removed.
+var mainRunning atomic.Bool
+
+// owned are the directories this process created, each with the open owner
+// file that holds its lock.
+var owned struct {
+	sync.Mutex
+	dirs []ownedDir
+}
+
+type ownedDir struct {
+	path  string
+	owner *os.File
+}
+
+// sweepOnce runs [sweep] on the first compilation of the process.
+var sweepOnce sync.Once
+
+const (
+	// dirPattern names the directory a compilation goes into.
+	dirPattern = "ptah-clirun-*"
+	// ownerName is the file in that directory whose lock says the process that
+	// created the directory still runs.
+	ownerName = "owner.lock"
+	// unownedAge is how old a directory without an owner file must be before a
+	// sweep removes it. A directory has no owner file for a moment after it is
+	// created, and forever when a build from before the owner file created it;
+	// the age tells the two apart. It is longer than any test timeout in this
+	// repository, so a build still in use is not taken.
+	unownedAge = 3 * time.Hour
+)
 
 type buildResult struct {
 	path string
 	err  error
+}
+
+// Main runs the tests of a package that uses [Build] or [Run] and removes every
+// program Build compiled in this process. A package that builds calls it from
+// its TestMain, in place of os.Exit(m.Run()):
+//
+//	func TestMain(m *testing.M) {
+//		clirun.Main(m)
+//	}
+//
+// It returns rather than exits, and the test binary exits with the code m.Run
+// returned once TestMain returns.
+//
+// A compiled program is about 120 MB, so a test process that builds both
+// targets and does not remove them leaves a quarter of a gigabyte in the temp
+// directory (stokaro/ptah#3869). A directory Main cannot remove, because a
+// program in it still runs on Windows, is left to the next sweep.
+func Main(m *testing.M) {
+	mainRunning.Store(true)
+	m.Run()
+	for _, err := range removeOwned() {
+		_, _ = fmt.Fprintf(os.Stderr, "clirun: %v; the next build in any process removes it\n", err)
+	}
+}
+
+// removeOwned releases and removes every directory this process created, and
+// returns what it could not remove.
+func removeOwned() []error {
+	owned.Lock()
+	defer owned.Unlock()
+	var failed []error
+	for _, dir := range owned.dirs {
+		// The owner file is closed first: Windows refuses to remove a file
+		// that is open, and closing it releases the lock a sweep reads.
+		if err := dir.owner.Close(); err != nil {
+			failed = append(failed, fmt.Errorf("release %s: %w", dir.path, err))
+		}
+		if err := os.RemoveAll(dir.path); err != nil {
+			failed = append(failed, fmt.Errorf("remove %s: %w", dir.path, err))
+		}
+	}
+	owned.dirs = nil
+	return failed
 }
 
 // Build compiles the target once per test binary and returns its path.
@@ -103,8 +190,19 @@ type buildResult struct {
 // parallel callers wait for the one compilation rather than starting their own.
 // The failure is reported through the checker rather than returned, because a
 // test that cannot build the program under test has nothing left to measure.
+//
+// Build refuses a test binary that [Main] does not run, because nothing would
+// remove the program. Its first compilation in a process also sweeps the temp
+// directory: a directory whose owner file no running process holds a lock on
+// was left by a test binary that died before Main returned, and is removed. The
+// lock rather than a process id is what says a process still runs, because an
+// id is reused, and a test in another container sharing the temp directory has
+// an id this process cannot see.
 func Build(c *qt.C, target Target) string {
 	c.Helper()
+	c.Assert(mainRunning.Load(), qt.IsTrue, qt.Commentf(
+		"clirun.Build needs clirun.Main: call it from the package's TestMain, "+
+			"or the %s binary stays in the temp directory after the tests end", target))
 
 	memo, _ := built.LoadOrStore(target, sync.OnceValue(func() buildResult {
 		return compile(target)
@@ -116,10 +214,19 @@ func Build(c *qt.C, target Target) string {
 }
 
 func compile(target Target) buildResult {
-	dir, err := os.MkdirTemp("", "ptah-clirun-*")
+	sweepOnce.Do(func() { sweep(os.TempDir(), time.Now()) })
+
+	dir, err := os.MkdirTemp("", dirPattern)
 	if err != nil {
 		return buildResult{err: err}
 	}
+	owner, err := claim(dir)
+	if err != nil {
+		return buildResult{err: errors.Join(err, os.RemoveAll(dir))}
+	}
+	owned.Lock()
+	owned.dirs = append(owned.dirs, ownedDir{path: dir, owner: owner})
+	owned.Unlock()
 	path := filepath.Join(dir, filepath.Base(string(target))+exeext.Suffix)
 
 	// The build runs from the repository so `go build` resolves the module
@@ -131,6 +238,63 @@ func compile(target Target) buildResult {
 		return buildResult{err: errors.New(string(output))}
 	}
 	return buildResult{path: path}
+}
+
+// claim creates the owner file in dir and locks it for the life of the
+// process. The lock goes when the process does, however it ends, which is what
+// lets a sweep tell a live directory from a stale one.
+func claim(dir string) (*os.File, error) {
+	owner, err := os.OpenFile(filepath.Join(dir, ownerName), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("create the owner file of %s: %w", dir, err)
+	}
+	locked, err := tryLock(owner)
+	if err == nil && !locked {
+		err = errors.New("another process holds it")
+	}
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("lock the owner file of %s: %w", dir, err), owner.Close())
+	}
+	return owner, nil
+}
+
+// sweep removes each compilation directory under tempDir that no running
+// process owns. A removal that fails, as it does on Windows while a program in
+// the directory still runs, is left for the next sweep.
+func sweep(tempDir string, now time.Time) {
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		return
+	}
+	prefix := strings.TrimSuffix(dirPattern, "*")
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		dir := filepath.Join(tempDir, entry.Name())
+		if stale(dir, now) {
+			_ = os.RemoveAll(dir)
+		}
+	}
+}
+
+// stale reports whether no running process owns dir: nobody holds the lock on
+// its owner file, or it has no owner file and is older than [unownedAge].
+// Anything it cannot read counts as owned.
+func stale(dir string, now time.Time) bool {
+	owner, err := os.OpenFile(filepath.Join(dir, ownerName), os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		info, err := os.Stat(dir)
+		return err == nil && now.Sub(info.ModTime()) > unownedAge
+	}
+	if err != nil {
+		return false
+	}
+	locked, err := tryLock(owner)
+	// Closing releases the lock this sweep may have taken; the directory is
+	// removed after it, since Windows refuses to remove an open file.
+	closeErr := owner.Close()
+	return err == nil && locked && closeErr == nil
 }
 
 // Run executes the built target and returns what it produced.
