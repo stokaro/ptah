@@ -130,7 +130,9 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	dir := t.TempDir()
 	devPath := filepath.Join(dir, "dev.db")
 	devConn := connectSQLite(c, devPath)
-	_, err := devConn.ExecContext(context.Background(), "CREATE TABLE stale_dev_table (id INTEGER PRIMARY KEY)")
+	// A view is what a clean dev database may still hold; a table is refused,
+	// see TestInspectSource_RefusesADevDatabaseThatHoldsATable.
+	_, err := devConn.ExecContext(context.Background(), "CREATE VIEW stale_dev_view AS SELECT 1 AS id")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(devConn)
 	schemaPath := filepath.Join(dir, "schema.sql")
@@ -145,7 +147,36 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	rendered := renderedResult.Rendered
 	c.Assert(rendered, qt.Contains, `table "fresh_table"`)
-	c.Assert(rendered, qt.Not(qt.Contains), "stale_dev_table")
+	c.Assert(rendered, qt.Not(qt.Contains), "stale_dev_view")
+	c.Assert(sqliteObjectCount(c, devPath, "stale_dev_view"), qt.Equals, 0)
+}
+
+// TestInspectSource_RefusesADevDatabaseThatHoldsATable inspects a schema file
+// through a dev database that already holds a table. Creating the file there
+// resets the dev database first, so the inspection refuses before that, and
+// the table is still there (stokaro/ptah#3797).
+func TestInspectSource_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	devPath := filepath.Join(dir, "dev.db")
+	devConn := connectSQLite(c, devPath)
+	_, err := devConn.ExecContext(context.Background(), "CREATE TABLE stale_dev_table (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(devConn)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE fresh_table (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	renderedResult, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		URLs:   []string{"file://" + schemaPath},
+		DevURL: "sqlite://" + devPath,
+		Format: "hcl",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found table "stale_dev_table"; `+
+		`Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`)
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
+	c.Assert(sqliteTableExists(c, devPath, "stale_dev_table"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, devPath, "fresh_table"), qt.IsFalse)
 }
 
 func TestInspectSource_MigrationDirOnDev(t *testing.T) {

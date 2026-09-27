@@ -1893,6 +1893,11 @@ func TestStrictCompatSchemaInspectValidatesMigrationBeforeDevReset(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 1)
 	c.Assert(schema.Tables[0].Name, qt.Equals, "sentinel")
+	// The run below is expected to replay, and a dev database holding a
+	// table is refused as not clean before any replay (stokaro/ptah#3797),
+	// so it starts from an empty one.
+	_, err = conn.ExecContext(t.Context(), "DROP TABLE sentinel")
+	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
 	stdout, stderr, code = runAtlasBinary(

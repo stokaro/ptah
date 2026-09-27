@@ -164,6 +164,9 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 		"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT)",
 		"CREATE TABLE "+defaultTable+" (id SERIAL PRIMARY KEY, email TEXT)",
 	)
+	// A dev database of its own: the --from database holds tables, and a dev
+	// database that holds tables is refused as not clean (stokaro/ptah#3797).
+	devURL := createDisposableDatabase(c, dbURL, "ptah_diff_dev_"+suffix)
 	desiredPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + scoped + ".users (id SERIAL PRIMARY KEY, email TEXT, extra TEXT);\n" +
 		"CREATE TABLE " + defaultTable + " (id SERIAL PRIMARY KEY, email TEXT, extra TEXT);\n"
@@ -213,7 +216,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 			out := runCompatSchemaDiff(c,
 				"--from", targetURL,
 				"--to", "file://"+desiredPath,
-				"--dev-url", targetURL,
+				"--dev-url", devURL,
 				"--schema", test.scope(),
 			)
 

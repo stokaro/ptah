@@ -54,13 +54,12 @@ func TestSimulateOnDev_HappyPath(t *testing.T) {
 		plan := prepareSimulationPlan(c, dbPath)
 
 		// Litter the dev database to prove the deterministic reset: stale
-		// objects must not leak into the rehearsal.
+		// objects must not leak into the rehearsal. A view is litter a clean
+		// dev database may hold; a table is refused, see
+		// TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable.
 		devConn := connectSQLite(c, devPath)
-		c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll, `
-CREATE TABLE sim_stale (
-  id INTEGER PRIMARY KEY
-);
-`), qt.IsNil)
+		c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
+			"CREATE VIEW sim_stale AS SELECT 1 AS id;"), qt.IsNil)
 		dbschema.CloseAndWarn(devConn)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
@@ -74,7 +73,7 @@ CREATE TABLE sim_stale (
 		// behind. The target only has the baseline.
 		c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
 		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsFalse)
-		c.Assert(sqliteTableExists(c, devPath, "sim_stale"), qt.IsFalse)
+		c.Assert(sqliteObjectCount(c, devPath, "sim_stale"), qt.Equals, 0)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 	})
 
@@ -373,4 +372,46 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		})
 		c.Assert(err, qt.ErrorMatches, `connect to --dev-url: .*`)
 	})
+}
+
+// sqliteObjectCount counts the catalog entries of any type named name.
+func sqliteObjectCount(c *qt.C, dbPath, name string) int {
+	c.Helper()
+	conn := connectSQLite(c, dbPath)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	c.Assert(conn.QueryRowContext(c.Context(),
+		"SELECT count(*) FROM sqlite_master WHERE name = ?", name).Scan(&count), qt.IsNil)
+	return count
+}
+
+// TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable rehearses a plan on a
+// dev database that already holds a table. The rehearsal resets the dev
+// database first and cleans it after, so it refuses before either, as the
+// pinned community binary does, and the table and its row are still there
+// (stokaro/ptah#3797).
+func TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	devPath := filepath.Join(dir, "dev.db")
+	plan := prepareSimulationPlan(c, dbPath)
+	devConn := connectSQLite(c, devPath)
+	c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
+		"CREATE TABLE dev_kept (id INTEGER PRIMARY KEY);\nINSERT INTO dev_kept (id) VALUES (1);"), qt.IsNil)
+	dbschema.CloseAndWarn(devConn)
+
+	err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+		DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+		TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
+	})
+
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found table "dev_kept"; `+
+		`Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`)
+	devConn = connectSQLite(c, devPath)
+	defer dbschema.CloseAndWarn(devConn)
+	var rows int
+	c.Assert(devConn.QueryRowContext(c.Context(), "SELECT count(*) FROM dev_kept").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
+	c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
 }

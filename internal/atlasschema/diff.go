@@ -95,6 +95,13 @@ type DiffOptions struct {
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
 	DevServerDisposable bool
+
+	// CheckDevDatabase, when set, judges the dev database once both sides are
+	// classified and every local source has passed validation, and before any
+	// database is opened or any source resolved. An error from it ends the
+	// diff. It receives both sides because whether a diff uses the dev
+	// database at all depends on what they are.
+	CheckDevDatabase func(ctx context.Context, from, to atlassource.Set) error
 }
 
 // DiffReportingChanges computes the Atlas schema diff between two
@@ -141,6 +148,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	}
 	if target.Note != "" && opts.Diagnostics != nil {
 		fmt.Fprintf(opts.Diagnostics, "Warning: %s.\n", target.Note)
+	}
+
+	if opts.CheckDevDatabase != nil {
+		if err := opts.CheckDevDatabase(ctx, fromSet, toSet); err != nil {
+			return atlasreport.SchemaDiff{}, nil, err
+		}
 	}
 
 	// Both sides are desired states here, so --dev-url is the only URL that can

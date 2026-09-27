@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/migratevalidate"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migratesum"
@@ -110,7 +111,10 @@ func runAtlasMigrateValidate(
 		// a foreign layout covers only the files its own tool reads, and a
 		// directory holding none of them is empty as far as this verb is
 		// concerned (stokaro/ptah#1241 item 7).
-		return nil
+		//
+		// The dev database is still judged: the pinned binary takes its
+		// snapshot before it replays nothing, and refuses one holding a table.
+		return refuseUncleanAtlasValidateDev(cmd, source.devURL)
 	case !hashed:
 		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 	case !result.OK():
@@ -132,7 +136,20 @@ func runAtlasMigrateValidate(
 	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := refuseUncleanAtlasValidateDev(cmd, source.devURL); err != nil {
+		return err
+	}
 	return replayAtlasMigrateSource(cmd, source, fsys, devServerDisposable)
+}
+
+// refuseUncleanAtlasValidateDev refuses a dev database that holds a table in
+// the words this verb prints; see [refuseUncleanAtlasDevDatabase]. Without a
+// --dev-url the verb reads no database, and the binary exits 0.
+func refuseUncleanAtlasValidateDev(cmd *cobra.Command, devURL string) error {
+	if err := devsnapshot.Refuse(cmd.Context(), devURL, devsnapshot.Replay); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	return nil
 }
 
 // replayAtlasMigrateSource replays a converted migration directory on the dev

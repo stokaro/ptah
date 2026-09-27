@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
@@ -327,6 +328,9 @@ func runAtlasMigrateLint(
 	lintOptions.Dir = dir
 	lintOptions.FS = snapshot
 	lintOptions.RevisionVersions = revisionVersions
+	if err := devsnapshot.Refuse(cmd.Context(), opts.devURL, devsnapshot.Lint); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
 		// Before the error goes out, whichever way it goes: a run that

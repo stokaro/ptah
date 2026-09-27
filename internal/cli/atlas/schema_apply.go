@@ -561,6 +561,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
 		}
 	}
+	if err := refuseUncleanAtlasApplyDev(cmd, opts, projectEnv); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	// After the before-work policy preflight above, the apply lock is held across
 	// the authoritative target reinspection, planning, simulation, confirmation,

@@ -903,8 +903,9 @@ snapshot, cleans the dev database again, and only then writes Atlas-style
 also runs after replay, introspection, comparison, or context-cancellation
 failures.
 
-Use a disposable dev database. Ptah only reads a database used as `--to`; it
-never cleans or mutates that database. Ptah rejects a desired database that
+Use a disposable dev database: one that holds a table is refused before
+anything is dropped, as the pinned binary refuses it. Ptah only reads a database
+used as `--to`; it never cleans or mutates that database. Ptah rejects a desired database that
 identifies the same host, port, and database as `--dev-url`, even when
 credentials, connection options, scheme aliases, or an explicit default port
 differ. After reading it, Ptah also asks both servers which database each
@@ -1137,9 +1138,12 @@ retained handle before anything is published.
 ## Validate integrity
 
 `ptah-compat migrate validate` verifies the migration directory against
-`atlas.sum`. When `--dev-url` is set, Ptah first checks integrity
-and then treats the dev database as scratch space: it drops user tables and
-replays the migration directory to validate SQL execution semantics. If
+`atlas.sum`. When `--dev-url` is set, Ptah first checks integrity and then
+replays the migration directory on the dev database to validate SQL execution
+semantics, emptying it before and after. A dev database that already holds a
+table is refused before anything is dropped, as the pinned binary refuses it:
+`Error: replaying the migration directory: sql/migrate: taking database
+snapshot: sql/migrate: connected database is not clean: found table "t"`. If
 integrity drift is found, Ptah reports the drift and does not connect to the dev
 database.
 
@@ -1226,9 +1230,10 @@ than flags because the conformance `cli-surface` tier asserts flag parity with
 the pinned binary. Native `ptah migrations lint` needs neither a dev database
 nor a scope and is unaffected by both.
 
-`migrate lint --dev-url` treats the dev database as scratch space: it drops user
-tables, replays the migration directory, and then runs static lint
-reporting. A `docker://` value is provisioned first: the container is started,
+`migrate lint --dev-url` replays the migration directory on the dev database,
+emptying it before and after, and then runs static lint reporting. A dev
+database that already holds a table is refused first, as the pinned binary
+refuses it. A `docker://` value is provisioned first: the container is started,
 replayed on, and removed when the command ends.
 
 With no `--format` and no project template, `ptah-compat migrate lint` prints a

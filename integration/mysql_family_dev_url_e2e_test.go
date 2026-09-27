@@ -200,14 +200,11 @@ func TestCompatMigrateDiffAcceptsADesiredDatabaseSpelledDifferentlyE2E(t *testin
 }
 
 // TestCompatRefusesADevURLNamingTheTargetInAnotherSpellingE2E names the target
-// database as the dev database, spelled as the other member of the family. The
-// dev database is reset before the plan is rehearsed, so the run is refused
-// before anything is dropped, and the target keeps its table.
-//
-// Compared as two dialects, the URLs are distinct, the reset runs, and the
-// target loses its table even though the rehearsal itself is refused
-// (stokaro/ptah#3769). The community binary refuses the same argv because the
-// dev database it is given is not clean.
+// database as the dev database, spelled as the other member of the family.
+// The target holds a table, so the run takes the dev database for its snapshot
+// and refuses it as not clean before anything is dropped, in the community
+// binary's words for the same argv (stokaro/ptah#3797). The target keeps its
+// table.
 func TestCompatRefusesADevURLNamingTheTargetInAnotherSpellingE2E(t *testing.T) {
 	for _, pair := range mysqlFamilySpellingPairs {
 		t.Run(pair.name, func(t *testing.T) {
@@ -223,8 +220,37 @@ func TestCompatRefusesADevURLNamingTheTargetInAnotherSpellingE2E(t *testing.T) {
 				"--to", "file://"+mysqlFamilyDesiredState(c),
 				"--auto-approve")
 
-			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches,
+				`sql/migrate: taking database snapshot: sql/migrate: connected database is not clean: found table "keep" in schema "`+target+`"`,
+				qt.Commentf("%s", out))
 			c.Assert(server.tables(c, target), qt.Equals, "keep")
+		})
+	}
+}
+
+// TestCompatRefusesADevURLNamingAnEmptyTargetInAnotherSpellingE2E is the same
+// argv with a target that holds a view and no table, which the snapshot takes
+// as clean. The dev database is reset before the plan is rehearsed, so the
+// identity check refuses the run before anything is dropped, and the view
+// survives. Compared as two dialects, the URLs are distinct and the reset runs
+// (stokaro/ptah#3769).
+func TestCompatRefusesADevURLNamingAnEmptyTargetInAnotherSpellingE2E(t *testing.T) {
+	for _, pair := range mysqlFamilySpellingPairs {
+		t.Run(pair.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := newMySQLFamilyServer(c, pair.engine)
+			target := server.database(c, "family_guard")
+			_, err := server.admin.ExecContext(c.Context(), "CREATE VIEW `"+target+"`.keep_v AS SELECT 1 AS id")
+			c.Assert(err, qt.IsNil)
+
+			out, err := runCompatVerb("schema", "apply",
+				"--url", server.url(pair.targetScheme, target),
+				"--dev-url", server.url(pair.devScheme, target),
+				"--to", "file://"+mysqlFamilyDesiredState(c),
+				"--auto-approve")
+
+			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
+			c.Assert(server.tables(c, target), qt.Equals, "keep_v")
 		})
 	}
 }

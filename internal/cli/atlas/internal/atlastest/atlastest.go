@@ -32,6 +32,42 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
+// SqliteExec runs ddl against the SQLite database at path, creating the file
+// when it does not exist.
+func SqliteExec(c *qt.C, path, ddl string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+path)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(), ddl)
+	c.Assert(err, qt.IsNil)
+}
+
+// SqliteQueryInt returns the one integer query answers from the SQLite
+// database at path.
+func SqliteQueryInt(c *qt.C, path, query string) int {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+path)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var value int
+	c.Assert(conn.QueryRowContext(context.Background(), query).Scan(&value), qt.IsNil)
+	return value
+}
+
+// SqliteObjectCount counts the catalog entries of any type named name in the
+// SQLite database at dbPath: a table, a view, an index or a trigger.
+func SqliteObjectCount(c *qt.C, dbPath, name string) int {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	c.Assert(conn.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM sqlite_master WHERE name = ?`, name).Scan(&count), qt.IsNil)
+	return count
+}
+
 func SqliteTableCount(c *qt.C, dbPath, table string) int {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)

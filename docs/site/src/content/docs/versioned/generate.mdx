@@ -284,7 +284,8 @@ generation, no migration or refreshed checksum is written.
 
 `--replay` derives the current state without any access to the target
 database: the existing directory is replayed on a disposable `--dev-url`
-database (reset destructively first), and the next migration is generated
+database (reset destructively first, and refused if it already holds a table),
+and the next migration is generated
 from the difference between that replayed state and the desired sources. CI
 can generate the next migration from the repository alone:
 
