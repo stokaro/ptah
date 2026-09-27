@@ -194,6 +194,33 @@ declaration is spelled by the server first, as
 [How a declaration is compared with what the server stored](#how-a-declaration-is-compared-with-what-the-server-stored)
 describes; without one the texts are compared as written.
 
+One `CREATE TABLE` builds a single constraint for index constraints that
+share a key. For a primary key or a `UNIQUE` the key is the columns, the
+`INCLUDE` columns and `NULLS NOT DISTINCT`. For an `EXCLUDE` it is the access
+method, the elements and the `WHERE` clause. The primary key is kept first,
+then the first of the others, and a name the dropped constraint carries goes to
+the kept one when that one has none. A SQL schema file is read the same way.
+Measured on PostgreSQL 18.6:
+
+| Declared in one `CREATE TABLE` on `t` | Built |
+| --- | --- |
+| `id int PRIMARY KEY, CONSTRAINT u UNIQUE (id)` | the primary key, named `u` |
+| `UNIQUE (a), CONSTRAINT n UNIQUE (a)` | `n` |
+| `EXCLUDE USING btree (r WITH =)` twice | `t_r_excl` |
+| `UNIQUE (a), UNIQUE NULLS NOT DISTINCT (a)` | `t_a_key`, `t_a_key1` |
+
+Declared in separate statements, a `CREATE TABLE` and an `ALTER TABLE ... ADD`,
+both constraints are built. A render writes the second one as an
+`ALTER TABLE ... ADD CONSTRAINT` after its table, so a database built from the
+render holds both as well. Elements and clauses are compared as the server's
+lexer reads them: spacing and the case of an unquoted word do not matter, and
+an extra pair of parentheses does, so the server can build one constraint for a
+pair that Ptah reads as two. `DEFERRABLE` is part of the server's key, and the
+SQL reader does not read it on these constraints yet
+([stokaro/ptah#3818](https://github.com/stokaro/ptah/issues/3818)). A column's
+own `UNIQUE` is outside this rule
+([stokaro/ptah#3812](https://github.com/stokaro/ptah/issues/3812)).
+
 A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
 column of the table, and `<table>_check` when it names none or more than one.
 It makes no difference whether the `CHECK` is written on the column or on the

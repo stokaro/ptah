@@ -898,6 +898,11 @@ func appendCreateTable(
 	constraintsStart := len(database.Constraints)
 	order := declaredOrder(database, node, tableSchema, sourcePlatform)
 
+	// A UNIQUE or EXCLUDE the server folds into another one is not built.
+	created := &database.Tables[len(database.Tables)-1]
+	foldCreatedIndexConstraints(database, created, fieldsStart, constraintsStart, sourcePlatform)
+	tableSchema = *created
+
 	// A UNIQUE or foreign key the author left unnamed gets the name its server
 	// gives it, which is the name the other side of a comparison reads from the
 	// catalog.

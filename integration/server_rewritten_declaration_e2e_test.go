@@ -16,8 +16,9 @@ import (
 // it was given: a CHECK and a policy clause come back from their parse tree
 // with parentheses and casts, an index predicate the same, a column default
 // with its casts spelled out, and an unnamed CHECK, UNIQUE, EXCLUDE or foreign
-// key under the name the server chose. A schema file identical to the
-// migration that built the database compares unequal to it unless the
+// key under the name the server chose. Where one CREATE TABLE declares the
+// same key twice, the server builds one constraint. A schema file identical to
+// the migration that built the database compares unequal to it unless the
 // comparison asks the server and names each unnamed constraint as the server
 // does; without that, `migrate diff` and `schema apply` drop and recreate every
 // one of them, or add a second foreign key beside the first
@@ -121,6 +122,20 @@ CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, h
 CREATE TABLE ex9 (t varchar(10), EXCLUDE USING btree (t WITH =) WHERE (t <> 'x'));`,
 	},
 	{
+		// PostgreSQL 18.6 builds one index constraint for each table: the
+		// primary key under the name f1_u, f2_n and f3_r_excl.
+		name: "index constraints one CREATE TABLE declares twice",
+		sql: `CREATE TABLE f1 (id int PRIMARY KEY, CONSTRAINT f1_u UNIQUE (id));
+CREATE TABLE f2 (a int, UNIQUE (a), CONSTRAINT f2_n UNIQUE (a));
+CREATE TABLE f3 (r int, EXCLUDE USING btree (r WITH =), EXCLUDE USING btree (r WITH =));`,
+	},
+	{
+		// PostgreSQL 18.6 builds both constraints: g1_pkey and g1_id_key.
+		name: "a UNIQUE an ALTER TABLE declares over the primary key",
+		sql: `CREATE TABLE g1 (id int PRIMARY KEY);
+ALTER TABLE g1 ADD UNIQUE (id);`,
+	},
+	{
 		name: "an unnamed inline foreign key and table-level UNIQUE",
 		sql: `CREATE TABLE tenants (id bigint PRIMARY KEY);
 CREATE TABLE keys (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -156,12 +171,13 @@ var serverRewrittenControls = []struct {
 		wantInPlan: "-|-",
 	},
 	{
-		name: "an EXCLUDE predicate bound moves",
-		migration: `CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (n >= 0));`,
-		schema: `CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE TABLE ex8 (lo int, hi int, n numeric, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (n >= 1));`,
-		wantInPlan: "n >= 1",
+		// The column is an integer so that the bound reads the same in the
+		// file and in the server's `WHERE ((hi >= 1))`: a plan from the file
+		// to the database adds the database's spelling.
+		name:       "an EXCLUDE predicate bound moves",
+		migration:  `CREATE TABLE ex8 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (hi >= 0));`,
+		schema:     `CREATE TABLE ex8 (lo int, hi int, EXCLUDE USING gist (int4range(lo, hi) WITH &&) WHERE (hi >= 1));`,
+		wantInPlan: "hi >= 1",
 	},
 	{
 		name: "a policy names another setting",
