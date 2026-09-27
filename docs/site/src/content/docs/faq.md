@@ -524,8 +524,9 @@ execution, and that needs a disposable database.
 
 ### Can I use my working dev database as the shadow database and save myself one server? {#shadow-database-must-be-disposable}
 
-Only if it holds no table. The shadow and replay workflows reset the database
-to get a reproducible run of the history, so Ptah refuses one that holds a table
+Only if it holds nothing the reset would drop. The shadow and replay workflows
+reset the database to get a reproducible run of the history, so Ptah refuses
+one that holds a table, or on PostgreSQL a view, function, sequence or type,
 and empties it again afterwards. One scratch database can serve as both; a
 shared dev, staging, or production database cannot.
 

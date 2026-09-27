@@ -131,8 +131,10 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 // operator pointed at by mistake held their data. The pinned community binary
 // refuses such a database, and so does every caller of this function: the
 // predicate and the object the refusal names are [migrateclean.DevRefusal]'s.
-// A database that answers nil can still hold objects that predicate does not
-// count, such as a view or a function; the reset removes them.
+// Where the dialect's writer cannot list what its reset drops, a database that
+// answers nil can still hold objects that predicate does not count, such as a
+// view or a function, and the reset removes them. On the PostgreSQL family it
+// can list them, and the predicate refuses them too.
 //
 // A dialect that predicate does not cover is not checked.
 func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {

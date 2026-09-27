@@ -22,9 +22,9 @@ import (
 // baselining.
 type BaselineVerifyOptions struct {
 	// ShadowDatabaseURL is an ephemeral database the verification replays the
-	// history into. It must hold no table when the verification starts, it is
-	// empty again when the verification returns, and its live realm must be
-	// distinct from TargetConn's.
+	// history into. It must hold nothing the reset would drop when the
+	// verification starts, it is empty again when the verification returns,
+	// and its live realm must be distinct from TargetConn's.
 	ShadowDatabaseURL string
 	// TargetConn is the already-open database whose metadata would be
 	// baselined. It is introspected and compared against, never written, and
@@ -70,9 +70,9 @@ type BaselineVerifyOptions struct {
 // PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused before target
 // validation, shadow connection, or replay.
 //
-// A shadow database that holds a table is refused at the claim stage, before
-// anything resets it, and the shadow database is emptied again on every
-// return. A failure to empty it is joined to the result.
+// A shadow database that holds anything the reset would drop is refused at
+// the claim stage, before anything resets it, and the shadow database is
+// emptied again on every return. A failure to empty it is joined to the result.
 func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr error) {
 	dialect := opts.Dialect
 	if opts.TargetConn != nil {

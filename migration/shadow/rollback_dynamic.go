@@ -71,8 +71,8 @@ type DynamicRollbackOptions struct {
 // what is being changed, and it is not any file in the directory, since a
 // version's schema is the accumulation of every migration up to it. The only
 // way to see it is to build it, and the only safe place to build it is a
-// database whose contents can be destroyed. A dev database that holds a table
-// is refused before anything resets it, and it is emptied again before
+// database whose contents can be destroyed. A dev database that holds anything
+// the reset would drop is refused before anything resets it, and it is emptied again before
 // planning returns; a failure to empty it fails the planning.
 func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (statements []string, resultErr error) {
 	if opts.TargetConnection == nil {
@@ -92,9 +92,9 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	defer dbschema.CloseAndWarn(devConn)
 
 	// Build the target state: a clean database carrying exactly what the
-	// directory defines at TargetVersion. A dev database holding a table is
-	// refused before the reset would drop it, and the database is emptied
-	// again once the plan is read, on every return.
+	// directory defines at TargetVersion. A dev database holding anything the
+	// reset would drop is refused first, and the database is emptied again
+	// once the plan is read, on every return.
 	lease, err := shadowdb.Claim(ctx, devConn)
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: %w", err)

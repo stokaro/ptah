@@ -132,6 +132,21 @@ type Scope struct {
 	// Populated only in realm scope, where the pinned binary keeps its
 	// bookkeeping in a schema of its own rather than in the connected one.
 	RevisionsSchema string
+
+	// Dropped lists what a reset of the dev database would drop besides what
+	// the fields above judge, first to be named first. It is read only by
+	// [DevRefusal] and only where the dialect's writer can say; the
+	// `migrate apply` gate never reads it.
+	Dropped []DroppedObject
+}
+
+// DroppedObject is an object a reset of a dev database would drop. Schema is
+// empty for one that belongs to no schema, such as a large object, whose Name
+// is its oid.
+type DroppedObject struct {
+	Kind   string
+	Schema string
+	Name   string
 }
 
 // RealmSchema is one schema of a realm-scope catalog read.

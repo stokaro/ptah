@@ -185,9 +185,9 @@ func validateConnection(
 // MigrationVerifyOptions configures [VerifyMigration].
 type MigrationVerifyOptions struct {
 	// ShadowDatabaseURL is an ephemeral database the verification replays
-	// into. It must hold no table when the verification starts, it is empty
-	// again when the verification returns, and its live realm must be
-	// distinct from TargetConnection's. When empty, an ephemeral SQLite
+	// into. It must hold nothing the reset would drop when the verification
+	// starts, it is empty again when the verification returns, and its live
+	// realm must be distinct from TargetConnection's. When empty, an ephemeral SQLite
 	// database is provisioned for the call and removed when verification
 	// finishes; a non-SQLite Dialect is then refused rather than silently
 	// verified against the wrong engine.
@@ -245,10 +245,12 @@ type Candidate struct {
 // VerifyMigration measures a planned migration against a live disposable
 // database before its files are written.
 //
-// The shadow database is refused if it holds a table, since the verification
-// resets it and would lose that table. Otherwise it is dropped clean, the prior
-// history is replayed into it, and the candidates are applied on top. The result is re-introspected and
-// compared with the desired schema, so what is checked is what a server did
+// The shadow database is refused if it holds a table, or anything else the
+// reset would drop where the dialect can say, since the verification resets it
+// and would lose what it holds. Otherwise it is dropped clean, the prior
+// history is replayed into it, and the candidates are applied on top. The
+// result is re-introspected and compared with the desired schema, so what is
+// checked is what a server did
 // rather than what the SQL was expected to mean. The candidates are then rolled
 // back to the prior version and reapplied, because a down body that does not
 // run is only discovered by running it.

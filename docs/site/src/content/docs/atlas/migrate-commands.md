@@ -904,7 +904,9 @@ also runs after replay, introspection, comparison, or context-cancellation
 failures.
 
 Use a disposable dev database: one that holds a table is refused before
-anything is dropped, as the pinned binary refuses it. Ptah only reads a database
+anything is dropped, as the pinned binary refuses it, and on PostgreSQL so is
+one holding anything else the reset would drop
+([Compatibility differences](../retained-divergences/#a-dev-database-holding-an-object-the-reset-drops)). Ptah only reads a database
 used as `--to`; it never cleans or mutates that database. Ptah rejects a desired database that
 identifies the same host, port, and database as `--dev-url`, even when
 credentials, connection options, scheme aliases, or an explicit default port
@@ -1233,7 +1235,8 @@ nor a scope and is unaffected by both.
 `migrate lint --dev-url` replays the migration directory on the dev database,
 emptying it before and after, and then runs static lint reporting. A dev
 database that already holds a table is refused first, as the pinned binary
-refuses it. A `docker://` value is provisioned first: the container is started,
+refuses it, and on PostgreSQL so is one holding a view, function, sequence or
+type. A `docker://` value is provisioned first: the container is started,
 replayed on, and removed when the command ends.
 
 With no `--format` and no project template, `ptah-compat migrate lint` prints a

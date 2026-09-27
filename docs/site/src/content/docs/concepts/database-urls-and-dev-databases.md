@@ -68,8 +68,9 @@ validation:
 - Atlas-compatible verbs use it for planning, linting, and rollback
   verification.
 
-A dev database must hold no table when a command starts: Ptah refuses one that
-does before anything is dropped, as the Atlas CLI does. Ptah then cleans the
+A dev database must hold nothing the reset would drop when a command starts.
+Ptah refuses a table before anything is dropped, as the Atlas CLI does, and on
+PostgreSQL any other such object too. Ptah then cleans the
 replay realm before migration execution and after the replay, failed or not.
 Commands read the replayed state before the final cleanup, on the same session.
 No fixed time limit applies to a cleanup: it takes as long as emptying the
@@ -95,7 +96,7 @@ keeping any files, and `ptah migrations checkpoint` and
 expected schema before anything is recorded. `ptah migrations down` uses it to
 verify the rollback plan before changing the target.
 
-The shadow database must hold no table and must not be the target's live
+The shadow database must meet the same rule and must not be the target's live
 database realm. Ptah checks both before changing either database, and empties
 the shadow database again after each run.
 

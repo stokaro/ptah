@@ -10,8 +10,9 @@ import (
 	"ptah.run/internal/migrateclean"
 )
 
-// Lease is a disposable database a verification has claimed: it held no table
-// when the verification started, and [Lease.Release] hands it back that way.
+// Lease is a disposable database a verification has claimed: it held nothing
+// the reset would drop when the verification started, and [Lease.Release]
+// hands it back that way.
 //
 // A verification resets its database before it replays into it. Without the
 // claim, that reset emptied a database holding a table the operator meant to
@@ -24,10 +25,10 @@ type Lease struct {
 	metadata []string
 }
 
-// Claim refuses a database that holds a table, before anything resets it, and
-// returns the lease whose Release empties it again. The predicate is the dev
-// database's, [migrateclean.DevRefusal], and so is the scope the lease resets
-// over; see [devclean.Reset].
+// Claim refuses a database that holds anything the reset would drop, before
+// anything resets it, and returns the lease whose Release empties it again.
+// The predicate is the dev database's, [migrateclean.DevRefusal], and so is
+// the scope the lease resets over; see [devclean.Reset].
 //
 // The refusal names no flag: one verification reads its URL from --shadow-db
 // on the native command and from --dev-url on the Atlas-compatible one.

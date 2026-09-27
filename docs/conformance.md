@@ -671,6 +671,36 @@ columns. Ptah's own layout is not Atlas CE's bytes in either profile -- one
 changeset per migration, Ptah's renderer's SQL -- so copying the colon would buy
 no parity and would lose the rollback the plan wrote.
 
+### A dev database holding an object the reset drops is refused
+
+Atlas CE refuses a dev database that holds a table or, with no `search_path`,
+a schema besides an empty `public`. Every other object passes its check. On
+PostgreSQL, CockroachDB, YugabyteDB and Spanner, Ptah refuses anything else its
+reset would drop as well: a view, a materialized view, a function, a procedure,
+an aggregate, a sequence, a type, a collation, a default privilege it would
+revoke, or on PostgreSQL a large object.
+The refusal names the object in the table refusal's shape, `connected database
+is not clean: found view "v" in connected schema`, or `in schema "public"` with
+no `search_path`. What an installed extension owns, and every schema outside a
+pinned `search_path`, is kept and does not refuse.
+
+Measured 2026-09-27 on PostgreSQL 18.6, each object alone in the dev database,
+with `migrate validate` and `schema apply`:
+
+| Dev database | Atlas CE v1.3.0 | Ptah without the refusal | Ptah |
+| --- | --- | --- | --- |
+| `?search_path=public`, a view, function, sequence, enum, domain, composite type or collation | 0, the object kept | 0, the object dropped | **1**, names it, kept |
+| no `search_path`, the same objects | 0, every one dropped but the enum | 0, the object dropped | **1**, names it, kept |
+| a large object, either scope | 0, kept | `migrate validate` 0, dropped | **1**, names it, kept |
+| a default privilege on `public`, `migrate validate` | 0, kept with a `search_path`, revoked without one | 0, revoked | **1**, names it, kept |
+
+Stricter, deliberately (stokaro/ptah#3808). Atlas CE keeps those objects under
+a `search_path` because it does not model them, and drops them in silence
+without one. Keeping them in Ptah would mean hiding them from every read of the
+dev database and letting a migration's `CREATE ... IF NOT EXISTS` pass against
+them; refusing loses nothing. The other engines still count tables alone. See
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-dev-database-holding-an-object-the-reset-drops).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

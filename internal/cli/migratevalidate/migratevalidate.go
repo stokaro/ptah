@@ -213,8 +213,8 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 		// and not a usage failure.
 		return FailAtlasChecksumUnreadableEntry(cmd, err)
 	case errors.As(err, &notClean):
-		// The replay refused a dev database that holds a table before it
-		// reset it. The binary's sentence names the step it was in.
+		// The replay refused a dev database that holds something its reset
+		// would drop, before it reset it. The binary's sentence names the step it was in.
 		return cmdutil.Fail(cmd, devsnapshot.Replay.Wrap(notClean))
 	case err != nil:
 		return cmdutil.Fail(cmd, AtlasDirectoryError(src.dir, err))
