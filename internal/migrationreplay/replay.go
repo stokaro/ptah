@@ -97,7 +97,7 @@ func Replay(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("capture migration directory: %w", err)
 	}
-	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	conn, err := dbschema.ConnectToServer(ctx, devURL)
 	if err != nil {
 		return fmt.Errorf("error connecting to dev database: %w", err)
 	}
@@ -295,6 +295,11 @@ func replayOnLockedConnection(
 func replayRealm(info catalog.ServerInfo) devclean.ReplayRealm {
 	if devdocker.RunOwned(info.URL) {
 		return devclean.ReplayRealmServer
+	}
+	// A dev URL naming no MySQL-family database gave the replay every user
+	// database on the server, and the claim found none there.
+	if info.WholeServer {
+		return devclean.ReplayRealmServerDatabases
 	}
 	return devclean.ReplayRealmDatabase
 }

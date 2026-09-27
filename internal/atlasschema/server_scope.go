@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
 )
 
 // ErrServerDevDatabase refuses a dev database beside a whole MySQL or MariaDB
@@ -25,6 +26,31 @@ func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string) error {
 		return nil
 	}
 	return ErrServerDevDatabase
+}
+
+// ErrDevServerUnsupported refuses a dev server, a --dev-url that names no
+// MySQL or MariaDB database, on the verbs that do not take one yet: schema
+// diff and schema apply rehearse and materialize on one dev database
+// (stokaro/ptah#3789).
+var ErrDevServerUnsupported = errors.New(
+	"a --dev-url naming no MySQL or MariaDB database is a whole dev server, which schema diff " +
+		"and schema apply do not take yet; name a database in --dev-url")
+
+// RefuseDevServer answers [ErrDevServerUnsupported] for a dev URL that names
+// no MySQL-family database, before anything is contacted.
+func RefuseDevServer(devURL string) error {
+	parsed, err := atlasurl.ParseMySQLURL(strings.TrimSpace(devURL))
+	if err != nil || parsed.Database() != "" {
+		return nil
+	}
+	return ErrDevServerUnsupported
+}
+
+// RefuseServerScopeMismatch answers a [ServerScopeMismatchError] when the
+// connection info reads and the desired state disagree about whether they are
+// a whole server; see refuseServerScopeMismatch.
+func RefuseServerScopeMismatch(current catalog.ServerInfo, desired atlassource.State) error {
+	return refuseServerScopeMismatch(connectionSide(current), stateSide(desired))
 }
 
 // ServerScopeMismatchError refuses a comparison of a whole MySQL or MariaDB

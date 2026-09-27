@@ -507,15 +507,19 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.O
 }
 
 // DropDatabaseRealm drops the selected MySQL/MariaDB database realm and
-// verifies that no supported user object remains.
+// verifies that no supported user object remains. On a connection to a whole
+// server the realm is every user database; see [Writer.dropServerDatabases].
 func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 	if w.dryRun {
 		return nil
 	}
 	return w.withCleanupConnection(ctx, "realm-cleanup", func(conn *sql.Conn) error {
-		schema, err := w.cleanupSchema(ctx, conn)
+		schema, err := w.selectedDatabase(ctx, conn)
 		if err != nil {
 			return err
+		}
+		if schema == "" {
+			return dropServerDatabases(ctx, conn)
 		}
 		if err := rejectProtectedMySQLDatabase(schema); err != nil {
 			return err
@@ -525,6 +529,111 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 		}
 		return w.verifyDatabaseRealm(ctx, conn)
 	})
+}
+
+// selectedDatabase is the database the writer cleans, and "" for a session
+// that selected none, which is a whole server. The connection layer gives the
+// writer the database of every URL that names one, so a writer with none
+// configured reads the session, and only a connection to a whole server
+// answers none.
+func (w *Writer) selectedDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
+	if strings.TrimSpace(w.schema) != "" {
+		return w.schema, nil
+	}
+	var selected sql.NullString
+	if err := conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&selected); err != nil {
+		return "", fmt.Errorf("mysql: read current database: %w", err)
+	}
+	return strings.TrimSpace(selected.String), nil
+}
+
+// dropServerDatabases empties a whole server a dev run claimed: every user
+// database, after every foreign key from one of them into another, and then
+// checks that none is left (stokaro/ptah#3789).
+//
+// The claim refused a server holding any user database, so each one here is
+// the run's own, created by its replay. The pinned community binary v1.3.0
+// drops the databases in name order, and its cleanup stops, leaving the dev
+// server dirty for the next run, when a database another one references
+// comes first: error 3730 on MySQL 8.4.11 and 1451 on MariaDB 11.8.9.
+//
+// It does not ask for the global privileges a one-database cleanup asks for.
+// Those prove that no object outside the database refers into it, and at
+// this scope there is no outside the session can see: a database it cannot
+// see is not one it created, and is not dropped.
+func dropServerDatabases(ctx context.Context, conn *sql.Conn) error {
+	databases, err := serverUserDatabases(ctx, conn)
+	if err != nil {
+		return err
+	}
+	keys, err := serverCrossDatabaseForeignKeys(ctx, conn)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		// #nosec G202 -- the database, table and key names are emitted only through identifier quoting.
+		statement := "ALTER TABLE " + quoteQualifiedIdent(key[0], key[1]) +
+			" DROP FOREIGN KEY " + quoteIdent(key[2])
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("mysql: drop foreign key %s.%s.%s between databases: %w", key[0], key[1], key[2], err)
+		}
+	}
+	for _, database := range databases {
+		if _, err := conn.ExecContext(ctx, "DROP DATABASE "+quoteIdent(database)); err != nil {
+			return fmt.Errorf("mysql: drop database %s from the dev server: %w", database, err)
+		}
+	}
+	left, err := serverUserDatabases(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		return fmt.Errorf("mysql: dev server cleanup left %d user databases; first is %s", len(left), left[0])
+	}
+	return nil
+}
+
+// serverUserDatabases lists the user databases the session sees.
+func serverUserDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, systemschema.MySQLUserDatabasesQuery())
+	if err != nil {
+		return nil, fmt.Errorf("mysql: list the dev server's databases: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var databases []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("mysql: scan a dev server database: %w", err)
+		}
+		databases = append(databases, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: list the dev server's databases: %w", err)
+	}
+	return databases, nil
+}
+
+// serverCrossDatabaseForeignKeys lists the foreign keys between databases,
+// each as database, table and name.
+func serverCrossDatabaseForeignKeys(ctx context.Context, conn *sql.Conn) ([][3]string, error) {
+	rows, err := conn.QueryContext(ctx, systemschema.MySQLCrossDatabaseForeignKeysQuery())
+	if err != nil {
+		return nil, fmt.Errorf("mysql: list foreign keys between the dev server's databases: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var keys [][3]string
+	for rows.Next() {
+		var key [3]string
+		if err := rows.Scan(&key[0], &key[1], &key[2]); err != nil {
+			return nil, fmt.Errorf("mysql: scan a foreign key between databases: %w", err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: list foreign keys between the dev server's databases: %w", err)
+	}
+	return keys, nil
 }
 
 func rejectProtectedMySQLDatabase(database string) error {

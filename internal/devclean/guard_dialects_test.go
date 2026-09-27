@@ -300,6 +300,68 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 	}
 }
 
+// TestReplayGuardServerDatabases_HappyPath is a replay on a whole MySQL or
+// MariaDB server the operator named as the dev server, with a URL naming no
+// database (stokaro/ptah#3789): every user database there is the run's, so
+// databases are created, changed and dropped, and any of them is written.
+func TestReplayGuardServerDatabases_HappyPath(t *testing.T) {
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
+		Dialect:     platform.MariaDB,
+		WholeServer: true,
+	}, devclean.ReplayRealmServerDatabases)
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "create a database", statement: "CREATE DATABASE app"},
+		{name: "create a schema if absent", statement: "CREATE SCHEMA IF NOT EXISTS `audit` DEFAULT CHARACTER SET utf8mb4"},
+		{name: "change a database", statement: "ALTER DATABASE app CHARACTER SET latin1"},
+		{name: "drop a database", statement: "DROP DATABASE IF EXISTS app"},
+		{name: "a table in a database", statement: "CREATE TABLE app.t (id int PRIMARY KEY)"},
+		{name: "a key into another database", statement: "ALTER TABLE audit.x ADD CONSTRAINT x_t FOREIGN KEY (t_id) REFERENCES app.t (id)"},
+		{name: "rows in another database", statement: "INSERT INTO audit.x (id) VALUES (1)"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
+		})
+	}
+}
+
+// TestReplayGuardServerDatabases_FailurePath refuses on a dev server what
+// outlives the cleanup, which drops databases and nothing else: a user, a
+// role, a privilege, a stored body, a server setting.
+func TestReplayGuardServerDatabases_FailurePath(t *testing.T) {
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
+		Dialect:     platform.MySQL,
+		WholeServer: true,
+	}, devclean.ReplayRealmServerDatabases)
+	tests := []struct {
+		name      string
+		statement string
+		wantErr   string
+	}{
+		{name: "a user", statement: "CREATE USER 'app'@'%'", wantErr: `mysql migration replay rejects CREATE USER .*`},
+		{name: "a role", statement: "CREATE ROLE reader", wantErr: `mysql migration replay rejects CREATE ROLE .*`},
+		{name: "a privilege", statement: "GRANT SELECT ON app.* TO reader", wantErr: `mysql migration replay rejects privilege or role mutation .*`},
+		{
+			name:      "a stored body",
+			statement: "CREATE PROCEDURE app.p() BEGIN SELECT 1; END",
+			wantErr:   `mysql migration replay rejects CREATE executable stored body .*`,
+		},
+		{name: "a server setting", statement: "SET GLOBAL max_connections = 10", wantErr: `mysql migration replay rejects global or persistent SET .*`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
 func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,

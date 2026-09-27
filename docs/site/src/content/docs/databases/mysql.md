@@ -356,6 +356,12 @@ or trigger because its body can reference the cleanup realm without a catalog
 dependency. Grant these privileges only to credentials used with a dedicated
 disposable dev database.
 
+A dev server, a `--dev-url` that names no database, is emptied database by
+database and needs none of these. The run found no user database there before
+it replayed, so it drops only the databases the session sees, which are the
+ones it created; see
+[A whole dev server](../../atlas/migrate-commands/#a-whole-dev-server).
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

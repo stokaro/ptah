@@ -319,7 +319,7 @@ func runAtlasMigrateDiff(
 	// starts once a server is already listening.
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, devURL)
+	conn, err := dbschema.ConnectToServer(connectCtx, devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --dev-url: %w", err))
 	}

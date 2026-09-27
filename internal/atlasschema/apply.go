@@ -791,6 +791,9 @@ func PrepareApply(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
+	if err := RefuseDevServer(opts.DevURL); err != nil {
+		return ApplyRuntimePlan{}, err
+	}
 	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL); err != nil {
 		return ApplyRuntimePlan{}, err
 	}

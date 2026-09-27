@@ -479,6 +479,14 @@ func (s Set) EnsureDevIsolation(devURL string) error {
 	if devdocker.IsURL(devURL) {
 		return nil
 	}
+	// A URL naming no MySQL-family database is a whole server, and every
+	// such URL "may" address the same database as any other, so this
+	// comparison would refuse every server pair. The pair is compared live
+	// instead, by server identity, through [Set.DevProtected], which every
+	// caller that resets the dev database hands to the reset.
+	if namesAWholeMySQLServer(s.Sources[0].Raw) || namesAWholeMySQLServer(devURL) {
+		return nil
+	}
 	same, err := atlasurl.MayAddressSameDatabase(s.Sources[0].Raw, devURL)
 	if err != nil {
 		return fmt.Errorf("compare %s database identity with --dev-url: %w", s.Flag, err)
@@ -487,6 +495,13 @@ func (s Set) EnsureDevIsolation(devURL string) error {
 		return s.devIsolationError()
 	}
 	return nil
+}
+
+// namesAWholeMySQLServer reports whether rawURL is a MySQL-family URL that
+// names no database.
+func namesAWholeMySQLServer(rawURL string) bool {
+	parsed, err := atlasurl.ParseMySQLURL(rawURL)
+	return err == nil && parsed.Database() == ""
 }
 
 // DevProtected is the database this set reads, as the dev database must not

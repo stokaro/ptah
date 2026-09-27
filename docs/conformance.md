@@ -765,6 +765,30 @@ on the community binary to look first. The variable is retained in strict mode,
 because it restores what Atlas CE does. See
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-whole-server-cleaned-without-an-opt-in).
 
+### A dev server is emptied whatever order its databases come in
+
+A `--dev-url` that names no MySQL or MariaDB database is a whole dev server.
+Atlas CE `migrate diff`, `migrate lint` and `migrate validate` replay the
+directory there and drop every database afterwards, in name order. A database
+another one keeps a foreign key into stops that cleanup when it comes first.
+Ptah drops the foreign keys between databases first.
+
+Measured 2026-09-27 with a directory whose second file adds a key from `r2.x`
+into `r1.t`, `migrate validate` on an empty dev server:
+
+| Engine | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| MySQL 8.4.11 | 1, `drop schema named "r1": Error 3730`, `r1` and `r2` left on the dev server | 0, the dev server empty |
+| MariaDB 11.8.9 | 1, `drop schema named "r1": Error 1451`, `r1` and `r2` left | 0, the dev server empty |
+
+Atlas CE's next run on that dev server then refuses it as not clean. The
+defect is not copied (stokaro/ptah#3789).
+
+Ptah refuses two pairs Atlas CE runs, on `migrate diff`, before anything is
+replayed: a dev server that is the server `--to` reads, compared by server
+identity, and a `--to` naming one database beside a dev server. See
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-dev-server-that-is-the---to-side-or-beside-one-database).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

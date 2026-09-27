@@ -134,6 +134,7 @@ own measurement conditions.
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
+| [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
 
 ## A `--config` selection naming more than one file
 
@@ -971,6 +972,39 @@ rather than by anything the operator names. One confirmation, or
 `--auto-approve` in a script, would drop databases nobody listed, and the
 community binary offers no dry run to look first. The variable restores the
 binary's behavior, so strict mode keeps it.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse.
+
+**Tracking.** [`stokaro/ptah#3789`](https://github.com/stokaro/ptah/issues/3789)
+
+## A dev server that is the `--to` side, or beside one database
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A `--dev-url` that names no MySQL or MariaDB database is a
+whole dev server, which `migrate diff`, `migrate lint` and `migrate validate`
+empty after the replay. `migrate diff` refuses two pairs before anything is
+replayed:
+
+- a dev server that is the server `--to` reads, compared by the server's UUID
+  on MySQL and by its host name, port and data directory on MariaDB:
+  `--to database must differ from --dev-url because the dev database is reset during planning`;
+- a `--to` naming one database beside a dev server:
+  `cannot diff a schema "app" with a database connection`.
+
+Measured on 2026-09-27 against MySQL 8.4.11 and MariaDB 11.8.9:
+
+| Run | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `--to` and `--dev-url` the same server, holding no database | exit `0`, replays the directory there and empties it | exit `1`, nothing replayed |
+| the same server holding a database | exit `1`, `found schema "r1"` | exit `1`, the same refusal |
+| `--to mysql://host/r1` beside a dev server | exit `0`, writes `ALTER TABLE` statements for `r1` | exit `1`, nothing replayed |
+
+A server that holds no database from the dev URL's point of view can still hold
+what another account sees, and the cleanup would drop what the replay created
+there. Comparing the server's identity costs one query. A database against a
+server compares two scopes as if they were one.
 
 The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse.

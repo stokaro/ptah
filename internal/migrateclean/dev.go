@@ -58,6 +58,11 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if !GovernsDev(scope.Dialect) {
 		return nil
 	}
+	// A whole MySQL-family server is reset database by database, so any user
+	// database refuses it and there is nothing smaller to list.
+	if scope.Realm && isMySQLFamily(scope.Dialect) {
+		return scope.DevRefusal()
+	}
 	scope.Dropped, err = resetObjects(ctx, conn, scope)
 	if err != nil {
 		return fmt.Errorf("clean check: %w", err)
@@ -245,10 +250,17 @@ func (s Scope) droppedRefusal() error {
 // devRealmRefusal is [Scope.DevRefusal] for a connection that pinned no
 // schema. Schemas is in byte order, which is the order the binary names them
 // in.
+//
+// On a whole MySQL or MariaDB server every user database refuses, even an
+// empty one and even one named atlas_schema_revisions: measured on MySQL
+// 8.4.11 and MariaDB 11.8.9, the binary refuses `found schema "A2"` for a dev
+// server holding b1, A2 and c3 (stokaro/ptah#3789).
 func (s Scope) devRealmRefusal() error {
 	switch {
 	case len(s.Schemas) == 0:
 		return nil
+	case isMySQLFamily(s.Dialect):
+		return &NotCleanError{Reason: fmt.Sprintf("found schema %q", s.Schemas[0].Name)}
 	case len(s.Schemas) == 1 && s.Schemas[0].Name == postgresDefaultSchema:
 		if len(s.Schemas[0].Tables) == 0 {
 			return nil

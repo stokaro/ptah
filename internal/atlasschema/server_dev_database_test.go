@@ -52,3 +52,26 @@ func TestRefuseServerDevDatabase_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestRefuseDevServer_FailurePath refuses a dev URL naming no MySQL-family
+// database on schema diff and schema apply, which do not take a dev server
+// (stokaro/ptah#3789).
+func TestRefuseDevServer_FailurePath(t *testing.T) {
+	for _, devURL := range []string{"mysql://root@localhost:3306", "mariadb://root@localhost:3306/", "mysql+unix://root@/run/mysqld/mysqld.sock"} {
+		t.Run(devURL, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.RefuseDevServer(devURL), qt.ErrorIs, atlasschema.ErrDevServerUnsupported)
+		})
+	}
+}
+
+// TestRefuseDevServer_HappyPath is the control: a dev URL naming a database,
+// another dialect, and no dev URL at all are not refused.
+func TestRefuseDevServer_HappyPath(t *testing.T) {
+	for _, devURL := range []string{"", "mysql://root@localhost:3306/dev", "postgres://localhost/dev", "docker://mysql/8/dev"} {
+		t.Run(devURL, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.RefuseDevServer(devURL), qt.IsNil)
+		})
+	}
+}

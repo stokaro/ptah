@@ -122,12 +122,6 @@ var mysqlServerRefusals = []struct {
 			return []string{"migrate", "down", "--url", server, "--dir", "file://" + dir}
 		},
 	},
-	{
-		name: "migrate diff with the server as the dev database",
-		args: func(server, dir string) []string {
-			return []string{"migrate", "diff", "--dir", "file://" + dir, "--to", "file://" + dir, "--dev-url", server}
-		},
-	},
 }
 
 // TestCommandsForOneDatabaseRefuseAMySQLServerURLE2E is the control for the

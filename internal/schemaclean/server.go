@@ -117,11 +117,7 @@ func inspectServer(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Ob
 
 // serverDatabases lists the user databases of a whole server.
 func serverDatabases(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
-	rows, err := conn.QueryContext(ctx, `
-		SELECT SCHEMA_NAME
-		FROM information_schema.SCHEMATA
-		WHERE `+systemschema.MySQLUserDatabasesPredicate("SCHEMA_NAME")+`
-		ORDER BY SCHEMA_NAME`)
+	rows, err := conn.QueryContext(ctx, systemschema.MySQLUserDatabasesQuery())
 	if err != nil {
 		return nil, fmt.Errorf("inspect cleanup databases: %w", err)
 	}
@@ -143,13 +139,7 @@ func serverDatabases(ctx context.Context, conn *dbschema.DatabaseConnection) ([]
 // crossDatabaseForeignKeys lists the foreign keys of a user database that
 // reference a table of another database.
 func crossDatabaseForeignKeys(ctx context.Context, conn *dbschema.DatabaseConnection) ([]Object, error) {
-	rows, err := conn.QueryContext(ctx, `
-		SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
-		FROM information_schema.KEY_COLUMN_USAGE
-		WHERE REFERENCED_TABLE_SCHEMA IS NOT NULL
-		  AND REFERENCED_TABLE_SCHEMA <> TABLE_SCHEMA
-		  AND `+systemschema.MySQLUserDatabasesPredicate("TABLE_SCHEMA")+`
-		ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME`)
+	rows, err := conn.QueryContext(ctx, systemschema.MySQLCrossDatabaseForeignKeysQuery())
 	if err != nil {
 		return nil, fmt.Errorf("inspect cleanup foreign keys between databases: %w", err)
 	}
