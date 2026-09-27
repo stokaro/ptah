@@ -287,11 +287,15 @@ and a second key over the column alone, as `CREATE TABLE g2 (a int, UNIQUE
 carries the column's `UNIQUE` and the second key under its name, `g2_a_key1`.
 
 A plan that adds a column-level `UNIQUE` to an existing column writes
-`ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
-as Atlas CE writes it. The plan cannot see which names the target already
-holds, so where an object the plan keeps holds that name, PostgreSQL refuses
-the statement. MySQL and
-MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
+`ADD CONSTRAINT` under the name the comparison reads as the column's key, as
+Atlas CE writes it: `<table>_<column>_key`, or `<table>_<column>_key1` and on
+where another relation or constraint the file declares holds that name. Beside
+`CREATE UNIQUE INDEX c_x_key ON c (y)`, a file that makes `x` UNIQUE on `c`
+plans `ALTER TABLE c ADD CONSTRAINT c_x_key1 UNIQUE (x)`; under `c_x_key`,
+PostgreSQL 18.6 refuses the statement with `relation "c_x_key" already
+exists`.
+
+MySQL and MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
 [MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
 an unnamed foreign key, `fk_<table>_<column>`. MySQL and MariaDB name an
 unnamed `CHECK` by rules of their own, which the MySQL page describes too. A

@@ -167,3 +167,28 @@ func TestFind_ReleasesNothing(t *testing.T) {
 		})
 	}
 }
+
+// TestFind_TheNameTheDiffCarries releases the key that holds the name the
+// comparison gives the column's key, and not one that holds the name the
+// server tries first when the column takes a later one (stokaro/ptah#3859).
+func TestFind_TheNameTheDiffCarries(t *testing.T) {
+	tests := []struct {
+		name    string
+		removed string
+		want    []string
+	}{
+		{name: "a removed key holds the carried name", removed: "c_x_key1", want: []string{"constraint c.c_x_key1"}},
+		{name: "a removed key holds the first name only", removed: "c_x_key", want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := gains("c", unique, becomesUnique, removed("c", test.removed, "UNIQUE"), nil)
+			diff.TablesModified[0].ColumnKeyNames = map[string]string{"x": "c_x_key1"}
+
+			got := keyrelease.Find(diff, platform.Postgres)
+
+			c.Assert(released(got), qt.DeepEquals, test.want)
+		})
+	}
+}

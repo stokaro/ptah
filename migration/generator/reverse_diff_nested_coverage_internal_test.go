@@ -54,6 +54,14 @@ var nestedCoverageExempt = map[string]string{
 	// only feeds InDependencyOrder(). This one waits for #2583 to decide who
 	// owns the emission and how a composite key is represented.
 	"TableCreation.SelfReferencingForeignKeys": "already emitted twice on the forward path; stokaro/ptah#2583",
+
+	// The names are the forward direction's, derived from the desired state.
+	// A key the rollback puts back is one the pre-change database held under
+	// its real name, and the reversal restores it from the removed constraint,
+	// which carries that name. Measured on PostgreSQL 18.6: a column losing
+	// its key beside a unique index c_x_key drops c_x_key1 on the way up, and
+	// the down migration adds c_x_key1 back (stokaro/ptah#3859).
+	"TableDiff.ColumnKeyNames": "the rollback restores the key from the removed constraint, which carries its name",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the
