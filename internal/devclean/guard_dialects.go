@@ -309,6 +309,12 @@ func isGlobalPostgresDDL(tokens []lexer.Token) bool {
 	if !isDDLAction(tokens) {
 		return false
 	}
+	// ALTER DEFAULT PRIVILEGES FOR ROLE names a role without altering it: the
+	// statement sets pg_default_acl rows of this database, which the realm
+	// cleanup revokes or resets. Read for its object kind, it is ALTER ROLE.
+	if tokenSequenceAt(tokens, 0, "ALTER", "DEFAULT", "PRIVILEGES") {
+		return false
+	}
 	kindIndex := statementObjectKindIndex(tokens)
 	if kindIndex == mutationTargetNotFound {
 		return false

@@ -34,15 +34,17 @@ import (
 )
 
 // UndescribedSQL is the predicate for a pg_default_acl row no declaration can
-// name: no schema, or no grantor.
+// name: no grantor, or no schema and an object class Ptah does not model.
 //
-// It is one function because two reads depend on it agreeing with itself. The
-// described read takes its complement and the undescribed read takes it, so a
-// row is either in the description or in the note, never both and never
-// neither. Written as two predicates, the first shape added to one of them
-// would silently drop out of both (stokaro/ptah#3770).
+// It is one function because the reads depend on it agreeing with itself. The
+// described reads take its complement -- the schema-scoped read and
+// [GlobalSQL] -- and the undescribed read takes it, so a row is either in the
+// description or in the note, never both and never neither. Written as two
+// predicates, the first shape added to one of them would silently drop out of
+// both (stokaro/ptah#3770).
 func UndescribedSQL(alias string) string {
-	return "(" + alias + ".defaclnamespace = 0 OR " + alias + ".defaclrole = 0)"
+	return "(" + alias + ".defaclrole = 0 OR (" + alias + ".defaclnamespace = 0 AND " +
+		alias + ".defaclobjtype NOT IN ('r', 'S', 'f', 'T', 'n', 'L')))"
 }
 
 // GrantorSQL selects a row's grantor: the role's name, or the empty string for
@@ -65,9 +67,10 @@ func GrantorSQL(alias string) string {
 //
 // Every statement over the relation uses it, so a class is named the same way
 // in the description, the note and the cleanup. SCHEMAS and LARGE OBJECTS are
-// global only -- PostgreSQL 18.6 refuses IN SCHEMA for both -- so only the
-// undescribed read meets them. A code this list does not know is kept as the
-// catalog spells it, which is enough to report it and says nothing false.
+// global only -- PostgreSQL 18.6 refuses IN SCHEMA for both, and LARGE OBJECTS
+// is PostgreSQL 18's -- so only the global read meets them. A code this list
+// does not know is kept as the catalog spells it, which is enough to report it
+// and says nothing false.
 func ObjectTypeSQL(alias string) string {
 	column := alias + ".defaclobjtype"
 	return `CASE ` + column + `
@@ -123,19 +126,26 @@ type Querier interface {
 
 // Revoke takes back what one grantee receives by default in one schema, for one
 // grantor and one object class.
+//
+// A global default is not taken back to nothing but to the built-in default,
+// so [ReadGlobalResets] writes two for a grantee the built-in default gives
+// something: the revoke, and a grant of that back, in that order.
 type Revoke struct {
-	// Schema is the schema the default applies in.
+	// Schema is the schema the default applies in, or the empty string for a
+	// global default, which applies in every schema.
 	Schema string
 	// Grantor is the role whose new objects the default applies to, or the
 	// empty string for CockroachDB's FOR ALL ROLES.
 	Grantor string
-	// Class is pg_default_acl's one-character object class: r, S, f or T.
+	// Class is pg_default_acl's one-character object class: r, S, f or T, and
+	// for a global default n or L too.
 	Class string
 	// Grantee is the role receiving the default, or the empty string for
 	// PUBLIC.
 	Grantee string
 	// Statement is the ALTER DEFAULT PRIVILEGES ... REVOKE ALL that takes it
-	// back, with every identifier quoted.
+	// back, or for a global default the GRANT that restores the built-in
+	// default, with every identifier quoted.
 	Statement string
 }
 

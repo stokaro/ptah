@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/migration/schemadiff/difftypes"
 )
@@ -69,6 +70,41 @@ func DefaultPrivileges(desired *schemamodel.Database, current *catalog.Database,
 // manage -- unless the declaration revokes it. A revoked privilege says the
 // privilege is absent, so it is removed whoever the grantor is.
 //
+// # The global default
+//
+// A default privilege without a schema is the global default, and it starts
+// from the built-in one: the owner holds every privilege of the object class,
+// PUBLIC holds EXECUTE on functions and USAGE on types. The read reports a
+// global row as its difference from that, a granted entry for what it adds and
+// a revoked entry for what it takes away, so the comparison knows the
+// built-in default too ([pgdefaultacl.Builtin]):
+//
+//   - a declared grant of a built-in privilege is held unless the database
+//     revoked it;
+//   - a declared revoke of a built-in privilege is planned unless the database
+//     already revoked it -- a database with no row at all holds PUBLIC's
+//     EXECUTE, so a declared REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC is planned
+//     there;
+//   - a built-in privilege the database revoked and the declaration does not is
+//     granted back, under the rule removals follow: when the grantor is a role
+//     the declaration manages or the object is one it declares.
+//
+// A global revoke from the owner that names every privilege of the object
+// class is a revoke of ALL, which is how the SQL schema reader spells REVOKE
+// ALL. The two have to be one: CockroachDB records a revoke of ALL from the
+// owner as ALL, and on CockroachDB the owner's ALL covers privileges the list
+// does not name.
+//
+// On CockroachDB the read cannot say which of its own privileges an owner took
+// away when it took away some and not all, and it reports the owner's part of
+// that default as undescribed. Two statements converge from there whatever the
+// owner holds, and both leave a state the read describes: REVOKE ALL, and
+// GRANT ALL, which restores the built-in default. So a declared revoke of ALL
+// plans the first, and a declared ALL, or nothing declared for a grantor the
+// declaration manages, plans the second. Anything else the declaration says
+// about the owner there is withheld as undecided: planned, it would be planned
+// again on every run, because the read never shows it done.
+//
 // # What a read that did not look plans
 //
 // A read that records [coverage.DefaultPrivilege] as not described reports no
@@ -113,26 +149,46 @@ func DefaultPrivilegesWithSemantics(
 		managedGrantors[semantics.TableIdentityKey(strings.TrimSpace(role.Name))] = true
 	}
 
-	described := make(map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef, len(database.DefaultPrivileges))
+	current := currentDefaultPrivileges{
+		described:      make(map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef, len(database.DefaultPrivileges)),
+		revoked:        make(map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef),
+		revokedObjects: make(map[defaultPrivilegeObject]bool),
+	}
 	removable := make(map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef)
 	for _, privilege := range database.DefaultPrivileges {
 		ref := defaultPrivilegeRefFromDatabase(privilege)
 		key := newDefaultPrivilegeIdentity(ref, semantics)
-		if previous, collides := described[key]; collides {
+		if privilege.Revoked {
+			current.revoked[key] = ref
+			current.revokedObjects[key.object] = true
+			continue
+		}
+		if previous, collides := current.described[key]; collides {
 			ref.WithOption = ref.WithOption || previous.WithOption
 		}
-		described[key] = ref
+		current.described[key] = ref
 		if managedGrantors[key.object.grantor] || declaredObjects[key.object] || revokes(revoked, key) {
 			removable[key] = ref
 		}
 	}
 
-	planDefaultPrivilegeAdditions(declared, described, diff)
+	planDefaultPrivilegeAdditions(declared, current, diff)
 	for key, ref := range removable {
 		if !declaredDefaultPrivilege(key, declared) {
 			diff.DefaultPrivilegesRemoved = append(diff.DefaultPrivilegesRemoved, ref)
 		}
 	}
+	planBuiltinRevokes(desired, semantics, current, diff)
+	for key, ref := range current.revoked {
+		owned := managedGrantors[key.object.grantor] || declaredObjects[key.object]
+		if !owned || revokes(revoked, key) || declaredDefaultPrivilege(key, declared) {
+			continue
+		}
+		diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, ref)
+	}
+	cov.recordUndecidedAdditions(resolveUndescribedOwners(database, semantics, declaredDefaults{
+		granted: declared, revoked: revoked, managedGrantors: managedGrantors,
+	}, diff))
 
 	kept, withheld := keepPlannedAdditions(cov, coverage.DefaultPrivilege, diff.DefaultPrivilegesAdded,
 		defaultPrivilegeSpelling, difftypes.DefaultPrivilegeRef.String, unguardedCreations(),
@@ -152,14 +208,42 @@ func DefaultPrivilegesWithSemantics(
 	sortDefaultPrivilegeRefs(diff.DefaultPrivilegeOptionsRevoked)
 }
 
+// currentDefaultPrivileges is what the read reported: the privileges held
+// beyond the built-in default, and the built-in privileges global rows took
+// away.
+type currentDefaultPrivileges struct {
+	described map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef
+	revoked   map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef
+	// revokedObjects are the objects revoked holds at least one entry of.
+	revokedObjects map[defaultPrivilegeObject]bool
+}
+
+// builtinHeld reports whether the database holds key through the built-in
+// default: key is global, the built-in default gives it, and the database did
+// not take it away, by its own name or by ALL. ALL itself is held only while
+// nothing of the object was taken away.
+func (c currentDefaultPrivileges) builtinHeld(key defaultPrivilegeIdentity) bool {
+	if key.object.schema != "" ||
+		!pgdefaultacl.Builtin(key.object.objectType, key.object.grantor, key.object.grantee, key.privilege) {
+		return false
+	}
+	if key.privilege == allPrivilege {
+		return !c.revokedObjects[key.object]
+	}
+	_, revoked := c.revoked[key]
+	_, revokedAll := c.revoked[defaultPrivilegeIdentity{object: key.object, privilege: allPrivilege}]
+	return !revoked && !revokedAll
+}
+
 // planDefaultPrivilegeAdditions plans each declared default privilege the
 // database does not hold, and the grant options the two disagree on.
 func planDefaultPrivilegeAdditions(
-	declared, described map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+	declared map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+	current currentDefaultPrivileges,
 	diff *difftypes.SchemaDiff,
 ) {
 	for key, ref := range declared {
-		held, exists := heldDefaultPrivileges(key, described)
+		held, exists := heldDefaultPrivileges(key, current)
 		if !exists {
 			diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, ref)
 			continue
@@ -184,12 +268,13 @@ func planDefaultPrivilegeAdditions(
 // on every supported release, one row each; see [heldPrivileges] for why
 // MAINTAIN is not required. Without this a declared ALL matched no row, so the
 // comparison granted ALL and revoked each row it stood for on every run
-// (stokaro/ptah#3579).
+// (stokaro/ptah#3579). A privilege the built-in default holds for a global key
+// counts as held, as a row without the grant option.
 func heldDefaultPrivileges(
 	key defaultPrivilegeIdentity,
-	described map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef,
+	current currentDefaultPrivileges,
 ) ([]difftypes.DefaultPrivilegeRef, bool) {
-	if ref, exists := described[key]; exists {
+	if ref, exists := current.held(key); exists {
 		return []difftypes.DefaultPrivilegeRef{ref}, true
 	}
 	if key.privilege != allPrivilege {
@@ -201,13 +286,197 @@ func heldDefaultPrivileges(
 	}
 	held := make([]difftypes.DefaultPrivilegeRef, 0, len(portable))
 	for _, privilege := range portable {
-		ref, exists := described[defaultPrivilegeIdentity{object: key.object, privilege: privilege}]
+		ref, exists := current.held(defaultPrivilegeIdentity{object: key.object, privilege: privilege})
 		if !exists {
 			return nil, false
 		}
 		held = append(held, ref)
 	}
 	return held, true
+}
+
+// held answers one privilege: the row the read reported for it, or, for a
+// built-in privilege of a global key the database did not take away, a row
+// without the grant option, which is how the built-in default holds it.
+func (c currentDefaultPrivileges) held(key defaultPrivilegeIdentity) (difftypes.DefaultPrivilegeRef, bool) {
+	if ref, exists := c.described[key]; exists {
+		return ref, true
+	}
+	if !c.builtinHeld(key) {
+		return difftypes.DefaultPrivilegeRef{}, false
+	}
+	return difftypes.DefaultPrivilegeRef{Privilege: key.privilege}, true
+}
+
+// planBuiltinRevokes plans the revoke of each built-in privilege a global
+// declaration revokes and the database still holds. A revoke of a privilege
+// the database holds beyond the built-in default is the removal loop's, so it
+// is not planned twice.
+func planBuiltinRevokes(
+	desired *schemamodel.Database,
+	semantics identifier.Semantics,
+	current currentDefaultPrivileges,
+	diff *difftypes.SchemaDiff,
+) {
+	for _, declaration := range desired.DefaultPrivileges {
+		declaration.Canonicalize()
+		if declaration.Schema != "" {
+			continue
+		}
+		for _, name := range revokedNames(declaration) {
+			base := difftypes.DefaultPrivilegeRef{
+				Grantor: declaration.Grantor, ObjectType: declaration.ObjectType, Grantee: declaration.Grantee,
+			}
+			diff.DefaultPrivilegesRemoved = append(diff.DefaultPrivilegesRemoved,
+				builtinRevokesOf(base, name, semantics, current)...)
+		}
+	}
+}
+
+// builtinRevokesOf is the revoke one revoked name plans for one global
+// declaration, base carrying its identity, or nothing when the database holds
+// none of it through the built-in default.
+//
+// A revoked ALL is one statement whenever the database still holds any of the
+// built-in default of the grantee, which is also what CockroachDB records for
+// the owner. It is decided on the privileges every release has: a release
+// without MAINTAIN never reports it taken away, so counting it would plan the
+// revoke on every run there, and REVOKE ALL takes MAINTAIN too where it exists.
+func builtinRevokesOf(
+	base difftypes.DefaultPrivilegeRef,
+	name string,
+	semantics identifier.Semantics,
+	current currentDefaultPrivileges,
+) []difftypes.DefaultPrivilegeRef {
+	candidates := []string{name}
+	if name == allPrivilege {
+		candidates = pgprivilege.Portable(base.ObjectType)
+	}
+	for _, candidate := range candidates {
+		ref := base
+		ref.Privilege = candidate
+		key := newDefaultPrivilegeIdentity(ref, semantics)
+		if !pgdefaultacl.Builtin(key.object.objectType, key.object.grantor, key.object.grantee, candidate) {
+			continue
+		}
+		if _, described := current.described[key]; described || !current.builtinHeld(key) {
+			continue
+		}
+		ref.Privilege = name
+		return []difftypes.DefaultPrivilegeRef{ref}
+	}
+	return nil
+}
+
+// revokedNames is what a canonical declaration revokes, with a global revoke
+// from the owner that names every privilege of its object class read as ALL.
+// Another grantee's list stays a list: ALL names the same privileges for it
+// on every engine, and the plan keeps the spelling the author wrote.
+func revokedNames(declaration schemamodel.DefaultPrivilege) []string {
+	if declaration.Schema == "" && declaration.Grantee == declaration.Grantor &&
+		pgprivilege.NamesAll(declaration.ObjectType, declaration.Revoked) {
+		return []string{allPrivilege}
+	}
+	return declaration.Revoked
+}
+
+// declaredDefaults is what the declaration says, keyed for the comparison.
+type declaredDefaults struct {
+	granted         map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef
+	revoked         map[defaultPrivilegeIdentity]bool
+	managedGrantors map[string]bool
+}
+
+// resolveUndescribedOwners replans the owner's part of each global default the
+// read reported as undescribed, and returns what it cannot decide there as
+// undecided objects. See [DefaultPrivilegesWithSemantics] for the rule.
+func resolveUndescribedOwners(
+	database *catalog.Database,
+	semantics identifier.Semantics,
+	declaration declaredDefaults,
+	diff *difftypes.SchemaDiff,
+) []coverage.Object {
+	var undecided []coverage.Object
+	for _, privilege := range database.UndescribedDefaultPrivileges {
+		if privilege.Grantor == "" || privilege.Schema != "" {
+			continue
+		}
+		owner := difftypes.DefaultPrivilegeRef{
+			Grantor:    strings.TrimSpace(privilege.Grantor),
+			ObjectType: strings.ToUpper(strings.TrimSpace(privilege.ObjectType)),
+			Grantee:    strings.TrimSpace(privilege.Grantor),
+		}
+		object := newDefaultPrivilegeIdentity(owner, semantics).object
+		for _, planned := range []*[]difftypes.DefaultPrivilegeRef{
+			&diff.DefaultPrivilegesAdded, &diff.DefaultPrivilegesRemoved,
+			&diff.DefaultPrivilegeOptionsAdded, &diff.DefaultPrivilegeOptionsRevoked,
+		} {
+			*planned = slices.DeleteFunc(*planned, func(ref difftypes.DefaultPrivilegeRef) bool {
+				return newDefaultPrivilegeIdentity(ref, semantics).object == object
+			})
+		}
+		granted, revoked := declaration.about(object)
+		all := owner
+		all.Privilege = allPrivilege
+		switch {
+		case len(granted) == 0 && slices.Equal(revoked, []string{allPrivilege}):
+			diff.DefaultPrivilegesRemoved = append(diff.DefaultPrivilegesRemoved, all)
+		case len(granted) == 0 && len(revoked) == 0:
+			if declaration.managedGrantors[object.grantor] {
+				diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, all)
+			}
+		case len(revoked) == 0 && len(granted) == 1 && granted[0].Privilege == allPrivilege:
+			diff.DefaultPrivilegesAdded = append(diff.DefaultPrivilegesAdded, granted[0])
+		default:
+			undecided = append(undecided, undecidedOwnerPart(owner, granted, revoked)...)
+		}
+	}
+	return undecided
+}
+
+// about returns what the declaration grants on object and the privileges it
+// revokes there, each sorted.
+func (d declaredDefaults) about(object defaultPrivilegeObject) ([]difftypes.DefaultPrivilegeRef, []string) {
+	var granted []difftypes.DefaultPrivilegeRef
+	for key, ref := range d.granted {
+		if key.object == object {
+			granted = append(granted, ref)
+		}
+	}
+	var revoked []string
+	for key := range d.revoked {
+		if key.object == object {
+			revoked = append(revoked, key.privilege)
+		}
+	}
+	sortDefaultPrivilegeRefs(granted)
+	slices.Sort(revoked)
+	return granted, revoked
+}
+
+// undecidedOwnerPart names each privilege the declaration grants or revokes
+// on an owner's part the read could not describe.
+func undecidedOwnerPart(
+	owner difftypes.DefaultPrivilegeRef,
+	granted []difftypes.DefaultPrivilegeRef,
+	revoked []string,
+) []coverage.Object {
+	refs := slices.Clone(granted)
+	for _, name := range revoked {
+		ref := owner
+		ref.Privilege = name
+		refs = append(refs, ref)
+	}
+	undecided := make([]coverage.Object, 0, len(refs))
+	for _, ref := range refs {
+		undecided = append(undecided, coverage.Object{
+			Kind:       coverage.DefaultPrivilege,
+			Name:       ref.String(),
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromTarget,
+		})
+	}
+	return undecided
 }
 
 // declaredDefaultPrivilege answers whether the declaration grants the default
@@ -238,7 +507,7 @@ func revokedDefaultPrivileges(
 	revoked := make(map[defaultPrivilegeIdentity]bool)
 	for _, privilege := range desired.DefaultPrivileges {
 		privilege.Canonicalize()
-		for _, name := range privilege.Revoked {
+		for _, name := range revokedNames(privilege) {
 			ref := difftypes.DefaultPrivilegeRef{
 				Grantor: privilege.Grantor, Schema: privilege.Schema, ObjectType: privilege.ObjectType,
 				Grantee: privilege.Grantee, Privilege: name,

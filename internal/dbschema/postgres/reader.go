@@ -3640,6 +3640,11 @@ func (r *Reader) rolesInScopeClauses(defaultACL defaultACLAccess, defaultPrivile
 		clauses = append(clauses, `SELECT d.defaclrole FROM pg_default_acl d
 			JOIN scope s ON s.oid = d.defaclnamespace
 			WHERE `+pgdefaultacl.ScopedClassesSQL("d"))
+		// The role a global default applies to. A global default applies in
+		// every schema, so it is in scope whatever the scope is, and the
+		// predicate is the global read's.
+		clauses = append(clauses, `SELECT d.defaclrole FROM pg_default_acl d
+			WHERE `+pgdefaultacl.GlobalSQL("d"))
 	}
 	if defaultPrivilegeGrantees != "" {
 		// Granted a default privilege in scope (pg_default_acl.defaclacl).
@@ -3737,8 +3742,9 @@ func (r *Reader) grantRolesInScopeClauses() []string {
 // leaves a default privilege's grantee out of the description that names it
 // there.
 //
-// The rows are the ones the defaclrole branch reads: every schema-scoped row of
-// the four object classes. PUBLIC is not a role and is left out. The names come
+// The rows are the ones the defaclrole branches read: every schema-scoped row
+// of the four object classes, and every global row the global read describes.
+// PUBLIC is not a role and is left out. The names come
 // back sorted and without duplicates, so the statement that binds them is the
 // same for the same catalog.
 func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []string) ([]string, error) {
@@ -3747,7 +3753,11 @@ func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []str
 		FROM pg_default_acl d
 		JOIN pg_namespace n ON n.oid = d.defaclnamespace
 		WHERE n.nspname IN (` + postgresPlaceholders(len(schemas)) + `)
-		AND ` + pgdefaultacl.ScopedClassesSQL("d")
+		AND ` + pgdefaultacl.ScopedClassesSQL("d") + `
+		UNION ALL
+		SELECT ` + pgdefaultacl.ListSQL("d") + ` AS acl
+		FROM pg_default_acl d
+		WHERE ` + pgdefaultacl.GlobalSQL("d")
 	rows, err := r.db.QueryContext(ctx, query, stringsToAny(schemas)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query default privilege grantees: %w", err)
@@ -4560,22 +4570,20 @@ func (r *Reader) readDefaultPrivileges(ctx context.Context) ([]catalog.DefaultPr
 //
 // The join to pg_namespace is an inner join deliberately: it drops the global
 // entries, which pg_default_acl records with defaclnamespace 0 and which apply
-// in every schema of the database. Ptah models no such entry --
-// internal/devclean refuses an ALTER DEFAULT PRIVILEGES with no IN SCHEMA
-// during replay -- so a described row of that shape names an object nothing
-// could apply back. Its ACL is also a different kind of value: a global row
-// holds the whole ACL, the built-in defaults included, where a schema-scoped
-// row holds only what was added. REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC stores
-// {owner=X/owner}, measured on PostgreSQL 18.6, so exploding it as grants would
-// describe the owner's implicit right and lose the revoke. CockroachDB's FOR
-// ALL ROLES, recorded with defaclrole 0, is left out as well, because a
-// declaration's grantor is a role, and role 0 has only the name
-// `unknown (OID=0)`. Both kinds are left out by the complement of
-// [pgdefaultacl.UndescribedSQL], and [Reader.readUndescribedDefaultPrivileges] lists
-// them for the read surfaces to report; modeling them is stokaro/ptah#3772.
-// defaclobjtype 'n' (SCHEMAS) is left out because the model has no spelling for
-// it either, by the object-type filter, whose CASE is also what turns the
-// catalog's one-character codes into the keywords a statement writes.
+// in every schema of the database. Their ACL is a different kind of value: a
+// global row holds the whole ACL, the built-in defaults included, where a
+// schema-scoped row holds only what was added. REVOKE EXECUTE ON FUNCTIONS FROM
+// PUBLIC stores {owner=X/owner}, measured on PostgreSQL 18.6, so exploding it
+// as grants would describe the owner's implicit right and lose the revoke.
+// [Reader.readGlobalDefaultPrivileges] reads them instead, as their difference
+// from the built-in default. CockroachDB's FOR ALL ROLES, recorded with
+// defaclrole 0, is left out as well, because a declaration's grantor is a
+// role, and role 0 has only the name `unknown (OID=0)`; the complement of
+// [pgdefaultacl.UndescribedSQL] leaves it out, and
+// [Reader.readUndescribedDefaultPrivileges] lists it for the read surfaces to
+// report. The object-type filter keeps the four classes IN SCHEMA can name,
+// and its CASE is what turns the catalog's one-character codes into the
+// keywords a statement writes.
 //
 // Every row carries its schema, the connected one included, unlike the other
 // reads here. A table in the connected schema is spelled unqualified, but a
@@ -4675,8 +4683,21 @@ func compareDefaultPrivileges(a, b catalog.DefaultPrivilege) int {
 		strings.Compare(a.Grantor, b.Grantor),
 		strings.Compare(a.ObjectType, b.ObjectType),
 		strings.Compare(a.Grantee, b.Grantee),
+		compareRevoked(a.Revoked, b.Revoked),
 		strings.Compare(a.Privilege, b.Privilege),
 	)
+}
+
+// compareRevoked orders a grant before a revoke.
+func compareRevoked(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case !a:
+		return -1
+	default:
+		return 1
+	}
 }
 
 // readAllViews reads views from whichever currentCatalog the server has. A view is not
@@ -4788,29 +4809,137 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 	if err != nil {
 		return fmt.Errorf("failed to read default privileges: %w", err)
 	}
-	schema.DefaultPrivileges = defaultPrivileges
+	global, ownerUndescribed, err := r.readGlobalDefaultPrivileges(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read global default privileges: %w", err)
+	}
+	schema.DefaultPrivileges = slices.Concat(global, defaultPrivileges)
 	undescribed, err := r.readUndescribedDefaultPrivileges(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read undescribed default privileges: %w", err)
 	}
-	schema.UndescribedDefaultPrivileges = undescribed
+	schema.UndescribedDefaultPrivileges = slices.Concat(undescribed, ownerUndescribed)
 	return nil
 }
 
-// readUndescribedDefaultPrivileges lists the pg_default_acl rows the read above
-// leaves out: the ones recorded with defaclnamespace 0, which ALTER DEFAULT
-// PRIVILEGES writes when it has no IN SCHEMA, and the ones recorded with
-// defaclrole 0, which is CockroachDB's FOR ALL ROLES. No declaration can name
-// either, so the description does not carry them, and the list exists so that
-// the read surfaces can say what was left out (stokaro/ptah#3737,
-// stokaro/ptah#3770).
+// readGlobalDefaultPrivileges reads what ALTER DEFAULT PRIVILEGES established
+// without IN SCHEMA, as the difference from the built-in default: one entry per
+// privilege a global row adds, and one with Revoked set per privilege of the
+// built-in default it takes away. See [catalog.DefaultPrivilege] and
+// [pgdefaultacl.GlobalDeltas].
 //
-// It is a read of its own rather than a second projection of the one above,
-// because that read is asked once per inspected schema and the rows without a
-// schema belong to none: they apply in every schema of the database, so a read
-// scoped to one schema still has to report them. A FOR ALL ROLES row does belong
-// to a schema, and it is kept only when the read covers that schema, as the
-// described rows are. It asks for the identity only.
+// The rows are read whatever schemas the read covers. They apply in every
+// schema of the database, so a read scoped to one schema is about them too, as
+// it is about a role.
+//
+// PostgreSQL and YugabyteDB answer the built-in default with acldefault. On
+// CockroachDB the owner and PUBLIC cannot be read out of pg_default_acl, so
+// SHOW DEFAULT PRIVILEGES names what each role holds; the owner's part of a
+// class it cannot be named for is returned as the second value, for the read
+// surfaces to report.
+func (r *Reader) readGlobalDefaultPrivileges(
+	ctx context.Context,
+) ([]catalog.DefaultPrivilege, []catalog.UndescribedDefaultPrivilege, error) {
+	if r.dialect == platform.CockroachDB {
+		return r.readCockroachGlobalDefaultPrivileges(ctx)
+	}
+	query := `
+		SELECT
+			pg_get_userbyid(d.defaclrole) AS grantor,
+			` + pgdefaultacl.ObjectTypeSQL("d") + ` AS object_type,
+			` + pgdefaultacl.ListSQL("d") + ` AS acl,
+			` + pgdefaultacl.BuiltinListSQL("d") + ` AS builtin
+		FROM pg_default_acl d
+		WHERE ` + pgdefaultacl.GlobalSQL("d")
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query global default privileges: %w", err)
+	}
+	defer rows.Close()
+
+	var privileges []catalog.DefaultPrivilege
+	for rows.Next() {
+		var identity catalog.DefaultPrivilege
+		var acl, builtin string
+		if err := rows.Scan(&identity.Grantor, &identity.ObjectType, &acl, &builtin); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan global default privilege: %w", err)
+		}
+		held, err := aclitem.ParseJSON(acl)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to read the global default privileges %s set on %s: %w", identity.Grantor, identity.ObjectType, err)
+		}
+		base, err := aclitem.ParseJSON(builtin)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to read the built-in default privileges of %s on %s: %w", identity.Grantor, identity.ObjectType, err)
+		}
+		privileges = append(privileges, globalDefaultPrivileges(identity, pgdefaultacl.GlobalDeltas(held, base))...)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read global default privileges: %w", err)
+	}
+	slices.SortFunc(privileges, compareDefaultPrivileges)
+	return privileges, nil, nil
+}
+
+// readCockroachGlobalDefaultPrivileges is [Reader.readGlobalDefaultPrivileges]
+// on CockroachDB, read through [pgdefaultacl.ReadGlobalFromShow].
+func (r *Reader) readCockroachGlobalDefaultPrivileges(
+	ctx context.Context,
+) ([]catalog.DefaultPrivilege, []catalog.UndescribedDefaultPrivilege, error) {
+	classes, err := pgdefaultacl.ReadGlobalFromShow(ctx, r.db)
+	if err != nil {
+		return nil, nil, err
+	}
+	var privileges []catalog.DefaultPrivilege
+	var undescribed []catalog.UndescribedDefaultPrivilege
+	for _, class := range classes {
+		identity := catalog.DefaultPrivilege{Grantor: class.Grantor, ObjectType: class.ObjectType}
+		privileges = append(privileges, globalDefaultPrivileges(identity, class.Deltas)...)
+		if class.OwnerUndescribed {
+			undescribed = append(undescribed, catalog.UndescribedDefaultPrivilege{
+				Grantor: class.Grantor, ObjectType: class.ObjectType,
+			})
+		}
+	}
+	slices.SortFunc(privileges, compareDefaultPrivileges)
+	return privileges, undescribed, nil
+}
+
+// globalDefaultPrivileges turns the differences of one global row into catalog
+// entries. A reserved grantee is left out, as [explodeDefaultPrivileges] leaves
+// it out of a schema-scoped row.
+func globalDefaultPrivileges(identity catalog.DefaultPrivilege, deltas []pgdefaultacl.Delta) []catalog.DefaultPrivilege {
+	var privileges []catalog.DefaultPrivilege
+	for _, delta := range deltas {
+		grantee := pgdefaultacl.GranteeName(aclitem.Item{Grantee: delta.Grantee})
+		if reservedrole.Is(grantee) {
+			continue
+		}
+		entry := identity
+		entry.Grantee = grantee
+		entry.Privilege = delta.Privilege
+		entry.WithOption = delta.WithOption
+		entry.Revoked = delta.Revoked
+		privileges = append(privileges, entry)
+	}
+	return privileges
+}
+
+// readUndescribedDefaultPrivileges lists the pg_default_acl rows the reads above
+// leave out: the ones recorded with defaclrole 0, which is CockroachDB's FOR
+// ALL ROLES, and a global row of an object class Ptah does not model. No
+// declaration can name either, so the description does not carry them, and the
+// list exists so that the read surfaces can say what was left out
+// (stokaro/ptah#3737, stokaro/ptah#3770).
+//
+// It is a read of its own rather than a second projection of the schema-scoped
+// read, because that read is asked once per inspected schema and a row without
+// a schema belongs to none: it applies in every schema of the database, so a
+// read scoped to one schema still has to report it. A FOR ALL ROLES row with a
+// schema is kept only when the read covers that schema, as the described rows
+// are. It asks for the identity only.
 //
 // Role 0 is spelled `unknown (OID=0)` by pg_get_userbyid, measured on
 // CockroachDB v25.4.16, v26.2.7 and v26.3.1, so the grantor is left empty for it

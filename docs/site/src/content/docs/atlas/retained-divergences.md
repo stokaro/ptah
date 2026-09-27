@@ -868,7 +868,8 @@ through the query the reset runs, and the check reads that list:
 
 - PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
   a function, a procedure, an aggregate, a sequence, a type, a collation, a
-  default privilege it would revoke, or on PostgreSQL a large object.
+  default privilege it would revoke, a global default privilege it would
+  return to the built-in default, or on PostgreSQL a large object.
 - MySQL and MariaDB: a view, a procedure, a function, an event, a sequence, or
   a system-versioned table.
 - SQLite: a view.
@@ -895,6 +896,7 @@ dev database and `migrate validate` and `schema apply` run against it:
 | no `search_path`, the same objects | exit `0`, every object dropped but the enum | exit `0`, the object dropped | exit `1`, names the object, kept |
 | a large object, either scope | exit `0`, kept | `migrate validate` exit `0`, dropped | exit `1`, names it, kept |
 | `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`, `migrate validate` | exit `0`, kept with a `search_path`, revoked without one | exit `0`, revoked | exit `1`, names it, kept |
+| `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, either scope, `migrate validate` | exit `0`, kept | exit `0`, returned to the built-in default | exit `1`, names it, kept |
 
 Measured the same day on the other engines, with the same verbs:
 

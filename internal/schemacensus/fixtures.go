@@ -114,6 +114,7 @@ func Fixtures() []Fixture {
 		{Name: "default-privilege-functions", Schema: defaultPrivilegeFunctionsFixture()},
 		{Name: "default-privilege-types", Schema: defaultPrivilegeTypesFixture()},
 		{Name: "default-privilege-grantable", Schema: defaultPrivilegeGrantableFixture()},
+		{Name: "default-privilege-global", Schema: defaultPrivilegeGlobalFixture()},
 		{Name: "rls", Schema: rlsFixture()},
 		{Name: "rls-strength", Schema: rlsStrengthFixture()},
 		{Name: "embedded-json", Schema: embeddedJSONFixture()},
@@ -1321,6 +1322,21 @@ func defaultPrivilegeGrantableFixture() schemamodel.Database {
 			{Privilege: "SELECT"},
 			{Privilege: "INSERT", WithOption: true},
 		},
+		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// defaultPrivilegeGlobalFixture is the global default, without a schema, taking
+// PUBLIC's built-in EXECUTE on functions away. It is the fixture where Revoked
+// renders: a new database starts from the built-in default, so the revoke is a
+// statement it needs, where a schema-scoped revoke on a new database takes back
+// nothing.
+func defaultPrivilegeGlobalFixture() schemamodel.Database {
+	db := defaultPrivilegeBase()
+	db.DefaultPrivileges = []schemamodel.DefaultPrivilege{{
+		StructName: "DPGlobal", Grantor: "app_owner", ObjectType: "FUNCTIONS",
+		Grantee: "PUBLIC", Revoked: []string{"EXECUTE"},
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
 	}}
 	return db

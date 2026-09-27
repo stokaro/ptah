@@ -31,6 +31,9 @@ var all = map[string][]string{
 	"ROUTINES":  {"EXECUTE"},
 	"TYPES":     {"USAGE"},
 	"SCHEMAS":   {"USAGE", "CREATE"},
+	// LARGE OBJECTS is an object class of ALTER DEFAULT PRIVILEGES on
+	// PostgreSQL 18 and later, and of the global form only.
+	"LARGE OBJECTS": {"SELECT", "UPDATE"},
 }
 
 // versionDependent are the privileges some supported release does not have.
@@ -55,4 +58,29 @@ func Portable(objectType string) []string {
 		}
 	}
 	return portable
+}
+
+// NamesAll reports whether privileges say ALL on objectType: the keyword
+// itself, or every privilege [All] names on it, in any case. The SQL schema
+// reader spells a REVOKE ALL as that list, and a caller that renders the
+// statement again or compares it with a catalog that recorded ALL needs the
+// two spellings to be one.
+func NamesAll(objectType string, privileges []string) bool {
+	named := make(map[string]bool, len(privileges))
+	for _, privilege := range privileges {
+		named[strings.ToUpper(strings.TrimSpace(privilege))] = true
+	}
+	if named["ALL"] {
+		return true
+	}
+	every := All(objectType)
+	if len(every) == 0 {
+		return false
+	}
+	for _, privilege := range every {
+		if !named[privilege] {
+			return false
+		}
+	}
+	return true
 }

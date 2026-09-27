@@ -96,6 +96,33 @@ type AccessControl struct {
 		c.Assert(database.DefaultPrivileges[0].Dialects, qt.DeepEquals, []string{"postgres"})
 	})
 
+	// Without a schema the declaration is the global default, ALTER DEFAULT
+	// PRIVILEGES without IN SCHEMA, and it can take a built-in privilege away
+	// and name the global-only classes (stokaro/ptah#3772).
+	t.Run("a declaration without a schema is the global default", func(t *testing.T) {
+		c := qt.New(t)
+		goCode := `
+package test
+
+//ptah:schema:defaultprivilege for_role="app_owner" object_type="FUNCTIONS" grantee="PUBLIC" revoked="EXECUTE"
+//ptah:schema:defaultprivilege for_role="app_owner" object_type="SCHEMAS" grantee="app_reader" privileges="USAGE"
+type AccessControl struct {
+}
+`
+		database := parseStringAsGoFile(c, goCode)
+
+		c.Assert(database.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{
+			{
+				StructName: "AccessControl", Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC",
+				Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+			},
+			{
+				StructName: "AccessControl", Grantor: "app_owner", ObjectType: "SCHEMAS", Grantee: "app_reader",
+				Privileges: []schemamodel.PrivilegeGrant{{Privilege: "USAGE"}},
+			},
+		})
+	})
+
 	// Identity is (grantor, schema, object type, grantee). Two declarations that
 	// differ only in object type are two objects, and folding them would drop
 	// one of the two statements.
@@ -131,10 +158,18 @@ func TestDefaultPrivilegeAnnotationParsing_FailurePath(t *testing.T) {
 			wantText:   `invalid "object_type" value "ROUTINES" on //ptah:schema:defaultprivilege at AccessControl: must be one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,
 		},
 		{
-			name:       "the global-only object class SCHEMAS",
+			name:       "the global-only object class SCHEMAS beside a schema",
 			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="SCHEMAS" grantee="app_reader" privileges="USAGE"`,
 			wantIs:     ptaherr.ErrInvalidAttributeValue,
-			wantText:   `invalid "object_type" value "SCHEMAS" on //ptah:schema:defaultprivilege at AccessControl: must be one of TABLES, SEQUENCES, FUNCTIONS, TYPES`,
+			wantText: `invalid "object_type" value "SCHEMAS" on //ptah:schema:defaultprivilege at AccessControl: ` +
+				`PostgreSQL sets it for the whole database only, so the declaration cannot name a schema`,
+		},
+		{
+			name:       "an object class ALTER DEFAULT PRIVILEGES does not name",
+			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" object_type="VIEWS" grantee="app_reader" privileges="SELECT"`,
+			wantIs:     ptaherr.ErrInvalidAttributeValue,
+			wantText: `invalid "object_type" value "VIEWS" on //ptah:schema:defaultprivilege at AccessControl: ` +
+				`must be one of TABLES, SEQUENCES, FUNCTIONS, TYPES, SCHEMAS, LARGE OBJECTS`,
 		},
 		{
 			name:       "a grantable privilege that is not granted",
@@ -153,12 +188,6 @@ func TestDefaultPrivilegeAnnotationParsing_FailurePath(t *testing.T) {
 			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader"`,
 			wantIs:     ptaherr.ErrMissingRequiredAttribute,
 			wantText:   `missing required annotation attribute "privileges" on //ptah:schema:defaultprivilege at AccessControl`,
-		},
-		{
-			name:       "a missing schema, which the model has no spelling for",
-			annotation: `//ptah:schema:defaultprivilege for_role="app_owner" object_type="TABLES" grantee="app_reader" privileges="SELECT"`,
-			wantIs:     ptaherr.ErrMissingRequiredAttribute,
-			wantText:   `missing required annotation attribute "schema" on //ptah:schema:defaultprivilege at AccessControl`,
 		},
 	}
 

@@ -49,6 +49,30 @@ default_privilege {
 	})
 }
 
+// TestParseDefaultPrivilege_ReadsTheGlobalForm reads a block without `schema`
+// as the global default, ALTER DEFAULT PRIVILEGES without IN SCHEMA, which can
+// take a built-in privilege away (stokaro/ptah#3772).
+func TestParseDefaultPrivilege_ReadsTheGlobalForm(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+role "app_owner" {}
+
+default_privilege {
+  for_role    = role.app_owner
+  object_type = "FUNCTIONS"
+  to          = "PUBLIC"
+  revoked     = ["EXECUTE"]
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.DefaultPrivileges, qt.DeepEquals, []schemamodel.DefaultPrivilege{{
+		Grantor: "app_owner", ObjectType: "FUNCTIONS", Grantee: "PUBLIC",
+		Privileges: make([]schemamodel.PrivilegeGrant, 0), Revoked: []string{"EXECUTE"},
+	}})
+}
+
 // TestParseDefaultPrivilege_GrantabilityIsPerPrivilege is the row the pair shape
 // exists for.
 //
@@ -142,15 +166,6 @@ func TestParseDefaultPrivilege_FailurePath(t *testing.T) {
   to          = "app_reader"
   privileges  = ["SELECT"]`,
 			wantErr: `.*default_privilege requires for_role.*`,
-		},
-		{
-			name: "no schema",
-			body: `
-  for_role    = "app_owner"
-  object_type = "TABLES"
-  to          = "app_reader"
-  privileges  = ["SELECT"]`,
-			wantErr: `.*default_privilege requires schema.*`,
 		},
 		{
 			name: "no object type",

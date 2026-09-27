@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/lexer"
 )
 
@@ -584,17 +585,13 @@ func (p *Parser) parseGrantOptionSuffix() (bool, error) {
 
 // defaultPrivilegeObjectClasses are the object classes an ALTER DEFAULT
 // PRIVILEGES statement may name here. The keyword is what the node stores, so
-// the accepted set is also the stored spelling.
+// the accepted set is also the stored spelling. Which of them only the global
+// form names is [schemamodel.GlobalOnlyDefaultPrivilegeObjectType]'s to say.
 //
-// PostgreSQL also accepts ROUTINES and SCHEMAS. Neither has a spelling in
-// [ast.DefaultPrivilegeNode], so both are refused by name: folding one onto a
-// neighbor would record a default for an object class the author did not write.
-var defaultPrivilegeObjectClasses = map[string]bool{
-	"TABLES":    true,
-	"SEQUENCES": true,
-	"FUNCTIONS": true,
-	"TYPES":     true,
-}
+// PostgreSQL also accepts ROUTINES, which it records as FUNCTIONS. It is
+// refused by name rather than folded, because a description would read it
+// back as FUNCTIONS and the source would say a word nothing reads back.
+var defaultPrivilegeObjectClasses = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES", "SCHEMAS", "LARGE OBJECTS"}
 
 // parseAlterDefaultPrivileges parses
 // ALTER DEFAULT PRIVILEGES FOR ROLE r IN SCHEMA s GRANT privs ON class TO
@@ -604,14 +601,11 @@ var defaultPrivilegeObjectClasses = map[string]bool{
 // ALTER is consumed and DEFAULT is the current token; see
 // [Parser.parseAlterStatement].
 //
-// Both scope clauses are optional in PostgreSQL and required here. FOR ROLE
-// absent means the role running the statement and IN SCHEMA absent means every
-// schema in the database, and the node models neither -- the grantor is part of
-// the object's identity, and the global default is what internal/devclean
-// refuses during replay. Without the refusals in
-// [Parser.parseDefaultPrivilegeScope] the parser builds a node whose Grantor or
-// Schema is empty, which the PostgreSQL renderer then declines to spell, so the
-// statement would be read and lost rather than read and rejected.
+// Both scope clauses are optional in PostgreSQL. FOR ROLE is required here:
+// absent, it means the role running the statement, and the grantor is part of
+// the object's identity, which a schema file cannot leave to whoever applies
+// it. IN SCHEMA absent means the global default, every schema in the database,
+// and the node records it as an empty Schema.
 func (p *Parser) parseAlterDefaultPrivileges() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "DEFAULT"); err != nil {
 		return nil, err
@@ -684,10 +678,6 @@ func (p *Parser) parseDefaultPrivilegeScope() (grantor, schema string, err error
 		return "", "", fmt.Errorf(
 			"ALTER DEFAULT PRIVILEGES requires FOR ROLE: the grantor is part of the default's identity")
 	}
-	if schema == "" {
-		return "", "", fmt.Errorf(
-			"ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the global default has no representation here")
-	}
 	return grantor, schema, nil
 }
 
@@ -715,7 +705,7 @@ func (p *Parser) parseDefaultPrivilegeGrant(grantor, schema string) (*ast.Defaul
 	if err != nil {
 		return nil, err
 	}
-	objectClass, err := p.parseDefaultPrivilegeObjectClass()
+	objectClass, err := p.parseDefaultPrivilegeObjectClass(schema)
 	if err != nil {
 		return nil, err
 	}
@@ -754,7 +744,7 @@ func (p *Parser) parseDefaultPrivilegeRevoke(grantor, schema string) (*ast.Revok
 	if err != nil {
 		return nil, err
 	}
-	objectClass, err := p.parseDefaultPrivilegeObjectClass()
+	objectClass, err := p.parseDefaultPrivilegeObjectClass(schema)
 	if err != nil {
 		return nil, err
 	}
@@ -798,19 +788,34 @@ func (p *Parser) parseRevokeGrantOptionForPrefix() (bool, error) {
 
 // parseDefaultPrivilegeObjectClass reads the plural object class after ON. It
 // is a keyword rather than a name, which is why [Parser.parseGrantTarget] does
-// not serve here.
-func (p *Parser) parseDefaultPrivilegeObjectClass() (string, error) {
+// not serve here. schema is the statement's IN SCHEMA, empty for the global
+// form, which a global-only class requires.
+func (p *Parser) parseDefaultPrivilegeObjectClass(schema string) (string, error) {
 	p.skipWhitespace()
 	if p.current.Type != lexer.TokenIdentifier {
 		return "", fmt.Errorf(
 			"expected object class after ON, got %s at position %d", p.current.Type, p.current.Start)
 	}
+	start := p.current.Start
 	keyword := strings.ToUpper(p.current.Value)
-	if !defaultPrivilegeObjectClasses[keyword] {
-		return "", fmt.Errorf(
-			"unsupported ALTER DEFAULT PRIVILEGES object class: %s at position %d", keyword, p.current.Start)
-	}
 	p.advance()
+	if keyword == "LARGE" {
+		p.skipWhitespace()
+		if !p.current.MatchIdentifierValue("OBJECTS") {
+			return "", fmt.Errorf("expected OBJECTS after LARGE at position %d", p.current.Start)
+		}
+		p.advance()
+		keyword = "LARGE OBJECTS"
+	}
+	if !slices.Contains(defaultPrivilegeObjectClasses, keyword) {
+		return "", fmt.Errorf(
+			"unsupported ALTER DEFAULT PRIVILEGES object class: %s at position %d", keyword, start)
+	}
+	if schemamodel.GlobalOnlyDefaultPrivilegeObjectType(keyword) && schema != "" {
+		return "", fmt.Errorf(
+			"ALTER DEFAULT PRIVILEGES ON %s cannot name IN SCHEMA, at position %d: PostgreSQL sets it for "+
+				"the whole database only", keyword, start)
+	}
 	return keyword, nil
 }
 

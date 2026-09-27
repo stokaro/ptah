@@ -45,9 +45,9 @@ func TestCockroachDBAllRolesDefaultPrivilegeE2E_HappyPath(t *testing.T) {
 			` IN SCHEMA "public" GRANT INSERT ON TABLES TO ` + quoteE2EIdent(fixture.reader) + ";",
 	})
 	c.Assert(readErr, qt.Contains, "note: 3 default privileges are not described, because no schema"+
-		" source can declare one set without IN SCHEMA or FOR ALL ROLES; a description applied to"+
-		" another database does not carry them: SEQUENCES in app for all roles, TABLES in public"+
-		" for all roles, TYPES in every schema for all roles.\n")
+		" source can declare one set FOR ALL ROLES; a description applied to another database does"+
+		" not carry them: SEQUENCES in app for all roles, TABLES in public for all roles, TYPES in"+
+		" every schema for all roles.\n")
 
 	rendered := filepath.Join(c.TempDir(), "rendered.sql")
 	c.Assert(os.WriteFile(rendered, []byte(read), 0o600), qt.IsNil)

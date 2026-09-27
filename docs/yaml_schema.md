@@ -328,7 +328,7 @@ Top-level constraints also require `table`. `condition` is supported for
 ## Default Privileges
 
 Each entry under `default_privileges` declares what a grantee receives on
-objects a named role creates later in a named schema. The map key names the
+objects a named role creates later, in a named schema or in every schema. The map key names the
 entry in error messages and nothing else: a default privilege has no name, and
 `for_role`, `schema`, `object_type` and `grantee` together identify it.
 
@@ -346,8 +346,8 @@ default_privileges:
 | Key | Meaning |
 |---|---|
 | `for_role` | Role whose newly created objects the privileges apply to. Required. |
-| `schema` | Schema the default applies in. Required. |
-| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`. Required. |
+| `schema` | Schema the default applies in. Left out, the entry is the global default, which applies in every schema. |
+| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`, and without a `schema` also `SCHEMAS` or `LARGE OBJECTS`. Required. |
 | `grantee` | Role receiving the privileges. `PUBLIC` names every role. Required. |
 | `privileges` | Privileges granted. Scalar comma-separated values and sequences are accepted. Required. |
 | `grantable` | The subset of `privileges` carrying `WITH GRANT OPTION`. |
@@ -366,9 +366,10 @@ A `grantable` name that is not in `privileges` is refused while the document is
 parsed: granting it would grant a privilege nobody asked for, and keeping it as
 a flag on nothing would put a contradiction in the schema.
 
-The global form, written without `IN SCHEMA`, has no spelling here.
-`schema` is required, and a default privilege with no schema is a different
-object Ptah does not model.
+An entry without `schema` is the global default, `ALTER DEFAULT PRIVILEGES`
+without `IN SCHEMA`. It applies in every schema of the database and starts from
+the built-in default, so a `revoked` list can take a built-in privilege away,
+such as `EXECUTE` on functions from `PUBLIC`.
 
 ## Schema Objects
 

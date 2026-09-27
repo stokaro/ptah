@@ -3654,18 +3654,15 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 // identity is two statements rather than one -- which is also how a reader
 // reports it back, so the two spellings fold to the same thing.
 //
-// IN SCHEMA is always emitted. The clause-less form sets the global default for
-// every schema of the database, which internal/devclean refuses during replay,
-// and the node has no spelling for it.
+// IN SCHEMA is emitted when the node has a schema. A node without one is the
+// global default, which applies in every schema of the database, and the
+// statement leaves the clause out.
 func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error {
 	if len(node.Privileges) == 0 {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires at least one privilege")
 	}
 	if node.Grantor == "" {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a grantor role")
-	}
-	if node.Schema == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires a schema")
 	}
 	if node.ObjectType == "" {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES requires an object type")
@@ -3683,8 +3680,8 @@ func (r *Renderer) renderDefaultPrivilege(node *ast.DefaultPrivilegeNode) error 
 	}
 
 	plain, grantable := splitByGrantOption(node.Privileges)
-	prefix := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT",
-		r.escapeRoleTarget(node.Grantor), r.escapeIdentifier(node.Schema))
+	prefix := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s GRANT",
+		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema))
 	if len(plain) > 0 {
 		r.w.WriteLinef("%s %s ON %s TO %s;",
 			prefix, strings.Join(plain, ", "), node.ObjectType, r.escapeRoleTarget(node.Grantee))
@@ -3706,9 +3703,6 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 	if node.Grantor == "" {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a grantor role")
 	}
-	if node.Schema == "" {
-		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires a schema")
-	}
 	if node.ObjectType == "" {
 		return fmt.Errorf("ALTER DEFAULT PRIVILEGES REVOKE requires an object type")
 	}
@@ -3728,10 +3722,19 @@ func (r *Renderer) renderRevokeDefaultPrivilege(node *ast.RevokeDefaultPrivilege
 	if node.GrantOptionFor {
 		revoke = "REVOKE GRANT OPTION FOR"
 	}
-	r.w.WriteLinef("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s %s %s ON %s FROM %s;",
-		r.escapeRoleTarget(node.Grantor), r.escapeIdentifier(node.Schema),
+	r.w.WriteLinef("ALTER DEFAULT PRIVILEGES FOR ROLE %s%s %s %s ON %s FROM %s;",
+		r.escapeRoleTarget(node.Grantor), r.inSchemaClause(node.Schema),
 		revoke, privileges, node.ObjectType, r.escapeRoleTarget(node.Grantee))
 	return nil
+}
+
+// inSchemaClause is the IN SCHEMA clause of an ALTER DEFAULT PRIVILEGES, with
+// its leading space, and nothing for the global default.
+func (r *Renderer) inSchemaClause(schema string) string {
+	if schema == "" {
+		return ""
+	}
+	return " IN SCHEMA " + r.escapeIdentifier(schema)
 }
 
 // splitByGrantOption separates the privileges that carry WITH GRANT OPTION from
@@ -3812,8 +3815,11 @@ func grantIdentity(objectPreposition, objectName, rolePreposition, role string) 
 // rendered. internal/modelast's render-and-plan agreement test is what measures
 // that.
 func defaultPrivilegeIdentity(grantor, schema, objectType, grantee string) string {
-	return "on " + objectType + " in schema " + schema +
-		" for role " + grantor + " to " + grantee
+	where := "in schema " + schema
+	if schema == "" {
+		where = "in every schema"
+	}
+	return "on " + objectType + " " + where + " for role " + grantor + " to " + grantee
 }
 
 // renderRoleOperation renders a single role operation as an ALTER ROLE statement

@@ -34,7 +34,7 @@ var postgresServerWideStatements = []struct {
 	{name: "schema privilege", statement: `GRANT USAGE ON SCHEMA public TO app`},
 	{name: "database privilege", statement: `GRANT CONNECT ON DATABASE dev TO app`},
 	{name: "revoked schema privilege", statement: `REVOKE ALL ON SCHEMA public FROM PUBLIC`},
-	{name: "default privileges without a schema", statement: `ALTER DEFAULT PRIVILEGES GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app`},
+	{name: "default privileges for all roles without a schema", statement: `ALTER DEFAULT PRIVILEGES FOR ALL ROLES GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app`},
 	{name: "DROP OWNED", statement: `DROP OWNED BY app`},
 	{name: "REASSIGN OWNED", statement: `REASSIGN OWNED BY app TO reporter`},
 	{name: "COMMENT ON ROLE", statement: `COMMENT ON ROLE app IS 'the application role'`},
@@ -110,6 +110,30 @@ func TestReplayGuardServerRealm_PostgresFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestReplayGuardDatabaseRealm_PostgresAcceptsDefaultPrivileges replays the
+// default privileges Ptah renders on a server the operator named. Each sets
+// pg_default_acl rows of the dev database, which the realm cleanup revokes,
+// or, for a global default, returns to the built-in one (stokaro/ptah#3772).
+// FOR ROLE names a role without altering it.
+func TestReplayGuardDatabaseRealm_PostgresAcceptsDefaultPrivileges(t *testing.T) {
+	guard := postgresGuard(devclean.ReplayRealmDatabase)
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "in a schema", statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "app" GRANT SELECT ON TABLES TO "app_reader"`},
+		{name: "global grant", statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" GRANT USAGE ON SCHEMAS TO "app_reader"`},
+		{name: "global revoke", statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`},
+		{name: "global, for the current role", statement: `ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO "app_reader"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
 		})
 	}
 }

@@ -204,7 +204,7 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(catalogQueries, qt.HasLen, 12)
+	c.Assert(catalogQueries, qt.HasLen, 13)
 	c.Assert(catalogQueries[0], qt.Equals, "SELECT version()")
 	c.Assert(catalogQueries[1], qt.Equals, "SELECT current_database()")
 	c.Assert(catalogQueries[2], qt.Contains, "database_scoped_artifacts")
@@ -225,11 +225,12 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	c.Assert(catalogQueries[6], qt.Contains, "DROP COLLATION IF EXISTS %I.%I RESTRICT")
 	c.Assert(catalogQueries[7], qt.Contains, "FROM pg_default_acl")
 	c.Assert(catalogQueries[7], qt.Contains, "WHEN d.defaclrole = 0 THEN ''")
-	c.Assert(catalogQueries[9], qt.Contains, "SELECT e.extname FROM pg_extension")
-	c.Assert(catalogQueries[10], qt.Contains, "residual_objects")
-	c.Assert(catalogQueries[10], qt.Contains, "FROM pg_collation")
-	c.Assert(catalogQueries[10], qt.Contains, "FROM pg_default_acl")
-	c.Assert(catalogQueries[11], qt.Contains, "FROM pg_largeobject_metadata")
+	c.Assert(catalogQueries[8], qt.Contains, "AS builtin")
+	c.Assert(catalogQueries[10], qt.Contains, "SELECT e.extname FROM pg_extension")
+	c.Assert(catalogQueries[11], qt.Contains, "residual_objects")
+	c.Assert(catalogQueries[11], qt.Contains, "FROM pg_collation")
+	c.Assert(catalogQueries[11], qt.Contains, "FROM pg_default_acl")
+	c.Assert(catalogQueries[12], qt.Contains, "FROM pg_largeobject_metadata")
 	c.Assert(catalogArgs[0], qt.HasLen, 0)
 	c.Assert(catalogArgs[1], qt.HasLen, 0)
 	c.Assert(catalogArgs[2], qt.HasLen, 0)
@@ -246,12 +247,13 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 		{Ordinal: 2, Value: "public"},
 	})
 	c.Assert(catalogArgs[8], qt.HasLen, 0)
-	c.Assert(catalogArgs[9], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
-	c.Assert(catalogArgs[10], qt.DeepEquals, []driver.NamedValue{
+	c.Assert(catalogArgs[9], qt.HasLen, 0)
+	c.Assert(catalogArgs[10], qt.DeepEquals, []driver.NamedValue{{Ordinal: 1, Value: "plpgsql"}})
+	c.Assert(catalogArgs[11], qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "public"},
 		{Ordinal: 2, Value: "plpgsql"},
 	})
-	c.Assert(catalogArgs[11], qt.HasLen, 0)
+	c.Assert(catalogArgs[12], qt.HasLen, 0)
 	c.Assert(execQueries, qt.DeepEquals, []string{
 		"SAVEPOINT ptah_cleanup_object;\n" +
 			`DROP EXTENSION IF EXISTS "hstore" RESTRICT;` +
@@ -276,7 +278,7 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 		`COMMENT ON SCHEMA "public" IS 'application root'`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 12)
+	c.Assert(db.QueryCount(), qt.Equals, 13)
 	c.Assert(db.ExecCount(), qt.Equals, 15)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -304,8 +306,8 @@ func TestWriterDropDatabaseRealm_LeavesExtensionOwnedObjectsToTheExtension(t *te
 	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(catalogQueries, qt.HasLen, 12)
-	planned, objects, verified, residual := catalogQueries[5], catalogQueries[6], catalogQueries[8], catalogQueries[10]
+	c.Assert(catalogQueries, qt.HasLen, 13)
+	planned, objects, verified, residual := catalogQueries[5], catalogQueries[6], catalogQueries[9], catalogQueries[11]
 	for _, schemas := range []string{planned, verified} {
 		c.Assert(schemas, qt.Contains, "d.classid = 'pg_namespace'::regclass")
 		c.Assert(schemas, qt.Contains, "d.deptype = 'e'")
@@ -342,7 +344,7 @@ func TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions(t *testing.T) {
 	err := postgres.NewPostgreSQLWriter(db.SQL, "public").DropDatabaseRealmKeeping(t.Context(), []string{"vector", "hstore"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(catalogQueries, qt.HasLen, 13)
+	c.Assert(catalogQueries, qt.HasLen, 14)
 	c.Assert(catalogQueries[6], qt.Contains, "JOIN pg_namespace n ON n.oid = e.extnamespace")
 	c.Assert(catalogArgs[6], qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "vector"},
@@ -355,12 +357,12 @@ func TestWriterDropDatabaseRealmKeeping_PassesTheKeptExtensions(t *testing.T) {
 		{Ordinal: 4, Value: "plpgsql"},
 		{Ordinal: 5, Value: "vector"},
 	})
-	c.Assert(catalogArgs[10], qt.DeepEquals, []driver.NamedValue{
+	c.Assert(catalogArgs[11], qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "hstore"},
 		{Ordinal: 2, Value: "plpgsql"},
 		{Ordinal: 3, Value: "vector"},
 	})
-	c.Assert(catalogArgs[11], qt.DeepEquals, []driver.NamedValue{
+	c.Assert(catalogArgs[12], qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "public"},
 		{Ordinal: 2, Value: "hstore"},
 		{Ordinal: 3, Value: "plpgsql"},
@@ -402,7 +404,7 @@ func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 		`COMMENT ON SCHEMA public IS 'standard public schema'`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 13)
+	c.Assert(db.QueryCount(), qt.Equals, 14)
 	c.Assert(db.ExecCount(), qt.Equals, 11)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -459,7 +461,7 @@ func TestWriterDropDatabaseRealm_CockroachPreservesPublicSchemaContainer(t *test
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 11)
+	c.Assert(db.QueryCount(), qt.Equals, 12)
 	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -476,7 +478,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnResidualObject(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`PostgreSQL database realm cleanup left residual collation "public"\."stale_collation"`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 10)
+	c.Assert(db.QueryCount(), qt.Equals, 11)
 	c.Assert(db.ExecCount(), qt.Equals, 4)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -654,7 +656,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnPreservedDependency(t *testing.T) {
 		"ROLLBACK TO SAVEPOINT ptah_cleanup_object;\nRELEASE SAVEPOINT ptah_cleanup_object",
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 8)
+	c.Assert(db.QueryCount(), qt.Equals, 9)
 	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -671,7 +673,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnResidualExtension(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`PostgreSQL database realm cleanup left residual user extension "hstore"`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 9)
+	c.Assert(db.QueryCount(), qt.Equals, 10)
 	c.Assert(db.ExecCount(), qt.Equals, 4)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -1026,6 +1028,12 @@ type postgresRealmQuery struct {
 	finalSchemas      [][]driver.Value
 	publicObjects     [][]driver.Value
 	defaultACLs       [][]driver.Value
+	globalDefaultACLs [][]driver.Value
+	// roles and globalShow answer the CockroachDB read of the global default
+	// privileges: the role list, and SHOW DEFAULT PRIVILEGES without IN
+	// SCHEMA.
+	roles             [][]driver.Value
+	globalShow        [][]driver.Value
 	residualExtension [][]driver.Value
 	residualObjects   [][]driver.Value
 	schemaQueryCount  int
@@ -1178,10 +1186,14 @@ func (q *postgresRealmQuery) query(
 			Columns: []string{"object_kind", "object_schema", "object_name", "object_qualifier", "drop_statement"},
 			Rows:    q.publicObjects,
 		}, nil
+	case strings.Contains(query, postgresGlobalDefaultACLMarker):
+		return postgresGlobalDefaultACLResult(q.globalDefaultACLs), nil
 	case strings.Contains(query, postgresDefaultACLMarker):
 		return postgresDefaultACLResult(q.defaultACLs), nil
 	case strings.Contains(query, postgresRoleNamesMarker):
-		return postgresRoleNamesResult(nil), nil
+		return postgresRoleNamesResult(q.roles), nil
+	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker) && !strings.Contains(query, " IN SCHEMA "):
+		return postgresShowDefaultPrivilegesResult(q.globalShow), nil
 	case strings.HasPrefix(query, postgresShowDefaultPrivilegesMarker):
 		return postgresShowDefaultPrivilegesResult(nil), nil
 	case strings.Contains(query, "aclexplode"):
@@ -1287,6 +1299,8 @@ func postgresCleanupCatalogQuery(
 		return noPostgresSchemaOwnedExtensions(), nil
 	case strings.Contains(query, "FROM pg_inherits"):
 		return noPostgresCrossSchemaPartitionEdges(), nil
+	case strings.Contains(query, postgresGlobalDefaultACLMarker):
+		return postgresGlobalDefaultACLResult(nil), nil
 	case strings.Contains(query, postgresDefaultACLMarker):
 		return postgresDefaultACLResult(nil), nil
 	case strings.Contains(query, postgresRoleNamesMarker):
@@ -1304,6 +1318,18 @@ func postgresCleanupCatalogQuery(
 // postgresDefaultACLMarker is what the cleanup's default privilege query
 // selects and no other statement the writer sends does: the ACL, whole.
 const postgresDefaultACLMarker = "array_to_json(d.defaclacl)"
+
+// postgresGlobalDefaultACLMarker is what the realm cleanup's read of the global
+// default privileges selects beside each list, and no other statement does: the
+// built-in default.
+const postgresGlobalDefaultACLMarker = "AS builtin"
+
+// postgresGlobalDefaultACLResult answers the read of the global default
+// privileges, one row per global pg_default_acl row: grantor, class keyword,
+// the ACL and the built-in ACL, each as array_to_json renders it.
+func postgresGlobalDefaultACLResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{Columns: []string{"grantor", "object_type", "acl", "builtin"}, Rows: rows}
+}
 
 // postgresRoleNamesMarker is the role list the CockroachDB cleanup reads to
 // ask SHOW DEFAULT PRIVILEGES about every role.

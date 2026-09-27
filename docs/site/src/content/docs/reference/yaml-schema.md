@@ -139,8 +139,8 @@ default privilege has no name of its own, and `for_role`, `schema`,
 | Key | Meaning |
 | --- | --- |
 | `for_role` | Role whose newly created objects the privileges apply to. Required. |
-| `schema` | Schema the default applies in. Required. |
-| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`. Required. |
+| `schema` | Schema the default applies in. Left out, the entry is the global default, which applies in every schema. |
+| `object_type` | `TABLES`, `SEQUENCES`, `FUNCTIONS`, or `TYPES`, and without a `schema` also `SCHEMAS` or `LARGE OBJECTS`. Required. |
 | `grantee` | Role receiving the privileges. `PUBLIC` names every role. Required. |
 | `privileges` | Privileges granted, such as `SELECT`. Required unless `revoked` is set. |
 | `grantable` | The subset of `privileges` carrying `WITH GRANT OPTION`. A name outside `privileges` is refused. |
@@ -167,12 +167,25 @@ database back reports the same two rows, so the comparison converges.
 `revoked` is what a SQL schema file writes as `ALTER DEFAULT PRIVILEGES ...
 REVOKE`. The comparison revokes each listed privilege wherever the database
 holds it for that identity, whether or not the schema declares the role in
-`for_role`. A database the schema creates has nothing to revoke, so the entry
-renders no statement of its own.
+`for_role`. A database the schema creates has no schema-scoped default to
+revoke, so a schema-scoped entry renders no statement of its own.
 
-Writing the global form, which omits `IN SCHEMA`, is not possible here.
-`schema` is required, and a default privilege with no schema is a different
-object that Ptah does not model.
+An entry without `schema` is the global default, `ALTER DEFAULT PRIVILEGES`
+without `IN SCHEMA`. It starts from the built-in default, so its `revoked`
+can take a built-in privilege away, and it renders as a statement even for a
+database the schema creates:
+
+```yaml
+default_privileges:
+  no_public_execute:
+    for_role: app_owner
+    object_type: FUNCTIONS
+    grantee: PUBLIC
+    revoked: [EXECUTE]
+```
+
+See [global default privileges](../../databases/postgresql/#global-default-privileges)
+for how the comparison treats the built-in default.
 
 ## Tables
 

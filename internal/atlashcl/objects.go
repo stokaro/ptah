@@ -982,7 +982,8 @@ func setGrantTargetFromRef(grant *schemamodel.Grant, target string) bool {
 }
 
 // parseDefaultPrivilege reads a `default_privilege` block: the privileges an
-// object gets when a named role creates one in a named schema.
+// object gets when a named role creates one, in a named schema or, without
+// `schema`, in every schema of the database.
 //
 // It is a sibling of `permission` rather than a shape of it because a default
 // privilege's identity includes the GRANTOR, and a `permission` block has
@@ -994,9 +995,11 @@ func setGrantTargetFromRef(grant *schemamodel.Grant, target string) bool {
 // `for_role` names the grantor and `to` names the grantee. `for` is not reused
 // for the grantor: in a `permission` block it names the object granted on.
 //
-// Every part of the identity is required, because the identity is what the
-// object IS: two declarations differing only in grantor are two objects, and one
-// missing a part addresses nothing.
+// Every part of the identity is required but the schema, because the identity
+// is what the object IS: two declarations differing only in grantor are two
+// objects, and one missing a part addresses nothing. A block without `schema`
+// is the global default, ALTER DEFAULT PRIVILEGES without IN SCHEMA, a
+// different object from every schema-scoped one.
 //
 // The object-type keyword is taken as written rather than checked against the
 // closed set ALTER DEFAULT PRIVILEGES names. [ptah.run/core/goschema] declares
@@ -1050,8 +1053,6 @@ func (p *parser) requireDefaultPrivilegeIdentity(
 	switch {
 	case privilege.Grantor == "":
 		return p.blockError(block, "default_privilege requires for_role")
-	case privilege.Schema == "":
-		return p.blockError(block, "default_privilege requires schema")
 	case privilege.ObjectType == "":
 		return p.blockError(block, "default_privilege requires object_type")
 	case privilege.Grantee == "":

@@ -49,8 +49,8 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 320 | reaches rendered SQL on at least one target |
-| `comparison` | 8 | read when two schemas are compared, and written into no statement |
+| `ddl` | 321 | reaches rendered SQL on at least one target |
+| `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 16 | identifies the source text the declaration was read from |
@@ -162,7 +162,7 @@ None.
 | `schemamodel.DefaultPrivilege.Grantor` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.ObjectType` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Privileges` | `ddl` | — |
-| `schemamodel.DefaultPrivilege.Revoked` | `comparison` | privileges the identity must not hold; a database the schema creates has none to revoke, so only a comparison plans the REVOKE |
+| `schemamodel.DefaultPrivilege.Revoked` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.Schema` | `ddl` | — |
 | `schemamodel.DefaultPrivilege.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Domain.BaseType` | `ddl` | — |

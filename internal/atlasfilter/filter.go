@@ -1275,7 +1275,7 @@ func (s *exclusionState) filterDefaultPrivileges(
 	return keep(privileges, func(privilege catalog.DefaultPrivilege) bool {
 		grantorNamed := s.matches("role", privilege.Grantor)
 		granteeNamed := s.matches("role", privilege.Grantee)
-		return !grantorNamed && !granteeNamed && !s.schemaExcluded(privilege.Schema)
+		return !grantorNamed && !granteeNamed && !s.defaultPrivilegeSchemaExcluded(privilege.Schema)
 	})
 }
 
@@ -1288,8 +1288,15 @@ func (s *exclusionState) filterGeneratedDefaultPrivileges(
 	return keep(privileges, func(privilege schemamodel.DefaultPrivilege) bool {
 		grantorNamed := s.matches("role", privilege.Grantor)
 		granteeNamed := s.matches("role", privilege.Grantee)
-		return !grantorNamed && !granteeNamed && !s.schemaExcluded(privilege.Schema)
+		return !grantorNamed && !granteeNamed && !s.defaultPrivilegeSchemaExcluded(privilege.Schema)
 	})
+}
+
+// defaultPrivilegeSchemaExcluded answers whether a default privilege's schema
+// is excluded. A blank schema is the global default, which no schema exclusion
+// reaches: it is not the connected schema.
+func (s *exclusionState) defaultPrivilegeSchemaExcluded(schema string) bool {
+	return strings.TrimSpace(schema) != "" && s.schemaExcluded(schema)
 }
 
 func (s *exclusionState) filterGrants(grants []catalog.Grant) []catalog.Grant {

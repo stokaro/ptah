@@ -426,6 +426,20 @@ func (c postgresCleanupCapabilities) defaultPrivilegeRevokes() defaultPrivilegeR
 	return pgdefaultacl.ReadRevokes
 }
 
+// globalDefaultPrivilegeResetReader reads the statements that return the global
+// default privileges to the built-in ones.
+type globalDefaultPrivilegeResetReader func(ctx context.Context, q pgdefaultacl.Querier) ([]pgdefaultacl.Revoke, error)
+
+// globalDefaultPrivilegeResets picks the read of the global default privileges
+// a realm cleanup resets: SHOW DEFAULT PRIVILEGES on CockroachDB, and
+// pg_default_acl elsewhere.
+func (c postgresCleanupCapabilities) globalDefaultPrivilegeResets() globalDefaultPrivilegeResetReader {
+	if c.showDefaultPrivileges {
+		return pgdefaultacl.ReadGlobalResetsFromShow
+	}
+	return pgdefaultacl.ReadGlobalResets
+}
+
 func (c postgresCleanupCapabilities) withoutTransaction() postgresCleanupCapabilities {
 	c.retryFailedDDL = false
 	c.retryFailedDDLWithoutTransaction = true
@@ -795,7 +809,15 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	if err != nil {
 		return nil, err
 	}
-	return append(objects, revokes...), nil
+	objects = append(objects, revokes...)
+	if !scope.realm {
+		return objects, nil
+	}
+	resets, err := w.collectGlobalDefaultPrivilegeResets(ctx, tx, capabilities.globalDefaultPrivilegeResets())
+	if err != nil {
+		return nil, err
+	}
+	return append(objects, resets...), nil
 }
 
 // The routine kinds are compared with OR rather than IN, and pg_class's are
@@ -1014,6 +1036,39 @@ func (w *PostgreSQLWriter) collectDefaultPrivilegeRevokes(
 			Schema:    revoke.Schema,
 			Name:      revoke.Name(),
 			Statement: revoke.Statement,
+		})
+	}
+	return objects, nil
+}
+
+// collectGlobalDefaultPrivilegeResets returns the statements that return every
+// global default privilege of the database to the built-in one, or nothing on a
+// server whose catalog has no pg_default_acl.
+//
+// A global default is what ALTER DEFAULT PRIVILEGES sets without IN SCHEMA. It
+// applies in every schema and belongs to the database rather than to a schema,
+// so a cleanup that drops schemas leaves it in place, and a dev database a
+// replay set one in would carry it into the next run. Only the realm cleanup,
+// which owns the whole database, resets it. They run after the revokes. See
+// [pgdefaultacl.ReadGlobalResets] for the statements.
+func (w *PostgreSQLWriter) collectGlobalDefaultPrivilegeResets(
+	ctx context.Context,
+	tx cleanupConn,
+	read globalDefaultPrivilegeResetReader,
+) ([]postgresCleanupObject, error) {
+	if !w.caps.Has(capability.CatalogDefaultPrivileges) {
+		return nil, nil
+	}
+	resets, err := read(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	objects := make([]postgresCleanupObject, 0, len(resets))
+	for _, reset := range resets {
+		objects = append(objects, postgresCleanupObject{
+			Kind:      defaultPrivilegeKind,
+			Name:      reset.Name(),
+			Statement: reset.Statement,
 		})
 	}
 	return objects, nil
@@ -1606,8 +1661,9 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeepingSchemas(ctx context.Context, 
 
 // ResetObjects lists what a reset of schemas drops, keeping keptExtensions and
 // everything they own: tables, views, sequences, routines, types, collations
-// and foreign tables, and the default privileges it revokes, sorted by schema,
-// name and kind. A constraint or an index
+// and foreign tables, the default privileges it revokes, and the global
+// default privileges the realm cleanup returns to the built-in ones, sorted by
+// schema, name and kind. A constraint or an index
 // is left out, since it is dropped with the relation it belongs to, which is
 // listed. Where the realm cleanup removes large objects, which is PostgreSQL
 // itself, the lowest one is listed last, whatever the schemas: a replay of a
@@ -1631,6 +1687,14 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope
 	if err != nil {
 		return nil, err
 	}
+	// The global default privileges go with the realm cleanup, whatever the
+	// schemas: they belong to the database rather than to a schema, and a
+	// replay of a dev database whose URL pins one schema still resets them.
+	resets, err := w.collectGlobalDefaultPrivilegeResets(ctx, w.db, capabilities.globalDefaultPrivilegeResets())
+	if err != nil {
+		return nil, err
+	}
+	collected = append(collected, resets...)
 	objects := make([]dbreset.Object, 0, len(collected))
 	for _, object := range collected {
 		if object.Kind == "constraint" || object.Kind == "index" {
@@ -1641,6 +1705,9 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope
 	slices.SortFunc(objects, func(a, b dbreset.Object) int {
 		return cmp.Or(cmp.Compare(a.Schema, b.Schema), cmp.Compare(a.Name, b.Name), cmp.Compare(a.Kind, b.Kind))
 	})
+	// A global reset is two statements for one grantee, a revoke and a grant
+	// back, and lists once.
+	objects = slices.Compact(objects)
 	// The large objects go in the realm cleanup's transaction. A server that
 	// refuses DDL inside one never gets that far, and the Spanner interface,
 	// which reports itself as PostgreSQL 14.1, has no pg_largeobject_metadata

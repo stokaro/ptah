@@ -48,6 +48,32 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 			statement: `ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT ON TABLES TO app_reader`,
 		},
 		{
+			// The realm cleanup resets a global default (stokaro/ptah#3772).
+			name:      "global default privileges",
+			dialect:   platform.Postgres,
+			statement: `ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC`,
+		},
+		{
+			name:      "global default privileges for a role",
+			dialect:   platform.Postgres,
+			statement: `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`,
+		},
+		{
+			name:      "schema scoped default privileges for a role",
+			dialect:   platform.Postgres,
+			statement: `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO app_reader`,
+		},
+		{
+			name:      "schema scoped default privileges for a user",
+			dialect:   platform.YugabyteDB,
+			statement: `ALTER DEFAULT PRIVILEGES FOR USER app_owner IN SCHEMA app GRANT USAGE ON TYPES TO app_reader`,
+		},
+		{
+			name:      "schema scoped default privileges for all roles",
+			dialect:   platform.CockroachDB,
+			statement: `ALTER DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA app GRANT SELECT ON TABLES TO app_reader`,
+		},
+		{
 			name:      "table grant",
 			dialect:   platform.Postgres,
 			statement: `GRANT SELECT ON TABLE app.users TO app_reader`,
@@ -173,10 +199,10 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 			wantErr:   `postgres migration replay rejects GRANT role membership .*`,
 		},
 		{
-			name:      "global default privileges",
-			dialect:   platform.Postgres,
-			statement: `ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC`,
-			wantErr:   `postgres migration replay rejects ALTER DEFAULT PRIVILEGES without IN SCHEMA .*`,
+			name:      "global default privileges for all roles",
+			dialect:   platform.CockroachDB,
+			statement: `ALTER DEFAULT PRIVILEGES FOR ALL ROLES GRANT SELECT ON TABLES TO PUBLIC`,
+			wantErr:   `cockroachdb migration replay rejects ALTER DEFAULT PRIVILEGES FOR ALL ROLES without IN SCHEMA .*`,
 		},
 		{
 			name:      "database comment",

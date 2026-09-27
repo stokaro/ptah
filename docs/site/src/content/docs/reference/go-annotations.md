@@ -746,8 +746,8 @@ refused: annotations have no order, so neither declaration could win.
 ### `//ptah:schema:defaultprivilege`
 
 Declares a PostgreSQL default privilege: what a grantee receives on objects a
-named role creates in a named schema. It is `ALTER DEFAULT PRIVILEGES`, and no
-other engine has the statement.
+named role creates, in a named schema or in every schema. It is
+`ALTER DEFAULT PRIVILEGES`, and no other engine has the statement.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -756,10 +756,10 @@ other engine has the statement.
 | `for_role` | Yes | Role whose newly created objects the privileges apply to. |
 | `grantable` | No | The subset of `privileges` carrying `WITH GRANT OPTION`. |
 | `grantee` | Yes | Role receiving the privileges; `PUBLIC` names every role. |
-| `object_type` | Yes | `TABLES`, `SEQUENCES`, `FUNCTIONS` or `TYPES`. |
+| `object_type` | Yes | `TABLES`, `SEQUENCES`, `FUNCTIONS` or `TYPES`, and without `schema` also `SCHEMAS` or `LARGE OBJECTS`. |
 | `privileges` | No | Comma-separated privileges, such as `SELECT,INSERT`. Required unless `revoked` is set. |
 | `revoked` | No | Comma-separated privileges the grantee must not hold by default, such as `INSERT,UPDATE`; `ALL` names every privilege of the object type. A name also in `privileges` is refused. |
-| `schema` | Yes | Schema the default applies in. |
+| `schema` | No | Schema the default applies in. Left out, the directive is the global default, which applies in every schema. |
 
 The directive needs a holder struct. Written at file level, below the closing
 brace of the declaration above it, it contributes no object and reports
@@ -781,10 +781,20 @@ WITH GRANT OPTION` reads back from the catalog as two rows. A name in
 `grantable` that is absent from `privileges` is refused while the file is
 parsed, rather than kept as a declaration nothing can render.
 
-`object_type` accepts those four keywords and nothing else; any other value is
-refused at parse time. `SCHEMAS` is refused with the rest, because the form
-that would name it sets a global default instead of a schema-scoped one,
-and `schema` is required here.
+`object_type` accepts those keywords and nothing else; any other value is
+refused at parse time. Without `schema` the directive declares the global
+default, `ALTER DEFAULT PRIVILEGES` without `IN SCHEMA`, which applies in every
+schema and starts from the built-in default:
+
+```go
+//ptah:schema:defaultprivilege for_role="app_owner" object_type="FUNCTIONS" grantee="PUBLIC" revoked="EXECUTE"
+type NoPublicExecute struct{}
+```
+
+`SCHEMAS` and `LARGE OBJECTS` exist only in that form, so either one with a
+`schema` is refused. See
+[global default privileges](../../databases/postgresql/#global-default-privileges)
+for how the comparison treats the built-in default.
 
 ### `//ptah:schema:rls:enable`
 

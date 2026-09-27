@@ -672,19 +672,23 @@ func (s *scopeSelection) extensionMatches(schema, name string) bool {
 // agree. A rule that kept a default privilege on the live side and dropped it
 // on the desired side reports a revoke nobody asked for, and the other way round
 // a grant.
+//
+// A blank schema is the global default, which applies in every schema of the
+// database. It is kept whatever --schema names, and dropped where include
+// selectors narrow the projection to named objects, because no selector names
+// it. The blank is not the connected schema here: for this family it has a
+// meaning of its own.
 func (s *scopeSelection) defaultPrivilegeSelected(schema string) bool {
+	if strings.TrimSpace(schema) == "" {
+		return len(s.selectors) == 0
+	}
 	if !s.schemaAllowed(schema) {
 		return false
 	}
 	if len(s.selectors) == 0 {
 		return true
 	}
-	// The effective schema, not the raw one. Ptah's readers always name a
-	// default privilege's schema, but a catalog.Database an embedder builds
-	// may follow the blank-default convention the other object types use, and
-	// comparing "" against the --schema names would drop exactly the defaults
-	// of the schema the run is pointed at.
-	_, named := s.allowed[strings.TrimSpace(s.effectiveSchema(schema))]
+	_, named := s.allowed[strings.TrimSpace(schema)]
 	return named
 }
 

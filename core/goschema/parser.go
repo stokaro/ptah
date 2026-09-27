@@ -2157,10 +2157,9 @@ func setRoutineTarget(grant *schemamodel.Grant, kv map[string]string, ctx annota
 // defaultPrivilegeObjectTypes is the closed set ALTER DEFAULT PRIVILEGES names,
 // and the set the catalog reader folds pg_default_acl's defaclobjtype into.
 //
-// SCHEMAS is absent deliberately: this family is schema-scoped, and PostgreSQL
-// accepts a default privilege on schemas only in the global form, without
-// IN SCHEMA, which the model has no spelling for.
-var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"}
+// SCHEMAS and LARGE OBJECTS are named only by the global form, without a
+// schema: PostgreSQL 18.6 refuses IN SCHEMA for both.
+var defaultPrivilegeObjectTypes = []string{"TABLES", "SEQUENCES", "FUNCTIONS", "TYPES", "SCHEMAS", "LARGE OBJECTS"}
 
 // parseDefaultPrivilegeComment reads one //ptah:schema:defaultprivilege
 // directive into the schema model.
@@ -2184,7 +2183,7 @@ func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
-	objectType, err := defaultPrivilegeObjectType(kv["object_type"], ctx)
+	objectType, err := defaultPrivilegeObjectType(kv["object_type"], strings.TrimSpace(kv["schema"]), ctx)
 	if err != nil {
 		return err
 	}
@@ -2220,8 +2219,24 @@ func (s *schemaParseState) parseDefaultPrivilegeComment(comment *ast.Comment, st
 	return nil
 }
 
-func defaultPrivilegeObjectType(raw string, ctx annotationErrorContext) (string, error) {
+// defaultPrivilegeObjectType reads object_type, refusing one the schema
+// cannot carry: a global-only type beside a schema.
+func defaultPrivilegeObjectType(raw, schema string, ctx annotationErrorContext) (string, error) {
 	objectType := strings.ToUpper(strings.TrimSpace(raw))
+	if schemamodel.GlobalOnlyDefaultPrivilegeObjectType(objectType) && schema != "" {
+		return "", &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "object_type",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf(
+				"invalid %q value %q on %s at %s: PostgreSQL sets it for the whole database only, "+
+					"so the declaration cannot name a schema",
+				"object_type", raw, ctx.directive, ctx.location,
+			),
+		}
+	}
 	if slices.Contains(defaultPrivilegeObjectTypes, objectType) {
 		return objectType, nil
 	}

@@ -14,7 +14,8 @@ import (
 // comparison. Each row sits in a different schema and carries a different object
 // type, so the object type identifies which schema's row survived -- a default
 // privilege has no name of its own, and its schema is exactly what a schema
-// allow-list decides about.
+// allow-list decides about. The row without a schema is the global default,
+// which applies in every schema.
 func generatedDefaultPrivilegeFixture() *schemamodel.Database {
 	return &schemamodel.Database{
 		DefaultPrivileges: []schemamodel.DefaultPrivilege{
@@ -80,7 +81,10 @@ func databaseDefaultPrivilegeTypes(privileges []catalog.DefaultPrivilege) []stri
 //
 // Without the keep lines the projection carries every schema's defaults through
 // unfiltered, which is not a failure anywhere: `--schema auth` then describes
-// billing's defaults as part of auth.
+// billing's defaults as part of auth. The global default is kept in every
+// scope, because it applies in the scoped schemas too; read as the connected
+// schema's, it would vanish from every scope that did not name that schema
+// (stokaro/ptah#3772).
 func TestFilterScopesDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -89,25 +93,25 @@ func TestFilterScopesDefaultPrivilegesOnBothSidesTheSameWay(t *testing.T) {
 		want          []string
 	}{
 		{
-			name:    "one named schema keeps its own defaults",
+			name:    "one named schema keeps its own defaults and the global one",
 			schemas: []string{"auth"},
-			want:    []string{"TABLES"},
+			want:    []string{"TABLES", "FUNCTIONS"},
 		},
 		{
-			name:    "two named schemas keep both",
+			name:    "two named schemas keep both and the global one",
 			schemas: []string{"auth", "billing"},
-			want:    []string{"TABLES", "SEQUENCES"},
+			want:    []string{"TABLES", "SEQUENCES", "FUNCTIONS"},
 		},
 		{
-			name:          "the connected schema claims the unqualified row",
-			schemas:       []string{"public"},
-			defaultSchema: "public",
-			want:          []string{"FUNCTIONS"},
+			name:          "the connected schema does not claim the global row",
+			schemas:       []string{"auth"},
+			defaultSchema: "billing",
+			want:          []string{"TABLES", "FUNCTIONS"},
 		},
 		{
-			name:    "with no default schema the unqualified row belongs to no named schema",
+			name:    "a schema holding no default keeps the global one",
 			schemas: []string{"public"},
-			want:    make([]string, 0),
+			want:    []string{"FUNCTIONS"},
 		},
 	}
 

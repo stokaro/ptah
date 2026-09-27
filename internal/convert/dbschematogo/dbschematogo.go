@@ -1193,10 +1193,10 @@ type defaultPrivilegeIdentity struct {
 // that found none gives an empty slice rather than nil, copying convertGrants
 // and the initializer in newDatabase.
 //
-// The grant sibling skips a row marked [catalog.Grant.IsPartialRevoke], a
-// ClickHouse shape that subtracts a privilege instead of adding one. There is no
-// arm for it here: pg_default_acl records a merged ACL per identity with no way
-// to express an exception, so every row it produces is an ordinary grant.
+// A row marked [catalog.DefaultPrivilege.Revoked] is a global default taking a
+// built-in privilege away, and becomes an entry of the declaration's Revoked:
+// a new database starts from the built-in default, so the description has to
+// say the revoke for the privilege to be gone there too.
 func convertDefaultPrivileges(dbPrivileges []catalog.DefaultPrivilege) []schemamodel.DefaultPrivilege {
 	position := make(map[defaultPrivilegeIdentity]int, len(dbPrivileges))
 	privileges := make([]schemamodel.DefaultPrivilege, 0, len(dbPrivileges))
@@ -1210,6 +1210,10 @@ func convertDefaultPrivileges(dbPrivileges []catalog.DefaultPrivilege) []schemam
 				Privilege:  dbPrivilege.Privilege,
 				WithOption: dbPrivilege.WithOption,
 			}},
+		}
+		if dbPrivilege.Revoked {
+			declaration.Privileges = make([]schemamodel.PrivilegeGrant, 0)
+			declaration.Revoked = []string{dbPrivilege.Privilege}
 		}
 		// Canonicalize before keying, so two rows whose identity differs only in
 		// case or padding group together rather than becoming twin declarations
@@ -1228,6 +1232,7 @@ func convertDefaultPrivileges(dbPrivileges []catalog.DefaultPrivilege) []schemam
 			continue
 		}
 		privileges[index].Privileges = append(privileges[index].Privileges, declaration.Privileges...)
+		privileges[index].Revoked = append(privileges[index].Revoked, declaration.Revoked...)
 		// Canonicalize again on the merged list: one identity holding the same
 		// privilege name twice keeps the grantable spelling, the way PostgreSQL
 		// merges two such statements.

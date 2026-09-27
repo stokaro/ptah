@@ -235,13 +235,14 @@ func TestReadDefaultPrivileges_FailurePath(t *testing.T) {
 // failure.
 //
 // Each one costs something different. An outer join to pg_namespace admits the
-// global entries, which pg_default_acl records with defaclnamespace 0 and
-// which replay refuses because they carry no IN SCHEMA. Without the complement
-// of undescribedDefaultACL, CockroachDB's FOR ALL ROLES is described under the
-// grantor `unknown (OID=0)`, a role nobody has. Dropping the object-type filter
-// admits defaclobjtype 'n', SCHEMAS, which no declaration can name. And
-// exploding the ACL with aclexplode reads nothing on CockroachDB v25.4.16,
-// where the list is text[] (stokaro/ptah#3802).
+// global entries, which pg_default_acl records with defaclnamespace 0 and whose
+// list holds the built-in default too, so exploding them here describes the
+// owner's implicit rights as grants; the global read subtracts the built-in
+// default instead. Without the complement of the undescribed predicate,
+// CockroachDB's FOR ALL ROLES is described under the grantor `unknown
+// (OID=0)`, a role nobody has. Dropping the object-type filter admits a class
+// IN SCHEMA cannot name. And exploding the ACL with aclexplode reads nothing on
+// CockroachDB v25.4.16, where the list is text[] (stokaro/ptah#3802).
 func TestReadDefaultPrivileges_StatementKeepsTheRestrictionsNoRowCanShow(t *testing.T) {
 	c := qt.New(t)
 	var sent, bound []string
@@ -258,7 +259,8 @@ func TestReadDefaultPrivileges_StatementKeepsTheRestrictionsNoRowCanShow(t *test
 	c.Assert(query, qt.Not(qt.Contains), "LEFT JOIN pg_namespace")
 	c.Assert(query, qt.Contains, "COALESCE(array_to_json(d.defaclacl)::text, '[]') AS acl")
 	c.Assert(query, qt.Not(qt.Contains), "aclexplode")
-	c.Assert(query, qt.Contains, "AND NOT (d.defaclnamespace = 0 OR d.defaclrole = 0)")
+	c.Assert(query, qt.Contains,
+		"AND NOT (d.defaclrole = 0 OR (d.defaclnamespace = 0 AND d.defaclobjtype NOT IN ('r', 'S', 'f', 'T', 'n', 'L')))")
 	c.Assert(query, qt.Contains, "d.defaclobjtype IN ('r', 'S', 'f', 'T')")
 	c.Assert(query, qt.Not(qt.Contains), "format(",
 		qt.Commentf("a read projects columns; the statement text belongs to the renderer"))

@@ -1910,7 +1910,7 @@ func (g Grant) ByColumn() []Grant {
 }
 
 // DefaultPrivilege is a PostgreSQL default privilege: the privileges an object
-// gets when a named role creates one in a named schema.
+// gets when a named role creates one, in a named schema or in any schema.
 //
 // It is an object rather than an attribute of a grant, and its identity is
 // (Grantor, Schema, ObjectType, Grantee) -- the key pg_default_acl uses, plus
@@ -1919,21 +1919,34 @@ func (g Grant) ByColumn() []Grant {
 // a non-member of that role with `permission denied to change default
 // privileges`, measured on 17.
 //
-// Schema is required. The clause-less form sets the global default for every
-// schema of the database, which internal/devclean refuses during replay, so
-// this type has no spelling for it. The reader that fills it leaves those rows
-// out of the description and lists them in
-// catalog.Database.UndescribedDefaultPrivileges, which the read surfaces report.
+// An empty Schema is the global default: ALTER DEFAULT PRIVILEGES without IN
+// SCHEMA, which applies in every schema of the database. It is a different
+// object from any schema-scoped one, not the same one spelled unqualified, so
+// no source fills in a default schema for it. The two forms also mean
+// different things:
+//
+//   - a schema-scoped default is added to the global ones, so Privileges are
+//     what it adds and Revoked are privileges it is declared not to hold;
+//   - a global default starts from the built-in one -- the owner holds every
+//     privilege, PUBLIC holds EXECUTE on functions and USAGE on types -- so
+//     Privileges are what it adds to that and Revoked are what it takes away.
+//     A revoke of a built-in privilege is a statement a new database needs,
+//     where a schema-scoped revoke on a new database takes back nothing.
+//
+// SCHEMAS and LARGE OBJECTS are object classes of the global form only;
+// PostgreSQL 18.6 refuses IN SCHEMA for both, and LARGE OBJECTS is PostgreSQL
+// 18's.
 //
 // Example:
 //
 //	//ptah:schema:defaultprivilege for_role="app_owner" schema="app" object_type="TABLES" grantee="app_reader" privileges="SELECT"
+//	//ptah:schema:defaultprivilege for_role="app_owner" object_type="FUNCTIONS" grantee="PUBLIC" revoked="EXECUTE"
 //	type AccessControl struct{}
 type DefaultPrivilege struct {
 	StructName string // Name of the Go struct this declaration is associated with
 	Grantor    string // Role whose newly created objects the privileges apply to
-	Schema     string // Schema the default applies in
-	ObjectType string // TABLES, SEQUENCES, FUNCTIONS or TYPES
+	Schema     string // Schema the default applies in; empty for the global default
+	ObjectType string // TABLES, SEQUENCES, FUNCTIONS or TYPES; globally also SCHEMAS or LARGE OBJECTS
 	Grantee    string // Role receiving the privileges; PUBLIC names every role
 	// Privileges are the privileges granted, each carrying its own grant
 	// option.

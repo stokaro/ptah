@@ -54,6 +54,38 @@ func TestParser_ParseAlterDefaultPrivilegesGrant_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// No IN SCHEMA is the global default, recorded as an empty
+			// schema (stokaro/ptah#3772).
+			name: "the global default",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;",
+			want: ast.DefaultPrivilegeNode{
+				Grantor:    "app_owner",
+				ObjectType: "TABLES",
+				Grantee:    "app_reader",
+				Privileges: []ast.DefaultPrivilege{{Privilege: "SELECT"}},
+			},
+		},
+		{
+			name: "schemas, which only the global form names",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT USAGE ON SCHEMAS TO app_reader;",
+			want: ast.DefaultPrivilegeNode{
+				Grantor:    "app_owner",
+				ObjectType: "SCHEMAS",
+				Grantee:    "app_reader",
+				Privileges: []ast.DefaultPrivilege{{Privilege: "USAGE"}},
+			},
+		},
+		{
+			name: "large objects, two words",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON LARGE OBJECTS TO app_reader;",
+			want: ast.DefaultPrivilegeNode{
+				Grantor:    "app_owner",
+				ObjectType: "LARGE OBJECTS",
+				Grantee:    "app_reader",
+				Privileges: []ast.DefaultPrivilege{{Privilege: "SELECT"}},
+			},
+		},
+		{
 			name: "with grant option reaches every privilege named",
 			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT, INSERT ON TABLES TO app_writer WITH GRANT OPTION;",
 			want: ast.DefaultPrivilegeNode{
@@ -186,6 +218,16 @@ func TestParser_ParseAlterDefaultPrivilegesRevoke_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "a built-in privilege taken away globally",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;",
+			want: ast.RevokeDefaultPrivilegeNode{
+				Grantor:    "app_owner",
+				ObjectType: "FUNCTIONS",
+				Grantee:    "PUBLIC",
+				Privileges: []string{"EXECUTE"},
+			},
+		},
+		{
 			name: "several privileges from public",
 			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app REVOKE SELECT, UPDATE ON SEQUENCES FROM PUBLIC;",
 			want: ast.RevokeDefaultPrivilegeNode{
@@ -228,19 +270,31 @@ func TestParser_ParseAlterDefaultPrivileges_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "no IN SCHEMA sets the global default",
-			sql:     "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON TABLES TO app_reader;",
-			wantErr: `ALTER DEFAULT PRIVILEGES requires IN SCHEMA: the global default has no representation here`,
-		},
-		{
 			name:    "no FOR ROLE leaves the grantor to the session",
 			sql:     "ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT ON TABLES TO app_reader;",
 			wantErr: `ALTER DEFAULT PRIVILEGES requires FOR ROLE: the grantor is part of the default's identity`,
 		},
 		{
 			name:    "an object class the model has no spelling for",
-			sql:     "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT USAGE ON SCHEMAS TO app_reader;",
-			wantErr: `unsupported ALTER DEFAULT PRIVILEGES object class: SCHEMAS at position \d+`,
+			sql:     "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT EXECUTE ON ROUTINES TO app_reader;",
+			wantErr: `unsupported ALTER DEFAULT PRIVILEGES object class: ROUTINES at position \d+`,
+		},
+		{
+			name: "schemas in a schema",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT USAGE ON SCHEMAS TO app_reader;",
+			wantErr: `ALTER DEFAULT PRIVILEGES ON SCHEMAS cannot name IN SCHEMA, at position \d+: ` +
+				`PostgreSQL sets it for the whole database only`,
+		},
+		{
+			name: "large objects in a schema",
+			sql:  "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app REVOKE SELECT ON LARGE OBJECTS FROM app_reader;",
+			wantErr: `ALTER DEFAULT PRIVILEGES ON LARGE OBJECTS cannot name IN SCHEMA, at position \d+: ` +
+				`PostgreSQL sets it for the whole database only`,
+		},
+		{
+			name:    "large without objects",
+			sql:     "ALTER DEFAULT PRIVILEGES FOR ROLE app_owner GRANT SELECT ON LARGE TO app_reader;",
+			wantErr: `expected OBJECTS after LARGE at position \d+`,
 		},
 		{
 			name:    "a list of grantor roles",
