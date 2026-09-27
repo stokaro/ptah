@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlcheck"
 	"ptah.run/internal/mysqlname"
 )
 
@@ -231,6 +232,10 @@ func applyModifyColumn(target alterTarget, operation *ast.ModifyColumnOperation,
 			target.written, operation.Column.Name)
 	}
 	replacement := fieldFromColumn(operation.Column, target.structName, sourcePlatform)
+	_, columns := tableColumns(target.databases, target.structName)
+	if err := refuseMySQLColumnCheckReference(replacement, columns, target); err != nil {
+		return err
+	}
 	if platform.NormalizeDialect(sourcePlatform) == platform.SQLServer {
 		field.Type = replacement.Type
 		field.Nullable = replacement.Nullable
@@ -239,6 +244,21 @@ func applyModifyColumn(target alterTarget, operation *ast.ModifyColumnOperation,
 	}
 	replacement.Primary = replacement.Primary || field.Primary
 	*field = replacement
+	return nil
+}
+
+// refuseMySQLColumnCheckReference refuses, for MySQL, the CHECK on a column
+// ALTER TABLE adds or modifies when it names another column of the table, as
+// MySQL refuses it; see [mysqlcheck.OtherColumn]. columns are the table's
+// columns, the one written here included. The parser refuses the same CHECK in
+// CREATE TABLE, where the whole table is in the statement.
+func refuseMySQLColumnCheckReference(field schemamodel.Field, columns []string, target alterTarget) error {
+	if platform.NormalizeDialect(target.sourcePlatform) != platform.MySQL || field.Check == "" {
+		return nil
+	}
+	if other, found := mysqlcheck.OtherColumn(field.Name, field.Check, columns); found {
+		return fmt.Errorf("ALTER TABLE %s: %w", target.written, mysqlcheck.Refusal(field.Name, other))
+	}
 	return nil
 }
 
