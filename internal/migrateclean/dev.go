@@ -30,7 +30,7 @@ func (e *NotCleanError) Error() string {
 
 // DevRefusal reads the dev database the connection selects and returns the
 // refusal the pinned binary gives before it uses one that is not clean, or nil
-// when it is clean or its dialect is not one [Governs] covers.
+// when it is clean or its dialect is not one [GovernsDev] covers.
 //
 // A dev database is reset before and after a run uses it, so a caller that
 // resets one asks this first and refuses on a non-nil answer. The binary takes
@@ -42,11 +42,46 @@ func (e *NotCleanError) Error() string {
 // An error that is not a *NotCleanError means the catalog could not be read,
 // and the caller must not treat the database as clean.
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	scope, err := Inspect(ctx, conn)
+	scope, err := inspect(ctx, conn, GovernsDev)
 	if err != nil {
 		return err
 	}
 	return scope.DevRefusal()
+}
+
+// GovernsDev reports whether a dev database of the dialect is checked before
+// it is reset.
+//
+// It is wider than [Governs], which is the `migrate apply` gate and covers only
+// the dialects that gate was measured on. A reset drops the tables of a dev
+// database on every dialect Ptah replays or rehearses on, so every one of them
+// is checked. Without the check, a CockroachDB, YugabyteDB, Spanner, SQL
+// Server or ClickHouse dev database holding a table is emptied by the reset.
+//
+//   - PostgreSQL, MySQL, MariaDB and SQLite, measured against the pinned
+//     community binary, which refuses the same databases.
+//   - CockroachDB, which that binary reaches through a `postgres://` URL and
+//     judges by the PostgreSQL rules: measured on CockroachDB 26.2 on
+//     2026-09-27, it refuses a table in the connected schema and, with no
+//     search_path, any schema but an empty public, and it accepts a view, a
+//     sequence or an empty database. YugabyteDB takes the same rules.
+//   - Spanner, SQL Server, ClickHouse and Oracle, whose URLs that binary does
+//     not open (`unknown driver`), and neither does it open `cockroachdb://`
+//     or `yugabytedb://`. There is no sentence of its to match, and the
+//     refusal uses the shape of its others.
+//
+// Oracle is checked although no run resets an Oracle dev database: the
+// replay's lock and the rehearsal's identity check both refuse one first. The
+// check keeps a path that reaches the reset without them from emptying one.
+func GovernsDev(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.MySQL, platform.MariaDB, platform.SQLite,
+		platform.SQLServer, platform.ClickHouse, platform.Oracle:
+		return true
+	default:
+		return false
+	}
 }
 
 // RealmScoped reports whether conn's URL left the run at realm scope, where
@@ -84,7 +119,7 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 //     first schema in byte order -- which is `public` itself when it sorts
 //     first, whether or not it holds anything.
 func (s Scope) DevRefusal() error {
-	if !Governs(s.Dialect) {
+	if !GovernsDev(s.Dialect) {
 		return nil
 	}
 	if s.Realm {
@@ -96,7 +131,7 @@ func (s Scope) DevRefusal() error {
 	switch platform.NormalizeDialect(s.Dialect) {
 	case platform.SQLite:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q", s.Tables[0])}
-	case platform.Postgres:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in connected schema", s.Tables[0])}
 	default:
 		return &NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q", s.Tables[0], s.Schema)}

@@ -79,11 +79,16 @@ func PostgresDescribedSchemasPredicate(dialect string, caps capability.Capabilit
 // CockroachDB and YugabyteDB share a reader but not an identical system
 // namespace set. CockroachDB exposes crdb_internal through the PostgreSQL
 // catalog surface, but its virtual relations are not ordinary user tables and
-// PostgreSQL readers cannot inspect them as comparison input.
+// PostgreSQL readers cannot inspect them as comparison input. Spanner lists
+// spanner_sys in pg_namespace beside public, measured on the PGAdapter
+// emulator v0.55.3, and it is the server's own.
 func PostgresNonSystemSchemasPredicate(dialect string) string {
 	predicates := []string{`n.nspname <> 'information_schema'`}
-	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB:
 		predicates = append(predicates, `n.nspname <> 'crdb_internal'`)
+	case platform.Spanner:
+		predicates = append(predicates, `n.nspname <> 'spanner_sys'`)
 	}
 	predicates = append(predicates, `n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`)
 	return strings.Join(predicates, `

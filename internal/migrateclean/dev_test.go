@@ -33,9 +33,13 @@ func TestScopeDevRefusal_HappyPath(t *testing.T) {
 			},
 		},
 		{
-			// A dialect the binary was not measured on is not judged.
-			name:  "clickhouse with a table",
-			scope: migrateclean.Scope{Dialect: "clickhouse", Schema: "dev", Tables: []string{"t"}},
+			// A connection with no dialect is not judged.
+			name:  "no dialect",
+			scope: migrateclean.Scope{Schema: "dev", Tables: []string{"t"}},
+		},
+		{
+			name:  "cockroachdb schema with no table",
+			scope: migrateclean.Scope{Dialect: "cockroachdb", Schema: "public"},
 		},
 	}
 
@@ -102,6 +106,42 @@ func TestScopeDevRefusal_FailurePath(t *testing.T) {
 			wantErr: `connected database is not clean: found schema "public"`,
 		},
 		{
+			// Measured on CockroachDB 26.2 through a postgres:// URL.
+			name:    "cockroachdb schema names its first table",
+			scope:   migrateclean.Scope{Dialect: "cockroachdb", Schema: "public", Tables: []string{"keep_me"}},
+			wantErr: `connected database is not clean: found table "keep_me" in connected schema`,
+		},
+		{
+			name: "cockroachdb realm with a schema beside public",
+			scope: migrateclean.Scope{
+				Dialect: "cockroachdb", Realm: true,
+				Schemas: []migrateclean.RealmSchema{{Name: "keep_schema"}, {Name: "public"}},
+			},
+			wantErr: `connected database is not clean: found schema "keep_schema"`,
+		},
+		{
+			name:    "yugabytedb reads as postgres",
+			scope:   migrateclean.Scope{Dialect: "yugabytedb", Schema: "public", Tables: []string{"keep_me"}},
+			wantErr: `connected database is not clean: found table "keep_me" in connected schema`,
+		},
+		{
+			// The binary opens none of the dialects below; the sentence takes
+			// the shape of its others.
+			name:    "sqlserver names the schema",
+			scope:   migrateclean.Scope{Dialect: "sqlserver", Schema: "dbo", Tables: []string{"keep_me"}},
+			wantErr: `connected database is not clean: found table "keep_me" in schema "dbo"`,
+		},
+		{
+			name:    "clickhouse names the database",
+			scope:   migrateclean.Scope{Dialect: "clickhouse", Schema: "dev", Tables: []string{"keep_me"}},
+			wantErr: `connected database is not clean: found table "keep_me" in schema "dev"`,
+		},
+		{
+			name:    "oracle names the user",
+			scope:   migrateclean.Scope{Dialect: "oracle", Schema: "SYSTEM", Tables: []string{"KEEP_ME"}},
+			wantErr: `connected database is not clean: found table "KEEP_ME" in schema "SYSTEM"`,
+		},
+		{
 			name: "postgres realm with one schema that is not public",
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Realm: true,
@@ -120,4 +160,24 @@ func TestScopeDevRefusal_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestGovernsDev_HappyPath is every dialect whose dev database is checked
+// before it is reset.
+func TestGovernsDev_HappyPath(t *testing.T) {
+	for _, dialect := range []string{
+		"postgres", "cockroachdb", "yugabytedb", "spanner",
+		"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle",
+	} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(migrateclean.GovernsDev(dialect), qt.IsTrue)
+		})
+	}
+}
+
+// TestGovernsDev_FailurePath is a dialect no dev database runs on.
+func TestGovernsDev_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(migrateclean.GovernsDev(""), qt.IsFalse)
 }

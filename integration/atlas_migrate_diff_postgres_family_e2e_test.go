@@ -80,9 +80,10 @@ func runPostgresFamilyMigrateDiffCase(
 			id BIGINT PRIMARY KEY,
 			name TEXT NOT NULL
 		)`)
-	execPostgresFamilySQL(c, ctx, devURL, `
-		CREATE TABLE stale_parent (id BIGINT PRIMARY KEY);
-		CREATE VIEW stale_parent_view AS SELECT id FROM stale_parent`)
+	// A view is left in the dev database and the run removes it. A table
+	// would make the dev database not clean, and the run would refuse it;
+	// dev_not_clean_dialects_e2e_test.go covers that refusal.
+	execPostgresFamilySQL(c, ctx, devURL, `CREATE VIEW stale_view AS SELECT 1 AS id`)
 
 	dir := c.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
