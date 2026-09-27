@@ -55,7 +55,9 @@ const undecidedTableSchema = "CREATE TABLE notes (id INT PRIMARY KEY);\n"
 // only the table.
 func restrictedMySQLTarget(c *qt.C) (target, workDir string) {
 	c.Helper()
-	server := newMySQLFamilyServer(c, dbtarget.MySQL)
+	// The administrative account, because the fixture creates a database and
+	// an account.
+	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
 	database := server.database(c, "undecided")
 	ctx := c.Context()
 
