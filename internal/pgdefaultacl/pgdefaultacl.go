@@ -11,12 +11,19 @@
 //
 // The SQL fragments are functions of the alias a statement gives the relation,
 // so a statement cannot spell one of them its own way.
+//
+// CockroachDB is read differently in two places. Its cleanup takes the revokes
+// from SHOW DEFAULT PRIVILEGES through [ReadRevokesFromShow], and [Refused]
+// and [Readable] recognize the one refusal it answers pg_default_acl with, so
+// the reader can record default privileges as not inspected instead of
+// failing (stokaro/ptah#3816).
 package pgdefaultacl
 
 import (
 	"cmp"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -221,6 +228,188 @@ func ReadRevokes(ctx context.Context, q Querier, schemas []string) ([]Revoke, er
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate default privileges: %w", err)
 	}
+	sortRevokes(revokes)
+	return revokes, nil
+}
+
+// Refused reports whether err is CockroachDB refusing to produce a row of
+// pg_default_acl.
+//
+// CockroachDB v26.2.7 writes a role name that needs quoting, such as one with a
+// dash, into the aclitem text unquoted, then refuses to read the text back:
+// `missing "=" sign: "r-dash=U*/"` at SQLSTATE 22P02 (stokaro/ptah#3816). It
+// does so for whichever row names such a role, so every read of the relation
+// that reaches that row fails, whatever its columns and its filter; a read that
+// stops before the row succeeds. v25.4.16 writes the name unquoted into a
+// text[] it never parses, and v26.3.1 quotes it, so neither refuses.
+func Refused(err error) bool {
+	var state interface{ SQLState() string }
+	return errors.As(err, &state) && state.SQLState() == invalidTextRepresentation &&
+		strings.Contains(err.Error(), `missing "=" sign`)
+}
+
+// invalidTextRepresentation is SQLSTATE 22P02.
+const invalidTextRepresentation = "22P02"
+
+// Readable reports whether the server produces every row of pg_default_acl.
+// It reads the whole relation, because the refusal [Refused] recognizes comes
+// with the row that names the role, not with the statement: measured on
+// CockroachDB v26.2.7, `SELECT 1 FROM pg_default_acl LIMIT 1` answers and the
+// same statement without the limit fails after its first row. Any other error
+// is returned.
+func Readable(ctx context.Context, q Querier) (bool, error) {
+	rows, err := q.QueryContext(ctx, "SELECT 1 FROM pg_default_acl")
+	if err != nil {
+		return refusedOr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		continue
+	}
+	if err := rows.Err(); err != nil {
+		return refusedOr(err)
+	}
+	return true, nil
+}
+
+// refusedOr answers Readable for a failed read: false for the refusal, and the
+// error for anything else.
+func refusedOr(err error) (bool, error) {
+	if Refused(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to read pg_default_acl: %w", err)
+}
+
+// showClasses maps the object_type SHOW DEFAULT PRIVILEGES writes to the
+// pg_default_acl class code and the keyword a statement writes. SCHEMAS is
+// missing because IN SCHEMA cannot name it.
+var showClasses = map[string]struct{ class, keyword string }{
+	"tables":    {class: "r", keyword: "TABLES"},
+	"sequences": {class: "S", keyword: "SEQUENCES"},
+	"routines":  {class: "f", keyword: "FUNCTIONS"},
+	"types":     {class: "T", keyword: "TYPES"},
+}
+
+// ReadRevokesFromShow is [ReadRevokes] for CockroachDB, read through
+// CockroachDB's SHOW DEFAULT PRIVILEGES rather than pg_default_acl.
+//
+// A revoke needs only who holds a default, never which privileges, and SHOW
+// names each grantee as it is, on every declared line: v25.4.16, v26.2.7 and
+// v26.3.1. pg_default_acl cannot say as much. On v26.2.7 it refuses every read
+// once a default names a role that needs quoting (see [Refused]), so a cleanup
+// that read it could revoke nothing; and it leaves out a grantee that holds
+// only a privilege PostgreSQL does not have, such as DROP, whose default a
+// cleanup from it would leave in place.
+//
+// SHOW takes one schema per statement and a list of roles, and names the FOR
+// ALL ROLES defaults only when asked for them, so each schema costs two
+// statements: one for every role pg_roles lists, and one for FOR ALL ROLES. A
+// role or a schema that holds nothing answers no rows. An object type this
+// function does not know is an error rather than a skip, for the reason
+// [ReadRevokes] gives.
+func ReadRevokesFromShow(ctx context.Context, q Querier, schemas []string) ([]Revoke, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+	roles, err := readRoleNames(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[Revoke]bool)
+	var revokes []Revoke
+	for _, schema := range schemas {
+		statements := []string{"SHOW DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA " + quote(schema)}
+		if len(roles) > 0 {
+			statements = append(statements,
+				"SHOW DEFAULT PRIVILEGES FOR ROLE "+strings.Join(roles, ", ")+" IN SCHEMA "+quote(schema))
+		}
+		for _, statement := range statements {
+			found, err := readShownRevokes(ctx, q, statement, schema)
+			if err != nil {
+				return nil, err
+			}
+			for _, revoke := range found {
+				if !seen[revoke] {
+					seen[revoke] = true
+					revokes = append(revokes, revoke)
+				}
+			}
+		}
+	}
+	sortRevokes(revokes)
+	return revokes, nil
+}
+
+// readRoleNames lists every role, quoted for a FOR ROLE list.
+func readRoleNames(ctx context.Context, q Querier) ([]string, error) {
+	rows, err := q.QueryContext(ctx, "SELECT rolname FROM pg_roles ORDER BY rolname")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query roles for default privileges: %w", err)
+	}
+	defer rows.Close()
+	var roles []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("failed to scan roles for default privileges: %w", err)
+		}
+		roles = append(roles, quote(role))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate roles for default privileges: %w", err)
+	}
+	return roles, nil
+}
+
+// readShownRevokes runs one SHOW DEFAULT PRIVILEGES statement and returns one
+// revoke per grantor, class and grantee it names, privilege rows folded. A FOR
+// ALL ROLES row carries a NULL role, measured on v25.4.16, v26.2.7 and v26.3.1,
+// which reads as the empty grantor [Revoke] gives role 0; SHOW spells PUBLIC
+// `public`.
+func readShownRevokes(ctx context.Context, q Querier, statement, schema string) ([]Revoke, error) {
+	rows, err := q.QueryContext(ctx, statement)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query default privileges in schema %s: %w", schema, err)
+	}
+	defer rows.Close()
+	var revokes []Revoke
+	for rows.Next() {
+		var role sql.NullString
+		var forAllRoles, grantable bool
+		var objectType, grantee, privilege string
+		// Scanned for the column count; a revoke needs only who holds a
+		// default, so the privilege and its grant option go unused.
+		if err := rows.Scan(&role, &forAllRoles, &objectType, &grantee, &privilege, &grantable); err != nil {
+			return nil, fmt.Errorf("failed to scan default privileges in schema %s: %w", schema, err)
+		}
+		class, known := showClasses[objectType]
+		if !known {
+			return nil, fmt.Errorf(
+				"failed to read the default privileges in schema %s: object type %q is not one IN SCHEMA can name",
+				schema, objectType,
+			)
+		}
+		grantor := role.String
+		if grantee == "public" {
+			grantee = ""
+		}
+		revokes = append(revokes, Revoke{
+			Schema:    schema,
+			Grantor:   grantor,
+			Class:     class.class,
+			Grantee:   grantee,
+			Statement: revokeStatement(schema, grantor, class.keyword, grantee),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate default privileges in schema %s: %w", schema, err)
+	}
+	return revokes, nil
+}
+
+// sortRevokes orders revokes by schema, name and statement, byte by byte.
+func sortRevokes(revokes []Revoke) {
 	slices.SortFunc(revokes, func(a, b Revoke) int {
 		return cmp.Or(
 			strings.Compare(a.Schema, b.Schema),
@@ -228,7 +417,6 @@ func ReadRevokes(ctx context.Context, q Querier, schemas []string) ([]Revoke, er
 			strings.Compare(a.Statement, b.Statement),
 		)
 	})
-	return revokes, nil
 }
 
 // revokeStatement spells ALTER DEFAULT PRIVILEGES ... REVOKE ALL for one

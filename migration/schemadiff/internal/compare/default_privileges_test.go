@@ -52,7 +52,7 @@ func TestDefaultPrivilegesWithSemantics_TwoGrantorsAreTwoObjects(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, &catalog.Database{}, diff, identifier.ForDialect(platform.Postgres))
+		desired, &catalog.Database{}, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesAdded), qt.DeepEquals, []string{
 		"SELECT on TABLES in app for alpha_owner to app_reader",
@@ -83,7 +83,7 @@ func TestDefaultPrivilegesWithSemantics_AMatchingDeclarationPlansNothing(t *test
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesAdded), qt.HasLen, 0)
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesRemoved), qt.HasLen, 0)
@@ -109,7 +109,7 @@ func TestDefaultPrivilegesWithSemantics_APublicGranteeIsRevocable(t *testing.T) 
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesRemoved), qt.DeepEquals, []string{
 		"SELECT on TABLES in app for app_owner to PUBLIC",
@@ -141,7 +141,7 @@ func TestDefaultPrivilegesWithSemantics_ADeclaredObjectIsTrimmedForAnyGrantee(t 
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesRemoved), qt.DeepEquals, []string{
 		"INSERT on TABLES in app for app_owner to PUBLIC",
@@ -163,7 +163,7 @@ func TestDefaultPrivilegesWithSemantics_AnUndeclaredGrantorIsLeftAlone(t *testin
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		&schemamodel.Database{}, database, diff, identifier.ForDialect(platform.Postgres))
+		&schemamodel.Database{}, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesRemoved), qt.HasLen, 0)
 }
@@ -191,7 +191,7 @@ func TestDefaultPrivilegesWithSemantics_AGrantOptionIsAdded(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegeOptionsAdded), qt.DeepEquals, []string{
 		"SELECT on TABLES in app for app_owner to app_reader",
@@ -218,7 +218,7 @@ func TestDefaultPrivilegesWithSemantics_AGrantOptionIsRevoked(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(diff.DefaultPrivilegeOptionsRevoked, qt.DeepEquals, []difftypes.DefaultPrivilegeRef{{
 		Grantor: "app_owner", Schema: "app", ObjectType: "TABLES",
@@ -250,7 +250,7 @@ func TestDefaultPrivilegesWithSemantics_PostgresKeepsTwoSpellingsApart(t *testin
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesAdded), qt.DeepEquals, []string{
 		"SELECT on TABLES in app for app_owner to App_Reader",
@@ -309,6 +309,7 @@ func TestDefaultPrivilegesWithSemantics_TheOutputOrderIsNotTheInputOrder(t *test
 				&catalog.Database{},
 				diff,
 				identifier.ForDialect(platform.Postgres),
+				compare.Coverage{},
 			)
 
 			c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesAdded), qt.DeepEquals, want)
@@ -344,7 +345,7 @@ func TestDefaultPrivilegesWithSemantics_TwoDeclarationsOfOneObjectMerge(t *testi
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DefaultPrivilegesWithSemantics(
-		desired, database, diff, identifier.ForDialect(platform.Postgres))
+		desired, database, diff, identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 	c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegeOptionsAdded), qt.DeepEquals, []string{
 		"SELECT on TABLES in app for app_owner to app_reader",

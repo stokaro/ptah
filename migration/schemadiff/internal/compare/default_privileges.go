@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
@@ -19,7 +20,7 @@ import (
 // instead, so the two sides fold a role or a schema name the way the target
 // does.
 func DefaultPrivileges(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
-	DefaultPrivilegesWithSemantics(desired, current, diff, identifier.ForDialect(""))
+	DefaultPrivilegesWithSemantics(desired, current, diff, identifier.ForDialect(""), CoverageOf(desired, current))
 }
 
 // DefaultPrivilegesWithSemantics is [DefaultPrivileges] told which identifier
@@ -67,11 +68,25 @@ func DefaultPrivileges(desired *schemamodel.Database, current *catalog.Database,
 // alone, which is the rule the grant comparator applies to a role it does not
 // manage -- unless the declaration revokes it. A revoked privilege says the
 // privilege is absent, so it is removed whoever the grantor is.
+//
+// # What a read that did not look plans
+//
+// A read that records [coverage.DefaultPrivilege] as not described reports no
+// default privilege, and that silence is not their absence. CockroachDB v26.2.7
+// refuses every read of pg_default_acl while a default privilege names a role
+// whose name needs quoting, and the reader records the refusal rather than
+// failing the whole description (stokaro/ptah#3816). A declared default is then
+// withheld as undecided rather than planned: ALTER DEFAULT PRIVILEGES ...
+// GRANT does not converge the grant option of a privilege already held, so the
+// statement is not safe to repeat blind. A document that records the kind as
+// not described keeps its silence from becoming a revoke, as for every other
+// kind.
 func DefaultPrivilegesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+	cov Coverage,
 ) {
 	declared := make(map[defaultPrivilegeIdentity]difftypes.DefaultPrivilegeRef)
 	declaredObjects := make(map[defaultPrivilegeObject]bool)
@@ -118,6 +133,15 @@ func DefaultPrivilegesWithSemantics(
 			diff.DefaultPrivilegesRemoved = append(diff.DefaultPrivilegesRemoved, ref)
 		}
 	}
+
+	kept, withheld := keepPlannedAdditions(cov, coverage.DefaultPrivilege, diff.DefaultPrivilegesAdded,
+		defaultPrivilegeSpelling, difftypes.DefaultPrivilegeRef.String, unguardedCreations(),
+	)
+	diff.DefaultPrivilegesAdded = kept
+	cov.recordUndecidedAdditions(withheld)
+	diff.DefaultPrivilegesRemoved = keepPlannedRemovals(cov, coverage.DefaultPrivilege,
+		diff.DefaultPrivilegesRemoved, defaultPrivilegeSpelling,
+	)
 
 	// Every list above is built by ranging over a map, whose order Go
 	// randomizes. Unsorted, the same two schemas produce a different migration
@@ -322,4 +346,11 @@ func compareDefaultPrivilegeRefs(left, right difftypes.DefaultPrivilegeRef) int 
 		}
 	}
 	return 0
+}
+
+// defaultPrivilegeSpelling names one default privilege for a coverage record:
+// its schema, and the one spelling a record can name it by, the phrase
+// [difftypes.DefaultPrivilegeRef.String] writes.
+func defaultPrivilegeSpelling(ref difftypes.DefaultPrivilegeRef) (schema string, spellings []string) {
+	return ref.Schema, []string{ref.String()}
 }

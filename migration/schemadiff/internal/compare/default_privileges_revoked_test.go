@@ -61,7 +61,7 @@ func TestDefaultPrivilegesWithSemantics_Revoked(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.DefaultPrivilegesWithSemantics(desired, &catalog.Database{DefaultPrivileges: test.rows}, diff,
-				identifier.ForDialect(platform.Postgres))
+				identifier.ForDialect(platform.Postgres), compare.Coverage{})
 
 			c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesAdded), qt.HasLen, 0)
 			c.Assert(defaultPrivilegeNames(diff.DefaultPrivilegesRemoved), qt.DeepEquals, append(make([]string, 0), test.wantRemoved...))

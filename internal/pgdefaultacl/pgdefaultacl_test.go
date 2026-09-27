@@ -3,6 +3,7 @@ package pgdefaultacl_test
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -208,4 +209,226 @@ func TestReadRevokes_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `failed to query default privileges: .*relation "pg_default_acl" does not exist`)
 		c.Assert(revokes, qt.IsNil)
 	})
+}
+
+// sqlStateError is a driver error carrying a SQLSTATE, as pgconn.PgError does.
+type sqlStateError struct {
+	state   string
+	message string
+}
+
+func (e sqlStateError) Error() string    { return "ERROR: " + e.message + " (SQLSTATE " + e.state + ")" }
+func (e sqlStateError) SQLState() string { return e.state }
+
+// cockroachRefusal is the error CockroachDB v26.2.7 answered a read of
+// pg_default_acl with, once a default named the role r-dash.
+var cockroachRefusal = sqlStateError{state: "22P02", message: `missing "=" sign: "r-dash=U*/"`}
+
+// TestRefused_RecognizesOnlyTheRefusal holds the predicate to the one error it
+// names: the SQLSTATE and the message together. Either alone is a different
+// failure, which the read must report rather than record as a refusal.
+func TestRefused_RecognizesOnlyTheRefusal(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "the refusal", err: cockroachRefusal, want: true},
+		{name: "the refusal, wrapped", err: fmt.Errorf("read: %w", cockroachRefusal), want: true},
+		{
+			name: "another invalid text representation",
+			err:  sqlStateError{state: "22P02", message: `invalid input syntax for type integer: "x"`},
+			want: false,
+		},
+		{
+			name: "the message under another SQLSTATE",
+			err:  sqlStateError{state: "XX000", message: `missing "=" sign: "r-dash=U*/"`},
+			want: false,
+		},
+		{name: "an error with no SQLSTATE", err: errors.New(`missing "=" sign`), want: false},
+		{name: "no error", err: nil, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(pgdefaultacl.Refused(test.err), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReadable_HappyPath answers false for the refusal whether it comes with
+// the statement or after the rows before the refused one, which is how
+// CockroachDB v26.2.7 delivers it to a full read, and true for a relation it
+// read to the end.
+func TestReadable_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		result dbtest.QueryResult
+		err    error
+		want   bool
+	}{
+		{
+			name:   "every row arrives",
+			result: dbtest.QueryResult{Columns: []string{"?column?"}, Rows: [][]driver.Value{{int64(1)}, {int64(1)}}},
+			want:   true,
+		},
+		{
+			name: "the refusal after a row",
+			result: dbtest.QueryResult{
+				Columns: []string{"?column?"}, Rows: [][]driver.Value{{int64(1)}}, TerminalErr: cockroachRefusal,
+			},
+			want: false,
+		},
+		{name: "the refusal with the statement", err: cockroachRefusal, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var sent []string
+			db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				sent = append(sent, query)
+				return test.result, test.err
+			})
+
+			readable, err := pgdefaultacl.Readable(c.Context(), db.SQL)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(readable, qt.Equals, test.want)
+			c.Assert(sent, qt.DeepEquals, []string{"SELECT 1 FROM pg_default_acl"})
+		})
+	}
+}
+
+// TestReadable_FailurePath returns any other failure, from the statement or
+// from the rows, rather than taking it for the refusal.
+func TestReadable_FailurePath(t *testing.T) {
+	broken := sqlStateError{state: "08006", message: "connection failure"}
+	tests := []struct {
+		name   string
+		result dbtest.QueryResult
+		err    error
+	}{
+		{name: "with the statement", err: broken},
+		{name: "after the rows", result: dbtest.QueryResult{Columns: []string{"?column?"}, TerminalErr: broken}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+				return test.result, test.err
+			})
+
+			readable, err := pgdefaultacl.Readable(c.Context(), db.SQL)
+
+			c.Assert(err, qt.ErrorIs, broken)
+			c.Assert(err, qt.ErrorMatches, `failed to read pg_default_acl: ERROR: connection failure \(SQLSTATE 08006\)`)
+			c.Assert(readable, qt.IsFalse)
+		})
+	}
+}
+
+// answerShow plays CockroachDB v26.2.7 for [pgdefaultacl.ReadRevokesFromShow],
+// with the rows that server printed: a FOR ALL ROLES row has no role, PUBLIC
+// is `public`, functions are `routines`, and a grantee holding several
+// privileges comes once per privilege.
+func answerShow(sent *[]string) dbtest.QueryHandler {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		*sent = append(*sent, query)
+		columns := []string{"role", "for_all_roles", "object_type", "grantee", "privilege_type", "is_grantable"}
+		switch {
+		case query == "SELECT rolname FROM pg_roles ORDER BY rolname":
+			return dbtest.QueryResult{Columns: []string{"rolname"}, Rows: [][]driver.Value{{"d-dash"}, {"d_owner"}}}, nil
+		case strings.HasPrefix(query, "SHOW DEFAULT PRIVILEGES FOR ALL ROLES"):
+			return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{
+				{nil, true, "sequences", "d_reader", "USAGE", false},
+			}}, nil
+		default:
+			return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{
+				{"d_owner", false, "routines", "public", "EXECUTE", false},
+				{"d_owner", false, "tables", "d-dash", "ALL", false},
+				{"d_owner", false, "tables", "d_reader", "INSERT", false},
+				{"d_owner", false, "tables", "d_reader", "SELECT", false},
+			}}, nil
+		}
+	}
+}
+
+// TestReadRevokesFromShow_HappyPath builds one revoke per grantor, class and
+// grantee SHOW DEFAULT PRIVILEGES names, asking about every role pg_roles
+// lists and about FOR ALL ROLES, one schema at a time.
+func TestReadRevokesFromShow_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var sent []string
+	db := dbtest.Open(c, answerShow(&sent))
+
+	revokes, err := pgdefaultacl.ReadRevokesFromShow(c.Context(), db.SQL, []string{"dapp"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(revokes, qt.DeepEquals, []pgdefaultacl.Revoke{
+		{
+			Schema: "dapp", Class: "S", Grantee: "d_reader",
+			Statement: `ALTER DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA "dapp" REVOKE ALL PRIVILEGES ON SEQUENCES FROM "d_reader"`,
+		},
+		{
+			Schema: "dapp", Grantor: "d_owner", Class: "f",
+			Statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "dapp" REVOKE ALL PRIVILEGES ON FUNCTIONS FROM PUBLIC`,
+		},
+		{
+			Schema: "dapp", Grantor: "d_owner", Class: "r", Grantee: "d-dash",
+			Statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "dapp" REVOKE ALL PRIVILEGES ON TABLES FROM "d-dash"`,
+		},
+		{
+			Schema: "dapp", Grantor: "d_owner", Class: "r", Grantee: "d_reader",
+			Statement: `ALTER DEFAULT PRIVILEGES FOR ROLE "d_owner" IN SCHEMA "dapp" REVOKE ALL PRIVILEGES ON TABLES FROM "d_reader"`,
+		},
+	})
+	c.Assert(sent, qt.DeepEquals, []string{
+		"SELECT rolname FROM pg_roles ORDER BY rolname",
+		`SHOW DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA "dapp"`,
+		`SHOW DEFAULT PRIVILEGES FOR ROLE "d-dash", "d_owner" IN SCHEMA "dapp"`,
+	})
+}
+
+// TestReadRevokesFromShow_NoSchemaAsksNothing reads nothing for an empty
+// scope, as [pgdefaultacl.ReadRevokes] does.
+func TestReadRevokesFromShow_NoSchemaAsksNothing(t *testing.T) {
+	c := qt.New(t)
+	var sent []string
+	db := dbtest.Open(c, answerShow(&sent))
+
+	revokes, err := pgdefaultacl.ReadRevokesFromShow(c.Context(), db.SQL, nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(revokes, qt.IsNil)
+	c.Assert(sent, qt.HasLen, 0)
+}
+
+// TestReadRevokesFromShow_FailurePath refuses an object type IN SCHEMA cannot
+// name rather than skipping the grantee, whose default the cleanup would then
+// leave behind.
+func TestReadRevokesFromShow_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, answerShowSchemas)
+
+	revokes, err := pgdefaultacl.ReadRevokesFromShow(c.Context(), db.SQL, []string{"dapp"})
+
+	c.Assert(err, qt.ErrorMatches,
+		`failed to read the default privileges in schema dapp: object type "schemas" is not one IN SCHEMA can name`)
+	c.Assert(revokes, qt.IsNil)
+}
+
+// answerShowSchemas answers SHOW DEFAULT PRIVILEGES with a SCHEMAS row, which
+// only a default set without IN SCHEMA can hold.
+func answerShowSchemas(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	if strings.HasPrefix(query, "SELECT rolname") {
+		return dbtest.QueryResult{Columns: []string{"rolname"}}, nil
+	}
+	return dbtest.QueryResult{
+		Columns: []string{"role", "for_all_roles", "object_type", "grantee", "privilege_type", "is_grantable"},
+		Rows:    [][]driver.Value{{nil, true, "schemas", "d_reader", "USAGE", false}},
+	}, nil
 }
