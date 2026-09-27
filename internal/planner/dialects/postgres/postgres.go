@@ -446,7 +446,16 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, ro
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
+		// A column's own UNIQUE over the primary key's column is not built
+		// when the CREATE TABLE writes both, so it is added after the table.
+		keys := modelast.ColumnKeysAfterTable(astNode, creation.Table, creation.Fields, creation.Constraints, DialectName)
 		result = append(result, astNode)
+		for _, key := range keys {
+			result = append(result, &ast.AlterTableNode{
+				Name:       astNode.Name,
+				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: modelast.FromConstraint(key)}},
+			})
+		}
 	}
 
 	return result

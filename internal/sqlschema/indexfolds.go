@@ -5,10 +5,10 @@ import (
 	"ptah.run/internal/schemaprep"
 )
 
-// foldCreatedIndexConstraints takes out of the model every UNIQUE and EXCLUDE
-// one CREATE TABLE declared that PostgreSQL does not build, and gives a dropped
-// constraint's name to the one the server keeps when that one has none; see
-// [schemaprep.FoldedIndexConstraints] for the rule.
+// foldCreatedIndexConstraints takes out of the model every UNIQUE and EXCLUDE,
+// and every column's own UNIQUE, one CREATE TABLE declared that PostgreSQL does
+// not build, and gives a dropped constraint's name to the one the server keeps
+// when that one has none; see [schemaprep.FoldedIndexConstraints] for the rule.
 //
 // Kept in the model, a dropped constraint is one the database the file built
 // does not hold, so a comparison of the two plans it on every run.
@@ -34,6 +34,10 @@ func foldCreatedIndexConstraints(
 	}
 	dropped := make(map[int]bool, len(folds))
 	for _, fold := range folds {
+		if fold.Folded == schemaprep.ColumnKeyOutsideList {
+			dropColumnKey(database.Fields[fieldsStart:], fold.Column)
+			continue
+		}
 		dropped[fold.Folded] = true
 		name := created[fold.Folded].Name
 		switch {
@@ -68,6 +72,16 @@ func namePrimaryKey(table *schemamodel.Table, fields []schemamodel.Field, name s
 	for _, field := range fields {
 		if field.Primary {
 			table.PrimaryKey = append(table.PrimaryKey, field.Name)
+		}
+	}
+}
+
+// dropColumnKey clears the own UNIQUE of the column called column. fields are
+// the columns the statement declared.
+func dropColumnKey(fields []schemamodel.Field, column string) {
+	for i := range fields {
+		if fields[i].Name == column {
+			fields[i].Unique = false
 		}
 	}
 }

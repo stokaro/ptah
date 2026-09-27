@@ -150,8 +150,9 @@ func TestMySQLFamilyUniqueBesidePrimary_ControlsForm(t *testing.T) {
 //	SQL Server 2022    key + unique constraint         refused, Msg 8151
 //
 // So SQL Server needs the table constraint as much as MariaDB does -- more, as
-// it will not accept the inline pair at all -- and PostgreSQL folds either way,
-// which is why its rendering is unchanged in meaning by this.
+// it will not accept the inline pair at all. PostgreSQL folds either way, and
+// its reader folds the pair as the server does, so no UNIQUE reaches the
+// renderer from it; see [TestUniqueBesidePrimary_PostgresReadsTheKeyAlone].
 func TestUniqueBesidePrimary_TableConstraintIsDialectAgnostic(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -159,7 +160,6 @@ func TestUniqueBesidePrimary_TableConstraintIsDialectAgnostic(t *testing.T) {
 		want    string
 	}{
 		{name: "sqlserver", dialect: platform.SQLServer, want: "[a] INT UNIQUE"},
-		{name: "postgres", dialect: platform.Postgres, want: `"a" INT UNIQUE`},
 	}
 
 	for _, test := range tests {
@@ -171,4 +171,17 @@ func TestUniqueBesidePrimary_TableConstraintIsDialectAgnostic(t *testing.T) {
 			c.Assert(rendered, qt.Contains, "PRIMARY KEY (")
 		})
 	}
+}
+
+// TestUniqueBesidePrimary_PostgresReadsTheKeyAlone renders the pair read for
+// PostgreSQL, which builds `a INT UNIQUE, PRIMARY KEY (a)` as the primary key
+// alone, measured on PostgreSQL 18. The reader keeps that one key, so the
+// rendering builds the table the file builds.
+func TestUniqueBesidePrimary_PostgresReadsTheKeyAlone(t *testing.T) {
+	c := qt.New(t)
+
+	rendered := renderedFromSQL(c, platform.Postgres, `CREATE TABLE t (a INT UNIQUE, PRIMARY KEY (a));`)
+
+	c.Assert(rendered, qt.Contains, `"a" INT PRIMARY KEY`)
+	c.Assert(rendered, qt.Not(qt.Contains), "UNIQUE")
 }

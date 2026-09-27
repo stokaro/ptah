@@ -14,24 +14,34 @@ import (
 // PRIMARY KEY entry of the constraint list.
 const PrimaryKeyOutsideList = -1
 
-// IndexConstraintFold is a UNIQUE or EXCLUDE constraint PostgreSQL does not
-// build when one CREATE TABLE declares it, because an index constraint the
-// same statement declares builds the same index.
+// ColumnKeyOutsideList is the [IndexConstraintFold.Folded] of a column's own
+// UNIQUE, which the model keeps on the column rather than in the constraint
+// list. [IndexConstraintFold.Column] names the column.
+const ColumnKeyOutsideList = -2
+
+// IndexConstraintFold is a UNIQUE or EXCLUDE constraint, or a column's own
+// UNIQUE, that PostgreSQL does not build when one CREATE TABLE declares it,
+// because an index constraint the same statement declares builds the same
+// index.
 type IndexConstraintFold struct {
 	// Folded is the position of the constraint the server leaves out, in the
-	// list given to [FoldedIndexConstraints].
+	// list given to [FoldedIndexConstraints], or [ColumnKeyOutsideList].
 	Folded int
 	// Into is the position of the constraint whose index the server builds
 	// instead, or [PrimaryKeyOutsideList].
 	Into int
+	// Column is the column whose own UNIQUE folds, when Folded is
+	// [ColumnKeyOutsideList], and empty otherwise.
+	Column string
 }
 
-// FoldedIndexConstraints answers which UNIQUE and EXCLUDE constraints of table
-// PostgreSQL leaves out of one CREATE TABLE that declares the table's primary
-// key and, in list order, every constraint of constraints that belongs to
-// table. fields may hold the columns of every table; the primary key is read
-// from the ones table owns. The answer is in list order, and nil on every
-// dialect but PostgreSQL.
+// FoldedIndexConstraints answers which UNIQUE and EXCLUDE constraints of table,
+// and which of its columns' own UNIQUEs, PostgreSQL leaves out of one CREATE
+// TABLE that declares the table's primary key, its columns and, in list order,
+// every constraint of constraints that belongs to table. fields may hold the
+// columns of every table; the primary key and the columns' own keys are read
+// from the ones table owns. The answer is in list order, then in the order of
+// fields, and nil on every dialect but PostgreSQL.
 //
 // The server builds one index for index constraints with the same key, keeps
 // the first, and drops the rest without a word. The primary key is first
@@ -51,9 +61,20 @@ type IndexConstraintFold struct {
 // writes nor reads it on these constraints, so the statement the server sees
 // never carries it.
 //
-// A column's own UNIQUE is not in the list and is not compared. The server
-// folds a table's UNIQUE over the same column into it too; the model keeps the
-// column's key on the column, and the comparison matches it by its column.
+// A column's own UNIQUE is a key over that column alone, and it folds with an
+// equal primary key or UNIQUE the same way. Measured on PostgreSQL 18.6:
+//
+//	body of c                                        keys of c
+//	a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)         uq_a
+//	CONSTRAINT uq_a UNIQUE (a), a int UNIQUE         uq_a
+//	a int UNIQUE, UNIQUE (a)                         c_a_key
+//	id int PRIMARY KEY UNIQUE                        c_pkey
+//	a int UNIQUE, PRIMARY KEY (a)                    c_pkey
+//
+// A column's own UNIQUE has no name, so the server reports the same key
+// whichever of two equal ones it keeps: the name the others give, or its own.
+// The rule places the columns after the list, so a column's key is the one that
+// folds, and a key of the list keeps the name it carries.
 func FoldedIndexConstraints(
 	table schemamodel.Table,
 	fields []schemamodel.Field,
@@ -86,6 +107,18 @@ func FoldedIndexConstraints(
 			continue
 		}
 		kept = append(kept, keptIndex{key: key, position: position})
+	}
+	for _, field := range fields {
+		if field.StructName != table.StructName || !field.Unique {
+			continue
+		}
+		key := indexKey{columns: field.Name}
+		into := slices.IndexFunc(kept, func(earlier keptIndex) bool { return earlier.key == key })
+		if into >= 0 {
+			folds = append(folds, IndexConstraintFold{
+				Folded: ColumnKeyOutsideList, Into: kept[into].position, Column: field.Name,
+			})
+		}
 	}
 	return folds
 }

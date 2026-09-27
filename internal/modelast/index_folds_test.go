@@ -125,3 +125,93 @@ func TestGetOrderedCreateStatements_IndexConstraintsTheServerKeepsStayInTheTable
 		})
 	}
 }
+
+// keyedTableWithColumnKey is [keyedTable] with column's own UNIQUE declared.
+func keyedTableWithColumnKey(column string, constraints ...schemamodel.Constraint) *schemamodel.Database {
+	database := keyedTable(constraints...)
+	for i := range database.Fields {
+		if database.Fields[i].Name == column {
+			database.Fields[i].Unique = true
+		}
+	}
+	return database
+}
+
+// TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable renders a
+// column's own UNIQUE that PostgreSQL would fold into an equal key of the same
+// CREATE TABLE so that both are built. Measured on PostgreSQL 18.6,
+// `a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)` and `a int UNIQUE, PRIMARY KEY
+// (a)` build one key each in one CREATE TABLE, and two when the second is
+// added by ALTER TABLE.
+func TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		database *schemamodel.Database
+		want     []string
+	}{
+		{
+			name:     "beside a UNIQUE over the column",
+			database: keyedTableWithColumnKey("r", uniqueOn("uq_r", "r")),
+			want: []string{
+				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+					"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER UNIQUE NOT NULL\n);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"uq_r\" UNIQUE (\"r\");\n\n",
+			},
+		},
+		{
+			name: "on the column of a PRIMARY KEY entry",
+			database: func() *schemamodel.Database {
+				database := &schemamodel.Database{
+					Tables: []schemamodel.Table{{StructName: "E", Name: "ex"}},
+					Fields: []schemamodel.Field{{StructName: "E", Name: "r", Type: "INTEGER", Unique: true}},
+					Constraints: []schemamodel.Constraint{
+						{StructName: "E", Table: "ex", Name: "ex_pk", Type: "PRIMARY KEY", Columns: []string{"r"}},
+					},
+				}
+				schemamodel.Finalize(database)
+				return database
+			}(),
+			want: []string{
+				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+					"  \"r\" INTEGER NOT NULL,\n  CONSTRAINT \"ex_pk\" PRIMARY KEY (\"r\")\n);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD UNIQUE (\"r\");\n\n",
+			},
+		},
+		{
+			name:     "on the primary key column",
+			database: keyedTableWithColumnKey("id"),
+			want: []string{
+				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+					"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL\n);\n\n",
+				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD UNIQUE (\"id\");\n\n",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := renderer.GetOrderedCreateStatements(test.database, platform.Postgres)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestGetOrderedCreateStatements_ColumnKeyTheServerKeepsStaysInTheTable is the
+// control: a column's own UNIQUE beside a UNIQUE the column only leads is its
+// own index, and stays in the CREATE TABLE.
+func TestGetOrderedCreateStatements_ColumnKeyTheServerKeepsStaysInTheTable(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := renderer.GetOrderedCreateStatements(
+		keyedTableWithColumnKey("r", uniqueOn("uq_r_id", "r", "id")), platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+			"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER UNIQUE NOT NULL,\n" +
+			"  CONSTRAINT \"uq_r_id\" UNIQUE (\"r\", \"id\")\n);\n\n",
+	})
+}
