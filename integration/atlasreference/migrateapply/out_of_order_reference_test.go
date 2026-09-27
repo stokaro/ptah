@@ -8,13 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"ptah.run/internal/atlasreference"
-	"ptah.run/internal/clirun"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
+
+	"ptah.run/internal/atlasreference"
+	"ptah.run/internal/clirun"
 )
 
 const (
@@ -136,8 +137,7 @@ func runCommand(c *qt.C, binary string, args ...string) commandResult {
 	cmd := exec.Command(binary, args...)
 	cmd.Env = commandEnvironmentWithoutPtahVariables(os.Environ())
 	out, err := cmd.CombinedOutput()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return commandResult{code: exitErr.ExitCode(), output: string(out)}
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s %s\n%s", binary, strings.Join(args, " "), out))

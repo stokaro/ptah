@@ -239,7 +239,7 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 	} {
 		t.Run(strings.SplitN(assignment, "=", 2)[0], func(t *testing.T) {
 			c := qt.New(t)
-			name := strings.SplitN(assignment, "=", 2)[0]
+			name, _, _ := strings.Cut(assignment, "=")
 			stdout, stderr, code := runAtlasBinary(
 				compat,
 				[]string{
@@ -691,14 +691,11 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testin
 			c.Assert(statErr, qt.IsNil)
 			conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+databasePath)
 			c.Assert(err, qt.IsNil)
-			rows, err := conn.QueryContext(t.Context(),
-				"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'")
-			c.Assert(err, qt.IsNil)
-			c.Assert(rows.Next(), qt.IsTrue)
 			var tableCount int
-			c.Assert(rows.Scan(&tableCount), qt.IsNil)
+			c.Assert(conn.QueryRowContext(t.Context(),
+				"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'",
+			).Scan(&tableCount), qt.IsNil)
 			c.Assert(tableCount, qt.Equals, 1)
-			c.Assert(rows.Close(), qt.IsNil)
 			dbschema.CloseAndWarn(conn)
 		})
 	}
@@ -1173,14 +1170,11 @@ func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 
 	conn, err = dbschema.ConnectToDatabase(t.Context(), "sqlite://"+databasePath)
 	c.Assert(err, qt.IsNil)
-	rows, err := conn.QueryContext(t.Context(),
-		"SELECT count(*) FROM sqlite_master WHERE name IN ('users', 'users_audit')")
-	c.Assert(err, qt.IsNil)
-	c.Assert(rows.Next(), qt.IsTrue)
 	var objectCount int
-	c.Assert(rows.Scan(&objectCount), qt.IsNil)
+	c.Assert(conn.QueryRowContext(t.Context(),
+		"SELECT count(*) FROM sqlite_master WHERE name IN ('users', 'users_audit')",
+	).Scan(&objectCount), qt.IsNil)
 	c.Assert(objectCount, qt.Equals, 2)
-	c.Assert(rows.Close(), qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
 	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
@@ -1190,13 +1184,10 @@ func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 
 	conn, err = dbschema.ConnectToDatabase(t.Context(), "sqlite://"+databasePath)
 	c.Assert(err, qt.IsNil)
-	rows, err = conn.QueryContext(t.Context(),
-		"SELECT count(*) FROM sqlite_master WHERE name IN ('users', 'users_audit')")
-	c.Assert(err, qt.IsNil)
-	c.Assert(rows.Next(), qt.IsTrue)
-	c.Assert(rows.Scan(&objectCount), qt.IsNil)
+	c.Assert(conn.QueryRowContext(t.Context(),
+		"SELECT count(*) FROM sqlite_master WHERE name IN ('users', 'users_audit')",
+	).Scan(&objectCount), qt.IsNil)
 	c.Assert(objectCount, qt.Equals, 0)
-	c.Assert(rows.Close(), qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 }
 
@@ -1923,8 +1914,7 @@ func runAtlasBinary(binary string, additions []string, args ...string) (stdout, 
 	if err == nil {
 		return stdoutBuffer.String(), stderrBuffer.String(), 0
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return stdoutBuffer.String(), stderrBuffer.String(), exitErr.ExitCode()
 	}
 	return stdoutBuffer.String(), stderrBuffer.String(), -1

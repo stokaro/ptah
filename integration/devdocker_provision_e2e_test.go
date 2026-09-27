@@ -47,6 +47,7 @@ const devDockerTestURL = "docker://postgres/16-alpine/ptahdev"
 // not.
 func devDockerCensus(c *qt.C) []string {
 	c.Helper()
+	// #nosec G204 -- every argument is a constant; the label is devdocker.ContainerLabel.
 	out, err := exec.Command(
 		"docker", "ps", "--all", "--quiet", "--filter", "label="+devdocker.ContainerLabel,
 	).Output()

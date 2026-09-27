@@ -105,7 +105,7 @@ func providedTypes(c *qt.C, ctx context.Context, db *sql.DB) map[string]string {
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	provided := map[string]string{}
+	provided := make(map[string]string)
 	for rows.Next() {
 		var typeName, extension string
 		c.Assert(rows.Scan(&typeName, &extension), qt.IsNil)

@@ -281,6 +281,7 @@ func TestPrepareRun_RefusesIncompleteIdempotentRowsLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	mismatchedTarget := desired
 	mismatchedTarget.ID = "incomplete-registry-target"
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET target_column = 'another_embedding' WHERE identity = $1`, generation.Identity)
 	c.Assert(err, qt.IsNil)
@@ -289,12 +290,14 @@ func TestPrepareRun_RefusesIncompleteIdempotentRowsLive(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	c.Assert(err.Error(), qt.Contains, "target column")
 	assertNoPreparedArtifacts(c, ctx, db, store, spec, mismatchedTarget.ID)
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET target_column = $2 WHERE identity = $1`, generation.Identity, generation.TargetColumn)
 	c.Assert(err, qt.IsNil)
 
 	mismatchedMode := desired
 	mismatchedMode.ID = "incomplete-registry-mode"
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET consistency_mode = 'immutable' WHERE identity = $1`, generation.Identity)
 	c.Assert(err, qt.IsNil)
@@ -303,6 +306,7 @@ func TestPrepareRun_RefusesIncompleteIdempotentRowsLive(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	c.Assert(err.Error(), qt.Contains, "consistency mode")
 	assertNoPreparedArtifacts(c, ctx, db, store, spec, mismatchedMode.ID)
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET consistency_mode = $2 WHERE identity = $1`,
 		generation.Identity, generation.ConsistencyMode)
@@ -330,7 +334,7 @@ func TestPrepareRun_RefusesIncompleteIdempotentRowsLive(t *testing.T) {
 		ctx, spec, generation, missingTarget, embedcatchup.ModeOutbox)
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	c.Assert(err.Error(), qt.Contains, "prepared target column")
-	c.Assert(embeddingColumns(c, ctx, db, table), qt.DeepEquals, map[string]string{})
+	c.Assert(embeddingColumns(c, ctx, db, table), qt.DeepEquals, make(map[string]string))
 }
 
 func setIncompletePreparedRow(
@@ -342,6 +346,7 @@ func setIncompletePreparedRow(
 	snapshot, source string,
 ) {
 	c.Helper()
+	// #nosec G202 -- the only concatenated part is the embedstore.RunTable constant.
 	_, err := db.ExecContext(ctx, `UPDATE `+embedstore.RunTable+`
 		SET phase = $2, snapshot_watermark = $3, source = $4 WHERE id = $1`,
 		id, string(phase), snapshot, source)
@@ -359,7 +364,7 @@ func assertNoPreparedArtifacts(
 	c.Helper()
 	_, err := store.Run(ctx, runID)
 	c.Assert(err, qt.ErrorIs, embedstore.ErrNotFound)
-	c.Assert(embeddingColumns(c, ctx, db, spec.Target.Table), qt.DeepEquals, map[string]string{})
+	c.Assert(embeddingColumns(c, ctx, db, spec.Target.Table), qt.DeepEquals, make(map[string]string))
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
 	installed, err := outbox.Installed(ctx)
@@ -528,10 +533,12 @@ func assertACompleteRunDoesNotLowerTheFloor(
 	// This is deliberately a damaged/imported-registry fixture, not a supported
 	// state transition: a complete row whose generation registry row is absent
 	// makes the status predicate the only reason it leaves the reader set.
+	// #nosec G202 -- the only concatenated part is the embedstore.RunTable constant.
 	_, err := db.ExecContext(ctx, `UPDATE `+embedstore.RunTable+`
 		SET phase = $2, status = $3 WHERE id = $1`, "run-complete",
 		string(embedrun.PhaseRetired), string(embedrun.StatusComplete))
 	c.Assert(err, qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = db.ExecContext(ctx, `DELETE FROM `+embedstore.GenerationTable+` WHERE identity = $1`,
 		"gen-complete")
 	c.Assert(err, qt.IsNil)
@@ -662,6 +669,7 @@ func assertARetiredGenerationDoesNotLowerTheFloor(
 ) {
 	c.Helper()
 	seedReader(c, ctx, store, "gen-retired", "run-retired", "articles", "3", floorAt)
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err := db.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET retired_at = $2 WHERE identity = $1`, "gen-retired", floorAt)
 	c.Assert(err, qt.IsNil)

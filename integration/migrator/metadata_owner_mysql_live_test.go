@@ -126,7 +126,7 @@ func definerObservations(c *qt.C, conn *dbschema.DatabaseConnection) []string {
 	rows, err := conn.QueryContext(context.Background(), "SELECT note FROM ptah_definer_evidence")
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(rows.Close(), qt.IsNil) }()
-	notes := []string{}
+	notes := make([]string, 0)
 	for rows.Next() {
 		var note string
 		c.Assert(rows.Scan(&note), qt.IsNil)

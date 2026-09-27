@@ -265,7 +265,7 @@ func spannerLiveSequenceNames(sequences []catalog.Sequence) []string {
 // is every line that is not a comment.
 func spannerLiveExecutableLines(rendered string) []string {
 	var executable []string
-	for _, line := range strings.Split(rendered, "\n") {
+	for line := range strings.SplitSeq(rendered, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
 			continue

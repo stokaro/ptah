@@ -283,7 +283,7 @@ func tableNames(c *qt.C, ctx context.Context, dsn string) []string {
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	names := []string{}
+	names := make([]string, 0)
 	for rows.Next() {
 		var name string
 		c.Assert(rows.Scan(&name), qt.IsNil)

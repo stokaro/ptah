@@ -33,7 +33,10 @@ func TestVerifyBaselineClickHouseAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 	defer cancel()
 
 	adminURL, admin := requireClickHouseBaselineConnection(t, c, ctx)
-	defer dbschema.CloseAndWarn(admin)
+	// A cleanup rather than a defer: the databases below are dropped by cleanups
+	// through admin, and cleanups run after the function's defers, so a deferred
+	// close would take admin away before the drops run.
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
 
 	suffix := time.Now().UnixNano()
 	targetName := fmt.Sprintf("ptah_3389_target_%d", suffix)
@@ -41,9 +44,9 @@ func TestVerifyBaselineClickHouseAcceptsAShadowDatabaseOfItsOwn(t *testing.T) {
 	for _, name := range []string{targetName, shadowName} {
 		_, err := admin.ExecContext(ctx, "CREATE DATABASE "+quoteClickHouseIdent(name))
 		c.Assert(err, qt.IsNil)
-		defer func(name string) {
+		c.Cleanup(func() {
 			_, _ = admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quoteClickHouseIdent(name))
-		}(name)
+		})
 	}
 
 	target, err := dbschema.ConnectToDatabase(ctx, addressNamingDatabase(c, adminURL, targetName))

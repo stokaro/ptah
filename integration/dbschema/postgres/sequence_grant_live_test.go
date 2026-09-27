@@ -118,7 +118,7 @@ func prepareSequenceGrantFixture(
 	c *qt.C,
 	ctx context.Context,
 	engine dbtarget.Engine,
-) (*dbschema.DatabaseConnection, string, string) {
+) (conn *dbschema.DatabaseConnection, schemaName, roleName string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
@@ -127,8 +127,8 @@ func prepareSequenceGrantFixture(
 	})
 
 	suffix := time.Now().UnixNano()
-	schemaName := fmt.Sprintf("ptah_seq_grant_%d", suffix)
-	roleName := fmt.Sprintf("ptah_seq_grant_role_%d", suffix)
+	schemaName = fmt.Sprintf("ptah_seq_grant_%d", suffix)
+	roleName = fmt.Sprintf("ptah_seq_grant_role_%d", suffix)
 	schemaIdent := pgx.Identifier{schemaName}.Sanitize()
 	roleIdent := pgx.Identifier{roleName}.Sanitize()
 	c.Cleanup(func() {
@@ -154,8 +154,7 @@ func dropSequenceGrantFixture(
 	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schemaIdent string,
-	roleIdent string,
+	schemaIdent, roleIdent string,
 ) {
 	c.Helper()
 	_, err := conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+schemaIdent+" CASCADE")

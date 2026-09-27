@@ -153,7 +153,7 @@ func oracleIdentityRows(c *qt.C, ctx context.Context, conn *dbschema.DatabaseCon
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	got := []string{}
+	got := make([]string, 0)
 	for rows.Next() {
 		var (
 			id   int64

@@ -98,12 +98,10 @@ func assertAbandonmentIsAtomicAndKeepsAFeeder(
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := store.AbandonRun(ctx, run.ID, "superseded")
 			results <- err
-		}()
+		})
 	}
 	wg.Wait()
 	close(results)
@@ -192,6 +190,7 @@ func assertCutoverWindowIsAtomicAgainstAbandonment(
 
 	blocker, err := db.BeginTx(ctx, nil)
 	c.Assert(err, qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = blocker.ExecContext(ctx, `SELECT active_generation FROM `+embedstore.PointerTable+`
 		WHERE target_schema = 'public' AND target_table = 'atomic_articles' FOR UPDATE`)
 	c.Assert(err, qt.IsNil)
@@ -721,6 +720,7 @@ func assertRegistrationCannotHideALiveOrTerminalOnlyRun(
 	_, err = store.Generation(ctx, maintained.Identity)
 	c.Assert(err, qt.ErrorIs, embedstore.ErrNotFound)
 	const activeMissing = "gen-registration-active-missing"
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = db.ExecContext(ctx, `INSERT INTO `+embedstore.PointerTable+` (
 		target_schema, target_table, active_generation, cut_over_at)
 		VALUES ('public', 'registration_active_missing', $1, $2)`, activeMissing, liveAt)
@@ -754,6 +754,7 @@ func assertRetirementIsTerminal(
 	c.Assert(store.CreateRun(ctx, run), qt.IsNil)
 	// Simulate a historical malformed pointer. Retirement must search every
 	// target row for this active identity, not only the generation's target.
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = db.ExecContext(ctx, `INSERT INTO `+embedstore.PointerTable+` (
 		target_schema, target_table, active_generation, cut_over_at)
 		VALUES ('public', 'wrong_retire_articles', $1, $2)`, "gen-retire", liveAt)
@@ -761,6 +762,7 @@ func assertRetirementIsTerminal(
 	_, err = store.RetireGenerationObjects(
 		ctx, "gen-retire", embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = db.ExecContext(ctx, `DELETE FROM `+embedstore.PointerTable+`
 		WHERE target_schema = 'public' AND target_table = 'wrong_retire_articles'`)
 	c.Assert(err, qt.IsNil)
@@ -970,6 +972,7 @@ func assertRetirementKeepsAnOutboxForAnOrphanReader(
 	orphan.SnapshotWatermark = ""
 	orphan.CatchUpWatermark = ""
 	c.Assert(store.CreateRun(ctx, orphan), qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.RunTable constant.
 	_, err = db.ExecContext(ctx, `UPDATE `+embedstore.RunTable+`
 		SET source = $2, snapshot_watermark = '100' WHERE id = $1`,
 		orphan.ID, orphan.Source)
@@ -1079,6 +1082,7 @@ func assertPointerMoveAndRetirementCannotCross(
 
 	blocker, err := db.BeginTx(ctx, nil)
 	c.Assert(err, qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = blocker.ExecContext(ctx, `SELECT active_generation FROM `+embedstore.PointerTable+`
 		WHERE target_schema = 'public' AND target_table = $1 FOR UPDATE`, table)
 	c.Assert(err, qt.IsNil)
@@ -1234,6 +1238,7 @@ func assertRollbackIsAtomicAndRevalidatesMaintenance(
 		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
 		"ptah:inference:generation:"+active)
 	c.Assert(err, qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.GenerationTable constant.
 	_, err = blocker.ExecContext(ctx, `UPDATE `+embedstore.GenerationTable+`
 		SET maintained_until = NULL WHERE identity = $1`, active)
 	c.Assert(err, qt.IsNil)
@@ -1399,6 +1404,7 @@ func assertAbsenceIsNotEmptiness(
 	protected.SnapshotWatermark = ""
 	protected.CatchUpWatermark = ""
 	c.Assert(store.CreateRun(ctx, protected), qt.IsNil)
+	// #nosec G202 -- the only concatenated part is the embedstore.PointerTable constant.
 	_, err = db.ExecContext(ctx, `INSERT INTO `+embedstore.PointerTable+` (
 		target_schema, target_table, active_generation, cut_over_at)
 		VALUES ('public', 'missing_generation_articles', $1, $2)`,

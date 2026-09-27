@@ -14,11 +14,11 @@ import (
 )
 
 // runSchemaTestDocument writes one `.test.hcl` document and runs
-// `ptah schema test` over it, returning the command's error and its output.
+// `ptah schema test` over it, returning the command's output and its error.
 //
 // It takes the checker rather than a testing.TB for the reason AGENTS.md gives:
 // *qt.C already is one, and widening buys nothing.
-func runSchemaTestDocument(c *qt.C, document string) (error, string) {
+func runSchemaTestDocument(c *qt.C, document string) (string, error) {
 	dir := c.TB.(*testing.T).TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "n.test.hcl"), []byte(document), 0o600), qt.IsNil)
 
@@ -38,7 +38,8 @@ type T struct {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"schema", "test", "--dir", dir, "--root-dir", models})
 
-	return cmd.Execute(), out.String()
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 // TestSchemaTest_EveryConstructHasANegativeEndToEndFixture is the half the
@@ -131,7 +132,7 @@ func TestSchemaTest_EveryConstructHasANegativeEndToEndFixture(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err, output := runSchemaTestDocument(c, test.document)
+			output, err := runSchemaTestDocument(c, test.document)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("output: %s", output))
 			c.Assert(err.Error()+output, qt.Contains, test.wantDetail)

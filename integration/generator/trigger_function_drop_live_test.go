@@ -35,11 +35,11 @@ import (
 // had: that statement changes nothing on the server, and the unit tests in
 // migration/generator pin its absence.
 
-// triggerDropDeclaration is a table with two triggers: one with a body and one
-// that executes a separately declared function. withTriggers false is the same
-// schema with both triggers gone and the function kept.
-func triggerDropDeclaration(withTriggers bool) *schemamodel.Database {
-	database := &schemamodel.Database{
+// triggerDropDeclaration is a table and a separately declared function, with
+// the given triggers on the table. With none, it is the schema after both
+// triggers are gone and the function is kept.
+func triggerDropDeclaration(triggers ...schemamodel.Trigger) *schemamodel.Database {
+	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
@@ -49,20 +49,23 @@ func triggerDropDeclaration(withTriggers bool) *schemamodel.Database {
 			Name: "normalize_email", Returns: "TRIGGER", Language: "plpgsql",
 			Body: "BEGIN NEW.email := lower(NEW.email); RETURN NEW; END;",
 		}},
+		Triggers: triggers,
 	}
-	if withTriggers {
-		database.Triggers = []schemamodel.Trigger{
-			{
-				Name: "owned", Table: "users", Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
-				Body: "NEW.email := lower(NEW.email); RETURN NEW;",
-			},
-			{
-				Name: "shared", Table: "users", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW",
-				ExecuteFunction: "normalize_email",
-			},
-		}
+}
+
+// triggerDropTriggers are the two triggers the test removes: one with a body,
+// and one that executes the separately declared function.
+func triggerDropTriggers() []schemamodel.Trigger {
+	return []schemamodel.Trigger{
+		{
+			Name: "owned", Table: "users", Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
+			Body: "NEW.email := lower(NEW.email); RETURN NEW;",
+		},
+		{
+			Name: "shared", Table: "users", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW",
+			ExecuteFunction: "normalize_email",
+		},
 	}
-	return database
 }
 
 // triggerDropConnection opens a connection whose search_path is a schema of
@@ -119,7 +122,7 @@ func TestPostgresLiveTriggerDropTakesOnlyTheGeneratedFunction(t *testing.T) {
 	c := qt.New(t)
 	conn, schemaName := triggerDropConnection(c, dbURL)
 
-	created, err := renderer.GetOrderedCreateStatements(triggerDropDeclaration(true), platform.Postgres)
+	created, err := renderer.GetOrderedCreateStatements(triggerDropDeclaration(triggerDropTriggers()...), platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range created {
 		_, err := conn.ExecContext(c.Context(), statement)
@@ -130,7 +133,7 @@ func TestPostgresLiveTriggerDropTakesOnlyTheGeneratedFunction(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	wanted := triggerDropDeclaration(false)
+	wanted := triggerDropDeclaration()
 	diff := schemadiff.CompareWithDialect(wanted, live, platform.Postgres)
 	c.Assert(diff.TriggersRemoved, qt.HasLen, 2)
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{

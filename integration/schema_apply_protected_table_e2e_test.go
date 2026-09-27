@@ -123,7 +123,7 @@ func regionNames(c *qt.C, ctx context.Context, dbPath string) map[string]string 
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
 
-	names := map[string]string{}
+	names := make(map[string]string)
 	for rows.Next() {
 		var code, name string
 		c.Assert(rows.Scan(&code, &name), qt.IsNil)

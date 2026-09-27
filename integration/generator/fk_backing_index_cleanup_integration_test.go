@@ -148,11 +148,11 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	cleanup()
 	c.Cleanup(cleanup)
 
-	prior := addedReferencedColumnSchema(false)
+	prior := addedReferencedColumnSchema("")
 	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
-	target := addedReferencedColumnSchema(true)
+	target := addedReferencedColumnSchema(foreignKey)
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
@@ -177,7 +177,10 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(hasNamedIndex(afterDown, childTable, "idx_parent_code"), qt.IsTrue)
 }
 
-func addedReferencedColumnSchema(withReference bool) *schemamodel.Database {
+// addedReferencedColumnSchema is a child with an indexed parent_code column.
+// A non-empty foreignKey adds the parent's code column and names the foreign
+// key that points parent_code at it; empty is the schema before either exists.
+func addedReferencedColumnSchema(foreignKey string) *schemamodel.Database {
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "PtahFKRefColumnParent", Name: "ptah_fk_ref_column_parents"},
@@ -192,12 +195,12 @@ func addedReferencedColumnSchema(withReference bool) *schemamodel.Database {
 			StructName: "PtahFKRefColumnChild", Name: "idx_parent_code", Fields: []string{"parent_code"},
 		}},
 	}
-	if withReference {
+	if foreignKey != "" {
 		database.Fields = append(database.Fields, schemamodel.Field{
 			StructName: "PtahFKRefColumnParent", Name: "code", Type: "VARCHAR(36)", Unique: true,
 		})
 		database.Fields[2].Foreign = "ptah_fk_ref_column_parents(code)"
-		database.Fields[2].ForeignKeyName = "fk_parent_code"
+		database.Fields[2].ForeignKeyName = foreignKey
 	}
 	schemamodel.Finalize(database)
 	return database
@@ -218,11 +221,11 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	cleanup()
 	c.Cleanup(cleanup)
 
-	prior := addedForeignKeyColumnSchema(false)
+	prior := addedForeignKeyColumnSchema("")
 	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
-	target := addedForeignKeyColumnSchema(true)
+	target := addedForeignKeyColumnSchema(foreignKey)
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
@@ -249,7 +252,10 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(hasNamedColumn(afterDown, childTable, "id"), qt.IsTrue)
 }
 
-func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *schemamodel.Database {
+// addedForeignKeyColumnSchema is a parent and a child table. A non-empty
+// foreignKey adds the child's parent_id column with a foreign key of that name;
+// empty is the schema before the column exists.
+func addedForeignKeyColumnSchema(foreignKey string) *schemamodel.Database {
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "PtahFKColumnParent", Name: "ptah_fk_column_parents"},
@@ -260,14 +266,14 @@ func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *schemamodel.Databas
 			{StructName: "PtahFKColumnChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
 		},
 	}
-	if withForeignKeyColumn {
+	if foreignKey != "" {
 		database.Fields = append(database.Fields, schemamodel.Field{
 			StructName:     "PtahFKColumnChild",
 			Name:           "parent_id",
 			Type:           "VARCHAR(36)",
 			Nullable:       true,
 			Foreign:        "ptah_fk_column_parents(id)",
-			ForeignKeyName: "fk_added_parent",
+			ForeignKeyName: foreignKey,
 		})
 	}
 	schemamodel.Finalize(database)
@@ -293,11 +299,11 @@ func runForeignKeyBackingIndexRoundTrip(
 	cleanup()
 	c.Cleanup(cleanup)
 
-	prior := foreignKeyBackingSchema(false, preexistingIndexName)
+	prior := foreignKeyBackingSchema("", preexistingIndexName)
 	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
-	target := foreignKeyBackingSchema(true, preexistingIndexName)
+	target := foreignKeyBackingSchema(foreignKey, preexistingIndexName)
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	c.Assert(upSQL, qt.Contains, foreignKey)
 	execScript(c, conn, upSQL, "UP")
@@ -329,7 +335,9 @@ func runForeignKeyBackingIndexRoundTrip(
 	)
 }
 
-func foreignKeyBackingSchema(withForeignKey bool, indexName string) *schemamodel.Database {
+// foreignKeyBackingSchema is a child whose parent_id column carries the named
+// foreign key and the named index. An empty name declares neither object.
+func foreignKeyBackingSchema(foreignKey, indexName string) *schemamodel.Database {
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "PtahFKBackingParent", Name: "ptah_fk_backing_parents"},
@@ -341,9 +349,9 @@ func foreignKeyBackingSchema(withForeignKey bool, indexName string) *schemamodel
 			{StructName: "PtahFKBackingChild", Name: "parent_id", Type: "VARCHAR(36)", Nullable: true},
 		},
 	}
-	if withForeignKey {
+	if foreignKey != "" {
 		database.Fields[2].Foreign = "ptah_fk_backing_parents(id)"
-		database.Fields[2].ForeignKeyName = "fk_parent"
+		database.Fields[2].ForeignKeyName = foreignKey
 	}
 	if indexName != "" {
 		database.Indexes = []schemamodel.Index{{
