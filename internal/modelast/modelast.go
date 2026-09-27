@@ -954,6 +954,11 @@ const (
 // CREATE TABLE, the pair is one constraint: a schema file materialized on a dev
 // database loses the second, and compared with the database the file built, it
 // plans the second again.
+//
+// A column's own UNIQUE folds the same way. Beside an equal UNIQUE of the list,
+// the column keeps its key and the UNIQUE goes after the table. Beside an equal
+// primary key, the column's key goes after the table as an unnamed UNIQUE, the
+// one the server names as it names the column's.
 func addTableConstraints(
 	createTable *ast.CreateTableNode,
 	table schemamodel.Table,
@@ -971,9 +976,14 @@ func addTableConstraints(
 
 	folded := make(map[int]bool)
 	for _, fold := range schemaprep.FoldedIndexConstraints(table, fields, constraints, targetPlatform) {
-		folded[fold.Folded] = true
+		switch {
+		case fold.Folded != schemaprep.ColumnKeyOutsideList:
+			folded[fold.Folded] = true
+		case !foldsIntoPrimaryKey(fold, constraints):
+			folded[fold.Into] = true
+		}
 	}
-	var after []schemamodel.Constraint
+	after := ColumnKeysAfterTable(createTable, table, fields, constraints, targetPlatform)
 	for position, constraint := range constraints {
 		if !schemaprep.ConstraintBelongsToTable(constraint, table) {
 			continue
@@ -993,6 +1003,47 @@ func addTableConstraints(
 		}
 	}
 	return after
+}
+
+// ColumnKeysAfterTable takes out of createTable the own UNIQUE of every column
+// of table that PostgreSQL would fold into the table's primary key, and answers
+// each as the unnamed UNIQUE to add after the table, in the order of fields;
+// see [schemaprep.FoldedIndexConstraints]. createTable is the table node built
+// from table and fields, and constraints are the document's.
+//
+// Added after the table, the key is built, and the server names it as it names
+// a column's own: `<table>_<column>_key`. Written on the column of the same
+// CREATE TABLE, it is not: measured on PostgreSQL 18.6, `CREATE TABLE c (id int
+// UNIQUE, PRIMARY KEY (id))` builds c_pkey alone, where `CREATE TABLE c (id int
+// UNIQUE)` and `ALTER TABLE c ADD PRIMARY KEY (id)` build c_id_key too.
+func ColumnKeysAfterTable(
+	createTable *ast.CreateTableNode,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
+	targetPlatform string,
+) []schemamodel.Constraint {
+	var after []schemamodel.Constraint
+	for _, fold := range schemaprep.FoldedIndexConstraints(table, fields, constraints, targetPlatform) {
+		if fold.Folded != schemaprep.ColumnKeyOutsideList || !foldsIntoPrimaryKey(fold, constraints) {
+			continue
+		}
+		for _, node := range createTable.Columns {
+			if node.Name == fold.Column {
+				node.Unique = false
+			}
+		}
+		after = append(after, schemamodel.Constraint{
+			StructName: table.StructName, Table: table.Name, Type: "UNIQUE", Columns: []string{fold.Column},
+		})
+	}
+	return after
+}
+
+// foldsIntoPrimaryKey reports whether fold goes into the table's primary key,
+// declared on the table, on a column, or as a PRIMARY KEY entry of constraints.
+func foldsIntoPrimaryKey(fold schemaprep.IndexConstraintFold, constraints []schemamodel.Constraint) bool {
+	return fold.Into == schemaprep.PrimaryKeyOutsideList || strings.EqualFold(constraints[fold.Into].Type, "PRIMARY KEY")
 }
 
 // replaceSynthesizedTableChecks re-derives the table's `checks` entries now that

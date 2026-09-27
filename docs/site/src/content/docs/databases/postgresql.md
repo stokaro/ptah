@@ -217,9 +217,15 @@ lexer reads them: spacing and the case of an unquoted word do not matter, and
 an extra pair of parentheses does, so the server can build one constraint for a
 pair that Ptah reads as two. `DEFERRABLE` is part of the server's key, and the
 SQL reader does not read it on these constraints yet
-([stokaro/ptah#3818](https://github.com/stokaro/ptah/issues/3818)). A column's
-own `UNIQUE` is outside this rule
-([stokaro/ptah#3812](https://github.com/stokaro/ptah/issues/3812)).
+([stokaro/ptah#3818](https://github.com/stokaro/ptah/issues/3818)).
+
+A column's own `UNIQUE` is a key over that column alone, and it folds the same
+way into an equal primary key or `UNIQUE` of the same `CREATE TABLE`:
+`a int UNIQUE, CONSTRAINT uq_a UNIQUE (a)` builds `uq_a` alone, and
+`id int PRIMARY KEY UNIQUE` builds the primary key alone. A render keeps the
+column's key and adds the other one after the table, or adds the column's key
+after the table where the other one is the primary key. How the comparison
+reads the pair is described with the other `UNIQUE` rules below.
 
 A `CHECK` is named `<table>_<column>_check` when its condition names exactly one
 column of the table, and `<table>_check` when it names none or more than one.

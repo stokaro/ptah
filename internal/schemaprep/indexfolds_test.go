@@ -101,6 +101,53 @@ func TestFoldedIndexConstraints_Folds(t *testing.T) {
 			},
 			wantFolds: []schemaprep.IndexConstraintFold{{Folded: 3, Into: 1}, {Folded: 4, Into: 1}},
 		},
+		{
+			name:        "a column's own UNIQUE beside a UNIQUE over the column",
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{foldUnique("uq_a", "a")},
+			wantFolds: []schemaprep.IndexConstraintFold{
+				{Folded: schemaprep.ColumnKeyOutsideList, Into: 0, Column: "a"},
+			},
+		},
+		{
+			name:   "a column's own UNIQUE on the column that is the key",
+			table:  foldTable,
+			fields: []schemamodel.Field{{StructName: "T", Name: "id", Primary: true, Unique: true}},
+			wantFolds: []schemaprep.IndexConstraintFold{
+				{Folded: schemaprep.ColumnKeyOutsideList, Into: schemaprep.PrimaryKeyOutsideList, Column: "id"},
+			},
+		},
+		{
+			name:   "a column's own UNIQUE on the table's one-column key",
+			table:  schemamodel.Table{StructName: "T", Name: "t", PrimaryKey: []string{"a"}},
+			fields: []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			wantFolds: []schemaprep.IndexConstraintFold{
+				{Folded: schemaprep.ColumnKeyOutsideList, Into: schemaprep.PrimaryKeyOutsideList, Column: "a"},
+			},
+		},
+		{
+			name:        "a column's own UNIQUE on a PRIMARY KEY entry's column",
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{{StructName: "T", Type: "PRIMARY KEY", Columns: []string{"a"}}},
+			wantFolds: []schemaprep.IndexConstraintFold{
+				{Folded: schemaprep.ColumnKeyOutsideList, Into: 0, Column: "a"},
+			},
+		},
+		{
+			name:  "a column's own UNIQUE and two UNIQUEs over the column",
+			table: foldTable,
+			fields: []schemamodel.Field{
+				{StructName: "T", Name: "b", Unique: true},
+				{StructName: "T", Name: "a", Unique: true},
+			},
+			constraints: []schemamodel.Constraint{foldUnique("", "a"), foldUnique("u2", "a")},
+			wantFolds: []schemaprep.IndexConstraintFold{
+				{Folded: 1, Into: 0},
+				{Folded: schemaprep.ColumnKeyOutsideList, Into: 0, Column: "a"},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -220,6 +267,59 @@ func TestFoldedIndexConstraints_Keeps(t *testing.T) {
 			dialect:     platform.Postgres,
 			table:       foldTable,
 			constraints: []schemamodel.Constraint{foldUnique("", "r"), foldExclude("btree", "r WITH =", "")},
+		},
+		{
+			name:        "a column's own UNIQUE beside a UNIQUE over another column",
+			dialect:     platform.Postgres,
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{foldUnique("", "b")},
+		},
+		{
+			name:        "a column's own UNIQUE beside a UNIQUE the column leads",
+			dialect:     platform.Postgres,
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{foldUnique("", "a", "b")},
+		},
+		{
+			name:    "a column's own UNIQUE beside NULLS NOT DISTINCT",
+			dialect: platform.Postgres,
+			table:   foldTable,
+			fields:  []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, NullsDistinct: &notDistinct},
+			},
+		},
+		{
+			name:    "a column's own UNIQUE beside a UNIQUE with INCLUDE columns",
+			dialect: platform.Postgres,
+			table:   foldTable,
+			fields:  []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{
+				{StructName: "T", Type: "UNIQUE", Columns: []string{"a"}, IncludeColumns: []string{"b"}},
+			},
+		},
+		{
+			name:        "another table's column UNIQUE",
+			dialect:     platform.Postgres,
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "O", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{foldUnique("", "a")},
+		},
+		{
+			name:        "a column's own UNIQUE on part of the table's key",
+			dialect:     platform.Postgres,
+			table:       schemamodel.Table{StructName: "T", Name: "t", PrimaryKey: []string{"a", "b"}},
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: nil,
+		},
+		{
+			name:        "a column's own UNIQUE beside a UNIQUE over it on MySQL",
+			dialect:     platform.MySQL,
+			table:       foldTable,
+			fields:      []schemamodel.Field{{StructName: "T", Name: "a", Unique: true}},
+			constraints: []schemamodel.Constraint{foldUnique("uq_a", "a")},
 		},
 		{
 			name:        "a UNIQUE declared twice on MySQL",
