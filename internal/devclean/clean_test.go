@@ -29,15 +29,14 @@ func openSQLiteDev(c *qt.C, ddl string) *dbschema.DatabaseConnection {
 	return conn
 }
 
-// TestEnsureClean_HappyPath is the dev databases a run may reset: the pinned
-// binary counts tables, so one holding none is clean whatever else it holds.
+// TestEnsureClean_HappyPath is the dev databases a run may reset: ones that
+// hold nothing the reset would drop.
 func TestEnsureClean_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		ddl  string
 	}{
 		{name: "an empty database", ddl: "SELECT 1"},
-		{name: "a view alone", ddl: "CREATE VIEW keep_v AS SELECT 1 AS id"},
 		{
 			// sqlite_sequence outlives the table that made it and is SQLite's.
 			name: "sqlite_sequence alone",
@@ -69,6 +68,23 @@ func TestEnsureClean_FailurePath(t *testing.T) {
 	var notClean *migrateclean.NotCleanError
 	c.Assert(err, qt.ErrorAs, &notClean)
 	c.Assert(err, qt.ErrorMatches, devNotClean)
+}
+
+// TestEnsureClean_RefusesAViewTheResetDrops refuses a dev database holding a
+// view alone. The pinned binary counts tables only and drops the view; Ptah
+// counts what its reset drops, so the view is still there afterwards
+// (stokaro/ptah#3851).
+func TestEnsureClean_RefusesAViewTheResetDrops(t *testing.T) {
+	c := qt.New(t)
+	conn := openSQLiteDev(c, "CREATE VIEW keep_v AS SELECT 1 AS id")
+
+	err := devclean.EnsureClean(c.Context(), conn)
+
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found view "keep_v"; `+
+		`Ptah resets a dev database before and after it uses one, so point --dev-url at an empty database`)
+	var views int
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM sqlite_schema WHERE name = 'keep_v'").Scan(&views), qt.IsNil)
+	c.Assert(views, qt.Equals, 1)
 }
 
 // TestClaim_FailurePath is the refusal as a replay meets it: Claim refuses the

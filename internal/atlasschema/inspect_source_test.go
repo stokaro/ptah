@@ -122,16 +122,15 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
-// TestInspectSource_DevDatabaseIsReset proves the dev database is reset
-// before the source is materialized: stale dev objects must not leak into
-// the inspection output.
-func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
+// TestInspectSource_RefusesADevDatabaseThatHoldsAView inspects a schema file
+// through a dev database holding a view alone. The pinned binary counts
+// tables only; the reset drops the view, so the inspection refuses before it,
+// and the view is still there (stokaro/ptah#3851).
+func TestInspectSource_RefusesADevDatabaseThatHoldsAView(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devPath := filepath.Join(dir, "dev.db")
 	devConn := connectSQLite(c, devPath)
-	// A view is what a clean dev database may still hold; a table is refused,
-	// see TestInspectSource_RefusesADevDatabaseThatHoldsATable.
 	_, err := devConn.ExecContext(context.Background(), "CREATE VIEW stale_dev_view AS SELECT 1 AS id")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(devConn)
@@ -144,11 +143,10 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 		Format: "hcl",
 	})
 
-	c.Assert(err, qt.IsNil)
-	rendered := renderedResult.Rendered
-	c.Assert(rendered, qt.Contains, `table "fresh_table"`)
-	c.Assert(rendered, qt.Not(qt.Contains), "stale_dev_view")
-	c.Assert(sqliteObjectCount(c, devPath, "stale_dev_view"), qt.Equals, 0)
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found view "stale_dev_view"; .*`)
+	c.Assert(renderedResult.Rendered, qt.Equals, "")
+	c.Assert(sqliteObjectCount(c, devPath, "stale_dev_view"), qt.Equals, 1)
+	c.Assert(sqliteTableExists(c, devPath, "fresh_table"), qt.IsFalse)
 }
 
 // TestInspectSource_RefusesADevDatabaseThatHoldsATable inspects a schema file

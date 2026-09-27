@@ -583,8 +583,8 @@ has what the pinned community binary does with the same history.
 Hashes prove the files are unchanged, not that the SQL executes. Add
 `--dev-url` to also replay the whole directory on a disposable
 **[dev database](../../concepts/database-urls-and-dev-databases/)**, which Ptah
-empties before and after. One that already holds a table, or on PostgreSQL
-anything else the reset would drop, is refused before anything is dropped:
+empties before and after. One that already holds a table, a view or anything
+else the reset would drop is refused before anything is dropped:
 
 ```bash
 ptah migrations validate \

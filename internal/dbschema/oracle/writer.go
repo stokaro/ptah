@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -119,6 +120,38 @@ ORDER BY CASE o.object_type
            ELSE 7
          END,
          o.object_name`
+
+// ResetObjects lists what DropAllTables drops, through the query it runs:
+// the tables, views, materialized views, sequences, synonyms, triggers and
+// types the connected account owns, in the order it drops them. The schema of
+// each is the account. A routine or a package is not listed, since the reset
+// leaves it in place. The scope is PostgreSQL's and is not read.
+func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	var account string
+	if err := w.db.QueryRowContext(ctx, "SELECT USER FROM dual").Scan(&account); err != nil {
+		return nil, fmt.Errorf("oracle: read the connected account: %w", err)
+	}
+	rows, err := w.db.QueryContext(ctx, cleanupObjectQuery)
+	if err != nil {
+		return nil, fmt.Errorf("oracle: list objects to drop: %w", err)
+	}
+	defer rows.Close()
+	var objects []dbreset.Object
+	for rows.Next() {
+		var kind, name string
+		if err := rows.Scan(&kind, &name); err != nil {
+			return nil, fmt.Errorf("oracle: scan object to drop: %w", err)
+		}
+		objects = append(objects, dbreset.Object{Kind: strings.ToLower(kind), Schema: account, Name: name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("oracle: iterate objects to drop: %w", err)
+	}
+	return objects, nil
+}
 
 // DropAllTables removes every object the connected account owns.
 //

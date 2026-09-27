@@ -526,9 +526,9 @@ execution, and that needs a disposable database.
 
 Only if it holds nothing the reset would drop. The shadow and replay workflows
 reset the database to get a reproducible run of the history, so Ptah refuses
-one that holds a table, or on PostgreSQL a view, function, sequence or type,
-and empties it again afterwards. One scratch database can serve as both; a
-shared dev, staging, or production database cannot.
+one that holds a table, a view, a function, a sequence or anything else the
+reset drops, and empties it again afterwards. One scratch database can serve as
+both; a shared dev, staging, or production database cannot.
 
 - [Generate migrations](../versioned/generate/#verify-on-a-shadow-database)
 

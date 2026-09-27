@@ -217,18 +217,18 @@ func TestCompatRefusesADevURLNamingTheTargetThroughAnotherTransportE2E(t *testin
 }
 
 // TestCompatRefusesADevURLNamingAnEmptyTargetThroughAnotherTransportE2E is the
-// same argv with a target that holds a view and no table, which the snapshot
-// takes as clean. Read from the path, the target is a database called after
-// the socket, the two URLs look distinct, and the reset would run against the
-// target; the identity check refuses first, and the view survives.
+// same argv with an empty target, which the snapshot takes as clean. Read from
+// the path, the target is a database called after the socket, the two URLs
+// look distinct, and the reset would run against the target; the identity
+// check refuses first. A view would have been refused as not clean before it
+// (stokaro/ptah#3851), so the target is read back for what the plan would have
+// created there instead.
 func TestCompatRefusesADevURLNamingAnEmptyTargetThroughAnotherTransportE2E(t *testing.T) {
 	for _, server := range mysqlSocketServers {
 		t.Run(server.name, func(t *testing.T) {
 			c := qt.New(t)
 			scratch := newMySQLSocketScratch(c, server.socket, server.admin, server.scheme)
 			target := scratch.database(c, "sock_guard")
-			_, err := scratch.admin.ExecContext(c.Context(), "CREATE VIEW `"+target+"`.keep_v AS SELECT 1 AS id")
-			c.Assert(err, qt.IsNil)
 
 			out, err := runCompatVerb("schema", "apply",
 				"--url", scratch.socketURL(target),
@@ -237,7 +237,7 @@ func TestCompatRefusesADevURLNamingAnEmptyTargetThroughAnotherTransportE2E(t *te
 				"--auto-approve")
 
 			c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: .*`, qt.Commentf("%s", out))
-			c.Assert(scratch.tables(c, target), qt.Equals, "keep_v")
+			c.Assert(scratch.tables(c, target), qt.Equals, "")
 		})
 	}
 }

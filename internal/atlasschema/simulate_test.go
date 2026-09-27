@@ -46,21 +46,12 @@ CREATE TABLE sim_existing (
 }
 
 func TestSimulateOnDev_HappyPath(t *testing.T) {
-	t.Run("plan rehearses on the reset dev database and hands it back empty", func(t *testing.T) {
+	t.Run("plan rehearses on the dev database and hands it back empty", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
 		plan := prepareSimulationPlan(c, dbPath)
-
-		// Litter the dev database to prove the deterministic reset: stale
-		// objects must not leak into the rehearsal. A view is litter a clean
-		// dev database may hold; a table is refused, see
-		// TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable.
-		devConn := connectSQLite(c, devPath)
-		c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
-			"CREATE VIEW sim_stale AS SELECT 1 AS id;"), qt.IsNil)
-		dbschema.CloseAndWarn(devConn)
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 			DevURL:    atlasurl.SQLiteURLFromPath(devPath),
@@ -69,11 +60,10 @@ func TestSimulateOnDev_HappyPath(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		// The dev database is scratch space, borrowed and handed back: nothing
-		// the rehearsal created, and nothing that was there before it, is left
-		// behind. The target only has the baseline.
+		// the rehearsal created is left behind. The target only has the
+		// baseline.
 		c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
 		c.Assert(sqliteTableExists(c, devPath, "sim_added"), qt.IsFalse)
-		c.Assert(sqliteObjectCount(c, devPath, "sim_stale"), qt.Equals, 0)
 		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 	})
 
@@ -413,5 +403,30 @@ func TestSimulateOnDev_RefusesADevDatabaseThatHoldsATable(t *testing.T) {
 	var rows int
 	c.Assert(devConn.QueryRowContext(c.Context(), "SELECT count(*) FROM dev_kept").Scan(&rows), qt.IsNil)
 	c.Assert(rows, qt.Equals, 1)
+	c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
+}
+
+// TestSimulateOnDev_RefusesADevDatabaseThatHoldsAView rehearses on a dev
+// database holding a view alone. The pinned binary counts tables only; the
+// reset drops the view, so the rehearsal refuses before it and the view is
+// still there (stokaro/ptah#3851).
+func TestSimulateOnDev_RefusesADevDatabaseThatHoldsAView(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	devPath := filepath.Join(dir, "dev.db")
+	plan := prepareSimulationPlan(c, dbPath)
+	devConn := connectSQLite(c, devPath)
+	c.Assert(atlasschema.ApplySQL(c.Context(), devConn, migrator.MigrationTxModeAll,
+		"CREATE VIEW sim_stale AS SELECT 1 AS id;"), qt.IsNil)
+	dbschema.CloseAndWarn(devConn)
+
+	err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
+		DevURL:    atlasurl.SQLiteURLFromPath(devPath),
+		TargetURL: atlasurl.SQLiteURLFromPath(dbPath),
+	})
+
+	c.Assert(err, qt.ErrorMatches, `connected database is not clean: found view "sim_stale"; .*`)
+	c.Assert(sqliteObjectCount(c, devPath, "sim_stale"), qt.Equals, 1)
 	c.Assert(sqliteTableExists(c, devPath, "sim_existing"), qt.IsFalse)
 }

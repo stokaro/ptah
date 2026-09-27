@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -369,6 +370,59 @@ func (w *Writer) dropCleanupObjects(ctx context.Context, dropKind string, names 
 		}
 	}
 	return nil
+}
+
+// resetObjectKinds are the words ResetObjects names each kind of object by.
+var resetObjectKinds = map[databaseRealmObjectKind]string{
+	databaseRealmObjectView:             "view",
+	databaseRealmObjectMaterializedView: "materialized view",
+	databaseRealmObjectLiveView:         "live view",
+	databaseRealmObjectWindowView:       "window view",
+	databaseRealmObjectDictionary:       "dictionary",
+	databaseRealmObjectTable:            "table",
+}
+
+// ResetObjects lists what a reset of the database drops, through the query the
+// realm reset a replay runs: every persistent object in it, sorted by name. A
+// materialized view's `.inner` table is left out, since it goes with the view,
+// which is listed. The reset a rehearsal runs drops the views and tables of
+// these. An object the realm reset cannot classify is named by its engine, and
+// that reset refuses the database anyway. The scope is PostgreSQL's and is not
+// read.
+func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	database := w.schema
+	if database == "" {
+		if err := w.db.QueryRowContext(ctx, "SELECT currentDatabase()").Scan(&database); err != nil {
+			return nil, fmt.Errorf("clickhouse: read current database: %w", err)
+		}
+	}
+	rows, err := w.db.QueryContext(ctx, databaseRealmObjectsQuery, database)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: list persistent objects in database %q: %w", database, err)
+	}
+	defer rows.Close()
+	var objects []dbreset.Object
+	for rows.Next() {
+		var object databaseRealmObject
+		if err := rows.Scan(&object.name, &object.engine, &object.createSQL); err != nil {
+			return nil, fmt.Errorf("clickhouse: scan persistent object in database %q: %w", database, err)
+		}
+		if strings.HasPrefix(object.name, ".inner") {
+			continue
+		}
+		kind, known := resetObjectKinds[classifyDatabaseRealmObject(object.engine, object.createSQL)]
+		if !known {
+			kind = strings.ToLower(object.engine)
+		}
+		objects = append(objects, dbreset.Object{Kind: kind, Schema: database, Name: object.name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("clickhouse: iterate persistent objects in database %q: %w", database, err)
+	}
+	return objects, nil
 }
 
 // DropDatabaseRealm removes every persistent object from the explicitly

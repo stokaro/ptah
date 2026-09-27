@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/migrateclean"
 )
 
@@ -186,7 +187,9 @@ func TestGovernsDev_FailurePath(t *testing.T) {
 // the binary's: an object the reset would drop that the binary does not count,
 // measured against v1.3.0 on PostgreSQL 18.6 on 2026-09-27. With a search_path
 // the binary keeps such an object, and with none it drops it; a dev database
-// holding one is refused either way (stokaro/ptah#3808).
+// holding one is refused either way (stokaro/ptah#3808). On the other engines
+// the object is named with the database it is in, as a table is there, and on
+// SQLite with no schema (stokaro/ptah#3851).
 func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -197,7 +200,7 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			name: "a view in the connected schema",
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Schema: "public",
-				Dropped: []migrateclean.DroppedObject{{Kind: "view", Schema: "public", Name: "v"}},
+				Dropped: []dbreset.Object{{Kind: "view", Schema: "public", Name: "v"}},
 			},
 			wantErr: `connected database is not clean: found view "v" in connected schema`,
 		},
@@ -205,7 +208,7 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			name: "the first object is named",
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Schema: "app",
-				Dropped: []migrateclean.DroppedObject{
+				Dropped: []dbreset.Object{
 					{Kind: "function", Schema: "app", Name: "a"},
 					{Kind: "view", Schema: "app", Name: "b"},
 				},
@@ -217,7 +220,7 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Realm: true,
 				Schemas: []migrateclean.RealmSchema{{Name: "public"}},
-				Dropped: []migrateclean.DroppedObject{{Kind: "type", Schema: "public", Name: "mood"}},
+				Dropped: []dbreset.Object{{Kind: "type", Schema: "public", Name: "mood"}},
 			},
 			wantErr: `connected database is not clean: found type "mood" in schema "public"`,
 		},
@@ -225,9 +228,25 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			name: "a large object belongs to no schema",
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Realm: true,
-				Dropped: []migrateclean.DroppedObject{{Kind: "large object", Name: "16385"}},
+				Dropped: []dbreset.Object{{Kind: "large object", Name: "16385"}},
 			},
 			wantErr: `connected database is not clean: found large object "16385"`,
+		},
+		{
+			name: "a MySQL view is named with its database",
+			scope: migrateclean.Scope{
+				Dialect: "mysql", Schema: "dev",
+				Dropped: []dbreset.Object{{Kind: "view", Schema: "dev", Name: "v"}},
+			},
+			wantErr: `connected database is not clean: found view "v" in schema "dev"`,
+		},
+		{
+			name: "a SQLite view carries no schema",
+			scope: migrateclean.Scope{
+				Dialect: "sqlite",
+				Dropped: []dbreset.Object{{Kind: "view", Name: "v"}},
+			},
+			wantErr: `connected database is not clean: found view "v"`,
 		},
 		{
 			// The binary's sentence comes first: a table is named before
@@ -235,7 +254,7 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			name: "a table beside a view is named as the binary names it",
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Schema: "public", Tables: []string{"t"},
-				Dropped: []migrateclean.DroppedObject{{Kind: "view", Schema: "public", Name: "a"}},
+				Dropped: []dbreset.Object{{Kind: "view", Schema: "public", Name: "a"}},
 			},
 			wantErr: `connected database is not clean: found table "t" in connected schema`,
 		},
@@ -244,7 +263,7 @@ func TestScopeDevRefusal_FailurePathDroppedObject(t *testing.T) {
 			scope: migrateclean.Scope{
 				Dialect: "postgres", Realm: true,
 				Schemas: []migrateclean.RealmSchema{{Name: "extra"}, {Name: "public"}},
-				Dropped: []migrateclean.DroppedObject{{Kind: "view", Schema: "public", Name: "a"}},
+				Dropped: []dbreset.Object{{Kind: "view", Schema: "public", Name: "a"}},
 			},
 			wantErr: `connected database is not clean: found schema "extra"`,
 		},
@@ -270,12 +289,12 @@ func TestScopeDevRefusal_HappyPathDroppedObject(t *testing.T) {
 			name: "no dialect",
 			scope: migrateclean.Scope{
 				Schema:  "public",
-				Dropped: []migrateclean.DroppedObject{{Kind: "view", Schema: "public", Name: "v"}},
+				Dropped: []dbreset.Object{{Kind: "view", Schema: "public", Name: "v"}},
 			},
 		},
 		{
 			name:  "nothing dropped",
-			scope: migrateclean.Scope{Dialect: "postgres", Schema: "public", Dropped: make([]migrateclean.DroppedObject, 0)},
+			scope: migrateclean.Scope{Dialect: "postgres", Schema: "public", Dropped: make([]dbreset.Object, 0)},
 		},
 	}
 

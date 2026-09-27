@@ -132,7 +132,7 @@ own measurement conditions.
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
-| [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it on PostgreSQL and names the object | accepts it, then keeps the object with a `search_path` and drops it without one |
+| [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 
 ## A `--config` selection naming more than one file
 
@@ -862,17 +862,29 @@ written migrations and rolls both back.
 
 **Type.** Deliberate divergence
 
-**Current boundary.** On PostgreSQL, CockroachDB, YugabyteDB and Spanner,
-`ptah-compat` refuses a dev database that holds anything its reset would drop,
-not only a table: a view, a materialized view, a function, a procedure, an
-aggregate, a sequence, a type, a collation, a default privilege it would revoke,
-or on PostgreSQL a large object. The
-refusal names the object, in the shape the pinned binary uses for a table:
-`connected database is not clean: found view "v" in connected schema` when the
-URL pins a `search_path`, and `found view "v" in schema "public"` when it does
-not. Native `ptah` refuses the same databases. Objects an installed extension
-owns are kept, and so is every schema outside a pinned `search_path`; neither
-refuses.
+**Current boundary.** `ptah-compat` refuses a dev database that holds anything
+its reset would drop, not only a table. Each writer lists what its reset drops
+through the query the reset runs, and the check reads that list:
+
+- PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
+  a function, a procedure, an aggregate, a sequence, a type, a collation, a
+  default privilege it would revoke, or on PostgreSQL a large object.
+- MySQL and MariaDB: a view, a procedure, a function, an event, a sequence, or
+  a system-versioned table.
+- SQLite: a view.
+- SQL Server: a view, a procedure, a function, a sequence, a synonym, a type,
+  an XML schema collection, or a user schema.
+- ClickHouse: a view, a materialized view, or a dictionary.
+- Oracle: a view, a sequence, a synonym, or a type.
+
+The refusal names the object, in the shape the pinned binary uses for a table:
+`connected database is not clean: found view "v" in connected schema` when a
+PostgreSQL URL pins a `search_path`, `found view "v" in schema "public"` when it
+does not, and `found view "v" in schema "dev"` on the other engines, which name
+the database or the account. SQLite has one schema, so it prints
+`found view "v"`. Native `ptah` refuses the same databases. Objects an
+installed extension owns are kept, and so is every PostgreSQL schema outside a
+pinned `search_path`; neither refuses.
 
 Measured on 2026-09-27 against PostgreSQL 18.6, with each object alone in the
 dev database and `migrate validate` and `schema apply` run against it:
@@ -884,21 +896,42 @@ dev database and `migrate validate` and `schema apply` run against it:
 | a large object, either scope | exit `0`, kept | `migrate validate` exit `0`, dropped | exit `1`, names it, kept |
 | `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`, `migrate validate` | exit `0`, kept with a `search_path`, revoked without one | exit `0`, revoked | exit `1`, names it, kept |
 
-The binary keeps those objects when a `search_path` is set because it does not
-model them, so its snapshot neither sees nor restores them. Keeping them in Ptah
-would mean hiding them from every read of the dev database, since a replay and
-a rehearsal read it back and compare it, and a migration's
-`CREATE ... IF NOT EXISTS` would then pass against the kept object instead of
-creating its own. Refusing loses nothing and proves as much as before. With no
-`search_path` the binary drops them in silence, which is the defect this
-refusal does not copy.
+Measured the same day on the other engines, with the same verbs:
+
+| Engine and object | Pinned community binary v1.3.0 | `ptah-compat` without the refusal | `ptah-compat` |
+| --- | --- | --- | --- |
+| MySQL 26.7 and MariaDB 12.3: a view, procedure, function or event; on MariaDB a sequence or a system-versioned table | exit `0`, kept | exit `0`, dropped | exit `1`, names it, kept |
+| SQLite: a view | exit `0`, dropped | exit `0`, dropped | exit `1`, names it, kept |
+| SQL Server 2025: a view, procedure, function, sequence or synonym | `unknown driver` | exit `0`, dropped | exit `1`, names it, kept |
+| SQL Server 2025: a type or an empty user schema | `unknown driver` | `migrate validate` exit `0`, dropped | exit `1`, names it, kept |
+| ClickHouse 26.9: a view, or a materialized view with its rows | `unknown driver` | exit `0`, dropped | exit `1`, names it, kept |
+| ClickHouse 26.9: a dictionary | `unknown driver` | `migrate validate` exit `0`, dropped | exit `1`, names it, kept |
+
+No verb reaches the Oracle reset, because the dev lock refuses Oracle first. Its
+reset drops a view, a sequence, a synonym and a type and keeps a function, a
+procedure and a package; the check counts the first four.
+
+The binary keeps most of those objects because it does not model them, so its
+snapshot neither sees nor restores them. Keeping them in Ptah would mean hiding
+them from every read of the dev database, since a replay and a rehearsal read
+it back and compare it, and a migration's `CREATE ... IF NOT EXISTS` would
+then pass against the kept object instead of creating its own. Refusing loses
+nothing and proves as much as before. Where the binary drops an object in
+silence, as it does on SQLite and on PostgreSQL with no `search_path`, that is
+the defect this refusal does not copy.
+
+A PostgreSQL text search configuration or dictionary is not refused, because
+the reset never drops it. The realm cleanup drops a schema with `RESTRICT`, so
+the schema that holds one stays, and the failure names it in the server's
+words: `failed to drop user schema "public" from PostgreSQL database realm
+(text search configuration keep_ts depends on schema public): ...`. The binary
+keeps it with a `search_path` and drops it without one.
 
 The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
-exits `0`, never the reverse. MySQL, MariaDB, SQLite, SQL Server, ClickHouse
-and Oracle still count tables alone, because their writers do not list what
-their reset drops.
+exits `0`, never the reverse.
 
-**Tracking.** [`stokaro/ptah#3808`](https://github.com/stokaro/ptah/issues/3808)
+**Tracking.** [`stokaro/ptah#3808`](https://github.com/stokaro/ptah/issues/3808),
+[`stokaro/ptah#3851`](https://github.com/stokaro/ptah/issues/3851)
 
 ## Not on this page
 

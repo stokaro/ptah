@@ -69,8 +69,8 @@ validation:
   verification.
 
 A dev database must hold nothing the reset would drop when a command starts.
-Ptah refuses a table before anything is dropped, as the Atlas CLI does, and on
-PostgreSQL any other such object too. Ptah then cleans the
+Ptah refuses a table before anything is dropped, as the Atlas CLI does, and
+any other such object too. Ptah then cleans the
 replay realm before migration execution and after the replay, failed or not.
 Commands read the replayed state before the final cleanup, on the same session.
 No fixed time limit applies to a cleanup: it takes as long as emptying the

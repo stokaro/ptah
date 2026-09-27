@@ -377,3 +377,34 @@ func TestWriterDropDatabaseRealmKeepingSchemas_LiveLeavesPublicBesideAnotherRoot
 		})
 	}
 }
+
+// TestWriterDropDatabaseRealm_LivePostgresNamesWhatKeepsASchema cleans a realm
+// whose public schema holds a text search configuration and a dictionary,
+// which the cleanup does not list. The schema drop is RESTRICT, so it fails
+// and the cleanup rolls back; the error names both objects in the server's
+// words, where the server's own error says only that other objects depend on
+// the schema (stokaro/ptah#3851).
+func TestWriterDropDatabaseRealm_LivePostgresNamesWhatKeepsASchema(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE TEXT SEARCH CONFIGURATION public.keep_ts (COPY = simple);
+		CREATE TEXT SEARCH DICTIONARY public.keep_td (TEMPLATE = simple);
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to drop user schema "public" from PostgreSQL database realm `+
+		`\(text search configuration keep_ts depends on schema public; `+
+		`text search dictionary keep_td depends on schema public\): .*cannot drop schema public.*`)
+	var remaining int
+	c.Assert(db.QueryRowContext(ctx, `
+		SELECT (SELECT count(*) FROM pg_ts_config WHERE cfgname = 'keep_ts')
+		     + (SELECT count(*) FROM pg_ts_dict WHERE dictname = 'keep_td')`).Scan(&remaining), qt.IsNil)
+	c.Assert(remaining, qt.Equals, 2)
+}

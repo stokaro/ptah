@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -231,6 +232,64 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	}
 	committed = true
 	return nil
+}
+
+// ResetObjects lists what a reset of the database drops, through the queries
+// the realm reset a replay runs: every object it drops by name, which are
+// tables, views, routines, sequences, synonyms, security policies and what
+// else it knows a DROP for, then user-defined types and XML schema
+// collections, then the user schemas it drops, which carry no schema of their
+// own. An object that belongs to another, such as a constraint or a table
+// trigger, is left out, since it goes with its owner. The schema-scoped reset
+// a rehearsal runs drops a subset of these. The scope is PostgreSQL's and is
+// not read.
+func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) (objects []dbreset.Object, resultErr error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: begin reset listing: %w", err)
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("sqlserver: end reset listing: %w", rollbackErr))
+		}
+	}()
+	listed, err := listRealmObjects(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range listed {
+		prefix, canDrop := realmDropPrefix(object)
+		if !canDrop || object.ParentID != 0 {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(prefix, "DROP "), " IF EXISTS "))
+		objects = append(objects, dbreset.Object{Kind: kind, Schema: object.Schema, Name: object.Name})
+	}
+	types, err := listRealmTypes(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for _, userType := range types {
+		objects = append(objects, dbreset.Object{Kind: "type", Schema: userType.Schema, Name: userType.Name})
+	}
+	xmlSchemas, err := listRealmXMLSchemas(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for _, collection := range xmlSchemas {
+		objects = append(objects, dbreset.Object{Kind: "xml schema collection", Schema: collection.Schema, Name: collection.Name})
+	}
+	schemas, err := listDroppableRealmSchemas(ctx, tx, w.schema)
+	if err != nil {
+		return nil, err
+	}
+	for _, schema := range schemas {
+		objects = append(objects, dbreset.Object{Kind: "schema", Name: schema})
+	}
+	return objects, nil
 }
 
 // DropDatabaseRealm removes supported user objects from every user schema in

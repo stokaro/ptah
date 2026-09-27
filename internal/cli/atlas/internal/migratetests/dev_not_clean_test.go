@@ -120,14 +120,35 @@ func TestCompatMigrateVerbsRefuseADevDatabaseThatHoldsATable(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateVerbsUseADevDatabaseThatHoldsNoTable is the control: the
-// same runs with the dev database holding only a view, which the binary
-// counts as clean.
-func TestCompatMigrateVerbsUseADevDatabaseThatHoldsNoTable(t *testing.T) {
+// TestCompatMigrateVerbsRefuseADevDatabaseThatHoldsAView runs each verb with
+// the dev database holding only a view. The pinned binary counts tables alone,
+// runs at exit 0 and drops the view; the reset drops it here too, so Ptah
+// refuses with the same sentence naming the view, and the view is still there
+// afterwards. Deliberately stricter than the binary (stokaro/ptah#3851).
+func TestCompatMigrateVerbsRefuseADevDatabaseThatHoldsAView(t *testing.T) {
 	for _, test := range migrateDevVerbs {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fixture := newMigrateDevFixture(c, "CREATE VIEW keep_v AS SELECT 1 AS id;")
+
+			out, err := atlastest.RunCompatOutput(fixture.args(test.args)...)
+
+			c.Assert(err, qt.ErrorMatches, strings.Replace(test.wantErr, `table "keep_me"`, `view "keep_v"`, 1), qt.Commentf("%s", out))
+			c.Assert(atlastest.SqliteQueryInt(c, filepath.Join(fixture.dir, "dev.db"),
+				"SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'keep_v'"), qt.Equals, 1)
+		})
+	}
+}
+
+// TestCompatMigrateVerbsUseADevDatabaseThatHoldsOnlySQLiteBookkeeping is the
+// control: the same runs with the dev database holding only sqlite_sequence,
+// which outlives the table that made it and is SQLite's own. Both binaries
+// count it as clean; the pinned one was measured on 2026-09-27.
+func TestCompatMigrateVerbsUseADevDatabaseThatHoldsOnlySQLiteBookkeeping(t *testing.T) {
+	for _, test := range migrateDevVerbs {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newMigrateDevFixture(c, "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT); INSERT INTO t DEFAULT VALUES; DROP TABLE t;")
 
 			out, err := atlastest.RunCompatOutput(fixture.args(test.args)...)
 

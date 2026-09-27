@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -471,6 +473,49 @@ func dropRemainingCleanupObjects(
 		}
 	}
 	return nil
+}
+
+// ResetObjects lists what a reset of the connected database drops, through the
+// query both resets run: its tables, including a MariaDB system-versioned
+// table, and its views, sequences, stored routines and events, sorted by name
+// and kind. A trigger is left out, since it is dropped with its table, which is
+// listed. The scope is PostgreSQL's and is not read.
+//
+// It reads the catalog whatever the writer's dry-run setting, because a caller
+// that refuses a database holding one of these has to see them before anything
+// is dropped.
+func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) ([]dbreset.Object, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	if w.connector == nil {
+		return nil, fmt.Errorf("mysql: listing what a reset drops requires a database connection pool")
+	}
+	conn := w.cleanupConn
+	if conn == nil {
+		acquired, err := acquireAuxiliaryConnection(ctx, w.connector, "reset-listing")
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = closeCleanupConnection(acquired, "reset-listing") }()
+		conn = acquired
+	}
+	schema, err := w.cleanupSchema(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	listed, err := listCleanupObjects(ctx, conn, schema)
+	if err != nil {
+		return nil, err
+	}
+	objects := make([]dbreset.Object, 0, len(listed))
+	for _, object := range listed {
+		objects = append(objects, dbreset.Object{Kind: strings.ToLower(object.Kind), Schema: schema, Name: object.Name})
+	}
+	slices.SortFunc(objects, func(a, b dbreset.Object) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Kind, b.Kind))
+	})
+	return objects, nil
 }
 
 // DropDatabaseRealm drops the selected MySQL/MariaDB database realm and
