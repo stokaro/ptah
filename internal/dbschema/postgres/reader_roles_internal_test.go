@@ -77,6 +77,16 @@ const (
 	readsRelationACL = "aclexplode(c.relacl)"
 	readsSchemaACL   = "aclexplode(s.nspacl)"
 
+	// A column grant and a routine grant each live in an ACL of their own, so
+	// a role holding only one of them is reached by no relation or schema
+	// branch (stokaro/ptah#3837). Each branch counts only when it also reads
+	// the rows its grant read reports on: live columns, and the routines the
+	// routine read describes.
+	readsColumnACL         = "aclexplode(a.attacl)"
+	readsLiveColumns       = "NOT a.attisdropped"
+	readsRoutineACL        = "aclexplode(p.proacl)"
+	readsDescribedRoutines = "p.prokind IN ('f', 'p')"
+
 	// CockroachDB takes the same two reasons from information_schema, on every
 	// line, because v25.4 and v26.2 leave the ACL columns NULL
 	// (stokaro/ptah#3815). A branch there counts only when it also leaves out
@@ -87,10 +97,15 @@ const (
 	readsCockroachBuiltins       = "NOT IN ('admin', 'root')"
 	readsCockroachRelationOwner  = "<> pg_get_userbyid(c.relowner)"
 	readsCockroachSchemaOwner    = "<> pg_get_userbyid(n.nspowner)"
-	readsGrantee                 = "acl.grantee"
-	readsGrantor                 = "acl.grantor"
-	readsPolicyRoles             = "unnest(pol.polroles)"
-	readsPostgresExcluded        = "!= 'postgres'"
+	readsCockroachRoutineGrants  = "information_schema.role_routine_grants"
+	readsCockroachRoutineOwner   = "<> pg_get_userbyid(p.proowner)"
+	// readsCockroachGrantee is what such a branch selects: the grantee's
+	// role, found by name because information_schema names roles.
+	readsCockroachGrantee = "SELECT grantee.oid"
+	readsGrantee          = "acl.grantee"
+	readsGrantor          = "acl.grantor"
+	readsPolicyRoles      = "unnest(pol.polroles)"
+	readsPostgresExcluded = "!= 'postgres'"
 
 	// The two ends of a default privilege. They are separate reasons because
 	// the catalog stores them in separate places: the role whose new objects
@@ -201,14 +216,22 @@ var (
 	byRelationGrant = []string{readsRelationACL, readsGrantee}
 
 	byCockroachRelationGrant = []string{
-		readsCockroachRelationGrants, readsCockroachBuiltins, readsCockroachRelationOwner,
+		readsCockroachGrantee, readsCockroachRelationGrants, readsCockroachBuiltins, readsCockroachRelationOwner,
 	}
 	byCockroachSchemaGrant = []string{
-		readsCockroachSchemaGrants, readsCockroachBuiltins, readsCockroachSchemaOwner,
+		readsCockroachGrantee, readsCockroachSchemaGrants, readsCockroachBuiltins, readsCockroachSchemaOwner,
+	}
+	byCockroachRoutineGrant = []string{
+		readsCockroachGrantee, readsCockroachRoutineGrants, readsCockroachBuiltins, readsCockroachRoutineOwner,
+		readsDescribedRoutines,
 	}
 	byRelationGrantor = []string{readsRelationACL, readsGrantor}
 	bySchemaGrant     = []string{readsSchemaACL, readsGrantee}
 	bySchemaGrantor   = []string{readsSchemaACL, readsGrantor}
+	byColumnGrant     = []string{readsColumnACL, readsGrantee, readsLiveColumns}
+	byColumnGrantor   = []string{readsColumnACL, readsGrantor, readsLiveColumns}
+	byRoutineGrant    = []string{readsRoutineACL, readsGrantee, readsDescribedRoutines}
+	byRoutineGrantor  = []string{readsRoutineACL, readsGrantor, readsDescribedRoutines}
 	byPolicy          = []string{readsPolicyRoles}
 
 	byDefaultPrivilegeRole  = []string{readsDefaultPrivilegeRole}
@@ -649,16 +672,19 @@ func TestReadRolesCockroachLeavesPasswordStateUnknownWithoutProtectedCatalogRead
 }
 
 // TestReadRolesCockroachScopesByInformationSchema is the role half of
-// stokaro/ptah#3815. CockroachDB v25.4 and v26.2 leave pg_class.relacl and
-// pg_namespace.nspacl NULL, so a role that holds a grant there was left out of
-// the description that names it. The reasons come from information_schema on
-// every CockroachDB line instead, and the ACL branches are not sent at all: a
-// role only an ACL branch would find is not reported.
+// stokaro/ptah#3815. CockroachDB v25.4 and v26.2 leave pg_class.relacl,
+// pg_namespace.nspacl and pg_proc.proacl NULL, so a role that holds a grant
+// there is left out of the description that names it unless the reasons come
+// from information_schema. They do on every CockroachDB line, and the ACL
+// branches are not sent at all: a role only an ACL branch would find is not
+// reported.
 func TestReadRolesCockroachScopesByInformationSchema(t *testing.T) {
 	c := qt.New(t)
 	cluster := []clusterRole{
 		{name: "acl_only", schema: "public", reads: byRelationGrant},
 		{name: "relation_grantee", schema: "public", reads: byCockroachRelationGrant},
+		{name: "routine_acl_only", schema: "public", reads: byRoutineGrant},
+		{name: "routine_grantee", schema: "public", reads: byCockroachRoutineGrant},
 		{name: "schema_grantee", schema: "public", reads: byCockroachSchemaGrant},
 		{name: "someone_elses", schema: "", reads: nil},
 	}
@@ -670,7 +696,69 @@ func TestReadRolesCockroachScopesByInformationSchema(t *testing.T) {
 	roles, err := reader.readRoles(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(roleNames(roles), qt.DeepEquals, []string{"relation_grantee", "schema_grantee"})
+	c.Assert(roleNames(roles), qt.DeepEquals, []string{"relation_grantee", "routine_grantee", "schema_grantee"})
+}
+
+// TestReadRolesAsksForRoutineGrantRolesOnlyWhereRoutinesExist holds the
+// routine branch of the role scoping to the capability that gates the routine
+// grant read, on both catalogs. A target without routines is not sent a query
+// naming pg_proc, and a gate that dropped the branch where routines exist loses
+// the routine grantee rather than a query that still answers.
+func TestReadRolesAsksForRoutineGrantRolesOnlyWhereRoutinesExist(t *testing.T) {
+	cluster := []clusterRole{
+		{name: "cockroach_routine_grantee", schema: "public", reads: byCockroachRoutineGrant},
+		{name: "cockroach_table_grantee", schema: "public", reads: byCockroachRelationGrant},
+		{name: "routine_grantee", schema: "public", reads: byRoutineGrant},
+		{name: "table_grantee", schema: "public", reads: byRelationGrant},
+	}
+	tests := []struct {
+		name    string
+		dialect string
+		caps    capability.Capabilities
+		want    []string
+	}{
+		{
+			name:    "postgres with routines",
+			dialect: platform.Postgres,
+			caps:    capability.Postgres16(),
+			want:    []string{"routine_grantee", "table_grantee"},
+		},
+		{
+			name:    "postgres without routines",
+			dialect: platform.Postgres,
+			caps:    capability.Postgres16().With(capability.Functions, false),
+			want:    []string{"table_grantee"},
+		},
+		{
+			name:    "cockroachdb with routines",
+			dialect: platform.CockroachDB,
+			caps:    capability.CockroachDB26(),
+			want:    []string{"cockroach_routine_grantee", "cockroach_table_grantee"},
+		},
+		{
+			name:    "cockroachdb without routines",
+			dialect: platform.CockroachDB,
+			caps:    capability.CockroachDB26().With(capability.Functions, false),
+			want:    []string{"cockroach_table_grantee"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+				return answerRoles(query, args, cluster)
+			})
+			reader := NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", test.dialect, test.caps)
+
+			// The role statement itself, past the password probe, which only
+			// PostgreSQL sends and which does not decide the scope.
+			roles, err := reader.queryRoles(t.Context(), rolesUsedByScope, roleAuthCatalogHidden, reader.defaultACLByCapability())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(roleNames(roles), qt.DeepEquals, test.want)
+		})
+	}
 }
 
 func TestReadRolesClassifiesPasswordWithProtectedCatalogAccess(t *testing.T) {
@@ -742,6 +830,26 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 		{
 			name:    "granted a privilege on the schema in scope",
 			used:    clusterRole{name: "schema_grantor", schema: "public", reads: bySchemaGrantor},
+			schemas: []string{"public"},
+		},
+		{
+			name:    "holds a privilege on a column in scope",
+			used:    clusterRole{name: "column_grantee", schema: "public", reads: byColumnGrant},
+			schemas: []string{"public"},
+		},
+		{
+			name:    "granted a privilege on a column in scope",
+			used:    clusterRole{name: "column_grantor", schema: "public", reads: byColumnGrantor},
+			schemas: []string{"public"},
+		},
+		{
+			name:    "holds a privilege on a routine in scope",
+			used:    clusterRole{name: "routine_grantee", schema: "public", reads: byRoutineGrant},
+			schemas: []string{"public"},
+		},
+		{
+			name:    "granted a privilege on a routine in scope",
+			used:    clusterRole{name: "routine_grantor", schema: "public", reads: byRoutineGrantor},
 			schemas: []string{"public"},
 		},
 		{

@@ -138,8 +138,9 @@ clean sibling database on the same server (issue #1267).
 
 Reading a database no longer produces a cluster-role dump. `ptah db read` and
 `ptah-compat schema inspect` describe only the roles the schemas being read use
-— a role that holds a privilege on a relation in them or on one of the schemas,
-a role that granted one, or a role a row-level security policy names — and
+— a role that holds a privilege on a relation, a column or a routine in them
+or on one of the schemas, a role that granted one, a role a default privilege
+in them names, or a role a row-level security policy names — and
 report on standard error how many managed roles they left out. Comparison is
 unaffected: a role that exists anywhere in the cluster is never planned as a
 `CREATE ROLE`, described or not. Set `PTAH_POSTGRES_INSPECT_ALL_ROLES=1` to

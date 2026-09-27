@@ -234,10 +234,12 @@ func (r *Reader) readCockroachRoutineGrants(ctx context.Context, schemaName stri
 // cockroachRolesInScopeClauses are the grant branches of the role scoping on
 // CockroachDB, read from information_schema for the reason the grant reads
 // above are. They mirror the PostgreSQL branches: a role holding a privilege
-// on a relation or a schema in scope. The built-in roles and each object's
+// on a relation or a schema in scope, and, where the target has routines,
+// [cockroachRoutineRolesInScopeClause]. The built-in roles and each object's
 // owner are left out as the grant reads leave them out, so a role is scoped in
 // exactly when a grant the description carries names it. CockroachDB names no
-// grantor, so there is no grantor branch.
+// grantor, so there is no grantor branch, and it refuses column privileges, so
+// there is no column branch.
 func cockroachRolesInScopeClauses() []string {
 	return []string{
 		`SELECT grantee.oid AS roleoid FROM information_schema.role_table_grants g
@@ -255,3 +257,17 @@ func cockroachRolesInScopeClauses() []string {
 			AND p.grantee <> pg_get_userbyid(n.nspowner)`,
 	}
 }
+
+// cockroachRoutineRolesInScopeClause is the routine branch of the role scoping
+// on CockroachDB: a role holding a privilege on a routine in scope that
+// [Reader.readCockroachRoutineGrants] reports on. The owner's row is read too,
+// but it is implicit, and a description leaves an implicit grant out, so the
+// owner is left out here.
+var cockroachRoutineRolesInScopeClause = `SELECT grantee.oid FROM information_schema.role_routine_grants g
+			JOIN pg_proc p ON p.proname || '_' || p.oid::text = g.specific_name
+			JOIN pg_namespace n ON n.oid = p.pronamespace AND n.nspname = g.routine_schema
+			JOIN scope s ON s.oid = n.oid
+			JOIN pg_language l ON l.oid = p.prolang
+			JOIN pg_roles grantee ON grantee.rolname = g.grantee
+			WHERE ` + notCockroachBuiltin("g.grantee") + `
+			AND g.grantee <> pg_get_userbyid(p.proowner)` + describedRoutinePredicate
