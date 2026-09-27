@@ -739,6 +739,32 @@ realm (text search configuration keep_ts depends on schema public): ...`.
 Atlas CE keeps it with a `search_path` and drops it without one. See
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-dev-database-holding-an-object-the-reset-drops).
 
+### A whole server is not cleaned without an opt-in
+
+A MySQL or MariaDB URL that names no database is the whole server. Atlas CE
+`schema clean` drops every user database on it at exit 0. Ptah refuses that
+cleanup, dry run included, unless `PTAH_ALLOW_SERVER_CLEAN=1` is set, and the
+refusal lists the databases as a dry run prints them. A URL that names a
+database, and a server with no user database, are not affected; native
+`ptah db drop-all` refuses the same way.
+
+Measured 2026-09-27 on MySQL 8.4.11 and MariaDB 11.8.9, a server holding two
+user databases:
+
+| Run | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `--auto-approve` | 0, both dropped | **1**, both listed, both kept |
+| `--auto-approve`, `PTAH_ALLOW_SERVER_CLEAN=1` | not read | 0, both dropped |
+| `--dry-run` | 1, `--dry-run` is not supported by the community version | **1** and the list; 0 and the plan with the variable |
+| a foreign key into a database that sorts first | 1, error 3730 at the referenced database | 0 with the variable, the key dropped first |
+
+Stricter, deliberately (stokaro/ptah#3789). A server is often shared, and the
+scope comes from what the URL leaves out, so one confirmation or
+`--auto-approve` in a script would drop databases nobody named, with no dry run
+on the community binary to look first. The variable is retained in strict mode,
+because it restores what Atlas CE does. See
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-whole-server-cleaned-without-an-opt-in).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

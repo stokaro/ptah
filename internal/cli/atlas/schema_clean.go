@@ -104,6 +104,12 @@ func runAtlasSchemaClean(
 	opts atlasSchemaCleanOptions,
 	policy atlascompatpolicy.Policy,
 ) error {
+	// Before every early return: a malformed value is refused on every run,
+	// not only on one that reaches a whole server.
+	serverClean, err := schemaclean.ResolveServerCleanPolicy()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if err != nil {
@@ -187,6 +193,11 @@ func runAtlasSchemaClean(
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	// A dry run is refused too: the refusal lists what the cleanup would
+	// drop, so it answers what the dry run was asked.
+	if err := serverClean.Refuse(conn.Info(), plan); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput && !opts.dryRun {
 		if err := validateAtlasSchemaCleanActualFormat(opts, conn, plan); err != nil {

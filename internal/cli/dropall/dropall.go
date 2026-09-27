@@ -50,7 +50,8 @@ SQLite keeps Ptah's revision table. Everything else in the database goes, so
 
 A MySQL or MariaDB URL that names no database is the whole server: every user
 database is dropped with everything in it, and the server's own databases,
-such as mysql and sys, are kept.
+such as mysql and sys, are kept. That scope is refused, dry run included,
+unless PTAH_ALLOW_SERVER_CLEAN=1 is set; the refusal lists the databases.
 
 Run --dry-run first. It connects, reports how many objects would be dropped,
 and changes nothing.
@@ -84,6 +85,12 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func dropAllCommand(cmd *cobra.Command, opts *options) error {
+	// Before every early return: a malformed value is refused on every run,
+	// not only on one that reaches a whole server.
+	serverClean, err := schemaclean.ResolveServerCleanPolicy()
+	if err != nil {
+		return err
+	}
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -122,6 +129,9 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 
 	plan, err := schemaclean.Inspect(cmd.Context(), conn)
 	if err != nil {
+		return err
+	}
+	if err := serverClean.Refuse(conn.Info(), plan); err != nil {
 		return err
 	}
 

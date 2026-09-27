@@ -1953,9 +1953,13 @@ owning table, or excluding it while the table remains selected, is refused
 before cleanup mutates the database. Select or exclude the owning table so the
 child sequence rides with the same decision.
 
-A `--url` that names no MySQL or MariaDB database cleans the whole server, as
-on the community binary: every user database is dropped, and the server's own
-databases, such as `mysql` and `sys`, are kept. A foreign key from one database
+A `--url` that names no MySQL or MariaDB database is the whole server. The
+cleanup drops every user database there and keeps the server's own databases,
+such as `mysql` and `sys`. Because the server may be shared, that cleanup is
+refused, dry run included, unless
+[`PTAH_ALLOW_SERVER_CLEAN=1`](../../reference/extension-variables/#ptah_allow_server_clean)
+is set; the refusal lists the databases. The community binary drops them without
+asking. A foreign key from one database
 into another is dropped first. The community binary v1.3.0 drops the databases
 in name order instead, and stops with MySQL error 3730 when a database another
 one references comes first, measured on MySQL 8.4.11. `--include` and `--exclude` are refused at that

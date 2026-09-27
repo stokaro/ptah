@@ -133,6 +133,7 @@ own measurement conditions.
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
+| [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 
 ## A `--config` selection naming more than one file
 
@@ -934,6 +935,47 @@ exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3808`](https://github.com/stokaro/ptah/issues/3808),
 [`stokaro/ptah#3851`](https://github.com/stokaro/ptah/issues/3851)
+
+## A whole server cleaned without an opt-in
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A MySQL or MariaDB URL that names no database is the
+whole server, and `ptah-compat schema clean` against it would drop every user
+database. It refuses that, dry run included, unless `PTAH_ALLOW_SERVER_CLEAN=1`
+is set, and the refusal lists the databases in the form a dry run prints them:
+
+```text
+Error: refusing to clean a whole MySQL or MariaDB server without PTAH_ALLOW_SERVER_CLEAN=1: the URL names no database, and the cleanup would drop every user database on the server:
+- DROP DATABASE `app`
+- DROP DATABASE `audit`
+Set PTAH_ALLOW_SERVER_CLEAN=1 to clean the server, or name a database in the URL to clean that database alone
+```
+
+With the variable set, the confirmation and `--dry-run` work as on any other
+URL. A URL that names a database is not affected, and neither is a server with
+no user database. Native `ptah db drop-all` refuses the same way.
+
+Measured on 2026-09-27 against MySQL 8.4.11 and MariaDB 11.8.9, a server
+holding two user databases:
+
+| Run | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `--auto-approve` | exit `0`, both databases dropped | exit `1`, both listed, both kept |
+| `--auto-approve`, `PTAH_ALLOW_SERVER_CLEAN=1` | not read | exit `0`, both databases dropped |
+| `--dry-run` | exit `1`, `--dry-run` is not supported by the community version | exit `1` and the list; exit `0` and the plan with the variable |
+| a table in one database with a foreign key into a database that sorts before it | exit `1`, error 3730 when it reaches the referenced database | with the variable, exit `0`: the key is dropped first |
+
+A server is often shared, and the scope is chosen by what the URL leaves out
+rather than by anything the operator names. One confirmation, or
+`--auto-approve` in a script, would drop databases nobody listed, and the
+community binary offers no dry run to look first. The variable restores the
+binary's behavior, so strict mode keeps it.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse.
+
+**Tracking.** [`stokaro/ptah#3789`](https://github.com/stokaro/ptah/issues/3789)
 
 ## Not on this page
 

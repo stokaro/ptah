@@ -19,6 +19,7 @@ import (
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/schemaclean"
 )
 
 // serverRealm is the desired state of three databases on one server: the
@@ -228,14 +229,41 @@ func TestSchemaApplyRefusesADevDatabaseBesideAMySQLServerE2E(t *testing.T) {
 	}
 }
 
+// TestSchemaCleanRefusesAMySQLServerE2E refuses the cleanup of a whole server
+// without PTAH_ALLOW_SERVER_CLEAN, dry run included, and lists the databases
+// it would drop, where the pinned community binary v1.3.0 drops every one of
+// them at exit 0 (stokaro/ptah#3789). The runs are dry runs because the server
+// is shared with every other test: a refusal that stopped working drops
+// nothing.
+func TestSchemaCleanRefusesAMySQLServerE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := newMySQLServer(c, engine.admin)
+
+			compat, compatErr := runCompatVerb("schema", "clean", "--url", server.url, "--dry-run")
+			native, nativeErr := runPtahNativeWithError("db", "drop-all", "--db-url", server.url, "--dry-run")
+
+			for _, err := range []error{compatErr, nativeErr} {
+				c.Assert(err, qt.ErrorMatches, `(?s)refusing to clean a whole MySQL or MariaDB server without PTAH_ALLOW_SERVER_CLEAN=1: .*`+
+					"- DROP DATABASE `"+server.first+"`.*- DROP DATABASE `"+server.second+"`.*",
+					qt.Commentf("%s\n%s", compat, native))
+			}
+			c.Assert(databaseCollation(c, newMySQLFamilyScratch(c, engine.admin), server.first), qt.Not(qt.Equals), "")
+		})
+	}
+}
+
 // TestSchemaCleanPlansEveryDatabaseOfAMySQLServerE2E plans the cleanup of a
-// whole server without running it: every user database, the foreign key one
-// keeps into another first. The native command reports the same scope. The
-// runs are dry runs because the server is shared with every other test.
+// whole server with PTAH_ALLOW_SERVER_CLEAN set, without running it: every
+// user database, the foreign key one keeps into another first. The native
+// command reports the same scope. The runs are dry runs because the server is
+// shared with every other test.
 func TestSchemaCleanPlansEveryDatabaseOfAMySQLServerE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
+			c.Setenv(schemaclean.AllowServerCleanEnvVar, "1")
 			server := newMySQLServer(c, engine.admin)
 
 			out, err := runCompatVerb("schema", "clean", "--url", server.url, "--dry-run")
@@ -397,15 +425,17 @@ func newMySQLAccountServer(c *qt.C, engine dbtarget.Engine) mysqlAccountServer {
 }
 
 // TestSchemaCleanDropsEveryDatabaseOfAMySQLServerE2E cleans a whole server
-// for real, through an account that sees two databases, one holding a foreign
-// key into the other. Both are dropped: the key first, which the server
-// requires before the database it references goes. The pinned community
-// binary v1.3.0 drops the databases in name order and stops with error 3730
-// when the referenced one comes first, measured on MySQL 8.4.11.
+// for real, with PTAH_ALLOW_SERVER_CLEAN set, through an account that sees two
+// databases, one holding a foreign key into the other. Both are dropped: the
+// key first, which the server requires before the database it references
+// goes. The pinned community binary v1.3.0 drops the databases in name order
+// and stops with error 3730 when the referenced one comes first, measured on
+// MySQL 8.4.11.
 func TestSchemaCleanDropsEveryDatabaseOfAMySQLServerE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
+			c.Setenv(schemaclean.AllowServerCleanEnvVar, "1")
 			server := newMySQLAccountServer(c, engine.admin)
 
 			out, err := runCompatVerb("schema", "clean", "--url", server.url, "--auto-approve")
@@ -423,6 +453,7 @@ func TestDBDropAllDropsEveryDatabaseOfAMySQLServerE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
+			c.Setenv(schemaclean.AllowServerCleanEnvVar, "1")
 			server := newMySQLAccountServer(c, engine.admin)
 
 			out := runPtahNative(c, "db", "drop-all", "--db-url", server.url, "--auto-approve")
