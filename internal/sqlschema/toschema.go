@@ -1136,7 +1136,7 @@ func applyAlterOperation(
 	case *ast.AlterColumnOperation:
 		return applyAlterColumn(target, typed)
 	case *ast.ModifyColumnOperation:
-		return applyModifyColumn(target, typed, sourcePlatform)
+		return applyModifyColumn(database, target, typed, sourcePlatform)
 	case *ast.DropColumnOperation:
 		return applyDropColumn(target, typed)
 	case *ast.RenameColumnOperation:
