@@ -5656,6 +5656,11 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 		return p.parseAlterTable()
 	case "DEFAULT":
 		return p.parseAlterDefaultPrivileges()
+	case "INDEX":
+		if p.dialect == platform.Postgres {
+			return p.parseAlterIndex()
+		}
+		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
 	default:
 		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
 	}

@@ -74,8 +74,8 @@ CREATE TABLE "users" (
 );
 ```
 
-Rendering SQL back out of a SQL file is not a no-op: it proves the parser
-understood every statement, and it can retarget the schema at another dialect.
+Rendering a SQL file back out proves the parser understood every statement,
+and can retarget the schema at another dialect.
 `--schema-file` is accepted wherever Ptah needs a desired schema:
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
 migration commands (`ptah migrations plan` / `ptah migrations generate`), and
@@ -236,6 +236,10 @@ drops along with it. A drop the server refuses is refused: an object nothing
 declares, unless `IF EXISTS` says so, a table a foreign key or a PostgreSQL
 view still reads, and the index behind a constraint.
 
+On PostgreSQL, `ALTER INDEX ... RENAME TO` renames an index, and the constraint
+it backs. A column's own `UNIQUE` becomes a named one. A name another relation
+holds is refused.
+
 These operations are read:
 
 - `ADD COLUMN`, `ADD PRIMARY KEY` and `ADD CONSTRAINT` (`UNIQUE`, `CHECK`,
@@ -345,9 +349,9 @@ table enables row-level security.
 ## API export metadata
 
 SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,
-`graphql_name`, `proto_name`, `api_type`, or `api_expose` metadata. OpenAPI,
-GraphQL, and Protobuf exports still work from a SQL schema, but their public
-names, types, and exposure are derived from the persistence schema. Use
+`graphql_name`, `proto_name`, `api_type`, or `api_expose` metadata. Exports
+work from a SQL schema, with public names, types, and exposure derived from the
+persistence schema. Use
 [YAML](../yaml/), [HCL](../hcl/), or [Go annotations](../go-annotations/) when
 the published contract must differ from database names and types.
 
@@ -429,9 +433,7 @@ Name the dialect when the file belongs to one engine.
 
 ## Use it
 
-Everything a desired schema is for — comparing, gating on drift, generating
-migrations, applying directly, composing sources, validating across dialects —
-is the same for every source and lives on
+Everything a desired schema is for is the same for every source and lives on
 [Work with a desired schema](../work-with-a-source/). For SQL the flag is
 `--schema-file`. What follows is specific to this source.
 

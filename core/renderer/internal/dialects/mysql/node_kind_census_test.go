@@ -281,6 +281,12 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 func mysqlRefusedKinds() []mysqlCensusRow {
 	return []mysqlCensusRow{
 		{
+			kind: "AlterIndexNode",
+			node: &ast.AlterIndexNode{Name: "ix", NewName: "other"},
+			want: "unsupported feature: mysql: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, " +
+				"and this renderer does not write it",
+		},
+		{
 			kind: "AlterMaterializedViewRefreshNode",
 			node: ast.NewAlterMaterializedViewRefresh("mv1", &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"}),
 			want: "unsupported feature: mysql: ALTER MATERIALIZED VIEW REFRESH mv1: materialized views are not " +

@@ -46,6 +46,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderIndex(n)
 	case *ast.DropIndexNode:
 		return r.renderDropIndex(n)
+	case *ast.AlterIndexNode:
+		return r.renderAlterIndex(n)
 	case *ast.EnumNode:
 		return r.renderEnum(n)
 	case *ast.CreateTypeNode:
@@ -229,4 +231,12 @@ func (r *Renderer) nilNode() error {
 		Err:     ptaherr.ErrInvalidSchemaDiff,
 		Message: DialectName + ": AST node is nil",
 	}
+}
+
+// renderAlterIndex refuses PostgreSQL's ALTER INDEX ... RENAME TO. SQL Server
+// renames an index with sp_rename, which needs the table the node does not
+// name.
+func (r *Renderer) renderAlterIndex(node *ast.AlterIndexNode) error {
+	return unsupportedFeaturef("ALTER INDEX %s RENAME TO %s is PostgreSQL's statement, and this renderer does not write it",
+		node.Name, node.NewName)
 }

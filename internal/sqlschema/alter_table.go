@@ -653,6 +653,14 @@ func (t alterTarget) nameColumnKey(database *schemamodel.Database, field *schema
 		return fmt.Errorf("ALTER TABLE %s %s TO %s: the table already holds a key named %s",
 			t.written, clause, to, name)
 	}
+	t.keyAsConstraint(database, field, name)
+	return nil
+}
+
+// keyAsConstraint turns the own UNIQUE of field into a UNIQUE constraint of
+// the table named name, over the column. The caller has settled that the name
+// is free.
+func (t alterTarget) keyAsConstraint(database *schemamodel.Database, field *schemamodel.Field, name string) {
 	field.Unique = false
 	database.Constraints = append(database.Constraints, schemamodel.Constraint{
 		StructName: t.structName,
@@ -661,7 +669,6 @@ func (t alterTarget) nameColumnKey(database *schemamodel.Database, field *schema
 		Table:      normalizeSQLTableReference("", t.qualified),
 		Columns:    []string{field.Name},
 	})
-	return nil
 }
 
 // renamesIndex reports whether the table declares an index, or a UNIQUE

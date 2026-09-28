@@ -1568,6 +1568,31 @@ func (n *DropIndexNode) SetComment(comment string) *DropIndexNode {
 // Accept implements the Node interface for DropIndexNode.
 func (n *DropIndexNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
+// AlterIndexNode is PostgreSQL's `ALTER INDEX [IF EXISTS] name RENAME TO
+// new_name`.
+//
+// The statement names the index alone, as PostgreSQL finds it: in the schema
+// Name spells, or in the default one when Name is bare. Renaming the index
+// behind a UNIQUE, a primary key or an EXCLUDE constraint renames the
+// constraint too. RENAME TO is the one action the node carries; the parser
+// refuses the others by name. Ptah plans no index rename, so the node comes
+// from parsed SQL. The PostgreSQL renderer writes it; the other renderers
+// refuse it.
+type AlterIndexNode struct {
+	// Name is the index the statement names, as the statement spells it,
+	// schema-qualified or bare.
+	Name string
+	// IfExists makes the statement do nothing for an index that does not
+	// exist.
+	IfExists bool
+	// NewName is the name the index takes. It is bare, because the index
+	// stays in its schema.
+	NewName string
+}
+
+// Accept hands the visitor this node.
+func (n *AlterIndexNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
 // CommentNode represents SQL comments that can be included in generated scripts.
 //
 // Comments are useful for documenting generated SQL and providing context
