@@ -2036,8 +2036,17 @@ func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dia
 	}
 }
 
+// mysqlForeignKeyTableParticipants names the described tables a foreign key
+// joins. A key into another database has a participant this description does
+// not hold, and whose engine it cannot set; the server refuses the key if that
+// table is not InnoDB.
 func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]struct{} {
 	participants := make(map[string]struct{})
+	add := func(table *schemamodel.Table) {
+		if table != nil {
+			participants[table.QualifiedName()] = struct{}{}
+		}
+	}
 	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	for _, field := range fields {
 		if field.Foreign == "" {
@@ -2047,22 +2056,20 @@ func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]
 		if owner == nil {
 			continue
 		}
-		target := referencedTable(
+		add(owner)
+		add(referencedTable(
 			database.Tables,
 			*owner,
 			schemaprep.ParseForeignKeyReference(field.Foreign).Table,
-		)
-		participants[owner.QualifiedName()] = struct{}{}
-		participants[target.QualifiedName()] = struct{}{}
+		))
 	}
 	for _, constraint := range database.Constraints {
 		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
 			continue
 		}
 		owner := constraintOwnerTable(database.Tables, constraint)
-		target := referencedTable(database.Tables, *owner, constraint.ForeignTable)
-		participants[owner.QualifiedName()] = struct{}{}
-		participants[target.QualifiedName()] = struct{}{}
+		add(owner)
+		add(referencedTable(database.Tables, *owner, constraint.ForeignTable))
 	}
 	return participants
 }
@@ -2173,38 +2180,73 @@ func validateSchemaForeignKeys(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
-	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	validation := foreignKeyValidation{
+		database:      database,
+		dialect:       dialect,
+		caps:          caps,
+		fields:        schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields),
+		explicitNames: make(map[string]map[string]struct{}),
+	}
+	fieldBindings, err := validation.fieldKeys()
+	if err != nil {
+		return err
+	}
+	constraintBindings, err := validation.constraintKeys()
+	if err != nil {
+		return err
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		return validateSQLServerCascadeGraph(dialect, append(fieldBindings, constraintBindings...))
+	}
+	return nil
+}
+
+// foreignKeyValidation is what the two halves of validateSchemaForeignKeys
+// share: the schema, its target, and the key names the keys already checked
+// have taken. The field half runs first, so its keys claim their names first.
+type foreignKeyValidation struct {
+	database      schemamodel.Database
+	dialect       string
+	caps          capability.Capabilities
+	fields        []schemamodel.Field
+	explicitNames map[string]map[string]struct{}
+}
+
+// fieldKeys checks the keys declared on a column, as its foreign attribute.
+func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
 	bindings := make([]foreignKeyBinding, 0)
-	explicitNames := make(map[string]map[string]struct{})
-	for _, field := range fields {
+	for _, field := range v.fields {
 		if field.Foreign == "" {
 			continue
 		}
-		owner := tableByStructName(database.Tables, field.StructName)
+		owner := tableByStructName(v.database.Tables, field.StructName)
 		if owner == nil {
-			if isEmbeddedHelperStruct(database.EmbeddedFields, field.StructName) {
+			if isEmbeddedHelperStruct(v.database.EmbeddedFields, field.StructName) {
 				continue
 			}
-			return invalidSchemaForeignKeyError(
-				dialect,
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
 				fmt.Sprintf("field %q has no owning table for struct %q", field.Name, field.StructName),
 			)
 		}
-		if err := reserveExplicitForeignKeyName(explicitNames, dialect, *owner, field.ForeignKeyName); err != nil {
-			return invalidSchemaForeignKeyError(dialect, err.Error())
+		if err := reserveExplicitForeignKeyName(v.explicitNames, v.dialect, *owner, field.ForeignKeyName); err != nil {
+			return nil, invalidSchemaForeignKeyError(v.dialect, err.Error())
 		}
 		reference := schemaprep.ParseForeignKeyReference(field.Foreign)
-		target := referencedTable(database.Tables, *owner, reference.Table)
+		target := referencedTable(v.database.Tables, *owner, reference.Table)
+		if target == nil && referencesAnotherDatabase(v.database, v.dialect, reference.Table) {
+			continue
+		}
 		if target == nil {
-			return invalidSchemaForeignKeyError(
-				dialect,
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
 				fmt.Sprintf("field %q references unknown table %q", field.Name, reference.Table),
 			)
 		}
 		referencedColumns := reference.ReferencedColumns()
 		if err := validateSchemaForeignKeyColumns(
-			fields,
-			dialect,
+			v.fields,
+			v.dialect,
 			*owner,
 			[]string{field.Name},
 			*target,
@@ -2213,10 +2255,10 @@ func validateSchemaForeignKeys(
 			field.OnUpdate,
 			nil,
 		); err != nil {
-			return err
+			return nil, err
 		}
-		if err := validateReferencedKeyPolicy(database, dialect, caps, *target, referencedColumns); err != nil {
-			return err
+		if err := validateReferencedKeyPolicy(v.database, v.dialect, v.caps, *target, referencedColumns); err != nil {
+			return nil, err
 		}
 		bindings = append(bindings, foreignKeyBinding{
 			owner:    owner.QualifiedName(),
@@ -2225,31 +2267,40 @@ func validateSchemaForeignKeys(
 			onUpdate: field.OnUpdate,
 		})
 	}
-	for _, constraint := range database.Constraints {
+	return bindings, nil
+}
+
+// constraintKeys checks the keys declared as table constraints.
+func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
+	bindings := make([]foreignKeyBinding, 0)
+	for _, constraint := range v.database.Constraints {
 		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY") {
 			continue
 		}
-		owner := constraintOwnerTable(database.Tables, constraint)
+		owner := constraintOwnerTable(v.database.Tables, constraint)
 		if owner == nil {
-			return invalidSchemaForeignKeyError(
-				dialect,
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
 				fmt.Sprintf("constraint %q has no owning table", constraint.Name),
 			)
 		}
-		if err := reserveExplicitForeignKeyName(explicitNames, dialect, *owner, constraint.Name); err != nil {
-			return invalidSchemaForeignKeyError(dialect, err.Error())
+		if err := reserveExplicitForeignKeyName(v.explicitNames, v.dialect, *owner, constraint.Name); err != nil {
+			return nil, invalidSchemaForeignKeyError(v.dialect, err.Error())
 		}
 		columns := constraint.ForeignColumnsOrDefault()
-		target := referencedTable(database.Tables, *owner, constraint.ForeignTable)
+		target := referencedTable(v.database.Tables, *owner, constraint.ForeignTable)
+		if target == nil && referencesAnotherDatabase(v.database, v.dialect, constraint.ForeignTable) {
+			continue
+		}
 		if target == nil {
-			return invalidSchemaForeignKeyError(
-				dialect,
+			return nil, invalidSchemaForeignKeyError(
+				v.dialect,
 				fmt.Sprintf("constraint %q references unknown table %q", constraint.Name, constraint.ForeignTable),
 			)
 		}
 		if err := validateSchemaForeignKeyColumns(
-			fields,
-			dialect,
+			v.fields,
+			v.dialect,
 			*owner,
 			constraint.Columns,
 			*target,
@@ -2258,10 +2309,10 @@ func validateSchemaForeignKeys(
 			constraint.OnUpdate,
 			constraint.OnDeleteColumns,
 		); err != nil {
-			return err
+			return nil, err
 		}
-		if err := validateReferencedKeyPolicy(database, dialect, caps, *target, columns); err != nil {
-			return err
+		if err := validateReferencedKeyPolicy(v.database, v.dialect, v.caps, *target, columns); err != nil {
+			return nil, err
 		}
 		bindings = append(bindings, foreignKeyBinding{
 			owner:    owner.QualifiedName(),
@@ -2270,10 +2321,44 @@ func validateSchemaForeignKeys(
 			onUpdate: constraint.OnUpdate,
 		})
 	}
-	if platform.NormalizeDialect(dialect) == platform.SQLServer {
-		return validateSQLServerCascadeGraph(dialect, bindings)
+	return bindings, nil
+}
+
+// referencesAnotherDatabase reports whether a MySQL-family foreign key names a
+// table in a database the description holds nothing of.
+//
+// A database is the schema on this family, and a key may reference a table in
+// another one: `REFERENCES crm.customers (id)` from a table of `shop`. A read
+// of `shop` describes `shop`, so the referenced table is not in it and cannot
+// be, and neither is a desired schema written for `shop`. Refusing that as an
+// unknown table would leave `db read`, `schema inspect --format sql` and
+// `schema compare` unable to describe a database holding such a key at all
+// (stokaro/ptah#3891). The key is rendered as written and left to the server:
+// the columns and the key it references are in the other database, so there
+// is nothing here to check them against.
+//
+// A reference stays unknown when it is unqualified, or when the description
+// holds anything of the database it names: `crm.missing` beside a described
+// `crm` is a table that is not there, which is what the refusal is for.
+func referencesAnotherDatabase(database schemamodel.Database, dialect, reference string) bool {
+	if normalized := platform.NormalizeDialect(dialect); normalized != platform.MySQL && normalized != platform.MariaDB {
+		return false
 	}
-	return nil
+	ref, ok := tableref.Parse(reference)
+	if !ok || !ref.Qualified {
+		return false
+	}
+	for _, schema := range database.Schemas {
+		if schema.Name == ref.Schema {
+			return false
+		}
+	}
+	for _, table := range database.Tables {
+		if strings.TrimSpace(table.Schema) == ref.Schema {
+			return false
+		}
+	}
+	return true
 }
 
 func isEmbeddedHelperStruct(embeddedFields []schemamodel.EmbeddedField, structName string) bool {

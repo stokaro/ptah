@@ -119,7 +119,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if !selected.Valid {
 		return r.readServer(ctx)
 	}
-	schema, err := r.readDatabase(ctx, selected.String, referencedTableAlone)
+	schema, err := r.readDatabase(ctx, selected.String, referencedOutside(selected.String))
 	if err != nil {
 		return nil, err
 	}
@@ -248,9 +248,24 @@ type foreignSchemaRule func(referenced string) string
 // database to tell `r1.u` from `r2.u`.
 func referencedDatabase(referenced string) string { return referenced }
 
-// referencedTableAlone is the rule of a read of one database, which reads
-// every referenced table as one of its own.
-func referencedTableAlone(string) string { return "" }
+// referencedOutside is the rule of a read of one database, database. A table
+// of that database is one of the description's own and carries no schema, as
+// every object the read describes carries none. A table of another database
+// keeps that database's name.
+//
+// Reading every referenced table as one of its own would turn a key into
+// `crm`.`customers` into a key into a `customers` the description does not
+// hold, which the renderer refuses as a reference to an unknown table
+// (stokaro/ptah#3891). The names are compared exactly, as the catalog reports
+// both: REFERENCED_TABLE_SCHEMA and DATABASE() spell one database alike.
+func referencedOutside(database string) foreignSchemaRule {
+	return func(referenced string) string {
+		if referenced == database {
+			return ""
+		}
+		return referenced
+	}
+}
 
 // readDatabase describes one database, dbName, recording referenced schemas
 // by foreignSchema.
