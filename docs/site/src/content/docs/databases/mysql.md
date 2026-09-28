@@ -347,6 +347,14 @@ SQL:
   was; `a INT PRIMARY KEY UNIQUE` builds both on MySQL and the primary key
   alone on MariaDB, and it is rendered inline so each engine gives its own
   answer. Folding the first into the second would lose MariaDB's second index.
+- A role is a name and nothing else. `CREATE ROLE` takes no attribute on
+  either engine, so a declared `login`, `password`, `superuser`, `createdb`,
+  `createrole` or `replication` is refused before any SQL is written: what it
+  asks for is a user, and Ptah does not manage users. A role always passes on
+  the privileges of the roles granted to it, and there is no `NOINHERIT`
+  (`Error 1064` on both engines). So every role reads back as inheriting,
+  which is what a declaration defaults to, and a declared `inherit="false"` is
+  refused rather than created as a role that inherits anyway.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 - A schema file's column `COMMENT 'text'` and table `COMMENT = 'text'`, with

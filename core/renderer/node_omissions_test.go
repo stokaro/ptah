@@ -182,7 +182,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedRoleComment(t
 	}
 
 	database := nodeSchema()
-	database.Roles = []schemamodel.Role{{Name: "reader", Comment: "read-only access"}}
+	database.Roles = []schemamodel.Role{{Name: "reader", Inherit: true, Comment: "read-only access"}}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -326,7 +326,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_ASchemaDeclaringNoneOfThis
 
 	database := nodeSchema()
 	database.Schemas = []schemamodel.Schema{{Name: "app"}}
-	database.Roles = []schemamodel.Role{{Name: "reader"}}
+	database.Roles = []schemamodel.Role{{Name: "reader", Inherit: true}}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

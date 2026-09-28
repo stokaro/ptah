@@ -47,20 +47,60 @@ func ValidateDeclaredRoles(dialect string, caps capability.Capabilities, roles [
 // different doors, and they name the lexicographically first offending role so
 // that two answers about one schema agree.
 func validateRoleAttributes(dialect string, roles []schemamodel.Role) error {
-	offending := make([]schemamodel.Role, 0, len(roles))
-	for _, role := range roles {
-		if role.Login || role.Password != "" || role.Superuser ||
-			role.CreateDB || role.CreateRole || role.Replication {
-			offending = append(offending, role)
-		}
+	if first, found := firstRoleWhere(roles, declaresUserAttribute); found {
+		return roleAttributeError(dialect, first.Name, "LOGIN, PASSWORD or another user attribute")
 	}
-	if len(offending) == 0 {
-		return nil
+	if first, found := firstRoleWhere(roles, declaresNoInherit); found {
+		return noInheritError(dialect, first.Name)
 	}
-	first := slices.MinFunc(offending, func(a, b schemamodel.Role) int {
-		return cmp.Compare(a.Name, b.Name)
+	return nil
+}
+
+// declaresUserAttribute reports whether a role asks for something only a USER
+// has on this family.
+func declaresUserAttribute(role schemamodel.Role) bool {
+	return role.Login || role.Password != "" || role.Superuser ||
+		role.CreateDB || role.CreateRole || role.Replication
+}
+
+// declaresNoInherit reports whether a role asks not to inherit the privileges
+// of the roles granted to it.
+//
+// A MySQL-family role always inherits them, and the reader reports every role
+// that way. Accepting the declaration would create a role that inherits, and
+// every later comparison would then find the difference and plan the ALTER
+// ROLE this family does not have (stokaro/ptah#3890). Every schema source
+// defaults inherit to true, so what reaches this is a declaration that said
+// false, or a [schemamodel.Role] built in Go that left the field at its zero
+// value, which means NOINHERIT on PostgreSQL too.
+func declaresNoInherit(role schemamodel.Role) bool {
+	return !role.Inherit
+}
+
+// firstRoleWhere names the lexicographically first role the predicate holds
+// for, so that the answer does not depend on declaration order.
+func firstRoleWhere(roles []schemamodel.Role, predicate func(schemamodel.Role) bool) (schemamodel.Role, bool) {
+	offending := slices.DeleteFunc(slices.Clone(roles), func(role schemamodel.Role) bool {
+		return !predicate(role)
 	})
-	return roleAttributeError(dialect, first.Name, "LOGIN, PASSWORD or another user attribute")
+	if len(offending) == 0 {
+		return schemamodel.Role{}, false
+	}
+	return slices.MinFunc(offending, func(a, b schemamodel.Role) int {
+		return cmp.Compare(a.Name, b.Name)
+	}), true
+}
+
+// noInheritError refuses a role declared not to inherit.
+//
+// It is not [roleAttributeError], whose sentence is about the attributes a
+// USER carries: inherit is an attribute a role here does have, fixed at true.
+func noInheritError(dialect, name string) error {
+	return fmt.Errorf(
+		"%w: %s: role %q declares inherit=false, which a role cannot have here: "+
+			"a role always passes on the privileges of the roles granted to it, and CREATE ROLE has no NOINHERIT",
+		ptaherr.ErrUnsupportedFeature, dialect, name,
+	)
 }
 
 func unsupportedRoleError(dialect, operation, name string) error {

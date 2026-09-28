@@ -66,8 +66,13 @@ func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {
 			c.Assert(queries, qt.HasLen, 2)
 			c.Assert(queries[1], qt.Contains, "SELECT user")
 			c.Assert(queries[1], qt.Contains, test.wantPredicate)
+			// Inherit is true because a role here always passes on the
+			// privileges of the roles granted to it. A declaration defaults
+			// to true too, so a read of false would make every declared role
+			// differ from itself (stokaro/ptah#3890).
 			c.Assert(roles, qt.DeepEquals, []catalog.Role{{
 				Name:          "app_reader",
+				Inherit:       true,
 				PasswordState: catalog.RolePasswordAbsent,
 			}})
 		})

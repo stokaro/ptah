@@ -90,10 +90,11 @@ server refuses generic and guarded `DROP CONSTRAINT` and
 `CREATE OR REPLACE TRIGGER`, and 26.3 is the first line to accept
 `CREATE DOMAIN`.
 
-MySQL and MariaDB roles do not take that skip path. Complete-schema validation
-and rendering fail before SQL because Ptah cannot read or converge their role
-state, so a comment-only success would lose an authored security declaration.
-Role-free schemas still validate normally.
+MySQL and MariaDB roles do not take that skip path. Their presets carry
+`role_management`, so a declared role is created, read back and compared. A
+role there has no attributes, and a declaration asking for one it cannot have
+fails validation before SQL rather than being dropped; see
+[MySQL and MariaDB](../../databases/mysql/).
 
 `role_management` is not a PostgreSQL key. It promises that a declared role and
 grant can be planned, rendered, introspected, and compared, not that any

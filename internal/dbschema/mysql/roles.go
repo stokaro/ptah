@@ -54,13 +54,26 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		// Every configurable Role attribute is a PostgreSQL one, and a
-		// MySQL-family role carries none of them: CREATE ROLE takes a name and
-		// nothing else. The discriminator above also establishes that the
-		// principal cannot authenticate, so password absence is known rather
-		// than a zero value standing in for unread data.
+		// The configurable Role attributes are PostgreSQL ones, and CREATE ROLE
+		// here takes a name and nothing else, so LOGIN, SUPERUSER and the rest
+		// are false because the object cannot have them. The discriminator
+		// above also establishes that the principal cannot authenticate, so
+		// password absence is known rather than a zero value standing in for
+		// unread data.
+		//
+		// Inherit is the one attribute that is true, for the reason the SQL
+		// Server, Oracle and ClickHouse readers give. A role granted to a role
+		// passes its privileges on whenever the outer role is active, and
+		// there is no NOINHERIT to turn that off: `CREATE ROLE r NOINHERIT` is
+		// ERROR 1064 on MySQL 8.4, 9.7 and 26.7 and on MariaDB 11.8 and 12.3,
+		// and an account whose only active role holds SELECT through a second
+		// role reads the table. A read of false would make every declared
+		// role differ from itself, because a declaration defaults to true, and
+		// the ALTER ROLE that difference asks for does not exist
+		// (stokaro/ptah#3890).
 		roles = append(roles, catalog.Role{
 			Name:          name,
+			Inherit:       true,
 			PasswordState: catalog.RolePasswordAbsent,
 		})
 	}
