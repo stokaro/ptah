@@ -1866,7 +1866,25 @@ func (p *Parser) parseOptionalTriggerForEach() (string, error) {
 	return strings.ToUpper(forEach), nil
 }
 
+// collectTriggerBody reads a trigger's body: a BEGIN ... END block, or, on
+// MySQL and MariaDB and in a document read with no dialect, one statement.
+//
+// MySQL's grammar is `FOR EACH ROW [trigger_order] trigger_body`, where the
+// body is any single statement and a compound BEGIN ... END is one form of it.
+// Measured on MySQL 8.4.11 and MariaDB 11.8.9, `CREATE TRIGGER tr BEFORE
+// INSERT ON a FOR EACH ROW SET NEW.n = NEW.id;` runs, and Atlas CE v1.3.0
+// reports the file synced with the database it builds, where the reader
+// refused it for want of BEGIN (stokaro/ptah#3915). SQLite's body is always a
+// BEGIN ... END block.
 func (p *Parser) collectTriggerBody() (string, error) {
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("BEGIN") && (p.dialect == "" || isMySQLFamilyDialect(p.dialect)) {
+		body := p.collectStatementBody()
+		if body == "" {
+			return "", fmt.Errorf("expected trigger body at position %d", p.current.Start)
+		}
+		return body, nil
+	}
 	var body strings.Builder
 	blockDepth := 0
 	caseDepth := 0
