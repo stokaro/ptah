@@ -535,6 +535,7 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		}
 		if operation.Unique {
 			target.keys.forget(target.qualified, name)
+			return target.refuseUnsupportedForeignKey(operation.ConstraintName)
 		}
 		return nil
 	}
@@ -543,7 +544,7 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 	if !operation.ForeignKey && !operation.Check {
 		if field := target.columnWithKey(name); field != nil {
 			field.Unique = false
-			return nil
+			return target.refuseUnsupportedForeignKey(operation.ConstraintName)
 		}
 	}
 	if operation.IfExists {

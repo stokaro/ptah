@@ -232,9 +232,10 @@ ALTER TABLE items DROP COLUMN legacy;
 ```
 
 `DROP TABLE` and `DROP INDEX` remove the table or index, with what the server
-drops along with it. A drop the server refuses is refused: an object nothing
-declares, unless `IF EXISTS` says so, a table a foreign key or a PostgreSQL
-view still reads, and the index behind a constraint.
+drops along with it. A drop the server refuses is refused: an undeclared
+object without `IF EXISTS`, a table a foreign key or a PostgreSQL view still
+reads, the index behind a constraint, and the last index a MySQL or MariaDB
+foreign key needs.
 
 On PostgreSQL, `ALTER INDEX ... RENAME TO` renames an index, and the constraint
 it backs. A column's own `UNIQUE` becomes a named one. A name another relation
