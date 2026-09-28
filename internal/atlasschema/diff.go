@@ -118,9 +118,6 @@ type DiffOptions struct {
 // applied, which is the one the statements were generated from. Returning the
 // comparison from before it would describe a change the statements do not make.
 func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
-	if err := RefuseDevServer(opts.DevURL); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
-	}
 	prepared, err := prepareDiffSources(opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -180,10 +177,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		// never looked at.
 		Schemas: opts.Schemas,
 		// Two databases are compared as they are, a MySQL-family server as
-		// the whole server. A file or a directory on either side is compared
-		// through a dev database's replay, and a dev server is not taken yet
-		// (stokaro/ptah#3789).
-		ServerScope:               fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase,
+		// the whole server, and so is a database beside a dev server, which
+		// compares whole servers too (stokaro/ptah#3885). Beside a dev
+		// database, a file or a directory is one database, and so is the
+		// database side.
+		ServerScope: (fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase) ||
+			isDevServer(opts.DevURL),
 		ConnectTimeout:            opts.ConnectTimeout,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
@@ -201,7 +200,8 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			var diffErr error
-			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect, target.Capabilities, opts)
+			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect, target.Capabilities,
+				devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
 			return diffErr
 		})
 	if err != nil {
@@ -224,8 +224,13 @@ func diffResolvedStates(
 	fromState, toState atlassource.State,
 	dialect string,
 	capabilities capability.Capabilities,
+	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	fromState, toState, err := scopeOnDevServer(fromState, toState, sides)
+	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	if err := refuseServerScopeMismatch(stateSide(fromState), stateSide(toState)); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -570,7 +575,9 @@ func materializedState(
 		return atlassource.State{}, err
 	}
 	defer releaseDev()
-	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToDatabase)
+	// A dev server takes the declaration database by database, and the state
+	// read back from it is the whole server.
+	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("connect to --dev-url: %w", err)
 	}

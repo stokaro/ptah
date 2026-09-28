@@ -135,6 +135,7 @@ own measurement conditions.
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
+| [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 
 ## A `--config` selection naming more than one file
 
@@ -1010,6 +1011,39 @@ The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3789`](https://github.com/stokaro/ptah/issues/3789)
+
+## A realm beside one database on a dev server
+
+**Type.** Deliberate divergence
+
+**Current boundary.** Beside a dev server, `schema diff` refuses a URL naming
+one database compared with an HCL document that declares more than one
+database, in either order:
+`cannot use HCL with more than 1 schema when --from is limited to schema "app"`.
+The sentence is the one the binary's `schema apply` gives the same pair.
+
+Measured on 2026-09-28 against MySQL 8.4.11. The server holds `app`, with a
+table `t` carrying a column `extra`, and `more`, with a table `keepme`. The
+realm file declares `app` and `more`:
+
+| Run | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `schema diff --from mysql://…/app --to file://realm.hcl --dev-url <dev server>` | exit `0`, plans `CREATE DATABASE more` and `ALTER TABLE app.t DROP COLUMN extra` | exit `1`, the refusal |
+| the binary's plan, run against the server | `ERROR 1007 (HY000): Can't create database 'more'; database exists` | not planned |
+| `schema diff --from file://realm.hcl --to mysql://…/app --dev-url <dev server>` | exit `0`, plans `DROP DATABASE more`, which holds `keepme` | exit `1`, the refusal |
+| `schema apply -u mysql://…/app --to file://realm.hcl --dev-url <dev server>` | exit `1`, `cannot use HCL with more than 1 schema when url is limited to schema "app"` | exit `1`, refused before anything is contacted |
+
+A URL naming one database reads that database alone, so a plan that creates or
+drops another database reaches a database that side never read. The binary's
+own `schema apply` refuses the pair, so its `schema diff` writes plans its
+apply will not run. An HCL document declaring one database is compared with the
+database, as the binary compares it. A SQL file or a migration directory beside
+one database is refused by both, in the binary's words.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse.
+
+**Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
 
 ## Not on this page
 

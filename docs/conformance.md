@@ -789,6 +789,13 @@ replayed: a dev server that is the server `--to` reads, compared by server
 identity, and a `--to` naming one database beside a dev server. See
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-dev-server-that-is-the---to-side-or-beside-one-database).
 
+`schema diff` beside a dev server refuses a URL naming one database compared
+with an HCL realm of several databases. Atlas CE diffs that pair, and its plan
+creates or drops databases the one-database side never read: measured on
+2026-09-28 against MySQL 8.4.11, its `CREATE DATABASE more` fails with
+ERROR 1007 when run, and the reverse plans `DROP DATABASE more`. See
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-realm-beside-one-database-on-a-dev-server).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

@@ -47,7 +47,7 @@ func TestDiffResolvedStates_ComparesTheDatabasesOfTwoServers(t *testing.T) {
 	c := qt.New(t)
 
 	report, _, err := diffResolvedStates(t.Context(), nil, serverState("r1", "r3"), serverState("r1", "r9"),
-		platform.MySQL, nil, DiffOptions{})
+		platform.MySQL, nil, devServerSides{}, DiffOptions{})
 
 	c.Assert(err, qt.IsNil)
 	statements := make([]string, 0, len(report.Changes))
@@ -79,7 +79,7 @@ func TestDiffResolvedStates_RefusesAServerBesideOneDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, nil, DiffOptions{})
+			report, diff, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, nil, devServerSides{}, DiffOptions{})
 
 			var mismatch *ServerScopeMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)

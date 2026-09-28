@@ -256,29 +256,25 @@ func TestCompatMigrateValidateRefusesAUserOnADevServerE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaVerbsRefuseADevServerE2E refuses a dev server on schema diff and
-// schema apply, which rehearse and materialize on one dev database and do not
-// take a whole server yet (stokaro/ptah#3789). The refusal comes before
-// anything is contacted, so a dev server holding a database gets this
-// refusal and not the one for a dev database that is not clean.
-func TestSchemaVerbsRefuseADevServerE2E(t *testing.T) {
+// TestSchemaApplyRefusesADevServerE2E refuses a dev server on schema apply,
+// which rehearses its plan on one dev database and does not take a whole
+// server yet (stokaro/ptah#3885). The refusal comes before anything is
+// contacted, so a dev server holding a database gets this refusal and not the
+// one for a dev database that is not clean.
+func TestSchemaApplyRefusesADevServerE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			dev := newMySQLServerAccount(c, engine.admin, []string{"app", "second", "third", "other"}, []string{"other"})
+			dev := newMySQLServerAccount(c, engine.admin, []string{"app", "third", "other"}, []string{"other"})
 			target := newMySQLFamilyScratch(c, engine.admin)
 			_, url := target.database(c, "target")
-			dir := devServerMigrationDir(c, dev.names["app"], dev.names["second"])
 			realm := devServerRealm(c, dev.names["app"], dev.names["third"])
 
-			diffed, diffErr := runCompatVerb("schema", "diff", "--from", "file://"+dir, "--to", "file://"+realm, "--dev-url", dev.url)
-			applied, applyErr := runCompatVerb("schema", "apply", "--url", url, "--to", "file://"+realm, "--dev-url", dev.url, "--dry-run")
+			applied, err := runCompatVerb("schema", "apply", "--url", url, "--to", "file://"+realm, "--dev-url", dev.url, "--dry-run")
 
-			for _, err := range []error{diffErr, applyErr} {
-				c.Assert(err, qt.ErrorMatches,
-					`(?s).*a --dev-url naming no MySQL or MariaDB database is a whole dev server, which schema diff and schema apply do not take yet.*`,
-					qt.Commentf("%s\n%s", diffed, applied))
-			}
+			c.Assert(err, qt.ErrorMatches,
+				`(?s).*a --dev-url naming no MySQL or MariaDB database is a whole dev server, which schema apply does not take yet.*`,
+				qt.Commentf("%s", applied))
 			c.Assert(dev.exists(c, "app"), qt.Equals, false)
 		})
 	}
