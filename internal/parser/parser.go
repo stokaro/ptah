@@ -5060,7 +5060,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	if isIndex {
 		optionKind = indexElement
 	}
-	if err := p.readKeyOptions(optionKind, indexMethod); err != nil {
+	if err := p.readTableElementOptions(optionKind, indexMethod); err != nil {
 		return nil, nil, err
 	}
 
@@ -5691,8 +5691,11 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	case "DEFAULT":
 		return p.parseAlterDefaultPrivileges()
 	case "INDEX":
-		if p.dialect == platform.Postgres {
+		switch p.dialect {
+		case platform.Postgres:
 			return p.parseAlterIndex()
+		case platform.CockroachDB:
+			return p.parseCockroachAlterIndex()
 		}
 		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
 	default:
@@ -6965,7 +6968,15 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 		return nil, err
 	}
 	p.skipWhitespace()
-	condition := p.parseCreateIndexCondition()
+	condition, err := p.parseCreateIndexCondition()
+	if err != nil {
+		return nil, err
+	}
+	if p.dialect == platform.CockroachDB {
+		if _, err := p.cockroachVisibilityAt(); err != nil {
+			return nil, err
+		}
+	}
 
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
@@ -6991,19 +7002,31 @@ func createIndexPrefix(indexType string) string {
 	}
 }
 
-func (p *Parser) parseCreateIndexCondition() string {
+func (p *Parser) parseCreateIndexCondition() (string, error) {
 	if !p.current.MatchIdentifierValue("WHERE") {
-		return ""
+		return "", nil
 	}
 	p.advance()
 	p.skipWhitespace()
 	start := p.current.Start
-	end := start
+	var tokens []lexer.Token
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
-		end = p.current.End
+		if p.current.Type != lexer.TokenWhitespace && p.current.Type != lexer.TokenComment {
+			tokens = append(tokens, p.current)
+		}
 		p.advance()
 	}
-	return strings.TrimSpace(p.input[start:end])
+	kept := len(tokens)
+	if p.dialect == platform.CockroachDB {
+		var err error
+		if kept, err = p.splitCockroachConditionVisibility(tokens); err != nil {
+			return "", err
+		}
+	}
+	if kept == 0 {
+		return "", nil
+	}
+	return strings.TrimSpace(p.input[start:tokens[kept-1].End]), nil
 }
 
 func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {

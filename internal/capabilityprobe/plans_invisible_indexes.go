@@ -8,13 +8,16 @@ import (
 // withInvisibleIndexes adds the question whether an index can be hidden from
 // the optimizer (stokaro/ptah#3853).
 //
-// The MySQL family is asked in its own words, MySQL's INVISIBLE and MariaDB's
-// IGNORED, and the key is decided by what STATISTICS records, not by
-// acceptance alone. The PostgreSQL family, SQLite, ClickHouse and SQL Server
-// are asked MySQL's spelling, which each refuses, so a refusal is a measured
-// answer. Oracle declares the key instead: it takes `CREATE INDEX ... INVISIBLE`
-// with a meaning of its own, which Ptah neither renders nor reads, so its
-// acceptance would answer a different question.
+// The MySQL family and CockroachDB are asked in their own words, MySQL's
+// INVISIBLE, MariaDB's IGNORED and CockroachDB's NOT VISIBLE, and the key is
+// decided by what the statistics view records, not by acceptance alone.
+// CockroachDB lists one statistics row per column of an index, the implicit
+// key included, so its read-back counts index names. PostgreSQL, YugabyteDB,
+// Spanner, SQLite, ClickHouse and SQL Server are asked MySQL's spelling, which
+// each refuses, so a refusal is a measured answer. Oracle declares the key
+// instead: it takes `CREATE INDEX ... INVISIBLE` with a meaning of its own,
+// which Ptah neither renders nor reads, so its acceptance would answer a
+// different question.
 func withInvisibleIndexes(p plan, dialect string) plan {
 	const create = "CREATE INDEX ivx_k ON ivx (n) INVISIBLE"
 	const statistics = "SELECT COUNT(*) FROM information_schema.STATISTICS " +
@@ -34,7 +37,13 @@ func withInvisibleIndexes(p plan, dialect string) plan {
 		p.undecided[capability.InvisibleIndexes] = "the key names the MySQL family's INVISIBLE and IGNORED " +
 			"index; this server takes INVISIBLE with a meaning of its own, which Ptah neither renders nor " +
 			"reads, so its acceptance would answer a different question"
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.CockroachDB:
+		table := postgresFamilySpelling(dialect).table("ivx", "n int", "n")
+		p.experiments = append(p.experiments, recordedExperiment(capability.InvisibleIndexes, []string{table},
+			"CREATE INDEX ivx_k ON ivx (n) NOT VISIBLE",
+			"SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics "+
+				"WHERE table_name = 'ivx' AND index_name = 'ivx_k' AND is_visible = 'NO'"))
+	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
 		table := postgresFamilySpelling(dialect).table("ivx", "n int", "n")
 		p.experiments = append(p.experiments, acceptance(capability.InvisibleIndexes, []string{table}, create))
 	case platform.ClickHouse:

@@ -1018,15 +1018,17 @@ const (
 	// AccessExclusiveLock. A foreign key behaves the same way.
 	AddConstraintNotValid Capability = "add_constraint_not_valid"
 	// InvisibleIndexes marks support for an index the optimizer does not use
-	// while the server keeps maintaining it: MySQL's INVISIBLE and MariaDB's
-	// IGNORED. Measured 2026-09-28:
+	// while the server keeps maintaining it: MySQL's INVISIBLE, MariaDB's
+	// IGNORED and CockroachDB's NOT VISIBLE. Measured 2026-09-28:
 	//
 	//	MySQL 8.4.11, 9.7.2, 26.7.0   INVISIBLE; STATISTICS.IS_VISIBLE is NO
 	//	MariaDB 11.8.9                IGNORED; STATISTICS.IGNORED is YES
+	//	CockroachDB 26.3.2            NOT VISIBLE; statistics.is_visible is NO
 	//
-	// `ALTER TABLE t ALTER INDEX k VISIBLE | INVISIBLE`, and MariaDB's
-	// `IGNORED | NOT IGNORED`, change it in place, and both engines refuse it
-	// on a primary key (ERROR 3522, ERROR 4174). A render for a target without
+	// `ALTER TABLE t ALTER INDEX k VISIBLE | INVISIBLE`, MariaDB's
+	// `IGNORED | NOT IGNORED` and CockroachDB's `ALTER INDEX t@k [NOT]
+	// VISIBLE` change it in place, and every engine refuses it on a primary
+	// key (ERROR 3522, ERROR 4174, SQLSTATE 0A000). A render for a target without
 	// it refuses the index rather than build one the optimizer uses, which
 	// would change the query plans its author held back (stokaro/ptah#3853).
 	InvisibleIndexes Capability = "invisible_indexes"
@@ -1298,7 +1300,7 @@ var registry = map[Capability]spec{
 		doc: "NOT VALID on an added constraint and VALIDATE CONSTRAINT to complete it (PostgreSQL family)",
 	},
 	InvisibleIndexes: {
-		doc: "an index the optimizer does not use: INVISIBLE on MySQL 8.0+, IGNORED on MariaDB 10.6+",
+		doc: "an index the optimizer does not use: INVISIBLE on MySQL 8.0+, IGNORED on MariaDB 10.6+, NOT VISIBLE on CockroachDB",
 	},
 }
 
@@ -2474,6 +2476,14 @@ func CockroachDB23() Capabilities {
 		// pg_get_triggerdef()`. The 26.2 line is the first to have it; see
 		// CockroachDB26 (stokaro/ptah#3707).
 		With(CatalogTriggerDefinitions, false).
+		// Measured 2026-09-28 on v26.3.2, and by the capability probe on
+		// v25.4 and v26.2: `CREATE INDEX k ON t (a) NOT VISIBLE` builds an
+		// index the optimizer does not use, information_schema.statistics
+		// reports is_visible = NO, pg_get_indexdef ends in NOT VISIBLE, and
+		// `ALTER INDEX t@k VISIBLE` shows it again. MySQL's INVISIBLE is taken
+		// as a synonym. A primary key is refused: `primary index cannot be
+		// invisible` (SQLSTATE 0A000).
+		With(InvisibleIndexes, true).
 		With(RowLevelTTL, true)
 }
 

@@ -6,9 +6,11 @@ import (
 )
 
 // changeIndexVisibility plans each index visibility change the comparison
-// found. The PostgreSQL family has no invisible index, and the renderer
-// refuses the operation by [capability.InvisibleIndexes]: a declaration that
-// hides an index is refused loudly rather than planned as nothing.
+// found. CockroachDB changes one in place and the renderer writes it as ALTER
+// INDEX. The other engines of this family have no invisible index, and the
+// renderer refuses the operation by [capability.InvisibleIndexes] there: a
+// declaration that hides an index is refused loudly rather than planned as
+// nothing.
 func changeIndexVisibility(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, change := range diff.IndexVisibilityChanged {
 		result = append(result, &ast.AlterTableNode{

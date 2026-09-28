@@ -1798,6 +1798,10 @@ func buildPostgresIndex(dialect string, row postgresIndexRow) (catalog.Index, er
 		return catalog.Index{}, fmt.Errorf("failed to parse index hidden keys for %s: %w", row.indexName, err)
 	}
 	index.HashShardBuckets = hashShardBuckets(dialect, row.indexDef)
+	index.Invisible, err = indexInvisible(dialect, row.indexName, row.indexDef)
+	if err != nil {
+		return catalog.Index{}, err
+	}
 
 	return index, nil
 }

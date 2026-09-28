@@ -126,8 +126,10 @@ SQL:
   it from `STATISTICS.IS_VISIBLE` or `STATISTICS.IGNORED`, writes it in the
   target's word, and changes it in place with `ALTER TABLE t ALTER INDEX k
   INVISIBLE` or `IGNORED`. Neither engine hides a primary key (`ERROR 3522`,
-  `ERROR 4174`), and the reader refuses one. A target without such an index,
-  PostgreSQL among them, refuses an invisible index rather than build it
+  `ERROR 4174`), and the reader refuses one. CockroachDB has such an index,
+  spelled `NOT VISIBLE`; see
+  [Invisible indexes](../distributed/#invisible-indexes). A target without
+  one, PostgreSQL among them, refuses an invisible index rather than build it
   visible. Atlas HCL has no attribute for it, so `schema inspect --format hcl`
   writes the index and reports on stderr that the document makes it visible.
 - Two constraints on one table may share a name, and both engines accept
