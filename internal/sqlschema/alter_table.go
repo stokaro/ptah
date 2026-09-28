@@ -223,7 +223,12 @@ func applyAlterColumn(target alterTarget, operation *ast.AlterColumnOperation) e
 // does not restate is gone, as on the server. SQL Server's ALTER COLUMN states
 // the type, nullability and collation and leaves the default alone, because a
 // default there is a constraint of its own.
-func applyModifyColumn(target alterTarget, operation *ast.ModifyColumnOperation, sourcePlatform string) error {
+//
+// A key is not part of the definition MODIFY replaces; see
+// [alterTarget.keepColumnKey].
+func applyModifyColumn(
+	database *schemamodel.Database, target alterTarget, operation *ast.ModifyColumnOperation, sourcePlatform string,
+) error {
 	if operation.Column == nil {
 		return fmt.Errorf("ALTER TABLE %s MODIFY carries no column", target.written)
 	}
@@ -244,8 +249,50 @@ func applyModifyColumn(target alterTarget, operation *ast.ModifyColumnOperation,
 		return nil
 	}
 	replacement.Primary = replacement.Primary || field.Primary
+	target.keepColumnKey(database, field, &replacement)
 	*field = replacement
 	return nil
+}
+
+// keepColumnKey carries the own UNIQUE of a column that MODIFY rewrites onto
+// the definition that replaces it, on MySQL and MariaDB.
+//
+// Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3 against
+// Atlas CE v1.3.0, the server reads UNIQUE in MODIFY as a request for a new
+// key, not as part of the column (stokaro/ptah#3875):
+//
+//   - `x int UNIQUE`, then `MODIFY x bigint`, keeps the key `x`.
+//   - `x int UNIQUE`, then `MODIFY x bigint UNIQUE`, adds a second key over x,
+//     `x_2`, named as [columnkey.Name] names a key whose name is held.
+//
+// So a column keeps its own key when the definition omits UNIQUE, and a
+// definition that restates it on a column that has one adds a UNIQUE
+// constraint under the name the server gives the new key. A column without a
+// key of its own takes one.
+func (t alterTarget) keepColumnKey(database *schemamodel.Database, field, replacement *schemamodel.Field) {
+	switch platform.NormalizeDialect(t.sourcePlatform) {
+	case platform.MySQL, platform.MariaDB:
+	default:
+		return
+	}
+	if !field.Unique {
+		return
+	}
+	if replacement.Unique {
+		// The column's own key still holds its name here, so the new key
+		// takes the next one.
+		name, _ := columnkey.Name(t.sourcePlatform, t.table.Name, field.Name, func(name string) bool {
+			return t.keyNameHeld(name, nil)
+		})
+		database.Constraints = append(database.Constraints, schemamodel.Constraint{
+			StructName: t.structName,
+			Name:       name,
+			Type:       "UNIQUE",
+			Table:      normalizeSQLTableReference("", t.qualified),
+			Columns:    []string{field.Name},
+		})
+	}
+	replacement.Unique = true
 }
 
 // refuseMySQLColumnCheckReference refuses, for MySQL, the CHECK on a column

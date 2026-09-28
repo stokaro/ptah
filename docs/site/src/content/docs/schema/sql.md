@@ -243,6 +243,10 @@ These operations are read:
   `DROP CHECK`, `DROP INDEX` and `RENAME INDEX`, and SQL Server's
   `ALTER COLUMN` with a new definition.
 
+`MODIFY` keeps the column's keys, as the server does. `UNIQUE` in it adds a
+key, so on a column with its own key it adds a second one, such as `x_2`
+beside `x`.
+
 Anything else is refused by name rather than read as nothing: an `ALTER COLUMN`
 action other than those above, `RENAME TO`, `CASCADE`, and an operation on a
 table the document does not declare. So is an operation the server would
@@ -295,9 +299,8 @@ from:
   policy of another table;
 - a routine named by its name alone when the document declares more than one
   overload of it, or a function named as a procedure;
-- a comment on a domain's constraint (`ON DOMAIN`), which the model keeps no
-  comment for, and on any other kind of object, such as a foreign table or a
-  cast;
+- a comment on a domain's constraint (`ON DOMAIN`) or on any other kind of
+  object, such as a foreign table or a cast;
 - `IS NULL`.
 
 A document may declare several overloads of a function or a procedure, as
@@ -348,8 +351,6 @@ escapes inside a string, whether `E'...'` is an escape string, whether a string
 continues on the next line, whether `--x` without a space is a comment, and
 whether `[name]` is an identifier.
 
-Each of these follows from the dialect you name.
-
 **A file that the named engine would reject is rejected here.** PostgreSQL runs
 with `standard_conforming_strings` on, so a backslash is an ordinary character
 and `DEFAULT 'a\'b'` is an unterminated string — PostgreSQL 18 answers
@@ -383,7 +384,7 @@ measured.
 **A version-guarded span is stepped over, and the one clause a schema needs is
 read out of it.** `mysqldump` writes a full-text index's parser as
 ``FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */``, and that clause
-now reaches the schema. The rest of a guard is not read: those spans hold
+reaches the schema. The rest of a guard is not read: those spans hold
 version-conditional fragments Ptah does not model, and `mariadb-dump` opens
 every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
 executes, because no server is version 999999.
@@ -417,7 +418,7 @@ and `"PUBLIC"` is the `PUBLIC` keyword.
 
 **Omitting `--dialect` keeps a permissive reader.** No dialect means no
 dialect's rules, which is what lets one file mixing conventions be read at all.
-Name the dialect when the file belongs to one engine, which is nearly always.
+Name the dialect when the file belongs to one engine.
 
 ## Use it
 
@@ -623,9 +624,8 @@ CREATE TABLE "pets" (
   every spelling the engines take: `ADD KEY`, `ADD INDEX`, `ADD SPATIAL KEY` and
   `ADD FULLTEXT KEY`, with a key part's prefix length and direction. A
   `UNIQUE` key stays a constraint, because it is a uniqueness guarantee rather
-  than an index alone. `ADD INDEX` still declares ClickHouse's data-skipping
-  index on that dialect; which one a statement means is decided by the dialect,
-  as it is for the same keyword inside a table body.
+  than an index alone. On ClickHouse, `ADD INDEX` declares a data-skipping
+  index, as the same keyword does inside a table body.
 - `ALTER TABLE ... ADD PRIMARY KEY` is read onto the table it names, with its
   prefix length and direction, exactly as the same key written inside the
   `CREATE TABLE` would be. A statement naming a table the document does not
