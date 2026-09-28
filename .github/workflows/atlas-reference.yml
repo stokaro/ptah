@@ -122,6 +122,7 @@ jobs:
           -v ON_ERROR_STOP=1 -c 'CREATE DATABASE realmdev'
 
       - name: Set up Go
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -132,9 +133,14 @@ jobs:
         run: GOWORK=off go mod download
 
       # Same key and same path as go-integration-tests.yml, so the two workflows
-      # share one entry rather than each paying for the build. The lock file
-      # pins the source archive by checksum, which makes it the binary's
-      # identity (stokaro/ptah#2186).
+      # share one entry rather than each paying for the build. The key names
+      # every input the build reads from this repository: the lock pins the
+      # source archive by checksum (stokaro/ptah#2186), the two scripts are the
+      # procedure, and the Go version is the compiler. A pull request that
+      # changes any of them misses the cache and builds, so a broken build is
+      # red on the pull request that breaks it. What no pull request changes --
+      # the tag, the archive host, the module proxy -- is left to the
+      # reference-from-source job below (stokaro/ptah#3904).
       #
       # The build script verifies whatever it finds before reusing it, so a hit
       # is not a reason to trust the file.
@@ -142,7 +148,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
-          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh') }}
+          key: atlas-ce-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh', 'scripts/lib/atlas-ce-reference.sh') }}
 
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "$PTAH_ATLAS_REFERENCE"
@@ -180,6 +186,45 @@ jobs:
 
       - name: Run migrate apply interoperability controls
         run: go test -tags integration ./integration/atlasreference/migrateapply -count=1
+
+  # Every other job restores the reference from the cache, and a restored binary
+  # skips the whole build: tag resolution, download, checksum, layout check and
+  # compile. The cache key rolls when an input in this repository changes, not
+  # when the tag, the archive host or a module Atlas depends on does. Without
+  # this job a break there waits for the next cache miss, then fails on a pull
+  # request that did not cause it. This job builds from nothing every night, so
+  # it fails on the morning after instead (stokaro/ptah#3904).
+  #
+  # It is not a pull-request check, for the reason install-smoke.yml gives: it
+  # reaches GitHub and the module proxy, and a network problem would turn
+  # unrelated pull requests red. A pull request that changes an input in this
+  # repository already builds, through the cache key above.
+  reference-from-source:
+    name: reference builds from source
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # No module cache either: a module that left the proxy is one of the
+      # failures this job is here to see.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The script prints the "building" line after the layout check and
+      # before it compiles, and never on the reuse path. Requiring the line is
+      # what proves the build ran: a job that restored a binary here would pass
+      # the script and fail the grep.
+      - name: Build the pinned Atlas CE reference with nothing to reuse
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/atlas-ce-build.log"
+          scripts/build-atlas-ce-reference.sh "$RUNNER_TEMP/atlas-ce-from-source/atlas" | tee "$log"
+          grep -qx 'atlas-ce: building verified source archive' "$log"
 
   complete-integration:
     name: complete integration contour

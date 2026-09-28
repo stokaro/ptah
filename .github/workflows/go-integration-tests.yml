@@ -304,12 +304,13 @@ jobs:
       - uses: actions/checkout@v7
       
       - name: Set up Go
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
-      
+
       - name: Install dependencies
         run: go mod download
 
@@ -510,10 +511,15 @@ jobs:
             -v ON_ERROR_STOP=1 -tAc 'SELECT current_database()' | grep -x ptah_aliased
 
       # The reference is a source archive pinned by checksum in
-      # scripts/atlas-ce-reference.lock, so the lock file IS the identity of the
-      # binary built from it and makes an exact cache key. Measured on run
-      # 32820538377, building it costs 1m40s of a 22.6-minute job, on every run
-      # (stokaro/ptah#2186).
+      # scripts/atlas-ce-reference.lock. Measured on run 32820538377, building
+      # it costs 1m40s of a 22.6-minute job, on every run (stokaro/ptah#2186).
+      #
+      # The key is the one atlas-reference.yml uses, so the two workflows share
+      # an entry, and it names every input the build reads from this
+      # repository: the lock, the two scripts and the Go version. A pull request
+      # that changes one of them builds, so a broken build is red where it was
+      # broken. The nightly reference-from-source job in atlas-reference.yml
+      # covers what no pull request changes (stokaro/ptah#3904).
       #
       # A hit does not skip the verification. The build script decides for
       # itself whether what it found is usable -- it compares a stamp holding
@@ -525,7 +531,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
-          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh') }}
+          key: atlas-ce-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh', 'scripts/lib/atlas-ce-reference.sh') }}
 
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
