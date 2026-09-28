@@ -168,6 +168,10 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if clauses := schemaprep.EnforcementAndMatch(db); len(clauses) > 0 {
 		return Result{}, fmt.Errorf("%s, which Atlas HCL cannot represent", clauses[0])
 	}
+	// Nor for a constraint the server has not validated.
+	if unvalidated := schemaprep.UnvalidatedConstraints(db); len(unvalidated) > 0 {
+		return Result{}, fmt.Errorf("%s is NOT VALID, which Atlas HCL cannot represent", unvalidated[0])
+	}
 
 	// Resolved once, here, rather than per index. A malformed value has to fail
 	// the export whether or not this particular schema happens to carry an

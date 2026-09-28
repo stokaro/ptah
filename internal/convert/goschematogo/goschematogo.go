@@ -67,6 +67,10 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	if clauses := schemaprep.EnforcementAndMatch(db); len(clauses) > 0 {
 		return nil, fmt.Errorf("%s, which a Go annotation cannot represent", clauses[0])
 	}
+	// The constraint annotation has no attribute for NOT VALID.
+	if unvalidated := schemaprep.UnvalidatedConstraints(db); len(unvalidated) > 0 {
+		return nil, fmt.Errorf("%s is NOT VALID, which a Go annotation cannot represent", unvalidated[0])
+	}
 
 	ctx := newRenderContext(db, opts)
 	if opts.SingleFile {

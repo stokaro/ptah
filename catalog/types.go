@@ -922,7 +922,13 @@ type Constraint struct {
 	// when the definition lists none, which means every referencing column
 	// (stokaro/ptah#3562).
 	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
-	CheckClause     *string  `json:"check_clause"` // For CHECK constraints
+	// NotValid reports a CHECK or foreign key the server has not validated
+	// against the rows the table held when it was added, as
+	// pg_get_constraintdef marks it with NOT VALID. A constraint declared NOT
+	// ENFORCED is not reported here, though PostgreSQL 18.6 records it with
+	// convalidated false, because VALIDATE CONSTRAINT refuses it.
+	NotValid    bool    `json:"not_valid,omitempty"`
+	CheckClause *string `json:"check_clause"` // For CHECK constraints
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

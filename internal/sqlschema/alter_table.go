@@ -766,6 +766,47 @@ func (t alterTarget) removeNamedConstraint(name string) bool {
 	return false
 }
 
+// applyValidateConstraint validates a CHECK or foreign key the schema declares
+// by name. One added NOT VALID becomes validated. One written on a column, or
+// added without the clause, is validated already, and the server takes the
+// statement and changes nothing. A name the table holds no CHECK or foreign
+// key under is refused, as the server refuses it.
+func applyValidateConstraint(target alterTarget, operation *ast.ValidateConstraintOperation) error {
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
+	if target.validateNamedConstraint(name) {
+		return nil
+	}
+	return fmt.Errorf(
+		"ALTER TABLE %s VALIDATE CONSTRAINT %s names no CHECK or foreign key this schema declares by that name",
+		target.written, operation.ConstraintName)
+}
+
+// validateNamedConstraint marks the CHECK or foreign key named name validated,
+// and reports whether the table has one.
+func (t alterTarget) validateNamedConstraint(name string) bool {
+	for _, database := range t.databases {
+		for i := range database.Constraints {
+			constraint := &database.Constraints[i]
+			if constraint.StructName != t.structName || constraint.Name != name {
+				continue
+			}
+			if strings.EqualFold(constraint.Type, "CHECK") || strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+				constraint.NotValid = false
+				return true
+			}
+		}
+		for _, field := range database.Fields {
+			if field.StructName != t.structName {
+				continue
+			}
+			if (field.Foreign != "" && field.ForeignKeyName == name) || (field.Check != "" && field.CheckName == name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // renameNamedConstraint renames the object that carries from, and reports
 // whether there was one.
 func (t alterTarget) renameNamedConstraint(from, to string) bool {

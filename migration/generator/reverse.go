@@ -317,6 +317,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// A comment transition carries both of its states, as an object's
 		// does, so the reversal swaps them.
 		ConstraintCommentsChanged: reverseConstraintComments(diff.ConstraintCommentsChanged),
+		// A validation has no reverse statement: PostgreSQL has no way to mark
+		// a validated constraint NOT VALID again short of dropping it, and the
+		// rows the validation checked satisfy the constraint whether it is
+		// marked or not. A declaration that allowed NOT VALID is satisfied by
+		// the validated constraint the rollback leaves.
+		ConstraintsValidated: nil,
 	}
 	// A re-created table brings its own primary key and field-level foreign keys
 	// back with it, so listing those a second time as constraint additions is

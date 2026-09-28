@@ -84,6 +84,13 @@ func assertReverseCoverageField(
 		// Signature is what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "ConstraintsValidated" {
+		// A validation has no reverse statement, so the field is read and
+		// deliberately answered with nothing. Zeroing it cannot change the
+		// plan. TestReverseSchemaDiff_AValidationHasNoReverse is what holds
+		// that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredTables" {
 		// An OUTPUT of the reverse, for the reason DeclaredUserTypes below is.
 		// A rollback restores the tables the pre-change database held, and a
@@ -990,4 +997,18 @@ func TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration(t *testin
 		qt.Commentf("the declaration comes from the database that held the table"))
 	c.Assert(reversed.DeclaredSchemas[0].Charset, qt.Equals, "utf8mb4")
 	c.Assert(reversed.DeclaredSchemas[0].Collate, qt.Equals, "utf8mb4_general_ci")
+}
+
+// TestReverseSchemaDiff_AValidationHasNoReverse rolls back a diff that only
+// validates a constraint: the rollback plans nothing, because PostgreSQL cannot
+// mark a validated constraint NOT VALID again without dropping it, and the
+// validated constraint satisfies a declaration that allowed NOT VALID.
+func TestReverseSchemaDiff_AValidationHasNoReverse(t *testing.T) {
+	c := qt.New(t)
+	schema, dbSchema := reverseCoverageContext()
+	diff := &difftypes.SchemaDiff{ConstraintsValidated: []difftypes.ConstraintValidation{{TableName: "t", Name: "t_ck"}}}
+
+	reversed := reverseSchemaDiffWithSchema(diff, schema, dbSchema)
+
+	c.Assert(reversed.HasChanges(), qt.IsFalse, qt.Commentf("%+v", reversed))
 }

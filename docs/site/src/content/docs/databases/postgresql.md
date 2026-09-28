@@ -381,6 +381,36 @@ named `<table>_check`, `<table>_check1` and on, past the names the column
 `CHECK`s take: a column `CHECK` over two columns takes `<table>_check`, and
 the first entry beside it takes `<table>_check1`.
 
+## Unvalidated constraints
+
+A `CHECK` or a foreign key added with `NOT VALID` checks new rows and leaves
+the rows already in the table unchecked. PostgreSQL, CockroachDB and
+YugabyteDB record it as not validated until `VALIDATE CONSTRAINT` checks those
+rows. A schema file declares it the way a migration adds it:
+
+```sql
+ALTER TABLE orders ADD CONSTRAINT orders_amount_positive CHECK (amount > 0) NOT VALID;
+```
+
+The comparison reads the clause as a permission, not a requirement:
+
+- A declaration with `NOT VALID` is satisfied by the constraint whether the
+  server has validated it or not. A plan that adds the constraint adds it
+  `NOT VALID`, so rows that break it do not stop the plan.
+- A declaration without the clause asks for a validated constraint. Where the
+  database holds the constraint `NOT VALID`, the plan runs
+  `ALTER TABLE ... VALIDATE CONSTRAINT` rather than dropping and adding it. The
+  validation fails if a row breaks the constraint.
+
+`NOT VALID` inside a `CREATE TABLE` changes nothing, because the server records
+the constraint as validated. So a plan that creates the table adds a `CHECK`
+declared `NOT VALID` after it, where the clause is kept. `VALIDATE CONSTRAINT`
+in a schema file marks the constraint validated.
+
+The Atlas HCL and Go annotation exports refuse a `NOT VALID` constraint,
+because neither format can write one. A rollback leaves a validated constraint
+validated: nothing can mark it `NOT VALID` again short of dropping it.
+
 ## Object comments
 
 Ptah writes the comment of a view, a materialized view, a sequence, a domain, a

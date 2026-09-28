@@ -562,6 +562,15 @@ type Constraint struct {
 	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
 	// referencing columns. See [ptah.run/core/ast.ForeignKeyRef.OnDeleteColumns].
 	OnDeleteColumns []string
+	// NotValid marks a CHECK or FOREIGN KEY constraint that may stay
+	// unvalidated: the server checks new rows and has not checked the rows the
+	// table held when the constraint was added. A database that holds it
+	// validated satisfies it, and one that holds it NOT VALID is left so. A
+	// constraint without it is one the rows already present must satisfy, so
+	// a database holding it NOT VALID is planned a VALIDATE CONSTRAINT. It is
+	// written only where a constraint is added to a table that exists; a
+	// table created with it has no rows to leave unchecked.
+	NotValid bool
 
 	// RequiresExtensions names the extensions the index backing this constraint
 	// cannot be built without, as the catalog resolved them rather than as

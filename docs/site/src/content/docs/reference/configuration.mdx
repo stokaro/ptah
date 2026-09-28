@@ -387,7 +387,8 @@ off.
 - **PostgreSQL**: there is no such clause, so the safe form is generated. A
   `CHECK` or `FOREIGN KEY` constraint is added `NOT VALID` and completed by its
   own `VALIDATE CONSTRAINT`, whose scan takes `SHARE UPDATE EXCLUSIVE` rather
-  than `ACCESS EXCLUSIVE`.
+  than `ACCESS EXCLUSIVE`. A constraint the declaration allows `NOT VALID` is
+  added that way with or without this setting, and is not validated.
 
 The PostgreSQL pair buys that weaker lock only when the two statements commit
 separately, so a generated migration carrying one runs outside a transaction. A

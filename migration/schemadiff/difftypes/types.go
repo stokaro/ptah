@@ -642,6 +642,7 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			Initially:       declared.Initially,
 			Match:           declared.Match,
 			NotEnforced:     declared.NotEnforced,
+			NotValid:        declared.NotValid,
 		})
 	}
 	return additions
@@ -851,6 +852,10 @@ type ConstraintAdditionInfo struct {
 	// every referencing column where the declaration named some
 	// (stokaro/ptah#3562).
 	OnDeleteColumns []string `json:"on_delete_columns,omitempty"`
+	// NotValid asks for the constraint to be added without checking the rows
+	// the table holds, as the declaration allows; see
+	// [ptah.run/core/schemamodel.Constraint.NotValid].
+	NotValid bool `json:"not_valid,omitempty"`
 	// Comment is the constraint's description, carried for the same reason
 	// Deferrable is: a fact the comparator saw on the desired constraint has to
 	// reach the statement that creates it, or the ALTER builds a constraint the
@@ -1489,6 +1494,23 @@ type SchemaDiff struct {
 	// definition changed, is not here: the statement that adds it writes its
 	// comment, and a new constraint has no other (stokaro/ptah#3678).
 	ConstraintCommentsChanged []ConstraintCommentChange `json:"constraint_comments_changed"`
+
+	// ConstraintsValidated names the CHECK and foreign key constraints the
+	// database holds NOT VALID and the declaration holds validated, which a
+	// plan completes with VALIDATE CONSTRAINT. A constraint this diff adds, or
+	// drops and adds again, is not here. The reverse, a declaration that allows
+	// NOT VALID against a validated constraint, is no change: the rows already
+	// passed the check the declaration lets the server skip.
+	ConstraintsValidated []ConstraintValidation `json:"constraints_validated"`
+}
+
+// ConstraintValidation names one constraint to validate.
+type ConstraintValidation struct {
+	// TableName is the table the constraint belongs to, qualified the way
+	// [ConstraintRemovalInfo.TableName] is.
+	TableName string `json:"table_name"`
+	// Name is the constraint's name as the database holds it.
+	Name string `json:"name"`
 }
 
 // ConstraintCommentChange is the comment transition of one table constraint.
@@ -1839,7 +1861,8 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 // constraints and answered false, and every check built on HasChanges reported
 // a synced schema (stokaro/ptah#2315).
 func (d *SchemaDiff) hasConstraintChanges() bool {
-	return len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0 || len(d.ConstraintCommentsChanged) > 0
+	return len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0 || len(d.ConstraintCommentsChanged) > 0 ||
+		len(d.ConstraintsValidated) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.

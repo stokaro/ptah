@@ -52,6 +52,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Constraint.Match", Disposition: DDL},
 	{Field: "schemamodel.Constraint.Name", Disposition: DDL},
 	{Field: "schemamodel.Constraint.NotEnforced", Disposition: DDL},
+	{Field: "schemamodel.Constraint.NotValid", Disposition: DDL},
 	{Field: "schemamodel.Constraint.NullsDistinct", Disposition: DDL},
 	{Field: "schemamodel.Constraint.OnDelete", Disposition: DDL},
 	{Field: "schemamodel.Constraint.OnDeleteColumns", Disposition: DDL},

@@ -200,13 +200,14 @@ reader takes them:
 
 The [PostgreSQL](../../databases/postgresql/#constraint-enforcement-and-the-match-type)
 and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED` and a MATCH
-type are kept. Clauses that declare something the model has no field for are
-refused by name
-([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): `NOT VALID`
-in `ALTER TABLE ... ADD`, and the index options `COMMENT`, `INVISIBLE`,
-`IGNORED`, `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
-`USING HASH` after a primary key is refused too. So is a clause a dialect's
-server refuses, such as `ENFORCED` after a `UNIQUE`:
+type are kept. `NOT VALID` after `ALTER TABLE ... ADD` is
+[kept too](../../databases/postgresql/#unvalidated-constraints). Clauses that
+declare something the model has no field for are refused by name
+([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): the index
+options `COMMENT`, `INVISIBLE`, `IGNORED`, `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE`
+and `SECONDARY_ENGINE_ATTRIBUTE`. `USING HASH` after a primary key is refused
+too. So is a clause a dialect's server refuses, such as `ENFORCED` after a
+`UNIQUE`:
 
 ```sql
 CREATE TABLE t (a int, KEY k (a) COMMENT 'lookup');

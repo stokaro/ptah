@@ -1150,6 +1150,8 @@ func applyAlterOperation(
 		return applyRenameConstraint(database, target, typed)
 	case *ast.RenameIndexOperation:
 		return applyRenameIndex(database, target, typed)
+	case *ast.ValidateConstraintOperation:
+		return applyValidateConstraint(target, typed)
 	case *ast.RenameTableOperation:
 		return fmt.Errorf(
 			"%w: ALTER TABLE %s RENAME TO %s: every other declaration names the table by its old name; "+
@@ -1209,6 +1211,8 @@ func describeAlterOperation(op ast.AlterOperation) string {
 		return "DROP CONSTRAINT " + typed.ConstraintName
 	case *ast.RenameColumnOperation:
 		return "RENAME COLUMN " + typed.OldName
+	case *ast.ValidateConstraintOperation:
+		return "VALIDATE CONSTRAINT " + typed.ConstraintName
 	default:
 		return strings.TrimPrefix(fmt.Sprintf("%T", op), "*ast.")
 	}
@@ -1388,6 +1392,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			Type:       "FOREIGN KEY",
 			Table:      ownerTable,
 			Columns:    normalizeSQLIdentifiers(sourcePlatform, constraint.Columns),
+			NotValid:   constraint.NotValid,
 		}
 		if ref := constraint.Reference; ref != nil {
 			fk.ForeignTable = normalizeSQLTableReference(sourcePlatform, ref.Table)
@@ -1410,6 +1415,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			Table:           ownerTable,
 			CheckExpression: constraint.Expression,
 			NotEnforced:     constraint.NotEnforced,
+			NotValid:        constraint.NotValid,
 		}, true
 	case ast.ExcludeConstraint:
 		return schemamodel.Constraint{

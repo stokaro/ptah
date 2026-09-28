@@ -2256,6 +2256,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			constraint.OnDeleteColumns = postgresDeleteColumnsFromDefinition(constraintDefinition)
 			constraint.Match = postgresMatchFromDefinition(constraintDefinition)
 		}
+		constraint.NotValid = postgresNotValidFromDefinition(constraintDefinition)
 
 		constraints = append(constraints, constraint)
 	}
@@ -2264,6 +2265,22 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 	}
 
 	return constraints, nil
+}
+
+// postgresNotValidFromDefinition reports whether pg_get_constraintdef ends a
+// definition with NOT VALID, which it prints last, after the deferral, for a
+// CHECK or foreign key the server has not validated. PostgreSQL 18.6,
+// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 print it the same way. The
+// clause is read rather than pg_constraint.convalidated, because PostgreSQL
+// 18.6 records a NOT ENFORCED constraint with convalidated false, prints no NOT
+// VALID for it, and refuses to validate it.
+//
+// A definition ends in a clause the server writes, never in a name or an
+// expression: a CHECK ends with its parenthesized condition and a foreign key
+// with its referenced columns, an action or a deferral clause. So a suffix
+// cannot come from text the user wrote.
+func postgresNotValidFromDefinition(definition string) bool {
+	return strings.HasSuffix(strings.TrimSpace(definition), " NOT VALID")
 }
 
 func postgresNullsDistinctFromDefinition(definition string) *bool {

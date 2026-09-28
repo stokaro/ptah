@@ -137,6 +137,7 @@ func Fixtures() []Fixture {
 		{Name: "fk-field-not-enforced", Schema: foreignKeyNotEnforcedFixture()},
 		{Name: "constraint-check-not-enforced", Schema: constraintCheckNotEnforcedFixture()},
 		{Name: "constraint-fk-match", Schema: constraintForeignKeyMatchFixture()},
+		{Name: "constraint-check-not-valid", Schema: constraintCheckNotValidFixture()},
 		{Name: "constraint-delete-column-list", Schema: constraintDeleteColumnListFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
@@ -355,6 +356,17 @@ func constraintForeignKeyMatchFixture() schemamodel.Database {
 		StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
 		Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumn: "id",
 		Match: "FULL",
+	}}
+	return db
+}
+
+// constraintCheckNotValidFixture is a CHECK the table may hold NOT VALID. The
+// PostgreSQL family adds it after the table, where the clause is kept.
+func constraintCheckNotValidFixture() schemamodel.Database {
+	db := twoTables()
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "Parent", Table: "parents", Name: "parents_id_positive", Type: "CHECK",
+		CheckExpression: "id > 0", NotValid: true,
 	}}
 	return db
 }

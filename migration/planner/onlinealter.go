@@ -109,8 +109,11 @@ func withValidations(operations []ast.AlterOperation) []ast.AlterOperation {
 	return rewritten
 }
 
+// validatesSeparately reports whether an addition becomes the pair. One the
+// declaration adds NOT VALID is left alone: the author asked for the rows
+// already in the table to stay unchecked, and a validation would check them.
 func validatesSeparately(constraint *ast.ConstraintNode) bool {
-	if constraint == nil || constraint.Name == "" {
+	if constraint == nil || constraint.Name == "" || constraint.NotValid {
 		return false
 	}
 	return constraint.Type == ast.CheckConstraint || constraint.Type == ast.ForeignKeyConstraint
