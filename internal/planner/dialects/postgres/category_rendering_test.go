@@ -492,6 +492,15 @@ func diffCategoryFixtures() []categoryFixture {
 			&schemamodel.Database{},
 		},
 		{
+			// Planned so the renderer refuses it by capability; PostgreSQL has
+			// no invisible index.
+			"IndexVisibilityChanged",
+			&difftypes.SchemaDiff{IndexVisibilityChanged: []difftypes.IndexVisibilityChange{{
+				TableName: "t", Name: "t_idx", Invisible: true,
+			}}},
+			&schemamodel.Database{},
+		},
+		{
 			"ConstraintCommentsChanged",
 			&difftypes.SchemaDiff{ConstraintCommentsChanged: []difftypes.ConstraintCommentChange{{
 				TableName: "t", Name: "t_pos", Current: "old", Desired: "new",

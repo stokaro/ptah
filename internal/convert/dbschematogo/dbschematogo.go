@@ -290,6 +290,7 @@ func convertIndexes(
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
 			Comment:       dbIndex.Comment,
+			Invisible:     dbIndex.Invisible,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
 			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,

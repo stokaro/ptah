@@ -105,14 +105,11 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(nodes, qt.HasLen, 3)
-			replacementDrop, ok := nodes[0].(*ast.DropIndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(replacementDrop.Table, qt.Equals, "users")
-			replacementCreate, ok := nodes[1].(*ast.IndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(replacementCreate.Table, qt.Equals, "users")
-			otherDrop, ok := nodes[2].(*ast.DropIndexNode)
+			c.Assert(nodes, qt.HasLen, 2)
+			table, replacement := replacedIndex(c, nodes[0])
+			c.Assert(table, qt.Equals, "users")
+			c.Assert(replacement.Table, qt.Equals, "users")
+			otherDrop, ok := nodes[1].(*ast.DropIndexNode)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(otherDrop.Table, qt.Equals, "orders")
 		})
@@ -138,15 +135,11 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(nodes, qt.HasLen, 2)
-			drop, ok := nodes[0].(*ast.DropIndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(drop.Name, qt.Equals, "idx_email")
-			c.Assert(drop.Table, qt.Equals, "users")
-			create, ok := nodes[1].(*ast.IndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(create.Name, qt.Equals, "idx_email")
-			c.Assert(create.Table, qt.Equals, "users")
+			c.Assert(nodes, qt.HasLen, 1)
+			table, replacement := replacedIndex(c, nodes[0])
+			c.Assert(table, qt.Equals, "users")
+			c.Assert(replacement.Name, qt.Equals, "idx_email")
+			c.Assert(replacement.Table, qt.Equals, "users")
 		})
 	}
 }
@@ -169,16 +162,14 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 			c := qt.New(t)
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
-			c.Assert(nodes, qt.HasLen, 2)
+			c.Assert(nodes, qt.HasLen, 1)
 
-			drop, ok := nodes[0].(*ast.DropIndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(drop.Name, qt.Equals, "idx_email")
-			c.Assert(drop.Table, qt.Equals, "users")
-			create, ok := nodes[1].(*ast.IndexNode)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(create.Name, qt.Equals, "IDX_Email")
-			c.Assert(create.Table, qt.Equals, "users")
+			// MySQL and MariaDB compare index names without case, so the
+			// statement's DROP INDEX `IDX_Email` drops idx_email.
+			table, replacement := replacedIndex(c, nodes[0])
+			c.Assert(table, qt.Equals, "users")
+			c.Assert(replacement.Name, qt.Equals, "IDX_Email")
+			c.Assert(replacement.Table, qt.Equals, "users")
 		})
 	}
 }
@@ -386,4 +377,17 @@ func sqlServerIndexSemantics(
 		}
 	}
 	return identifier.ForSQLServerCatalog(collation).WithResolvedNames(resolved)
+}
+
+// replacedIndex reads a node the planner built to rebuild an index under its
+// own name, `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`, and answers the
+// table and the index added.
+func replacedIndex(c *qt.C, node ast.Node) (string, *ast.IndexNode) {
+	c.Helper()
+	alter, ok := node.(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("node: %T", node))
+	c.Assert(alter.Operations, qt.HasLen, 1)
+	replace, ok := alter.Operations[0].(*ast.ReplaceIndexOperation)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("operation: %T", alter.Operations[0]))
+	return alter.Name, replace.Index
 }

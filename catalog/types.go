@@ -768,8 +768,12 @@ type Index struct {
 	// HCL reader's `comment` attribute, and the HCL writer's. Without this
 	// field a comment the server reports is dropped between the catalog and the
 	// model, and every surface below it sees an index that has none. Empty
-	// means the object carries no comment.
+	// means the object carries no comment. On MySQL and MariaDB it is
+	// STATISTICS.INDEX_COMMENT, the COMMENT clause after the key's parts.
 	Comment string `json:"comment,omitempty"`
+	// Invisible reports an index the optimizer does not use:
+	// STATISTICS.IS_VISIBLE NO on MySQL, STATISTICS.IGNORED YES on MariaDB.
+	Invisible bool `json:"invisible,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

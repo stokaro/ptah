@@ -41,6 +41,8 @@ func uniqueKeyRebuildSchema() *schemamodel.Database {
 // binary v1.3.0 plans on MySQL 9.7.1. Reading the mark as "spell this as a
 // constraint drop" -- the PostgreSQL-family answer -- would emit
 // ALTER TABLE ... DROP CONSTRAINT here and change a plan that was already right.
+// The key is rebuilt under its own name, so the drop and the add are one
+// statement.
 func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
@@ -49,14 +51,10 @@ func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(nodes, qt.HasLen, 2)
-			drop, isDropIndex := nodes[0].(*ast.DropIndexNode)
-			c.Assert(isDropIndex, qt.IsTrue, qt.Commentf("first node: %T", nodes[0]))
-			c.Assert(drop.Name, qt.Equals, "uq_users_email")
-			c.Assert(drop.Table, qt.Equals, "users")
-			create, isIndex := nodes[1].(*ast.IndexNode)
-			c.Assert(isIndex, qt.IsTrue, qt.Commentf("second node: %T", nodes[1]))
-			c.Assert(create.Name, qt.Equals, "uq_users_email")
+			c.Assert(nodes, qt.HasLen, 1)
+			table, replacement := replacedIndex(c, nodes[0])
+			c.Assert(table, qt.Equals, "users")
+			c.Assert(replacement.Name, qt.Equals, "uq_users_email")
 		})
 	}
 }
@@ -73,10 +71,12 @@ func TestPlanner_MySQLFamilyMarksTheUniquenessLossOnTheDrop(t *testing.T) {
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(nodes, qt.HasLen, 2)
-			drop, isDropIndex := nodes[0].(*ast.DropIndexNode)
-			c.Assert(isDropIndex, qt.IsTrue, qt.Commentf("first node: %T", nodes[0]))
-			c.Assert(drop.EnforcesUniqueConstraint, qt.IsTrue)
+			c.Assert(nodes, qt.HasLen, 1)
+			alter, isAlter := nodes[0].(*ast.AlterTableNode)
+			c.Assert(isAlter, qt.IsTrue, qt.Commentf("node: %T", nodes[0]))
+			replace, isReplace := alter.Operations[0].(*ast.ReplaceIndexOperation)
+			c.Assert(isReplace, qt.IsTrue, qt.Commentf("operation: %T", alter.Operations[0]))
+			c.Assert(replace.DropsUniqueConstraint, qt.IsTrue)
 		})
 	}
 }

@@ -213,9 +213,7 @@ built today would call a normalized default a loss.
 A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
 table, column or index comment. Oracle and ClickHouse keep the first two and
-have no clause for the third. The MySQL family keeps all three, and Ptah does
-not write an index comment there
-([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)).
+have no clause for the third. The MySQL family and PostgreSQL keep all three.
 
 A partial index reports its condition wherever the target drops it. That one is
 worth a gate on its own: the MySQL family and ClickHouse render the index over

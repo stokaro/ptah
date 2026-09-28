@@ -30,6 +30,8 @@ var statisticsColumns = []string{
 	"INDEX_TYPE",
 	"SUB_PART",
 	"COLLATION",
+	"INDEX_COMMENT",
+	"INVISIBLE",
 }
 
 // wideKeyColumnNames is a 16-part key of 64-character column names: 1039 bytes
@@ -88,6 +90,23 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				Method:     "SPATIAL",
 				Columns:    []string{"location"},
 				Definition: "SPATIAL INDEX sx_geo_location ON geo (location)",
+			}},
+		},
+		{
+			// MySQL 8.4.11 keeps the comment in STATISTICS.INDEX_COMMENT and an
+			// INVISIBLE index as IS_VISIBLE NO (stokaro/ptah#3853).
+			name: "a comment and an invisible index",
+			rows: [][]driver.Value{
+				{"k_a", "t", "a", int64(1), "BTREE", nil, "A", "lookup", int64(1)},
+			},
+			want: []catalog.Index{{
+				Name:       "k_a",
+				TableName:  "t",
+				Method:     "BTREE",
+				Columns:    []string{"a"},
+				Definition: "BTREE INDEX k_a ON t (a)",
+				Comment:    "lookup",
+				Invisible:  true,
 			}},
 		},
 		{
@@ -376,15 +395,23 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 	}
 }
 
-// statisticsDB answers the index query with rows and refuses every other query,
-// so a projection change that stops selecting key parts fails here rather than
-// silently reading something else.
+// statisticsDB answers the index query with rows, and the question which
+// visibility column STATISTICS has with MySQL's, and refuses every other
+// query, so a projection change that stops selecting key parts fails here
+// rather than silently reading something else.
 func statisticsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		queried := strings.Contains(query, "FROM information_schema.STATISTICS") &&
-			strings.Contains(query, "s.SEQ_IN_INDEX")
-		c.Assert(queried, qt.IsTrue, qt.Commentf("query: %s", query))
-		return dbtest.QueryResult{Columns: statisticsColumns, Rows: rows}, nil
+		visibility := strings.Contains(query, "FROM information_schema.COLUMNS") &&
+			strings.Contains(query, "'IS_VISIBLE', 'IGNORED'")
+		keyParts := strings.Contains(query, "FROM information_schema.STATISTICS") &&
+			strings.Contains(query, "s.SEQ_IN_INDEX") &&
+			strings.Contains(query, "CASE WHEN s.IS_VISIBLE = 'NO' THEN 1 ELSE 0 END")
+		c.Assert(visibility || keyParts, qt.IsTrue, qt.Commentf("query: %s", query))
+		answers := map[bool]dbtest.QueryResult{
+			true:  {Columns: []string{"COLUMN_NAME"}, Rows: [][]driver.Value{{"IS_VISIBLE"}}},
+			false: {Columns: statisticsColumns, Rows: rows},
+		}
+		return answers[visibility], nil
 	})
 }
 

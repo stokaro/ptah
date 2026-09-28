@@ -552,6 +552,7 @@ func indexAttrs(index schemamodel.Index) []attr {
 		{name: "table", value: index.TableName, set: index.TableName != ""},
 		{name: "granularity", value: strconv.Itoa(index.Granularity), set: index.Granularity > 0},
 		{name: "comment", value: index.Comment, set: index.Comment != ""},
+		{name: "invisible", value: strconv.FormatBool(index.Invisible), set: index.Invisible},
 	}
 }
 

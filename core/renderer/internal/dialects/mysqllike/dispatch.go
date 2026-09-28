@@ -189,6 +189,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.DropConstraintOperation,
 		*ast.RenameConstraintOperation,
 		*ast.RenameIndexOperation,
+		*ast.AlterIndexVisibilityOperation,
+		*ast.ReplaceIndexOperation,
 		*ast.AddIndexOperation,
 		*ast.AddSkippingIndexOperation,
 		*ast.RenameTableOperation,

@@ -38,6 +38,9 @@ type Parser struct {
 	// same reason lastGuard does: the keyword handler reads it, and the node it
 	// belongs to is not built until the column list has been read too.
 	foreignKeyIndexName string
+	// keyOptions are the COMMENT and visibility after the parts of the key
+	// being read; see [Parser.readKeyOptions].
+	keyOptions keyOptions
 	// indexAccessMethod is the USING clause the element being read asked for,
 	// and it lives here for the same reason.
 	indexAccessMethod string
@@ -4705,6 +4708,15 @@ func (p *Parser) uniqueCarriesAccessMethod(constraint *ast.ConstraintNode) bool 
 	return constraint.Type == ast.UniqueConstraint && p.indexAccessMethod != ""
 }
 
+// uniqueCarriesIndexOptions reports whether a table-body UNIQUE carries a
+// COMMENT or is invisible, which a schemamodel.Constraint cannot hold either.
+// It takes the promotion [Parser.uniqueCarriesAccessMethod] takes: MySQL
+// 8.4.11 and MariaDB 11.8.9 build a UNIQUE key as an index and keep both in
+// STATISTICS.
+func (p *Parser) uniqueCarriesIndexOptions(constraint *ast.ConstraintNode) bool {
+	return constraint.Type == ast.UniqueConstraint && p.keyOptions.carriesIndexOptions()
+}
+
 // isFunctionalUnique reports whether a table element is a UNIQUE KEY carrying a
 // functional key part, which is read as a unique INDEX rather than refused.
 //
@@ -4997,6 +5009,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, fmt.Errorf("expected constraint type, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
+	p.keyOptions = keyOptions{}
 	isIndex, indexMethod, err := p.readTableElementKind(constraint)
 	if err != nil {
 		return nil, nil, err
@@ -5039,7 +5052,8 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	// were a primary one.
 	uniqueIndex := false
 	if !isIndex {
-		if isFunctionalUnique(constraint) || p.uniqueCarriesAccessMethod(constraint) {
+		if isFunctionalUnique(constraint) || p.uniqueCarriesAccessMethod(constraint) ||
+			p.uniqueCarriesIndexOptions(constraint) {
 			isIndex, uniqueIndex = true, true
 		} else if err := refuseFunctionalConstraintPart(constraint); err != nil {
 			return nil, nil, err
@@ -5079,9 +5093,11 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 			// SPATIAL and FULLTEXT take no USING clause -- so one field holds
 			// whichever the element asked for. mysqlindex reads both questions
 			// out of it.
-			Type:   cmp.Or(indexMethod, p.indexAccessMethod),
-			Parser: parserName,
-			Unique: uniqueIndex,
+			Type:      cmp.Or(indexMethod, p.indexAccessMethod),
+			Parser:    parserName,
+			Unique:    uniqueIndex,
+			Comment:   p.keyOptions.comment,
+			Invisible: p.keyOptions.invisible,
 		}, nil
 	}
 
@@ -5975,6 +5991,9 @@ func (p *Parser) parseAlterOperation() ([]ast.AlterOperation, error) {
 	case "DROP":
 		return oneOperation(p.parseDropOperation())
 	case "ALTER":
+		if p.readsKeyOptions() && (p.nextIsWord("INDEX") || p.nextIsWord("KEY")) {
+			return oneOperation(p.parseAlterIndexVisibility())
+		}
 		return oneOperation(p.parseAlterColumnOperation())
 	case "MODIFY":
 		return oneOperation(p.parseModifyOperation())
@@ -6634,6 +6653,32 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 // what MODIFY states on MySQL. A document read without a dialect takes the
 // action form when an action keyword follows the name, and the definition
 // otherwise.
+// parseAlterIndexVisibility reads `ALTER INDEX name VISIBLE | INVISIBLE`, as
+// MySQL spells it, or `ALTER INDEX name [NOT] IGNORED`, as MariaDB does; each
+// engine answers ERROR 1064 to the other's words. MariaDB takes KEY for INDEX.
+func (p *Parser) parseAlterIndexVisibility() (ast.AlterOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	p.advance()
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected index name after ALTER INDEX: %w", err)
+	}
+	p.skipWhitespace()
+	start := p.current.Start
+	keyword := strings.ToUpper(p.current.Value)
+	if p.current.Type != lexer.TokenIdentifier || !p.atVisibilityWord(keyword) {
+		return nil, fmt.Errorf("expected VISIBLE, INVISIBLE, IGNORED or NOT IGNORED after ALTER INDEX %s at position %d",
+			name, start)
+	}
+	p.keyOptions = keyOptions{}
+	if err := p.readKeyVisibility(indexElement, keyword, start); err != nil {
+		return nil, err
+	}
+	return &ast.AlterIndexVisibilityOperation{IndexName: name, Invisible: p.keyOptions.invisible}, nil
+}
+
 func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
 	p.advance()
 	p.skipWhitespace()
@@ -6848,6 +6893,13 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	if err != nil {
 		return nil, err
 	}
+	// The MySQL family's options after the parts: a USING clause, a COMMENT
+	// and the visibility, which `CREATE INDEX` takes as a table element does.
+	p.keyOptions, p.indexAccessMethod = keyOptions{}, ""
+	if err := p.readKeyOptions(indexElement, createIndexPrefix(indexType)); err != nil {
+		return nil, err
+	}
+	indexType = cmp.Or(p.indexAccessMethod, indexType)
 	p.skipWhitespace()
 	includeColumns, err := p.parseCreateIndexIncludeColumns()
 	if err != nil {
@@ -6874,7 +6926,20 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.Condition = condition
 	index.Concurrently = concurrently
 	index.IfNotExists = ifNotExists
+	index.Comment = p.keyOptions.comment
+	index.Invisible = p.keyOptions.invisible
 	return index, nil
+}
+
+// createIndexPrefix is the FULLTEXT or SPATIAL prefix of a CREATE INDEX, which
+// takes no access method, and empty for any other kind.
+func createIndexPrefix(indexType string) string {
+	switch strings.ToUpper(indexType) {
+	case "FULLTEXT", "SPATIAL":
+		return strings.ToUpper(indexType)
+	default:
+		return ""
+	}
 }
 
 func (p *Parser) parseCreateIndexCondition() string {

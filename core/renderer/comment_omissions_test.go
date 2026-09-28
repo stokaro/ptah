@@ -54,7 +54,7 @@ func omissionSubjects(c *qt.C, omissions []renderer.Omission) []string {
 // covers the comment half of stokaro/ptah#2983.
 //
 // The rows are measured against what each renderer emits, not assumed: MySQL
-// stores a table and a column comment and has no clause here for an index one;
+// and MariaDB store all three, the index comment in STATISTICS.INDEX_COMMENT;
 // SQLite and SQL Server store none of the three and write two of them as line
 // comments; Oracle and ClickHouse store the first two.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryCommentATargetDrops(t *testing.T) {
@@ -64,14 +64,14 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryCommentATargetDr
 		want    []string
 	}{
 		{
-			name:    "mysql keeps the table and column comments",
+			name:    "mysql keeps all three",
 			dialect: platform.MySQL,
-			want:    []string{"index idx_items_code comment"},
+			want:    make([]string, 0),
 		},
 		{
-			name:    "mariadb keeps the table and column comments",
+			name:    "mariadb keeps all three",
 			dialect: platform.MariaDB,
-			want:    []string{"index idx_items_code comment"},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "sqlite stores none of them",

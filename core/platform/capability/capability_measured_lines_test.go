@@ -210,6 +210,7 @@ func measuredLines() map[string]measuredLine {
 				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
 				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
 				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
+				capability.InvisibleIndexes:       invisibleIndexesCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -326,6 +327,7 @@ func measuredLines() map[string]measuredLine {
 				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
 				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
 				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
+				capability.InvisibleIndexes:       invisibleIndexesCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -443,6 +445,7 @@ func measuredLines() map[string]measuredLine {
 				capability.NotEnforcedForeignKeys: enforcementAndMatchCarried,
 				capability.ForeignKeyMatchFull:    enforcementAndMatchCarried,
 				capability.ForeignKeyMatchPartial: enforcementAndMatchCarried,
+				capability.InvisibleIndexes:       invisibleIndexesCarried,
 				capability.DeferrableKeys: "this run predates the key and sent no deferrable key. It was " +
 					"measured on 2026-09-27 against PostgreSQL 18.6, CockroachDB v26.3.2, YugabyteDB 2026.1.2 " +
 					"and Oracle Free 23, and carried here from those runs (stokaro/ptah#3824)",
@@ -537,6 +540,13 @@ const enforcementAndMatchCarried = "this run predates the key and sent no NOT EN
 	"It was measured on 2026-09-27 against PostgreSQL 17.11 and 18.6, MySQL 8.4.11 and 9.7.2, " +
 	"MariaDB 11.8.9, CockroachDB v26.3.2, YugabyteDB 2026.1.2 and SQLite 3.51, and carried here " +
 	"from those runs (stokaro/ptah#3853)"
+
+// invisibleIndexesCarried is the reason a line carries the invisible-index key:
+// its run predates it.
+const invisibleIndexesCarried = "this run predates the key and sent no invisible index. It was measured " +
+	"on 2026-09-28 against MySQL 8.4.11, 9.7.2 and 26.7.0, which record `CREATE INDEX ... INVISIBLE` " +
+	"as IS_VISIBLE NO, MariaDB 11.8.9, which records `CREATE INDEX ... IGNORED` as IGNORED YES, and " +
+	"PostgreSQL 18.6, which answers a syntax error, and carried here from those runs (stokaro/ptah#3853)"
 
 // objectCommentCarried is why the five object-comment keys are carried on every
 // measured line: the run named there predates them.

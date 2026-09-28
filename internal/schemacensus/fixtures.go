@@ -87,6 +87,7 @@ func Fixtures() []Fixture {
 		{Name: "index-concurrent", Schema: indexConcurrentFixture()},
 		{Name: "index-clickhouse", Schema: indexClickHouseFixture()},
 		{Name: "index-fulltext", Schema: indexFullTextFixture()},
+		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "domain", Schema: domainFixture()},
 		{Name: "composite", Schema: compositeFixture()},
@@ -1036,6 +1037,16 @@ func indexFullTextFixture() schemamodel.Database {
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
 		Type: "GIN", Operator: "gin_trgm_ops", Parser: "ngram",
 		RequiresExtensions: []string{"pg_trgm"},
+	}}
+	return db
+}
+
+// indexInvisibleFixture is an index the optimizer does not use, which the
+// MySQL family writes as INVISIBLE or IGNORED (stokaro/ptah#3853).
+func indexInvisibleFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Invisible: true,
 	}}
 	return db
 }

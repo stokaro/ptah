@@ -247,6 +247,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Index.Fields", Disposition: DDL},
 	{Field: "schemamodel.Index.Granularity", Disposition: DDL},
 	{Field: "schemamodel.Index.IncludeColumns", Disposition: DDL},
+	{Field: "schemamodel.Index.Invisible", Disposition: DDL},
 	{Field: "schemamodel.Index.Name", Disposition: DDL},
 	{Field: "schemamodel.Index.NullsDistinct", Disposition: DDL},
 	{Field: "schemamodel.Index.Operator", Disposition: DDL},

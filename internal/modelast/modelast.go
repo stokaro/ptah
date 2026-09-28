@@ -1199,6 +1199,7 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	if index.Comment != "" {
 		indexNode.Comment = index.Comment
 	}
+	indexNode.Invisible = index.Invisible
 
 	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
 	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
