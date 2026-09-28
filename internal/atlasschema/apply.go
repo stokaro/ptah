@@ -703,6 +703,11 @@ func loadDesiredApplySchema(
 			return nil, err
 		}
 	}
+	// Before the set is resolved, because a migration directory replays on the
+	// dev server as it resolves.
+	if err := refuseSQLBesideOneDatabaseOnDevServer(conn.Info(), opts.DevURL, set); err != nil {
+		return nil, err
+	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
 		Dialect:           conn.Info().Dialect,
 		DialectFlag:       "--url",
@@ -782,6 +787,23 @@ func loadAndValidateDesiredApplySchema(
 	return desired, nil
 }
 
+// desiredApplySet classifies the --to sources the way the load will, for a
+// refusal that has to be decided before anything is contacted. A source the
+// load would refuse classifies as nothing, and the load reports it.
+func desiredApplySet(opts ApplyRuntimeOptions) atlassource.Set {
+	if opts.PreparedTo != nil {
+		return *opts.PreparedTo
+	}
+	if opts.Desired != nil {
+		return atlassource.Set{}
+	}
+	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	if err != nil {
+		return atlassource.Set{}
+	}
+	return set
+}
+
 // PrepareApply validates Atlas schema apply runtime inputs and builds the
 // executable apply plan for the already-open target database connection.
 func PrepareApply(
@@ -795,10 +817,7 @@ func PrepareApply(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
-	if err := RefuseDevServer(opts.DevURL); err != nil {
-		return ApplyRuntimePlan{}, err
-	}
-	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL); err != nil {
+	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(opts)); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 

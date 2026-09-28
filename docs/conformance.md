@@ -797,6 +797,16 @@ creates or drops databases the one-database side never read: measured on
 ERROR 1007 when run, and the reverse plans `DROP DATABASE more`. See
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-realm-beside-one-database-on-a-dev-server).
 
+`schema apply` beside a dev server plans as Atlas CE does and rehearses the
+plan there before the target is touched; Atlas CE does not rehearse. Measured
+on 2026-09-28 against MySQL 8.4.11 and MariaDB 11.8.9, with a plan whose CHECK
+calls `RAND()`: Ptah exits 1 after the rehearsal with the server's error
+(ERROR 3814 on MySQL, 1901 on MariaDB), the target and the dev server
+unchanged, and Atlas CE stops on the target with the same error. A dev
+database beside a whole server is refused, including a document declaring one
+database, which Atlas CE plans. See
+[Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-dev-database-beside-a-whole-server).
+
 ### `docker://` dev databases are provisioned, with two forms deliberately refused
 
 Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)

@@ -136,6 +136,7 @@ own measurement conditions.
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
+| [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 
 ## A `--config` selection naming more than one file
@@ -1070,6 +1071,34 @@ one database is refused by both, in the binary's words.
 
 The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse.
+
+**Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
+
+## A dev database beside a whole server
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `schema apply` refuses a `--dev-url` naming one database
+beside a target URL naming none, before the dev database is contacted. A plan
+for a whole server creates and drops databases, and Ptah rehearses the plan
+before it applies it. A rehearsal on one dev database would reach the other
+databases of its server, so it needs a whole dev server, a `--dev-url` naming
+no database. Where the binary refuses the pair, the sentence is the binary's.
+
+Measured on 2026-09-28 against MySQL 8.4.11 and MariaDB 11.8.9, with the same
+results on both. The target server holds `app`; the dev URL names `devdb`:
+
+| `--to` | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| an HCL document declaring `app` and `more` | exit `1`, `cannot use HCL with more than 1 schema when dev-url is limited to schema "devdb"` | exit `1`, the same sentence |
+| an HCL document declaring `app` alone | exit `0`, plans `ALTER TABLE app.t ADD COLUMN name` | exit `1`, a dev database beside a whole server is refused |
+| a SQL file creating `app` and `more` | exit `1`, `cannot diff a schema "devdb" with a database connection`, and `app` and `more` left on the dev database's server | exit `1`, the same sentence, the dev server untouched |
+| a migration directory creating them | exit `1`, the same, with the same databases left | exit `1`, the same sentence, the dev server untouched |
+
+The binary replays SQL onto the server the dev database is on, creating
+databases outside it, and leaves them there when it refuses. Ptah refuses
+before it connects. The divergence is stricter, not looser: `ptah-compat`
+exits `1` where the binary exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
 

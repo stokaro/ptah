@@ -405,14 +405,21 @@ func withAtlasSchemaApplyPolicy(
 	return runtime
 }
 
-// checkAtlasSchemaApplyDevURL refuses a --dev-url this verb cannot use before
-// anything is contacted: one naming no driver, and a dev server, which schema
-// apply does not take yet; see [atlasschema.RefuseDevServer].
+// checkAtlasSchemaApplyDevURL refuses a --dev-url naming no driver before
+// anything is contacted.
 func checkAtlasSchemaApplyDevURL(devURL string) error {
-	if err := atlasDevURLDriverDiagnostic(devURL); err != nil {
-		return err
+	return atlasDevURLDriverDiagnostic(devURL)
+}
+
+// classifiedAtlasApplyTo classifies --to for a refusal decided before the dev
+// database is contacted. validateAtlasSchemaApplyOptions refused a source that
+// does not classify already, so an error here classifies as nothing.
+func classifiedAtlasApplyTo(opts atlasSchemaApplyOptions, projectEnv atlassource.ProjectEnv) atlassource.Set {
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	if err != nil {
+		return atlassource.Set{}
 	}
-	return atlasschema.RefuseDevServer(devURL)
+	return set
 }
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
@@ -1348,18 +1355,18 @@ func validateAtlasSchemaApplyOptions(
 const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
 
 // checkAtlasApplyTarget holds the refusals schema apply reports once it has
-// contacted the target and before it takes the apply lock: a dev database on
-// the target's server, a target the strict CE policy cannot read, and a dev
-// database that is not clean when the target is a server. A file target's dev
-// database is checked before the connection, because opening the file
-// creates it.
+// contacted the target and before it takes the apply lock: a dev database
+// beside a whole-server target, a target the strict CE policy cannot read, and
+// a dev database that is not clean when the target is a server. A file
+// target's dev database is checked before the connection, because opening the
+// file creates it.
 func checkAtlasApplyTarget(
 	cmd *cobra.Command,
 	conn *dbschema.DatabaseConnection,
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
-	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL); err != nil {
+	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv)); err != nil {
 		return err
 	}
 	if opts.policy.IsStrictCE() {

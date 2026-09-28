@@ -8,40 +8,86 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/schemafile"
 )
 
 // ErrServerDevDatabase refuses a dev database beside a whole MySQL or MariaDB
-// server. A dev database for a server replays the desired state as a server,
-// creating and dropping databases, and a dev server is not taken yet
-// (stokaro/ptah#3789).
+// server. A plan for a server creates and drops databases, so its rehearsal
+// runs on a whole dev server, which is claimed empty and emptied again; a dev
+// database is claimed alone, and a server plan rehearsed there would reach the
+// other databases of its server (stokaro/ptah#3789, stokaro/ptah#3885). Where
+// the pinned community binary v1.3.0 refuses the pair it is refused in its
+// words; see [RefuseServerDevDatabase].
 var ErrServerDevDatabase = errors.New(
-	"a dev database for a whole MySQL or MariaDB server is not supported yet; " +
-		"apply an HCL desired state without --dev-url, or name a database in --url")
+	"a dev database beside a whole MySQL or MariaDB server is refused: the plan creates and drops databases, " +
+		"and its rehearsal needs a whole dev server; name no database in --dev-url")
 
-// RefuseServerDevDatabase answers [ErrServerDevDatabase] when info is a
-// connection to a whole MySQL or MariaDB server and devURL names a dev
-// database, before the dev database is contacted.
-func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string) error {
-	if strings.TrimSpace(devURL) == "" || !info.WholeServer {
+// RefuseServerDevDatabase refuses a dev database beside a whole MySQL or
+// MariaDB server, before the dev database is contacted.
+//
+// The sentence is the pinned community binary v1.3.0's where it refuses the
+// same pair, measured on MySQL 8.4.11 and MariaDB 11.8.9 with `schema apply -u
+// <server> --dev-url mysql://…/devdb`. A SQL file or a migration directory is
+// `cannot diff a schema "devdb" with a database connection`, which the binary
+// prints after it replayed the SQL and left its databases on the dev server. A
+// document declaring several databases is `cannot use HCL with more than 1
+// schema when dev-url is limited to schema "devdb"`. A document declaring one
+// database the binary plans, and Ptah refuses with [ErrServerDevDatabase],
+// because its plan is rehearsed and the rehearsal needs a whole dev server.
+func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atlassource.Set) error {
+	devDatabase, beside := devDatabaseBesideServer(info, devURL)
+	switch {
+	case !beside:
 		return nil
+	case devDatabase == "":
+		return ErrServerDevDatabase
+	case runsSQL(desired):
+		return &ServerScopeMismatchError{Database: devDatabase}
+	case declaresSeveralDatabases(info.Dialect, desired):
+		return &OneDatabaseBesideDocumentError{Flag: "dev-url", Database: devDatabase}
+	default:
+		return ErrServerDevDatabase
 	}
-	return ErrServerDevDatabase
 }
 
-// ErrDevServerUnsupported refuses a dev server, a --dev-url that names no
-// MySQL or MariaDB database, on the verb that does not take one yet: schema
-// apply rehearses its plan on one dev database (stokaro/ptah#3885).
-var ErrDevServerUnsupported = errors.New(
-	"a --dev-url naming no MySQL or MariaDB database is a whole dev server, which schema apply " +
-		"does not take yet; name a database in --dev-url")
+// declaresSeveralDatabases reports a declarative document that declares more
+// than one database. It reads the files, which needs no dev database. A
+// document that does not read answers false, and the refusal is
+// [ErrServerDevDatabase] either way.
+func declaresSeveralDatabases(dialect string, desired atlassource.Set) bool {
+	if !desired.DeclarativeLocalFiles() {
+		return false
+	}
+	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect})
+	return err == nil && len(schema.Schemas) > 1
+}
 
-// RefuseDevServer answers [ErrDevServerUnsupported] for a dev URL that names
-// no MySQL-family database, before anything is contacted.
-func RefuseDevServer(devURL string) error {
-	if !isDevServer(devURL) {
+// devDatabaseBesideServer reports a dev URL that names a database beside a
+// connection to a whole MySQL or MariaDB server, and the database it names,
+// empty when the URL is not a MySQL-family one.
+func devDatabaseBesideServer(info catalog.ServerInfo, devURL string) (string, bool) {
+	if strings.TrimSpace(devURL) == "" || !info.WholeServer || isDevServer(devURL) {
+		return "", false
+	}
+	parsed, err := atlasurl.ParseMySQLURL(strings.TrimSpace(devURL))
+	if err != nil {
+		return "", true
+	}
+	return parsed.Database(), true
+}
+
+// refuseSQLBesideOneDatabaseOnDevServer refuses SQL beside a target naming one
+// database, on a whole dev server. The pinned community binary v1.3.0 runs the
+// SQL on the dev server as a server and refuses the pair with `cannot diff a
+// database connection with a schema "app"`, measured on MySQL 8.4.11 and
+// MariaDB 11.8.9 with `schema apply -u mysql://…/app --to realm.sql --dev-url
+// <dev server>`; a document declaring one database is taken and rehearsed in a
+// database of the target's name on the dev server.
+func refuseSQLBesideOneDatabaseOnDevServer(info catalog.ServerInfo, devURL string, desired atlassource.Set) error {
+	if !isDevServer(devURL) || info.WholeServer || !runsSQL(desired) {
 		return nil
 	}
-	return ErrDevServerUnsupported
+	return &ServerScopeMismatchError{Database: info.Schema, DatabaseIsCurrent: true}
 }
 
 // isDevServer reports whether devURL is a whole dev server: a MySQL-family URL
