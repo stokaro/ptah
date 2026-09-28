@@ -1503,6 +1503,9 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredPrimaryKeyMethod(dialect, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredConstraintMethods(dialect, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredEnforcementAndMatch(dialect, caps, database); err != nil {
 		return err
 	}
@@ -1528,6 +1531,26 @@ func validateDeclaredPrimaryKeyMethod(dialect string, database *schemamodel.Data
 		if err := primaryKeyMethodError(dialect, owner, constraint.UsingMethod); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateDeclaredConstraintMethods refuses an access method on a UNIQUE,
+// CHECK or FOREIGN KEY constraint. Every schema source accepts `using` on any
+// constraint, and only an EXCLUDE constraint and a primary key take a method;
+// on the other kinds the constraint was built without it and nothing said so
+// (stokaro/ptah#3958). A primary key's method is
+// [validateDeclaredPrimaryKeyMethod]'s.
+func validateDeclaredConstraintMethods(dialect string, database *schemamodel.Database) error {
+	for _, constraint := range database.Constraints {
+		kind := strings.ToUpper(strings.TrimSpace(constraint.Type))
+		method := strings.TrimSpace(constraint.UsingMethod)
+		if method == "" || kind == ast.ExcludeConstraint.String() || kind == ast.PrimaryKeyConstraint.String() {
+			continue
+		}
+		return fmt.Errorf("%w: %s: the %s constraint %q on %q asks for USING %s, and a %s constraint takes no access method",
+			ptaherr.ErrUnsupportedFeature, platform.NormalizeDialect(dialect), kind, constraint.Name,
+			constraintOwnerName(database.Tables, constraint), method, kind)
 	}
 	return nil
 }

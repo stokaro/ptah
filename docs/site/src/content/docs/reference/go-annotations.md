@@ -324,7 +324,7 @@ Declares a table constraint.
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE. |
-| `using` | No | EXCLUDE index method. |
+| `using` | No | Access method: an EXCLUDE constraint's index method, or a PRIMARY KEY's on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
 
 `include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
 on different targets:
