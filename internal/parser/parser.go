@@ -45,6 +45,9 @@ type Parser struct {
 	// where `NOT VALID` leaves the rows already in the table unchecked; in a
 	// CREATE TABLE there are none, and the clause changes nothing.
 	addingConstraint bool
+	// addedNotValid is set when the constraint ALTER TABLE ... ADD reads ends
+	// in `NOT VALID`, and the ADD operation carries it onto the constraint.
+	addedNotValid bool
 	// columnChecks are the CHECKs the table body being read wrote on its
 	// columns, the ones read at table level included. MySQL's rule for them
 	// needs every column of the table, so they are checked once the body is
@@ -5920,9 +5923,35 @@ func (p *Parser) parseAlterOperation() ([]ast.AlterOperation, error) {
 		return oneOperation(p.parseModifyOperation())
 	case "RENAME":
 		return oneOperation(p.parseRenameOperation())
+	case "VALIDATE":
+		return oneOperation(p.parseValidateConstraintOperation())
 	default:
 		return nil, fmt.Errorf("unsupported ALTER operation: %s at position %d", operation, p.current.Start)
 	}
+}
+
+// parseValidateConstraintOperation reads VALIDATE CONSTRAINT name, which the
+// PostgreSQL family takes to check the rows a constraint added NOT VALID left
+// unchecked.
+func (p *Parser) parseValidateConstraintOperation() (ast.AlterOperation, error) {
+	start := p.current.Start
+	if err := p.expect(lexer.TokenIdentifier, "VALIDATE"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "CONSTRAINT"); err != nil {
+		return nil, fmt.Errorf("expected CONSTRAINT after VALIDATE: %w", err)
+	}
+	if !takesNotValid(p.dialect) {
+		return nil, fmt.Errorf("VALIDATE CONSTRAINT at position %d: the %s dialect takes no VALIDATE CONSTRAINT",
+			start, dialectName(p.dialect))
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name: %w", err)
+	}
+	return &ast.ValidateConstraintOperation{ConstraintName: name}, nil
 }
 
 func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
@@ -6045,10 +6074,14 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 
 	if p.isAlterAddConstraintStart() {
 		p.addingConstraint = true
+		p.addedNotValid = false
 		constraint, index, err := p.parseTableConstraint()
 		p.addingConstraint = false
 		if err != nil {
 			return nil, err
+		}
+		if constraint != nil {
+			constraint.NotValid = p.addedNotValid
 		}
 		// The gate admits an index for the MySQL family, so one arrives here
 		// rather than being refused as it was while the gate held only the

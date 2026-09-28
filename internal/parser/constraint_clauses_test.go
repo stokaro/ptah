@@ -235,12 +235,6 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `NOT VALID at position 36: it follows a table constraint, not a column`,
 		},
 		{
-			name:    "NOT VALID in ALTER TABLE",
-			dialect: platform.Postgres,
-			sql:     "ALTER TABLE c ADD CONSTRAINT c_ck CHECK (a > 0) NOT VALID;",
-			wantErr: `NOT VALID at position 48: a CHECK added without checking the rows already in the table is not modeled.*`,
-		},
-		{
 			name:    "NOT VALID on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (a int, CONSTRAINT ck CHECK (a > 0) NOT VALID);",

@@ -122,9 +122,19 @@ func ConstraintsWithSemantics(
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
 				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
 				diff.ConstraintsAdded = appendConstraintAddition(diff.ConstraintsAdded, genConstraint, semantics)
+				continue
+			}
+			if needsValidation(genConstraint, dbConstraint) {
+				diff.ConstraintsValidated = append(diff.ConstraintsValidated, difftypes.ConstraintValidation{
+					TableName: dbConstraint.QualifiedTableName(),
+					Name:      dbConstraint.Name,
+				})
 			}
 		}
 	}
+	slices.SortFunc(diff.ConstraintsValidated, func(a, b difftypes.ConstraintValidation) int {
+		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
+	})
 
 	// Sort for consistent output. One list per direction now, ordered by host
 	// then name, so a plan lists its constraint work the same way whatever the
@@ -319,8 +329,17 @@ func appendConstraintAddition(
 		Initially:       genConstraint.Initially,
 		Match:           genConstraint.Match,
 		NotEnforced:     genConstraint.NotEnforced,
+		NotValid:        genConstraint.NotValid,
 		Identity:        constraintIdentity(genConstraint.Table, genConstraint.Name, semantics),
 	})
+}
+
+// needsValidation reports whether the database holds NOT VALID a CHECK or
+// foreign key the declaration holds validated. The other direction is no
+// change: a declaration that allows NOT VALID is satisfied by a constraint the
+// server has validated, and one it has not.
+func needsValidation(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
+	return dbConstraint.NotValid && !genConstraint.NotValid
 }
 
 // constraintDefinitionsChanged compares constraint definitions between generated and database schemas

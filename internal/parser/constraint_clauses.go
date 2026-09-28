@@ -61,8 +61,7 @@ func takesOneEnforcement(dialect string) bool {
 // server does not check, which the model carries; `ENFORCED` is what a
 // constraint is without it. `NOT VALID` in a CREATE TABLE leaves the
 // constraint validated, as `pg_constraint.convalidated` reports, and in ALTER
-// TABLE it keeps existing rows unchecked, which the model has no field for, so
-// that one is refused by name.
+// TABLE it keeps existing rows unchecked, which the added constraint carries.
 func (p *Parser) readConstraintAttributes(kind string, enforced *enforcement) error {
 	for {
 		p.skipWhitespace()
@@ -137,24 +136,34 @@ func refuseEnforcement(dialect, kind, clause string, start int) error {
 	}
 }
 
-// readNotValid reads `NOT VALID` after a table constraint of kind.
+// readNotValid reads `NOT VALID` after a table constraint of kind. After ALTER
+// TABLE ... ADD it marks the constraint added; in a CREATE TABLE it changes
+// nothing, because PostgreSQL 18.6, CockroachDB v26.3.2 and YugabyteDB
+// 2026.1.2 record such a constraint as validated.
 func (p *Parser) readNotValid(kind string, start int) error {
-	dialect := platform.NormalizeDialect(p.dialect)
 	switch {
 	case kind == primaryKeyElement || kind == uniqueElement || kind == excludeElement:
 		return fmt.Errorf("NOT VALID at position %d: %s constraints cannot be marked NOT VALID", start, kind)
 	case kind != checkElement && kind != foreignKeyElement:
 		return fmt.Errorf("NOT VALID at position %d: an index takes no NOT VALID clause", start)
-	case dialect != "" && dialect != platform.Postgres:
+	case !takesNotValid(p.dialect):
 		return fmt.Errorf("NOT VALID at position %d: the %s dialect takes no NOT VALID clause", start, dialectName(p.dialect))
-	case p.addingConstraint:
-		return fmt.Errorf(
-			"NOT VALID at position %d: a %s added without checking the rows already in the table is not modeled (%s); "+
-				"write the constraint without NOT VALID, and add it NOT VALID in a migration",
-			start, kind, unmodeledClauses,
-		)
 	default:
+		p.addedNotValid = p.addingConstraint
 		return nil
+	}
+}
+
+// takesNotValid reports whether the dialect takes `NOT VALID` after a CHECK or
+// a foreign key and `VALIDATE CONSTRAINT` to complete it. PostgreSQL 18.6,
+// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 take both. A document read with
+// no dialect takes what any of them does.
+func takesNotValid(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case "", platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return true
+	default:
+		return false
 	}
 }
 

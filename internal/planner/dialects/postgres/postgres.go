@@ -1972,6 +1972,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, 
 	// added above takes its comment from the statement that adds it.
 	result = changeConstraintComments(result, diff)
 
+	// 10.8. Validate the constraints the database holds NOT VALID and the
+	// declaration holds validated.
+	result = validateConstraints(result, diff)
+
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
 
@@ -3694,6 +3698,7 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 			Name:        add.Name,
 			Expression:  add.CheckExpression,
 			NotEnforced: add.NotEnforced,
+			NotValid:    add.NotValid,
 		}
 	case "UNIQUE":
 		if len(add.Columns) == 0 {
@@ -3834,6 +3839,7 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 	// Without it a commented foreign key is added bare, and the next
 	// comparison plans its comment on its own.
 	constraint.Comment = add.Comment
+	constraint.NotValid = add.NotValid
 	return &ast.AlterTableNode{
 		Name:       add.TableName,
 		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},

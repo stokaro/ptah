@@ -18,6 +18,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
@@ -899,6 +900,9 @@ func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 		return nil
 	}
 	node.Comment = constraint.Comment
+	// Only a CHECK or a foreign key can stay unvalidated, and the renderer
+	// writes the clause only where a constraint is added to a table.
+	node.NotValid = constraint.NotValid && (node.Type == ast.CheckConstraint || node.Type == ast.ForeignKeyConstraint)
 	return node
 }
 
@@ -959,6 +963,16 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 	}
 }
 
+// addedUnvalidated reports whether a CHECK is declared NOT VALID for a target
+// that keeps the clause, which it does only on a constraint added to a table
+// that exists: written in the CREATE TABLE, the server records the CHECK
+// validated, and the database the plan builds is not the one declared. A
+// foreign key is added after the table already.
+func addedUnvalidated(constraint schemamodel.Constraint, targetPlatform string) bool {
+	return constraint.NotValid && strings.EqualFold(constraint.Type, "CHECK") &&
+		capability.ForDialect(targetPlatform).Has(capability.AddConstraintNotValid)
+}
+
 type tableConstraintMode int
 
 const (
@@ -1009,7 +1023,7 @@ func addTableConstraints(
 		if !schemaprep.ConstraintBelongsToTable(constraint, table) {
 			continue
 		}
-		if folded[position] {
+		if folded[position] || addedUnvalidated(constraint, targetPlatform) {
 			after = append(after, constraint)
 			continue
 		}

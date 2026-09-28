@@ -339,13 +339,14 @@ func TestToDatabase_RefusesAnAlterOperationItDoesNotModel(t *testing.T) {
 	statements := &ast.StatementList{Statements: []ast.Node{
 		table,
 		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{
-			&ast.ValidateConstraintOperation{ConstraintName: "t_ck"},
+			&ast.AlterGeneratedColumnExpressionOperation{ColumnName: "id", Expression: "1"},
 		}},
 	}}
 
 	database, err := sqlschema.ToDatabase(statements, "postgres")
 
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-	c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: ALTER TABLE t ValidateConstraintOperation`)
+	c.Assert(err, qt.ErrorMatches,
+		`the schema model has no place for this statement: ALTER TABLE t AlterGeneratedColumnExpressionOperation`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 }

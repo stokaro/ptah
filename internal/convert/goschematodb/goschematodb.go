@@ -379,6 +379,7 @@ func toDBConstraints(
 				constraint.ExcludeElements,
 			),
 			WhereCondition: optionalStringPtr(constraint.WhereCondition),
+			NotValid:       constraint.NotValid,
 			Comment:        constraint.Comment,
 			Deferrable:     constraint.Deferrable,
 			Initially:      constraint.Initially,

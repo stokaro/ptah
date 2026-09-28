@@ -878,9 +878,12 @@ func convertConstraints(
 }
 
 // carriedByItsColumn reports whether a constraint is a foreign key over at most
-// one column, which the column carries unless another key over it does.
+// one column, which the column carries unless another key over it does. A key
+// the server has not validated is not: a column's reference has no room for
+// NOT VALID, so it stays a constraint of the table.
 func carriedByItsColumn(dbConstraint catalog.Constraint) bool {
-	return strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") && len(dbConstraint.ColumnNamesOrDefault()) <= 1
+	return strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") && len(dbConstraint.ColumnNamesOrDefault()) <= 1 &&
+		!dbConstraint.NotValid
 }
 
 func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (schemamodel.Constraint, bool) {
@@ -950,6 +953,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Initially:       dbConstraint.Initially,
 		Match:           dbConstraint.Match,
 		NotEnforced:     dbConstraint.NotEnforced,
+		NotValid:        dbConstraint.NotValid,
 		Comment:         dbConstraint.Comment,
 		// The index backing this constraint is dropped above so the constraint
 		// renders once; what that index needed does not go with it.
@@ -1312,7 +1316,10 @@ type columnForeignKeys struct {
 func indexForeignKeysByColumn(dbSchema *catalog.Database) columnForeignKeys {
 	byColumn := make(map[tableMemberKey][]catalog.Constraint)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
+		// A key the server has not validated stays a constraint of the table:
+		// a column's reference has no room for NOT VALID.
+		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil ||
+			len(c.ColumnNamesOrDefault()) != 1 || c.NotValid {
 			continue
 		}
 		column := tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}
