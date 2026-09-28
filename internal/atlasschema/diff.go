@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -197,11 +198,18 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		report  atlasreport.SchemaDiff
 		changes *difftypes.SchemaDiff
 	)
+	// Two documents compared as written hold no connection, so the server
+	// behind --dev-url is asked once for what it is.
+	var documentCaps capability.Capabilities
+	if opts.ServerVersion == "" && !materializesFrom(fromSet, toSet, opts.DevURL) &&
+		!holdsServerForComparison(fromSet, toSet) {
+		documentCaps = devServerCapabilities(ctx, dialect, opts.DevURL, opts.ConnectTimeout)
+	}
 	err = withResolvedDiffSources(ctx, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			var diffErr error
-			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect, target.Capabilities,
-				devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
+			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
+				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
 			return diffErr
 		})
 	if err != nil {
@@ -209,6 +217,84 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	}
 	return report, changes, nil
 }
+
+// diffCapabilities is the capability set a schema diff plans with.
+//
+// A --server-version pins it. Without one, a diff that holds a connection --
+// the --from or --to database, or the dev database a file or directory is
+// replayed on -- plans for that server, as schema apply and migrate diff plan
+// for the server they connect to. Measured on PostgreSQL 18.6, planning for
+// the dialect default refused a NOT ENFORCED CHECK as unavailable on the
+// server that holds it, and reported a NOT NULL rename as unavailable too
+// (stokaro/ptah#3910, stokaro/ptah#3936). Only a diff with no connection at
+// all keeps the dialect default. Two documents compared as written hold no
+// connection, and plan for the dev server instead; see
+// [devServerCapabilities], which answers documentCaps.
+func diffCapabilities(
+	target servertarget.Target,
+	version string,
+	conn *dbschema.DatabaseConnection,
+	documentCaps capability.Capabilities,
+) capability.Capabilities {
+	switch {
+	case version != "":
+		return target.Capabilities
+	case conn != nil:
+		return conn.Info().Capabilities
+	case documentCaps != nil:
+		return documentCaps
+	default:
+		return target.Capabilities
+	}
+}
+
+// devServerCapabilities answers what the server behind a dev URL can do, for a
+// diff of two documents that never opens it otherwise, or nil where the dialect
+// default stands.
+//
+// A docker:// URL names its server in the image tag, `docker://postgres/18`,
+// which is read without starting the container; a tag no release line
+// matches, such as `latest`, answers nil. Any other URL is opened and asked,
+// as the comparison of a file with a database asks the database. Two
+// documents are compared as written, and the dev database is not otherwise
+// opened, so one that cannot be opened within devVersionTimeout answers nil:
+// the comparison it would have informed runs as it does with no dev database,
+// and a declaration the default cannot plan is refused by name there.
+func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout time.Duration) capability.Capabilities {
+	devURL = strings.TrimSpace(devURL)
+	if devURL == "" {
+		return nil
+	}
+	if devdocker.IsURL(devURL) {
+		spec, err := devdocker.Parse(devURL)
+		if err != nil {
+			return nil
+		}
+		_, tag, tagged := strings.Cut(spec.Image, ":")
+		resolution := capability.ResolveServerVersion(dialect, tag)
+		if !tagged || !resolution.Recognized {
+			return nil
+		}
+		return resolution.Capabilities
+	}
+	if timeout <= 0 || timeout > devVersionTimeout {
+		timeout = devVersionTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := dbschema.ConnectToServer(ctx, devURL)
+	if err != nil {
+		slog.Debug("could not open --dev-url for its server version; planning for the dialect default",
+			"dialect", dialect, "error", err)
+		return nil
+	}
+	defer func() { _ = conn.Close() }()
+	return conn.Info().Capabilities
+}
+
+// devVersionTimeout bounds the one connection a diff of two documents makes to
+// learn the dev server's version, which nothing else in that diff waits for.
+const devVersionTimeout = 5 * time.Second
 
 // diffResolvedStates is the part of a schema diff that runs once both sides
 // are resolved: scoping, the refusals, the comparison and the plan.
