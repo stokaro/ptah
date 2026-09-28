@@ -39,16 +39,16 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *sche
 	// ON UPDATE action of a field-level FK (issue #189): the down path treats
 	// the introspected (pre-change) database as the target, so the old action
 	// must survive the round-trip into goschema.
-	fkByColumn := indexForeignKeysByColumn(dbSchema)
+	columnKeys := indexForeignKeysByColumn(dbSchema)
 	tablePrimaryKeys := primaryKeysByTable(dbSchema)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
-	tableStructNames := convertTablesAndFields(database, dbSchema, fkByColumn, tablePrimaryKeys, tablePKColumns)
+	tableStructNames := convertTablesAndFields(database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns)
 
 	// One decision, consulted by both pools below. A unique constraint and its
 	// backing index describe one object, so exactly one of them may be emitted.
 	indexDescribed := indexDescribedUniques(dbSchema)
 	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
-	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed)
+	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed, columnKeys.besideColumn)
 	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
 	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
@@ -850,15 +850,21 @@ func columnOwnUniqueKeys(
 	return own
 }
 
+// convertConstraints converts the constraints no column and no index carries.
+// besideColumn names, by table and constraint name, the single-column foreign
+// keys a column does not carry; see [indexForeignKeysByColumn].
 func convertConstraints(
 	dbSchema *catalog.Database,
 	tableStructNames map[string]string,
-	indexDescribed map[tableMemberKey]struct{},
+	indexDescribed, besideColumn map[tableMemberKey]struct{},
 ) []schemamodel.Constraint {
 	constraints := make([]schemamodel.Constraint, 0, len(dbSchema.Constraints))
 	for _, dbConstraint := range dbSchema.Constraints {
 		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: dbConstraint.Name}
 		if _, ok := indexDescribed[key]; ok {
+			continue
+		}
+		if _, beside := besideColumn[key]; !beside && carriedByItsColumn(dbConstraint) {
 			continue
 		}
 		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
@@ -869,6 +875,12 @@ func convertConstraints(
 	return constraints
 }
 
+// carriedByItsColumn reports whether a constraint is a foreign key over at most
+// one column, which the column carries unless another key over it does.
+func carriedByItsColumn(dbConstraint catalog.Constraint) bool {
+	return strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") && len(dbConstraint.ColumnNamesOrDefault()) <= 1
+}
+
 func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (schemamodel.Constraint, bool) {
 	constraintType := strings.ToUpper(dbConstraint.Type)
 	columns := dbConstraint.ColumnNamesOrDefault()
@@ -876,9 +888,8 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 	case "PRIMARY KEY":
 		return schemamodel.Constraint{}, false
 	case "FOREIGN KEY":
-		if len(columns) <= 1 {
-			return schemamodel.Constraint{}, false
-		}
+		// A key over one column reaches here only when its column carries
+		// another; see convertConstraints.
 	case "UNIQUE":
 		// A single-column UNIQUE is normally carried by the column's own
 		// `unique = true`, which is the compact spelling and the one a person
@@ -1271,37 +1282,69 @@ type tableMemberKey struct {
 	member string
 }
 
-// indexForeignKeysByColumn maps table.column -> reconstructed FK info for every
-// single-column FOREIGN KEY constraint in the database schema. Multi-column FKs
-// are not field-level and are skipped (they are represented as table-level
-// constraints, which this converter does not yet round-trip).
-func indexForeignKeysByColumn(dbSchema *catalog.Database) map[tableMemberKey]foreignKeyInfo {
-	result := make(map[tableMemberKey]foreignKeyInfo)
+// columnForeignKeys is where the database's single-column foreign keys go in
+// the model.
+type columnForeignKeys struct {
+	// byColumn is the key each column carries, by table and column.
+	byColumn map[tableMemberKey]foreignKeyInfo
+	// besideColumn names, by table and constraint name, the other keys over a
+	// column that already carries one. They stay constraints of the table.
+	besideColumn map[tableMemberKey]struct{}
+}
+
+// indexForeignKeysByColumn decides which single-column FOREIGN KEY each column
+// carries. Multi-column keys are not field-level and are left to
+// [convertConstraints].
+//
+// A column carries one key. PostgreSQL 18.6 and MySQL 8.4.11 build two keys
+// over one column when a table declares both, so a column with more than one
+// carries the key whose name sorts first, and the rest stay constraints of the
+// table. Carried on the column alone, the second key would be lost, and a
+// database compared with itself would plan to drop one (stokaro/ptah#3873).
+func indexForeignKeysByColumn(dbSchema *catalog.Database) columnForeignKeys {
+	byColumn := make(map[tableMemberKey][]catalog.Constraint)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
 			continue
 		}
-		foreignTable := c.QualifiedForeignTableName()
-		foreignColumn := ""
-		if foreignColumns := c.ForeignColumnsOrDefault(); len(foreignColumns) == 1 {
-			foreignColumn = foreignColumns[0]
-		}
-		foreign := foreignTable
-		if foreignColumn != "" {
-			foreign = foreignTable + "(" + foreignColumn + ")"
-		}
-		// An ON DELETE column list on a one-column key can name only that
-		// column, which is what no list means, so the field needs none.
-		result[tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}] = foreignKeyInfo{
-			name:       c.Name,
-			foreign:    foreign,
-			onDelete:   derefString(c.DeleteRule),
-			onUpdate:   derefString(c.UpdateRule),
-			deferrable: c.Deferrable,
-			initially:  c.Initially,
+		column := tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}
+		byColumn[column] = append(byColumn[column], c)
+	}
+	result := columnForeignKeys{
+		byColumn:     make(map[tableMemberKey]foreignKeyInfo, len(byColumn)),
+		besideColumn: make(map[tableMemberKey]struct{}),
+	}
+	for column, keys := range byColumn {
+		slices.SortFunc(keys, func(a, b catalog.Constraint) int { return strings.Compare(a.Name, b.Name) })
+		result.byColumn[column] = columnForeignKey(keys[0])
+		for _, beside := range keys[1:] {
+			result.besideColumn[tableMemberKey{table: column.table, member: beside.Name}] = struct{}{}
 		}
 	}
 	return result
+}
+
+// columnForeignKey is the field-level description of a single-column key.
+func columnForeignKey(c catalog.Constraint) foreignKeyInfo {
+	foreignTable := c.QualifiedForeignTableName()
+	foreignColumn := ""
+	if foreignColumns := c.ForeignColumnsOrDefault(); len(foreignColumns) == 1 {
+		foreignColumn = foreignColumns[0]
+	}
+	foreign := foreignTable
+	if foreignColumn != "" {
+		foreign = foreignTable + "(" + foreignColumn + ")"
+	}
+	// An ON DELETE column list on a one-column key can name only that
+	// column, which is what no list means, so the field needs none.
+	return foreignKeyInfo{
+		name:       c.Name,
+		foreign:    foreign,
+		onDelete:   derefString(c.DeleteRule),
+		onUpdate:   derefString(c.UpdateRule),
+		deferrable: c.Deferrable,
+		initially:  c.Initially,
+	}
 }
 
 // derefString returns the pointed-to string or "" when nil.
