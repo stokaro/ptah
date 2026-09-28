@@ -1149,7 +1149,23 @@ Ptah refuses two pairs before the replay that Atlas runs:
 that a schema file declares, or that a migration directory creates, reads them
 back and leaves the server empty. A MySQL-family `CREATE DATABASE` in a SQL
 schema file declares a database, as `CREATE SCHEMA` does, because the two are
-synonyms there. `schema diff` and `schema apply` do not take a dev server yet
+synonyms there.
+
+`schema diff` takes one too. Beside a dev server, a schema file and a migration
+directory are whole servers, compared database by database with a server URL,
+and the plan creates and drops databases. A URL naming one database keeps its
+scope, and Atlas's rules for pairing it apply:
+
+- beside a SQL file or a migration directory it is refused, with
+  `cannot diff a database connection with a schema "app"` or its reverse;
+- beside an HCL document declaring one database, the two are compared as one
+  database;
+- beside an HCL document declaring several, it is refused with
+  `cannot use HCL with more than 1 schema when --from is limited to schema "app"`,
+  where Atlas plans; see
+  [a realm beside one database](../retained-divergences/#a-realm-beside-one-database-on-a-dev-server).
+
+`schema apply` does not take a dev server yet
 ([stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885)).
 
 ### The publication boundary
