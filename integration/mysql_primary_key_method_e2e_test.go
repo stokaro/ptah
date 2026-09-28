@@ -95,8 +95,7 @@ type HK struct {
 
 // TestSchemaApplyBuildsAPrimaryKeyConstraintMethodE2E applies the key spelled
 // as a constraint to an empty database: each engine builds what the table
-// spelling builds. A second apply of a key declared this way is
-// stokaro/ptah#3959, whatever its method.
+// spelling builds, a second apply succeeds, and the schema is then synced.
 func TestSchemaApplyBuildsAPrimaryKeyConstraintMethodE2E(t *testing.T) {
 	for _, engine := range primaryKeyMethodEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -107,8 +106,11 @@ func TestSchemaApplyBuildsAPrimaryKeyConstraintMethodE2E(t *testing.T) {
 			c.Assert(os.WriteFile(filepath.Join(entities, "models.go"), []byte(hashKeyEntity), 0o600), qt.IsNil)
 
 			runPtahNative(c, "schema", "apply", "--db-url", target, "--root-dir", entities, "--auto-approve")
+			runPtahNative(c, "schema", "apply", "--db-url", target, "--root-dir", entities, "--auto-approve")
 
 			c.Assert(primaryIndexType(c, mySQLDSNForDatabase(c, scratch.adminDSN, name)), qt.Equals, engine.wantType)
+			c.Assert(runPtahNative(c, "schema", "apply", "--db-url", target, "--root-dir", entities, "--dry-run"),
+				qt.Contains, "Schema is synced")
 		})
 	}
 }
