@@ -227,8 +227,14 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	// The dev-server scope comes first: it refuses what CE refuses on a dev
+	// server, in CE's words, and narrows a one-schema document to the one
+	// database. The one-database rule then reads the narrowed sides.
 	fromState, toState, err := scopeOnDevServer(fromState, toState, sides)
 	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
+	if err := refuseOutsideComparedDatabase(dialect, fromState, toState); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	if err := refuseServerScopeMismatch(stateSide(fromState), stateSide(toState)); err != nil {
