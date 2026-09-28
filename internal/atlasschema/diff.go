@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -276,6 +277,14 @@ func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout 
 			return nil
 		}
 		return resolution.Capabilities
+	}
+	if atlasurl.NamesAFile(devURL) {
+		// A SQLite file has no server to ask: the engine is the one compiled
+		// into Ptah, which the dialect's default preset describes. Opening the
+		// file to ask creates it, so without this `--dev-url sqlite://dev.db`
+		// on a diff of two files leaves an empty dev.db in the working
+		// directory.
+		return nil
 	}
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout

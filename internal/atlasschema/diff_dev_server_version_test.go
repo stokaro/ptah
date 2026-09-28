@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlasurl"
 )
 
 // notEnforcedCheck declares a CHECK only PostgreSQL 18 and later can hold.
@@ -46,4 +48,27 @@ func TestDiff_TwoDocumentsPlanForTheDevServer_FailurePath(t *testing.T) {
 	_, err := atlasschema.Diff(c.Context(), notEnforcedDiffOptions(c, "docker://postgres/17/dev"))
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*NOT ENFORCED CHECK, which requires target capability not_enforced_checks.*`)
+}
+
+// TestDiff_TwoDocumentsLeaveASQLiteDevFileAlone compares two documents on a
+// SQLite dev URL that names a file nobody created. There is no server to ask
+// for a version, so the diff does not open the file, and opening it would
+// create it: the working directory gained an empty dev.db.
+func TestDiff_TwoDocumentsLeaveASQLiteDevFileAlone(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	path := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(path, []byte("CREATE TABLE t (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	devPath := filepath.Join(dir, "dev.db")
+
+	report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+		FromURLs: []string{"file://" + path},
+		ToURLs:   []string{"file://" + path},
+		DevURL:   atlasurl.SQLiteURLFromPath(devPath),
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Changes, qt.HasLen, 0)
+	_, err = os.Stat(devPath)
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }

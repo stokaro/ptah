@@ -592,6 +592,18 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	return dialect, nil
 }
 
+// fileSchemes are the schemes of a URL that names a SQLite database file
+// rather than a server. A libsql URL names a server.
+var fileSchemes = []string{"sqlite", "sqlite3", "file"}
+
+// NamesAFile reports whether rawURL names a SQLite database file rather than a
+// server. Opening one creates the file when it does not exist, and the engine
+// behind it is the one compiled into Ptah.
+func NamesAFile(rawURL string) bool {
+	parsed, err := Parse(rawURL)
+	return err == nil && slices.Contains(fileSchemes, parsed.Scheme)
+}
+
 // WithDatabaseName returns rawURL addressing the database name instead of the
 // one it names now.
 //
@@ -623,7 +635,7 @@ func WithDatabaseName(rawURL, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if parsed.Scheme == "sqlite" || parsed.Scheme == "sqlite3" || parsed.Scheme == "file" {
+	if slices.Contains(fileSchemes, parsed.Scheme) {
 		return "", fmt.Errorf("a %s URL names a file rather than a server, so it has no database name to replace", parsed.Scheme)
 	}
 	parsed.Path = "/" + name
