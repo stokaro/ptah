@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -278,6 +279,17 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// A status is a read, and an account that may only read the database has
+	// to be able to ask for one. With the writer in dry-run mode the migrator
+	// inspects the migrations table instead of creating it, and an absent
+	// table reads as no migrations applied, as `ptah-compat migrate status`
+	// reads it. Without it, the status of an empty database leaves a
+	// schema_migrations table behind, and a SELECT-only account is refused
+	// with the server's CREATE denial (stokaro/ptah#3893).
+	writer := conn.SchemaWriter()
+	restore := writer.IsDryRun()
+	writer.SetDryRun(true)
+	defer writer.SetDryRun(restore)
 
 	mig, err := migrator.NewFSMigrator(
 		conn,
@@ -291,7 +303,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
-		WithLogger(runtime.Logger()).
+		WithLogger(slog.New(warnFloor{runtime.Logger().Handler()})).
 		WithObserver(runtime.Observer())
 
 	// Get migration status
@@ -615,4 +627,29 @@ func unknownStatementOutcomeHint(revision *migrator.MigrationRevision) string {
 		revision.Total,
 		revision.Version,
 	)
+}
+
+// warnFloor passes the migrator's warnings and errors to the command's handler
+// and drops its Info records. A status is a read, and every Info record the
+// migrator writes narrates an apply: with the writer in dry-run mode, an empty
+// database reads as `[DRY RUN] Would initialize migrations metadata`, which is
+// not what a status does, on a stream a pending status leaves empty.
+type warnFloor struct {
+	slog.Handler
+}
+
+// Enabled reports whether level is Warn or above and the wrapped handler takes
+// it.
+func (h warnFloor) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= slog.LevelWarn && h.Handler.Enabled(ctx, level)
+}
+
+// WithAttrs keeps the floor on the handler the attributes return.
+func (h warnFloor) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return warnFloor{h.Handler.WithAttrs(attrs)}
+}
+
+// WithGroup keeps the floor on the handler the group returns.
+func (h warnFloor) WithGroup(name string) slog.Handler {
+	return warnFloor{h.Handler.WithGroup(name)}
 }
