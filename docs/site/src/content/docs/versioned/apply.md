@@ -291,6 +291,10 @@ Out-of-order Migrations: 0
 Status: ✅ Database is up to date
 ```
 
+Status only reads. Against a database with no tracking table it reports every
+migration pending and creates nothing, so an account that may only read the
+database can run it.
+
 For scripts, `--json` prints the same state as one object:
 
 ```console
