@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/catalogfield"
 )
 
 // buildTablePrimaryKeyColumnSets maps each generated table to the set of
@@ -112,7 +113,7 @@ func isFieldLevelConstraint(
 		// synthetic name would be redundant at best and illegal at worst (PG
 		// rejects with 42P16 "column X is in a primary key" when the column
 		// is part of a PK). Treat these as field-level always; skip the diff.
-		if strings.Contains(dbConstraint.Name, "_not_null") {
+		if catalogfield.IsNotNullRow(dbConstraint) {
 			return true
 		}
 		// Regular CHECK constraints from `check=` annotations are surfaced

@@ -245,3 +245,31 @@ func setDefault(field *schemamodel.Field, defaultSQL string) {
 	}
 	field.Default = defaultSQL
 }
+
+// IsNotNullRow reports whether a CHECK row a database reported is a column's
+// NOT NULL rather than a CHECK its author wrote.
+//
+// PostgreSQL 17 and earlier list every NOT NULL as a CHECK in
+// information_schema, named `<n>_<n>_<n>_not_null` and holding exactly
+// `<column> IS NOT NULL`, and PostgreSQL 18 keeps a NOT NULL as a constraint
+// with no condition. Such a row is the column's nullability, which the column
+// already carries. A CHECK the author named with the same suffix is not: the
+// row `p_not_null CHECK (p > 0)` is a CHECK like any other, and taking it for a
+// NOT NULL leaves it out of every comparison, so each plan adds it again
+// (stokaro/ptah#3935). The row is told apart by its name and by what it holds,
+// never by the name alone.
+//
+// The conversion to the desired-schema model and the schema comparison both
+// ask this, and must answer alike: a row one of them takes for a NOT NULL and
+// the other for a CHECK is written by one side and dropped by the other.
+func IsNotNullRow(constraint catalog.Constraint) bool {
+	if !strings.EqualFold(strings.TrimSpace(constraint.Type), "CHECK") ||
+		!strings.HasSuffix(constraint.Name, "_not_null") {
+		return false
+	}
+	if constraint.CheckClause == nil || strings.TrimSpace(*constraint.CheckClause) == "" {
+		return true
+	}
+	clause := strings.ToUpper(strings.TrimSpace(*constraint.CheckClause))
+	return strings.HasSuffix(clause, " IS NOT NULL") && strings.Count(clause, " IS NOT NULL") == 1
+}
