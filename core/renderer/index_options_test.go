@@ -28,8 +28,9 @@ func indexOptionsSchema() *schemamodel.Database {
 }
 
 // TestRender_IndexOptions_HappyPath writes an index's comment and visibility
-// in each MySQL-family dialect's own words; each engine answers ERROR 1064 to
-// the other's (stokaro/ptah#3853).
+// in each dialect's own words; MySQL and MariaDB answer ERROR 1064 to each
+// other's (stokaro/ptah#3853), and CockroachDB prints its index back with NOT
+// VISIBLE.
 func TestRender_IndexOptions_HappyPath(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -43,6 +44,14 @@ func TestRender_IndexOptions_HappyPath(t *testing.T) {
 		{
 			dialect: platform.MariaDB, caps: capability.MariaDB1011(),
 			want: "CREATE INDEX `k_a` ON `t` (`a`) COMMENT 'it''s a lookup' IGNORED;",
+		},
+		{
+			dialect: platform.CockroachDB, caps: capability.CockroachDB263(),
+			want: `ON "t" ("a") NOT VISIBLE;`,
+		},
+		{
+			dialect: platform.CockroachDB, caps: capability.CockroachDB25(),
+			want: `ON "t" ("a") NOT VISIBLE;`,
 		},
 	}
 	for _, test := range tests {
@@ -83,6 +92,22 @@ func TestRender_IndexOptions_FailurePath(t *testing.T) {
 	}
 }
 
+// TestRender_CockroachDBInvisiblePartialIndex_HappyPath puts the visibility
+// after the condition: CockroachDB v26.3.2 refuses `NOT VISIBLE WHERE ...` with
+// a syntax error.
+func TestRender_CockroachDBInvisiblePartialIndex_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	schema := indexOptionsSchema()
+	schema.Indexes[0].Comment = ""
+	schema.Indexes[0].Condition = "a > 0"
+
+	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(schema, platform.CockroachDB,
+		capability.CockroachDB263())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, `ON "t" ("a") WHERE a > 0 NOT VISIBLE;`)
+}
+
 // TestRender_IndexStatements_HappyPath writes the rebuild of an index under its
 // own name as one statement, and a visibility change in place. MySQL 8.4.11
 // takes `DROP INDEX k, ADD INDEX k (...)` on an index a foreign key needs, and
@@ -112,6 +137,16 @@ func TestRender_IndexStatements_HappyPath(t *testing.T) {
 			operation: &ast.AlterIndexVisibilityOperation{IndexName: "k_q", Invisible: false},
 			want:      "ALTER TABLE `c` ALTER INDEX `k_q` NOT IGNORED;",
 		},
+		{
+			name: "CockroachDB hides an index", dialect: platform.CockroachDB, caps: capability.CockroachDB263(),
+			operation: &ast.AlterIndexVisibilityOperation{IndexName: "k_q", Invisible: true},
+			want:      `ALTER INDEX "c"@"k_q" NOT VISIBLE;`,
+		},
+		{
+			name: "CockroachDB shows an index", dialect: platform.CockroachDB, caps: capability.CockroachDB263(),
+			operation: &ast.AlterIndexVisibilityOperation{IndexName: "k_q", Invisible: false},
+			want:      `ALTER INDEX "c"@"k_q" VISIBLE;`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -137,5 +172,22 @@ func TestRender_IndexStatements_FailurePath(t *testing.T) {
 		}})
 
 	c.Assert(err, qt.ErrorMatches, `.*index "k_q" is invisible, which requires target capability invisible_indexes, .*`)
+	c.Assert(sql, qt.Equals, "")
+}
+
+// TestRender_PostgreSQLIndexVisibility_FailurePath refuses a
+// visibility change on a PostgreSQL target whose capabilities were widened to
+// claim invisible indexes: the statement the renderer knows is CockroachDB's,
+// and PostgreSQL has no ALTER INDEX form for it.
+func TestRender_PostgreSQLIndexVisibility_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres,
+		capability.Postgres18().With(capability.InvisibleIndexes, true),
+		&ast.AlterTableNode{Name: "c", Operations: []ast.AlterOperation{
+			&ast.AlterIndexVisibilityOperation{IndexName: "k_q", Invisible: true},
+		}})
+
+	c.Assert(err, qt.ErrorMatches, `.*postgres: index "k_q" cannot be shown or hidden from the optimizer on this engine`)
 	c.Assert(sql, qt.Equals, "")
 }

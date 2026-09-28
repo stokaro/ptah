@@ -186,6 +186,29 @@ A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
 `--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
+## Invisible indexes
+
+CockroachDB hides an index from the optimizer while it keeps the index up to
+date. The clause comes last in `CREATE INDEX`, after the key parts and after
+`WHERE`, and `NOT VISIBLE WHERE ...` is a syntax error:
+
+```sql
+CREATE INDEX k_a ON ic (a) WHERE a > 0 NOT VISIBLE;
+```
+
+Ptah reads the clause from `pg_get_indexdef`, which prints it the same way,
+and from a schema file, where MySQL's `INVISIBLE` is taken as a synonym. It
+writes `NOT VISIBLE` and changes a visibility in place with
+`ALTER INDEX ic@k_a VISIBLE`. The server refuses to hide a primary key.
+
+A partially visible index, `VISIBILITY 0.5`, is refused by name, in a schema
+file and in a database read. The model holds a visible or a hidden index, and
+either reading would move the index on the next apply. `VISIBILITY 0.0` and
+`VISIBILITY 1.0` are read as hidden and visible. Measured on CockroachDB
+26.3.2; the capability probe measures the 25.4 and 26.2 lines. PostgreSQL,
+YugabyteDB and Spanner have no such index, and Ptah refuses an invisible index
+there rather than build it visible.
+
 ## Trigger conditions
 
 A trigger's `WHEN` condition is read through `pg_get_triggerdef`, which

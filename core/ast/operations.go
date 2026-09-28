@@ -617,10 +617,11 @@ func (op *RenameIndexOperation) alterOperation() {}
 
 // AlterIndexVisibilityOperation shows or hides an index from the optimizer in
 // place, as MySQL spells it, `ALTER TABLE t ALTER INDEX k VISIBLE | INVISIBLE`,
-// and MariaDB, `ALTER TABLE t ALTER INDEX k NOT IGNORED | IGNORED`. The server
-// keeps maintaining a hidden index; only the optimizer stops using it. The
-// MySQL-family renderers write it; the other renderers refuse it, because
-// their engines have no such index.
+// MariaDB, `ALTER TABLE t ALTER INDEX k NOT IGNORED | IGNORED`, and
+// CockroachDB, `ALTER INDEX t@k VISIBLE | NOT VISIBLE`. The server keeps
+// maintaining a hidden index; only the optimizer stops using it. The
+// MySQL-family renderers and the PostgreSQL renderer for CockroachDB write it;
+// the other renderers refuse it, because their engines have no such index.
 type AlterIndexVisibilityOperation struct {
 	// IndexName is the index to show or hide.
 	IndexName string

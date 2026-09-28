@@ -966,7 +966,7 @@
               "type": "string"
             },
             "invisible": {
-              "description": "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB.",
+              "description": "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB, NOT VISIBLE on CockroachDB.",
               "enum": [
                 "true",
                 "false"

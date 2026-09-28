@@ -772,7 +772,8 @@ type Index struct {
 	// STATISTICS.INDEX_COMMENT, the COMMENT clause after the key's parts.
 	Comment string `json:"comment,omitempty"`
 	// Invisible reports an index the optimizer does not use:
-	// STATISTICS.IS_VISIBLE NO on MySQL, STATISTICS.IGNORED YES on MariaDB.
+	// STATISTICS.IS_VISIBLE NO on MySQL, STATISTICS.IGNORED YES on MariaDB,
+	// and a definition ending in NOT VISIBLE on CockroachDB.
 	Invisible bool `json:"invisible,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.

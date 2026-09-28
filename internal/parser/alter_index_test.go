@@ -89,9 +89,14 @@ func TestParse_AlterIndex_FailurePath(t *testing.T) {
 			wantErr: `unsupported ALTER target: INDEX at position \d+`,
 		},
 		{
-			name: "CockroachDB", dialect: "cockroachdb",
+			name: "CockroachDB, an index named without its table", dialect: "cockroachdb",
 			sql:     "ALTER INDEX ix RENAME TO other;",
-			wantErr: `unsupported ALTER target: INDEX at position \d+`,
+			wantErr: `ALTER INDEX ix at position \d+: name the index through its table, as table@index`,
+		},
+		{
+			name: "CockroachDB, a rename", dialect: "cockroachdb",
+			sql:     "ALTER INDEX c@ix RENAME TO other;",
+			wantErr: `ALTER INDEX c@ix RENAME at position \d+: only VISIBLE and NOT VISIBLE are read; .*`,
 		},
 		{
 			name: "no dialect", dialect: "",

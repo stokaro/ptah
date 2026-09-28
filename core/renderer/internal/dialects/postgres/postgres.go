@@ -1356,13 +1356,16 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			if err := r.writeRowExpiryOperation(node, operation); err != nil {
 				return err
 			}
-		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation:
-			// Both render a complete statement of their own rather than an
+		case *ast.SetCommentOperation, *ast.SetConstraintCommentOperation, *ast.RenameConstraintOperation,
+			*ast.AlterIndexVisibilityOperation:
+			// Each renders a complete statement of its own rather than an
 			// ALTER TABLE clause, and they share one branch for the same reason
 			// the row-expiry operations above do: this switch has a complexity
 			// budget, and writeStandaloneOperation re-selects between them
 			// (stokaro/ptah#2161).
-			r.writeStandaloneOperation(node.Name, operation)
+			if err := r.writeStandaloneOperation(node.Name, operation); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}
@@ -1449,7 +1452,7 @@ func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
 
 // writeStandaloneOperation renders an operation that is a statement in its own
 // right rather than a clause of the surrounding ALTER TABLE.
-func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOperation) {
+func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOperation) error {
 	switch op := operation.(type) {
 	case *ast.SetCommentOperation:
 		r.writeSetComment(table, op)
@@ -1457,8 +1460,33 @@ func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOpe
 		r.writeSetConstraintComment(table, op.Constraint, op.Comment)
 	case *ast.RenameConstraintOperation:
 		r.writeRenameConstraint(table, op)
+	case *ast.AlterIndexVisibilityOperation:
+		return r.writeIndexVisibility(table, op)
 	}
+	return nil
 }
+
+// writeIndexVisibility shows or hides an index from the optimizer in place.
+//
+// CockroachDB is the one engine of this family with such an index, and it
+// changes one with ALTER INDEX; `ALTER TABLE t ALTER INDEX k NOT VISIBLE`, the
+// MySQL spelling, is a syntax error there. Measured on v26.3.2, `ALTER INDEX
+// t@k NOT VISIBLE` and `ALTER INDEX t@k VISIBLE` each flip
+// information_schema.statistics.is_visible. The renderer refuses the operation
+// by [capability.InvisibleIndexes] before it reaches here on any other target.
+func (r *Renderer) writeIndexVisibility(table string, op *ast.AlterIndexVisibilityOperation) error {
+	if r.dialect != platform.CockroachDB {
+		return fmt.Errorf("%w: %s: index %q cannot be shown or hidden from the optimizer on this engine",
+			ptaherr.ErrUnsupportedFeature, r.dialect, op.IndexName)
+	}
+	r.w.WriteLinef("ALTER INDEX %s %s;", r.qualifiedIndexTarget(table, op.IndexName), indexVisibilityClauses[op.Invisible])
+	return nil
+}
+
+// indexVisibilityClauses spell an index's visibility the way CockroachDB
+// prints it back in SHOW CREATE TABLE and pg_get_indexdef, keyed by whether
+// the index is hidden.
+var indexVisibilityClauses = map[bool]string{true: "NOT VISIBLE", false: "VISIBLE"}
 
 // writeRenameConstraint renames a constraint in place.
 //
@@ -1585,6 +1613,14 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if node.Condition != "" {
 		parts = append(parts, "WHERE")
 		parts = append(parts, node.Condition)
+	}
+
+	// CockroachDB takes the visibility last, after WHERE: v26.3.2 refuses
+	// `NOT VISIBLE WHERE ...` with a syntax error. The renderer refuses an
+	// invisible index by [capability.InvisibleIndexes] before it reaches here
+	// on a target without one.
+	if node.Invisible {
+		parts = append(parts, indexVisibilityClauses[true])
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
