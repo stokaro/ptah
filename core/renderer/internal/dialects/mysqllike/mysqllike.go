@@ -447,7 +447,8 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		if !r.rendersNamedColumnCheckAsTableConstraint(column) {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", escapeIdentifier(column.CheckName), column.Check))
+		lines = append(lines, fmt.Sprintf("  CONSTRAINT %s CHECK (%s)%s",
+			escapeIdentifier(column.CheckName), column.Check, notEnforcedClauses[column.CheckNotEnforced]))
 	}
 
 	// Render table-level constraints
@@ -989,6 +990,10 @@ func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []st
 		} else {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 		}
+		// The shared renderer has refused the clause on a target without it.
+		if column.CheckNotEnforced {
+			parts = append(parts, "NOT ENFORCED")
+		}
 	}
 	if r.needsMariaDBJSONCheck(column) {
 		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", escapeIdentifier(column.Name)))
@@ -1134,10 +1139,11 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	case ast.ForeignKeyConstraint:
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
+		check := fmt.Sprintf("  CHECK (%s)", constraint.Expression)
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", escapeIdentifier(constraint.Name), constraint.Expression), nil
+			check = fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", escapeIdentifier(constraint.Name), constraint.Expression)
 		}
-		return fmt.Sprintf("  CHECK (%s)", constraint.Expression), nil
+		return check + notEnforcedClauses[constraint.NotEnforced], nil
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
@@ -1173,6 +1179,13 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		strings.Join(escapeIdentifierList(constraint.Columns), ", "),
 		escapeQualifiedIdentifier(ref.Table),
 		strings.Join(escapeIdentifierList(ref.ReferencedColumns()), ", "))
+	// The MATCH type follows the referenced columns. MySQL 8.4.11 and 9.7.2
+	// keep it in REFERENTIAL_CONSTRAINTS.MATCH_OPTION and leave it out of
+	// SHOW CREATE TABLE; the shared renderer has refused it on MariaDB, which
+	// records NONE.
+	if ref.Match != "" {
+		result += " MATCH " + ref.Match
+	}
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
@@ -1864,3 +1877,7 @@ func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
 	r.notGenerated("COMMENT ON "+string(node.Object), node.Name)
 	return nil
 }
+
+// notEnforcedClauses is the clause that follows a CHECK, keyed by whether it is
+// NOT ENFORCED: kept by the server and not checked.
+var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}

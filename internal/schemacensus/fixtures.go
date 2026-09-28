@@ -132,6 +132,11 @@ func Fixtures() []Fixture {
 		{Name: "foreign-key-self-constraint", Schema: selfReferencingForeignKeyConstraintFixture()},
 		{Name: "constraint-deferrable-only", Schema: constraintDeferrableOnlyFixture()},
 		{Name: "constraint-initially-only", Schema: constraintInitiallyOnlyFixture()},
+		{Name: "field-check-not-enforced", Schema: fieldCheckNotEnforcedFixture()},
+		{Name: "fk-field-match", Schema: foreignKeyMatchFixture()},
+		{Name: "fk-field-not-enforced", Schema: foreignKeyNotEnforcedFixture()},
+		{Name: "constraint-check-not-enforced", Schema: constraintCheckNotEnforcedFixture()},
+		{Name: "constraint-fk-match", Schema: constraintForeignKeyMatchFixture()},
 		{Name: "constraint-delete-column-list", Schema: constraintDeleteColumnListFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
@@ -301,6 +306,55 @@ func constraintInitiallyOnlyFixture() schemamodel.Database {
 		StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
 		Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumn: "id",
 		Initially: "DEFERRED",
+	}}
+	return db
+}
+
+// fieldCheckNotEnforcedFixture declares a column CHECK the server does not
+// check, the one clause of its kind in the fixture (stokaro/ptah#3853).
+func fieldCheckNotEnforcedFixture() schemamodel.Database {
+	return oneTable("T", schemamodel.Table{Name: "t"}, schemamodel.Field{
+		StructName: "T", FieldName: "N", Name: "n", Type: "INTEGER", Nullable: true,
+		Check: "n > 0", CheckNotEnforced: true,
+	})
+}
+
+func foreignKeyMatchFixture() schemamodel.Database {
+	db := twoTables()
+	db.Fields = append(db.Fields, schemamodel.Field{
+		StructName: "Child", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT", Nullable: true,
+		Foreign: "parents(id)", ForeignKeyMatch: "FULL",
+	})
+	return db
+}
+
+func foreignKeyNotEnforcedFixture() schemamodel.Database {
+	db := twoTables()
+	db.Fields = append(db.Fields, schemamodel.Field{
+		StructName: "Child", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT", Nullable: true,
+		Foreign: "parents(id)", ForeignKeyNotEnforced: true,
+	})
+	return db
+}
+
+func constraintCheckNotEnforcedFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "T", Table: "t", Name: "t_id_positive", Type: "CHECK", CheckExpression: "id > 0",
+		NotEnforced: true,
+	}}
+	return db
+}
+
+func constraintForeignKeyMatchFixture() schemamodel.Database {
+	db := twoTables()
+	db.Fields = append(db.Fields, schemamodel.Field{
+		StructName: "Child", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT", Nullable: true,
+	})
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
+		Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumn: "id",
+		Match: "FULL",
 	}}
 	return db
 }

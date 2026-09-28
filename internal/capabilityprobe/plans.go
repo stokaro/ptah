@@ -20,7 +20,8 @@ func planFor(dialect string) (plan, bool) {
 	if !ok {
 		return plan{}, false
 	}
-	return withDeferrableKeys(withConstraintComments(withObjectComments(family, normalized), normalized), normalized), true
+	withComments := withConstraintComments(withObjectComments(family, normalized), normalized)
+	return withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), true
 }
 
 // familyPlan returns the experiments a dialect's family answers, before the

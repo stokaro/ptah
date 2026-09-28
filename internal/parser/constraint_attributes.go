@@ -243,7 +243,8 @@ func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind stri
 	if err := p.handleTableExcludeWhere(constraint); err != nil {
 		return err
 	}
-	if err := p.readConstraintAttributes(kind); err != nil {
+	var enforced enforcement
+	if err := p.readConstraintAttributes(kind, &enforced); err != nil {
 		return err
 	}
 	clauses, err := p.parseDeferral()
@@ -253,7 +254,16 @@ func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind stri
 	if err := clauses.applyToTableElement(constraint, kind); err != nil {
 		return err
 	}
-	return p.readConstraintAttributes(kind)
+	if err := p.readConstraintAttributes(kind, &enforced); err != nil {
+		return err
+	}
+	switch {
+	case kind == checkElement:
+		constraint.NotEnforced = enforced.notEnforced
+	case kind == foreignKeyElement && constraint.Reference != nil:
+		constraint.Reference.NotEnforced = enforced.notEnforced
+	}
+	return nil
 }
 
 // applyToTableElement carries the clauses after a table element of kind onto

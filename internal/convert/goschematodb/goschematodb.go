@@ -8,6 +8,7 @@ package goschematodb
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -381,6 +382,8 @@ func toDBConstraints(
 			Comment:        constraint.Comment,
 			Deferrable:     constraint.Deferrable,
 			Initially:      constraint.Initially,
+			Match:          constraint.Match,
+			NotEnforced:    constraint.NotEnforced,
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
@@ -437,6 +440,10 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 		deref(constraint.WhereCondition),
 		constraint.QualifiedForeignTableName(),
 		strings.Join(constraint.ForeignColumnsOrDefault(), "\x01"),
+		// Two constraints that differ only in how they check their rows are
+		// two constraints (stokaro/ptah#3853).
+		strings.ToUpper(constraint.Match),
+		strconv.FormatBool(constraint.NotEnforced),
 	}, "\x00")
 }
 
@@ -454,6 +461,7 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, chec
 			ColumnName:  field.Name,
 			ColumnNames: []string{field.Name},
 			CheckClause: new(field.Check),
+			NotEnforced: field.CheckNotEnforced,
 		})
 	}
 	if field.Foreign != "" {
@@ -481,6 +489,8 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, chec
 			UpdateRule:     optionalStringPtr(field.OnUpdate),
 			Deferrable:     field.Deferrable,
 			Initially:      field.Initially,
+			Match:          field.ForeignKeyMatch,
+			NotEnforced:    field.ForeignKeyNotEnforced,
 		})
 	}
 	return out

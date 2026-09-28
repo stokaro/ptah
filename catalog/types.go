@@ -909,6 +909,14 @@ type Constraint struct {
 	// constraint that is not deferrable, so a schema that never asked for one
 	// reads back exactly as it did before (stokaro/ptah#1624).
 	Initially string `json:"initially,omitempty"`
+	// Match is a foreign key's MATCH type: "FULL" or "PARTIAL", and empty for
+	// MATCH SIMPLE, which PostgreSQL reports as `s` in pg_constraint.confmatchtype
+	// and MySQL as `NONE` in REFERENTIAL_CONSTRAINTS.MATCH_OPTION.
+	Match string `json:"match,omitempty"`
+	// NotEnforced reports a CHECK or a foreign key the server keeps and does
+	// not check: pg_constraint.conenforced false on PostgreSQL 18, and
+	// TABLE_CONSTRAINTS.ENFORCED `NO` on MySQL.
+	NotEnforced bool `json:"not_enforced,omitempty"`
 	// OnDeleteColumns are the referencing columns an ON DELETE SET NULL or
 	// SET DEFAULT action changes, as the definition lists them. It is empty
 	// when the definition lists none, which means every referencing column

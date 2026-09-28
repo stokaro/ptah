@@ -870,6 +870,55 @@ const (
 	// other engines have no deferrable key, or none measured here.
 	DeferrableKeys Capability = "deferrable_keys"
 
+	// NotEnforcedChecks marks support for a CHECK constraint declared NOT
+	// ENFORCED, which the server keeps and does not check. Measured
+	// 2026-09-27 with `CHECK (a > 0) NOT ENFORCED` on a column and on the
+	// table:
+	//
+	//	PostgreSQL 18.6          records it; pg_constraint.conenforced is false
+	//	PostgreSQL 17.11         syntax error at or near "ENFORCED"
+	//	MySQL 8.4.11 and 9.7.2   records it; TABLE_CONSTRAINTS.ENFORCED is NO
+	//	MariaDB 11.8.9           ERROR 1064
+	//	CockroachDB v26.3.2      syntax error at or near "enforced"
+	//	YugabyteDB 2026.1.2      syntax error at or near "ENFORCED"
+	//	SQLite 3.51              syntax error near "ENFORCED"
+	//
+	// The other engines have no such clause, or none measured here
+	// (stokaro/ptah#3853).
+	NotEnforcedChecks Capability = "not_enforced_checks"
+
+	// NotEnforcedForeignKeys marks support for a foreign key declared NOT
+	// ENFORCED, which the server keeps and does not check. Measured
+	// 2026-09-27: PostgreSQL 18.6 records it in pg_constraint.conenforced;
+	// MySQL 8.4.11 and 9.7.2 answer ERROR 1064, and PostgreSQL 17.11,
+	// CockroachDB v26.3.2 and YugabyteDB 2026.1.2 a syntax error
+	// (stokaro/ptah#3853).
+	NotEnforcedForeignKeys Capability = "not_enforced_foreign_keys"
+
+	// ForeignKeyMatchFull marks support for MATCH FULL on a foreign key, which
+	// refuses a row whose key is partly NULL. It is decided by what the server
+	// records rather than by what it accepts, because two engines accept the
+	// clause and drop it. Measured 2026-09-27:
+	//
+	//	PostgreSQL 17.11 and 18.6   records f in pg_constraint.confmatchtype
+	//	CockroachDB v26.3.2         records f
+	//	YugabyteDB 2026.1.2         records f
+	//	MySQL 8.4.11 and 9.7.2      records FULL in MATCH_OPTION, and enforces nothing
+	//	MariaDB 11.8.9              accepts it and records NONE
+	//	SQLite 3.51                 accepts it and records NONE
+	//
+	// A render for a target without it refuses the key rather than build a
+	// MATCH SIMPLE one (stokaro/ptah#3853).
+	ForeignKeyMatchFull Capability = "foreign_key_match_full"
+
+	// ForeignKeyMatchPartial marks support for MATCH PARTIAL on a foreign key.
+	// Measured 2026-09-27: MySQL 8.4.11 and 9.7.2 record PARTIAL in
+	// MATCH_OPTION and enforce nothing; PostgreSQL 17.11 and 18.6 and
+	// YugabyteDB 2026.1.2 answer `MATCH PARTIAL not yet implemented`, and
+	// CockroachDB v26.3.2 `unimplemented`; MariaDB 11.8.9 and SQLite 3.51
+	// record NONE (stokaro/ptah#3853).
+	ForeignKeyMatchPartial Capability = "foreign_key_match_partial"
+
 	// UniqueConstraints reports whether the target accepts UNIQUE as a CONSTRAINT
 	// -- table-level `CONSTRAINT x UNIQUE (col)` or the column-level `col ... UNIQUE`
 	// -- rather than requiring a unique index for the same guarantee.
@@ -1206,6 +1255,18 @@ var registry = map[Capability]spec{
 	DeferrableKeys: {
 		doc: "PRIMARY KEY, UNIQUE and EXCLUDE constraints declared DEFERRABLE (PostgreSQL, and Oracle, which has no EXCLUDE)",
 	},
+	NotEnforcedChecks: {
+		doc: "CHECK constraints declared NOT ENFORCED, kept and not checked (PostgreSQL 18+, MySQL 8.0.16+)",
+	},
+	NotEnforcedForeignKeys: {
+		doc: "foreign keys declared NOT ENFORCED, kept and not checked (PostgreSQL 18+)",
+	},
+	ForeignKeyMatchFull: {
+		doc: "MATCH FULL on a foreign key, recorded by the server (the PostgreSQL family and MySQL; MariaDB and SQLite drop it)",
+	},
+	ForeignKeyMatchPartial: {
+		doc: "MATCH PARTIAL on a foreign key, recorded by the server (MySQL, which does not enforce it)",
+	},
 	UniqueConstraints: {
 		doc: "UNIQUE accepted as a constraint rather than only as a unique index (false on Spanner and ClickHouse)",
 	},
@@ -1450,6 +1511,10 @@ func MySQL84() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
+		NotEnforcedChecks:               true,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             true,
+		ForeignKeyMatchPartial:          true,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -1489,6 +1554,10 @@ func MySQL8016() Capabilities {
 func MySQLLegacy() Capabilities {
 	return MySQL8016().
 		With(CheckConstraintsEnforced, false).
+		// [NOT] ENFORCED arrived with CHECK enforcement in 8.0.16. Unmeasured
+		// on this line and false on the conservative side: a render refuses a
+		// CHECK the server may not take, rather than write it.
+		With(NotEnforcedChecks, false).
 		With(DropCheckClause, false).
 		// information_schema.VIEW_TABLE_USAGE arrived in 8.0.13, which is
 		// inside this arm's range rather than above it -- hence [MySQL8013].
@@ -1605,6 +1674,10 @@ func MariaDB1011() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
+		NotEnforcedChecks:               false,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             false,
+		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -1709,6 +1782,10 @@ func Postgres16() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
 		DeferrableKeys:                  true,
+		NotEnforcedChecks:               false,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             true,
+		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       true,
 		ForeignKeyDeleteColumnList:      true,
@@ -1738,7 +1815,13 @@ func Postgres17() Capabilities {
 // which is what makes deriving the preset from it correct rather than
 // convenient (stokaro/ptah#2161).
 func Postgres18() Capabilities {
-	return Postgres17().With(NamedNotNullConstraints, true)
+	return Postgres17().
+		With(NamedNotNullConstraints, true).
+		// PostgreSQL 18 grew NOT ENFORCED on a CHECK and a foreign key.
+		// Measured: 18.6 records conenforced false, and 17.11 answers a
+		// syntax error at or near "ENFORCED" (stokaro/ptah#3853).
+		With(NotEnforcedChecks, true).
+		With(NotEnforcedForeignKeys, true)
 }
 
 // Postgres14 is the preset for the PostgreSQL 14 line.
@@ -1937,6 +2020,10 @@ func ClickHouse24() Capabilities {
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
+		NotEnforcedChecks:               false,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             false,
+		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               false,
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
@@ -2049,6 +2136,10 @@ func SQLite3() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
 		DeferrableKeys:                  false,
+		NotEnforcedChecks:               false,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             false,
+		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		// SQLite has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one
@@ -2244,6 +2335,10 @@ func SQLServer2022() Capabilities {
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
+		NotEnforcedChecks:               false,
+		NotEnforcedForeignKeys:          false,
+		ForeignKeyMatchFull:             false,
+		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		// SQL Server has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one.
@@ -2567,6 +2662,10 @@ func SpannerPostgres() Capabilities {
 		// side: the emulator refuses DEFERRABLE on a foreign key, and a key
 		// is no likelier to take it.
 		With(DeferrableKeys, false).
+		// Unmeasured against a live emulator and false on the conservative
+		// side: a MATCH type is PostgreSQL grammar that Spanner's foreign keys
+		// are not known to record.
+		With(ForeignKeyMatchFull, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
 		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
 		// reads back from information_schema.tables. It is the one row-expiry
@@ -2872,6 +2971,10 @@ func Oracle23() Capabilities {
 		// UNIQUE, in CREATE TABLE and ALTER TABLE ... ADD, and read back from
 		// user_constraints.
 		DeferrableKeys:             true,
+		NotEnforcedChecks:          false,
+		NotEnforcedForeignKeys:     false,
+		ForeignKeyMatchFull:        false,
+		ForeignKeyMatchPartial:     false,
 		UniqueConstraints:          true,
 		UniqueNullsDistinctClause:  false,
 		ForeignKeyDeleteColumnList: false,

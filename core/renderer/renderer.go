@@ -736,6 +736,11 @@ func prepareColumnNode(
 	if node.Name == "" {
 		return nil, unnamedColumnError(dialect, table)
 	}
+	if node.Check != "" && node.CheckNotEnforced {
+		if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(node.CheckName, node.Name)); err != nil {
+			return nil, err
+		}
+	}
 	if node.ForeignKey == nil {
 		return node, nil
 	}
@@ -746,6 +751,12 @@ func prepareColumnNode(
 	cloned := *node
 	cloned.ForeignKey = cloneForeignKeyRef(node.ForeignKey)
 	if err := validateASTForeignKey(dialect, []string{node.Name}, cloned.ForeignKey); err != nil {
+		return nil, err
+	}
+	if err := validateForeignKeyClauses(
+		dialect, caps, foreignKeyClauses{match: cloned.ForeignKey.Match, notEnforced: cloned.ForeignKey.NotEnforced},
+		foreignKeyIdentity(cloned.ForeignKey.Name, node.Name),
+	); err != nil {
 		return nil, err
 	}
 	var err error
@@ -901,6 +912,11 @@ func prepareConstraintNode(
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
+	if node.Type == ast.CheckConstraint && node.NotEnforced {
+		if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(node.Name, "")); err != nil {
+			return nil, err
+		}
+	}
 	// A foreign key carries its deferral on its reference, so a constraint
 	// node that defers is a key.
 	if node.Deferrable {
@@ -919,6 +935,12 @@ func prepareConstraintNode(
 	cloned.Columns = slices.Clone(node.Columns)
 	cloned.Reference = cloneForeignKeyRef(node.Reference)
 	if err := validateASTForeignKey(dialect, cloned.Columns, cloned.Reference); err != nil {
+		return nil, err
+	}
+	if err := validateForeignKeyClauses(
+		dialect, caps, foreignKeyClauses{match: cloned.Reference.Match, notEnforced: cloned.Reference.NotEnforced},
+		foreignKeyIdentity(node.Name, strings.Join(node.Columns, ", ")),
+	); err != nil {
 		return nil, err
 	}
 	var err error
@@ -1405,6 +1427,9 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredEnforcementAndMatch(dialect, caps, database); err != nil {
+		return err
+	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
 }
 
@@ -1446,6 +1471,141 @@ func refuseDeferrableKey(dialect string, caps capability.Capabilities, kind, ide
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf("%s does not support a DEFERRABLE %s; %s declares one",
 			platform.NormalizeDialect(dialect), kind, identity),
+	}
+}
+
+// validateDeclaredEnforcementAndMatch refuses a NOT ENFORCED CHECK or foreign
+// key, and a MATCH type, the target cannot write, before any statement is
+// built, for the reason validateDeclaredNullsDistinct gives.
+func validateDeclaredEnforcementAndMatch(
+	dialect string, caps capability.Capabilities, database *schemamodel.Database,
+) error {
+	for _, field := range database.Fields {
+		if field.Check != "" && field.CheckNotEnforced {
+			if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(field.CheckName, field.Name)); err != nil {
+				return err
+			}
+		}
+		if field.Foreign == "" {
+			continue
+		}
+		if err := validateForeignKeyClauses(
+			dialect, caps, foreignKeyClauses{match: field.ForeignKeyMatch, notEnforced: field.ForeignKeyNotEnforced},
+			foreignKeyIdentity(field.ForeignKeyName, field.Name),
+		); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		switch {
+		case strings.EqualFold(constraint.Type, "CHECK") && constraint.NotEnforced:
+			if err := refuseNotEnforcedCheck(dialect, caps, checkIdentity(constraint.Name, "")); err != nil {
+				return err
+			}
+		case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
+			if err := validateForeignKeyClauses(
+				dialect, caps, foreignKeyClauses{match: constraint.Match, notEnforced: constraint.NotEnforced},
+				foreignKeyIdentity(constraint.Name, strings.Join(constraint.Columns, ", ")),
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// refuseNotEnforcedCheck refuses a CHECK declared NOT ENFORCED on a target
+// without [capability.NotEnforcedChecks]. Written without the clause, the
+// CHECK would reject rows its author chose to keep, so the declaration is
+// refused rather than hardened (stokaro/ptah#3853).
+func refuseNotEnforcedCheck(dialect string, caps capability.Capabilities, identity string) error {
+	if caps.Has(capability.NotEnforcedChecks) {
+		return nil
+	}
+	return enforcementError(dialect, fmt.Sprintf(
+		"%s declares a NOT ENFORCED CHECK, which requires target capability %s, unavailable on this %s target",
+		identity, capability.NotEnforcedChecks, platform.NormalizeDialect(dialect),
+	))
+}
+
+// foreignKeyClauses are the clauses of a foreign key that change how it
+// checks its rows.
+type foreignKeyClauses struct {
+	match       string
+	notEnforced bool
+}
+
+// validateForeignKeyClauses refuses a foreign key's NOT ENFORCED and MATCH
+// type on a target without the capability for each, for the reason
+// refuseNotEnforcedCheck gives: a key written without them checks rows its
+// author said it does not, or lets through rows MATCH FULL refuses.
+func validateForeignKeyClauses(
+	dialect string, caps capability.Capabilities, clauses foreignKeyClauses, identity string,
+) error {
+	normalized := platform.NormalizeDialect(dialect)
+	match := clauses.match
+	if clauses.notEnforced && !caps.Has(capability.NotEnforcedForeignKeys) {
+		return enforcementError(dialect, fmt.Sprintf(
+			"%s declares a NOT ENFORCED foreign key, which requires target capability %s, unavailable on this %s target",
+			identity, capability.NotEnforcedForeignKeys, normalized,
+		))
+	}
+	var keeps capability.Capability
+	switch strings.ToUpper(strings.TrimSpace(match)) {
+	case "":
+		return nil
+	case "FULL":
+		keeps = capability.ForeignKeyMatchFull
+	case "PARTIAL":
+		keeps = capability.ForeignKeyMatchPartial
+	default:
+		return fmt.Errorf("%s declares MATCH %s, which is neither FULL nor PARTIAL", identity, match)
+	}
+	if caps.Has(keeps) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "foreign key match type",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s declares MATCH %s, which requires target capability %s, unavailable on this %s target",
+			identity, strings.ToUpper(strings.TrimSpace(match)), keeps, normalized),
+	}
+}
+
+// enforcementError is the refusal of a NOT ENFORCED constraint.
+func enforcementError(dialect, message string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "not enforced constraints",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: message,
+	}
+}
+
+// checkIdentity names a CHECK in a refusal: by its name, or by the column it
+// is written on.
+func checkIdentity(name, column string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case column != "":
+		return fmt.Sprintf("the CHECK of column %q", column)
+	default:
+		return "an unnamed CHECK"
+	}
+}
+
+// foreignKeyIdentity names a foreign key in a refusal: by its name, or by the
+// columns it is written on.
+func foreignKeyIdentity(name, columns string) string {
+	switch {
+	case name != "":
+		return fmt.Sprintf("constraint %q", name)
+	case columns != "":
+		return fmt.Sprintf("the foreign key over %s", columns)
+	default:
+		return "an unnamed foreign key"
 	}
 }
 

@@ -154,6 +154,7 @@ func (t alterTarget) removeForeignKey(name string) bool {
 			if field.StructName == t.structName && field.Foreign != "" && field.ForeignKeyName == name {
 				field.Foreign, field.ForeignKeyName, field.OnDelete, field.OnUpdate = "", "", "", ""
 				field.Deferrable, field.Initially = false, ""
+				field.ForeignKeyMatch, field.ForeignKeyNotEnforced = "", false
 				return true
 			}
 		}

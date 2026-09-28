@@ -44,12 +44,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-384 fields are reachable from the desired schema, and each one carries
+389 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 323 | reaches rendered SQL on at least one target |
+| `ddl` | 328 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 7 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -107,7 +107,9 @@ None.
 | `schemamodel.Constraint.ForeignTable` | `ddl` | — |
 | `schemamodel.Constraint.IncludeColumns` | `ddl` | — |
 | `schemamodel.Constraint.Initially` | `ddl` | — |
+| `schemamodel.Constraint.Match` | `ddl` | — |
 | `schemamodel.Constraint.Name` | `ddl` | — |
+| `schemamodel.Constraint.NotEnforced` | `ddl` | — |
 | `schemamodel.Constraint.NullsDistinct` | `ddl` | — |
 | `schemamodel.Constraint.OnDelete` | `ddl` | — |
 | `schemamodel.Constraint.OnDeleteColumns` | `ddl` | — |
@@ -216,6 +218,7 @@ None.
 | `schemamodel.Field.Charset` | `ddl` | — |
 | `schemamodel.Field.Check` | `ddl` | — |
 | `schemamodel.Field.CheckName` | `ddl` | — |
+| `schemamodel.Field.CheckNotEnforced` | `ddl` | — |
 | `schemamodel.Field.Collate` | `ddl` | — |
 | `schemamodel.Field.Comment` | `ddl` | — |
 | `schemamodel.Field.Default` | `ddl` | — |
@@ -225,7 +228,9 @@ None.
 | `schemamodel.Field.Enum` | `ddl` | — |
 | `schemamodel.Field.FieldName` | `source` | the Go struct field the column was read from; the column's own name is its identity. The only render that moves under its ablation is the PostgreSQL-family renderer walking table options in map order |
 | `schemamodel.Field.Foreign` | `ddl` | — |
+| `schemamodel.Field.ForeignKeyMatch` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyName` | `ddl` | — |
+| `schemamodel.Field.ForeignKeyNotEnforced` | `ddl` | — |
 | `schemamodel.Field.GeneratedExpression` | `ddl` | — |
 | `schemamodel.Field.GeneratedFromEmbedded` | `derived` | marks a column Finalize materialized from an embedded declaration, so a later finalization can rebuild it rather than duplicate it |
 | `schemamodel.Field.GeneratedKind` | `ddl` | — |

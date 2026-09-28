@@ -162,6 +162,12 @@ func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRe
 	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
 		return Result{}, fmt.Errorf("%s defers its check, which Atlas HCL cannot represent", keys[0])
 	}
+	// Nor for a constraint the server does not check, or a foreign key's
+	// MATCH type: the foreign_key and check blocks have no attribute for
+	// either (stokaro/ptah#3853).
+	if clauses := schemaprep.EnforcementAndMatch(db); len(clauses) > 0 {
+		return Result{}, fmt.Errorf("%s, which Atlas HCL cannot represent", clauses[0])
+	}
 
 	// Resolved once, here, rather than per index. A malformed value has to fail
 	// the export whether or not this particular schema happens to carry an

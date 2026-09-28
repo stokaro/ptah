@@ -149,6 +149,7 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 	// suggestion as a phantom `check_name=` with no `check=` to back it.
 	if column.Check != "" {
 		field.CheckName = normalizeSQLIdentifier(sourcePlatform, column.CheckName)
+		field.CheckNotEnforced = column.CheckNotEnforced
 	}
 
 	// Same guarding, same reason: a name describes a constraint, and one on a
@@ -182,6 +183,8 @@ func fieldFromColumn(column *ast.ColumnNode, structName, sourcePlatform string) 
 		field.OnUpdate = column.ForeignKey.OnUpdate
 		field.Deferrable = column.ForeignKey.Deferrable
 		field.Initially = column.ForeignKey.Initially
+		field.ForeignKeyMatch = column.ForeignKey.Match
+		field.ForeignKeyNotEnforced = column.ForeignKey.NotEnforced
 	}
 
 	return field
@@ -1378,6 +1381,8 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			fk.OnDeleteColumns = normalizeSQLIdentifiers(sourcePlatform, ref.OnDeleteColumns)
 			fk.Deferrable = ref.Deferrable
 			fk.Initially = ref.Initially
+			fk.Match = ref.Match
+			fk.NotEnforced = ref.NotEnforced
 		}
 		return fk, true
 	case ast.CheckConstraint:
@@ -1387,6 +1392,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourceP
 			Type:            "CHECK",
 			Table:           ownerTable,
 			CheckExpression: constraint.Expression,
+			NotEnforced:     constraint.NotEnforced,
 		}, true
 	case ast.ExcludeConstraint:
 		return schemamodel.Constraint{

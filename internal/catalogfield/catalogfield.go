@@ -42,6 +42,10 @@ type ForeignKey struct {
 	// the schema declared (stokaro/ptah#1624).
 	Deferrable bool
 	Initially  string
+	// Match and NotEnforced carry the MATCH type and enforcement the catalog
+	// reported, for the same reason (stokaro/ptah#3853).
+	Match       string
+	NotEnforced bool
 }
 
 // Options is what a column cannot answer about itself.
@@ -94,6 +98,8 @@ func Field(column catalog.Column, opts Options) schemamodel.Field {
 		field.OnDelete = opts.ForeignKey.OnDelete
 		field.Deferrable = opts.ForeignKey.Deferrable
 		field.Initially = opts.ForeignKey.Initially
+		field.ForeignKeyMatch = opts.ForeignKey.Match
+		field.ForeignKeyNotEnforced = opts.ForeignKey.NotEnforced
 		field.OnUpdate = opts.ForeignKey.OnUpdate
 	}
 	return field

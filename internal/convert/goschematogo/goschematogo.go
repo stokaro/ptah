@@ -62,6 +62,11 @@ func Render(db *schemamodel.Database, opts Options) ([]File, error) {
 	if keys := schemaprep.DeferrableKeys(db); len(keys) > 0 {
 		return nil, fmt.Errorf("%s defers its check, which a Go annotation cannot represent", keys[0])
 	}
+	// Nor for a constraint the server does not check, or a foreign key's
+	// MATCH type (stokaro/ptah#3853).
+	if clauses := schemaprep.EnforcementAndMatch(db); len(clauses) > 0 {
+		return nil, fmt.Errorf("%s, which a Go annotation cannot represent", clauses[0])
+	}
 
 	ctx := newRenderContext(db, opts)
 	if opts.SingleFile {

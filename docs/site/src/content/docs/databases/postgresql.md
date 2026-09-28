@@ -53,6 +53,10 @@ PostgreSQL release lines differ in grammar that reaches generated SQL:
   PostgreSQL 15+. On an older line Ptah refuses the declaration rather than
   render an action that clears every column of the key; see
   [Limit ON DELETE to some columns](../../schema/sql/#limit-on-delete-to-some-columns).
+- `NOT ENFORCED` on a `CHECK` or a foreign key requires PostgreSQL 18+. On an
+  older line Ptah refuses the declaration rather than render a constraint the
+  server would check; see
+  [Constraint enforcement and the MATCH type](#constraint-enforcement-and-the-match-type).
 
 ## Schema objects
 
@@ -146,6 +150,30 @@ columns are used, a view created before its table gained a column is replaced,
 and the new column appears in it. A `*` over a join or inside a subquery is
 compared as written, so such a view is replaced on every plan; list its
 columns instead.
+
+## Constraint enforcement and the MATCH type
+
+PostgreSQL 18 keeps a `CHECK` or a foreign key declared `NOT ENFORCED` and does
+not check it. A foreign key declared `MATCH FULL` refuses a row whose key is
+partly null. Ptah reads both clauses from a SQL file, writes them when it
+renders the constraint, reads them back from `pg_get_constraintdef`, and
+compares them. A constraint whose enforcement or MATCH type changes is dropped
+and added again, because PostgreSQL 18.6 cannot change a `CHECK`'s enforcement
+in place.
+
+CockroachDB and YugabyteDB keep `MATCH FULL` too, and neither takes
+`NOT ENFORCED`. The reader refuses `MATCH PARTIAL`, which PostgreSQL 18.6
+answers with `MATCH PARTIAL not yet implemented`, and the renderer refuses
+`NOT ENFORCED` for PostgreSQL before 18.
+
+A command that connects plans for the server it connects to. `schema render`
+and `schema diff` plan for PostgreSQL 17 unless `--server-version 18` names the
+target, and `schema diff` does so even when it compares on a PostgreSQL 18
+connection ([stokaro/ptah#3910](https://github.com/stokaro/ptah/issues/3910)):
+
+```bash
+ptah schema diff --from "$DATABASE_URL" --to file://schema.sql --server-version 18
+```
 
 ## Unnamed constraints in a SQL file
 

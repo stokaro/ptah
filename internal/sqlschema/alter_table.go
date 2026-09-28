@@ -707,10 +707,11 @@ func (t alterTarget) removeNamedConstraint(name string) bool {
 			if field.Foreign != "" && field.ForeignKeyName == name {
 				field.Foreign, field.ForeignKeyName, field.OnDelete, field.OnUpdate = "", "", "", ""
 				field.Deferrable, field.Initially = false, ""
+				field.ForeignKeyMatch, field.ForeignKeyNotEnforced = "", false
 				return true
 			}
 			if field.Check != "" && field.CheckName == name {
-				field.Check, field.CheckName = "", ""
+				field.Check, field.CheckName, field.CheckNotEnforced = "", "", false
 				return true
 			}
 		}

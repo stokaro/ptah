@@ -254,8 +254,7 @@ func (p *Planner) addRegularForeignKeys(
 		if fkRef.Table == table.QualifiedName() {
 			continue
 		}
-		fkRef.OnDelete = field.OnDelete
-		fkRef.OnUpdate = field.OnUpdate
+		withFieldForeignKeyClauses(fkRef, field)
 		result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 	}
 	return result
@@ -292,6 +291,19 @@ func (p *Planner) addSelfReferencingForeignKeys(
 // (issue #189).
 func isRegularForeignKeyField(field schemamodel.Field, table schemamodel.Table) bool {
 	return field.StructName == table.StructName && field.Foreign != ""
+}
+
+// withFieldForeignKeyClauses gives fkRef what the field declares about its
+// foreign key beyond the reference: the actions, the deferral, the MATCH type
+// and enforcement. A reference built with fewer adds a key that checks what
+// the declaration said it does not (stokaro/ptah#3853).
+func withFieldForeignKeyClauses(fkRef *ast.ForeignKeyRef, field schemamodel.Field) {
+	fkRef.OnDelete = field.OnDelete
+	fkRef.OnUpdate = field.OnUpdate
+	fkRef.Deferrable = field.Deferrable
+	fkRef.Initially = field.Initially
+	fkRef.Match = field.ForeignKeyMatch
+	fkRef.NotEnforced = field.ForeignKeyNotEnforced
 }
 
 func astForeignKeyReference(reference *schemaprep.ForeignKeyReference) *ast.ForeignKeyRef {
@@ -370,8 +382,7 @@ func (p *Planner) addNewTableColumns(
 					fkRef := astForeignKeyReference(parsed)
 					fkName := foreignKeyName(tableDiff.TableName, *targetField)
 					fkRef.Name = fkName
-					fkRef.OnDelete = targetField.OnDelete
-					fkRef.OnUpdate = targetField.OnUpdate
+					withFieldForeignKeyClauses(fkRef, *targetField)
 
 					// Create foreign key constraint
 					fkConstraint := ast.NewForeignKeyConstraint(
@@ -985,6 +996,7 @@ func declaredForeignKeys(diff *difftypes.SchemaDiff) []affectedForeignKey {
 				Columns:  declared.ForeignColumns,
 				OnDelete: declared.OnDelete,
 				OnUpdate: declared.OnUpdate,
+				Match:    declared.Match,
 			},
 		})
 	}
@@ -2089,9 +2101,10 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 			return nil
 		}
 		return &ast.ConstraintNode{
-			Type:       ast.CheckConstraint,
-			Name:       add.Name,
-			Expression: add.CheckExpression,
+			Type:        ast.CheckConstraint,
+			Name:        add.Name,
+			Expression:  add.CheckExpression,
+			NotEnforced: add.NotEnforced,
 		}
 	case "UNIQUE":
 		if len(add.Columns) == 0 {
@@ -2138,8 +2151,14 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		OnDelete: add.OnDelete,
 		OnUpdate: add.OnUpdate,
 		// Carried so the renderer refuses the list this family cannot write,
-		// rather than the planner dropping it here.
+		// rather than the planner dropping it here. The same holds for the
+		// deferral and enforcement, which neither engine takes on a foreign
+		// key, and the MATCH type MySQL keeps (stokaro/ptah#3853).
 		OnDeleteColumns: append([]string(nil), add.OnDeleteColumns...),
+		Deferrable:      add.Deferrable,
+		Initially:       add.Initially,
+		Match:           add.Match,
+		NotEnforced:     add.NotEnforced,
 	}
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }

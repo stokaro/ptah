@@ -181,24 +181,6 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "NOT ENFORCED after a CHECK",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, CHECK (a > 0) NOT ENFORCED);",
-			wantErr: `NOT ENFORCED at position 37: a CHECK that is not enforced is not modeled \(stokaro/ptah#3853\).*`,
-		},
-		{
-			name:    "NOT ENFORCED after a foreign key",
-			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) NOT ENFORCED);",
-			wantErr: `NOT ENFORCED at position 57: a FOREIGN KEY that is not enforced is not modeled.*`,
-		},
-		{
-			name:    "NOT ENFORCED after a column's CHECK",
-			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int CHECK (a > 0) NOT ENFORCED);",
-			wantErr: `NOT ENFORCED at position 36: a CHECK that is not enforced is not modeled.*`,
-		},
-		{
 			name:    "ENFORCED after a UNIQUE",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (a int, UNIQUE (a) ENFORCED);",
@@ -265,22 +247,55 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `NOT VALID at position 51: the mysql dialect takes no NOT VALID clause`,
 		},
 		{
-			name:    "MATCH FULL",
+			name:    "NOT ENFORCED twice",
 			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int, b int, FOREIGN KEY (a, b) REFERENCES p (id, k) MATCH FULL);",
-			wantErr: `.*MATCH FULL at position 70: the match type of a foreign key is not modeled \(stokaro/ptah#3853\).*`,
+			sql:     "CREATE TABLE c (a int, CHECK (a > 0) NOT ENFORCED ENFORCED);",
+			wantErr: "NOT ENFORCED or ENFORCED at position 50: a constraint takes one of them, and PostgreSQL 18.6 answers " +
+				"`multiple ENFORCED/NOT ENFORCED clauses not allowed`",
 		},
 		{
-			name:    "MATCH PARTIAL on MySQL",
+			name:    "NOT ENFORCED twice on a column",
+			dialect: platform.Postgres,
+			sql:     "CREATE TABLE c (a int CHECK (a > 0) ENFORCED NOT ENFORCED);",
+			wantErr: "NOT ENFORCED or ENFORCED at position 45: .*",
+		},
+		{
+			name:    "NOT ENFORCED after a foreign key on MySQL",
 			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) MATCH PARTIAL);",
-			wantErr: `.*MATCH PARTIAL at position 57: the match type of a foreign key is not modeled.*`,
+			sql:     "CREATE TABLE c (a int, FOREIGN KEY (a) REFERENCES p (id) NOT ENFORCED);",
+			wantErr: `NOT ENFORCED at position 57: the mysql dialect takes no NOT ENFORCED clause after a FOREIGN KEY`,
 		},
 		{
-			name:    "MATCH FULL on a column's REFERENCES",
+			name:    "NOT ENFORCED on CockroachDB",
+			dialect: platform.CockroachDB,
+			sql:     "CREATE TABLE c (a int, CHECK (a > 0) NOT ENFORCED);",
+			wantErr: `NOT ENFORCED at position 37: the cockroachdb dialect takes no NOT ENFORCED clause after a CHECK`,
+		},
+		{
+			name:    "MATCH FULL on MariaDB",
+			dialect: platform.MariaDB,
+			sql:     "CREATE TABLE c (a int, b int, FOREIGN KEY (a, b) REFERENCES p (id, k) MATCH FULL);",
+			wantErr: `.*MATCH FULL at position 70: MariaDB 11.8.9 accepts the clause and records NONE, so the key it builds ` +
+				`is MATCH SIMPLE; declare the key without the clause`,
+		},
+		{
+			name:    "MATCH PARTIAL on SQLite",
+			dialect: platform.SQLite,
+			sql:     "CREATE TABLE c (a int REFERENCES p (id) MATCH PARTIAL);",
+			wantErr: `.*MATCH PARTIAL at position 40: SQLite 3.51 accepts the clause and records NONE.*`,
+		},
+		{
+			name:    "MATCH PARTIAL on PostgreSQL",
 			dialect: platform.Postgres,
-			sql:     "CREATE TABLE c (a int REFERENCES p (id) MATCH FULL);",
-			wantErr: `.*MATCH FULL at position 40: .*`,
+			sql:     "CREATE TABLE c (a int, b int, FOREIGN KEY (a, b) REFERENCES p (id, k) MATCH PARTIAL);",
+			wantErr: ".*MATCH PARTIAL at position 70: the postgres dialect's server does not implement it, and " +
+				"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`",
+		},
+		{
+			name:    "MATCH PARTIAL on CockroachDB",
+			dialect: platform.CockroachDB,
+			sql:     "CREATE TABLE c (a int REFERENCES p (id) MATCH PARTIAL);",
+			wantErr: `.*MATCH PARTIAL at position 40: the cockroachdb dialect's server does not implement it.*`,
 		},
 		{
 			name:    "MATCH with no type",
