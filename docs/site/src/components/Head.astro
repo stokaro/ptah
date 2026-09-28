@@ -7,13 +7,15 @@
  *
  * global.css defines two layouts: the "envelope" the site renders by default
  * and the docs concept's "column", under `:root[data-ptah-layout='column']`.
- * While the choice between them is open, the header carries a toggle
+ * The site keeps both (stokaro/ptah#2913), and the header carries a toggle
  * (LayoutToggle.astro) that stores the choice under the localStorage key
  * `ptah-layout`; `?layout=column` or `?layout=envelope` in the URL sets it as
  * well. This script reads that and sets the attribute inline, the way
  * Starlight's ThemeProvider sets the theme, so a page never flashes the other
  * layout. Without a stored choice or a query the page renders the envelope
- * and no attribute is set, which is also what every build-time gate measures.
+ * and no attribute is set. check-responsive.mjs measures both layouts, the
+ * column through `?layout=column`; the other build-time gates measure the
+ * envelope.
  */
 import Default from '@astrojs/starlight/components/Head.astro';
 ---

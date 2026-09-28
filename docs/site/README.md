@@ -102,12 +102,14 @@ in `src/styles/global.css`: a 60rem prose column, a 70rem shell for wide
 content, the article-and-contents frame centered until its gutters reach a
 cap. The concept's layout, a 44rem prose column with a 60rem shell and the
 frame weighted toward the navigation on wide screens, is under
-`:root[data-ptah-layout='column']`. While the choice between them is open,
-the header carries a toggle beside the theme toggle (`LayoutToggle.astro`);
+`:root[data-ptah-layout='column']`. The site keeps both
+(stokaro/ptah#2913), and the header carries a toggle beside the theme toggle
+(`LayoutToggle.astro`);
 the choice is stored in the browser and `Head.astro` applies it before the
 first paint, and `?layout=column` or `?layout=envelope` in the URL sets it
-too. A page without a stored choice renders the envelope, which is what
-`scripts/check-responsive.mjs` measures and pins.
+too. A page without a stored choice renders the envelope.
+`scripts/check-responsive.mjs` measures and pins both layouts, the column
+through `?layout=column`.
 
 When a token changes on ptah.run, change it in `tokens.css` and, for the
 colors it repeats, in `code-theme.mjs`; there is no second source for it
