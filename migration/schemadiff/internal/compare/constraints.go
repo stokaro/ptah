@@ -434,7 +434,7 @@ func declaredAndCheckConstraints(
 ) map[tableMemberKey]schemamodel.Constraint {
 	constraints := make(map[tableMemberKey]schemamodel.Constraint)
 	for _, constraint := range desired.Constraints {
-		constraint, key := declaredConstraint(constraint, desired.Tables, semantics)
+		constraint, key := comparedDeclaredConstraint(constraint, desired.Tables, database, dialect, semantics)
 		constraints[key] = constraint
 	}
 
@@ -464,6 +464,39 @@ func declaredConstraint(
 	constraint schemamodel.Constraint, tables []schemamodel.Table, semantics identifier.Semantics,
 ) (schemamodel.Constraint, tableMemberKey) {
 	constraint.Table = constraintowner.TableName(constraint, tables)
+	return constraint, newDeclaredConstraintKey(constraint, semantics)
+}
+
+// comparedDeclaredConstraint is [declaredConstraint] for a comparison with
+// database on dialect. A declared primary key takes the name of the database's
+// primary key where its own name cannot find it: always on MySQL and MariaDB,
+// which call every primary key PRIMARY whatever the declaration says, and on
+// any dialect when the declaration names none. Keyed by the declared name, the
+// key the first apply built never meets its declaration, and every later apply
+// plans it again (stokaro/ptah#3959).
+//
+// The constraint comparison and the comment comparison both key a declaration
+// through it, so the two pair a declared key with the same database key.
+func comparedDeclaredConstraint(
+	constraint schemamodel.Constraint,
+	tables []schemamodel.Table,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) (schemamodel.Constraint, tableMemberKey) {
+	constraint, key := declaredConstraint(constraint, tables, semantics)
+	if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") || database == nil {
+		return constraint, key
+	}
+	if !isMySQLFamily(dialect) && strings.TrimSpace(constraint.Name) != "" {
+		return constraint, key
+	}
+	identity := newQualifiedTableIdentity(constraint.Table, semantics)
+	name, found := livePrimaryKeyName(database.Constraints, identity, semantics)
+	if !found {
+		return constraint, key
+	}
+	constraint.Name = name
 	return constraint, newDeclaredConstraintKey(constraint, semantics)
 }
 

@@ -351,6 +351,11 @@ and CockroachDB takes it on an index and on a UNIQUE constraint but not on a
 primary key. See
 [`//ptah:schema:index`](#ptahschemaindex) for the index list.
 
+A PRIMARY KEY constraint's `name` is the name the key is built with on
+PostgreSQL; without one the server names it `<table>_pkey`. MySQL and MariaDB
+call every primary key `PRIMARY` whatever it is declared as, so there the
+comparison matches the key without its name.
+
 ## Reusable types
 
 ### `//ptah:schema:enum`

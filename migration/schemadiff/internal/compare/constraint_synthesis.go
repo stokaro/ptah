@@ -306,19 +306,32 @@ func tablePrimaryKeyConstraintName(
 	semantics identifier.Semantics,
 ) string {
 	wanted := newQualifiedTableIdentity(table.QualifiedName(), semantics)
-	for _, constraint := range dbConstraints {
-		if constraint.Type != "PRIMARY KEY" {
-			continue
-		}
-		if newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == wanted {
-			return constraint.Name
-		}
+	if name, found := livePrimaryKeyName(dbConstraints, wanted, semantics); found {
+		return name
 	}
 
 	if isMySQLFamily(dialect) {
 		return "PRIMARY"
 	}
 	return table.Name + "_pkey"
+}
+
+// livePrimaryKeyName answers the name of the primary key the database holds on
+// the table, and false where it holds none.
+func livePrimaryKeyName(
+	dbConstraints []catalog.Constraint,
+	table tableIdentity,
+	semantics identifier.Semantics,
+) (string, bool) {
+	for _, constraint := range dbConstraints {
+		if constraint.Type != "PRIMARY KEY" {
+			continue
+		}
+		if newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == table {
+			return constraint.Name, true
+		}
+	}
+	return "", false
 }
 
 // synthesizeFieldLevelForeignKeyConstraints turns each field-level `foreign=`
