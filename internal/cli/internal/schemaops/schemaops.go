@@ -97,21 +97,8 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, err
 	}
 
-	loadOpts := schemaload.Options{
-		RootDirs:        opts.RootDirs,
-		SchemaFiles:     opts.SchemaFiles,
-		ProjectEnv:      opts.ProjectEnv,
-		EnvSelectorFlag: opts.EnvSelectorFlag,
-		Commands:        opts.Commands,
-		Dialect:         dialect,
-		PlainHTTP:       opts.PlainHTTP,
-		Vars:            opts.Vars,
-	}
-	desired, err := schemaload.LoadContext(ctx, loadOpts)
-	if err != nil {
-		return nil, err
-	}
-
+	// Connected first: the server names the dialect a SQL schema file is read
+	// in, because a postgres:// URL reaches CockroachDB too (stokaro/ptah#3952).
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, opts.ConnectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
 	cancelConnect()
@@ -119,6 +106,21 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	loadOpts := schemaload.Options{
+		RootDirs:        opts.RootDirs,
+		SchemaFiles:     opts.SchemaFiles,
+		ProjectEnv:      opts.ProjectEnv,
+		EnvSelectorFlag: opts.EnvSelectorFlag,
+		Commands:        opts.Commands,
+		Dialect:         conn.Info().Dialect,
+		PlainHTTP:       opts.PlainHTTP,
+		Vars:            opts.Vars,
+	}
+	desired, err := schemaload.LoadContext(ctx, loadOpts)
+	if err != nil {
+		return nil, err
+	}
 
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
 	if err != nil {

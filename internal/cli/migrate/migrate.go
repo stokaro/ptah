@@ -178,8 +178,19 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintln(out)
 	}
 
-	// 1. Resolve the desired schema from Go entities, schema files, and/or an
-	// external command into one composite schema.
+	// 1. Connect first: the server names the dialect a SQL schema file is read
+	// in, because a postgres:// URL reaches CockroachDB too (stokaro/ptah#3952).
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
+	if err != nil {
+		return fmt.Errorf("error connecting to database: %w", err)
+	}
+	defer dbschema.CloseAndWarn(conn)
+
+	// 2. Resolve the desired schema from Go entities, schema files, and/or an
+	// external command into one composite schema, then read the database.
+	loadOpts.Dialect = conn.Info().Dialect
 	loadResult, err := schemaload.LoadResult(cmd.Context(), loadOpts)
 	if err != nil {
 		return err
@@ -188,15 +199,6 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
 	}
 	result := loadResult.Database
-
-	// 2. Connect to database and read schema
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
-	cancelConnect()
-	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
-	}
-	defer dbschema.CloseAndWarn(conn)
 
 	schemas := dbcli.ParseSchemas(schemasValue)
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)

@@ -214,6 +214,39 @@ type generateReplayOptions struct {
 	dirFormat      migrationfile.DirFormat
 	connectTimeout time.Duration
 	policy         migrationintegrity.Policy
+	// loadDesired reads the desired schema in the dialect the dev server
+	// reports.
+	loadDesired func(dialect string) (*schemamodel.Database, error)
+}
+
+// generateAgainstTarget plans and writes the next migration from the target
+// database, reading the desired schema in the dialect the target reports.
+//
+// Only the connect is bounded by connectTimeout; the command context governs
+// the rest. A connect context handed to GenerateMigration put a 10s deadline
+// on planning, rendering and publication, which on a slow runner expired
+// during publication and reported `error creating migration files: context
+// deadline exceeded` (stokaro/ptah#1749).
+func generateAgainstTarget(
+	ctx context.Context,
+	generateOpts generator.GenerateMigrationOptions,
+	targetURL string,
+	connectTimeout time.Duration,
+	loadDesired func(dialect string) (*schemamodel.Database, error),
+) (*generator.MigrationFiles, error) {
+	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, targetURL)
+	cancelConnect()
+	if err != nil {
+		return nil, fmt.Errorf("error connecting to database: %w", err)
+	}
+	defer dbschema.CloseAndWarn(conn)
+	generateOpts.Generated, err = loadDesired(conn.Info().Dialect)
+	if err != nil {
+		return nil, err
+	}
+	generateOpts.DBConn = conn
+	return generator.GenerateMigration(ctx, generateOpts)
 }
 
 // planGeneratedMigrationByReplay derives the current state by replaying the
@@ -269,6 +302,11 @@ func planGeneratedMigrationByReplay(
 				opts.dirFormat,
 				func(replayConn *dbschema.DatabaseConnection) error {
 					replayOpts := generateOpts
+					desired, err := opts.loadDesired(replayConn.Info().Dialect)
+					if err != nil {
+						return err
+					}
+					replayOpts.Generated = desired
 					replayOpts.DBConn = replayConn
 					replayOpts.PriorMigrationsFS = priorMigrations
 					var planErr error
@@ -514,11 +552,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	desired, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
-	if err != nil {
-		return err
-	}
-
 	priorMigrations, dirFormat, err := captureGeneratePriorMigrations(
 		cmd.Context(),
 		cmd.ErrOrStderr(),
@@ -534,13 +567,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// The desired schema is read once a connection says which dialect the
+	// server speaks, and after the integrity gate, which refuses a drifted
+	// directory before any database is reached (stokaro/ptah#3952).
+	loadDesired := func(dialect string) (*schemamodel.Database, error) {
+		return loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
+	}
+
 	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
 	if err != nil {
 		return err
 	}
 
 	generateOpts := generator.GenerateMigrationOptions{
-		Generated: desired,
 		CompareOptions: dbcli.CompareOptionsIgnoringExtensions(
 			cmd, ignoreExtensions, projectCfg, nil,
 		),
@@ -573,6 +612,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			dirFormat:      dirFormat,
 			connectTimeout: connectTimeout,
 			policy:         integrityPolicy,
+			loadDesired:    loadDesired,
 		})
 		// Planning can succeed and the surrounding replay still fail, which
 		// leaves a plan nobody will publish. It holds the migration directory
@@ -585,14 +625,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			files, err = plan.WriteFilesContext(cmd.Context())
 		}
 	} else {
-		// The command context governs the run; the connect budget is a field
-		// the generator spends on the connect alone. Handing the connect
-		// context to GenerateMigration instead put a 10s default deadline on
-		// planning, rendering and publication, which on a slow runner expired
-		// during publication and reported `error creating migration files:
-		// context deadline exceeded` (stokaro/ptah#1749).
-		generateOpts.ConnectTimeout = connectTimeout
-		files, err = generator.GenerateMigration(cmd.Context(), generateOpts)
+		files, err = generateAgainstTarget(cmd.Context(), generateOpts, targetURL, connectTimeout, loadDesired)
 	}
 	return outcome.report(cmd, targetURL, files, err)
 }
