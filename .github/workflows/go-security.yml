@@ -104,23 +104,27 @@ jobs:
           args: --enable-only=gosec --output.sarif.path=gosec.sarif --timeout=30m
           version: v2.14.0
 
-      # The second build-tag contour. A file behind //go:build integration is
-      # outside the default build, so the run above never reads it, and code
-      # scanning showed none of those files (stokaro/ptah#3895). It runs even
+      # The tagged contour: every opt-in build tag the tree uses at once, as
+      # scripts/list-build-tags.sh lists them. A tagged file is outside the
+      # default build, so the run above never reads it: without this run, code
+      # scanning shows none of those files (stokaro/ptah#3895). It runs even
       # when the first run found something, so both reports are uploaded, and
-      # scripts/check-go-module-lint-coverage.sh fails if it is removed.
-      - name: Run gosec (integration contour)
+      # scripts/check-go-module-lint-coverage.sh fails if it is removed or
+      # misses a tag.
+      - name: Run gosec (tagged contour)
         if: ${{ !cancelled() }}
         uses: golangci/golangci-lint-action@v9
         with:
-          args: --enable-only=gosec --build-tags=integration --output.sarif.path=gosec-integration.sarif --timeout=30m
+          args: --enable-only=gosec --build-tags=integration,observability --output.sarif.path=gosec-integration.sarif --timeout=30m
           version: v2.14.0
 
       # One upload per contour, each under its own category. The pinned
       # upload-sarif refuses two runs from one tool under one category: it
       # throws when a directory holds both, and a second upload in the same job
       # with the same category aborts. A file in both builds is reported by both
-      # configurations, and code scanning shows that as one alert.
+      # configurations, and code scanning shows that as one alert. The tagged
+      # report keeps the category it was first uploaded under, so its alerts
+      # keep their history.
       - name: Upload gosec SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@v4.38.2
@@ -128,7 +132,7 @@ jobs:
           sarif_file: gosec.sarif
           category: gosec
 
-      - name: Upload gosec SARIF (integration contour)
+      - name: Upload gosec SARIF (tagged contour)
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@v4.38.2
         with:

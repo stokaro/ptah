@@ -18,16 +18,20 @@ set -euo pipefail
 # A new module therefore fails here until the workflow visits it, which is the
 # moment the decision is cheap.
 #
-# The contours are the two runs `make lint-golangci` makes in every module:
-# none, and `--build-tags=integration`. A file behind `//go:build integration`
-# is outside the default build, so one run never reads it. Before this check
-# knew about contours, every golangci-lint step here passed no tags, and 84
-# findings sat in integration/ with the lint job green (stokaro/ptah#3882).
+# The contours are the two runs `make lint-golangci` makes in every module. The
+# default contour passes no build tags. The tagged contour passes every opt-in
+# tag the tree uses at once, as scripts/list-build-tags.sh lists them:
+# `--build-tags=integration,observability` today. A file behind a tag is
+# outside the default build, so one run never reads it: without the tagged
+# steps, no golangci-lint run reads the integration tests or the OTLP exporter
+# (stokaro/ptah#3882, stokaro/ptah#3895).
+#
+# The tag list is discovered, so a tag added to a file fails here until the
+# workflow lints it. A step's tags are compared as a set, in any order.
 #
 # go-security.yml is read too, for its gosec code-scanning run. That job scans
-# the root module only, as it always has, so only the contours are required of
-# it: before stokaro/ptah#3895 it ran without the tag, and code scanning showed
-# none of the integration-tagged files.
+# the root module only, so only the contours are required of it: without the
+# tagged run, code scanning shows none of the tagged files (stokaro/ptah#3895).
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
@@ -35,6 +39,12 @@ cd "$repo_root"
 modules="$(scripts/list-go-modules.sh)"
 if [[ -z $modules ]]; then
 	printf 'go module lint coverage: no modules discovered; refusing to report a vacuous pass\n' >&2
+	exit 1
+fi
+
+tagged="$(scripts/list-build-tags.sh --joined)"
+if [[ -z $tagged ]]; then
+	printf 'go module lint coverage: no opt-in build tag discovered; refusing to report a vacuous pass\n' >&2
 	exit 1
 fi
 
@@ -49,9 +59,26 @@ fi
 # one that lints it twice in the same contour.
 lint_steps() {
 	awk '
+	# sorted returns a comma-separated list sorted, so two spellings of one
+	# set compare equal. An insertion sort: asort is not in every awk.
+	function sorted(list,    parts, n, i, j, v, out) {
+		n = split(list, parts, ",")
+		for (i = 2; i <= n; i++) {
+			v = parts[i]
+			for (j = i - 1; j >= 1 && parts[j] > v; j--) {
+				parts[j + 1] = parts[j]
+			}
+			parts[j + 1] = v
+		}
+		out = parts[1]
+		for (i = 2; i <= n; i++) {
+			out = out "," parts[i]
+		}
+		return out
+	}
 	function flush() {
 		if (lint) {
-			printf "%s\t%s\t%s\n", job, (dir == "" ? "." : dir), (tags == "" ? "default" : tags)
+			printf "%s\t%s\t%s\n", job, (dir == "" ? "." : dir), (tags == "" ? "default" : sorted(tags))
 		}
 		lint = 0
 		dir = ""
@@ -123,7 +150,7 @@ lint_steps() {
 	' "$1"
 }
 
-contours=(default integration)
+contours=(default "$tagged")
 tab=$'\t'
 missing=0
 summary=()
@@ -162,12 +189,15 @@ require_coverage() {
 				if grep -qxF "${job}${tab}${module}${tab}${contour}" <<<"$steps"; then
 					continue
 				fi
-				printf 'go module lint coverage: job %s in %s does not lint %s in the %s contour\n' \
-					"$job" "$workflow" "$name" "$contour" >&2
 				if [[ $contour == "default" ]]; then
+					printf 'go module lint coverage: job %s in %s does not lint %s without build tags\n' \
+						"$job" "$workflow" "$name" >&2
 					printf '  it needs a golangci-lint step with %s and no --build-tags\n' "$where" >&2
 				else
+					printf 'go module lint coverage: job %s in %s does not lint %s with --build-tags=%s\n' \
+						"$job" "$workflow" "$name" "$contour" >&2
 					printf '  it needs a golangci-lint step with %s and `--build-tags=%s`\n' "$where" "$contour" >&2
+					printf '  the tags are every opt-in tag scripts/list-build-tags.sh finds, in any order\n' >&2
 				fi
 				missing=1
 			done

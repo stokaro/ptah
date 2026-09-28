@@ -98,6 +98,7 @@
   "/operate/oci-registry/",
   "/operate/overview/",
   "/operate/seed-data/",
+  "/operate/trace-migrations/",
   "/operate/troubleshooting/",
   "/operate/verify-a-release/",
   "/operate/zero-downtime-changes/",

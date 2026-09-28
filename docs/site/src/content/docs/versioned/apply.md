@@ -717,7 +717,8 @@ scripts. `ptah migrations up` supports:
 - `--pg-dump-to` / `--mysqldump-to` — a directory where a backup is written
   before migrations are applied.
 - Revision-table placement (`--migrations-table`, `--migrations-schema`) and
-  Prometheus metrics (`--metrics-addr`).
+  Prometheus metrics (`--metrics-addr`). OpenTelemetry traces need a build
+  with the `observability` tag; see [Trace migration runs](../../operate/trace-migrations/).
 - `--migrations-engine` — the storage engine the revision table is created with.
   It exists for ClickHouse, where a replicated deployment needs
   `ReplicatedMergeTree(...)` or the migration history lives on one node while
