@@ -921,7 +921,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		if dbConstraint.CheckClause == nil || strings.TrimSpace(*dbConstraint.CheckClause) == "" {
 			return schemamodel.Constraint{}, false
 		}
-		if isPostgresSyntheticNotNullCheck(dbConstraint) {
+		if catalogfield.IsNotNullRow(dbConstraint) {
 			return schemamodel.Constraint{}, false
 		}
 	case "EXCLUDE":
@@ -1027,17 +1027,6 @@ func indexDescribedUniques(dbSchema *catalog.Database) map[tableMemberKey]struct
 		}
 	}
 	return owned
-}
-
-func isPostgresSyntheticNotNullCheck(constraint catalog.Constraint) bool {
-	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
-		return false
-	}
-	checkClause := strings.TrimSpace(strings.ToUpper(*constraint.CheckClause))
-	if !strings.HasSuffix(checkClause, " IS NOT NULL") {
-		return false
-	}
-	return strings.Count(checkClause, " IS NOT NULL") == 1
 }
 
 func structNameForTable(tableStructNames map[string]string, qualifiedTableName, fallbackTableName string) string {
