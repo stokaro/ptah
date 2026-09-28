@@ -14,9 +14,23 @@ lister="$repo_root/scripts/list-go-modules.sh"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/ptah-module-lint.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
-# write_repo builds a throwaway repository with the modules and the workflow the
-# case is about. The modules are discovered from `git ls-files`, so each go.mod
-# has to be tracked.
+# security_workflow is the go-security.yml write_repo writes. By default it is a
+# gosec job linting the root module in both contours; a case about that file
+# sets it before write_repo and restores it after.
+default_security_workflow='jobs:
+  gosec:
+    steps:
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          args: --enable-only=gosec --output.sarif.path=gosec.sarif
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          args: --enable-only=gosec --build-tags=integration --output.sarif.path=gosec-integration.sarif'
+security_workflow=$default_security_workflow
+
+# write_repo builds a throwaway repository with the modules and the go-lint.yml
+# the case is about. The modules are discovered from `git ls-files`, so each
+# go.mod has to be tracked.
 write_repo() {
 	local workflow=$1
 	shift
@@ -31,6 +45,7 @@ write_repo() {
 		printf 'module example.com/%s\n\ngo 1.26\n' "$module" >"$work_dir/repo/$module/go.mod"
 	done
 	printf '%s\n' "$workflow" >"$work_dir/repo/.github/workflows/go-lint.yml"
+	printf '%s\n' "$security_workflow" >"$work_dir/repo/.github/workflows/go-security.yml"
 	git -C "$work_dir/repo" add -A
 }
 
@@ -146,4 +161,18 @@ $(lint_step . ' --build-tags=integration')
 $(lint_step nested '')" nested
 assert_rejected 'a nested module missing one contour in one job' 'job lint-windows in .github/workflows/go-lint.yml does not lint nested in the integration contour'
 
-printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, a workflow linting nothing, and a missing integration contour are each reported\n'
+# The gosec code-scanning job running without the integration tag: the state
+# stokaro/ptah#3895 found, where code scanning showed no tagged file. Only the
+# root is asked of it, so the nested module here is not a gap.
+security_workflow="$(printf '%s\n' "$default_security_workflow" | grep -v 'build-tags')"
+write_repo "$two_jobs_both_modules" nested
+assert_rejected 'the gosec job without the integration contour' 'job gosec in .github/workflows/go-security.yml does not lint the root module in the integration contour'
+security_workflow=$default_security_workflow
+
+# A repository without go-security.yml has no code-scanning run to read.
+write_repo "$two_jobs_both_modules" nested
+rm "$work_dir/repo/.github/workflows/go-security.yml"
+git -C "$work_dir/repo" add -A
+assert_rejected 'no go-security.yml' '.github/workflows/go-security.yml not found'
+
+printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, a workflow linting nothing, and a missing integration contour in either workflow are each reported\n'

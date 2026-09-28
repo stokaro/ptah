@@ -23,16 +23,14 @@ set -euo pipefail
 # is outside the default build, so one run never reads it. Before this check
 # knew about contours, every golangci-lint step here passed no tags, and 84
 # findings sat in integration/ with the lint job green (stokaro/ptah#3882).
+#
+# go-security.yml is read too, for its gosec code-scanning run. That job scans
+# the root module only, as it always has, so only the contours are required of
+# it: before stokaro/ptah#3895 it ran without the tag, and code scanning showed
+# none of the integration-tagged files.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
-
-workflow=".github/workflows/go-lint.yml"
-
-if [[ ! -f $workflow ]]; then
-	printf 'go module lint coverage: %s not found\n' "$workflow" >&2
-	exit 1
-fi
 
 modules="$(scripts/list-go-modules.sh)"
 if [[ -z $modules ]]; then
@@ -40,16 +38,17 @@ if [[ -z $modules ]]; then
 	exit 1
 fi
 
-# Each golangci-lint step, as "<job>\t<module>\t<contour>". The module is the
-# step's working-directory, or `.` when it names none; the contour is the value
-# of --build-tags, or `default` when it passes none. A job is a key under the
-# top-level `jobs:`, and a step is an item of its `steps:` list, ending at the
-# next item or where the list does.
+# lint_steps prints each golangci-lint step of a workflow, as
+# "<job>\t<module>\t<contour>". The module is the step's working-directory, or
+# `.` when it names none; the contour is the value of --build-tags, or `default`
+# when it passes none. A job is a key under the top-level `jobs:`, and a step is
+# an item of its `steps:` list, ending at the next item or where the list does.
 #
 # The step is the unit because the property belongs to it. Counting lines over
 # the whole file cannot tell a job that lints the root in both contours from
 # one that lints it twice in the same contour.
-steps="$(awk '
+lint_steps() {
+	awk '
 	function flush() {
 		if (lint) {
 			printf "%s\t%s\t%s\n", job, (dir == "" ? "." : dir), (tags == "" ? "default" : tags)
@@ -121,53 +120,74 @@ steps="$(awk '
 	END {
 		flush()
 	}
-' "$workflow")"
+	' "$1"
+}
 
-if [[ -z $steps ]]; then
-	printf 'go module lint coverage: %s runs golangci-lint in no job at all\n' "$workflow" >&2
-	exit 1
-fi
+contours=(default integration)
+tab=$'\t'
+missing=0
+summary=()
 
-# Every job that runs golangci-lint at all -- two today, Ubuntu and Windows --
-# has to lint every module, the root included, in every contour.
+# require_coverage checks that every job in the workflow that runs golangci-lint
+# at all lints each of the given modules in every contour. It reports each gap
+# and sets missing.
 #
 # Asking each job rather than the file matters: searched over the file, a module
 # dropped from one job stays green on the strength of the other, which is the
 # same "somewhere in the file" reasoning that let the modules go uncovered in
 # the first place.
-contours=(default integration)
-tab=$'\t'
-jobs="$(cut -f1 <<<"$steps" | sort -u)"
+require_coverage() {
+	local workflow=$1 modules=$2 steps jobs job module name where contour
+	if [[ ! -f $workflow ]]; then
+		printf 'go module lint coverage: %s not found\n' "$workflow" >&2
+		missing=1
+		return
+	fi
+	steps="$(lint_steps "$workflow")"
+	if [[ -z $steps ]]; then
+		printf 'go module lint coverage: %s runs golangci-lint in no job at all\n' "$workflow" >&2
+		missing=1
+		return
+	fi
+	jobs="$(cut -f1 <<<"$steps" | sort -u)"
+	while read -r job; do
+		while read -r module; do
+			name="$module"
+			where="\`working-directory: $module\`"
+			if [[ $module == "." ]]; then
+				name="the root module"
+				where="no \`working-directory:\`"
+			fi
+			for contour in "${contours[@]}"; do
+				if grep -qxF "${job}${tab}${module}${tab}${contour}" <<<"$steps"; then
+					continue
+				fi
+				printf 'go module lint coverage: job %s in %s does not lint %s in the %s contour\n' \
+					"$job" "$workflow" "$name" "$contour" >&2
+				if [[ $contour == "default" ]]; then
+					printf '  it needs a golangci-lint step with %s and no --build-tags\n' "$where" >&2
+				else
+					printf '  it needs a golangci-lint step with %s and `--build-tags=%s`\n' "$where" "$contour" >&2
+				fi
+				missing=1
+			done
+		done <<<"$modules"
+	done <<<"$jobs"
+	summary+=("$(printf '%s: modules %d, contours %d, jobs %d' "$workflow" \
+		"$(printf '%s\n' "$modules" | wc -l | tr -d ' ')" "${#contours[@]}" \
+		"$(printf '%s\n' "$jobs" | wc -l | tr -d ' ')")")
+}
 
-missing=0
-while read -r job; do
-	while read -r module; do
-		name="$module"
-		where="\`working-directory: $module\`"
-		if [[ $module == "." ]]; then
-			name="the root module"
-			where="no \`working-directory:\`"
-		fi
-		for contour in "${contours[@]}"; do
-			if grep -qxF "${job}${tab}${module}${tab}${contour}" <<<"$steps"; then
-				continue
-			fi
-			printf 'go module lint coverage: job %s in %s does not lint %s in the %s contour\n' \
-				"$job" "$workflow" "$name" "$contour" >&2
-			if [[ $contour == "default" ]]; then
-				printf '  it needs a golangci-lint step with %s and no --build-tags\n' "$where" >&2
-			else
-				printf '  it needs a golangci-lint step with %s and `--build-tags=%s`\n' "$where" "$contour" >&2
-			fi
-			missing=1
-		done
-	done <<<"$modules"
-done <<<"$jobs"
+# Every job in go-lint.yml that runs golangci-lint -- two today, Ubuntu and
+# Windows -- lints every module, the root included, in every contour.
+require_coverage .github/workflows/go-lint.yml "$modules"
+
+# The gosec job in go-security.yml scans the root module for code scanning.
+require_coverage .github/workflows/go-security.yml .
 
 if [[ $missing -ne 0 ]]; then
 	exit 1
 fi
 
-printf 'go module lint coverage: OK (%d modules in %d contours across %d jobs)\n' \
-	"$(printf '%s\n' "$modules" | wc -l | tr -d ' ')" "${#contours[@]}" \
-	"$(printf '%s\n' "$jobs" | wc -l | tr -d ' ')"
+printf 'go module lint coverage: OK\n'
+printf '  %s\n' "${summary[@]}"
