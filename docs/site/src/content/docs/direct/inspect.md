@@ -253,7 +253,9 @@ ptah schema inspect --db-url "sqlite://$PWD/app.db" --include users
 A MySQL or MariaDB URL that names no database is the whole server: the output
 describes every user database, each table under its database, and `--schemas`
 names databases. The server's own databases, such as `mysql` and `sys`, are
-left out.
+left out. A foreign key into a database the run does not read, from a URL that
+names one database or from a `--schemas` list, keeps that database's name in
+every format.
 
 ```bash
 ptah schema inspect --db-url "mysql://root:pass@localhost:3306" --schemas app,audit
