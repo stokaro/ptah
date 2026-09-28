@@ -1,6 +1,8 @@
 package compare
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -789,8 +791,17 @@ func appendIndexDifferences(
 		):
 			appendIndexAddition(diff, generatedEntry)
 			appendIndexRemoval(diff, databaseEntry)
+		case generatedEntry.index.Invisible != databaseEntry.index.Invisible:
+			diff.IndexVisibilityChanged = append(diff.IndexVisibilityChanged, difftypes.IndexVisibilityChange{
+				TableName: databaseEntry.ref.TableName,
+				Name:      databaseEntry.ref.Name,
+				Invisible: generatedEntry.index.Invisible,
+			})
 		}
 	}
+	slices.SortFunc(diff.IndexVisibilityChanged, func(a, b difftypes.IndexVisibilityChange) int {
+		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))
+	})
 
 	for identity, entry := range database {
 		if _, ambiguous := ambiguousGenerated[identity]; ambiguous {
@@ -938,6 +949,12 @@ func indexDefinitionsChanged(
 // read MariaDB's own metadata (stokaro/ptah#2721). Which direction is compared,
 // and why only one, is at [mysqlindex.Kind.SatisfiedBy].
 //
+// The comment is compared too. On these engines it is part of the index's
+// definition, kept in STATISTICS.INDEX_COMMENT, and no statement changes it in
+// place, so a changed comment is a rebuild. MySQL 8.4.11 and MariaDB 11.8.9
+// take the drop and the add in one statement, which the planner writes
+// (stokaro/ptah#3853).
+//
 // Nothing else is compared, and the omissions are the reader's, not a
 // judgement that they do not matter. Ptah's MySQL reader keeps the column
 // names, NON_UNIQUE and INDEX_TYPE out of information_schema.STATISTICS, so a
@@ -954,7 +971,8 @@ func mysqlIndexDefinitionChanged(
 ) bool {
 	return desired.Unique != database.IsUnique ||
 		mysqlIndexMethodChanged(desired, database, dialect) ||
-		mysqlIndexKeyColumnsChanged(desired, database, semantics)
+		mysqlIndexKeyColumnsChanged(desired, database, semantics) ||
+		desired.Comment != database.Comment
 }
 
 // mysqlIndexMethodChanged answers whether the server's index satisfies the

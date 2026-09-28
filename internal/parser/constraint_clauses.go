@@ -323,10 +323,11 @@ func takesMatch(dialect string) bool {
 //
 // `USING BTREE | HASH` is the access method `KEY k USING HASH (a)` asks for
 // before the parts, and the later clause wins: MariaDB 11.8 builds `KEY k USING
-// BTREE (a) USING HASH` as HASH. `VISIBLE` and MariaDB's `NOT IGNORED` are what
-// an index is without them. The rest declare what the model has no field for;
-// see [refuseKeyOption]. Other dialects take none of these, and a document
-// read as one of them leaves them to the end of the table element.
+// BTREE (a) USING HASH` as HASH. A `COMMENT` and the visibility of the index
+// are kept on p.keyOptions; see [Parser.readKeyVisibility]. The rest declare
+// what the model has no field for; see [refuseKeyOption]. Other dialects take
+// none of these, and a document read as one of them leaves them to the end of
+// the table element.
 func (p *Parser) readKeyOptions(kind, prefix string) error {
 	if !p.readsKeyOptions() || (kind != primaryKeyElement && kind != uniqueElement && kind != indexElement) {
 		return nil
@@ -338,27 +339,100 @@ func (p *Parser) readKeyOptions(kind, prefix string) error {
 		if p.current.Type != lexer.TokenIdentifier {
 			return nil
 		}
+		var err error
 		switch {
 		case keyword == "USING" && !p.nextIsWord("INDEX"):
-			if err := p.readKeyMethod(kind, prefix, start); err != nil {
-				return err
-			}
-		case keyword == "VISIBLE":
-			p.advance()
-		case keyword == "NOT" && p.nextIsWord("IGNORED"):
-			if platform.NormalizeDialect(p.dialect) == platform.MySQL {
-				return fmt.Errorf("NOT IGNORED at position %d: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064", start)
-			}
-			p.advance()
-			p.skipWhitespace()
-			p.advance()
+			err = p.readKeyMethod(kind, prefix, start)
+		case keyword == "COMMENT":
+			err = p.readKeyComment(kind, start)
+		case p.atVisibilityWord(keyword):
+			err = p.readKeyVisibility(kind, keyword, start)
 		default:
-			if err := refuseKeyOption(keyword, start); err != nil {
-				return err
-			}
-			return nil
+			return refuseKeyOption(keyword, start)
+		}
+		if err != nil {
+			return err
 		}
 	}
+}
+
+// keyOptions are the options after a key's parts that the index model keeps.
+// They belong to the element being read, which resets them before it reads its
+// parts.
+type keyOptions struct {
+	comment    string
+	hasComment bool
+	invisible  bool
+}
+
+// carriesIndexOptions reports whether the element asked for something only an
+// index can hold.
+func (o keyOptions) carriesIndexOptions() bool {
+	return o.hasComment || o.invisible
+}
+
+// readKeyComment reads `COMMENT 'text'` after a key's parts, which MySQL 8.4.11
+// and MariaDB 11.8.9 keep in STATISTICS.INDEX_COMMENT. A primary key's comment
+// is not modeled.
+func (p *Parser) readKeyComment(kind string, start int) error {
+	if kind == primaryKeyElement {
+		return fmt.Errorf("COMMENT at position %d: a primary key's comment is not modeled (%s); "+
+			"declare the key without it", start, unmodeledClauses)
+	}
+	p.advance()
+	text, err := p.stringConstant("index comment")
+	if err != nil {
+		return err
+	}
+	p.keyOptions.comment, p.keyOptions.hasComment = text, true
+	return nil
+}
+
+// atVisibilityWord reports whether keyword, the current token upper-cased,
+// opens a clause that says whether the optimizer uses an index. A key's
+// options and ALTER INDEX both ask it, so the two cannot disagree on which
+// words hide or show an index.
+func (p *Parser) atVisibilityWord(keyword string) bool {
+	switch keyword {
+	case "VISIBLE", "INVISIBLE", "IGNORED":
+		return true
+	case "NOT":
+		return p.nextIsWord("IGNORED")
+	default:
+		return false
+	}
+}
+
+// readKeyVisibility reads whether the optimizer uses the index. MySQL spells
+// it `VISIBLE | INVISIBLE` and MariaDB `NOT IGNORED | IGNORED`; each engine
+// answers ERROR 1064 to the other's word for the hidden index, and both refuse
+// a hidden primary key. A document read with no dialect takes either word.
+func (p *Parser) readKeyVisibility(kind, keyword string, start int) error {
+	dialect := platform.NormalizeDialect(p.dialect)
+	clause := keyword
+	if keyword == "NOT" {
+		clause = "NOT IGNORED"
+	}
+	switch {
+	case (clause == "IGNORED" || clause == "NOT IGNORED") && dialect == platform.MySQL:
+		return fmt.Errorf("%s at position %d: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064", clause, start)
+	case clause == "INVISIBLE" && dialect == platform.MariaDB:
+		return fmt.Errorf("INVISIBLE at position %d: it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; "+
+			"MariaDB spells it IGNORED", start)
+	case clause == "INVISIBLE" && kind == primaryKeyElement:
+		return fmt.Errorf("INVISIBLE at position %d: MySQL 8.4.11 answers ERROR 3522, "+
+			"a primary key index cannot be invisible", start)
+	case clause == "IGNORED" && kind == primaryKeyElement:
+		return fmt.Errorf("IGNORED at position %d: MariaDB 11.8.9 answers ERROR 4174, "+
+			"a primary key cannot be marked as IGNORE", start)
+	}
+	p.advance()
+	if clause == "NOT IGNORED" {
+		p.skipWhitespace()
+		p.advance()
+	}
+	p.keyOptions.invisible = clause == "INVISIBLE" || clause == "IGNORED"
+	return nil
 }
 
 // readsKeyOptions reports whether the document's dialect has the MySQL
@@ -389,17 +463,11 @@ func (p *Parser) readKeyMethod(kind, prefix string, start int) error {
 
 // refuseKeyOption refuses an index option the model has no field for, by
 // name, and answers nil for a word that is not one. Measured on MySQL 8.4 and
-// MariaDB 11.8, each is stored with the index: a comment in
-// `STATISTICS.INDEX_COMMENT`, which the index model has a field for and the
-// MySQL-family renderer writes nowhere; an invisible or ignored index that the
-// optimizer skips; a key block size; an engine attribute.
+// MariaDB 11.8, each is stored with the index: a key block size and an engine
+// attribute.
 func refuseKeyOption(keyword string, start int) error {
 	var what string
 	switch keyword {
-	case "COMMENT":
-		what = "an index comment is not kept on MySQL and MariaDB: Ptah writes none and reads none back"
-	case "INVISIBLE", "IGNORED":
-		what = "an index the optimizer does not use is not modeled"
 	case "KEY_BLOCK_SIZE":
 		what = "the key block size of an index is not modeled"
 	case "ENGINE_ATTRIBUTE", "SECONDARY_ENGINE_ATTRIBUTE":

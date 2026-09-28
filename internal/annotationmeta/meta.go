@@ -391,6 +391,8 @@ var directives = []Directive{
 			attr("table", "Explicit target table.", valueString, false, false),
 			attr("granularity", "ClickHouse data-skipping index granularity.", valueString, false, false),
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
+			attr("invisible", "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB.",
+				valueBoolean, false, true),
 		},
 	},
 	{

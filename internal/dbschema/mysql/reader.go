@@ -1037,6 +1037,9 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, 
 // `schema inspect` output ended in
 // `Error 1072 (42000): Key column 'a' doesn't exist in table` where the pinned
 // community binary v1.3.0 reported "Schema is synced" (issue #1245).
+//
+// It also reads the index's COMMENT and whether the optimizer uses it; see
+// [Reader.indexInvisibleExpr].
 const indexKeyPartsQuery = `
 		SELECT
 			s.INDEX_NAME,
@@ -1055,7 +1058,9 @@ const indexKeyPartsQuery = `
 			-- KEY (a DESC) and KEY (a) are different indexes on both engines,
 			-- so a read that discards this cannot tell a declaration that
 			-- changed direction from one that did not (stokaro/ptah#2816).
-			s.COLLATION
+			s.COLLATION,
+			COALESCE(s.INDEX_COMMENT, ''),
+			%s
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
 		AND s.TABLE_NAME NOT IN ('schema_migrations', 'schema_migrations_log')
@@ -1063,7 +1068,11 @@ const indexKeyPartsQuery = `
 
 // readIndexes reads all indexes, assembling each key from its parts.
 func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
-	rows, err := r.db.QueryContext(ctx, indexKeyPartsQuery, dbName)
+	invisible, err := r.indexInvisibleExpr(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(indexKeyPartsQuery, invisible), dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -1083,9 +1092,11 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			indexType  string
 			subPart    sql.NullInt64
 			collation  sql.NullString
+			comment    sql.NullString
+			hidden     sql.NullInt64
 		)
 		err := rows.Scan(
-			&name, &tableName, &columnName, &nonUnique, &indexType, &subPart, &collation,
+			&name, &tableName, &columnName, &nonUnique, &indexType, &subPart, &collation, &comment, &hidden,
 		)
 		if err != nil {
 			return nil, err
@@ -1100,6 +1111,8 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 				TableName: tableName,
 				IsUnique:  nonUnique == 0,
 				IsPrimary: name == "PRIMARY",
+				Comment:   comment.String,
+				Invisible: hidden.Int64 == 1,
 			})
 			indexTypes = append(indexTypes, indexType)
 		}
@@ -1129,6 +1142,41 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 	}
 
 	return indexes, nil
+}
+
+// indexInvisibleExpr is the projection that reads whether the optimizer uses an
+// index, 1 for one it does not. MySQL 8.4.11 reports it in
+// STATISTICS.IS_VISIBLE, NO for an INVISIBLE index, and MariaDB 11.8.9 in
+// STATISTICS.IGNORED, YES for an IGNORED one. MySQL 5.7 and MariaDB before
+// 10.6 have neither column, so the catalog is asked which it has rather than
+// the dialect: a projection naming a column the server lacks refuses the whole
+// read.
+func (r *Reader) indexInvisibleExpr(ctx context.Context) (string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT COLUMN_NAME FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'STATISTICS'
+		AND COLUMN_NAME IN ('IS_VISIBLE', 'IGNORED')`)
+	if err != nil {
+		return "", fmt.Errorf("failed to ask which index visibility column the server has: %w", err)
+	}
+	defer rows.Close()
+	expr := "0"
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return "", err
+		}
+		switch strings.ToUpper(column) {
+		case "IS_VISIBLE":
+			expr = "CASE WHEN s.IS_VISIBLE = 'NO' THEN 1 ELSE 0 END"
+		case "IGNORED":
+			expr = "CASE WHEN s.IGNORED = 'YES' THEN 1 ELSE 0 END"
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return expr, nil
 }
 
 // addIndexKeyPart records one key part of an index.

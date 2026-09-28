@@ -304,28 +304,34 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `.*MATCH at position 57: the sqlserver dialect takes no MATCH clause`,
 		},
 		{
-			name:    "an index comment",
-			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, KEY k (a) COMMENT 'x');",
-			wantErr: `COMMENT at position 33: an index comment is not kept on MySQL and MariaDB: .*`,
-		},
-		{
 			name:    "a primary key comment",
 			dialect: platform.MariaDB,
 			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) COMMENT 'pk');",
-			wantErr: `COMMENT at position 39: .*`,
+			wantErr: `COMMENT at position 39: a primary key's comment is not modeled \(stokaro/ptah#3853\); .*`,
 		},
 		{
-			name:    "an invisible index",
+			name:    "an invisible primary key",
 			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, UNIQUE KEY k (a) INVISIBLE);",
-			wantErr: `INVISIBLE at position 40: an index the optimizer does not use is not modeled.*`,
+			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) INVISIBLE);",
+			wantErr: `INVISIBLE at position 39: MySQL 8.4.11 answers ERROR 3522, a primary key index cannot be invisible`,
 		},
 		{
-			name:    "an ignored index",
+			name:    "an ignored primary key",
 			dialect: platform.MariaDB,
+			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) IGNORED);",
+			wantErr: `IGNORED at position 39: MariaDB 11.8.9 answers ERROR 4174, a primary key cannot be marked as IGNORE`,
+		},
+		{
+			name:    "INVISIBLE on MariaDB",
+			dialect: platform.MariaDB,
+			sql:     "CREATE TABLE c (a int, KEY k (a) INVISIBLE);",
+			wantErr: `INVISIBLE at position 33: it is MySQL's clause, and MariaDB 11.8.9 answers ERROR 1064; MariaDB spells it IGNORED`,
+		},
+		{
+			name:    "IGNORED on MySQL",
+			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (a int, KEY k (a) IGNORED);",
-			wantErr: `IGNORED at position 33: an index the optimizer does not use is not modeled.*`,
+			wantErr: `IGNORED at position 33: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064`,
 		},
 		{
 			name:    "NOT IGNORED on MySQL",
@@ -348,8 +354,8 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 		{
 			name:    "an option after other options",
 			dialect: platform.MySQL,
-			sql:     "CREATE TABLE c (a int, KEY k (a) VISIBLE USING BTREE COMMENT 'x');",
-			wantErr: `COMMENT at position 53: .*`,
+			sql:     "CREATE TABLE c (a int, KEY k (a) VISIBLE USING BTREE COMMENT 'x' KEY_BLOCK_SIZE = 8);",
+			wantErr: `KEY_BLOCK_SIZE at position 65: .*`,
 		},
 		{
 			name:    "an index option after a foreign key's columns",

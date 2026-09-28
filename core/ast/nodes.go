@@ -896,6 +896,9 @@ type IndexNode struct {
 	Parser string
 	// Comment is an optional index comment
 	Comment string
+	// Invisible asks for an index the optimizer does not use; see
+	// [ptah.run/core/schemamodel.Index.Invisible].
+	Invisible bool
 	// IfNotExists indicates whether to use IF NOT EXISTS clause for idempotent migrations
 	IfNotExists bool
 

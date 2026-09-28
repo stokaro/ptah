@@ -689,6 +689,49 @@ func (t alterTarget) renamesIndex(name string) bool {
 
 // renameIndex renames the index, or the UNIQUE constraint, of the table named
 // from.
+// applyIndexVisibility shows or hides an index the schema declares by name.
+// A UNIQUE constraint of that name is an index on the MySQL family, where the
+// statement is read, and it becomes the unique index the server holds, which
+// is where the model keeps visibility. A name the table holds no index under
+// is refused, as the servers refuse it.
+func applyIndexVisibility(target alterTarget, operation *ast.AlterIndexVisibilityOperation) error {
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.IndexName)
+	if target.setIndexVisibility(name, operation.Invisible) {
+		return nil
+	}
+	return fmt.Errorf("ALTER TABLE %s ALTER INDEX %s names an index this schema does not declare by that name",
+		target.written, operation.IndexName)
+}
+
+// setIndexVisibility sets the visibility of the index or UNIQUE constraint
+// named name, and reports whether the table has one.
+func (t alterTarget) setIndexVisibility(name string, invisible bool) bool {
+	for _, database := range t.databases {
+		for i := range database.Indexes {
+			if t.ownsIndex(database.Indexes[i]) && database.Indexes[i].Name == name {
+				database.Indexes[i].Invisible = invisible
+				return true
+			}
+		}
+		for i, constraint := range database.Constraints {
+			if !t.ownsUniqueConstraint(constraint, name) {
+				continue
+			}
+			database.Constraints = slices.Delete(database.Constraints, i, i+1)
+			database.Indexes = append(database.Indexes, schemamodel.Index{
+				Name:       constraint.Name,
+				StructName: t.structName,
+				Fields:     slices.Clone(constraint.Columns),
+				Unique:     true,
+				Invisible:  invisible,
+				TableName:  t.qualified,
+			})
+			return true
+		}
+	}
+	return false
+}
+
 func (t alterTarget) renameIndex(from, to string) {
 	for _, database := range t.databases {
 		for i := range database.Indexes {

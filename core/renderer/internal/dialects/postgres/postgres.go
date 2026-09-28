@@ -628,6 +628,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameColumnOperation,
 		*ast.RenameConstraintOperation,
 		*ast.RenameIndexOperation,
+		*ast.AlterIndexVisibilityOperation,
+		*ast.ReplaceIndexOperation,
 		*ast.RenameEnumValueOperation,
 		*ast.RenameTableOperation,
 		*ast.RenameTypeOperation,

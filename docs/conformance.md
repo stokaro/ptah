@@ -1266,12 +1266,20 @@ it is a real hole in the same surface enumeration and it is recorded here rather
 than left implicit. Closing it means the comparator arm below and the converter
 hop together.
 
-What is **not** closed is a comment *change* on an index that already exists:
-the index comparator does not compare comments, so `schema apply` plans nothing
-for `'a'` -> `'b'` where CE plans a `COMMENT ON INDEX`. That is left open
-deliberately — the comparator's only transition for an index is DROP plus
-CREATE, and planning a rebuild for a comment would be a strictly worse answer
-than planning nothing.
+What is **not** closed on PostgreSQL is a comment *change* on an index that
+already exists: the index comparator does not compare a PostgreSQL index's
+comment, so `schema apply` plans nothing for `'a'` -> `'b'` where CE plans a
+`COMMENT ON INDEX`. That is left open deliberately — the comparator's only
+transition for an index is DROP plus CREATE, and planning a rebuild for a
+comment would be a strictly worse answer than planning nothing.
+
+The MySQL family is the other case. There the comment is part of the index
+definition, kept in `STATISTICS.INDEX_COMMENT`, and no statement changes it in
+place, so the comparator compares it and a change rebuilds the index. Ptah
+writes the rebuild as one statement, `ALTER TABLE t DROP INDEX k, ADD INDEX k
+(...) COMMENT '...'`. CE v1.3.0 writes the drop and the add as two statements,
+and MySQL 8.4.11 refuses the drop alone on an index a foreign key needs with
+`ERROR 1553`, so we are stricter here, deliberately.
 
 Table and column comments are a separate, wider gap that predates this work and
 is untouched by it. Ptah's PostgreSQL renderer emits an object comment as an SQL

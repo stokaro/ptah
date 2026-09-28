@@ -965,6 +965,15 @@
               "description": "Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
               "type": "string"
             },
+            "invisible": {
+              "description": "Hides the index from the optimizer: INVISIBLE on MySQL, IGNORED on MariaDB.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
             "name": {
               "description": "Index name.",
               "type": "string"

@@ -423,6 +423,7 @@ func ToIndex(index *ast.IndexNode, sourcePlatform string) schemamodel.Index {
 		Parts:      parts,
 		Unique:     index.Unique,
 		Comment:    index.Comment,
+		Invisible:  index.Invisible,
 		// PostgreSQL-specific features
 		Type: index.Type,
 		// ClickHouse's data-skipping granularity. Dropping it here let the
@@ -1155,6 +1156,8 @@ func applyAlterOperation(
 		return applyRenameIndex(database, target, typed)
 	case *ast.ValidateConstraintOperation:
 		return applyValidateConstraint(target, typed)
+	case *ast.AlterIndexVisibilityOperation:
+		return applyIndexVisibility(target, typed)
 	case *ast.RenameTableOperation:
 		return fmt.Errorf(
 			"%w: ALTER TABLE %s RENAME TO %s: every other declaration names the table by its old name; "+
@@ -1216,6 +1219,8 @@ func describeAlterOperation(op ast.AlterOperation) string {
 		return "RENAME COLUMN " + typed.OldName
 	case *ast.ValidateConstraintOperation:
 		return "VALIDATE CONSTRAINT " + typed.ConstraintName
+	case *ast.AlterIndexVisibilityOperation:
+		return "ALTER INDEX " + typed.IndexName
 	default:
 		return strings.TrimPrefix(fmt.Sprintf("%T", op), "*ast.")
 	}

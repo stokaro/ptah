@@ -1036,6 +1036,14 @@ type SchemaDiff struct {
 	// needs. See [SupplementLists] for what that means to a reader.
 	ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty" ptah:"supplement=indexes_removed"`
 
+	// IndexVisibilityChanged holds the indexes both sides hold with the same
+	// definition whose visibility to the optimizer differs, each with the
+	// visibility the declaration asks for. A plan changes it in place: MySQL's
+	// `ALTER INDEX k VISIBLE | INVISIBLE`, MariaDB's `[NOT] IGNORED`. An index
+	// this diff adds, or drops and adds again, carries its visibility in the
+	// addition and is not here.
+	IndexVisibilityChanged []IndexVisibilityChange `json:"index_visibility_changed"`
+
 	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
 	// schema and not in the current database, each carrying its declaration;
 	// see [ExtensionChanges].
@@ -1640,7 +1648,21 @@ func (d *SchemaDiff) hasEnumChanges() bool {
 // hasIndexChanges returns true if there are any index-related changes
 func (d *SchemaDiff) hasIndexChanges() bool {
 	return len(d.IndexesAdded) > 0 ||
-		len(d.IndexesRemoved) > 0
+		len(d.IndexesRemoved) > 0 ||
+		len(d.IndexVisibilityChanged) > 0
+}
+
+// IndexVisibilityChange is an index whose visibility to the optimizer
+// changes; see [SchemaDiff.IndexVisibilityChanged].
+type IndexVisibilityChange struct {
+	// TableName is the table the index belongs to, qualified the way
+	// [IndexRef.TableName] is.
+	TableName string `json:"table_name"`
+	// Name is the index's name as the database holds it.
+	Name string `json:"name"`
+	// Invisible is what the declaration asks for: true hides the index from
+	// the optimizer, false shows it.
+	Invisible bool `json:"invisible"`
 }
 
 // IndexAdditions returns a copy of the added index references.

@@ -572,9 +572,16 @@ func (r *Renderer) renderConstraintNode(node *ast.ConstraintNode) error {
 
 // renderIndex renders a CREATE INDEX statement for MySQL
 func (r *Renderer) renderIndex(node *ast.IndexNode) error {
-	// The MySQL family has an index COMMENT clause and this renderer writes
-	// none, so the declaration reaches the output nowhere at all.
-	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
+	r.recordLostIndexProperties(node)
+	parts := []string{"CREATE"}
+	parts = append(parts, r.indexDefinition(node, "ON "+escapeQualifiedIdentifier(node.Table))...)
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// recordLostIndexProperties reports what an index declares that this renderer
+// writes nowhere.
+func (r *Renderer) recordLostIndexProperties(node *ast.IndexNode) {
 	// The condition is dropped, so the index covers every row rather than the
 	// declared subset. On a unique index that changes which rows the server
 	// accepts, which is why it is reported rather than left to the reader to
@@ -592,22 +599,24 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if mysqlIndexPrefixType(node.Type) == "" && mysqlindex.Method(node.Type) == "" {
 		r.sink.RecordLostIndexType(node.Name, node.Type)
 	}
+}
+
+// indexDefinition is an index from its kind to its options, as CREATE INDEX
+// and ALTER TABLE ... ADD INDEX both write it. placement is what stands
+// between the name and the key parts: `ON table` for CREATE INDEX, and nothing
+// for ADD INDEX.
+func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) []string {
 	var parts []string
-
-	parts = append(parts, "CREATE")
-
 	if node.Unique {
 		parts = append(parts, "UNIQUE")
 	}
-
 	if indexType := mysqlIndexPrefixType(node.Type); indexType != "" {
 		parts = append(parts, indexType)
 	}
-
-	parts = append(parts, "INDEX")
-	parts = append(parts, escapeIdentifier(node.Name))
-	parts = append(parts, "ON")
-	parts = append(parts, escapeQualifiedIdentifier(node.Table))
+	parts = append(parts, "INDEX", escapeIdentifier(node.Name))
+	if placement != "" {
+		parts = append(parts, placement)
+	}
 	columnSpec := fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", "))
 	if node.Parser != "" {
 		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER %s */", escapeIdentifier(node.Parser))
@@ -622,9 +631,27 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	if method := mysqlindex.Method(node.Type); method != "" {
 		parts = append(parts, "USING", method)
 	}
+	// The comment and the visibility follow, as MySQL 8.4.11 and MariaDB 11.8.9
+	// print them in SHOW CREATE TABLE; both keep the comment in
+	// STATISTICS.INDEX_COMMENT (stokaro/ptah#3853).
+	if node.Comment != "" {
+		parts = append(parts, "COMMENT", r.escapeValue(node.Comment))
+	}
+	if node.Invisible {
+		parts = append(parts, r.hiddenIndexWord(true))
+	}
+	return parts
+}
 
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-	return nil
+// hiddenIndexWord is how the dialect says whether the optimizer uses an index:
+// MySQL's INVISIBLE and VISIBLE, MariaDB's IGNORED and NOT IGNORED. Each
+// engine answers ERROR 1064 to the other's words.
+func (r *Renderer) hiddenIndexWord(invisible bool) string {
+	words := map[bool]string{true: "INVISIBLE", false: "VISIBLE"}
+	if r.dialect == "mariadb" {
+		words = map[bool]string{true: "IGNORED", false: "NOT IGNORED"}
+	}
+	return words[invisible]
 }
 
 func renderIndexParts(parts []ast.IndexPart) []string {
@@ -1310,9 +1337,10 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			// migration apply time rather than at SQL generation time.
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME COLUMN %s TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
-		case *ast.RenameIndexOperation:
-			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME INDEX %s TO %s",
-				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.From), escapeIdentifier(op.To))
+		case *ast.RenameIndexOperation, *ast.AlterIndexVisibilityOperation, *ast.ReplaceIndexOperation:
+			if err := r.writeIndexAlteration(node, op); err != nil {
+				return err
+			}
 		case *ast.RenameTableOperation:
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))
@@ -1333,6 +1361,32 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 	}
 
 	r.w.WriteLine("")
+	return nil
+}
+
+// writeIndexAlteration renders an ALTER TABLE operation on one of the table's
+// indexes: a rename, a visibility change in place, or a rebuild that drops the
+// index and adds it again in one statement, so the table is never without it
+// and an index a foreign key needs does not hit ERROR 1553.
+func (r *Renderer) writeIndexAlteration(node *ast.AlterTableNode, operation ast.AlterOperation) error {
+	table := escapeQualifiedIdentifier(node.Name)
+	switch op := operation.(type) {
+	case *ast.RenameIndexOperation:
+		r.writeAlterStatementf(node, "ALTER TABLE %s RENAME INDEX %s TO %s",
+			table, escapeIdentifier(op.From), escapeIdentifier(op.To))
+	case *ast.AlterIndexVisibilityOperation:
+		r.writeAlterStatementf(node, "ALTER TABLE %s ALTER INDEX %s %s",
+			table, escapeIdentifier(op.IndexName), r.hiddenIndexWord(op.Invisible))
+	case *ast.ReplaceIndexOperation:
+		if op.Index == nil {
+			return fmt.Errorf("replace-index operation on table %s carries no index", node.Name)
+		}
+		r.recordLostIndexProperties(op.Index)
+		r.writeAlterStatementf(node, "ALTER TABLE %s DROP INDEX %s, ADD %s",
+			table, escapeIdentifier(op.Index.Name), strings.Join(r.indexDefinition(op.Index, ""), " "))
+	default:
+		return fmt.Errorf("unknown index alter operation type: %T", operation)
+	}
 	return nil
 }
 
