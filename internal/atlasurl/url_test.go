@@ -658,3 +658,28 @@ func TestSchemeDialectMatches_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestNamesAFile tells a URL that names a SQLite database file from one that
+// names a server, a libsql server among them.
+func TestNamesAFile(t *testing.T) {
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{url: "sqlite://dev.db", want: true},
+		{url: "sqlite3://dev.db", want: true},
+		{url: "file:dev.db", want: true},
+		{url: "sqlite://file?mode=memory", want: true},
+		{url: "libsql://db.example.com", want: false},
+		{url: "libsql+ws://db.example.com", want: false},
+		{url: "postgres://localhost/dev", want: false},
+		{url: "docker://postgres/18/dev", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasurl.NamesAFile(test.url), qt.Equals, test.want)
+		})
+	}
+}
