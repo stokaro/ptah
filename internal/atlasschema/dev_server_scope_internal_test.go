@@ -4,13 +4,18 @@ package atlasschema
 // diff are resolved, which through the exported API takes a live server for
 // the database side and a dev server for the other. The decision itself reads
 // two resolved states and crosses no boundary, so its rows are pinned here and
-// the e2e tests drive the path that joins it to the servers.
+// the e2e tests drive the path that joins it to the servers. The schema apply
+// refusal of SQL beside one database on a dev server, and the guard of a
+// rehearsal on a whole dev server, run only once a target, and for the guard a
+// dev server, are connected, and are pinned here for the same reason.
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
 )
@@ -128,6 +133,78 @@ func TestScopeOnDevServer_SQLBesideOneDatabase(t *testing.T) {
 			c.Assert(err, qt.ErrorAs, new(*ServerScopeMismatchError))
 			c.Assert(from, qt.DeepEquals, atlassource.State{})
 			c.Assert(to, qt.DeepEquals, atlassource.State{})
+		})
+	}
+}
+
+var (
+	wholeMySQLServerInfo = catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}
+	appDatabaseInfo      = catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"}
+	sqlFileTo            = atlassource.Set{Kind: atlassource.KindLocalFile,
+		Sources: []atlassource.Source{{Kind: atlassource.KindLocalFile, Path: "realm.sql"}}}
+	hclFileTo = atlassource.Set{Kind: atlassource.KindLocalFile,
+		Sources: []atlassource.Source{{Kind: atlassource.KindLocalFile, Path: "realm.hcl"}}}
+)
+
+// TestRefuseSQLBesideOneDatabaseOnDevServer_FailurePath refuses SQL beside a
+// target naming one database on a whole dev server, in the pinned community
+// binary v1.3.0's words, measured on MySQL 8.4.11 and MariaDB 11.8.9.
+func TestRefuseSQLBesideOneDatabaseOnDevServer_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	file := refuseSQLBesideOneDatabaseOnDevServer(appDatabaseInfo, "mysql://root@localhost:3307/", sqlFileTo)
+	dir := refuseSQLBesideOneDatabaseOnDevServer(appDatabaseInfo, "mysql://root@localhost:3307/",
+		atlassource.Set{Kind: atlassource.KindMigrationDir})
+
+	c.Assert(file, qt.ErrorMatches, `cannot diff a database connection with a schema "app"`)
+	c.Assert(dir, qt.ErrorMatches, `cannot diff a database connection with a schema "app"`)
+}
+
+// TestRefuseSQLBesideOneDatabaseOnDevServer_HappyPath is the control: a
+// document beside one database, SQL beside a whole server, and SQL beside a
+// dev database are not refused here.
+func TestRefuseSQLBesideOneDatabaseOnDevServer_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(refuseSQLBesideOneDatabaseOnDevServer(appDatabaseInfo, "mysql://root@localhost:3307/", hclFileTo), qt.IsNil)
+	c.Assert(refuseSQLBesideOneDatabaseOnDevServer(wholeMySQLServerInfo, "mysql://root@localhost:3307/", sqlFileTo),
+		qt.IsNil)
+	c.Assert(refuseSQLBesideOneDatabaseOnDevServer(appDatabaseInfo, "mysql://root@localhost:3307/dev", sqlFileTo),
+		qt.IsNil)
+}
+
+// TestGuardServerRehearsal_HappyPath takes what the reset of a whole dev
+// server removes: databases, and what is in them.
+func TestGuardServerRehearsal_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	err := guardServerRehearsal([]string{
+		"CREATE DATABASE `more`",
+		"CREATE TABLE `more`.`m` (`id` int NOT NULL, PRIMARY KEY (`id`))",
+		"ALTER TABLE `app`.`t` ADD COLUMN `name` varchar(10)",
+		"DROP DATABASE `old`",
+	}, wholeMySQLServerInfo)
+
+	c.Assert(err, qt.IsNil)
+}
+
+// TestGuardServerRehearsal_FailurePath refuses what the reset leaves behind,
+// naming the statement.
+func TestGuardServerRehearsal_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "a user", statement: "CREATE USER 'u'@'%'"},
+		{name: "a privilege", statement: "GRANT SELECT ON `app`.* TO 'u'@'%'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := guardServerRehearsal([]string{"CREATE DATABASE `more`", test.statement}, wholeMySQLServerInfo)
+
+			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: .*`)
 		})
 	}
 }

@@ -245,9 +245,8 @@ community binary reads it
 - `schema apply`, `schema diff` and `schema clean` read the URL the same way;
   see [A whole MySQL or MariaDB server](#a-whole-mysql-or-mariadb-server).
   `migrate status`, `migrate apply` and `migrate set` read it too, and the
-  migrate verbs, `schema inspect` and `schema diff` take it as a dev server;
-  see [Migrate commands](../migrate-commands/#a-whole-dev-server).
-  `schema apply` does not take a dev server yet.
+  migrate verbs, `schema inspect`, `schema diff` and `schema apply` take it as
+  a dev server; see [Migrate commands](../migrate-commands/#a-whole-dev-server).
 
 A URL that names a database reads that database whatever `--schema` says, as
 the community binary does. `--format`
@@ -1099,11 +1098,11 @@ community binary's message:
 Error: cannot diff a schema "app" with a database connection
 ```
 
-A dev database beside a whole server is refused before it is contacted. A
-`--dev-url` that names no database is a dev server, which `schema diff` takes:
-see [A whole dev server](../migrate-commands/#a-whole-dev-server). `schema
-apply` refuses one before anything is contacted; rehearsing on a dev server is
-[stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885).
+A dev database beside a whole server is refused before it is contacted; see
+[a dev database beside a whole server](../retained-divergences/#a-dev-database-beside-a-whole-server).
+A `--dev-url` that names no database is a dev server, which `schema diff` and
+`schema apply` take, and on which `schema apply` rehearses its plan: see
+[A whole dev server](../migrate-commands/#a-whole-dev-server).
 
 ### A registry artifact as the desired state
 

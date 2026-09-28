@@ -200,9 +200,9 @@ func TestSchemaDiffFindsAMySQLServerSyncedWithItselfE2E(t *testing.T) {
 }
 
 // TestSchemaApplyRefusesADevDatabaseBesideAMySQLServerE2E refuses a dev
-// database beside a whole server before the dev database is contacted: a dev
-// server that replays a desired state as a server is not taken yet
-// (stokaro/ptah#3789). The dev URL names the server's own `mysql` database,
+// database beside a whole server: a plan for a server creates and drops
+// databases, and its rehearsal needs a whole dev server (stokaro/ptah#3789,
+// stokaro/ptah#3885). The dev URL names the server's own `mysql` database,
 // which the dev clean check would refuse with another message, so the
 // refusal is the first thing either command says about it. Both runs are dry
 // runs, so a refusal that stopped working changes nothing.
@@ -220,9 +220,9 @@ func TestSchemaApplyRefusesADevDatabaseBesideAMySQLServerE2E(t *testing.T) {
 			native, nativeErr := runPtahNativeWithError("schema", "apply", "--db-url", server.url,
 				"--schema-file", realm, "--dev-url", dev, "--schemas", server.first, "--dry-run")
 
-			c.Assert(compatErr, qt.ErrorMatches, `(?s).*a dev database for a whole MySQL or MariaDB server is not supported yet.*`,
+			c.Assert(compatErr, qt.ErrorMatches, `(?s).*a dev database beside a whole MySQL or MariaDB server is refused.*`,
 				qt.Commentf("%s", compat))
-			c.Assert(nativeErr, qt.ErrorMatches, `(?s).*a dev database for a whole MySQL or MariaDB server is not supported yet.*`,
+			c.Assert(nativeErr, qt.ErrorMatches, `(?s).*a dev database beside a whole MySQL or MariaDB server is refused.*`,
 				qt.Commentf("%s", native))
 			c.Assert(databaseCollation(c, newMySQLFamilyScratch(c, engine.admin), server.second), qt.Not(qt.Equals), "")
 		})

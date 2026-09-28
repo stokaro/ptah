@@ -178,7 +178,12 @@ func connectSimulationDev(
 	// comparison has no dialect to compare and answers `unsupported database
 	// URL dialect`, which would refuse every docker dev database on this verb
 	// with a sentence about a dialect the operator did not choose.
-	for _, target := range aliasCandidates(devURL, []string{targetURL}) {
+	// A dev server names no database, so its URL may address every database
+	// of any server and a comparison of URLs would refuse each one. It is
+	// compared by the server it reaches instead, once connected and before
+	// anything is reset; see [claimSimulationDevServer].
+	serverDev := isDevServer(devURL)
+	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
 		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
 		if err != nil {
 			return simulationDev{}, fmt.Errorf("compare --dev-url with target database: %w", err)
@@ -189,15 +194,18 @@ func connectSimulationDev(
 	}
 	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
+		if isDirectDatabaseURL(desired) {
+			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
+		}
+		if serverDev {
+			continue
+		}
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
 		if err != nil {
 			return simulationDev{}, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
 		}
 		if sameDesired {
 			return simulationDev{}, devURLIsDesiredError(desired)
-		}
-		if isDirectDatabaseURL(desired) {
-			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
 		}
 	}
 
@@ -206,7 +214,14 @@ func connectSimulationDev(
 		return simulationDev{}, err
 	}
 
-	devConn, err := dbschema.ConnectToDatabase(ctx, strings.TrimSpace(resolved))
+	// A dev URL naming no MySQL-family database is a whole dev server, reached
+	// and claimed as one; see [claimSimulationDevServer]. The operator's
+	// spelling decides it, as it does for every verb that takes a dev server.
+	connect := dbschema.ConnectToDatabase
+	if serverDev {
+		connect = dbschema.ConnectToServer
+	}
+	devConn, err := connect(ctx, strings.TrimSpace(resolved))
 	if err != nil {
 		release()
 		return simulationDev{}, fmt.Errorf("connect to --dev-url: %w", err)
@@ -222,6 +237,20 @@ func connectSimulationDev(
 		dbschema.CloseAndWarn(devConn)
 		release()
 		return simulationDev{}, err
+	}
+	if serverDev {
+		dev, err := claimSimulationDevServer(ctx, devConn, strings.TrimSpace(resolved), targetInfo, protected)
+		if err != nil {
+			dbschema.CloseAndWarn(devConn)
+			release()
+			return simulationDev{}, err
+		}
+		releaseDev := dev.release
+		dev.release = func() {
+			releaseDev()
+			release()
+		}
+		return dev, nil
 	}
 	// The URL comparisons above cannot see every alias: a connection pooler
 	// can serve the target under another database name. Each server is asked
@@ -285,6 +314,15 @@ func aliasCandidates(devURL string, candidates []string) []string {
 	return out
 }
 
+// urlAliasCandidates is [aliasCandidates] for the comparison of URLs, which a
+// dev server skips: see [connectSimulationDev].
+func urlAliasCandidates(devURL string, candidates []string) []string {
+	if isDevServer(devURL) {
+		return nil
+	}
+	return aliasCandidates(devURL, candidates)
+}
+
 // sameDirectDatabaseURL compares candidate only when its scheme names a
 // directly connectable database. Desired-state files and migration directories
 // share the DesiredURLs collection and are intentionally not database aliases.
@@ -329,9 +367,18 @@ func rehearseStatementsOnDev(
 	if targetConn == nil {
 		return errors.New("schema apply simulation requires target database connection")
 	}
-	statements, err := rescopeStatementsForDevDatabase(
-		statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema,
-	)
+	// A plan for a whole server names each table by its database and runs as
+	// written on a whole dev server; the guard keeps it to what the reset of
+	// that server removes. A plan for one database is re-scoped onto the dev
+	// database.
+	var err error
+	if devConn.Info().WholeServer {
+		err = guardServerRehearsal(statements, devConn.Info())
+	} else {
+		statements, err = rescopeStatementsForDevDatabase(
+			statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema,
+		)
+	}
 	if err != nil {
 		return err
 	}

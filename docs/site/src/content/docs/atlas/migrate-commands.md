@@ -1165,8 +1165,22 @@ scope, and Atlas's rules for pairing it apply:
   where Atlas plans; see
   [a realm beside one database](../retained-divergences/#a-realm-beside-one-database-on-a-dev-server).
 
-`schema apply` does not take a dev server yet
-([stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885)).
+`schema apply` takes one as well. It plans as Atlas does, and rehearses the
+plan on the dev server before it touches the target, which Atlas does not.
+Beside a whole server the plan runs as written, and a user, a role, a
+privilege or a stored body in it is refused, as it is in a replay. Beside a URL
+naming one database the plan runs in a database of that name, created on the
+dev server and dropped after the rehearsal. The pairs Atlas refuses are
+refused in its words:
+
+- a SQL file or a migration directory beside a URL naming one database:
+  `cannot diff a database connection with a schema "app"`;
+- the target server as the dev server, which is not clean:
+  `connected database is not clean: found schema "app"`.
+
+A dev database beside a whole server is refused, because the plan creates and
+drops databases and the rehearsal needs a whole dev server; see
+[a dev database beside a whole server](../retained-divergences/#a-dev-database-beside-a-whole-server).
 
 ### The publication boundary
 
