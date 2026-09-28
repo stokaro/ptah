@@ -6629,7 +6629,19 @@ func (p *Parser) parseOptionalDropBehavior() (bool, error) {
 
 // parseModifyOperation parses the MySQL family's MODIFY [COLUMN], which states
 // a whole new column definition.
+//
+// The clause is read as MySQL's, which replaces the column's definition, so a
+// dialect with another MODIFY, or none, is refused rather than read as MySQL's
+// (stokaro/ptah#3920). PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server
+// and Spanner have no such clause: PostgreSQL 18.6 answers `syntax error at or
+// near "MODIFY"`, where the reader planned ALTER COLUMN ... TYPE. Oracle's
+// MODIFY changes only the attributes it states, and ClickHouse's is not
+// measured, so neither is read as MySQL's. A document read with no dialect
+// keeps the clause.
 func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
+	if err := p.refuseModify(); err != nil {
+		return nil, err
+	}
 	p.advance()
 	p.skipWhitespace()
 	if p.current.MatchIdentifierValue("COLUMN") {
@@ -6643,6 +6655,25 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 		return nil, err
 	}
 	return &ast.ModifyColumnOperation{Column: column}, nil
+}
+
+// refuseModify refuses ALTER TABLE ... MODIFY where the dialect's MODIFY is
+// not the MySQL one the reader applies; see [Parser.parseModifyOperation].
+func (p *Parser) refuseModify() error {
+	switch {
+	case p.dialect == "" || isMySQLFamilyDialect(p.dialect):
+		return nil
+	case p.dialect == platform.Oracle || p.dialect == platform.ClickHouse:
+		return fmt.Errorf(
+			"MODIFY at position %d in ALTER TABLE: %s's MODIFY is not MySQL's, which replaces the column's "+
+				"definition and is the one Ptah reads; state the column as it should be in CREATE TABLE",
+			p.current.Start, p.dialect)
+	default:
+		return fmt.Errorf(
+			"MODIFY at position %d in ALTER TABLE: %s has no MODIFY clause; change the column with "+
+				"ALTER COLUMN, or state it as it should be in CREATE TABLE",
+			p.current.Start, p.dialect)
+	}
 }
 
 // parseAlterColumnOperation parses ALTER [COLUMN] name.
