@@ -1075,6 +1075,22 @@ HCL table without a schema too. Applied a second time, the plan is empty. The
 community binary v1.3.0 plans the table collation and the foreign key index a
 second time, measured on MySQL 8.4.11 and MariaDB 11.8.9.
 
+A URL that names one database limits the run to that database. A table the
+desired schema writes without a database, or with that database's name, is in
+it. A table, view, routine, sequence or trigger that the document puts in
+another database is refused by name before anything is planned, and so is a
+database the document declares besides the one the URL names:
+
+```text
+Error: table "other.u" is in database "other", but the target URL is limited to database "app"; name no database in the URL to reach the whole server, or leave the database out of the name
+```
+
+`schema diff` refuses the same document beside a `--from` or `--to` naming one
+database. The community binary runs such a file on the dev database and
+refuses it there, `Error 1049 (42000): Unknown database 'other'`; see
+[a database outside a one-database URL](../retained-divergences/#a-database-outside-a-one-database-url)
+for the one file it accepts.
+
 `--to` may name a whole server too, and that server is the desired schema. A
 whole server and one database are refused together, in either order, with the
 community binary's message:

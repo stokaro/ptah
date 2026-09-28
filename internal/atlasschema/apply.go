@@ -770,6 +770,9 @@ func loadAndValidateDesiredApplySchema(
 	if err != nil {
 		return nil, fmt.Errorf("load --to schema: %w", err)
 	}
+	if err := refuseOutsideTargetDatabase(conn.Info(), desired); err != nil {
+		return nil, err
+	}
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 		conn.Info().Dialect,
 		desired.Schemas,

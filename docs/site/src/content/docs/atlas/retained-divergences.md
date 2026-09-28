@@ -132,6 +132,7 @@ own measurement conditions.
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
+| [A database outside a one-database URL](#a-database-outside-a-one-database-url) | refuses a document that declares another database, or puts an object in one | reads a SQL file that creates the other database first as synced, and drops what it puts there |
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
@@ -978,6 +979,33 @@ The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3789`](https://github.com/stokaro/ptah/issues/3789)
+
+## A database outside a one-database URL
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A MySQL or MariaDB URL that names one database limits
+`schema apply` and `schema diff` to it. A document that declares another
+database, or puts a table, view, routine, sequence or trigger in one, is
+refused by name before anything is planned.
+
+Measured on 2026-09-28 against MySQL 8.4.11, with the URL naming `app`:
+
+| Document | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `CREATE TABLE other.u (…); CREATE TABLE t (…)` | exit `1`, `Error 1049 (42000): Unknown database 'other'` | exit `1`, `table "other.u" is in database "other", …` |
+| `CREATE DATABASE other; CREATE TABLE other.u (…); CREATE TABLE t (…)` | exit `0`, `Schema is synced`: `other.u` is dropped without a word | exit `1`, `the document declares database "other", …` |
+| an HCL document declaring `schema "other"` alone | exit `1`, `mismatched HCL and database schemas: "app" <> "other"` | exit `1`, `the document declares database "other", …` |
+| `CREATE TABLE app.t (…)`, naming the URL's own database | exit `1`, `Error 1049 (42000): Unknown database 'app'`, run on the dev database | exit `0`, the table is in `app` |
+
+The binary runs the document on the dev database, so what it accepts depends
+on what that database can hold rather than on what the URL names. Without the
+refusal, the plan creates `other.u` on the server, in a database the URL does
+not name. The last row is the reverse: a name qualified with the URL's own
+database is that database's, and the binary refuses it only because the dev
+database has another name.
+
+**Tracking.** [`stokaro/ptah#3928`](https://github.com/stokaro/ptah/issues/3928)
 
 ## A dev server that is the `--to` side, or beside one database
 
