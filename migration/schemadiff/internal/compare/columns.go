@@ -193,6 +193,7 @@ func tableColumnsWithSemantics(
 				table:                genTable.Name,
 				generatedExpressions: spellings.Generated,
 				columnSpellings:      spellings.Columns,
+				defaultIntSize:       spellings.DefaultIntSize,
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -367,6 +368,8 @@ type columnContext struct {
 	// columnSpellings is [config.CompareOptions.ColumnSpellings], nil when
 	// nobody asked a server.
 	columnSpellings map[string]config.ColumnSpelling
+	// defaultIntSize is [ServerSpellings.DefaultIntSize].
+	defaultIntSize int
 }
 
 // columnSpelling returns the server's spelling of the column's type and
@@ -430,7 +433,9 @@ func columnsWithDesiredDomains(
 	// comparison below still folds what it knows how to fold.
 	spelling, spelled := ctx.columnSpelling(dialect, genCol.Name)
 	sameType := spelled && strings.EqualFold(spelling.Type, strings.TrimSpace(dbRawType))
-	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" && !sameType {
+	declared := genCol
+	declared.Type = resolvedDeclaredType(genCol.Type, dialect, ctx.defaultIntSize)
+	if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains); change != "" && !sameType {
 		colDiff.Changes["type"] = change
 	}
 
@@ -997,6 +1002,36 @@ func normalizeColumnTypesForDialect(
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
 	}
+}
+
+// resolvedDeclaredType is the type a server builds for a declaration, where it
+// resolves the declared spelling through a session setting rather than by its
+// name.
+//
+// CockroachDB is the case. A column declared INT or INTEGER, with no width, is
+// built with the width the session's default_int_size names, 8 unless the
+// session sets it: measured on v26.3.2, `n integer` and `k int` both read back
+// as INT8, and INT4 in a session with default_int_size = 4. Taken at
+// PostgreSQL's width, a declared `integer` differs from the INT8 the same
+// statement built, and the plan carries an ALTER COLUMN ... TYPE on every run
+// (stokaro/ptah#3922). So the declaration is compared as the width the server
+// gives it, and a declaration that does name a width, `int4` or `bigint`, is
+// compared as written.
+//
+// defaultIntSize is 0 where no connection read the setting; that is taken as
+// CockroachDB's own default. Every other dialect's declaration is returned
+// unchanged.
+func resolvedDeclaredType(declared, dialect string, defaultIntSize int) string {
+	if platform.NormalizeDialect(dialect) != platform.CockroachDB {
+		return declared
+	}
+	if name := strings.ToLower(strings.TrimSpace(declared)); name != "int" && name != "integer" {
+		return declared
+	}
+	if defaultIntSize == 4 {
+		return "int4"
+	}
+	return "int8"
 }
 
 // typeChangeText spells a reported type change for a person reading the plan.

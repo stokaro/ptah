@@ -119,6 +119,10 @@ type ServerSpellings struct {
 	Generated map[string]config.GeneratedExpression
 	// Columns is [config.CompareOptions.ColumnSpellings].
 	Columns map[string]config.ColumnSpelling
+	// DefaultIntSize is [catalog.ServerInfo.DefaultIntSize]: the width
+	// CockroachDB gives a column declared INT or INTEGER, 0 where no connection
+	// read it.
+	DefaultIntSize int
 }
 
 // TablesAndColumnsWithServerSpellings is [TablesAndColumnsWithSemantics] told

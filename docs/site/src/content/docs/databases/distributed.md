@@ -26,6 +26,10 @@ matching preset automatically.
   management, row-level security, standalone sequences, and `SERIAL` columns.
   It is also the one target that ADDS to PostgreSQL's surface rather than
   subtracting from it: see [CockroachDB row-level TTL](#cockroachdb-row-level-ttl).
+  A column declared `INT` or `INTEGER` without a width is compared at the
+  width CockroachDB builds for it, which the session's `default_int_size`
+  sets: `INT8` by default, `INT4` when the session sets 4. A declared width
+  such as `INT4` or `BIGINT` is compared as written.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`

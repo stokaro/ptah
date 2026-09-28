@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver
@@ -1186,6 +1187,36 @@ var errMySQLURLNamesNoDatabase = errors.New(
 		"for a socket URL, in the database parameter (mysql+unix://user@/run/mysqld/mysqld.sock?database=app), " +
 		"and run the command once for each database")
 
+// cockroachDefaultIntSize reads the width CockroachDB gives a column declared
+// INT or INTEGER in this session, or 0 on any other dialect.
+//
+// CockroachDB resolves those spellings through the session variable
+// default_int_size, 8 unless the session sets it: measured on v26.3.2,
+// `CREATE TABLE t (n integer, k int)` builds both columns as INT8, and the
+// same statement in a session with default_int_size = 4 builds INT4. Taken at
+// PostgreSQL's width, the declaration differs from the table the same SQL
+// built, and a comparison plans an ALTER COLUMN ... TYPE on every run
+// (stokaro/ptah#3922).
+//
+// A failed read leaves 0, which the comparison takes as the server's default,
+// rather than failing the connection over a setting it can do without.
+func cockroachDefaultIntSize(ctx context.Context, db *sql.DB, dialect string) int {
+	if platform.NormalizeDialect(dialect) != platform.CockroachDB {
+		return 0
+	}
+	var size string
+	if err := db.QueryRowContext(ctx, "SHOW default_int_size").Scan(&size); err != nil {
+		slog.Debug("could not read default_int_size", "error", err)
+		return 0
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(size))
+	if err != nil {
+		slog.Debug("could not parse default_int_size", "value", size, "error", err)
+		return 0
+	}
+	return width
+}
+
 // getDatabaseInfo retrieves database metadata
 func getDatabaseInfo(
 	ctx context.Context,
@@ -1248,6 +1279,7 @@ func getDatabaseInfo(
 		// there. MySQL, MariaDB, Oracle and SQL Server pin the same field from
 		// the same place, for the reason stokaro/ptah#1244 records below.
 		info.IdentifierSemantics.DefaultSchema = info.Schema
+		info.DefaultIntSize = cockroachDefaultIntSize(ctx, db, info.Dialect)
 
 	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
