@@ -141,6 +141,14 @@ func (k *keyIndexes) forget(table, name string) {
 	})
 }
 
+// forgetTable removes every index of table, which a statement dropped with
+// the table.
+func (k *keyIndexes) forgetTable(table string) {
+	k.entries = slices.DeleteFunc(k.entries, func(entry keyIndex) bool {
+		return entry.table == table
+	})
+}
+
 // isDeclaredKeyIndex reports whether table's index called name is one the
 // server built for a key and the model declares.
 func (k *keyIndexes) isDeclaredKeyIndex(table, name string) bool {

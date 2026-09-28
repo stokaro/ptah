@@ -98,10 +98,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
 ```
 
 `IF NOT EXISTS` makes the statement do nothing for a column the table already
-declares the same way. A column declared again without `IF NOT EXISTS` is
-refused, as the server refuses it. One declared again with `IF NOT EXISTS` but
-differently is refused too: the server keeps the first declaration and ignores
-the second, so either reading would drop what the other one says.
+declares the same way. A column declared again is refused otherwise: without
+`IF NOT EXISTS` the server refuses it, and with it the server keeps the first
+declaration, so either reading would drop what the other one says.
 
 ## Limit ON DELETE to some columns
 
@@ -228,6 +227,11 @@ ALTER TABLE items ALTER COLUMN qty SET DEFAULT 1, ALTER COLUMN qty SET NOT NULL;
 ALTER TABLE items ALTER COLUMN note TYPE varchar(200);
 ALTER TABLE items DROP COLUMN legacy;
 ```
+
+`DROP TABLE` and `DROP INDEX` remove the table or index, with what the server
+drops along with it. A drop the server refuses is refused: an object nothing
+declares, unless `IF EXISTS` says so, a table a foreign key or a PostgreSQL
+view still reads, and the index behind a constraint.
 
 These operations are read:
 
@@ -439,18 +443,14 @@ one per line:
 ```
 
 Point `--schema-file` at the entry point and the declarations merge in the order
-the file lists them. The entry point may declare objects of its own as well, and
-an imported file may import in turn.
-
-This is the layout `ptah-compat schema inspect` writes when its output goes
-through `split`, so an export of a live database reads back as the schema it was
-taken from.
+the file lists them. The entry point may declare objects of its own, and an
+imported file may import in turn. `ptah-compat schema inspect` writes this
+layout when its output goes through `split`, so an export reads back as the
+schema it was taken from.
 
 Each path is relative to the file that writes it and must stay inside the entry
-point's own directory. An absolute path, a path that climbs out with `..`, a
-file that does not exist, one that is not `.sql`, and a cycle are each refused
-by name. An entry point that imports nothing is read exactly as any other SQL
-file.
+point's directory. An absolute path, a path that climbs out with `..`, a missing
+file, one that is not `.sql`, and a cycle are each refused by name.
 
 ## Diff two SQL files locally
 
@@ -516,11 +516,10 @@ CREATE TABLE "pets" (
 
 - An index name between `FOREIGN KEY` and its column list is read under
   `--dialect mysql` and `--dialect mariadb`, and refused elsewhere. On MySQL
-  the name declares the index that backs the key, so Ptah reads it as that
-  index. It is the index the server builds for the key, so it is not built
-  where another index covers the key, and it gives way to a later index that
-  begins with its columns. On MariaDB it is the key's own name, and the key's
-  index takes it. No other engine has the syntax:
+  it names the index the server builds for the key, which is not built where
+  another index covers the key and gives way to a later index that begins with
+  its columns. On MariaDB it is the key's own name, and the key's index takes
+  it. No other engine has the syntax:
 
   ```sql
   CREATE TABLE child (a INT, FOREIGN KEY zidx (a) REFERENCES parents (id));
