@@ -116,6 +116,18 @@ const (
 	// empties it rather than the database every other test shares.
 	PostgreSQLAliased
 	PostgreSQLAlias
+	// MySQLDevServer is a second MySQL server, and MariaDBDevServer a second
+	// MariaDB server, each reached with an account that may create and drop
+	// databases and through a URL naming none.
+	//
+	// They are engines of their own because a second server is what they are
+	// for. A dev server that is the server a run reads is refused before it is
+	// reset, compared by server identity, and a whole server reached through
+	// another account or another spelling of the address is the same server.
+	// So a run that reads one server and rehearses on another cannot be
+	// covered by the servers the other engines name (stokaro/ptah#3885).
+	MySQLDevServer
+	MariaDBDevServer
 )
 
 // source is where one engine's address comes from.
@@ -233,6 +245,14 @@ var sources = map[Engine]source{
 	PostgreSQLAlias: {
 		canonical: "POSTGRES_ALIAS_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
+	},
+	MySQLDevServer: {
+		canonical: "MYSQL_DEV_SERVER_URL",
+		scheme:    []string{"mysql"},
+	},
+	MariaDBDevServer: {
+		canonical: "MARIADB_DEV_SERVER_URL",
+		scheme:    []string{"mariadb", "mysql"},
 	},
 }
 
@@ -360,6 +380,10 @@ func engineName(engine Engine) string {
 		return "PostgreSQL database that the pooler also serves under another name"
 	case PostgreSQLAlias:
 		return "PostgreSQL database reached through the pooler under another name"
+	case MySQLDevServer:
+		return "second MySQL server"
+	case MariaDBDevServer:
+		return "second MariaDB server"
 	}
 	return engine.String()
 }
@@ -436,7 +460,7 @@ func LookupDriverDSN(engine Engine) (string, error) {
 // driver.
 func driverForm(engine Engine, address string) string {
 	switch engine {
-	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
+	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin, MySQLDevServer, MariaDBDevServer:
 		return mysqlNetworkDSN(address)
 	case MySQLSocket, MariaDBSocket:
 		// The socket form is Ptah's to read, so it is read by the parser Ptah
@@ -511,6 +535,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
+		MySQLDevServer, MariaDBDevServer,
 	}
 }
 

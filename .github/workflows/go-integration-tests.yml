@@ -178,6 +178,37 @@ jobs:
         ports:
           - 3307:3306
 
+      # A second server per MySQL-family engine, holding no user database.
+      # A dev server that is the server a run reads is refused before it is
+      # reset, compared by server identity, so a run that reads one server and
+      # rehearses on another needs two (stokaro/ptah#3885). Only the tests that
+      # ask for dbtarget.MySQLDevServer or MariaDBDevServer use them.
+      mysql-dev:
+        image: mysql:26.7
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot_password"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1024m
+        ports:
+          - 3316:3306
+
+      mariadb-dev:
+        image: mariadb:12.3
+        env:
+          MARIADB_ROOT_PASSWORD: root_password
+        options: >-
+          --health-cmd "mariadb-admin ping -h localhost -u root -proot_password"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1024m
+        ports:
+          - 3317:3306
+
       clickhouse:
         image: clickhouse/clickhouse-server:26.9
         env:
@@ -318,6 +349,15 @@ jobs:
             sleep 2
           done
           echo "MariaDB is ready!"
+
+          for port in 3316 3317; do
+            echo "Waiting for the dev server on port $port..."
+            until mysqladmin ping -h 127.0.0.1 -P "$port" -u root -proot_password --silent; do
+              echo "The dev server on port $port is unavailable - sleeping"
+              sleep 2
+            done
+            echo "The dev server on port $port is ready!"
+          done
 
           echo "Waiting for ClickHouse..."
           until curl --silent --fail http://127.0.0.1:8123/ping; do
@@ -528,6 +568,10 @@ jobs:
           # `database` parameter.
           MYSQL_SOCKET_TEST_URL: "mysql+unix://root:root_password@/tmp/ptah-mysql-socket/mysqld.sock"
           MARIADB_SOCKET_TEST_URL: "mariadb+unix://root:root_password@/tmp/ptah-mariadb-socket/mysqld.sock"
+          # The second server of each engine, as a whole: the URL names no
+          # database.
+          MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
+          MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
