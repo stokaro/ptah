@@ -1145,8 +1145,12 @@ Ptah refuses two pairs before the replay that Atlas runs:
 - a `--to` naming one database beside a dev server, refused with
   `cannot diff a schema "app" with a database connection`.
 
-`schema diff`, `schema apply` and `schema inspect` do not take a dev server
-yet ([stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885)).
+`schema inspect` takes a dev server the same way. It creates the databases
+that a schema file declares, or that a migration directory creates, reads them
+back and leaves the server empty. A MySQL-family `CREATE DATABASE` in a SQL
+schema file declares a database, as `CREATE SCHEMA` does, because the two are
+synonyms there. `schema diff` and `schema apply` do not take a dev server yet
+([stokaro/ptah#3885](https://github.com/stokaro/ptah/issues/3885)).
 
 ### The publication boundary
 

@@ -36,6 +36,15 @@ SQL:
   `ENGINE=InnoDB` explicitly instead of trusting the session default.
 - `SET NULL` requires nullable local columns. Explicit foreign-key names are
   limited to 64 characters; generated names are shortened deterministically.
+- A foreign key may reference a table in another database, such as
+  `REFERENCES crm.customers (id)` on a table of `shop`. A read of `shop`
+  keeps the name `crm`: `db read` and SQL output write
+  ``REFERENCES `crm`.`customers`(`id`)``, HCL output writes
+  `table.crm.customers`, and a schema file declaring the key compares equal to
+  the database. The description does not hold `crm.customers`, so Ptah cannot
+  check its columns or its key, and the server checks them when the statement
+  runs. An unqualified reference, or one to a database the description holds a
+  table of, must still name a table the description holds.
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.
