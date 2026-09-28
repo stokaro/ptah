@@ -4062,6 +4062,12 @@ func (p *Parser) handleTableConstraintPrimaryKey(constraint *ast.ConstraintNode)
 		return fmt.Errorf("expected KEY after PRIMARY: %w", err)
 	}
 	constraint.Type = ast.PrimaryKeyConstraint
+	// The MySQL family takes the method before the parts as well as after
+	// them: `PRIMARY KEY USING HASH (id)`.
+	if p.readsKeyOptions() {
+		p.skipWhitespace()
+		constraint.UsingMethod = p.readIndexAccessMethod()
+	}
 	return nil
 }
 
@@ -5060,7 +5066,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	if isIndex {
 		optionKind = indexElement
 	}
-	if err := p.readTableElementOptions(optionKind, indexMethod); err != nil {
+	if err := p.readTableElementOptions(constraint, optionKind, indexMethod); err != nil {
 		return nil, nil, err
 	}
 

@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
 )
@@ -607,6 +608,7 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 		table.PrimaryKey = primaryKey.columns
 		table.PrimaryKeyParts = primaryKey.parts
 		table.PrimaryKeyInclude = primaryKey.include
+		table.PrimaryKeyMethod = primaryKey.method
 	case "index":
 		index, err := p.parseIndex(table.StructName, table.Name, block)
 		if err != nil {
@@ -1361,6 +1363,10 @@ type primaryKeySpec struct {
 	columns []string
 	parts   []schemamodel.PrimaryKeyPart
 	include []string
+	// method is the `type` attribute, HASH or empty; see [mysqlindex.Method].
+	// The pinned community binary v1.3.0 writes `type = HASH` for a MariaDB
+	// primary key built USING HASH (stokaro/ptah#3853).
+	method string
 }
 
 func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error) {
@@ -1382,7 +1388,8 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 		if err != nil {
 			return primaryKeySpec{}, err
 		}
-		return primaryKeySpec{columns: columns, parts: primaryKeyParts(columns), include: include}, nil
+		return primaryKeySpec{columns: columns, parts: primaryKeyParts(columns), include: include,
+			method: p.primaryKeyMethod(block)}, nil
 	}
 
 	parts, err := p.parsePrimaryKeyParts(block)
@@ -1393,7 +1400,7 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 	for _, part := range parts {
 		columns = append(columns, part.Name)
 	}
-	return primaryKeySpec{columns: columns, parts: parts, include: include}, nil
+	return primaryKeySpec{columns: columns, parts: parts, include: include, method: p.primaryKeyMethod(block)}, nil
 }
 
 func (p *parser) parsePartition(block *hclsyntax.Block) (*schemamodel.PartitionSpec, error) {
@@ -1489,6 +1496,12 @@ func partitionColumnParts(columns []string) []schemamodel.PartitionPart {
 		parts = append(parts, schemamodel.PartitionPart{Name: column})
 	}
 	return parts
+}
+
+// primaryKeyMethod is the access method a primary_key block's `type` asks for,
+// which [parser.validatePrimaryKeyType] has admitted.
+func (p *parser) primaryKeyMethod(block *hclsyntax.Block) string {
+	return mysqlindex.Method(p.optionalString(block.Body.Attributes["type"]))
 }
 
 func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {

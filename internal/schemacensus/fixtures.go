@@ -59,6 +59,7 @@ func Fixtures() []Fixture {
 		{Name: "table-pk", Schema: tablePrimaryKeyFixture()},
 		{Name: "table-pk-include", Schema: tablePrimaryKeyIncludeFixture()},
 		{Name: "table-pk-deferrable", Schema: tablePrimaryKeyDeferrableFixture()},
+		{Name: "table-pk-method", Schema: tablePrimaryKeyMethodFixture()},
 		{Name: "table-pk-parts", Schema: tablePrimaryKeyPartsFixture()},
 		{Name: "table-partition", Schema: tablePartitionFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
@@ -660,6 +661,19 @@ func tablePrimaryKeyIncludeFixture() schemamodel.Database {
 		Fields: []schemamodel.Field{
 			{StructName: "T", FieldName: "A", Name: "a", Type: "VARCHAR(16)"},
 			{StructName: "T", FieldName: "B", Name: "b", Type: "BIGINT", Nullable: true},
+		},
+	}
+}
+
+// tablePrimaryKeyMethodFixture is a primary key built USING HASH, which MariaDB
+// keeps (stokaro/ptah#3853).
+func tablePrimaryKeyMethodFixture() schemamodel.Database {
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "T", Name: "t", PrimaryKey: []string{"a"}, PrimaryKeyMethod: "HASH",
+		}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", FieldName: "A", Name: "a", Type: "BIGINT"},
 		},
 	}
 }

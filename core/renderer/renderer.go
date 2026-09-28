@@ -63,6 +63,7 @@ import (
 	"ptah.run/internal/crdbttl"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/objectidentity"
@@ -1499,10 +1500,67 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredPrimaryKeyMethod(dialect, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredEnforcementAndMatch(dialect, caps, database); err != nil {
 		return err
 	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredPrimaryKeyMethod refuses a primary key access method the
+// target cannot write, whether the table carries the key or a PRIMARY KEY
+// constraint does. Only the MySQL family has a clause for it, and there the
+// clause takes BTREE or HASH. Built without the method, the key would silently
+// become the engine's default.
+func validateDeclaredPrimaryKeyMethod(dialect string, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := primaryKeyMethodError(dialect, table.QualifiedName(), table.PrimaryKeyMethod); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), ast.PrimaryKeyConstraint.String()) {
+			continue
+		}
+		owner := constraintOwnerName(database.Tables, constraint)
+		if err := primaryKeyMethodError(dialect, owner, constraint.UsingMethod); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// primaryKeyMethodError answers why dialect cannot build the primary key of
+// table asking for method, and nil where it can.
+func primaryKeyMethodError(dialect, table, method string) error {
+	method = strings.TrimSpace(method)
+	normalized := platform.NormalizeDialect(dialect)
+	switch {
+	case method == "":
+		return nil
+	case normalized != platform.MySQL && normalized != platform.MariaDB:
+		return fmt.Errorf("%w: %s: the primary key of %q asks for USING %s, which only MySQL and MariaDB write",
+			ptaherr.ErrUnsupportedFeature, normalized, table, method)
+	case mysqlindex.Method(method) == "" && !strings.EqualFold(method, "BTREE"):
+		return fmt.Errorf("%w: %s: the primary key of %q asks for USING %s; a primary key is built USING BTREE or USING HASH",
+			ptaherr.ErrUnsupportedFeature, normalized, table, method)
+	default:
+		return nil
+	}
+}
+
+// constraintOwnerName is what a refusal calls the table a constraint belongs
+// to: the table it resolves to, or failing that the name it was declared with.
+func constraintOwnerName(tables []schemamodel.Table, constraint schemamodel.Constraint) string {
+	if owner := constraintOwnerTable(tables, constraint); owner != nil {
+		return owner.QualifiedName()
+	}
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	return constraint.StructName
 }
 
 // validateDeclaredKeyDeferral refuses a deferrable PRIMARY KEY, UNIQUE or

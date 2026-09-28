@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/sqlrunner"
 	"ptah.run/internal/systemschema"
@@ -337,8 +338,30 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	// one database at a time.
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
+	carryPrimaryKeyMethod(schema)
 
 	return schema, nil
+}
+
+// carryPrimaryKeyMethod puts the access method the server reports for each
+// table's PRIMARY index on the table's PRIMARY KEY constraint, which is where
+// a comparison reads a key. Only HASH is carried, as for any other index; see
+// [mysqlindex.Method]. MariaDB 11.8.9 reports INDEX_TYPE HASH for `PRIMARY KEY
+// (id) USING HASH` and prints the clause back, and MySQL 8.4.11 reports BTREE
+// on InnoDB (stokaro/ptah#3853).
+func carryPrimaryKeyMethod(schema *catalog.Database) {
+	methods := make(map[string]string)
+	for _, index := range schema.Indexes {
+		if method := mysqlindex.Method(index.Method); index.IsPrimary && method != "" {
+			methods[index.TableName] = method
+		}
+	}
+	for i := range schema.Constraints {
+		constraint := &schema.Constraints[i]
+		if method, ok := methods[constraint.TableName]; ok && constraint.Type == "PRIMARY KEY" {
+			constraint.UsingMethod = &method
+		}
+	}
 }
 
 // readTables reads all tables and their columns using bulk information_schema

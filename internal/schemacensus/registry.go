@@ -373,6 +373,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Table.PrimaryKeyDeferrable", Disposition: DDL},
 	{Field: "schemamodel.Table.PrimaryKeyInclude", Disposition: DDL},
 	{Field: "schemamodel.Table.PrimaryKeyInitially", Disposition: DDL},
+	{Field: "schemamodel.Table.PrimaryKeyMethod", Disposition: DDL},
 	{Field: "schemamodel.Table.PrimaryKeyName", Disposition: DDL},
 	{Field: "schemamodel.Table.PrimaryKeyParts", Disposition: DDL},
 	{Field: "schemamodel.Table.RowDeletionPolicy", Disposition: DDL},

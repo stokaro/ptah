@@ -59,17 +59,21 @@ func (p *Parser) cockroachVisibilityAt() (read bool, err error) {
 }
 
 // readTableElementOptions reads the options after the parts of a CREATE TABLE
-// element: the MySQL family's (see [Parser.readKeyOptions]), and the
-// visibility clause that may end a CockroachDB index. Any other dialect, and
+// element: the MySQL family's (see [Parser.readKeyOptions]), whose access
+// method a primary key keeps on its constraint, and the visibility clause that
+// may end a CockroachDB index. Any other dialect, and
 // any other element, reads no visibility here; the table element reports what
 // it cannot read.
 //
 // CREATE INDEX does not come here: CockroachDB takes the clause there after
 // INCLUDE and WHERE, so reading it after the parts would accept `NOT VISIBLE
 // WHERE ...`, which the server refuses.
-func (p *Parser) readTableElementOptions(kind, prefix string) error {
+func (p *Parser) readTableElementOptions(constraint *ast.ConstraintNode, kind, prefix string) error {
 	if err := p.readKeyOptions(kind, prefix); err != nil {
 		return err
+	}
+	if kind == primaryKeyElement && p.keyOptions.primaryKeyMethod != "" {
+		constraint.UsingMethod = p.keyOptions.primaryKeyMethod
 	}
 	if p.dialect != platform.CockroachDB || kind != indexElement {
 		return nil

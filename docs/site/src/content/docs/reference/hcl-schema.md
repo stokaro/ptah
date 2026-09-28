@@ -99,7 +99,7 @@ for the message and the flag it names.
 | `schema` | Labels and comments for table namespace references. |
 | `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, `platform`, `api_name`, `openapi_name`, `graphql_name`, and `proto_name` extensions. |
 | `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum`, `platform`, `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` extensions. |
-| `primary_key` | `columns`; PostgreSQL also supports `include`. |
+| `primary_key` | `columns`; PostgreSQL also supports `include`, and MySQL and MariaDB support `type = HASH`. |
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |

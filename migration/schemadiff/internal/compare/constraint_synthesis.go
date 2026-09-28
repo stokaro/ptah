@@ -180,9 +180,11 @@ func synthesizeTablePrimaryKeyConstraints(
 			// payload from the live index, after which the schema reads as synced
 			// (stokaro/ptah#2199).
 			IncludeColumns: append([]string(nil), table.PrimaryKeyInclude...),
-			// Compared the same way, for the same reason (stokaro/ptah#3824).
-			Deferrable: table.PrimaryKeyDeferrable,
-			Initially:  table.PrimaryKeyInitially,
+			// Compared the same way, for the same reason (stokaro/ptah#3824,
+			// stokaro/ptah#3853).
+			Deferrable:  table.PrimaryKeyDeferrable,
+			Initially:   table.PrimaryKeyInitially,
+			UsingMethod: table.PrimaryKeyMethod,
 		})
 	}
 	return synthesized

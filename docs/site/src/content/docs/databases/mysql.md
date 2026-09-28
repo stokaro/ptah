@@ -69,10 +69,10 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
-- `USING BTREE` and `USING HASH` are read on a `KEY`, `INDEX` or `UNIQUE KEY`
-  and rendered back after the column list. A `UNIQUE KEY` asking for a method
-  is read as a unique index, which is what the server builds and where a method
-  has somewhere to live. `BTREE` is not carried: `INDEX_TYPE` reports it for a
+- `USING BTREE` and `USING HASH` are read on a `PRIMARY KEY`, `KEY`, `INDEX`
+  or `UNIQUE KEY` and rendered back after the column list. A `UNIQUE KEY`
+  asking for a method is read as a unique index, which is what the server
+  builds and where a method has somewhere to live. `BTREE` is not carried: `INDEX_TYPE` reports it for a
   declared `USING BTREE` and for an index that asked for nothing alike, so the
   two are one index to every reader Ptah has, and emitting it would put the
   clause into the DDL of every index read back from a server. `HASH` is
@@ -88,6 +88,9 @@ SQL:
   default engine a desired `HASH` reads back as `BTREE`, and reporting it would
   plan a rebuild MySQL immediately undoes. Deciding the MySQL case properly
   needs the table's storage engine, which the index comparison does not have.
+  A primary key is compared the same way; where its method differs, the plan
+  drops the key and adds it with the method. Other dialects have no clause for
+  a primary key's method, so a schema asking for one is refused there.
 - A column-level `UNIQUE` is compared by the name the server gives it: the
   column's name, with `_2` and on where another key of the table holds it.
   When the database holds the key over the column under another name, the

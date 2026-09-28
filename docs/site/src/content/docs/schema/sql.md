@@ -195,8 +195,9 @@ reader takes them:
 - `MATCH SIMPLE` after `REFERENCES` and its columns, before `ON DELETE` and
   `ON UPDATE`.
 - On MySQL and MariaDB, the index options `VISIBLE`, MariaDB's `NOT IGNORED`,
-  and `USING BTREE` or `USING HASH` after a key's parts. A method written
-  there is the one `KEY k USING HASH (a)` asks for, and the later clause wins.
+  and `USING BTREE` or `USING HASH` after the parts of a key, the primary key
+  included. A method written there is the one `KEY k USING HASH (a)` asks for,
+  and the later clause wins.
 
 The [PostgreSQL](../../databases/postgresql/#constraint-enforcement-and-the-match-type)
 and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED`, a MATCH
@@ -206,8 +207,7 @@ after `ALTER TABLE ... ADD` is
 declare something the model has no field for are refused by name
 ([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): the index
 options `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
-`USING HASH` after a primary key is refused too. So is a clause a dialect's
-server refuses, such as `ENFORCED` after a `UNIQUE`:
+So is a clause a dialect's server refuses, such as `ENFORCED` after a `UNIQUE`:
 
 ```sql
 CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE = 8);

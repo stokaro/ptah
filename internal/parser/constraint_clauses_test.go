@@ -364,12 +364,6 @@ func TestParse_UnmodeledClause_FailurePath(t *testing.T) {
 			wantErr: `expected REFERENCES after FOREIGN KEY: expected 'REFERENCES', got 'VISIBLE' at position 39`,
 		},
 		{
-			name:    "HASH on a primary key",
-			dialect: platform.MariaDB,
-			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) USING HASH);",
-			wantErr: `USING HASH after a PRIMARY KEY at position 39: the access method of a primary key is not modeled.*`,
-		},
-		{
 			name:    "USING on a FULLTEXT index",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (b text, FULLTEXT KEY f (b) USING BTREE);",

@@ -342,6 +342,8 @@ table "users" {
 	c.Assert(sql, qt.Not(qt.Contains), "id int PRIMARY KEY")
 }
 
+// TestParsePrimaryKeyType reads the primary_key `type` the pinned community
+// binary v1.3.0 writes for a MariaDB key built USING HASH.
 func TestParsePrimaryKeyType(t *testing.T) {
 	c := qt.New(t)
 
@@ -362,9 +364,13 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+	c.Assert(db.Tables[0].PrimaryKeyMethod, qt.Equals, "HASH")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
-	c.Assert(sql, qt.Contains, "id varchar(128) PRIMARY KEY")
+	// The key keeps its method, which MariaDB builds: dropped, the document
+	// applied a BTREE key that compared as the HASH it declared
+	// (stokaro/ptah#3853).
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mariadb"), "\n"))
+	c.Assert(sql, qt.Contains, "PRIMARY KEY (id) USING HASH")
 }
 
 func TestParsePrimaryKeyTypeRejectsUnknownValue(t *testing.T) {

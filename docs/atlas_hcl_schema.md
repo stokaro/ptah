@@ -64,7 +64,7 @@ current schema IR:
   `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and
   `api_expose` preserve API export metadata
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
-  `include`
+  `include`, and MySQL and MariaDB primary keys support `type = HASH`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
   an `on` block also accepts `nulls_first` or `nulls_last` (not both) for a key
