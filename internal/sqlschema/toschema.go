@@ -722,14 +722,10 @@ func appendStatement(
 	if handled, err := appendRowSecurity(database, stmt, sourcePlatform); handled {
 		return err
 	}
+	if appendNamespace(database, stmt, sourcePlatform) {
+		return nil
+	}
 	switch node := stmt.(type) {
-	case *ast.CreateSchemaNode:
-		database.Schemas = append(database.Schemas, schemamodel.Schema{
-			Name:    normalizeSQLIdentifier(sourcePlatform, node.Name),
-			Comment: node.Comment,
-			Charset: node.Charset,
-			Collate: node.Collate,
-		})
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
 	case *ast.CreateTableNode:
@@ -758,12 +754,10 @@ func appendStatement(
 		database.RLSPolicies = append(database.RLSPolicies, toRLSPolicy(node, sourcePlatform))
 	case *ast.CommentNode:
 		return applyComment(database, base, node, sourcePlatform)
-	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
-		*ast.PostgresDoBlockNode, *ast.RawSQLNode:
+	case *ast.DropTableNode, *ast.DropIndexNode, *ast.PostgresDoBlockNode, *ast.RawSQLNode:
 		// Deliberately not modeled, and each for the same reason: a
 		// schemamodel.Database is what a schema SHOULD contain, and none of
-		// these names an object it would contain. A CREATE DATABASE names the
-		// database this model already is; a DROP names an object by its
+		// these names an object it would contain. A DROP names an object by its
 		// absence, which the desired schema expresses by not declaring it; a
 		// DO block and a raw statement do work rather than declare a thing.
 		//
