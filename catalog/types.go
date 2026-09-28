@@ -1108,6 +1108,15 @@ type ServerInfo struct {
 	// empty Schema alone does not make a server.
 	WholeServer bool `json:"whole_server,omitempty"`
 
+	// DefaultIntSize is the width in bytes CockroachDB gives a column
+	// declared INT or INTEGER without one, read from the session's
+	// default_int_size when the connection is made. It is 8 unless the
+	// session sets it, and 0 where the dialect has no such setting or the
+	// connection did not read it; a comparison takes 0 on CockroachDB as 8,
+	// the server's own default. PostgreSQL gives those spellings 4 bytes
+	// always.
+	DefaultIntSize int `json:"default_int_size,omitempty"`
+
 	// URL is the database connection URL the connection was opened from, with
 	// whatever credentials it carried. Callers that reconnect to the same
 	// target read it -- a dev-database URL, a second session for an online DDL

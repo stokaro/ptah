@@ -176,7 +176,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 			return nil, nil, err
 		}
 	}
-	diff, undecided := compareReportingUndecidedAdditions(desired, database, merged, info.Capabilities)
+	diff, undecided := compareReportingUndecidedAdditions(desired, database, merged, info.Capabilities, info.DefaultIntSize)
 	// The half of the SQLite virtual-table guard that only the comparator can
 	// answer. A table both sides name and describe differently is rebuilt by
 	// the SQLite planner -- drop, recreate, copy -- which destroys a module's
@@ -265,7 +265,7 @@ func CompareReportingUndecidedAdditions(
 	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object) {
-	return compareReportingUndecidedAdditions(desired, database, opts, nil)
+	return compareReportingUndecidedAdditions(desired, database, opts, nil, 0)
 }
 
 // compareReportingUndecidedAdditions is [CompareReportingUndecidedAdditions]
@@ -273,11 +273,14 @@ func CompareReportingUndecidedAdditions(
 // a read to report. Nil takes the dialect's default preset, which is all an
 // offline comparison has; a live one passes what the server's version
 // resolved to, because two releases of one engine can answer differently.
+// defaultIntSize is [catalog.ServerInfo.DefaultIntSize], 0 where no connection
+// read it.
 func compareReportingUndecidedAdditions(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
 	caps capability.Capabilities,
+	defaultIntSize int,
 ) (*difftypes.SchemaDiff, []coverage.Object) {
 	if opts == nil {
 		opts = config.DefaultCompareOptions()
@@ -346,7 +349,11 @@ func compareReportingUndecidedAdditions(
 		opts.Dialect,
 		identifierSemantics,
 		cov,
-		compare.ServerSpellings{Generated: opts.GeneratedExpressions, Columns: opts.ColumnSpellings},
+		compare.ServerSpellings{
+			Generated:      opts.GeneratedExpressions,
+			Columns:        opts.ColumnSpellings,
+			DefaultIntSize: defaultIntSize,
+		},
 	)
 
 	// Compare enum type definitions and values. The semantics carry the
