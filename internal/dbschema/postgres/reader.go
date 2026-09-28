@@ -2077,16 +2077,19 @@ func (r *Reader) readBasicConstraints(ctx context.Context) ([]catalog.Constraint
 	return constraints, nil
 }
 
-func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
-	// PostgreSQL scopes constraint names to their owning tables. Joining the
-	// information_schema FK views by schema and name therefore cross-products
-	// same-named constraints on different tables. Anchor the row in
-	// pg_constraint by owning relation and pair conkey/confkey by ordinality so
-	// every local column, referenced column, and action comes from one object.
-	// Unnest the arrays separately because CockroachDB returns no key rows for
-	// the multi-array form when confkey is NULL, which hides PRIMARY KEY and
-	// UNIQUE columns.
-	constraintsQuery := `
+// basicConstraintsQuery reads the constraints of one schema, $1, anchored in
+// pg_constraint.
+//
+// PostgreSQL scopes constraint names to their owning tables. Joining the
+// information_schema FK views by schema and name therefore cross-products
+// same-named constraints on different tables. Anchor the row in
+// pg_constraint by owning relation and pair conkey/confkey by ordinality so
+// every local column, referenced column, and action comes from one object.
+// Unnest the arrays separately because CockroachDB returns no key rows for
+// the multi-array form when confkey is NULL, which hides PRIMARY KEY and
+// UNIQUE columns.
+func (r *Reader) basicConstraintsQuery() string {
+	return `
 			SELECT
 				tc.table_schema,
 				tc.table_name,
@@ -2145,6 +2148,13 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
 		WHERE tc.table_schema = $1
 		AND tc.table_name NOT IN ('schema_migrations', 'schema_migrations_log')
+		-- A NOT NULL is the column's, and its name is read with the column; see
+		-- notNullConstraintNameExpr. PostgreSQL 18 catalogs each one in
+		-- pg_constraint as contype 'n', and information_schema lists it as a
+		-- CHECK, so without this filter a NOT NULL reads as a CHECK with no
+		-- condition that nothing declares, and the comparison plans to drop it,
+		-- which drops the NOT NULL (stokaro/ptah#3927).
+		AND pc.contype <> 'n'
 		GROUP BY
 			tc.table_schema,
 			tc.table_name,
@@ -2152,6 +2162,10 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			tc.constraint_type
 		` + r.hiddenKeyFilter() + `
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
+}
+
+func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
+	constraintsQuery := r.basicConstraintsQuery()
 
 	rows, err := r.db.QueryContext(ctx, constraintsQuery, schemaName)
 	if err != nil {
