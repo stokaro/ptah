@@ -182,6 +182,9 @@ func (p *Parser) parseCreateRole() (*ast.CreateRoleNode, error) {
 		return nil, err
 	}
 	p.skipWhitespace()
+	if err := p.parseCreateRoleIfNotExists(); err != nil {
+		return nil, err
+	}
 
 	name, err := p.expectIdentifier()
 	if err != nil {
@@ -196,6 +199,28 @@ func (p *Parser) parseCreateRole() (*ast.CreateRoleNode, error) {
 		return nil, err
 	}
 	return role, nil
+}
+
+// parseCreateRoleIfNotExists reads the IF NOT EXISTS of a MySQL-family CREATE
+// ROLE, which the MySQL-family renderer writes for every role. It changes
+// nothing a schema file declares: the role exists after the statement either
+// way. Without it, `CREATE ROLE IF NOT EXISTS r` read IF as the role's name,
+// so the SQL `schema inspect` wrote for a server holding a role could not be
+// read back (stokaro/ptah#3902). PostgreSQL has no such form and answers a
+// syntax error, so there the guard is refused by name.
+func (p *Parser) parseCreateRoleIfNotExists() error {
+	if !p.current.MatchIdentifierValue("IF") {
+		return nil
+	}
+	if p.dialect != "" && !isMySQLFamilyDialect(p.dialect) {
+		return fmt.Errorf("CREATE ROLE IF NOT EXISTS at position %d: %s takes no IF NOT EXISTS on CREATE ROLE",
+			p.current.Start, p.dialect)
+	}
+	if _, err := p.parseOptionalIfNotExists(); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+	return nil
 }
 
 func (p *Parser) parseRoleOptions(role *ast.CreateRoleNode) error {
