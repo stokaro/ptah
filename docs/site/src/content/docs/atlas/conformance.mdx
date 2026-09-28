@@ -264,14 +264,16 @@ From the Ptah repository:
 make conformance
 ```
 
-Ptah's own CI also rebuilds the pinned Atlas CE oracle from an immutable source
-archive on every run. It verifies the release tag's locked commit, the archive
-SHA-256, and exact version output. It then runs the migration-directory query,
-migrate-apply interoperability, and Flyway revision-identity controls through
-both command-line processes, runs differential migration-sum tests, regenerates
-the recorded corpus, and fails if the committed corpus changes. This is a black-box
-executable used only by tests; Atlas source and compiled code are not imported,
-vendored, or linked into Ptah.
+Ptah's own CI also builds the pinned Atlas CE oracle from an immutable source
+archive. The build verifies the release tag's locked commit, the archive
+SHA-256, and exact version output. It runs every night, and on any pull request
+that changes the lock, the build scripts or the Go toolchain. Other runs reuse
+the built binary after checking the version it prints. CI then runs the
+migration-directory query, migrate-apply interoperability, and Flyway
+revision-identity controls through both command-line processes, runs
+differential migration-sum tests, regenerates the recorded corpus, and fails if
+the committed corpus changes. This is a black-box executable used only by tests;
+Atlas source and compiled code are not imported, vendored, or linked into Ptah.
 
 Atlas Cloud and commercial binaries are outside this oracle workflow.
 
