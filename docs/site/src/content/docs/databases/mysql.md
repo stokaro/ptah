@@ -335,6 +335,11 @@ SQL:
   names columns, so a column list that is a number is refused, and the refusal
   names the keyword. MySQL and MariaDB answer the same statement with
   `Error 1064`.
+- Under `--dialect mysql`, an `ALTER TABLE` in a schema file carrying
+  `IF EXISTS` or `IF NOT EXISTS` is refused, because MySQL refuses the guard on
+  every operation. MariaDB takes it on `DROP INDEX`, `DROP KEY`,
+  `DROP FOREIGN KEY`, `DROP CONSTRAINT`, `DROP COLUMN` and `ADD COLUMN`, and
+  Ptah reads it there.
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique
