@@ -140,6 +140,23 @@ func (r *Reader) outputSchema(schemaName string) string {
 	return ""
 }
 
+// referencedSchema is the schema a foreign key records for the schema of the
+// table it references.
+//
+// It is [Reader.outputSchema] without the scope condition. An unscoped read
+// describes r.schema alone, so every object it reports is in r.schema and
+// carries no schema. A referenced table can be anywhere, and one outside
+// r.schema keeps its schema's name: read as a table of r.schema, a key into
+// `crm.customers` would name a `customers` the description does not hold, and
+// every command that renders the read would refuse it as unknown
+// (stokaro/ptah#3906).
+func (r *Reader) referencedSchema(schemaName string) string {
+	if schemaName != r.schema {
+		return schemaName
+	}
+	return ""
+}
+
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
 // context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
@@ -2195,7 +2212,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			constraint.ForeignTable = &foreignTable
 		}
 		constraint.Schema = r.outputSchema(constraint.Schema)
-		constraint.ForeignSchema = r.outputSchema(foreignSchema)
+		constraint.ForeignSchema = r.referencedSchema(foreignSchema)
 		if foreignColumns != "" {
 			constraint.ForeignColumns = strings.Split(foreignColumns, ",")
 			constraint.ForeignColumn = &constraint.ForeignColumns[0]

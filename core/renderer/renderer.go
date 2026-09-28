@@ -61,6 +61,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/nullsdistinct"
@@ -2394,7 +2395,7 @@ func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
 		}
 		reference := schemaprep.ParseForeignKeyReference(field.Foreign)
 		target := referencedTable(v.database.Tables, *owner, reference.Table)
-		if target == nil && referencesAnotherDatabase(v.database, v.dialect, reference.Table) {
+		if target == nil && referencesUndescribedSchema(v.database, v.dialect, reference.Table) {
 			continue
 		}
 		if target == nil {
@@ -2449,7 +2450,7 @@ func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
 		}
 		columns := constraint.ForeignColumnsOrDefault()
 		target := referencedTable(v.database.Tables, *owner, constraint.ForeignTable)
-		if target == nil && referencesAnotherDatabase(v.database, v.dialect, constraint.ForeignTable) {
+		if target == nil && referencesUndescribedSchema(v.database, v.dialect, constraint.ForeignTable) {
 			continue
 		}
 		if target == nil {
@@ -2484,41 +2485,17 @@ func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
 	return bindings, nil
 }
 
-// referencesAnotherDatabase reports whether a MySQL-family foreign key names a
-// table in a database the description holds nothing of.
-//
-// A database is the schema on this family, and a key may reference a table in
-// another one: `REFERENCES crm.customers (id)` from a table of `shop`. A read
-// of `shop` describes `shop`, so the referenced table is not in it and cannot
-// be, and neither is a desired schema written for `shop`. Refusing that as an
-// unknown table would leave `db read`, `schema inspect --format sql` and
-// `schema compare` unable to describe a database holding such a key at all
-// (stokaro/ptah#3891). The key is rendered as written and left to the server:
-// the columns and the key it references are in the other database, so there
-// is nothing here to check them against.
-//
-// A reference stays unknown when it is unqualified, or when the description
-// holds anything of the database it names: `crm.missing` beside a described
-// `crm` is a table that is not there, which is what the refusal is for.
-func referencesAnotherDatabase(database schemamodel.Database, dialect, reference string) bool {
-	if normalized := platform.NormalizeDialect(dialect); normalized != platform.MySQL && normalized != platform.MariaDB {
-		return false
-	}
-	ref, ok := tableref.Parse(reference)
-	if !ok || !ref.Qualified {
-		return false
-	}
-	for _, schema := range database.Schemas {
-		if schema.Name == ref.Schema {
-			return false
-		}
-	}
-	for _, table := range database.Tables {
-		if strings.TrimSpace(table.Schema) == ref.Schema {
-			return false
-		}
-	}
-	return true
+// referencesUndescribedSchema reports whether a foreign key names a table in a
+// schema the description holds nothing of, which the renderer writes as
+// declared and leaves to the server: the columns and the key it references are
+// in the other schema, so there is nothing here to check them against.
+// Refusing it as an unknown table would leave `db read`, `schema inspect
+// --format sql` and `schema compare` unable to describe a schema holding such a
+// key at all. [foreignkeyscope.Outside] decides which keys those are, and the
+// comparison asks it too.
+func referencesUndescribedSchema(database schemamodel.Database, dialect, reference string) bool {
+	_, outside := foreignkeyscope.Outside(database, dialect, reference)
+	return outside
 }
 
 func isEmbeddedHelperStruct(embeddedFields []schemamodel.EmbeddedField, structName string) bool {

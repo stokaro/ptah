@@ -44,7 +44,11 @@ SQL:
   the database. The description does not hold `crm.customers`, so Ptah cannot
   check its columns or its key, and the server checks them when the statement
   runs. An unqualified reference, or one to a database the description holds a
-  table of, must still name a table the description holds.
+  table of, must still name a table the description holds. Where the read a
+  command compares against covers `crm` too, as a URL naming no database does
+  without `--schemas`, a desired schema that declares nothing of `crm` asks for
+  its tables to be dropped; Ptah refuses a key into it by name rather than plan
+  the drop.
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.

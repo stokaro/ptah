@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
@@ -692,6 +693,49 @@ func validateDeclaredBeforeComparison(
 		desired.Schemas,
 	); err != nil {
 		return err
+	}
+	return validateKeysIntoComparedSchemas(desired, database, info.Dialect)
+}
+
+// validateKeysIntoComparedSchemas refuses a foreign key into a schema the
+// desired schema holds nothing of, when the database it is compared with holds
+// that schema.
+//
+// The renderer writes such a key as declared, because a description of one
+// schema cannot hold a table of another. A comparison is the exception: when
+// the database read covers the other schema, the desired schema saying nothing
+// of it asks for everything there to be dropped, the referenced table
+// included, and the plan would drop a table while adding a key into it. So the
+// key is refused as the renderer refuses a reference to a table the
+// description does not hold. Measured on PostgreSQL 18.6: `schema apply` of a
+// file declaring only public's tables, against a URL covering every schema,
+// planned `ALTER TABLE "crm"."customers" DROP CONSTRAINT IF EXISTS
+// "customers_pkey"`, and the server refused it with SQLSTATE 2BP01
+// (stokaro/ptah#3906).
+func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *catalog.Database, dialect string) error {
+	if database == nil {
+		return nil
+	}
+	held := make(map[string]bool, len(database.Schemas)+len(database.Tables))
+	for _, schema := range database.Schemas {
+		held[schema.Name] = true
+	}
+	for _, table := range database.Tables {
+		held[strings.TrimSpace(table.Schema)] = true
+	}
+	for _, reference := range foreignkeyscope.References(*desired) {
+		schema, outside := foreignkeyscope.Outside(*desired, dialect, reference.Table)
+		if outside && held[schema] {
+			return &ptaherr.RenderError{
+				Dialect: dialect,
+				Err:     ptaherr.ErrInvalidSchemaDiff,
+				Message: fmt.Sprintf(
+					"invalid foreign key: %s references unknown table %q: the database compared holds schema %q "+
+						"and the desired schema declares nothing of it",
+					reference.Declaration, reference.Table, schema,
+				),
+			}
+		}
 	}
 	return nil
 }

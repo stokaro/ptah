@@ -41,6 +41,19 @@ selects the matching capability preset, so planning adapts to the concrete
 server — see
 [Dialects and capabilities](../../concepts/dialects-and-capabilities/).
 
+A foreign key may reference a table in another schema of the same database,
+such as `REFERENCES crm.customers (id)` on a table of `public`. A read of
+`public` keeps the name `crm`: `db read` and SQL output write
+`REFERENCES "crm"."customers"("id")`, HCL output writes `table.crm.customers`,
+and a schema file declaring the key compares equal to the database. The same
+holds on CockroachDB. The description does not hold `crm.customers`, so Ptah
+cannot check its columns or its key, and the server checks them when the
+statement runs. Where the read a command compares against covers `crm` too, as
+`schema apply` reads a URL naming no schema, a desired schema that declares
+nothing of `crm` asks for its tables to be dropped. Ptah refuses a key into
+such a schema by name rather than plan the drop: scope the run with
+`search_path` or declare the referenced table.
+
 ## Version-dependent behavior
 
 PostgreSQL release lines differ in grammar that reaches generated SQL:
