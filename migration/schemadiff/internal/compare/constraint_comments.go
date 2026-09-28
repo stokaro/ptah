@@ -42,7 +42,7 @@ func ConstraintComments(
 	if opts != nil {
 		dialect = opts.Dialect
 	}
-	declared := declaredConstraintKeys(desired, semantics)
+	declared := declaredConstraintKeys(desired, database, dialect, semantics)
 	genConstraints, dbConstraints := pairedConstraints(desired, database, dialect, semantics)
 	var changes []difftypes.ConstraintCommentChange
 	for key, genConstraint := range genConstraints {
@@ -75,11 +75,16 @@ func ConstraintComments(
 }
 
 // declaredConstraintKeys keys the constraints the declaration states as
-// constraints.
-func declaredConstraintKeys(desired *schemamodel.Database, semantics identifier.Semantics) map[tableMemberKey]struct{} {
+// constraints, as the constraint comparison with database keys them.
+func declaredConstraintKeys(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) map[tableMemberKey]struct{} {
 	keys := make(map[tableMemberKey]struct{}, len(desired.Constraints))
 	for _, constraint := range desired.Constraints {
-		_, key := declaredConstraint(constraint, desired.Tables, semantics)
+		_, key := comparedDeclaredConstraint(constraint, desired.Tables, database, dialect, semantics)
 		keys[key] = struct{}{}
 	}
 	return keys

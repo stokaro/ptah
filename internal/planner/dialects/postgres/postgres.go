@@ -3445,6 +3445,9 @@ type constraintPlanState struct {
 	addedHostsByName   map[string]map[constraintHostKey]struct{}
 	handled            map[string]struct{}
 	droppedForModify   map[constraintHostKey]struct{}
+	// replacedPrimaryKeys are the primary keys the diff removes from a table
+	// it adds a primary key to; see [replacedPrimaryKeys].
+	replacedPrimaryKeys map[string]difftypes.ConstraintRemovalInfo
 }
 
 // constraintHostKey is the shared identity model's comparison value for a
@@ -3542,14 +3545,44 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	}
 
 	return constraintPlanState{
-		semantics:          semantics,
-		removedNames:       removedNames,
-		removalByTableName: removalByTableName,
-		removalsByName:     removalsByName,
-		addedHostsByName:   addedHostsByName,
-		handled:            make(map[string]struct{}),
-		droppedForModify:   make(map[constraintHostKey]struct{}),
+		semantics:           semantics,
+		removedNames:        removedNames,
+		removalByTableName:  removalByTableName,
+		removalsByName:      removalsByName,
+		addedHostsByName:    addedHostsByName,
+		handled:             make(map[string]struct{}),
+		droppedForModify:    make(map[constraintHostKey]struct{}),
+		replacedPrimaryKeys: replacedPrimaryKeys(diff, semantics),
 	}
+}
+
+// replacedPrimaryKeys answers the primary keys diff removes from a table it
+// adds a primary key to, keyed by table. A table holds one primary key, so the
+// removed key is dropped before the added one whatever either is called. Under
+// two names the pair is no modification, and the ADD ran ahead of the DROP
+// the removals get, which the server refuses (stokaro/ptah#3959).
+//
+// The planner reads it twice: [Planner.addPrimaryKeyConstraintsWithTables]
+// drops each key ahead of its replacement, and [Planner.removeConstraints]
+// leaves it out of the removals, where a second drop would follow the ADD.
+func replacedPrimaryKeys(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[string]difftypes.ConstraintRemovalInfo {
+	adding := make(map[string]struct{})
+	for _, add := range diff.ConstraintsAdded {
+		if add.TableName != "" && strings.EqualFold(add.Type, "PRIMARY KEY") {
+			adding[semantics.QualifiedTableIdentityKey(add.TableName)] = struct{}{}
+		}
+	}
+	replaced := make(map[string]difftypes.ConstraintRemovalInfo)
+	for _, info := range diff.ConstraintsRemoved {
+		if info.TableName == "" || !strings.EqualFold(info.Type, "PRIMARY KEY") {
+			continue
+		}
+		table := semantics.QualifiedTableIdentityKey(info.TableName)
+		if _, found := adding[table]; found {
+			replaced[table] = info
+		}
+	}
+	return replaced
 }
 
 // addNamedConstraintsByKind refuses an addition the record-driven passes could
@@ -3743,14 +3776,14 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		key := add.Identity
-		if _, modified := state.removalByTableName[key]; modified {
-			result = p.emitModifyDrop(result, add, state)
+		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
+			result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
 		}
 		// The payload rides with the key, exactly as it does for a covering
 		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the
 		// DROP just removed never comes back (stokaro/ptah#2199).
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
+		primaryKey.Name = writtenPrimaryKeyName(add)
 		primaryKey.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		// So does the deferral (stokaro/ptah#3824).
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
@@ -3761,6 +3794,22 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		state.handled[add.Name] = struct{}{}
 	}
 	return result
+}
+
+// writtenPrimaryKeyName is the name an added primary key is written with: the
+// name it asks for, or none where that is the name PostgreSQL gives an unnamed
+// key. Without the name, a declared key is built as `<table>_pkey`, and the
+// next comparison looks for it under the name it was declared with
+// (stokaro/ptah#3959).
+func writtenPrimaryKeyName(add difftypes.ConstraintAdditionInfo) string {
+	table := add.TableName
+	if ref, ok := tableref.Parse(add.TableName); ok {
+		table = ref.Name
+	}
+	if add.Name == pgname.Object(table, "", "pkey") {
+		return ""
+	}
+	return add.Name
 }
 
 // emitModifyDrop appends the DROP that must precede the re-ADD of a modified
@@ -3882,6 +3931,7 @@ func (p *Planner) removeConstraints(
 		semantics:        diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		droppedForModify: make(map[constraintHostKey]struct{}),
 	}
+	replacedKeys := replacedPrimaryKeys(diff, state.semantics)
 
 	// A removed constraint is dropped from its exact owning table with a direct,
 	// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>. The
@@ -3962,6 +4012,11 @@ func (p *Planner) removeConstraints(
 		key := info.Identity
 		if _, modified := modifySet[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+			continue
+		}
+		if replaced, found := replacedKeys[state.semantics.QualifiedTableIdentityKey(info.TableName)]; found &&
+			replaced.Identity == key {
+			// Dropped ahead of the primary key that replaces it.
 			continue
 		}
 		if _, dropped := released[key]; dropped {

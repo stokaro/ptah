@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
@@ -177,7 +178,7 @@ func tableColumnsWithSemantics(
 	// Find modified columns
 	for identity, genCol := range genColumns {
 		if dbCol, exists := dbColumns[identity]; exists {
-			if columnInTablePrimaryKey(genTable, genCol.Name) {
+			if columnInTablePrimaryKey(genTable, genCol.Name) || columnInDeclaredPrimaryKey(desired, genTable, genCol.Name) {
 				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol, dialect)
 			}
 			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
@@ -1130,6 +1131,23 @@ func normalizeTablePrimaryKeyColumn(genCol schemamodel.Field, dbCol catalog.Colu
 
 func columnInTablePrimaryKey(table schemamodel.Table, column string) bool {
 	return slices.Contains(tablePrimaryKeyColumns(table), column)
+}
+
+// columnInDeclaredPrimaryKey reports whether a PRIMARY KEY constraint of table
+// covers the column. The key is compared as a constraint, as the table's own
+// key is, so the column is normalized like one of the table's key columns.
+// Compared on the column, the key the database holds reads as the column's
+// own, and every plan changes `primary_key: true -> false` (stokaro/ptah#3959).
+func columnInDeclaredPrimaryKey(desired *schemamodel.Database, table schemamodel.Table, column string) bool {
+	for _, constraint := range desired.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") || !slices.Contains(constraint.Columns, column) {
+			continue
+		}
+		if owner, found := constraintowner.Table(constraint, desired.Tables); found && owner.QualifiedName() == table.QualifiedName() {
+			return true
+		}
+	}
+	return false
 }
 
 func tablePrimaryKeyColumns(table schemamodel.Table) []string {
