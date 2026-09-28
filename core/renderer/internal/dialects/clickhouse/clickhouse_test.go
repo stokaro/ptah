@@ -470,7 +470,7 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 func TestVisitComment(t *testing.T) {
 	c := qt.New(t)
 	out := render(t, ast.NewComment("a note"))
-	c.Assert(out, qt.Contains, "-- a note --")
+	c.Assert(out, qt.Equals, "-- a note\n")
 }
 
 func TestVisitRawSQL_PassThrough(t *testing.T) {
@@ -846,7 +846,7 @@ func TestDialectAndOutputHelpers(t *testing.T) {
 	c.Assert(r.GetDialect(), qt.Equals, "clickhouse")
 	out, err := r.Render(ast.NewComment("hello"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(out, qt.Contains, "-- hello --")
+	c.Assert(out, qt.Equals, "-- hello\n")
 	c.Assert(r.GetOutput(), qt.Equals, r.Output())
 }
 

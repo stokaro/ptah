@@ -290,7 +290,7 @@ func renderGeneratedDownMigrationSQL(
 	)
 	directives := generatedDirectiveOptions{skipTimeouts: plan.Reverse.RequiresNoTransaction}
 	return withGeneratedTimeoutDirectivesForOptions(
-		header+strings.Join(statements, ";\n")+";",
+		header+joinScriptStatements(statements),
 		plan.Dialect,
 		directives,
 	), nil
@@ -313,7 +313,7 @@ func renderGeneratedMigrationSQL(
 	}
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: %s\n\n",
 		time.Now().Format(time.RFC3339), direction)
-	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
 }
 
 func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadow.Candidate {

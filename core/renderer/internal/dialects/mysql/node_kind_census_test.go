@@ -83,7 +83,7 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 		{
 			kind: "CommentNode",
 			node: ast.NewComment("a note"),
-			want: "-- a note --\n",
+			want: "-- a note\n",
 		},
 		{
 			// Same as ColumnNode: a constraint belongs to its table.

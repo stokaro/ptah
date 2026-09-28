@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/sqlscript"
 )
 
 // SchemaDiffTemplateHelpersEnvVar opens the shared `--format` helper set on
@@ -163,10 +164,14 @@ func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
 	return result.MarshalSQL(indent...)
 }
 
+// schemaChangesSQLText writes the changes as the script the `sql` template
+// function returns. A change that is only comments -- a planner's note with
+// nothing to run after it -- ends without a semicolon; see [sqlscript].
 func schemaChangesSQLText(changes []SchemaChange) string {
 	var sql strings.Builder
 	for _, change := range changes {
-		fmt.Fprintf(&sql, "%s;\n", strings.TrimSuffix(change.Cmd, ";"))
+		cmd := strings.TrimSuffix(change.Cmd, ";")
+		fmt.Fprintf(&sql, "%s%s\n", cmd, sqlscript.Terminator(cmd))
 	}
 	return sql.String()
 }

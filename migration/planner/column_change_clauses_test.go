@@ -31,11 +31,11 @@ func oneModifiedColumn(desired schemamodel.Field, changes map[string]string) *di
 // default-only change writes `ALTER COLUMN TYPE boolean` for a boolean column,
 // a NULL backfill in a DO block, `SET NOT NULL` for a column that is NOT NULL,
 // and then the `SET DEFAULT` that was asked for; Atlas CE v1.3.0 writes the
-// last statement alone. With the comment after the statements, a plan that
-// ends on a column change ends on a comment, and every writer terminates it
-// as `-- Modify column ... --;`.
+// last statement alone. The comment comes before the statements it describes:
+// after them, a plan that ends on a column change would end on a comment that
+// describes nothing below it.
 func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testing.T) {
-	const header = "-- Add/modify columns for table: flags --\n"
+	const header = "-- Add/modify columns for table: flags\n"
 	tests := []struct {
 		name    string
 		desired schemamodel.Field
@@ -47,7 +47,7 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			desired: schemamodel.Field{Name: "fresh", Type: "BOOLEAN", StructName: "Flag", Default: "true"},
 			changes: map[string]string{"default_expr": " -> true"},
 			want: []string{header +
-				"-- Modify column flags.fresh: default_expr:  -> true --\n" +
+				"-- Modify column flags.fresh: default_expr:  -> true\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" SET DEFAULT true`},
 		},
@@ -56,7 +56,7 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			desired: schemamodel.Field{Name: "fresh", Type: "BOOLEAN", StructName: "Flag"},
 			changes: map[string]string{"default": "false -> "},
 			want: []string{header +
-				"-- Modify column flags.fresh: default: false ->  --\n" +
+				"-- Modify column flags.fresh: default: false -> \n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" DROP DEFAULT`},
 		},
@@ -65,7 +65,7 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			desired: schemamodel.Field{Name: "fresh", Type: "BOOLEAN", StructName: "Flag", Nullable: true},
 			changes: map[string]string{"nullable": "false -> true"},
 			want: []string{header +
-				"-- Modify column flags.fresh: nullable: false -> true --\n" +
+				"-- Modify column flags.fresh: nullable: false -> true\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" DROP NOT NULL`},
 		},
@@ -74,7 +74,7 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			desired: schemamodel.Field{Name: "hits", Type: "BIGINT", StructName: "Flag"},
 			changes: map[string]string{"type": "int4 -> bigint"},
 			want: []string{header +
-				"-- Modify column flags.hits: type: int4 -> bigint --\n" +
+				"-- Modify column flags.hits: type: int4 -> bigint\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "hits" TYPE BIGINT`},
 		},
@@ -84,7 +84,7 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			changes: map[string]string{"type": "int4 -> bigint", "default_expr": " -> 1"},
 			want: []string{
 				header +
-					"-- Modify column flags.hits: default_expr:  -> 1, type: int4 -> bigint --\n" +
+					"-- Modify column flags.hits: default_expr:  -> 1, type: int4 -> bigint\n" +
 					"-- ALTER statements: --\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "hits" TYPE BIGINT`,
 				`ALTER TABLE "flags" ALTER COLUMN "hits" SET DEFAULT 1`,
@@ -116,8 +116,8 @@ func TestGenerateSchemaDiffSQLStatements_MySQLColumnCommentPrecedesTheStatement(
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, []string{"-- Modify table: flags --\n" +
-		"-- Modify column flags.fresh: default_expr:  -> true --\n" +
+	c.Assert(got, qt.DeepEquals, []string{"-- Modify table: flags\n" +
+		"-- Modify column flags.fresh: default_expr:  -> true\n" +
 		"-- ALTER statements: --\n" +
 		"ALTER TABLE `flags` MODIFY COLUMN `fresh` BOOLEAN NOT NULL DEFAULT 1"})
 }

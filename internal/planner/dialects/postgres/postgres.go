@@ -861,8 +861,8 @@ func (p *Planner) modifyExistingTableColumns(
 		}
 
 		// The comment goes before the statements it describes. Written after
-		// them, it is the last fragment of a plan that ends on a column
-		// change, and every writer terminates it: `-- Modify column ... --;`.
+		// them, it would be the last fragment of a plan that ends on a column
+		// change, describing nothing below it.
 		result = append(result, modifyColumnComment(tableDiff.TableName, colDiff))
 
 		if changed.Any() {

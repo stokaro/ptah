@@ -687,7 +687,7 @@ which a PostgreSQL 16 server rejects outright. `--server-version 16` plans the
 answer that server can act on instead:
 
 ```sql
--- WARNING: Generated column t.b changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required. --;
+-- WARNING: Generated column t.b changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
 ```
 
 The refusal names the capability, not the version, because the version is only

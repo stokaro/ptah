@@ -2,13 +2,14 @@ package atlasmigrate
 
 import (
 	"fmt"
-	"strings"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/planner"
 )
@@ -359,10 +360,7 @@ func splitNoTransactionPlanNodes(dialect string, nodes []ast.Node) (transactiona
 }
 
 func hasActualSQLStatements(statements []string) bool {
-	for _, statement := range statements {
-		if strings.TrimSpace(sqlutil.StripComments(statement)) != "" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(statements, func(statement string) bool {
+		return !sqlscript.CommentOnly(statement)
+	})
 }

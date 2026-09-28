@@ -352,9 +352,14 @@ func TestFormatMigrationSQL_HappyPath(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);",
 		" ",
 		"CREATE INDEX users_id_idx ON users (id)",
+		"-- NOTE: a planner note with nothing after it",
 	})
 
-	c.Assert(sqlText, qt.Equals, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE INDEX users_id_idx ON users (id);\n")
+	// The note is only a comment, so it ends without a semicolon
+	// (stokaro/ptah#3903).
+	c.Assert(sqlText, qt.Equals, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n"+
+		"CREATE INDEX users_id_idx ON users (id);\n"+
+		"-- NOTE: a planner note with nothing after it\n")
 }
 
 func connectSQLite(c *qt.C, dbPath string) *dbschema.DatabaseConnection {

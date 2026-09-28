@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/sqlscript"
 )
 
 // This file is the write half of `migrate diff`'s layout rules: given the
@@ -332,11 +333,14 @@ func composeLiquibaseArtifact(
 	fmt.Fprintf(&body, "--changeset %s:%d-1%s\n",
 		liquibaseChangesetAuthor, version, liquibaseChangesetAttributes(content))
 	for _, statement := range content.Statements {
-		body.WriteString(strings.TrimRight(statement, "\n"))
-		body.WriteString(";\n")
+		statement = strings.TrimRight(statement, "\n")
+		body.WriteString(statement)
+		body.WriteString(sqlscript.Terminator(statement))
+		body.WriteString("\n")
 	}
 	for _, statement := range content.ReverseStatements {
-		for line := range strings.SplitSeq(strings.TrimRight(statement, "\n")+";", "\n") {
+		statement = strings.TrimRight(statement, "\n")
+		for line := range strings.SplitSeq(statement+sqlscript.Terminator(statement), "\n") {
 			body.WriteString(liquibaseRollbackPrefix)
 			body.WriteString(line)
 			body.WriteString("\n")

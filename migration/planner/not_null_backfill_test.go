@@ -23,8 +23,8 @@ func TestGenerateSchemaDiffSQLStatements_SetNotNullWithoutDefault(t *testing.T) 
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, []string{"-- Add/modify columns for table: flags --\n" +
-		"-- Modify column flags.qty: nullable: true -> false --\n" +
+	c.Assert(got, qt.DeepEquals, []string{"-- Add/modify columns for table: flags\n" +
+		"-- Modify column flags.qty: nullable: true -> false\n" +
 		"-- ALTER statements: --\n" +
 		"-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"qty\"; the column declares no default to fill it with.\n" +
 		`ALTER TABLE "flags" ALTER COLUMN "qty" SET NOT NULL`})

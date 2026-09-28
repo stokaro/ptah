@@ -18,6 +18,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/integrationfixture"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/testsummary"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -602,7 +603,8 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 	var upSQL strings.Builder
 	for _, stmt := range statements {
 		upSQL.WriteString(stmt)
-		upSQL.WriteString(";\n")
+		upSQL.WriteString(sqlscript.Terminator(stmt))
+		upSQL.WriteString("\n")
 	}
 
 	// For simplicity, we'll create a basic down migration that drops everything

@@ -323,7 +323,13 @@ func (r *Renderer) renderEnum(_ *ast.EnumNode) error {
 	return nil
 }
 
+// renderComment writes a comment node -- a planner's note or warning -- as a
+// plain line comment. An empty comment is a separator line.
 func (r *Renderer) renderComment(node *ast.CommentNode) error {
+	if node.Text == "" {
+		r.w.WriteLine("--")
+		return nil
+	}
 	r.w.WriteLinef("-- %s", node.Text)
 	return nil
 }

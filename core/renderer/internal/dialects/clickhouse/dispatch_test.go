@@ -91,7 +91,7 @@ func TestVisitNode_AStatementListEmitsItsStatementsInOrder(t *testing.T) {
 	err := r.VisitNode(list)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(r.Output(), qt.Equals, "-- first --\n-- second --\n")
+	c.Assert(r.Output(), qt.Equals, "-- first\n-- second\n")
 }
 
 // TestVisitNode_AStatementListStopsAtTheFirstFailure pins that the walk reports
@@ -109,7 +109,7 @@ func TestVisitNode_AStatementListStopsAtTheFirstFailure(t *testing.T) {
 	err := r.VisitNode(list)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(r.Output(), qt.Equals, "-- first --\n")
+	c.Assert(r.Output(), qt.Equals, "-- first\n")
 }
 
 // refusedNodeRow is one node the dispatcher refuses, with the sentinel and the

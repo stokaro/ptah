@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -50,14 +51,25 @@ func renderSafetyReport(
 
 // hasActualSQLStatements checks if the statements contain actual SQL operations (not just comments)
 func hasActualSQLStatements(statements []string) bool {
-	for _, stmt := range statements {
-		// Strip comments and check if there's any actual SQL content
-		stripped := strings.TrimSpace(sqlutil.StripComments(stmt))
-		if stripped != "" {
-			return true
+	return slices.ContainsFunc(statements, func(statement string) bool {
+		return !sqlscript.CommentOnly(statement)
+	})
+}
+
+// joinScriptStatements writes statements as the body of a migration file, one
+// after another, each executable statement ended with a semicolon. A statement
+// that is only comments -- a planner's note with nothing to run after it --
+// gets none; see [sqlscript].
+func joinScriptStatements(statements []string) string {
+	var script strings.Builder
+	for i, statement := range statements {
+		if i > 0 {
+			script.WriteString("\n")
 		}
+		script.WriteString(statement)
+		script.WriteString(sqlscript.Terminator(statement))
 	}
-	return false
+	return script.String()
 }
 
 // generateUpMigrationSQL generates the SQL for the up migration.
@@ -110,7 +122,7 @@ func generateUpMigrationSQLWithOptions(
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: UP\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
 }
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
@@ -209,7 +221,7 @@ func generateDownMigrationSQLQualified(
 	header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
 }
 
 // planDownMigrationStatements renders the reversed diff into ordered down

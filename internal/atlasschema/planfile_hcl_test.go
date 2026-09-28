@@ -276,6 +276,32 @@ func TestMarshalPlanFileHCLRoundTrips(t *testing.T) {
 	c.Assert(atlasschema.IsNativeFingerprint(plan.ToFingerprint), qt.IsTrue)
 }
 
+// A plan can end on a statement that is only a comment: the PostgreSQL planner's
+// note after it drops a table's last RLS policy. The migration heredoc writes it
+// without a semicolon, which after a comment ends nothing and read as "--;"
+// (stokaro/ptah#3903), and the file still reads back to the same statements.
+func TestMarshalPlanFileHCLEndsANoteWithoutASemicolon(t *testing.T) {
+	c := qt.New(t)
+	plan := goldenPlan()
+	note := "-- NOTE: RLS policies were removed from table users - verify if RLS should be disabled"
+	plan.Statements = append(plan.Statements, atlasschema.PlanStatement{
+		SQL:      note,
+		Severity: safety.Safe,
+		Reason:   "does not remove data or tighten constraints",
+	})
+	path := filepath.Join(t.TempDir(), "note.plan.hcl")
+
+	document, err := atlasschema.MarshalPlanFileHCL(plan)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(document), qt.Contains, "  "+note+"\n  SQL\n")
+	c.Assert(string(document), qt.Not(qt.Contains), note+";")
+
+	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
+	read, _, err := atlasschema.ReadPlanDocument(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(read.Statements, qt.DeepEquals, plan.Statements)
+}
+
 func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 	tests := []struct {
 		name   string
