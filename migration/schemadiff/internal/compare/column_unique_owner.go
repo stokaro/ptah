@@ -101,7 +101,7 @@ func readColumnKeys(
 		})
 		if named {
 			own := uniqueColumns[column]
-			name, _ := columnkey.Name(dialect, own.table.Name, own.column, desiredKeyNames(desired, own.table, dialect))
+			name, _ := ownKeyName(desired, own.table, own.column, dialect)
 			found := slices.IndexFunc(constraints, func(constraint catalog.Constraint) bool {
 				return columnkey.Same(dialect, constraint.Name, name)
 			})
@@ -114,6 +114,19 @@ func readColumnKeys(
 		keys.held[column] = struct{}{}
 	}
 	return keys
+}
+
+// ownKeyName answers the name the server of dialect gives the own UNIQUE of
+// column on table, and false on an engine whose naming [columnkey.Named] does
+// not measure. The name gives way to the names the desired state holds; see
+// [desiredKeyNames].
+//
+// The comparison pairs the column's key with the database key of this name,
+// and a planner adds the key under it; see
+// [difftypes.TableDiff.ColumnKeyNames]. One function answers both, so a plan
+// adds the key the next comparison reads as the column's.
+func ownKeyName(desired *schemamodel.Database, table schemamodel.Table, column, dialect string) (string, bool) {
+	return columnkey.Name(dialect, table.Name, column, desiredKeyNames(desired, table, dialect))
 }
 
 // desiredKeyNames reports whether a name the desired state holds keeps the

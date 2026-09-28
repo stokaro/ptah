@@ -35,6 +35,14 @@ const (
 	// or that reaches past the server, is refused here too: those would
 	// mislead the rest of the run, or leave the container.
 	ReplayRealmServer
+	// ReplayRealmServerDatabases confines a replay to the user databases of a
+	// MySQL or MariaDB server the operator named as a whole, with a dev URL
+	// that names no database (stokaro/ptah#3789). The claim found no user
+	// database there and the cleanup drops every one, so the replay may
+	// create, change and drop databases and write in any of them. A role, a
+	// user, a privilege or a stored body outlives that cleanup, and is refused
+	// as it is in [ReplayRealmDatabase].
+	ReplayRealmServerDatabases
 )
 
 // NewReplayGuard creates a dialect-aware migration replay guard for a replay
@@ -63,6 +71,9 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 		return validatePostgresReplayStatement(dialect, tokens)
 	case platform.MySQL, platform.MariaDB:
 		if g.realm == ReplayRealmServer && mysqlServerWideOperation(tokens) != "" {
+			return nil
+		}
+		if g.realm == ReplayRealmServerDatabases && mysqlDatabaseOperation(tokens) {
 			return nil
 		}
 		return validateMySQLReplayStatement(dialect, g.info.Schema, tokens, g.realm)

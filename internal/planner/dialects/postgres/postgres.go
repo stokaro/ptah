@@ -868,7 +868,7 @@ func (p *Planner) modifyExistingTableColumns(
 				}},
 			})
 		}
-		if node := addedColumnUnique(tableDiff.TableName, colDiff); node != nil {
+		if node := addedColumnUnique(tableDiff, colDiff); node != nil {
 			result = append(result, node)
 		}
 	}
@@ -882,26 +882,35 @@ func (p *Planner) modifyExistingTableColumns(
 // leave it out, and without this the plan says `unique: false -> true` and
 // adds nothing (stokaro/ptah#3649). The constraint takes the name PostgreSQL
 // gives the same UNIQUE inside CREATE TABLE, which is also what Atlas CE
-// v1.3.0 writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`.
+// v1.3.0 writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`, and
+// `t_c_key1` where another relation or constraint of the schema holds t_c_key.
+// The comparison derives the name and the diff carries it; see
+// [difftypes.TableDiff.ColumnKeyNames]. Written without the number beside an
+// object the plan keeps, the statement is refused (stokaro/ptah#3859). A diff
+// built by hand carries no name, and the name the server tries first stands in.
 //
 // The other direction needs nothing here. The live UNIQUE is a constraint the
 // desired schema does not have, so the plan drops it by its name as a removed
 // constraint. A column declaring unique_expr gets no constraint: uniqueness
 // over the raw column is not what it asked for, and no target renders the
 // expression.
-func addedColumnUnique(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+func addedColumnUnique(tableDiff difftypes.TableDiff, colDiff difftypes.ColumnDiff) ast.Node {
 	if _, changed := colDiff.Changes["unique"]; !changed || !colDiff.Desired.Unique ||
 		strings.TrimSpace(colDiff.Desired.UniqueExpr) != "" {
 		return nil
 	}
-	table := tableName
-	if ref, ok := tableref.Parse(tableName); ok {
-		table = ref.Name
+	name := tableDiff.ColumnKeyNames[colDiff.ColumnName]
+	if name == "" {
+		table := tableDiff.TableName
+		if ref, ok := tableref.Parse(tableDiff.TableName); ok {
+			table = ref.Name
+		}
+		name = pgname.ColumnKey(table, colDiff.ColumnName)
 	}
 	return &ast.AlterTableNode{
-		Name: tableName,
+		Name: tableDiff.TableName,
 		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{
-			Constraint: ast.NewUniqueConstraint(pgname.ColumnKey(table, colDiff.ColumnName), colDiff.ColumnName),
+			Constraint: ast.NewUniqueConstraint(name, colDiff.ColumnName),
 		}},
 	}
 }

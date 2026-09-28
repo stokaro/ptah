@@ -675,6 +675,10 @@ carries none of them — `system.roles` is `(name, id, storage)` — so declarin
 for a ClickHouse target is refused rather than dropped, and `comment` is
 emitted as a leading SQL comment because the engine cannot store one. See
 [ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
+A MySQL or MariaDB role carries none of them either, and the same attributes
+are refused there. `inherit="false"` is refused too: a role on those engines
+always passes on the privileges of the roles granted to it. See
+[MySQL and MariaDB](../../databases/mysql/).
 
 ### `//ptah:schema:grant`
 

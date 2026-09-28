@@ -345,6 +345,14 @@ func (m *Migrator) loadMySQLTransactionalCatalog(
 			return mysqlTransactionalCatalog{}, err
 		}
 	}
+	// A connection to a whole server selected no database, so no statement
+	// can name an object without its database, and the server refuses one
+	// that tries. There is no connected database to read, and asking for the
+	// privilege on it would refuse an account holding every privilege on the
+	// databases the migration names (stokaro/ptah#3789).
+	if schema == "" {
+		return catalog, nil
+	}
 	if err := m.collectMySQLSchemaCatalog(ctx, schema, &catalog); err != nil {
 		return mysqlTransactionalCatalog{}, err
 	}

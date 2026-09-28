@@ -2838,23 +2838,18 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 	return nil
 }
 
+// handleColumnComment reads a column's COMMENT clause as the text the server
+// stores: the string constant decoded, without its keyword and quotes. A
+// column that carries two keeps the last, as MySQL 8.4.11 keeps it
+// (stokaro/ptah#3874).
 func (p *Parser) handleColumnComment(column *ast.ColumnNode) error {
 	p.advance()
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenString {
-		return fmt.Errorf("expected column comment string, got %s at position %d", p.current.Type, p.current.Start)
+	text, err := p.stringConstant("column comment")
+	if err != nil {
+		return err
 	}
-	appendColumnComment(column, "COMMENT "+p.current.Value)
-	p.advance()
+	column.SetComment(text)
 	return nil
-}
-
-func appendColumnComment(column *ast.ColumnNode, text string) {
-	if column.Comment == "" {
-		column.SetComment(text)
-		return
-	}
-	column.SetComment(column.Comment + "; " + text)
 }
 
 func (p *Parser) handleOn(column *ast.ColumnNode) {
@@ -5086,19 +5081,20 @@ func (p *Parser) handleTableCollate(table *ast.CreateTableNode) error {
 	return nil
 }
 
+// handleTableComment reads a table's COMMENT option, `COMMENT = 'text'` or
+// `COMMENT 'text'` as MySQL, MariaDB and ClickHouse all take it, as the text
+// the server stores (stokaro/ptah#3874).
 func (p *Parser) handleTableComment(table *ast.CreateTableNode) error {
-	// Handle COMMENT
 	p.advance()
 	p.skipWhitespace()
-	if err := p.expect(lexer.TokenOperator, "="); err != nil {
-		return fmt.Errorf("expected '=' after COMMENT: %w", err)
+	if p.current.Type == lexer.TokenOperator && p.current.Value == "=" {
+		p.advance()
 	}
-	p.skipWhitespace()
-	if p.current.Type != lexer.TokenString {
-		return fmt.Errorf("expected string for comment value at position %d", p.current.Start)
+	text, err := p.stringConstant("table comment")
+	if err != nil {
+		return err
 	}
-	table.Comment = p.current.Value
-	p.advance()
+	table.Comment = text
 	return nil
 }
 
@@ -6050,9 +6046,15 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
 		p.advance()
 		p.skipWhitespace()
+		guardStart := p.current.Start
 		var err error
 		if ifNotExists, err = p.parseOptionalIfNotExists(); err != nil {
 			return nil, err
+		}
+		if ifNotExists {
+			if err := p.refuseAlterGuard("IF NOT EXISTS", "ADD COLUMN", "", guardStart); err != nil {
+				return nil, err
+			}
 		}
 		p.skipWhitespace()
 	}
@@ -6359,7 +6361,7 @@ func (p *Parser) parseDropOperation() (ast.AlterOperation, error) {
 	switch {
 	case p.current.MatchIdentifierValue("CONSTRAINT"):
 		p.advance()
-		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{})
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{}, "DROP CONSTRAINT")
 	case p.current.MatchIdentifierValue("PRIMARY"):
 		p.advance()
 		p.skipWhitespace()
@@ -6373,23 +6375,32 @@ func (p *Parser) parseDropOperation() (ast.AlterOperation, error) {
 		if err := p.expect(lexer.TokenIdentifier, "KEY"); err != nil {
 			return nil, fmt.Errorf("expected KEY after DROP FOREIGN: %w", err)
 		}
-		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{ForeignKey: true})
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{ForeignKey: true}, "DROP FOREIGN KEY")
 	case p.current.MatchIdentifierValue("CHECK"):
 		p.advance()
-		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Check: true})
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Check: true}, "DROP CHECK")
 	case p.current.MatchIdentifierValue("INDEX"), p.current.MatchIdentifierValue("KEY"):
+		clause := "DROP " + strings.ToUpper(p.current.Value)
 		p.advance()
-		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Unique: true})
+		return p.parseDropNamedConstraint(&ast.DropConstraintOperation{Unique: true}, clause)
 	}
 
 	// Optional COLUMN keyword
+	clause := "DROP"
 	if p.current.MatchIdentifierValue("COLUMN") {
+		clause = "DROP COLUMN"
 		p.advance()
 		p.skipWhitespace()
 	}
+	guardStart := p.current.Start
 	ifExists, err := p.parseOptionalIfExists()
 	if err != nil {
 		return nil, err
+	}
+	if ifExists {
+		if err := p.refuseAlterGuard("IF EXISTS", clause, "", guardStart); err != nil {
+			return nil, err
+		}
 	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
@@ -6404,12 +6415,23 @@ func (p *Parser) parseDropOperation() (ast.AlterOperation, error) {
 }
 
 // parseDropNamedConstraint reads [IF EXISTS] name [CASCADE | RESTRICT] onto a
-// DROP CONSTRAINT operation whose kind the caller already set.
-func (p *Parser) parseDropNamedConstraint(operation *ast.DropConstraintOperation) (ast.AlterOperation, error) {
+// DROP CONSTRAINT operation whose kind the caller already set. clause is the
+// DROP clause as written, which a refused guard names.
+func (p *Parser) parseDropNamedConstraint(operation *ast.DropConstraintOperation, clause string) (ast.AlterOperation, error) {
 	p.skipWhitespace()
+	guardStart := p.current.Start
 	ifExists, err := p.parseOptionalIfExists()
 	if err != nil {
 		return nil, err
+	}
+	guardKey := capability.DropConstraintIfExists
+	if operation.Unique {
+		guardKey = capability.DropIndexIfExists
+	}
+	if ifExists {
+		if err := p.refuseAlterGuard("IF EXISTS", clause, guardKey, guardStart); err != nil {
+			return nil, err
+		}
 	}
 	name, err := p.expectIdentifier()
 	if err != nil {

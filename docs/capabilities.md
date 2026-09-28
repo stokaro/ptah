@@ -52,7 +52,7 @@ rendering begin.
 
 ## The model
 
-Two layers cooperate:
+Each layer below asks the same capability set a different question:
 
 - **Intent (planner).** A planner configured with a capability set records
   intent on AST nodes — e.g. a MariaDB-preset planner sets `IfExists` on
@@ -64,6 +64,10 @@ Two layers cooperate:
   initial SQL Server renderer, still rely on planner/configuration boundaries
   for unsupported feature suppression unless the renderer-specific section below
   says a modifier is validated again.
+- **Reading (parser).** The SQL parser asks `drop_index_if_exists` and
+  `drop_constraint_if_exists` before it reads a MySQL-family `ALTER TABLE`
+  guard, so a schema file may carry a guard only where the renderer would write
+  one. The `mysql` parser refuses the guard, as MySQL does.
 
 At the `Capabilities` type level the nil/empty set is valid and reads as
 "everything absent" (`Has` is nil-safe). The **planners** deliberately do NOT

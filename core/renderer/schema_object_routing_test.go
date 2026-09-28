@@ -142,7 +142,6 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 		if dialect == platform.MySQL || dialect == platform.MariaDB {
 			for i := range database.Roles {
 				database.Roles[i].Login = false
-				database.Roles[i].Inherit = false
 			}
 		}
 		adaptForClickHouse(database, dialect)
@@ -457,7 +456,7 @@ func TestRender_MySQLFamilyEmitsRolesAndStillRefusesTheAttributes(t *testing.T) 
 
 			// A local fixture, because the shared one declares Login: true --
 			// which is now the refusal case rather than the ordinary one.
-			bare := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "role_probe"}}}
+			bare := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "role_probe", Inherit: true}}}
 			statements, err := renderer.GetOrderedCreateStatements(bare, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -532,6 +531,56 @@ func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, "(?s).*app_user.*LOGIN, PASSWORD or another user attribute.*")
 		})
 	}
+}
+
+// TestValidateSchema_MySQLFamilyRefusesARoleDeclaredNotToInherit holds a
+// declared inherit=false to a refusal on both entry points.
+//
+// A role here always passes on the privileges of the roles granted to it, and
+// the reader says so. Rendering the declaration would create a role that
+// inherits, and every later comparison would find the difference and ask for
+// an ALTER ROLE this family does not have (stokaro/ptah#3890). The fixture
+// lists the inheriting role first and names the two others out of order, so
+// the sentence has to name the lexicographically first role that does not
+// inherit rather than the first one listed.
+func TestValidateSchema_MySQLFamilyRefusesARoleDeclaredNotToInherit(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		// run is the entry point. Validation and complete rendering must give
+		// the same answer.
+		run func(*schemamodel.Database, string) error
+	}{
+		{name: "mysql validation", dialect: platform.MySQL, run: renderer.ValidateSchema},
+		{name: "mariadb validation", dialect: platform.MariaDB, run: renderer.ValidateSchema},
+		{name: "mysql rendering", dialect: platform.MySQL, run: renderOrderedCreateStatements},
+		{name: "mariadb rendering", dialect: platform.MariaDB, run: renderOrderedCreateStatements},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := test.run(&schemamodel.Database{Roles: []schemamodel.Role{
+				{Name: "a_reader", Inherit: true},
+				{Name: "reporter", Inherit: false},
+				{Name: "b_writer", Inherit: false},
+			}}, test.dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: `+test.dialect+`: role "b_writer" declares inherit=false, `+
+				`which a role cannot have here: a role always passes on the privileges of the roles granted to it, `+
+				`and CREATE ROLE has no NOINHERIT`)
+		})
+	}
+}
+
+// renderOrderedCreateStatements is [renderer.GetOrderedCreateStatements] with
+// the statements dropped, so it fits a table of entry points that answer an
+// error.
+func renderOrderedCreateStatements(database *schemamodel.Database, dialect string) error {
+	_, err := renderer.GetOrderedCreateStatements(database, dialect)
+	return err
 }
 
 // TestValidateSchema_MySQLFamilyRoleRefusalIsNarrow pins both sides of the

@@ -405,6 +405,16 @@ func withAtlasSchemaApplyPolicy(
 	return runtime
 }
 
+// checkAtlasSchemaApplyDevURL refuses a --dev-url this verb cannot use before
+// anything is contacted: one naming no driver, and a dev server, which schema
+// apply does not take yet; see [atlasschema.RefuseDevServer].
+func checkAtlasSchemaApplyDevURL(devURL string) error {
+	if err := atlasDevURLDriverDiagnostic(devURL); err != nil {
+		return err
+	}
+	return atlasschema.RefuseDevServer(devURL)
+}
+
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -537,7 +547,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// measured on 2026-08-13, `--to` a database and `--dev-url notadriver://x`
 	// answers `sql/sqlclient: unknown driver "notadriver"` there, on the argv
 	// where ensureAtlasSchemaApplyDevURL below deliberately exempts the source.
-	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+	if err := checkAtlasSchemaApplyDevURL(opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {

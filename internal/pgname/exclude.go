@@ -36,13 +36,22 @@ func Exclude(table, elements string, taken func(string) bool) string {
 }
 
 // excludeElementNames names the elements of an EXCLUDE constraint as
-// ChooseIndexColumnNames does: each by [elementName], and a name an earlier
-// element holds numbered 1, 2 and on, the name cut so the number fits in 63
-// bytes.
+// ChooseIndexColumnNames does: each by [elementName], then numbered by
+// [indexColumnNames].
 func excludeElementNames(elements string) []string {
 	var names []string
 	for _, element := range splitTopLevel(significantTokens(elements)) {
-		original := elementName(element)
+		names = append(names, elementName(element))
+	}
+	return indexColumnNames(names)
+}
+
+// indexColumnNames numbers the column names of one index as
+// ChooseIndexColumnNames does: a name an earlier column of the list already
+// took is numbered 1, 2 and on, the name cut so the number fits in 63 bytes.
+func indexColumnNames(columns []string) []string {
+	names := make([]string, 0, len(columns))
+	for _, original := range columns {
 		name := original
 		for suffix := 1; slices.Contains(names, name); suffix++ {
 			number := strconv.Itoa(suffix)

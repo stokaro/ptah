@@ -156,7 +156,9 @@ the database its own SQL built, and a plan from the file creates the constraint
 under that name.
 
 The name is `<table>_<columns>_key` or `<table>_<columns>_fkey`, with the
-columns joined by underscores. A name longer than 63 bytes is cut, from the
+columns joined by underscores. The columns of a `UNIQUE` are every column of
+its index, the `INCLUDE` columns after the key columns, and a column named
+twice is numbered the second time. A name longer than 63 bytes is cut, from the
 longer of the table part and the columns part first, at a character boundary.
 A name already taken in the schema is numbered `key1`, `fkey1` and on. For a
 `UNIQUE`, a table, view, sequence or index of that name counts as taken too.
@@ -168,6 +170,8 @@ Measured on PostgreSQL 18.6:
 | `FOREIGN KEY (a, b) REFERENCES parent(id, k)` on `child` | `child_a_b_fkey` |
 | a second foreign key over `p` on `twice` | `twice_p_fkey1` |
 | `UNIQUE (a, b)` on `p` | `p_a_b_key` |
+| `UNIQUE (x) INCLUDE (y)` on `i1` | `i1_x_y_key` |
+| `UNIQUE (x, y) INCLUDE (z, x)` on `i3` | `i3_x_y_z_x1_key` |
 | `UNIQUE (a)` on `q`, beside an index named `q_a_key` | `q_a_key1` |
 
 An `EXCLUDE` is named `<table>_<elements>_excl`. An element that is a column
@@ -243,12 +247,38 @@ than one `CHECK`, and each is kept. Measured on PostgreSQL 18.6:
 | `CHECK (s COLLATE "C" > '')` on `co`, which has a column `C` | `co_s_check` |
 | `a int CHECK (a > 0) CHECK (a < 10)` on `h2` | `h2_a_check`, `h2_a_check1` |
 
-PostgreSQL numbers two `CHECK`s that derive one name in the order the statement
-writes them. Ptah names the `CHECK`s written on columns before those written on
-the table. Where a table-level `CHECK` comes before a column's `CHECK` and both
-derive one name, as in `CREATE TABLE h (CHECK (a > 0), a int CHECK (a < 10))`,
-the two names are swapped: the plan drops both and adds them back under the
-names the file gives them.
+One `CREATE TABLE` names its constraints in the order PostgreSQL builds them,
+and a SQL schema file is read in the same order. The server adds the `CHECK`s
+first, then builds the primary key wherever the statement writes it, then every
+`UNIQUE` and `EXCLUDE`, a column's own `UNIQUE` among them, and then the foreign
+keys. Within each group it follows the statement, a column's constraints at the
+column's place. A name the statement writes before a derived one numbers it,
+and a derived name takes no account of a name the statement writes later.
+Measured on PostgreSQL 18.6:
+
+| Declared in one `CREATE TABLE` on `t` | Names |
+| --- | --- |
+| `CHECK (a > 0), a int CHECK (a < 10)` | `t_a_check` for `a > 0`, `t_a_check1` for `a < 10` |
+| `UNIQUE NULLS NOT DISTINCT (a), a int UNIQUE` | `t_a_key` for the first, `t_a_key1` for the column's |
+| `CONSTRAINT t_x_key UNIQUE (y), x int UNIQUE` | `t_x_key`, and `t_x_key1` for the column's |
+| `x int UNIQUE, CONSTRAINT t_x_key CHECK (y > 0)` | `t_x_key` for the `CHECK`, `t_x_key1` for the column's |
+
+A column's own `UNIQUE` that the server numbers this way is read as a `UNIQUE`
+on the table under that name. A render writes a column's constraints before
+the table's, so the key left on the column would take the first name there,
+and the constraint that holds it would be refused.
+
+A written name that a constraint built earlier already holds is refused, as
+the server refuses it. The reader names both constraints in the error. Each of
+these fails on PostgreSQL 18.6, and the reader refuses it:
+
+| Declared in one `CREATE TABLE` on `t` | PostgreSQL answers |
+| --- | --- |
+| `x int UNIQUE, y int, CONSTRAINT t_x_key UNIQUE (y)` | `relation "t_x_key" already exists` |
+| `a int CHECK (a > 0), CONSTRAINT t_a_check CHECK (a < 10)` | `check constraint "t_a_check" already exists` |
+| `x int CHECK (x > 0), CONSTRAINT t_x_check UNIQUE (id)` | `constraint "t_x_check" for relation "t" already exists` |
+| `id int PRIMARY KEY, x int, CONSTRAINT t_pkey UNIQUE (x)` | `relation "t_pkey" already exists` |
+| `CONSTRAINT d UNIQUE (a), CONSTRAINT d UNIQUE (b)` | `relation "d" already exists` |
 
 A foreign key is compared by its name, whether the file declares it on its
 column or on its table. When the database holds the key under another name,
@@ -287,11 +317,15 @@ and a second key over the column alone, as `CREATE TABLE g2 (a int, UNIQUE
 carries the column's `UNIQUE` and the second key under its name, `g2_a_key1`.
 
 A plan that adds a column-level `UNIQUE` to an existing column writes
-`ADD CONSTRAINT` under the same `<table>_<column>_key` name, without a number,
-as Atlas CE writes it. The plan cannot see which names the target already
-holds, so where an object the plan keeps holds that name, PostgreSQL refuses
-the statement. MySQL and
-MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
+`ADD CONSTRAINT` under the name the comparison reads as the column's key, as
+Atlas CE writes it: `<table>_<column>_key`, or `<table>_<column>_key1` and on
+where another relation or constraint the file declares holds that name. Beside
+`CREATE UNIQUE INDEX c_x_key ON c (y)`, a file that makes `x` UNIQUE on `c`
+plans `ALTER TABLE c ADD CONSTRAINT c_x_key1 UNIQUE (x)`; under `c_x_key`,
+PostgreSQL 18.6 refuses the statement with `relation "c_x_key" already
+exists`.
+
+MySQL and MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
 [MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
 an unnamed foreign key, `fk_<table>_<column>`. MySQL and MariaDB name an
 unnamed `CHECK` by rules of their own, which the MySQL page describes too. A

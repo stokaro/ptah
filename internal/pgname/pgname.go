@@ -10,6 +10,7 @@
 package pgname
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -95,6 +96,32 @@ func Constraint(table string, columns []string, label string, taken func(string)
 		}
 		numbered = label + strconv.Itoa(pass)
 	}
+}
+
+// Unique answers the name PostgreSQL gives an unnamed UNIQUE constraint on
+// table: `<table>_<column names>_key`, fitted and numbered as [Constraint]
+// does.
+//
+// The names are those of every column of the index the constraint builds, the
+// key columns and then the INCLUDE columns, as ChooseIndexColumnNames gives
+// them: a name an earlier column of the list already took is numbered.
+// Measured on PostgreSQL 18.6:
+//
+//	UNIQUE (x) INCLUDE (y) on i1            i1_x_y_key
+//	UNIQUE (x, y) INCLUDE (z, x) on i3      i3_x_y_z_x1_key
+//	UNIQUE (x) INCLUDE (x) on i4            i4_x_x1_key
+//	UNIQUE (x) INCLUDE ("Y") on i10         i10_x_Y_key
+func Unique(table string, columns, include []string, taken func(string) bool) string {
+	return Constraint(table, indexColumnNames(slices.Concat(columns, include)), "key", taken)
+}
+
+// PrimaryKey answers the name PostgreSQL gives an unnamed primary key on
+// table: `<table>_pkey`, fitted and numbered as [Constraint] does. Measured on
+// PostgreSQL 18.6, `id int PRIMARY KEY, x int, CONSTRAINT k6_pkey CHECK (x >
+// 0)` on k6 names the key k6_pkey1, because the server adds a table's CHECK
+// constraints before it builds the key's index.
+func PrimaryKey(table string, taken func(string) bool) string {
+	return Constraint(table, nil, "pkey", taken)
 }
 
 // ColumnKey answers the name PostgreSQL gives a column-level UNIQUE on table

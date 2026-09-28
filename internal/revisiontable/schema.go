@@ -36,6 +36,9 @@ const AtlasSchema = "atlas_schema_revisions"
 //	MySQL 8.4       the connected database, `app`, not a database of its own
 //	SQLite          the one namespace there is
 //
+// and on MySQL and MariaDB a URL naming no database is the whole server, where
+// the binary keeps the table in the database atlas_schema_revisions.
+//
 // and the scope the URL selects:
 //
 //	postgres://…/db                     atlas_schema_revisions
@@ -67,6 +70,12 @@ func Schema(resolved, databaseURL string) string {
 		// every dialect outside the PostgreSQL family wants anyway.
 		return resolved
 	}
+	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
+		if urlNamesDatabase(databaseURL) {
+			return resolved
+		}
+		return AtlasSchema
+	}
 	if !platform.IsPostgresFamily(dialect) {
 		return resolved
 	}
@@ -74,6 +83,20 @@ func Schema(resolved, databaseURL string) string {
 		return resolved
 	}
 	return AtlasSchema
+}
+
+// urlNamesDatabase reports whether a MySQL-family URL names a database. One
+// that names none is the whole server, where the pinned community binary
+// keeps its revision table in a database of its own, `atlas_schema_revisions`,
+// measured on MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789). An
+// unreadable URL counts as naming one, which keeps the connection default,
+// for the reason [Schema] gives.
+func urlNamesDatabase(databaseURL string) bool {
+	parsed, err := atlasurl.ParseMySQLURL(databaseURL)
+	if err != nil {
+		return true
+	}
+	return parsed.Database() != ""
 }
 
 // urlPinsSchema reports whether the URL selects one schema for the session.

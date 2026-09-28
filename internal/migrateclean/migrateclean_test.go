@@ -326,6 +326,32 @@ func TestScopeRefusal_CleanRealms(t *testing.T) {
 			},
 		},
 		{
+			// A whole MySQL server with no user database applies, the
+			// bookkeeping database the binary creates first being the only one
+			// (stokaro/ptah#3789).
+			name: "an empty MySQL server",
+			scope: migrateclean.Scope{
+				Dialect:         "mysql",
+				Realm:           true,
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+		},
+		{
+			// Measured on MySQL 8.4.11 and MariaDB 11.8.9: an empty bookkeeping
+			// database, or one holding the revision table alone, applies.
+			name: "a MariaDB server holding only its bookkeeping database",
+			scope: migrateclean.Scope{
+				Dialect: "mariadb",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "revs", Tables: []string{"atlas_schema_revisions"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "revs",
+			},
+		},
+		{
 			// The gate stays off for a dialect Governs does not cover even when
 			// the realm is full.
 			name: "ungoverned dialect with schemas",
@@ -528,10 +554,11 @@ func TestScopeRefusal_UncleanRealms(t *testing.T) {
 			wantErr: `sql/migrate: connected database is not clean: found schema "Zed". baseline version or allow-dirty is required`,
 		},
 		{
-			// A realm scope for a dialect whose realm shapes this package does
-			// not implement must never read as clean. Inspect refuses to build
-			// one, and a hand-built one says so rather than passing.
-			name: "a dialect with no realm rule",
+			// A whole MySQL server with one user database, even an empty one,
+			// counts the bookkeeping database the binary creates before it
+			// looks: measured on MySQL 8.4.11 and MariaDB 11.8.9
+			// (stokaro/ptah#3789).
+			name: "a MySQL server holding one database",
 			scope: migrateclean.Scope{
 				Dialect:         "mysql",
 				Realm:           true,
@@ -539,7 +566,52 @@ func TestScopeRefusal_UncleanRealms(t *testing.T) {
 				RevisionTable:   "atlas_schema_revisions",
 				RevisionsSchema: "atlas_schema_revisions",
 			},
-			wantErr: `migrate apply clean check has no realm-scope rule for dialect "mysql"`,
+			wantErr: `sql/migrate: connected database is not clean: found multiple schemas: 2. baseline version or allow-dirty is required`,
+		},
+		{
+			name: "a MariaDB server holding two databases and its bookkeeping database",
+			scope: migrateclean.Scope{
+				Dialect: "mariadb",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "appdb", Tables: []string{"t"}},
+					{Name: "atlas_schema_revisions"},
+					{Name: "other"},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found multiple schemas: 3. baseline version or allow-dirty is required`,
+		},
+		{
+			// The bookkeeping database alone, holding a table besides the
+			// revision table, counts tables instead, the revision table the
+			// binary creates included.
+			name: "a MySQL bookkeeping database holding another table",
+			scope: migrateclean.Scope{
+				Dialect: "mysql",
+				Realm:   true,
+				Schemas: []migrateclean.RealmSchema{
+					{Name: "revs", Tables: []string{"junk"}},
+				},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "revs",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found multiple tables: 2. baseline version or allow-dirty is required`,
+		},
+		{
+			// A realm scope for a dialect whose realm shapes this package does
+			// not implement must never read as clean. Inspect refuses to build
+			// one, and a hand-built one says so rather than passing.
+			name: "a dialect with no realm rule",
+			scope: migrateclean.Scope{
+				Dialect:         "sqlite",
+				Realm:           true,
+				Schemas:         []migrateclean.RealmSchema{{Name: "appdb"}},
+				RevisionTable:   "atlas_schema_revisions",
+				RevisionsSchema: "atlas_schema_revisions",
+			},
+			wantErr: `migrate apply clean check has no realm-scope rule for dialect "sqlite"`,
 		},
 	}
 

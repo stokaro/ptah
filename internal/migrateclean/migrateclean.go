@@ -400,6 +400,9 @@ func (s Scope) Refusal() error {
 // creates that table, and without the addition --dry-run would report one table
 // fewer than a real apply against the same database.
 func (s Scope) realmRefusal() error {
+	if isMySQLFamily(s.Dialect) {
+		return s.serverRefusal()
+	}
 	if platform.NormalizeDialect(s.Dialect) != platform.Postgres {
 		// Only PostgreSQL reaches realm scope through Inspect, and only its
 		// shapes are measured. A Scope built by hand for another dialect gets a
@@ -420,6 +423,50 @@ func (s Scope) realmRefusal() error {
 		return notClean("found schema %q", schema.Name)
 	}
 	return nil
+}
+
+// serverRefusal answers the realm question on a whole MySQL or MariaDB
+// server, where the realm's schemas are its user databases. The pinned binary
+// creates its bookkeeping database before it looks, and then refuses on a
+// count, measured on MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789):
+//
+//   - more than one database, the bookkeeping database included, reads
+//     `found multiple schemas: 2` for one other database, even an empty one,
+//     and `3` for two;
+//   - the bookkeeping database alone, holding a table besides the revision
+//     table, reads `found multiple tables: 2`, the revision table included.
+//
+// Both counts include what the binary creates before it looks, so a dry run,
+// which creates nothing here, reports what a real apply reports.
+func (s Scope) serverRefusal() error {
+	databases := make([]string, 0, len(s.Schemas)+1)
+	var bookkeeping []string
+	for _, schema := range s.Schemas {
+		databases = append(databases, schema.Name)
+		if schema.Name == s.RevisionsSchema {
+			bookkeeping = schema.Tables
+		}
+	}
+	if !slices.Contains(databases, s.RevisionsSchema) {
+		databases = append(databases, s.RevisionsSchema)
+	}
+	if len(databases) > 1 {
+		return notClean("found multiple schemas: %d", len(databases))
+	}
+	if held := tablesWithRevisionTable(bookkeeping, s.RevisionTable); len(held) > 1 {
+		return notClean("found multiple tables: %d", len(held))
+	}
+	return nil
+}
+
+// isMySQLFamily reports whether dialect is MySQL or MariaDB.
+func isMySQLFamily(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 // notClean wraps a measured reason in the sentence the pinned binary prints
@@ -585,14 +632,21 @@ func tableProbe(dialect string, caps capability.Capabilities, schema string) (st
 // the join rather than the WHERE clause for the same reason — moving it down
 // would drop exactly the empty schemas the gate exists to see.
 //
-// Only PostgreSQL has a probe. MySQL's realm shapes were measured (`found
-// multiple schemas: %d` over the non-system databases including the one the
-// binary creates for its revisions, and `found multiple tables: %d` once a
-// single database is also the run's --revisions-schema), but a MySQL URL with
-// no database never reaches this package: dbschema refuses it while reading
-// DATABASE(). Writing that probe would be writing code no test could reach, so
-// this returns nothing and Inspect fails loudly instead.
+// On MySQL and MariaDB the realm is a whole server, reached through a URL that
+// names no database, and its schemas are the user databases; see
+// [systemschema.MySQLUserDatabasesPredicate]. A view is not a table there
+// either.
 func realmProbe(dialect string, caps capability.Capabilities) string {
+	if isMySQLFamily(dialect) {
+		return `
+		SELECT s.SCHEMA_NAME, COALESCE(t.TABLE_NAME, '')
+		FROM information_schema.SCHEMATA s
+		LEFT JOIN information_schema.TABLES t
+		  ON t.TABLE_SCHEMA = s.SCHEMA_NAME
+		 AND t.TABLE_TYPE = 'BASE TABLE'
+		WHERE ` + systemschema.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
+		ORDER BY s.SCHEMA_NAME, t.TABLE_NAME`
+	}
 	if !platform.IsPostgresFamily(dialect) {
 		return ""
 	}

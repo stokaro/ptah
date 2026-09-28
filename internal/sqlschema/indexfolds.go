@@ -1,6 +1,8 @@
 package sqlschema
 
 import (
+	"slices"
+
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
 )
@@ -18,27 +20,41 @@ import (
 // dropped one's name derives none. table is the last table of database, and
 // fieldsStart and constraintsStart are where this statement's columns and
 // constraints begin.
+//
+// places holds the place of each of this statement's constraints, in the
+// order of the model; see [constraintPlaces]. The answer holds the places of
+// the constraints the fold keeps. A kept constraint takes the earliest place
+// of the ones folded into it, because the server builds the first of equal
+// keys and folds the rest into it: `a int UNIQUE, CONSTRAINT w1_a_key UNIQUE
+// (b), b int, UNIQUE (a)` names the key over a when it reaches the column, and
+// PostgreSQL 18.6 then refuses the name w1_a_key the statement writes.
 func foldCreatedIndexConstraints(
 	database *schemamodel.Database,
 	table *schemamodel.Table,
 	fieldsStart, constraintsStart int,
+	places []int,
 	sourcePlatform string,
-) {
+) []int {
 	if !namesConstraintsLikePostgres(sourcePlatform) {
-		return
+		return places
 	}
 	created := database.Constraints[constraintsStart:]
-	folds := schemaprep.FoldedIndexConstraints(*table, database.Fields[fieldsStart:], created, sourcePlatform)
+	fields := database.Fields[fieldsStart:]
+	folds := schemaprep.FoldedIndexConstraints(*table, fields, created, sourcePlatform)
 	if len(folds) == 0 {
-		return
+		return places
 	}
 	dropped := make(map[int]bool, len(folds))
 	for _, fold := range folds {
 		if fold.Folded == schemaprep.ColumnKeyOutsideList {
-			dropColumnKey(database.Fields[fieldsStart:], fold.Column)
+			dropColumnKey(fields, fold.Column)
+			moveToEarlierPlace(places, fold.Into, columnPlace(slices.IndexFunc(fields, func(field schemamodel.Field) bool {
+				return field.Name == fold.Column
+			})))
 			continue
 		}
 		dropped[fold.Folded] = true
+		moveToEarlierPlace(places, fold.Into, places[fold.Folded])
 		name := created[fold.Folded].Name
 		switch {
 		case name == "":
@@ -49,12 +65,25 @@ func foldCreatedIndexConstraints(
 		}
 	}
 	kept := make([]schemamodel.Constraint, 0, len(created)-len(dropped))
+	keptPlaces := make([]int, 0, len(created)-len(dropped))
 	for position, constraint := range created {
 		if !dropped[position] {
 			kept = append(kept, constraint)
+			keptPlaces = append(keptPlaces, places[position])
 		}
 	}
 	database.Constraints = append(database.Constraints[:constraintsStart], kept...)
+	return keptPlaces
+}
+
+// moveToEarlierPlace gives the constraint at position into the earlier of its
+// place and place. A key folded into the primary key moves nothing: the server
+// builds the primary key first wherever the statement writes it.
+func moveToEarlierPlace(places []int, into, place int) {
+	if into < 0 {
+		return
+	}
+	places[into] = min(places[into], place)
 }
 
 // namePrimaryKey gives table's primary key name when the key has none. fields

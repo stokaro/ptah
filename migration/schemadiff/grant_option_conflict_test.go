@@ -55,7 +55,7 @@ func TestCompareWithDatabaseInfoStillComparesAgreeingGrants(t *testing.T) {
 			c := qt.New(t)
 			withOption := test.dialect == "postgres"
 			desired := &schemamodel.Database{
-				Roles: []schemamodel.Role{{Name: "reader"}},
+				Roles: []schemamodel.Role{{Name: "reader", Inherit: true}},
 				Grants: []schemamodel.Grant{
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
 					{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "orders", WithOption: withOption},

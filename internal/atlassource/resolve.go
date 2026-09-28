@@ -451,7 +451,9 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 		}
 	}
 
-	conn, err := connectDatabase(ctx, devURL, opts.ConnectTimeout)
+	// A dev URL naming no MySQL-family database is a whole dev server, which
+	// the replay claims, confines and resets database by database.
+	conn, err := connectWith(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
 		return fmt.Errorf("connect to --dev-url: %w", err)
 	}
@@ -534,14 +536,6 @@ func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
 		return nil
 	}
 	return fmt.Errorf("--dev-url dialect %q does not match %s dialect %q", devDialect, opts.DialectFlag, pinned)
-}
-
-func connectDatabase(
-	ctx context.Context,
-	rawURL string,
-	timeout time.Duration,
-) (*dbschema.DatabaseConnection, error) {
-	return connectWith(ctx, rawURL, timeout, dbschema.ConnectToDatabase)
 }
 
 // connectWith opens rawURL with connect, bounding the connection attempt by

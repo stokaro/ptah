@@ -48,8 +48,8 @@ names the database, and a host is ignored. The Go-driver form
 `mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app` reaches the same socket.
 
 A MySQL or MariaDB URL naming no database is the whole server, as in the
-Atlas CLI; the `migrate` commands refuse it
-([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)).
+Atlas CLI; as a dev database it is a
+[dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
 ## The four database roles
 

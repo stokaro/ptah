@@ -95,6 +95,13 @@ SQL:
   compared beside it. Both engines build `a INT UNIQUE` and
   `CONSTRAINT uq_a UNIQUE (a)` as two keys, so a database with `uq_a` alone
   is planned the key `a`, as Atlas CE plans it.
+- A plan that changes a column writes `MODIFY COLUMN` with the whole new
+  definition, and writes `UNIQUE` in it only when the change gives the column
+  its `UNIQUE`. Both engines read the clause as a request for a new key, so
+  `MODIFY COLUMN x BIGINT UNIQUE` on a column that already has its key builds
+  a second one, `x_2`. A column that keeps its `UNIQUE` while its type,
+  nullability or default changes is written without the clause and keeps its
+  one key, as Atlas CE writes it.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so
@@ -328,6 +335,11 @@ SQL:
   names columns, so a column list that is a number is refused, and the refusal
   names the keyword. MySQL and MariaDB answer the same statement with
   `Error 1064`.
+- Under `--dialect mysql`, an `ALTER TABLE` in a schema file carrying
+  `IF EXISTS` or `IF NOT EXISTS` is refused, because MySQL refuses the guard on
+  every operation. MariaDB takes it on `DROP INDEX`, `DROP KEY`,
+  `DROP FOREIGN KEY`, `DROP CONSTRAINT`, `DROP COLUMN` and `ADD COLUMN`, and
+  Ptah reads it there.
 - A column carrying both a primary key and a `UNIQUE` is written back the way
   it was read, because the two spellings do not mean the same thing.
   `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique
@@ -335,8 +347,20 @@ SQL:
   was; `a INT PRIMARY KEY UNIQUE` builds both on MySQL and the primary key
   alone on MariaDB, and it is rendered inline so each engine gives its own
   answer. Folding the first into the second would lose MariaDB's second index.
+- A role is a name and nothing else. `CREATE ROLE` takes no attribute on
+  either engine, so a declared `login`, `password`, `superuser`, `createdb`,
+  `createrole` or `replication` is refused before any SQL is written: what it
+  asks for is a user, and Ptah does not manage users. A role always passes on
+  the privileges of the roles granted to it, and there is no `NOINHERIT`
+  (`Error 1064` on both engines). So every role reads back as inheriting,
+  which is what a declaration defaults to, and a declared `inherit="false"` is
+  refused rather than created as a role that inherits anyway.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
+- A schema file's column `COMMENT 'text'` and table `COMMENT = 'text'`, with
+  or without the `=`, hold the text the server stores. A doubled quote and a
+  backslash escape are read as the server reads them, and of two `COMMENT`
+  clauses on one column the last is kept.
 
 ## Dev-database cleanup privileges
 
@@ -348,6 +372,12 @@ DDL. Cleanup fails closed when another user database contains a routine, event,
 or trigger because its body can reference the cleanup realm without a catalog
 dependency. Grant these privileges only to credentials used with a dedicated
 disposable dev database.
+
+A dev server, a `--dev-url` that names no database, is emptied database by
+database and needs none of these. The run found no user database there before
+it replayed, so it drops only the databases the session sees, which are the
+ones it created; see
+[A whole dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
 ## Making a column NOT NULL
 

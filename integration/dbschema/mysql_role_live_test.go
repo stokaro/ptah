@@ -30,10 +30,33 @@ import (
 // in the same table as every user account, and reading without separating them
 // would report every account on the server as a role -- and the first plan
 // would then offer to drop them (stokaro/ptah#1762).
+//
+// The declared role inherits, because every schema source declares it that
+// way when the author says nothing. The read has to agree: a role here always
+// passes on the privileges of the roles granted to it, and a read that said
+// otherwise would leave every declared role modified forever, with an ALTER
+// ROLE this family does not have (stokaro/ptah#3890). MariaDB records roles in another
+// column and the membership graph in another table, so it is measured too.
 func TestMySQLLiveRoleRoundTrip(t *testing.T) {
-	dbURL := dbtarget.URL(t, dbtarget.MySQL)
-	c := qt.New(t)
-	ctx := t.Context()
+	for _, engine := range []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
+	} {
+		t.Run(engine.name, func(t *testing.T) {
+			dbURL := dbtarget.URL(t, engine.engine)
+			c := qt.New(t)
+			liveRoleRoundTrip(c, dbURL)
+		})
+	}
+}
+
+// liveRoleRoundTrip creates a declared role through a plan, reads it back, and
+// compares the declaration against the read.
+func liveRoleRoundTrip(c *qt.C, dbURL string) {
+	ctx := c.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -51,7 +74,7 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 	declared := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: table}},
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		Roles:  []schemamodel.Role{{StructName: "R", Name: role}},
+		Roles:  []schemamodel.Role{{StructName: "R", Name: role, Inherit: true}},
 	}
 
 	// 1. The role is seen as missing, planned, and the statement runs.

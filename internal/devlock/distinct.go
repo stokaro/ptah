@@ -61,7 +61,7 @@ func sameRealmAs(ctx context.Context, dev *dbschema.DatabaseConnection, candidat
 	if protectedURL == "" {
 		return false, nil
 	}
-	conn, err := dbschema.ConnectToDatabase(ctx, protectedURL)
+	conn, err := dbschema.ConnectToServer(ctx, protectedURL)
 	if err != nil {
 		return false, err
 	}

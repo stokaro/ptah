@@ -516,9 +516,12 @@ func resolveDesiredState(
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:                   conn.Info().Dialect,
-		DialectFlag:               "--dev-url",
-		DialectFromServer:         true,
+		Dialect:           conn.Info().Dialect,
+		DialectFlag:       "--dev-url",
+		DialectFromServer: true,
+		// A --to database naming no database is read as the whole server, to
+		// match a dev server; against a dev database it is refused below.
+		ServerScope:               true,
 		DevURL:                    devURL,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,
@@ -535,6 +538,12 @@ func resolveDesiredState(
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	// The directory replays on the dev database as it is: a whole server on a
+	// dev server and one database on a dev database. A --to database of the
+	// other scope would be compared with the replay as if the scopes were one.
+	if err := atlasschema.RefuseServerScopeMismatch(conn.Info(), state); err != nil {
+		return atlassource.State{}, err
 	}
 	// generateDiff replays the migration directory on this connection next,
 	// and the replay resets it first. A --to database the URL comparison above

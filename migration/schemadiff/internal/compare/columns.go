@@ -211,6 +211,7 @@ func tableColumnsWithSemantics(
 	sort.Slice(tableDiff.ColumnsModified, func(i, j int) bool {
 		return tableDiff.ColumnsModified[i].ColumnName < tableDiff.ColumnsModified[j].ColumnName
 	})
+	tableDiff.ColumnKeyNames = gainedKeyNames(tableDiff, genTable, desired, dialect)
 
 	return tableDiff
 }
@@ -1420,4 +1421,38 @@ func removedColumn(reported catalog.Column) schemamodel.Field {
 // sortColumns orders by the key the name list was sorted on.
 func sortColumns(columns difftypes.ColumnChanges) {
 	sort.Slice(columns, func(i, j int) bool { return columns[i].Name < columns[j].Name })
+}
+
+// gainedKeyNames answers the name each column of tableDiff that gains its own
+// UNIQUE takes, keyed by column: a column added with UNIQUE, and a column whose
+// uniqueness changes to UNIQUE. A column declaring unique_expr takes no key over
+// the raw column and is left out. It is nil where no column gains a key, and on
+// an engine whose naming is not measured; see [ownKeyName].
+func gainedKeyNames(
+	tableDiff difftypes.TableDiff, table schemamodel.Table, desired *schemamodel.Database, dialect string,
+) map[string]string {
+	var columns []string
+	for _, field := range tableDiff.ColumnsAdded {
+		if field.Unique && strings.TrimSpace(field.UniqueExpr) == "" {
+			columns = append(columns, field.Name)
+		}
+	}
+	for _, column := range tableDiff.ColumnsModified {
+		_, changed := column.Changes["unique"]
+		if changed && column.Desired.Unique && strings.TrimSpace(column.Desired.UniqueExpr) == "" {
+			columns = append(columns, column.ColumnName)
+		}
+	}
+	var names map[string]string
+	for _, column := range columns {
+		name, named := ownKeyName(desired, table, column, dialect)
+		if !named {
+			return nil
+		}
+		if names == nil {
+			names = make(map[string]string, len(columns))
+		}
+		names[column] = name
+	}
+	return names
 }

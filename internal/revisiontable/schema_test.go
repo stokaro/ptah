@@ -40,6 +40,35 @@ func TestApplyAtlasRevisionsSchemaDefault(t *testing.T) {
 			want: "",
 		},
 		{
+			// A URL naming no database is the whole server, where the binary
+			// keeps the table in a database of its own, measured on MySQL
+			// 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789).
+			name: "a mysql server takes the atlas database",
+			url:  "mysql://localhost:3306/",
+			want: "atlas_schema_revisions",
+		},
+		{
+			name: "a mariadb server without the trailing slash takes the atlas database",
+			url:  "mariadb://localhost:3306",
+			want: "atlas_schema_revisions",
+		},
+		{
+			name: "a socket url without a database takes the atlas database",
+			url:  "mysql+unix://root@/run/mysqld/mysqld.sock",
+			want: "atlas_schema_revisions",
+		},
+		{
+			name: "a socket url naming a database keeps it",
+			url:  "mysql+unix://root@/run/mysqld/mysqld.sock?database=app",
+			want: "",
+		},
+		{
+			name:     "an explicit value on a mysql server is never overridden",
+			resolved: "revs",
+			url:      "mysql://localhost:3306/",
+			want:     "revs",
+		},
+		{
 			// There is no schema to name, and passing one is an error rather
 			// than a no-op.
 			name: "sqlite keeps its single namespace",

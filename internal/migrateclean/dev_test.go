@@ -42,6 +42,12 @@ func TestScopeDevRefusal_HappyPath(t *testing.T) {
 			name:  "cockroachdb schema with no table",
 			scope: migrateclean.Scope{Dialect: "cockroachdb", Schema: "public"},
 		},
+		{
+			// A whole MySQL server with no user database is clean
+			// (stokaro/ptah#3789).
+			name:  "mysql server with no user database",
+			scope: migrateclean.Scope{Dialect: "mysql", Realm: true},
+		},
 	}
 
 	for _, test := range tests {
@@ -74,6 +80,33 @@ func TestScopeDevRefusal_FailurePath(t *testing.T) {
 			name:    "mariadb reads as mysql",
 			scope:   migrateclean.Scope{Dialect: "mariadb", Schema: "dev", Tables: []string{"keep_me"}},
 			wantErr: `connected database is not clean: found table "keep_me" in schema "dev"`,
+		},
+		{
+			// Measured on MySQL 8.4.11 and MariaDB 11.8.9: a dev server holding
+			// b1, A2 and c3 is refused on the first in byte order, empty or not
+			// (stokaro/ptah#3789).
+			name: "mysql server names its first database in byte order",
+			scope: migrateclean.Scope{Dialect: "mysql", Realm: true, Schemas: []migrateclean.RealmSchema{
+				{Name: "A2"}, {Name: "b1", Tables: []string{"t"}}, {Name: "c3"},
+			}},
+			wantErr: `connected database is not clean: found schema "A2"`,
+		},
+		{
+			// The PostgreSQL realm tolerates an empty `public`; a MySQL server
+			// tolerates no database, whatever its name.
+			name: "mysql server holding an empty database named public",
+			scope: migrateclean.Scope{Dialect: "mysql", Realm: true, Schemas: []migrateclean.RealmSchema{
+				{Name: "public"},
+			}},
+			wantErr: `connected database is not clean: found schema "public"`,
+		},
+		{
+			// Even an empty bookkeeping database refuses a dev server.
+			name: "mariadb server holding an empty bookkeeping database",
+			scope: migrateclean.Scope{Dialect: "mariadb", Realm: true, Schemas: []migrateclean.RealmSchema{
+				{Name: "atlas_schema_revisions"},
+			}},
+			wantErr: `connected database is not clean: found schema "atlas_schema_revisions"`,
 		},
 		{
 			// Tables is in catalog order on SQLite: zzz_t was created first.
