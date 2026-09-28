@@ -67,7 +67,10 @@ part of what it says, and the others carry no order to preserve.
 | ``default: `expr` `` | an expression default |
 | `note:` and `Note:` | a column or table comment |
 | `Indexes { … }` with `unique`, `type`, `name` | an index |
+| `Indexes { (a, b) [pk] }` | a composite or named primary key |
 | `Ref` and `[ref: > table.column]` | a foreign key, with `delete:` / `update:` |
+| `Ref: t.(a, b) > p.(a, b)` | a composite foreign key |
+| ``Checks { `expr` }`` and ``check: `expr` `` | a CHECK constraint |
 | `Enum` | an enum type |
 
 A **literal default and an expression default stay apart** in both directions.
@@ -76,10 +79,15 @@ call. They are different columns, and Ptah keeps them different.
 
 ## What it cannot
 
-DBML describes tables, columns, enums, indexes and references. It has no syntax
-for views, functions, triggers, sequences, domains, composite types, ranges,
-policies, roles, extensions, synonyms, extended properties, hypertables,
-continuous aggregates or virtual tables.
+DBML describes tables, columns, enums, indexes, checks and references,
+composite keys included. It has no syntax for views, functions, triggers,
+sequences, domains, composite types, ranges, policies, roles, extensions,
+synonyms, extended properties, hypertables, continuous aggregates or virtual
+tables. Inside the keys it does write, it has no spelling for an EXCLUDE
+constraint, DEFERRABLE, MATCH FULL or PARTIAL, NOT ENFORCED, INCLUDE columns or
+NULLS NOT DISTINCT. A UNIQUE constraint over columns is written as a unique
+index, the only way DBML says a rule over more than one column is unique, so it
+reads back as an index.
 
 DBML also has no lossless spelling for Ptah API export metadata: `api_name`,
 `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` are
@@ -114,7 +122,9 @@ warning: DBML cannot express triggers (1); the export leaves them out
 ```
 
 The warnings go to standard error, so redirecting the document to a file keeps
-the document clean.
+the document clean. `ptah schema inspect --format dbml` reports the same way,
+for what the database holds and DBML cannot write, a key's EXCLUDE or
+DEFERRABLE included.
 
 ## What is refused, and why
 

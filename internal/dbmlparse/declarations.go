@@ -55,26 +55,8 @@ func (p *parser) table() error {
 	if err != nil {
 		return err
 	}
-	// `as alias` names the table for the diagram. It is read so the document
-	// parses, and it names nothing in the database.
-	if p.isWord("as") {
-		if err := p.advance(); err != nil {
-			return err
-		}
-		if _, err := p.name(); err != nil {
-			return err
-		}
-	}
-	if p.isPunct("[") {
-		settings, err := p.settings()
-		if err != nil {
-			return err
-		}
-		for _, entry := range settings {
-			if err := rejectExportMetadataSetting("table", entry); err != nil {
-				return p.wrapAt(err)
-			}
-		}
+	if err := p.tableHeader(); err != nil {
+		return err
 	}
 	if err := p.expectPunct("{"); err != nil {
 		return err
@@ -88,25 +70,77 @@ func (p *parser) table() error {
 		if p.tok.kind == tokenEOF {
 			return p.errorf("unterminated table %q", name)
 		}
-		switch {
-		case p.isWord("indexes"):
-			if err := p.indexes(structName); err != nil {
-				return err
-			}
-		case p.isWord("note"):
-			note, err := p.noteValue()
-			if err != nil {
-				return err
-			}
-			table.Comment = note
-		default:
-			if err := p.column(structName, schema); err != nil {
-				return err
-			}
+		if err := p.tableEntry(&table); err != nil {
+			return err
 		}
+	}
+	if err := p.singlePrimaryKey(table); err != nil {
+		return err
 	}
 	p.db.Tables = append(p.db.Tables, table)
 	return p.advance()
+}
+
+// tableHeader reads what may stand between a table's name and its body. `as
+// alias` names the table for the diagram and nothing in the database, so it
+// is read and dropped; a settings list may carry only what the export writes.
+func (p *parser) tableHeader() error {
+	if p.isWord("as") {
+		if err := p.advance(); err != nil {
+			return err
+		}
+		if _, err := p.name(); err != nil {
+			return err
+		}
+	}
+	if !p.isPunct("[") {
+		return nil
+	}
+	settings, err := p.settings()
+	if err != nil {
+		return err
+	}
+	for _, entry := range settings {
+		if err := rejectExportMetadataSetting("table", entry); err != nil {
+			return p.wrapAt(err)
+		}
+	}
+	return nil
+}
+
+// tableEntry reads one entry of a table body: its Indexes, its Checks, its
+// Note, or a column.
+func (p *parser) tableEntry(table *schemamodel.Table) error {
+	switch {
+	case p.isWord("indexes"):
+		return p.indexes(table)
+	case p.isWord("checks"):
+		return p.checks(table)
+	case p.isWord("note"):
+		note, err := p.noteValue()
+		if err != nil {
+			return err
+		}
+		table.Comment = note
+		return nil
+	default:
+		return p.column(table.StructName, table.Schema)
+	}
+}
+
+// singlePrimaryKey refuses a table that declares its key both ways: on columns
+// with `pk` and as an `[pk]` entry in Indexes. Taking either would drop the
+// other, and they need not agree.
+func (p *parser) singlePrimaryKey(table schemamodel.Table) error {
+	if len(table.PrimaryKey) == 0 {
+		return nil
+	}
+	for _, field := range p.db.Fields {
+		if field.StructName == table.StructName && field.Primary {
+			return p.errorf("table %q declares a primary key both on column %q and in Indexes", table.Name, field.Name)
+		}
+	}
+	return nil
 }
 
 // noteValue reads `Note: '...'` or `Note { '...' }`.

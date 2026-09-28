@@ -426,25 +426,22 @@ func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (strin
 // formats would otherwise start describing different databases, and the reason
 // to pick the right source is strongest while nothing forces it.
 //
-// What DBML cannot carry is not reported here. This returns a document; the
-// caller decides where a warning goes, and a renderer that wrote one into its
-// own output would be writing it into the artifact.
+// What DBML cannot carry is reported on the diagnostics writer, one warning per
+// entry in [dbmlrender.Result.Omitted], as MarshalHCL reports its own
+// diagnostics. Never into the document: a warning written there would be part
+// of the artifact. Without the warnings the export reads as a complete
+// description of the database when it is not (stokaro/ptah#3917).
 func (r *SchemaInspectReport) MarshalDBML() (string, error) {
 	rendered, err := dbmlrender.Render(r.sqlSource(), dbmlrender.Options{})
 	if err != nil {
 		return "", fmt.Errorf("render DBML: %w", err)
 	}
-	return rendered.DBML, nil
-}
-
-// OmittedByDBML names the object families the inspected schema holds and DBML
-// has no syntax for, so a caller can report the loss beside the document.
-func (r *SchemaInspectReport) OmittedByDBML() ([]string, error) {
-	rendered, err := dbmlrender.Render(r.sqlSource(), dbmlrender.Options{})
-	if err != nil {
-		return nil, fmt.Errorf("render DBML: %w", err)
+	if r.diagnostics != nil {
+		for _, warning := range rendered.Warnings() {
+			fmt.Fprintln(r.diagnostics, warning)
+		}
 	}
-	return rendered.Omitted, nil
+	return rendered.DBML, nil
 }
 
 func atlasSchemaInspectDBML(report *SchemaInspectReport, _ ...string) (string, error) {

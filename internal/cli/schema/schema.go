@@ -550,9 +550,8 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		// What DBML cannot carry is said before the document is written, not
 		// after: a caller reading stdout has the file by then, and a caller
 		// redirecting it never sees a line that came out afterwards.
-		for _, omitted := range rendered.Omitted {
-			fmt.Fprintf(cmd.ErrOrStderr(),
-				"warning: DBML cannot express %s; the export leaves them out\n", omitted)
+		for _, warning := range rendered.Warnings() {
+			fmt.Fprintln(cmd.ErrOrStderr(), warning)
 		}
 		if err := emitAPISchema(cmd, opts, db, []byte(rendered.DBML), nil, "DBML schema"); err != nil {
 			return cmdutil.Fail(cmd, err)

@@ -145,9 +145,34 @@ func TestParse_RefusesWhatItCannotRepresent(t *testing.T) {
 			message:  `unsupported index setting "nope"`,
 		},
 		{
-			name:     "a primary key declared in Indexes",
-			document: "Table t {\n  a int\n\n  Indexes {\n    a [pk]\n  }\n}\n",
-			message:  "declare a primary key on its columns",
+			name:     "a primary key declared on a column and in Indexes",
+			document: "Table t {\n  a int [pk]\n  b int\n\n  Indexes {\n    (a, b) [pk]\n  }\n}\n",
+			message:  `table "t" declares a primary key both on column "a" and in Indexes`,
+		},
+		{
+			name:     "two primary keys in Indexes",
+			document: "Table t {\n  a int\n  b int\n\n  Indexes {\n    a [pk]\n    b [pk]\n  }\n}\n",
+			message:  `table "t" declares a second primary key in Indexes`,
+		},
+		{
+			name:     "a primary key entry with an index setting",
+			document: "Table t {\n  a int\n\n  Indexes {\n    a [pk, type: hash]\n  }\n}\n",
+			message:  "a primary key entry in Indexes takes only a name",
+		},
+		{
+			name:     "a reference pairing unequal column lists",
+			document: "Table p {\n  a int\n  b int\n}\nTable c {\n  a int\n}\nRef: c.(a) > p.(a, b)\n",
+			message:  "a reference pairs 1 columns with 2",
+		},
+		{
+			name:     "a second check on one column",
+			document: "Table t {\n  a int [check: `a > 0`, check: `a < 9`]\n}\n",
+			message:  `column "a" declares more than one check`,
+		},
+		{
+			name:     "a check setting other than a name",
+			document: "Table t {\n  a int\n\n  Checks {\n    `a > 0` [note: 'x']\n  }\n}\n",
+			message:  `unsupported check setting "note"`,
 		},
 		{
 			name:     "a reference to a column nobody declared",

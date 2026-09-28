@@ -40,13 +40,22 @@ func (b *builder) tables() []string {
 	blocks := make([]string, 0, len(tables))
 	for _, table := range tables {
 		var out strings.Builder
+		fields := b.fieldsOf(table)
+		key := primaryKeyOf(table, fields)
 		fmt.Fprintf(&out, "Table %s {\n", qualified(table.Schema, table.Name))
-		for _, field := range b.fieldsOf(table) {
-			fmt.Fprintf(&out, "  %s\n", column(field))
+		for _, field := range fields {
+			fmt.Fprintf(&out, "  %s\n", column(field, key))
 		}
-		if indexes := b.indexesOf(table); len(indexes) > 0 {
+		if indexes := b.indexesOf(table, key); len(indexes) > 0 {
 			out.WriteString("\n  Indexes {\n")
 			for _, line := range indexes {
+				fmt.Fprintf(&out, "    %s\n", line)
+			}
+			out.WriteString("  }\n")
+		}
+		if checks := b.checksOf(table); len(checks) > 0 {
+			out.WriteString("\n  Checks {\n")
+			for _, line := range checks {
 				fmt.Fprintf(&out, "    %s\n", line)
 			}
 			out.WriteString("  }\n")
@@ -102,10 +111,11 @@ func (b *builder) fieldsOf(table schemamodel.Table) []schemamodel.Field {
 	return fields
 }
 
-// column renders one column line with its settings.
-func column(field schemamodel.Field) string {
+// column renders one column line with its settings. key says whether the
+// table's primary key is written on its column or in Indexes.
+func column(field schemamodel.Field, key primaryKey) string {
 	line := fmt.Sprintf("%s %s", quote(field.Name), columnType(field))
-	settings := columnSettings(field)
+	settings := columnSettings(field, key)
 	if len(settings) == 0 {
 		return line
 	}
@@ -123,9 +133,9 @@ func columnType(field schemamodel.Field) string {
 
 // columnSettings is the bracketed list, in a fixed order so the same column
 // always renders the same way.
-func columnSettings(field schemamodel.Field) []string {
-	settings := make([]string, 0, 6)
-	if field.Primary {
+func columnSettings(field schemamodel.Field, key primaryKey) []string {
+	settings := make([]string, 0, 7)
+	if field.Primary && key.onColumn {
 		settings = append(settings, "pk")
 	}
 	if field.AutoInc {
@@ -139,6 +149,9 @@ func columnSettings(field schemamodel.Field) []string {
 	}
 	if def, ok := defaultSetting(field); ok {
 		settings = append(settings, def)
+	}
+	if field.Check != "" && expressible(field.Check) {
+		settings = append(settings, "check: `"+field.Check+"`")
 	}
 	if field.Comment != "" {
 		settings = append(settings, "note: "+quoteNote(field.Comment))
@@ -162,8 +175,12 @@ func defaultSetting(field schemamodel.Field) (string, bool) {
 	return "", false
 }
 
-// indexesOf renders the table's indexes, sorted by name.
-func (b *builder) indexesOf(table schemamodel.Table) []string {
+// indexesOf renders the table's Indexes entries: the primary key first when
+// it is not on a column, then its indexes and UNIQUE constraints sorted.
+//
+// A UNIQUE constraint is written as a unique index, which is the only way
+// DBML says a rule over more than one column is unique.
+func (b *builder) indexesOf(table schemamodel.Table, key primaryKey) []string {
 	lines := make([]string, 0, 4)
 	for _, index := range b.db.Indexes {
 		if index.StructName != table.StructName {
@@ -171,7 +188,13 @@ func (b *builder) indexesOf(table schemamodel.Table) []string {
 		}
 		lines = append(lines, indexLine(index))
 	}
+	for _, constraint := range b.constraintsOf(table, constraintUnique) {
+		lines = append(lines, uniqueLine(constraint))
+	}
 	sort.Strings(lines)
+	if line, ok := key.line(); ok {
+		lines = append([]string{line}, lines...)
+	}
 	return lines
 }
 
