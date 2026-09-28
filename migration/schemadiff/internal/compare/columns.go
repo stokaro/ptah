@@ -1415,6 +1415,8 @@ func removedColumn(reported catalog.Column) schemamodel.Field {
 	field.OnUpdate = ""
 	field.Deferrable = false
 	field.Initially = ""
+	field.ForeignKeyMatch = ""
+	field.ForeignKeyNotEnforced = false
 	return field
 }
 

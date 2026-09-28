@@ -28,11 +28,11 @@ func foreignKeyCatalog(selected any) dbtest.QueryHandler {
 			Columns: []string{
 				"CONSTRAINT_NAME", "TABLE_NAME", "CONSTRAINT_TYPE", "COLUMN_NAME",
 				"REFERENCED_TABLE_SCHEMA", "REFERENCED_TABLE_NAME", "REFERENCED_COLUMN_NAME",
-				"DELETE_RULE", "UPDATE_RULE",
+				"DELETE_RULE", "UPDATE_RULE", "MATCH_OPTION", "ENFORCED",
 			},
 			Rows: [][]driver.Value{
-				{"orders_customer", "orders", "FOREIGN KEY", "customer_id", "crm", "customers", "id", "NO ACTION", "NO ACTION"},
-				{"orders_line", "orders", "FOREIGN KEY", "line_id", "shop", "lines", "id", "NO ACTION", "NO ACTION"},
+				{"orders_customer", "orders", "FOREIGN KEY", "customer_id", "crm", "customers", "id", "NO ACTION", "NO ACTION", "NONE", "YES"},
+				{"orders_line", "orders", "FOREIGN KEY", "line_id", "shop", "lines", "id", "NO ACTION", "NO ACTION", "NONE", "YES"},
 			},
 		},
 		{},

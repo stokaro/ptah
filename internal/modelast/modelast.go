@@ -343,6 +343,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	// Set check constraint (using potentially overridden value)
 	if field.Check != "" {
 		column.SetCheck(field.Check)
+		column.CheckNotEnforced = field.CheckNotEnforced
 		if field.CheckName != "" {
 			column.SetCheckName(field.CheckName)
 		}
@@ -372,6 +373,8 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 		column.ForeignKey.OnUpdate = field.OnUpdate
 		column.ForeignKey.Deferrable = field.Deferrable
 		column.ForeignKey.Initially = field.Initially
+		column.ForeignKey.Match = field.ForeignKeyMatch
+		column.ForeignKey.NotEnforced = field.ForeignKeyNotEnforced
 	}
 
 	return column
@@ -448,6 +451,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	// Set check constraint (using potentially overridden value)
 	if field.Check != "" {
 		column.SetCheck(field.Check)
+		column.CheckNotEnforced = field.CheckNotEnforced
 		if field.CheckName != "" {
 			column.SetCheckName(field.CheckName)
 		}
@@ -934,13 +938,16 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 			Name:            constraint.Name,
 			Deferrable:      constraint.Deferrable,
 			Initially:       constraint.Initially,
+			Match:           constraint.Match,
+			NotEnforced:     constraint.NotEnforced,
 			OnDeleteColumns: append([]string(nil), constraint.OnDeleteColumns...),
 		})
 	case "CHECK":
 		return &ast.ConstraintNode{
-			Type:       ast.CheckConstraint,
-			Name:       constraint.Name,
-			Expression: constraint.CheckExpression,
+			Type:        ast.CheckConstraint,
+			Name:        constraint.Name,
+			Expression:  constraint.CheckExpression,
+			NotEnforced: constraint.NotEnforced,
 		}
 	case "EXCLUDE":
 		node := ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements).
@@ -1650,6 +1657,8 @@ func appendFieldForeignKeyConstraintStatements(
 			fkRef.OnUpdate = field.OnUpdate
 			fkRef.Deferrable = field.Deferrable
 			fkRef.Initially = field.Initially
+			fkRef.Match = field.ForeignKeyMatch
+			fkRef.NotEnforced = field.ForeignKeyNotEnforced
 			fkRef.Name = field.ForeignKeyName
 			if err := visit(&ast.AlterTableNode{
 				Name: table.QualifiedName(),

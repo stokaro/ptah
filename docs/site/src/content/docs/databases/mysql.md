@@ -116,6 +116,14 @@ SQL:
   identifies a named constraint by its type as well as its table and name, so
   both survive the read, the desired model, and the comparison. MySQL also lets
   a `CHECK` share a name with a `UNIQUE`, where MariaDB answers `ERROR 1826`.
+- `NOT ENFORCED` after a `CHECK` is kept on MySQL 8.0.16+ and read back from
+  `information_schema.TABLE_CONSTRAINTS`; MariaDB has no such clause. A foreign
+  key's `MATCH FULL` or `MATCH PARTIAL` is kept on MySQL, which records it in
+  `REFERENTIAL_CONSTRAINTS.MATCH_OPTION` and leaves it out of `SHOW CREATE
+  TABLE`. MySQL 8.4.11 still checks such a key as `MATCH SIMPLE`. MariaDB
+  11.8.9 accepts the clause and records `NONE`, so Ptah refuses it there
+  rather than read a key the server does not build. A constraint whose
+  enforcement or MATCH type changes is dropped and added again.
 - A key part's direction is read back from the catalog, so `KEY (a DESC)` and
   `KEY (a)` are told apart rather than both arriving ascending. It also decides
   which index a foreign key owns: MySQL will not back one with a descending

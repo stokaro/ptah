@@ -291,8 +291,15 @@ type Field struct {
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
 	Initially string
-	Enum      []string // Enum values for ENUM type fields
-	Check     string   // Check constraint expression
+	// ForeignKeyMatch is the MATCH type of the column's foreign key: "FULL" or
+	// "PARTIAL", and empty for MATCH SIMPLE, which is what a key is without
+	// the clause. See [ptah.run/core/ast.ForeignKeyRef.Match].
+	ForeignKeyMatch string
+	// ForeignKeyNotEnforced marks a column's foreign key the server keeps and
+	// does not check. See [ptah.run/core/ast.ForeignKeyRef.NotEnforced].
+	ForeignKeyNotEnforced bool
+	Enum                  []string // Enum values for ENUM type fields
+	Check                 string   // Check constraint expression
 	// CheckName is an optional constraint name for the column-level CHECK.
 	// Left empty, the CHECK is rendered unnamed, and a comparison expects the
 	// name the server gives it: on PostgreSQL `<table>_<column>_check` when
@@ -300,6 +307,9 @@ type Field struct {
 	// MySQL `<table>_chk_<n>` in column order, on MariaDB the column's own
 	// name. Other targets expect `<table>_<column>_check`.
 	CheckName string
+	// CheckNotEnforced marks the column-level CHECK as one the server keeps and
+	// does not check. See [ptah.run/core/ast.ConstraintNode.NotEnforced].
+	CheckNotEnforced bool
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
 	// addressable catalog object. See
@@ -542,6 +552,13 @@ type Constraint struct {
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
 	Initially string
+	// Match is the MATCH type of a FOREIGN KEY: "FULL" or "PARTIAL", and empty
+	// for MATCH SIMPLE, which is what a key is without the clause. See
+	// [ptah.run/core/ast.ForeignKeyRef.Match].
+	Match string
+	// NotEnforced marks a CHECK or a FOREIGN KEY the server keeps and does not
+	// check. See [ptah.run/core/ast.ConstraintNode.NotEnforced].
+	NotEnforced bool
 	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
 	// referencing columns. See [ptah.run/core/ast.ForeignKeyRef.OnDeleteColumns].
 	OnDeleteColumns []string

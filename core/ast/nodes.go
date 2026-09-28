@@ -488,6 +488,9 @@ type ColumnNode struct {
 	// CHECK. When empty, dialect renderers emit an unnamed `CHECK (...)` and
 	// the engine names it.
 	CheckName string
+	// CheckNotEnforced marks the column-level CHECK as one the server keeps
+	// and does not check. See [ConstraintNode.NotEnforced].
+	CheckNotEnforced bool
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL.
 	//
@@ -806,6 +809,13 @@ type ConstraintNode struct {
 	// [capability.AddConstraintNotValid] leave it out and write the plain
 	// constraint, which validates as it goes.
 	NotValid bool
+	// NotEnforced marks a CHECK the server keeps and does not check, written
+	// `NOT ENFORCED`: PostgreSQL 18 records it in pg_constraint.conenforced,
+	// and MySQL 8.0.16 and later in TABLE_CONSTRAINTS.ENFORCED. A foreign
+	// key's is on [ForeignKeyRef.NotEnforced]. A renderer for a target without
+	// the clause refuses the constraint rather than write one that checks
+	// every row (stokaro/ptah#3853).
+	NotEnforced bool
 	// UsingMethod specifies the index method for EXCLUDE constraints (e.g., "gist", "btree")
 	UsingMethod string
 	// ExcludeElements contains the exclude elements specification (e.g., "user_id WITH =", "during WITH &&")

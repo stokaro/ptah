@@ -185,8 +185,8 @@ TABLESPACE`, are refused by name.
 
 ## Clauses after a constraint or a key
 
-A table element may end in clauses that build what the element builds without
-them. The reader takes these and changes nothing:
+These clauses after a table element change nothing the server builds, and the
+reader takes them:
 
 - `ENFORCED` after a `CHECK`, and after a foreign key on PostgreSQL. MySQL
   takes it after a `CHECK` only, and MariaDB not at all.
@@ -198,10 +198,12 @@ them. The reader takes these and changes nothing:
   and `USING BTREE` or `USING HASH` after a key's parts. A method written
   there is the one `KEY k USING HASH (a)` asks for, and the later clause wins.
 
-Clauses that declare something the model has no field for are refused by name
-([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)):
-`NOT ENFORCED`, `MATCH FULL` and `MATCH PARTIAL`, `NOT VALID` in
-`ALTER TABLE ... ADD`, and the index options `COMMENT`, `INVISIBLE`,
+The [PostgreSQL](../../databases/postgresql/#constraint-enforcement-and-the-match-type)
+and [MySQL](../../databases/mysql/) pages say where `NOT ENFORCED` and a MATCH
+type are kept. Clauses that declare something the model has no field for are
+refused by name
+([stokaro/ptah#3853](https://github.com/stokaro/ptah/issues/3853)): `NOT VALID`
+in `ALTER TABLE ... ADD`, and the index options `COMMENT`, `INVISIBLE`,
 `IGNORED`, `KEY_BLOCK_SIZE`, `ENGINE_ATTRIBUTE` and `SECONDARY_ENGINE_ATTRIBUTE`.
 `USING HASH` after a primary key is refused too. So is a clause a dialect's
 server refuses, such as `ENFORCED` after a `UNIQUE`:

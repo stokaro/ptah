@@ -2916,6 +2916,8 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 	last := columnClause{}
 	// Whether that constraint was a CHECK, which ENFORCED may follow.
 	lastCheck := false
+	// What the enforcement clauses after that constraint said.
+	var enforced enforcement
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
@@ -2930,9 +2932,10 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 
 		keyword := strings.ToUpper(p.current.Value)
 		if p.isColumnAttribute(keyword) {
-			if err := p.parseColumnAttribute(columnClauseKind(last, lastCheck)); err != nil {
+			if err := p.parseColumnAttribute(columnClauseKind(last, lastCheck), &enforced); err != nil {
 				return err
 			}
+			applyColumnEnforcement(table, column, last, enforced)
 			continue
 		}
 		if keyword == "DEFERRABLE" || keyword == "INITIALLY" || (keyword == "NOT" && p.nextIsDeferrable()) {
@@ -2954,6 +2957,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 		}
 		last = before.clauseRead(table, column)
 		lastCheck = p.markColumnChecks(column) != checks
+		enforced = enforcement{}
 	}
 
 	return nil
@@ -3839,9 +3843,11 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 		fkRef.Columns = columnNames
 	}
 
-	if err := p.readMatchType(); err != nil {
+	match, err := p.readMatchType()
+	if err != nil {
 		return nil, err
 	}
+	fkRef.Match = match
 	if err := p.parseReferentialActions(fkRef); err != nil {
 		return nil, err
 	}

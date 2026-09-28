@@ -640,6 +640,8 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			OnDeleteColumns: append([]string(nil), declared.OnDeleteColumns...),
 			Deferrable:      declared.Deferrable,
 			Initially:       declared.Initially,
+			Match:           declared.Match,
+			NotEnforced:     declared.NotEnforced,
 		})
 	}
 	return additions
@@ -689,6 +691,7 @@ func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamo
 			Type:            "CHECK",
 			Table:           table,
 			CheckExpression: field.Check,
+			NotEnforced:     field.CheckNotEnforced,
 		}, true
 	}
 	return schemamodel.Constraint{}, false
@@ -837,6 +840,12 @@ type ConstraintAdditionInfo struct {
 	// (stokaro/ptah#2216).
 	Deferrable bool   `json:"deferrable,omitempty"`
 	Initially  string `json:"initially,omitempty"`
+	// Match and NotEnforced carry a foreign key's MATCH type and a CHECK's or
+	// foreign key's `NOT ENFORCED` to the planner, for the same reason: an
+	// addition built without them writes a key that checks what the
+	// declaration said it does not (stokaro/ptah#3853).
+	Match       string `json:"match,omitempty"`
+	NotEnforced bool   `json:"not_enforced,omitempty"`
 	// OnDeleteColumns carries the columns an ON DELETE SET NULL or SET DEFAULT
 	// is limited to, for the same reason: an addition built without it sets
 	// every referencing column where the declaration named some
@@ -2964,6 +2973,9 @@ type ForeignKeyDeclaration struct {
 	// declaration states none.
 	OnDelete string
 	OnUpdate string
+	// Match is the MATCH type, empty for MATCH SIMPLE. A key rebuilt around
+	// a change to one of its columns keeps it (stokaro/ptah#3853).
+	Match string
 }
 
 // ForeignKeyDeclarationsOf enumerates every foreign key db declares, from all
@@ -3026,6 +3038,7 @@ func appendFieldForeignKeys(
 			ForeignColumns: append([]string(nil), reference.Columns...),
 			OnDelete:       field.OnDelete,
 			OnUpdate:       field.OnUpdate,
+			Match:          field.ForeignKeyMatch,
 		})
 	}
 	return declarations
@@ -3084,6 +3097,7 @@ func appendTableForeignKeys(declarations []ForeignKeyDeclaration, db *schemamode
 			ForeignColumns: append([]string(nil), constraint.ForeignColumns...),
 			OnDelete:       constraint.OnDelete,
 			OnUpdate:       constraint.OnUpdate,
+			Match:          constraint.Match,
 		})
 	}
 	return declarations

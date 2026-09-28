@@ -2220,8 +2220,10 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 		constraint.NullsDistinct = postgresNullsDistinctFromDefinition(constraintDefinition)
 		constraint.IncludeColumns = postgresIncludeColumnsFromDefinition(constraintDefinition)
 		constraint.HashShardBuckets = hashShardBuckets(r.dialect, constraintDefinition)
+		constraint.NotEnforced = postgresNotEnforcedFromDefinition(constraintDefinition)
 		if constraint.Type == "FOREIGN KEY" {
 			constraint.OnDeleteColumns = postgresDeleteColumnsFromDefinition(constraintDefinition)
+			constraint.Match = postgresMatchFromDefinition(constraintDefinition)
 		}
 
 		constraints = append(constraints, constraint)
@@ -2319,6 +2321,58 @@ func splitQuotedIdentifierList(list string) []string {
 
 // closingParenthesis returns the index of the parenthesis that closes the one
 // text opens with, skipping any inside a quoted identifier, or -1.
+// postgresNotEnforcedFromDefinition reports whether pg_get_constraintdef
+// describes a constraint the server does not check. PostgreSQL 18.6 ends such
+// a CHECK or foreign key with ` NOT ENFORCED`, after its deferral clauses:
+// `FOREIGN KEY (a) REFERENCES p(id) MATCH FULL DEFERRABLE NOT ENFORCED`. The
+// definition is read rather than pg_constraint.conenforced, which exists only
+// from PostgreSQL 18, so one query serves every server the reader reads
+// (stokaro/ptah#3853).
+func postgresNotEnforcedFromDefinition(definition string) bool {
+	return strings.HasSuffix(definition, " NOT ENFORCED")
+}
+
+// postgresMatchFromDefinition answers the MATCH type pg_get_constraintdef
+// prints for a foreign key, FULL or PARTIAL, and empty for MATCH SIMPLE, which
+// it does not print. The clause follows the referenced columns directly:
+// `FOREIGN KEY (a, b) REFERENCES p(id, k) MATCH FULL ON DELETE CASCADE` on
+// PostgreSQL 18.6, CockroachDB v26.3.2 and YugabyteDB 2026.1.2. It is found
+// after the referenced column list, so a quoted name that spells the words
+// cannot be read as the clause.
+func postgresMatchFromDefinition(definition string) string {
+	references := indexOutsideQuotes(definition, " REFERENCES ")
+	if references < 0 {
+		return ""
+	}
+	target := definition[references+len(" REFERENCES "):]
+	end := closingParenthesis(target)
+	if end < 0 {
+		return ""
+	}
+	clauses := strings.TrimLeft(target[end+1:], " ")
+	for _, match := range []string{"FULL", "PARTIAL"} {
+		if clauses == "MATCH "+match || strings.HasPrefix(clauses, "MATCH "+match+" ") {
+			return match
+		}
+	}
+	return ""
+}
+
+// indexOutsideQuotes answers where word first appears in text outside a
+// double-quoted identifier, and -1 where it does not.
+func indexOutsideQuotes(text, word string) int {
+	quoted := false
+	for i := range len(text) {
+		switch {
+		case text[i] == '"':
+			quoted = !quoted
+		case !quoted && strings.HasPrefix(text[i:], word):
+			return i
+		}
+	}
+	return -1
+}
+
 func closingParenthesis(text string) int {
 	depth := 0
 	quoted := false

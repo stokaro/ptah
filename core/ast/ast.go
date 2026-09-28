@@ -88,6 +88,20 @@ type ForeignKeyRef struct {
 	// thing the engine defaults to -- IMMEDIATE -- spelled as "the author did
 	// not say".
 	Initially string
+	// Match is the MATCH type: "FULL" or "PARTIAL", and empty for MATCH SIMPLE,
+	// which is what a key is without the clause. MATCH FULL refuses a row
+	// whose key is partly NULL; MATCH SIMPLE lets any NULL part through.
+	// PostgreSQL records FULL and refuses PARTIAL as not implemented; MySQL
+	// records both and enforces neither, measured on 8.4.11 and 9.7.2.
+	// MariaDB 11.8.9 and SQLite 3.51 accept the clause and record NONE, so a
+	// renderer for a target without it refuses the key rather than write a
+	// clause the server drops (stokaro/ptah#3853).
+	Match string
+	// NotEnforced marks a foreign key the server keeps and does not check:
+	// PostgreSQL 18 records `NOT ENFORCED` in pg_constraint.conenforced. A
+	// renderer for a target without the clause refuses the key rather than
+	// write one that checks every row.
+	NotEnforced bool
 	// OnDeleteColumns limits ON DELETE SET NULL or SET DEFAULT to these
 	// referencing columns (PostgreSQL 15 and later); the other referencing
 	// columns keep their values. Empty means every referencing column, which

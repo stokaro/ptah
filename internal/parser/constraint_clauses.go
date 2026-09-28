@@ -13,21 +13,57 @@ import (
 // because the model has no field for what they declare.
 const unmodeledClauses = "stokaro/ptah#3853"
 
+// enforcement is what `ENFORCED` and `NOT ENFORCED` said about one
+// constraint: whether either was written, and whether the last one written was
+// `NOT ENFORCED`.
+type enforcement struct {
+	written     bool
+	notEnforced bool
+}
+
+// record takes one enforcement clause written at start. PostgreSQL 18.6
+// refuses a second one, `ENFORCED NOT ENFORCED` and `NOT ENFORCED NOT
+// ENFORCED` alike, and MySQL 8.4 keeps the last: `CHECK (a > 0) NOT ENFORCED
+// ENFORCED` reads back ENFORCED `YES`.
+func (e *enforcement) record(dialect string, notEnforced bool, start int) error {
+	if e.written && takesOneEnforcement(dialect) {
+		return fmt.Errorf("NOT ENFORCED or ENFORCED at position %d: a constraint takes one of them, and "+
+			"PostgreSQL 18.6 answers `multiple ENFORCED/NOT ENFORCED clauses not allowed`", start)
+	}
+	e.written = true
+	e.notEnforced = notEnforced
+	return nil
+}
+
+// takesOneEnforcement reports whether the dialect refuses a second
+// enforcement clause after one constraint. A document read with no dialect
+// takes PostgreSQL's rule, the stricter one.
+func takesOneEnforcement(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case "", platform.Postgres:
+		return true
+	default:
+		return false
+	}
+}
+
 // readConstraintAttributes reads `ENFORCED`, `NOT ENFORCED` and `NOT VALID`
-// after a table constraint of kind, and leaves the cursor on anything else. It
-// is read before the deferral clauses and again after them, because PostgreSQL
-// takes the two families in any order.
+// after a table constraint of kind into enforced, and leaves the cursor on
+// anything else. It is read before the deferral clauses and again after them,
+// because PostgreSQL takes the two families in any order.
 //
 // PostgreSQL 18.6 takes each of them after a CHECK or a FOREIGN KEY, in any
 // order and beside the deferral clauses, and answers `<KIND> constraints cannot
-// be marked ENFORCED` after a key. MySQL 8.4 takes `[NOT] ENFORCED` after a
-// CHECK alone, and MariaDB 11.8 takes none of them. What is read changes
-// nothing: `ENFORCED` is what a constraint is without it, and `NOT VALID` in a
-// CREATE TABLE leaves the constraint validated, as `pg_constraint.convalidated`
-// reports. `NOT ENFORCED` keeps a constraint that checks nothing, and `NOT
-// VALID` in ALTER TABLE keeps existing rows unchecked; the model has a field for
-// neither, so both are refused by name.
-func (p *Parser) readConstraintAttributes(kind string) error {
+// be marked ENFORCED` after a key. PostgreSQL 17 answers a syntax error to
+// `ENFORCED`, so a render refuses a constraint that does not check its rows
+// there. MySQL 8.4 and 9.7 take `[NOT] ENFORCED` after a CHECK alone, and
+// MariaDB 11.8 takes none of them. `NOT ENFORCED` keeps a constraint the
+// server does not check, which the model carries; `ENFORCED` is what a
+// constraint is without it. `NOT VALID` in a CREATE TABLE leaves the
+// constraint validated, as `pg_constraint.convalidated` reports, and in ALTER
+// TABLE it keeps existing rows unchecked, which the model has no field for, so
+// that one is refused by name.
+func (p *Parser) readConstraintAttributes(kind string, enforced *enforcement) error {
 	for {
 		p.skipWhitespace()
 		start := p.current.Start
@@ -35,12 +71,12 @@ func (p *Parser) readConstraintAttributes(kind string) error {
 		switch {
 		case p.current.MatchIdentifierValue("ENFORCED"):
 			p.advance()
-			err = refuseEnforcement(p.dialect, kind, "ENFORCED", start)
+			err = p.readEnforcement(kind, "ENFORCED", start, enforced)
 		case p.current.MatchIdentifierValue("NOT") && p.nextIsWord("ENFORCED"):
 			p.advance()
 			p.skipWhitespace()
 			p.advance()
-			err = refuseNotEnforced(p.dialect, kind, start)
+			err = p.readEnforcement(kind, "NOT ENFORCED", start, enforced)
 		case p.current.MatchIdentifierValue("NOT") && p.nextIsWord("VALID"):
 			p.advance()
 			p.skipWhitespace()
@@ -75,17 +111,14 @@ func takesEnforced(dialect, kind string) bool {
 	}
 }
 
-// refuseNotEnforced refuses `NOT ENFORCED`: where the dialect takes it, the
-// model has no field for a constraint that checks nothing.
-func refuseNotEnforced(dialect, kind string, start int) error {
-	if err := refuseEnforcement(dialect, kind, "NOT ENFORCED", start); err != nil {
+// readEnforcement reads clause, `ENFORCED` or `NOT ENFORCED`, after a
+// constraint of kind into enforced, and refuses it where the dialect takes
+// none there.
+func (p *Parser) readEnforcement(kind, clause string, start int, enforced *enforcement) error {
+	if err := refuseEnforcement(p.dialect, kind, clause, start); err != nil {
 		return err
 	}
-	return fmt.Errorf(
-		"NOT ENFORCED at position %d: a %s that is not enforced is not modeled (%s); "+
-			"declare it without the clause, or drop the constraint",
-		start, kind, unmodeledClauses,
-	)
+	return enforced.record(p.dialect, clause == "NOT ENFORCED", start)
 }
 
 // refuseEnforcement refuses clause after a constraint of kind where the
@@ -160,11 +193,11 @@ func (p *Parser) markColumnChecks(column *ast.ColumnNode) columnCheckMark {
 }
 
 // parseColumnAttribute reads `ENFORCED`, `NOT ENFORCED` or `NOT VALID` in a
-// column definition, after the clause of kind. PostgreSQL 18.6 attaches the
-// first two to the CHECK or REFERENCES written just before them and answers
-// `misplaced ENFORCED clause` after anything else, a NOT NULL included, and
-// takes `NOT VALID` after a table constraint alone.
-func (p *Parser) parseColumnAttribute(kind string) error {
+// column definition, after the clause of kind, into enforced. PostgreSQL 18.6
+// attaches the first two to the CHECK or REFERENCES written just before them
+// and answers `misplaced ENFORCED clause` after anything else, a NOT NULL
+// included, and takes `NOT VALID` after a table constraint alone.
+func (p *Parser) parseColumnAttribute(kind string, enforced *enforcement) error {
 	start := p.current.Start
 	switch {
 	case p.current.MatchIdentifierValue("NOT") && p.nextIsWord("VALID"):
@@ -174,7 +207,28 @@ func (p *Parser) parseColumnAttribute(kind string) error {
 			"misplaced ENFORCED clause at position %d: it has to follow the column's CHECK or REFERENCES", start,
 		)
 	}
-	return p.readConstraintAttributes(kind)
+	return p.readConstraintAttributes(kind, enforced)
+}
+
+// applyColumnEnforcement gives what the enforcement clauses in a column
+// definition said to the constraint they follow: the column's foreign key, its
+// CHECK, or a second CHECK the column moved onto the table, which PostgreSQL
+// 18.6 marks alone: `b int CHECK (a > 0) CHECK (b > 0) NOT ENFORCED` leaves
+// `a > 0` enforced.
+func applyColumnEnforcement(
+	table *ast.CreateTableNode, column *ast.ColumnNode, last columnClause, enforced enforcement,
+) {
+	if !enforced.written {
+		return
+	}
+	switch {
+	case last.foreignKey:
+		column.ForeignKey.NotEnforced = enforced.notEnforced
+	case last.onTable && last.key == checkElement:
+		table.Constraints[len(table.Constraints)-1].NotEnforced = enforced.notEnforced
+	default:
+		column.CheckNotEnforced = enforced.notEnforced
+	}
 }
 
 // isColumnAttribute reports whether the word at the cursor opens `ENFORCED`,
@@ -184,20 +238,23 @@ func (p *Parser) isColumnAttribute(keyword string) bool {
 }
 
 // readMatchType reads `MATCH SIMPLE | FULL | PARTIAL` after a reference's
-// column list. SIMPLE is what a key is without the clause on every server
-// that takes it, and is read. The model keeps no match type, so FULL and
-// PARTIAL are refused by name. Measured on PostgreSQL 18.6, MySQL 8.4 and
-// MariaDB 11.8: PostgreSQL enforces FULL and answers `MATCH PARTIAL not yet
-// implemented`; MySQL records FULL and PARTIAL in MATCH_OPTION and enforces
-// neither; MariaDB takes all three and records NONE.
-func (p *Parser) readMatchType() error {
+// column list, and answers FULL or PARTIAL, or empty for SIMPLE, which is what
+// a key is without the clause on every server that takes it.
+//
+// Measured: PostgreSQL 17.11 and 18.6, CockroachDB v26.3.2 and YugabyteDB
+// 2026.1.2 record FULL in pg_constraint.confmatchtype, and refuse PARTIAL.
+// MySQL 8.4.11 and 9.7.2 record FULL and PARTIAL in
+// REFERENTIAL_CONSTRAINTS.MATCH_OPTION and enforce neither. MariaDB 11.8.9 and
+// SQLite 3.51 accept both and record NONE, so the key they build is MATCH
+// SIMPLE, and the clause is refused there rather than read and dropped.
+func (p *Parser) readMatchType() (string, error) {
 	p.skipWhitespace()
 	if !p.current.MatchIdentifierValue("MATCH") {
-		return nil
+		return "", nil
 	}
 	start := p.current.Start
 	if !takesMatch(p.dialect) {
-		return fmt.Errorf("MATCH at position %d: the %s dialect takes no MATCH clause", start, dialectName(p.dialect))
+		return "", fmt.Errorf("MATCH at position %d: the %s dialect takes no MATCH clause", start, dialectName(p.dialect))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -205,23 +262,45 @@ func (p *Parser) readMatchType() error {
 	switch matchType {
 	case "SIMPLE":
 		p.advance()
-		return nil
+		return "", nil
 	case "FULL", "PARTIAL":
-		return fmt.Errorf(
-			"MATCH %s at position %d: the match type of a foreign key is not modeled (%s), so the key would be "+
-				"built as MATCH SIMPLE; declare it without the clause",
-			matchType, start, unmodeledClauses,
-		)
+		if err := refuseMatchType(p.dialect, matchType, start); err != nil {
+			return "", err
+		}
+		p.advance()
+		return matchType, nil
 	default:
-		return fmt.Errorf("expected SIMPLE, FULL or PARTIAL after MATCH at position %d", p.current.Start)
+		return "", fmt.Errorf("expected SIMPLE, FULL or PARTIAL after MATCH at position %d", p.current.Start)
 	}
+}
+
+// refuseMatchType refuses a MATCH type the dialect's server does not build,
+// and answers nil for one it does. A document read with no dialect takes what
+// any of them does.
+func refuseMatchType(dialect, matchType string, start int) error {
+	switch platform.NormalizeDialect(dialect) {
+	case "", platform.MySQL:
+		return nil
+	case platform.MariaDB:
+		return fmt.Errorf("MATCH %s at position %d: MariaDB 11.8.9 accepts the clause and records NONE, so the key "+
+			"it builds is MATCH SIMPLE; declare the key without the clause", matchType, start)
+	case platform.SQLite:
+		return fmt.Errorf("MATCH %s at position %d: SQLite 3.51 accepts the clause and records NONE, so the key "+
+			"it builds is MATCH SIMPLE; declare the key without the clause", matchType, start)
+	}
+	if matchType == "PARTIAL" {
+		return fmt.Errorf("MATCH PARTIAL at position %d: the %s dialect's server does not implement it, and "+
+			"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`", start, dialectName(dialect))
+	}
+	return nil
 }
 
 // takesMatch reports whether the dialect takes a MATCH clause after
 // REFERENCES.
 func takesMatch(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case "", platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite:
+	case "", platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
+		platform.MySQL, platform.MariaDB, platform.SQLite:
 		return true
 	default:
 		return false

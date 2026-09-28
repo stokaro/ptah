@@ -1216,7 +1216,9 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSche
 			COALESCE(kcu.REFERENCED_TABLE_NAME, '') as REFERENCED_TABLE_NAME,
 			COALESCE(kcu.REFERENCED_COLUMN_NAME, '') as REFERENCED_COLUMN_NAME,
 			COALESCE(rc.DELETE_RULE, '') as DELETE_RULE,
-			COALESCE(rc.UPDATE_RULE, '') as UPDATE_RULE
+			COALESCE(rc.UPDATE_RULE, '') as UPDATE_RULE,
+			COALESCE(rc.MATCH_OPTION, '') as MATCH_OPTION,
+			` + r.enforcedExpr() + ` as ENFORCED
 		FROM information_schema.TABLE_CONSTRAINTS tc
 		LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu ON
 			tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND
@@ -1263,7 +1265,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSche
 
 	for rows.Next() {
 		var constraintName, tableName, constraintType, columnName string
-		var referencedSchema, referencedTable, referencedColumn, deleteRule, updateRule string
+		var referencedSchema, referencedTable, referencedColumn, deleteRule, updateRule, matchOption, enforced string
 		err := rows.Scan(
 			&constraintName,
 			&tableName,
@@ -1274,6 +1276,8 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSche
 			&referencedColumn,
 			&deleteRule,
 			&updateRule,
+			&matchOption,
+			&enforced,
 		)
 		if err != nil {
 			return nil, err
@@ -1293,6 +1297,8 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSche
 					referencedColumn: referencedColumn,
 					deleteRule:       deleteRule,
 					updateRule:       updateRule,
+					matchOption:      matchOption,
+					enforced:         enforced,
 				},
 				checkClauses,
 			)
@@ -1341,6 +1347,13 @@ type constraintRefs struct {
 	referencedColumn string
 	deleteRule       string
 	updateRule       string
+	// matchOption is REFERENTIAL_CONSTRAINTS.MATCH_OPTION: FULL, PARTIAL, or
+	// NONE for MATCH SIMPLE, which MySQL 8.4.11 and 9.7.2 keep although SHOW
+	// CREATE TABLE prints no MATCH clause.
+	matchOption string
+	// enforced is TABLE_CONSTRAINTS.ENFORCED, NO for a CHECK declared NOT
+	// ENFORCED; see [Reader.enforcedExpr].
+	enforced string
 }
 
 func newConstraint(name, tableName, constraintType string, refs constraintRefs, checkClauses checkConstraintClauses) *catalog.Constraint {
@@ -1364,7 +1377,23 @@ func newConstraint(name, tableName, constraintType string, refs constraintRefs, 
 	if checkClause := checkClauses.forConstraint(tableName, name, constraintType); checkClause != "" {
 		constraint.CheckClause = &checkClause
 	}
+	if matchOption := strings.ToUpper(refs.matchOption); matchOption == "FULL" || matchOption == "PARTIAL" {
+		constraint.Match = matchOption
+	}
+	constraint.NotEnforced = strings.EqualFold(refs.enforced, "NO")
 	return constraint
+}
+
+// enforcedExpr projects whether a constraint is enforced. MySQL 8.0.16 and
+// later report it in TABLE_CONSTRAINTS.ENFORCED, NO for a CHECK declared NOT
+// ENFORCED; MariaDB 11.8.9 has no such column and answers ERROR 1054, and no
+// server there keeps a constraint it does not check, so the projection is a
+// constant where [capability.NotEnforcedChecks] is false (stokaro/ptah#3853).
+func (r *Reader) enforcedExpr() string {
+	if r.caps.Has(capability.NotEnforcedChecks) {
+		return "COALESCE(tc.ENFORCED, 'YES')"
+	}
+	return "'YES'"
 }
 
 // forConstraint answers the CHECK clause a constraint carries, and the empty

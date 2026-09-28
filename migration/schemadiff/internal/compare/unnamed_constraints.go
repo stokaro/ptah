@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -34,6 +35,10 @@ type unnamedDefinition struct {
 	where          string
 	foreignTable   string
 	foreignColumns []string
+	// match and notEnforced tell apart two constraints that differ only in
+	// how they check their rows (stokaro/ptah#3853).
+	match       string
+	notEnforced bool
 }
 
 // unnamedDeclaredDefinition reads the definition of a desired constraint.
@@ -46,6 +51,8 @@ func unnamedDeclaredDefinition(constraint schemamodel.Constraint) unnamedDefinit
 		where:          constraint.WhereCondition,
 		foreignTable:   constraint.ForeignTable,
 		foreignColumns: constraint.ForeignColumnsOrDefault(),
+		match:          constraint.Match,
+		notEnforced:    constraint.NotEnforced,
 	}
 }
 
@@ -60,6 +67,8 @@ func unnamedCatalogDefinition(constraint catalog.Constraint) unnamedDefinition {
 		where:          getStringValue(constraint.WhereCondition),
 		foreignTable:   getStringValue(constraint.ForeignTable),
 		foreignColumns: constraint.ForeignColumnsOrDefault(),
+		match:          constraint.Match,
+		notEnforced:    constraint.NotEnforced,
 	}
 }
 
@@ -86,6 +95,8 @@ func (d unnamedDefinition) member(semantics identifier.Semantics) string {
 		normalizeCheckExpression(d.where),
 		semantics.IndexIdentityKey(foreignTable),
 		foldNames(d.foreignColumns, semantics),
+		normalizeMatchType(d.match),
+		strconv.FormatBool(d.notEnforced),
 	}
 	return strings.Join(parts, "\x00")
 }

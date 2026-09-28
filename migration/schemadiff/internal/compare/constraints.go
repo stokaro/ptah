@@ -317,6 +317,8 @@ func appendConstraintAddition(
 		OnDeleteColumns: append([]string(nil), genConstraint.OnDeleteColumns...),
 		Deferrable:      genConstraint.Deferrable,
 		Initially:       genConstraint.Initially,
+		Match:           genConstraint.Match,
+		NotEnforced:     genConstraint.NotEnforced,
 		Identity:        constraintIdentity(genConstraint.Table, genConstraint.Name, semantics),
 	})
 }
@@ -525,6 +527,13 @@ func checkConstraintChanged(
 	checks map[string]config.CheckExpression,
 	semantics identifier.Semantics,
 ) bool {
+	// A CHECK the server does not enforce is another constraint from one it
+	// does. PostgreSQL 18.6 cannot change it in place (`cannot alter
+	// enforceability of constraint`), so a difference is a drop and an add
+	// (stokaro/ptah#3853).
+	if genConstraint.NotEnforced != dbConstraint.NotEnforced {
+		return true
+	}
 	dbClause := getStringValue(dbConstraint.CheckClause)
 	if strings.TrimSpace(genConstraint.CheckExpression) == "" || strings.TrimSpace(dbClause) == "" {
 		return false

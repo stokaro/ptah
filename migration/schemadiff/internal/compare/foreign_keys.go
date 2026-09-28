@@ -60,10 +60,33 @@ func foreignKeyConstraintChanged(
 		return true
 	}
 
+	// Compare the MATCH type and whether the server checks the key. Without
+	// these a declaration of MATCH FULL or NOT ENFORCED compares equal to a key
+	// built without it, and the plan never changes the key
+	// (stokaro/ptah#3853).
+	if normalizeMatchType(genConstraint.Match) != normalizeMatchType(dbConstraint.Match) ||
+		genConstraint.NotEnforced != dbConstraint.NotEnforced {
+		return true
+	}
+
 	// Compare deferral. Without this a schema that declares DEFERRABLE against a
 	// constraint created without it reports no difference, so the plan is empty
 	// and the property never arrives (stokaro/ptah#1624).
 	return deferralChanged(genConstraint, dbConstraint)
+}
+
+// normalizeMatchType spells a foreign key's MATCH type as FULL or PARTIAL,
+// and MATCH SIMPLE as empty. A key written without the clause is MATCH SIMPLE,
+// which PostgreSQL reports as `s` and MySQL as `NONE`.
+func normalizeMatchType(match string) string {
+	switch strings.ToUpper(strings.TrimSpace(match)) {
+	case "FULL":
+		return "FULL"
+	case "PARTIAL":
+		return "PARTIAL"
+	default:
+		return ""
+	}
 }
 
 // deferralChanged reports whether a constraint defers its check differently

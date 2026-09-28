@@ -183,12 +183,14 @@ func convertTablesAndFields(
 			// so down migrations can reconstruct it with the prior action.
 			if fk, ok := fkByColumn[tableMemberKey{table: dbTable.QualifiedName(), member: dbColumn.Name}]; ok {
 				opts.ForeignKey = &catalogfield.ForeignKey{
-					Name:       fk.name,
-					Reference:  fk.foreign,
-					OnDelete:   fk.onDelete,
-					OnUpdate:   fk.onUpdate,
-					Deferrable: fk.deferrable,
-					Initially:  fk.initially,
+					Name:        fk.name,
+					Reference:   fk.foreign,
+					OnDelete:    fk.onDelete,
+					OnUpdate:    fk.onUpdate,
+					Deferrable:  fk.deferrable,
+					Initially:   fk.initially,
+					Match:       fk.match,
+					NotEnforced: fk.notEnforced,
 				}
 			}
 
@@ -946,6 +948,8 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		OnDeleteColumns: slices.Clone(dbConstraint.OnDeleteColumns),
 		Deferrable:      dbConstraint.Deferrable,
 		Initially:       dbConstraint.Initially,
+		Match:           dbConstraint.Match,
+		NotEnforced:     dbConstraint.NotEnforced,
 		Comment:         dbConstraint.Comment,
 		// The index backing this constraint is dropped above so the constraint
 		// renders once; what that index needed does not go with it.
@@ -1275,6 +1279,10 @@ type foreignKeyInfo struct {
 	// the schema declared (stokaro/ptah#1624).
 	deferrable bool
 	initially  string
+	// match and notEnforced carry the MATCH type and enforcement, for the
+	// same reason (stokaro/ptah#3853).
+	match       string
+	notEnforced bool
 }
 
 type tableMemberKey struct {
@@ -1338,12 +1346,14 @@ func columnForeignKey(c catalog.Constraint) foreignKeyInfo {
 	// An ON DELETE column list on a one-column key can name only that
 	// column, which is what no list means, so the field needs none.
 	return foreignKeyInfo{
-		name:       c.Name,
-		foreign:    foreign,
-		onDelete:   derefString(c.DeleteRule),
-		onUpdate:   derefString(c.UpdateRule),
-		deferrable: c.Deferrable,
-		initially:  c.Initially,
+		name:        c.Name,
+		foreign:     foreign,
+		onDelete:    derefString(c.DeleteRule),
+		onUpdate:    derefString(c.UpdateRule),
+		deferrable:  c.Deferrable,
+		initially:   c.Initially,
+		match:       c.Match,
+		notEnforced: c.NotEnforced,
 	}
 }
 

@@ -76,6 +76,7 @@ func synthesizeFieldLevelCheckConstraints(
 			Type:            "CHECK",
 			Table:           tableName,
 			CheckExpression: f.Check,
+			NotEnforced:     f.CheckNotEnforced,
 		})
 	}
 	return synthesized
@@ -426,6 +427,10 @@ func synthesizeFieldLevelForeignKeyConstraints(
 			// reader reported the property (stokaro/ptah#2202).
 			Deferrable: f.Deferrable,
 			Initially:  f.Initially,
+			// The same holds for the MATCH type and enforcement, which a
+			// column's foreign key carries on the field (stokaro/ptah#3853).
+			Match:       f.ForeignKeyMatch,
+			NotEnforced: f.ForeignKeyNotEnforced,
 		})
 	}
 	return synthesized

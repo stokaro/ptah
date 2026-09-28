@@ -1703,6 +1703,10 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		// PostgreSQL 18.6 builds both of `UNIQUE (a) DEFERRABLE, UNIQUE (a)`.
 		strconv.FormatBool(constraint.Deferrable),
 		strings.ToLower(constraint.Initially),
+		// And so are two that differ in how they check their rows
+		// (stokaro/ptah#3853).
+		strings.ToUpper(constraint.Match),
+		strconv.FormatBool(constraint.NotEnforced),
 	}, "\x00")
 }
 

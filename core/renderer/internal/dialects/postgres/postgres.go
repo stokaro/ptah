@@ -1180,21 +1180,25 @@ func (r *Renderer) appendColumnForeignKeyLines(
 	return lines, refused, nil
 }
 
+// columnForeignKeyConstraint is the table constraint a column's foreign key is
+// written as. The whole reference is carried: a copy that picked fields left
+// the MATCH type, enforcement and deferral behind, and the key was built
+// without them.
 func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
-	fk := column.ForeignKey
+	reference := *column.ForeignKey
+	reference.Columns = slices.Clone(column.ForeignKey.Columns)
+	reference.OnDeleteColumns = slices.Clone(column.ForeignKey.OnDeleteColumns)
 	return &ast.ConstraintNode{
-		Type:    ast.ForeignKeyConstraint,
-		Name:    fk.Name,
-		Columns: []string{column.Name},
-		Reference: &ast.ForeignKeyRef{
-			Table:    fk.Table,
-			Column:   fk.Column,
-			OnDelete: fk.OnDelete,
-			OnUpdate: fk.OnUpdate,
-			Name:     fk.Name,
-		},
+		Type:      ast.ForeignKeyConstraint,
+		Name:      reference.Name,
+		Columns:   []string{column.Name},
+		Reference: &reference,
 	}
 }
+
+// notEnforcedClauses is the clause that follows a constraint, keyed by whether it is
+// NOT ENFORCED: kept by the server and not checked.
+var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
 
 // writeAddConstraint writes one ALTER TABLE ... ADD CONSTRAINT and the comment
 // that belongs to it.
@@ -1921,6 +1925,10 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		} else {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 		}
+		// The shared renderer has refused the clause on a target without it.
+		if column.CheckNotEnforced {
+			parts = append(parts, "NOT ENFORCED")
+		}
 	}
 
 	return strings.Join(parts, " "), nil
@@ -2068,10 +2076,11 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		}
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
+		check := fmt.Sprintf("  CHECK (%s)", constraint.Expression)
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(constraint.Name), constraint.Expression), nil
+			check = fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(constraint.Name), constraint.Expression)
 		}
-		return fmt.Sprintf("  CHECK (%s)", constraint.Expression), nil
+		return check + notEnforcedClauses[constraint.NotEnforced], nil
 	case ast.ExcludeConstraint:
 		return r.renderExcludeConstraint(constraint)
 	default:
@@ -2119,6 +2128,10 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		strings.Join(r.escapeIdentifierList(constraint.Columns), ", "),
 		r.escapeQualifiedIdentifier(ref.Table),
 		strings.Join(r.escapeIdentifierList(ref.ReferencedColumns()), ", "))
+	// PostgreSQL takes the MATCH type right after the referenced columns.
+	if ref.Match != "" {
+		foreignKey += " MATCH " + ref.Match
+	}
 	if constraint.Name != "" {
 		result = fmt.Sprintf("  CONSTRAINT %s %s", r.escapeIdentifier(constraint.Name), foreignKey)
 	} else {
@@ -2142,6 +2155,9 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		return "", err
 	}
 	result += deferrable
+	// NOT ENFORCED follows the deferral clauses, where pg_get_constraintdef
+	// prints it on PostgreSQL 18.6.
+	result += notEnforcedClauses[ref.NotEnforced]
 
 	return result, nil
 }

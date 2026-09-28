@@ -170,6 +170,7 @@ func reverseConstraintAdditions(
 					Type:            "CHECK",
 					CheckExpression: *dbConstraint.CheckClause,
 					Comment:         dbConstraint.Comment,
+					NotEnforced:     dbConstraint.NotEnforced,
 				})
 			}
 		case "UNIQUE":
@@ -214,6 +215,13 @@ func foreignKeyAdditionFromDBConstraint(
 		// And the comment the dropped key carried, which the statement that
 		// adds it back writes.
 		Comment: dbFK.Comment,
+		// And how the prior key checked its rows: a key added back without its
+		// deferral, MATCH type or enforcement is not the key that was dropped
+		// (stokaro/ptah#3853).
+		Deferrable:  dbFK.Deferrable,
+		Initially:   dbFK.Initially,
+		Match:       dbFK.Match,
+		NotEnforced: dbFK.NotEnforced,
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)

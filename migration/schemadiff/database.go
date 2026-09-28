@@ -436,8 +436,9 @@ func typeAndDefaultOnly(field schemamodel.Field) schemamodel.Field {
 	field.Nullable = true
 	field.NotNullConstraintName = ""
 	field.Primary, field.Unique = false, false
-	field.Check, field.CheckName = "", ""
+	field.Check, field.CheckName, field.CheckNotEnforced = "", "", false
 	field.Foreign, field.ForeignKeyName = "", ""
+	field.ForeignKeyMatch, field.ForeignKeyNotEnforced = "", false
 	field.GeneratedExpression, field.GeneratedKind = "", ""
 	field.IdentityGeneration = ""
 	field.Comment = ""
