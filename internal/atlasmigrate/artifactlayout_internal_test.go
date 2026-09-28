@@ -464,3 +464,35 @@ func TestComposeMigrationArtifacts_LiquibaseRollbackIsOneLiquibaseReads(t *testi
 	c.Assert(rollback, qt.Equals, "CREATE TABLE widgets (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n);\n"+
 		"CREATE INDEX widgets_name ON widgets (name);")
 }
+
+// TestComposeMigrationArtifacts_LiquibaseEndsANoteWithoutASemicolon holds the
+// Liquibase layout to the rule every script writer follows: a statement that is
+// only a comment -- the planner's note after it drops a table's last RLS policy
+// -- is written without a semicolon, in the changeset and in its rollback lines
+// alike (stokaro/ptah#3903). The executable statements keep theirs.
+func TestComposeMigrationArtifacts_LiquibaseEndsANoteWithoutASemicolon(t *testing.T) {
+	c := qt.New(t)
+	note := "-- NOTE: RLS policies were removed from table site_media_settings - verify if RLS should be disabled"
+
+	artifacts, err := composeMigrationArtifacts(
+		atlasmigrateimport.FormatLiquibase,
+		"removed",
+		20240102030405,
+		[]MigrationFileContent{{
+			SQL:        "DROP POLICY p ON t;\n" + note + "\n",
+			DownSQL:    "CREATE POLICY p ON t;\n" + note + "\n",
+			Statements: []string{"DROP POLICY p ON t", note},
+			ReverseStatements: []string{
+				"CREATE POLICY p ON t",
+				note,
+			},
+		}},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(artifacts, qt.HasLen, 1)
+	contents := string(artifacts[0].Contents)
+	c.Assert(contents, qt.Contains, "DROP POLICY p ON t;\n"+note+"\n")
+	c.Assert(contents, qt.Contains, "--rollback CREATE POLICY p ON t;\n--rollback "+note+"\n")
+	c.Assert(contents, qt.Not(qt.Contains), note+";")
+}

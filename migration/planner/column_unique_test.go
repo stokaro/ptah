@@ -41,8 +41,8 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			table:   "flags",
 			desired: schemamodel.Field{Name: "code", Type: "INTEGER", StructName: "Flag", Nullable: true, Unique: true},
 			changes: map[string]string{"unique": "false -> true"},
-			want: []string{"-- Add/modify columns for table: flags --\n" +
-				"-- Modify column flags.code: unique: false -> true --\n" +
+			want: []string{"-- Add/modify columns for table: flags\n" +
+				"-- Modify column flags.code: unique: false -> true\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`},
 		},
@@ -51,8 +51,8 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			table:   "app.flags",
 			desired: schemamodel.Field{Name: "code", Type: "INTEGER", StructName: "Flag", Nullable: true, Unique: true},
 			changes: map[string]string{"unique": "false -> true"},
-			want: []string{"-- Add/modify columns for table: app.flags --\n" +
-				"-- Modify column app.flags.code: unique: false -> true --\n" +
+			want: []string{"-- Add/modify columns for table: app.flags\n" +
+				"-- Modify column app.flags.code: unique: false -> true\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "app"."flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`},
 		},
@@ -63,8 +63,8 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 				Name: "a_rather_long_column_name_too", Type: "INTEGER", StructName: "Flag", Nullable: true, Unique: true,
 			},
 			changes: map[string]string{"unique": "false -> true"},
-			want: []string{"-- Add/modify columns for table: t3649_a_rather_long_table_name_for_truncation --\n" +
-				"-- Modify column t3649_a_rather_long_table_name_for_truncation.a_rather_long_column_name_too: unique: false -> true --\n" +
+			want: []string{"-- Add/modify columns for table: t3649_a_rather_long_table_name_for_truncation\n" +
+				"-- Modify column t3649_a_rather_long_table_name_for_truncation.a_rather_long_column_name_too: unique: false -> true\n" +
 				"-- ALTER statements: --\n" +
 				`ALTER TABLE "t3649_a_rather_long_table_name_for_truncation" ADD CONSTRAINT ` +
 				`"t3649_a_rather_long_table_nam_a_rather_long_column_name_too_key" UNIQUE ("a_rather_long_column_name_too")`},
@@ -75,8 +75,8 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			desired: schemamodel.Field{Name: "code", Type: "BIGINT", StructName: "Flag", Nullable: true, Unique: true},
 			changes: map[string]string{"unique": "false -> true", "type": "int4 -> bigint"},
 			want: []string{
-				"-- Add/modify columns for table: flags --\n" +
-					"-- Modify column flags.code: type: int4 -> bigint, unique: false -> true --\n" +
+				"-- Add/modify columns for table: flags\n" +
+					"-- Modify column flags.code: type: int4 -> bigint, unique: false -> true\n" +
 					"-- ALTER statements: --\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "code" TYPE BIGINT`,
 				"-- ALTER statements: --\n" +
@@ -112,19 +112,19 @@ func TestGenerateSchemaDiffSQLStatements_ColumnUniqueAddsNothing(t *testing.T) {
 			name:    "UNIQUE lost",
 			desired: schemamodel.Field{Name: "code", Type: "INTEGER", StructName: "Flag", Nullable: true},
 			changes: map[string]string{"unique": "true -> false"},
-			want:    []string{"-- Add/modify columns for table: flags --\n-- Modify column flags.code: unique: true -> false --"},
+			want:    []string{"-- Add/modify columns for table: flags\n-- Modify column flags.code: unique: true -> false"},
 		},
 		{
 			name:    "unique_expr declared",
 			desired: schemamodel.Field{Name: "code", Type: "TEXT", StructName: "Flag", Nullable: true, Unique: true, UniqueExpr: "lower(code)"},
 			changes: map[string]string{"unique": "false -> true"},
-			want:    []string{"-- Add/modify columns for table: flags --\n-- Modify column flags.code: unique: false -> true --"},
+			want:    []string{"-- Add/modify columns for table: flags\n-- Modify column flags.code: unique: false -> true"},
 		},
 		{
 			name:    "PRIMARY KEY gained",
 			desired: schemamodel.Field{Name: "code", Type: "INTEGER", StructName: "Flag", Primary: true},
 			changes: map[string]string{"primary_key": "false -> true"},
-			want:    []string{"-- Add/modify columns for table: flags --\n-- Modify column flags.code: primary_key: false -> true --"},
+			want:    []string{"-- Add/modify columns for table: flags\n-- Modify column flags.code: primary_key: false -> true"},
 		},
 	}
 	for _, test := range tests {

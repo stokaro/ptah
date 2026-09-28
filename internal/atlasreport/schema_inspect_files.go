@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/sqlscript"
 )
 
 // Split modes mirror the documented Atlas schema inspect split strategies:
@@ -414,12 +415,14 @@ func trimSQLIdentifier(value string) string {
 	return strings.Trim(trimmed, "`\"[]")
 }
 
+// ensureTrailingSemicolon ends an executable statement with a semicolon. A
+// statement that is only comments gets none; see [sqlscript].
 func ensureTrailingSemicolon(statement string) string {
 	trimmed := strings.TrimSpace(statement)
 	if strings.HasSuffix(trimmed, ";") {
 		return trimmed + "\n"
 	}
-	return trimmed + ";\n"
+	return trimmed + sqlscript.Terminator(trimmed) + "\n"
 }
 
 func splitSchemaInspectHCL(hclText string, opts schemaInspectSplitOptions) (schemaInspectArchive, error) {

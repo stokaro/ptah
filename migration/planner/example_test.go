@@ -87,7 +87,7 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 
 	// Output:
 	// -- statement 1 --
-	// -- Add/modify columns for table: users --
+	// -- Add/modify columns for table: users
 	// -- ALTER statements: --
 	// ALTER TABLE "users" ADD COLUMN "email" VARCHAR(255) NOT NULL
 	// -- statement 2 --

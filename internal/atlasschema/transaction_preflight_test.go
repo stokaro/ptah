@@ -18,7 +18,7 @@ import (
 // enum type probe_status (SQLSTATE 55P04)` (stokaro/ptah#3283).
 var enumValueUsedPlan = []string{
 	`ALTER TYPE "probe_status" ADD VALUE 'archived'`,
-	"-- Add/modify columns for table: messages --\n-- ALTER statements: --\n" +
+	"-- Add/modify columns for table: messages\n-- ALTER statements: --\n" +
 		`ALTER TABLE "messages" ADD COLUMN "archive_state" probe_status NOT NULL DEFAULT 'archived'`,
 }
 

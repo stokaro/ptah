@@ -471,9 +471,9 @@ func (p *Planner) modifyExistingColumns(
 		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
 		// Add a comment showing what changes are being made, before the
-		// statement it describes: written after it, the comment is the last
-		// fragment of a plan that ends on a column change, and every writer
-		// terminates it as `-- Modify column ... --;` (stokaro/ptah#3645).
+		// statement it describes: written after it, the comment would be the
+		// last fragment of a plan that ends on a column change, describing
+		// nothing below it (stokaro/ptah#3645).
 		// Iterate the changes in sorted key order so migration output is
 		// deterministic (issue #59).
 		changesList := make([]string, 0, len(colDiff.Changes))

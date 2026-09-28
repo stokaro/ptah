@@ -307,12 +307,12 @@ func TestHasActualSQLStatements(t *testing.T) {
 		},
 		{
 			name:       "only comments",
-			statements: []string{"-- Add/modify columns for table: users --"},
+			statements: []string{"-- Add/modify columns for table: users"},
 			expected:   false,
 		},
 		{
 			name:       "comments with whitespace",
-			statements: []string{"  -- Add/modify columns for table: users --  "},
+			statements: []string{"  -- Add/modify columns for table: users  "},
 			expected:   false,
 		},
 		{

@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/systemschema"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
@@ -1008,8 +1009,10 @@ func FormatMigrationSQL(statements []string) string {
 		if stmt == "" {
 			continue
 		}
-		out.WriteString(strings.TrimSuffix(stmt, ";"))
-		out.WriteString(";\n")
+		stmt = strings.TrimSuffix(stmt, ";")
+		out.WriteString(stmt)
+		out.WriteString(sqlscript.Terminator(stmt))
+		out.WriteString("\n")
 	}
 	return out.String()
 }

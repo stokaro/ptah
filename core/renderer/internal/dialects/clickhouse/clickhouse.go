@@ -1283,8 +1283,17 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 }
 
 // renderComment passes through SQL comments verbatim.
+// renderComment writes a comment node -- a planner's note or warning -- as a
+// plain line comment. It is not closed with a trailing marker the way a table
+// banner is: a script writer may put a semicolon after a statement, and a note
+// that ends in " --" then reads as "--;" (stokaro/ptah#3903). An empty comment
+// is a separator line.
 func (r *Renderer) renderComment(node *ast.CommentNode) error {
-	r.w.WriteLinef("-- %s --", node.Text)
+	if node.Text == "" {
+		r.w.WriteLine("--")
+		return nil
+	}
+	r.w.WriteLinef("-- %s", node.Text)
 	return nil
 }
 

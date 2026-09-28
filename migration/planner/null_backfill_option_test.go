@@ -15,8 +15,8 @@ import (
 // SET DEFAULT as Atlas CE v1.3.0 does, where the default plan fills the NULL
 // rows first. MySQL's MODIFY never fills and reads nothing from the option.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.T) {
-	const header = "-- Add/modify columns for table: flags --\n" +
-		"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false --\n" +
+	const header = "-- Add/modify columns for table: flags\n" +
+		"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false\n" +
 		"-- ALTER statements: --\n"
 	tests := []struct {
 		name    string
@@ -51,8 +51,8 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.
 			name:    "MySQL, the fill omitted",
 			dialect: platform.MySQL,
 			omit:    true,
-			want: []string{"-- Modify table: flags --\n" +
-				"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false --\n" +
+			want: []string{"-- Modify table: flags\n" +
+				"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false\n" +
 				"-- ALTER statements: --\n" +
 				"ALTER TABLE `flags` MODIFY COLUMN `c` INTEGER NOT NULL DEFAULT 9"},
 		},

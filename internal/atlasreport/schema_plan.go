@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"text/template"
+
+	"ptah.run/internal/sqlscript"
 )
 
 // SchemaPlan is the `schema plan --format` template payload.
@@ -138,7 +140,8 @@ func (r SchemaPlan) MarshalSQL(indent ...string) (string, error) {
 	}
 	var sql strings.Builder
 	for _, change := range r.Changes {
-		fmt.Fprintf(&sql, "%s;\n", strings.TrimSuffix(change.Cmd, ";"))
+		cmd := strings.TrimSuffix(change.Cmd, ";")
+		fmt.Fprintf(&sql, "%s%s\n", cmd, sqlscript.Terminator(cmd))
 	}
 	text := sql.String()
 	if len(indent) == 0 || indent[0] == "" || text == "" {
