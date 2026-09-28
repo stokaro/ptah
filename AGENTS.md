@@ -669,8 +669,14 @@ without it comes back tomorrow.
 `.golangci.yml` is a strict contract: fix code rather than relaxing thresholds
 or broadening exclusions. Run both passes, `golangci-lint run --fix ./...` then
 `golangci-lint run ./...`, and clean the second-pass fallout by hand. Then run
-both again with `--build-tags=integration`: a tagged file is outside the
-default build, and CI lints both contours, as `make lint-golangci` does.
+both again with `--build-tags="$(scripts/list-build-tags.sh --joined)"`: a
+tagged file is outside the default build, and CI lints both contours, as
+`make lint-golangci` does. The tagged contour sets every opt-in tag the tree
+uses at once -- `integration` and `observability` -- and
+`scripts/list-build-tags.sh` discovers them, so a new tag joins every lint run
+without an edit. Every opt-in tag except `integration` is also built into
+`ptah`, and the tests of the packages it changes run, in the `build-tags` job
+of `go-unit-tests.yml`.
 
 Ptah is pre-GA: prefer the cleaner architecture over an alias, wrapper or
 fallback kept for an older internal shape, and update callers, tests and docs.
@@ -692,7 +698,8 @@ rewrite, which re-wraps what it touches.
 **Discover the module list, never write it out.** `scripts/list-go-modules.sh`
 is the answer, from `git ls-files`; `make lint` consumes it, and
 `scripts/check-go-module-lint-coverage.sh` fails when a workflow job that lints
-misses a tracked module in either build-tag contour. Any "we do X for every
+misses a tracked module in either build-tag contour, or passes a tag list other
+than the one `scripts/list-build-tags.sh` discovers. Any "we do X for every
 module" claim needs discovery or a check.
 
 Every package carries a `// Package <name>` comment that says what it does and

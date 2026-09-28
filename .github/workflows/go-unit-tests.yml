@@ -213,10 +213,70 @@ jobs:
           GOARCH: wasm
         run: go build ./...
 
+  build-tags:
+    name: build-tags
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      # An opt-in build tag selects code no default build compiles, and no
+      # release build ships: without this job, nothing compiles the
+      # observability tag's OTLP trace exporter or runs its tests
+      # (stokaro/ptah#3895). The lint jobs read tagged files; this job builds
+      # ptah with each tag and runs the tests of every package whose files the
+      # tag changes.
+      #
+      # The tags come from scripts/list-build-tags.sh, so a new one is built
+      # and tested here without an edit. The integration tag is left out: its
+      # tests need databases, and go-integration-tests.yml runs them.
+      - name: Build and test each opt-in build tag
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          tags="$(scripts/list-build-tags.sh | grep -vx integration || true)"
+          if [ -z "$tags" ]; then
+            echo "scripts/list-build-tags.sh lists no opt-in tag besides integration." >&2
+            echo "If the last one was removed on purpose, remove this job too." >&2
+            exit 1
+          fi
+          files() { go list "$@" -f '{{.ImportPath}} {{.GoFiles}} {{.TestGoFiles}} {{.XTestGoFiles}}' ./... | sort; }
+          files >"$RUNNER_TEMP/default-files.txt"
+          while read -r tag; do
+            echo "::group::build tag $tag"
+            go build -tags "$tag" -o "$RUNNER_TEMP/ptah-$tag" ./cmd/ptah </dev/null
+            # The binary records its build tags; a build that dropped the tag
+            # would still succeed.
+            go version -m "$RUNNER_TEMP/ptah-$tag" | grep -F -- "-tags=$tag"
+            mapfile -t packages < <(files -tags "$tag" | comm -13 "$RUNNER_TEMP/default-files.txt" - | cut -d' ' -f1)
+            if [ "${#packages[@]}" -eq 0 ]; then
+              echo "the $tag tag changes the files of no package, so nothing would be tested" >&2
+              exit 1
+            fi
+            printf 'packages the %s tag changes:\n' "$tag"
+            printf '  %s\n' "${packages[@]}"
+            go test -race -count=1 -tags "$tag" "${packages[@]}" </dev/null
+            echo "::endgroup::"
+          done <<<"$tags"
+
   unit-test-gate:
     name: Unit test gate
     if: always() && github.event_name == 'pull_request'
-    needs: [scope, unit-tests, windows-publication, windows-unit-tests, js-wasm-build]
+    needs: [scope, unit-tests, windows-publication, windows-unit-tests, js-wasm-build, build-tags]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -229,6 +289,7 @@ jobs:
           WINDOWS_PUBLICATION_RESULT: ${{ needs.windows-publication.result }}
           WINDOWS_UNIT_RESULT: ${{ needs.windows-unit-tests.result }}
           JS_WASM_RESULT: ${{ needs.js-wasm-build.result }}
+          BUILD_TAGS_RESULT: ${{ needs.build-tags.result }}
         run: |
           scripts/check-ci-scope-gate.sh --selftest
           scripts/check-ci-scope-gate.sh \
@@ -237,4 +298,5 @@ jobs:
             --scoped "unit-tests=$UNIT_RESULT" \
             --scoped "windows-publication=$WINDOWS_PUBLICATION_RESULT" \
             --scoped "windows-unit-tests=$WINDOWS_UNIT_RESULT" \
-            --scoped "js-wasm-build=$JS_WASM_RESULT"
+            --scoped "js-wasm-build=$JS_WASM_RESULT" \
+            --scoped "build-tags=$BUILD_TAGS_RESULT"

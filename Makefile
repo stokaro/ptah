@@ -171,23 +171,35 @@ GO_MODULES := $(shell scripts/list-go-modules.sh)
 # Lint code
 lint: lint-qtlint lint-nolintguard lint-golangci
 
+# Every lint target runs two build-tag contours. The default contour sets no
+# tag. The tagged contour sets every opt-in tag the tree uses at once, which
+# scripts/list-build-tags.sh discovers: `integration,observability` today. A
+# file behind a tag is not in the default build, so a run without the tag
+# never reads it: without the tagged run, no linter reads the integration
+# tests or the OTLP exporter (stokaro/ptah#3882, stokaro/ptah#3895).
+#
+# The list is read inside each recipe rather than with $(shell), because
+# $(shell) drops a failing exit status: a script that refused would leave an
+# empty -tags, and the tagged run would quietly become a second default run.
+LIST_BUILD_TAGS := tags="$$(scripts/list-build-tags.sh --joined)" && test -n "$$tags" || \
+	{ echo "scripts/list-build-tags.sh listed no build tags" >&2; exit 1; }
+
 lint-nolintguard:
 	@echo "Running nolintguard..."
-	@nolintguard="$$(go tool -n nolintguard)"; \
+	@$(LIST_BUILD_TAGS); \
+	nolintguard="$$(go tool -n nolintguard)"; \
 	for module in $(GO_MODULES); do \
 		(cd "$$module" && go vet -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
-		(cd "$$module" && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
+		(cd "$$module" && go vet -tags="$$tags" -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
 	done
 
-# Both contours, every module, like lint-nolintguard. A file behind
-# //go:build integration is not in the default build, so a run without the tag
-# never reads it: before this target ran the second contour, 84 findings sat
-# in integration/ with every lint job green (stokaro/ptah#3882).
+# Both contours, every module, like lint-nolintguard.
 lint-golangci:
 	@echo "Running golangci-lint..."
-	@for module in $(GO_MODULES); do \
+	@$(LIST_BUILD_TAGS); \
+	for module in $(GO_MODULES); do \
 		(cd "$$module" && golangci-lint run ./...) || exit 1; \
-		(cd "$$module" && golangci-lint run --build-tags=integration ./...) || exit 1; \
+		(cd "$$module" && golangci-lint run --build-tags="$$tags" ./...) || exit 1; \
 	done
 
 # Both invocations are required, and neither is redundant.
@@ -199,8 +211,8 @@ lint-golangci:
 # or its selected dependencies".
 #
 # The two contours are two different builds, not a subset and a superset:
-# satisfying `integration` also drops every file a constraint excludes from
-# that contour.
+# satisfying a tag also drops every file a constraint excludes from that
+# contour, such as the !observability stub in internal/cli/cliobs.
 #
 # lint-qtlint-fix runs the rules in separate passes. Applied together with
 # -fix they can collide: one rule deletes a receiver declaration the other
@@ -223,20 +235,23 @@ QTLINT_RULES := -require-qt-c-receiver -require-data-rows -require-testing-run
 
 lint-qtlint:
 	@echo "Running qtlint..."
-	go tool qtlint -multi-module $(QTLINT_RULES) ./...
-	go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
+	@$(LIST_BUILD_TAGS); \
+	go tool qtlint -multi-module $(QTLINT_RULES) ./... && \
+	go tool qtlint -multi-module $(QTLINT_RULES) -tags "$$tags" ./...
 
 lint-qtlint-fix:
-	@for rule in $(QTLINT_RULES); do \
+	@$(LIST_BUILD_TAGS); \
+	for rule in $(QTLINT_RULES); do \
 		go tool qtlint -multi-module $$rule -fix ./... || exit 1; \
-		go tool qtlint -multi-module $$rule -fix -tags integration ./... || exit 1; \
+		go tool qtlint -multi-module $$rule -fix -tags "$$tags" ./... || exit 1; \
 	done
 
 lint-fix:
 	@echo "Running auto-fixable linters..."
 	$(MAKE) lint-qtlint-fix
-	golangci-lint run --fix ./...
-	golangci-lint run --fix --build-tags=integration ./...
+	@$(LIST_BUILD_TAGS); \
+	golangci-lint run --fix ./... && \
+	golangci-lint run --fix --build-tags="$$tags" ./...
 	$(MAKE) lint
 
 # Atlas parity scoreboard. The executable harness and Apache-2.0 Atlas fixture

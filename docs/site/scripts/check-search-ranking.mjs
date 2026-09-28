@@ -21,6 +21,7 @@ export const searchCases = [
   ['generate migrations from DBML', '/versioned/generate/'],
   ['generate migration without Go', '/versioned/generate/'],
   ['apply migrations', '/versioned/apply/'],
+  ['OpenTelemetry tracing', '/operate/trace-migrations/'],
   ['rollback migration', '/versioned/rollback/'],
   ['schema drift', '/direct/compare-and-drift/', { before: ['/schema/go-annotations/'] }],
   ['apply desired schema', '/direct/apply/', { before: ['/schema/go-annotations/'] }],

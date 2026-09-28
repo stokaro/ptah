@@ -371,8 +371,13 @@ ptah migrations up --log-format json --log-level debug --metrics-addr :9090
 Text logging preserves the traditional human output. JSON logging emits
 structured log records with a `correlation_id` so automation can parse stdout.
 When `--metrics-addr` is set, Ptah serves Prometheus text metrics on
-`/metrics`. OpenTelemetry OTLP tracing is intentionally behind the
-`observability` build tag so default binaries do not link the OTLP exporter.
+`/metrics`.
+
+OpenTelemetry tracing needs a `ptah` built with `-tags observability`. Release
+builds leave the tag out, so they do not link the OTLP exporter. A tagged build
+exports the observer's spans over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT`
+is set. [Trace migration runs](../../docs/site/src/content/docs/operate/trace-migrations.md)
+covers the build, the variables and the spans.
 
 ## API Overview
 
