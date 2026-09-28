@@ -376,7 +376,8 @@ When `--metrics-addr` is set, Ptah serves Prometheus text metrics on
 OpenTelemetry tracing needs a `ptah` built with `-tags observability`. Release
 builds leave the tag out, so they do not link the OTLP exporter. A tagged build
 exports the observer's spans over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT`
-is set. [Trace migration runs](../../docs/site/src/content/docs/operate/trace-migrations.md)
+or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set, and logs a failed export at
+`warn`. [Trace migration runs](../../docs/site/src/content/docs/operate/trace-migrations.md)
 covers the build, the variables and the spans.
 
 ## API Overview
