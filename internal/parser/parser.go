@@ -66,6 +66,10 @@ type Parser struct {
 	// refuseModifyReferences and refuseMySQLColumnConstraint, read it here
 	// because the column parser is shared by all three statements.
 	modifyColumn bool
+
+	// usedDatabase is the database the last MySQL-family USE selected; see
+	// parseUse.
+	usedDatabase string
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -203,7 +207,9 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
-	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "USE", "VACUUM", "WITH":
+	case "USE":
+		return nil, p.parseUse()
+	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "VACUUM", "WITH":
 		p.skipSchemaNeutralStatement()
 		return nil, nil
 	default:
@@ -674,6 +680,52 @@ func (p *Parser) expectBracketedIdentifier() (string, error) {
 
 func isDoubleQuotedIdentifierToken(tok lexer.Token) bool {
 	return tok.Type == lexer.TokenString && strings.HasPrefix(tok.Value, `"`)
+}
+
+// parseUse reads a USE statement. On the MySQL family it selects the database
+// the tables that follow are in, so a later unqualified table name reads as
+// qualified by it; see parseTableName. Every other dialect's USE, and a
+// dialect-neutral document's, changes nothing the schema holds.
+//
+// Measured on MySQL 8.4.11 with the pinned community binary v1.3.0, a schema
+// file `CREATE DATABASE app; USE app; CREATE TABLE t (...)` compared with a
+// whole server beside a dev server plans the table as app.t, and a second USE
+// moves the tables after it into its database. Without this, t names no
+// database, and the whole-server comparison refuses the file
+// (stokaro/ptah#3926).
+func (p *Parser) parseUse() error {
+	if !isMySQLFamilyDialect(p.dialect) {
+		p.skipSchemaNeutralStatement()
+		return nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected database name after USE: %w", err)
+	}
+	p.usedDatabase = name
+	p.skipSchemaNeutralStatement()
+	return nil
+}
+
+// parseTableName reads a table's name, qualified or not, and qualifies an
+// unqualified one with the database a MySQL-family USE selected.
+//
+// It is not used for the table a REFERENCES clause names. Measured on MySQL
+// 8.4.11 and MariaDB 11.8.9, after `USE rb`, `CREATE TABLE ra.y (...
+// REFERENCES t (id))` references ra.t: the server resolves an unqualified
+// referenced table in the database of the table that holds the key, not in
+// the one USE selected, and the SQL reader resolves it the same way.
+func (p *Parser) parseTableName(label string) (string, error) {
+	name, err := p.parseQualifiedIdentifier(label)
+	if err != nil {
+		return "", err
+	}
+	if p.usedDatabase == "" || strings.Contains(name, ".") {
+		return name, nil
+	}
+	return p.usedDatabase + "." + name, nil
 }
 
 func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
@@ -1547,7 +1599,7 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
-	tableName, err := p.parseQualifiedIdentifier("trigger table name")
+	tableName, err := p.parseTableName("trigger table name")
 	if err != nil {
 		return nil, err
 	}
@@ -1934,7 +1986,7 @@ func (p *Parser) parseCreateTableHeader() (*ast.CreateTableNode, error) {
 	p.skipWhitespace()
 
 	// Get table name (could be schema.table)
-	tableName, err := p.parseQualifiedIdentifier("table name")
+	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return nil, err
 	}
@@ -5617,7 +5669,7 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 	}
 
 	// Get table name
-	tableName, err := p.parseQualifiedIdentifier("table name")
+	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return nil, err
 	}
@@ -5724,7 +5776,7 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 func (p *Parser) parseDropTableNames() ([]string, error) {
 	var names []string
 	for {
-		tableName, err := p.parseQualifiedIdentifier("table name")
+		tableName, err := p.parseTableName("table name")
 		if err != nil {
 			return nil, err
 		}
@@ -5858,7 +5910,7 @@ func (p *Parser) parseDropIndexTarget() (name, table string, err error) {
 	}
 	p.advance()
 	p.skipWhitespace()
-	tableName, err := p.parseQualifiedIdentifier("table name")
+	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return "", "", err
 	}
@@ -5943,7 +5995,7 @@ func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
 
 	p.advance()
 	p.skipWhitespace()
-	newName, err := p.parseQualifiedIdentifier("new table name")
+	newName, err := p.parseTableName("new table name")
 	if err != nil {
 		return nil, err
 	}
@@ -6731,7 +6783,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	p.skipWhitespace()
 
 	// Get table name
-	tableName, err := p.parseQualifiedIdentifier("table name")
+	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return nil, err
 	}
